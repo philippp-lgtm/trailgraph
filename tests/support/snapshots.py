@@ -85,9 +85,15 @@ def revision(
 class DictSnapshot:
     """Current revisions only; enough for evaluators and validators."""
 
-    def __init__(self, *revisions: Revision, seq: int = 1) -> None:
+    def __init__(
+        self,
+        *revisions: Revision,
+        seq: int = 1,
+        former_aliases: Mapping[str, EntityId] | None = None,
+    ) -> None:
         self._current = {r.id: r for r in revisions}
         self._seq = seq
+        self._former = dict(former_aliases or {})
 
     @property
     def seq(self) -> int:
@@ -126,7 +132,7 @@ class DictSnapshot:
         for r in self._current.values():
             if r.alias == alias:
                 return r.id, True
-        return None
+        return (self._former[alias], False) if alias in self._former else None
 
     def match_suffix(self, hex_suffix: str, *, limit: int = 10) -> Sequence[EntityId]:
         return sorted(e for e in self._current if e.hex.endswith(hex_suffix))[:limit]

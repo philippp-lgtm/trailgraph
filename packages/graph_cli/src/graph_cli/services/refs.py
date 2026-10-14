@@ -1,0 +1,238 @@
+"""Reference resolution for one change set (contracts B1.8, B1.9, B3.8, B3.9, B6.9; plan W6).
+
+Runs before the lock on a lock-free snapshot (authorization and early
+errors, W.4) and again under the lock on the locked snapshot, because an
+alias may have been renamed in between.
+
+- **Full ids** are used as given. Op subjects (``id``, ``by``, supersede
+  ``targets``) must exist (``entity.not_found``); edge targets are not
+  checked here (the validator reports ``target_missing``).
+- **Aliases** resolve through the snapshot; a former alias resolves with
+  warning ``entity.alias_renamed``.
+- **Locals** are declared by creates; a name declared twice, or already
+  bound by an earlier document of the same invocation, is
+  ``changeset.local_ref_duplicate``; a use without a binding is
+  ``changeset.local_ref_unresolved``.
+- **Abbreviations** (CLI arguments only, ``allow_abbrev``) match the
+  trailing hex of ids; several matches are ``entity.ambiguous_ref`` with up
+  to 10 candidates. They are replaced by full ids in the returned change
+  set, which is what gets hashed and recorded.
+
+The result also names the (action, type) pair of every touched entity for
+authorization; types are immutable, so they are known before the lock.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
+from types import MappingProxyType
+
+from graph_cli.kernel.actions import Action
+from graph_cli.kernel.changeset import (
+    ChangeSet,
+    CreateOp,
+    EdgeSpec,
+    LinkOp,
+    Op,
+    RetractOp,
+    SetAliasOp,
+    SupersedeOp,
+    TransitionOp,
+    UnlinkOp,
+    UpdateOp,
+    op_action,
+)
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.ids import (
+    AbbrevRef,
+    AliasRef,
+    EntityId,
+    EntityRef,
+    LocalRef,
+    TermRef,
+    ref_text,
+)
+from graph_cli.kernel.ports.storage import Snapshot
+
+MAX_CANDIDATES = 10
+NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
+
+
+@dataclass(frozen=True, slots=True)
+class Resolution:
+    changeset: ChangeSet  # abbreviations replaced by full ids
+    refs: Mapping[str, EntityId]  # alias text and "@name" of earlier bindings -> id (normalize)
+    pairs: tuple[tuple[Action, TermRef], ...]  # sorted, unique (B6.9)
+    warnings: tuple[WarningRecord, ...]
+
+
+class _Resolver:
+    def __init__(
+        self,
+        snapshot: Snapshot,
+        bindings: Mapping[str, EntityId],
+        allow_abbrev: bool,
+        declared: Mapping[str, TermRef],
+    ) -> None:
+        self.snapshot = snapshot
+        self.bindings = bindings
+        self.allow_abbrev = allow_abbrev
+        self.declared = declared  # local name -> type of its create
+        self.refs: dict[str, EntityId] = {f"@{n}": e for n, e in bindings.items()}
+        self.warnings: dict[str, WarningRecord] = {}
+
+    def ref(self, ref: EntityRef, path: str, *, subject: bool) -> EntityRef:
+        """The reference to keep in the change set; full ids for abbreviations."""
+        match ref:
+            case LocalRef(name):
+                if name not in self.declared and name not in self.bindings:
+                    raise GraphCliError(
+                        "changeset.local_ref_unresolved",
+                        f"{path}: @{name} is not bound",
+                        details={"name": name, "path": path},
+                    )
+                return ref
+            case AliasRef(alias):
+                bound = self.snapshot.resolve_alias(alias)
+                if bound is None:
+                    raise _not_found(alias, path)
+                entity, current = bound
+                if not current:
+                    revision = self.snapshot.get(entity)
+                    self.warnings[alias] = WarningRecord(
+                        "entity.alias_renamed",
+                        f"{alias} was renamed",
+                        {
+                            "alias": alias,
+                            "id": str(entity),
+                            "current": None if revision is None else revision.alias,
+                        },
+                    )
+                self.refs[alias] = entity
+                return ref
+            case AbbrevRef(suffix):
+                if not self.allow_abbrev:
+                    raise GraphCliError(
+                        "changeset.malformed",
+                        f"{path}: abbreviated ids are not allowed in change sets (B1.9)",
+                        details={"path": path},
+                    )
+                found = self.snapshot.match_suffix(suffix, limit=MAX_CANDIDATES + 1)
+                if not found:
+                    raise _not_found(suffix, path)
+                if len(found) > 1:
+                    raise GraphCliError(
+                        "entity.ambiguous_ref",
+                        f"{suffix} matches {len(found)} entities",
+                        details={
+                            "ref": suffix,
+                            "path": path,
+                            "candidates": [str(e) for e in found[:MAX_CANDIDATES]],
+                        },
+                    )
+                return found[0]
+        if subject and self.snapshot.get(ref) is None:
+            raise _not_found(ref_text(ref), path)
+        return ref
+
+    def type_of(self, ref: EntityRef) -> TermRef:
+        if isinstance(ref, LocalRef):
+            if ref.name in self.declared:
+                return self.declared[ref.name]
+            entity = self.bindings[ref.name]
+        elif isinstance(ref, AliasRef):
+            entity = self.refs[ref.alias]
+        else:
+            assert not isinstance(ref, AbbrevRef)
+            entity = ref
+        revision = self.snapshot.get(entity)
+        if revision is None:
+            raise _not_found(ref_text(ref), "")
+        return revision.type
+
+
+def _not_found(text: str, path: str) -> GraphCliError:
+    return GraphCliError(
+        "entity.not_found", f"no entity {text}", details={"ref": text, "path": path}
+    )
+
+
+def _declared_locals(cs: ChangeSet, bindings: Mapping[str, EntityId]) -> dict[str, TermRef]:
+    declared: dict[str, TermRef] = {}
+    for index, op in enumerate(cs.ops):
+        if isinstance(op, CreateOp) and op.local is not None:
+            if op.local in declared or op.local in bindings:
+                raise GraphCliError(
+                    "changeset.local_ref_duplicate",
+                    f"ops[{index}].local: @{op.local} is bound twice",
+                    details={"name": op.local, "path": f"ops[{index}].local"},
+                )
+            declared[op.local] = op.type
+    return declared
+
+
+def _subjects(op: Op) -> list[EntityRef]:
+    """The entities an op touches besides the ones it creates."""
+    match op:
+        case SupersedeOp():
+            return [op.by, *op.targets]
+        case RetractOp():
+            return [op.id] if op.by is None else [op.id, op.by]
+        case CreateOp():
+            return []
+    return [op.id]
+
+
+def _rewrite(op: Op, fix: Callable[[EntityRef, str, bool], EntityRef], path: str) -> Op:
+    def edge(spec: EdgeSpec, at: str) -> EdgeSpec:
+        return replace(spec, target=fix(spec.target, f"{at}.target", False))
+
+    match op:
+        case CreateOp():
+            return replace(
+                op, edges=tuple(edge(e, f"{path}.edges[{i}]") for i, e in enumerate(op.edges))
+            )
+        case UpdateOp() | TransitionOp() | SetAliasOp():
+            return replace(op, id=fix(op.id, f"{path}.id", True))
+        case LinkOp():
+            return replace(op, id=fix(op.id, f"{path}.id", True), edge=edge(op.edge, path))
+        case UnlinkOp():
+            target = None if op.target is None else fix(op.target, f"{path}.target", False)
+            return replace(op, id=fix(op.id, f"{path}.id", True), target=target)
+        case SupersedeOp():
+            targets = tuple(fix(t, f"{path}.targets[{i}]", True) for i, t in enumerate(op.targets))
+            return replace(op, by=fix(op.by, f"{path}.by", True), targets=targets)
+        case RetractOp():
+            by = None if op.by is None else fix(op.by, f"{path}.by", True)
+            return replace(op, id=fix(op.id, f"{path}.id", True), by=by)
+
+
+def resolve_refs(
+    cs: ChangeSet,
+    snapshot: Snapshot,
+    *,
+    bindings: Mapping[str, EntityId] = NO_BINDINGS,
+    allow_abbrev: bool = False,
+) -> Resolution:
+    """Resolve every reference of ``cs`` against ``snapshot`` (B1.9 order)."""
+    declared = _declared_locals(cs, bindings)
+    resolver = _Resolver(snapshot, bindings, allow_abbrev, declared)
+
+    def fix(ref: EntityRef, path: str, subject: bool) -> EntityRef:
+        return resolver.ref(ref, path, subject=subject)
+
+    ops = tuple(_rewrite(op, fix, f"ops[{i}]") for i, op in enumerate(cs.ops))
+    pairs: set[tuple[Action, TermRef]] = set()
+    for op in ops:
+        action = op_action(op)
+        if isinstance(op, CreateOp):
+            pairs.add((action, op.type))
+        for ref in _subjects(op):
+            pairs.add((action, resolver.type_of(ref)))
+    return Resolution(
+        changeset=replace(cs, ops=ops),
+        refs=dict(resolver.refs),
+        pairs=tuple(sorted(pairs)),
+        warnings=tuple(resolver.warnings[k] for k in sorted(resolver.warnings)),
+    )
