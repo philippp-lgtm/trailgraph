@@ -1,7 +1,8 @@
 """Minimal audit drafts for storage tests (plan Q2).
 
-Storage treats the body as opaque JSON; it only needs ``event_id``. P1 item 4
-replaces these with the real builders in ``graph_cli.audit``.
+Storage treats the body as opaque JSON; it only needs ``event_id``. Storage
+tests keep these minimal bodies so they do not depend on ``graph_cli.audit``;
+tests that verify streams use ``support.audit_events`` (real builders).
 """
 
 from datetime import datetime

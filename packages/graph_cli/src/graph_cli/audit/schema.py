@@ -67,6 +67,11 @@ def _actions(event: Mapping[str, JsonValue]) -> list[str]:
     return [a for a in actions if isinstance(a, str)]
 
 
+def is_ext_state_action(action: str) -> bool:
+    """The implicit ``ext.<ns>.state`` action of every extension (B6.1)."""
+    return _EXT_STATE_RE.match(action) is not None
+
+
 def is_write_intent(event: Mapping[str, JsonValue]) -> bool:
     """An ``ok`` event with a ``write.*`` action: committed iff its tx exists (B5.6)."""
     return _status(event) == "ok" and any(a.startswith("write.") for a in _actions(event))
@@ -75,7 +80,7 @@ def is_write_intent(event: Mapping[str, JsonValue]) -> bool:
 def is_intent(event: Mapping[str, JsonValue]) -> bool:
     """B5.6: ``ok`` with ``write.*``, ``ext.<ns>.state`` or a maintenance action with effect."""
     return _status(event) == "ok" and any(
-        a.startswith("write.") or _EXT_STATE_RE.match(a) or a in MAINT_EFFECT_ACTIONS
+        a.startswith("write.") or is_ext_state_action(a) or a in MAINT_EFFECT_ACTIONS
         for a in _actions(event)
     )
 
@@ -86,7 +91,7 @@ def unknown_actions(event: Mapping[str, JsonValue], ext_actions: Iterable[str] =
     return [
         a
         for a in _actions(event)
-        if not is_known_action(a, known_ext) and not _EXT_STATE_RE.match(a)
+        if not is_known_action(a, known_ext) and not is_ext_state_action(a)
     ]
 
 
