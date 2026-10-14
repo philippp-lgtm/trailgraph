@@ -17,7 +17,9 @@ from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.storage.files.audit_log import FileAuditLog
+from graph_cli.storage.files.durable import write_tree
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
+from graph_cli.storage.files.manifest import format_manifest
 from support.clock import StepClock
 from support.drafts import draft
 from support.fixtures import compiled_model
@@ -42,6 +44,18 @@ def manifest(graph_id: GraphId, name: str, pin: OntologyPin) -> ManifestData:
 
 def with_pin(data: ManifestData, pin: OntologyPin) -> ManifestData:
     return replace(data, entry=replace(data.entry, pin=pin))
+
+
+def publish_ontology(
+    graph_dir: Path, graph_id: GraphId, ontology: str, syncer: RecordingSyncer
+) -> CompiledModel:
+    """Give a test graph directory its manifest and pinned release without the port."""
+    model = compiled_model(ontology)
+    (graph_dir / "manifest.toml").write_bytes(
+        format_manifest(manifest(graph_id, "example_graph", pin_of(model)))
+    )
+    write_tree(graph_dir / "ontology" / model.bundle_version, release_files(model), syncer)
+    return model
 
 
 @dataclass

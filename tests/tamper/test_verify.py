@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from support.drafts import intent
+from support.graphs import publish_ontology
 from support.stores import StoreEnv, snapshot_state
 from support.trees import tree_hash
 
@@ -24,6 +25,7 @@ def setup(tmp_path: Path) -> tuple[StoreEnv, FileStore, FileStoreMaintenance]:
     env = StoreEnv("files", "inventory", tmp_path, seed=5)
     env.random(12)
     assert isinstance(env.store, FileStore)
+    publish_ontology(env.store.layout.root, env.graph_id, "inventory", env.syncer)
     return env, env.store, FileStoreMaintenance(tmp_path, syncer=env.syncer)
 
 
@@ -69,12 +71,20 @@ def edit_head(store: FileStore) -> None:
     store.layout.head.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
+def edit_pinned_release(store: FileStore) -> None:
+    (compiled,) = store.layout.ontology.glob("*/compiled.json")
+    document = json.loads(compiled.read_text())
+    document["classes"] = {}
+    compiled.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+
 SCENARIOS: dict[str, Callable[[FileStore], None]] = {
     finding_codes.TX_CHAIN_BROKEN: edit_interior_tx_line,
     finding_codes.REVISION_HASH_MISMATCH: edit_revision_file,
     finding_codes.REVISION_MISSING: delete_revision_file,
     finding_codes.REVISION_UNEXPECTED: add_revision_file,
     finding_codes.HEAD_INCONSISTENT: edit_head,
+    finding_codes.PIN_MISMATCH: edit_pinned_release,
 }
 
 
@@ -109,6 +119,17 @@ def test_more_head_inconsistencies(tmp_path: Path) -> None:
         assert verify(maintenance, env.graph_id) == [finding_codes.HEAD_INCONSISTENT], change
     store.layout.head.write_text("{broken")
     assert verify(maintenance, env.graph_id) == [finding_codes.HEAD_INCONSISTENT]
+
+
+def test_more_pin_mismatches(tmp_path: Path) -> None:
+    env, store, maintenance = setup(tmp_path)
+    manifest = store.layout.manifest.read_text()
+    store.layout.manifest.write_text(manifest.replace('version = "1.0.0"', 'version = "9.0.0"'))
+    assert verify(maintenance, env.graph_id) == [finding_codes.PIN_MISMATCH]
+    store.layout.manifest.write_text("broken = ")
+    assert verify(maintenance, env.graph_id) == [finding_codes.PIN_MISMATCH]
+    store.layout.manifest.unlink()
+    assert verify(maintenance, env.graph_id) == [finding_codes.PIN_MISMATCH]
 
 
 def test_verify_does_not_recover(tmp_path: Path) -> None:

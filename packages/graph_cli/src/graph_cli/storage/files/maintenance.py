@@ -76,6 +76,7 @@ from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
 from graph_cli.storage.finding_codes import (
     HEAD_INCONSISTENT,
+    PIN_MISMATCH,
     REVISION_HASH_MISMATCH,
     REVISION_MISSING,
     REVISION_UNEXPECTED,
@@ -396,7 +397,29 @@ class Verifier:
         self._revisions(view, materialized_seq, complete=complete)
         if complete:  # beyond damage nothing can be judged; no cascades
             self._head(view, checkpoint)
+        self._pin()
         return self.findings
+
+    def _pin(self) -> None:
+        """The manifest pins a release whose ``compiled.json`` has the pinned hash (B7.6)."""
+        layout = self.store.layout
+        try:
+            pin = read_manifest(layout).entry.pin
+        except GraphCliError as exc:
+            self.add(PIN_MISMATCH, {"path": "manifest.toml"}, f"the pin cannot be read: {exc}")
+            return
+        path = f"ontology/{pin.version}/{COMPILED_FILE}"
+        actual = release_hashes(layout).get(pin.version)
+        if actual is None:
+            self.add(PIN_MISMATCH, {"path": path}, "the pinned release is missing or unreadable")
+        elif actual != pin.artifact_hash:
+            self.add(
+                PIN_MISMATCH,
+                {"path": path},
+                "the pinned release differs from the manifest's artifact hash",
+                expected=pin.artifact_hash,
+                actual=actual,
+            )
 
     def _tx_log(self) -> GraphView:
         """Replay the whole log; damage ends the replay with one finding."""
