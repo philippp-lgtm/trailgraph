@@ -1,0 +1,66 @@
+"""Finding codes owned by audit (contracts R.4, R.6, section 1.5.2, B5.12).
+
+Produced by ``graph_cli.audit.verify``. Every code has exactly one tamper
+scenario under ``tests/tamper/``.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+from graph_cli.kernel.findings import FindingCodeSpec, Severity
+
+
+def _integrity(name: str, severity: Severity, summary: str) -> FindingCodeSpec:
+    return FindingCodeSpec(
+        code=f"integrity.audit.{name}",
+        scope="integrity",
+        layer="audit",
+        default_severity=severity,
+        when="verify",
+        fixture="tamper",
+        summary=summary,
+    )
+
+
+CHAIN_BROKEN: Final = "integrity.audit.chain_broken"
+SEQ_GAP: Final = "integrity.audit.seq_gap"
+HASH_MISMATCH: Final = "integrity.audit.hash_mismatch"
+TORN_INTERIOR_LINE: Final = "integrity.audit.torn_interior_line"
+UNKNOWN_SCHEMA: Final = "integrity.audit.unknown_schema"
+EVENT_MALFORMED: Final = "integrity.audit.event_malformed"
+UNKNOWN_ACTION: Final = "integrity.audit.unknown_action"
+INTENT_WITHOUT_EFFECT: Final = "integrity.audit.intent_without_effect"
+TX_WITHOUT_INTENT: Final = "integrity.audit.tx_without_intent"
+ANCHOR_MISMATCH: Final = "integrity.audit.anchor_mismatch"
+
+FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
+    _integrity(
+        "chain_broken", Severity.ERROR, "An event does not continue the stream's hash chain."
+    ),
+    _integrity("seq_gap", Severity.ERROR, "An event's seq does not follow its predecessor's."),
+    _integrity("hash_mismatch", Severity.ERROR, "An event's content does not match its hash."),
+    _integrity(
+        "torn_interior_line", Severity.ERROR, "A line inside the stream is not a JSON object."
+    ),
+    _integrity(
+        "unknown_schema", Severity.ERROR, "An event carries a schema this version cannot read."
+    ),
+    _integrity(
+        "event_malformed", Severity.ERROR, "An event does not have the shape of its schema."
+    ),
+    _integrity(
+        "unknown_action", Severity.WARNING, "An event names an action outside the known taxonomy."
+    ),
+    _integrity(
+        "intent_without_effect", Severity.INFO, "A write intent has no committed tx (benign crash)."
+    ),
+    _integrity(
+        "tx_without_intent",
+        Severity.ERROR,
+        "A tx has no matching write intent in the graph stream.",
+    ),
+    _integrity(
+        "anchor_mismatch", Severity.ERROR, "An installation anchor does not match the graph stream."
+    ),
+)

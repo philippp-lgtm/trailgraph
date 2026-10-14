@@ -36,6 +36,10 @@ POSITIVE_CONTROLS = {
         "graph_cli/storage/common/__init__.py",
         "import graph_cli.storage.memory.store\n",
     ),
+    "Audit and access control import only the kernel": (
+        "graph_cli/audit/__init__.py",
+        "import graph_cli.query\n",
+    ),
 }
 # Allowed by the same contracts: admin may use the maintenance port.
 ALLOWED_IMPORTS = {
@@ -43,7 +47,7 @@ ALLOWED_IMPORTS = {
 }
 
 
-def test_storage_contracts_catch_violations(tmp_path: Path) -> None:
+def test_contracts_catch_violations(tmp_path: Path) -> None:
     """Positive controls: a scratch copy with one violation per contract breaks exactly
     those contracts, and the allowed admin import breaks none."""
     src = tmp_path / "src"

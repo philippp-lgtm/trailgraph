@@ -99,6 +99,15 @@ forbidden_modules = [
     "graph_cli.app_cli",
 ]
 
+# Audit events and authorization decisions are pure functions over kernel
+# types (contracts B5, B6.4). The layers contract already keeps them apart
+# from storage and from everything above them.
+[[tool.importlinter.contracts]]
+name = "Audit and access control import only the kernel"
+type = "forbidden"
+source_modules = ["graph_cli.audit", "graph_cli.access_control"]
+forbidden_modules = ["graph_cli.ontology_layer", "graph_cli.query"]
+
 # B13.1: the maintenance port is constructed by admin wiring only. Inside the
 # app distribution only graph_cli.storage itself may import it.
 [[tool.importlinter.contracts]]

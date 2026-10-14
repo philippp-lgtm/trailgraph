@@ -67,6 +67,23 @@ class RequestMeta:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvInfo:
+    """Where an invocation ran: the resolved data root and how it was chosen (B5.14, B12.9).
+
+    ``data_root`` is ``None`` when config redacts it (``[audit] record_data_root``).
+    """
+
+    data_root: str | None
+    root_source: str
+
+    def to_json(self) -> dict[str, JsonValue]:
+        data: dict[str, JsonValue] = {"root_source": self.root_source}
+        if self.data_root is not None:
+            data["data_root"] = self.data_root
+        return data
+
+
+@dataclass(frozen=True, slots=True)
 class EdgeRecord:
     edge_id: EdgeId
     rel: TermRef
