@@ -33,6 +33,14 @@ class AuditReceipt:
     session_token: object  # ties the receipt to the session that appended it
 
 
+@dataclass(frozen=True, slots=True)
+class AuditLine:
+    """One raw stream line for the verifier; ``data`` keeps its ``\\n`` unless the line is torn."""
+
+    position: str  # opaque locator for findings, e.g. "<segment>:<offset>"
+    data: bytes
+
+
 class AuditSink(Protocol):
     def append_installation(self, event: AuditEventDraft) -> AuditReceipt:
         """Append to the installation stream under its own lock; durable on return."""
@@ -41,5 +49,9 @@ class AuditSink(Protocol):
     def read(
         self, stream: AuditStream, *, from_seq: int = 1
     ) -> Iterator[Mapping[str, JsonValue]]: ...
+
+    def read_lines(self, stream: AuditStream) -> Iterator[AuditLine]:
+        """Every line in stream order, unparsed and unverified; never raises on content."""
+        ...
 
     def head(self, stream: AuditStream) -> tuple[int, str]: ...

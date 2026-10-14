@@ -69,3 +69,19 @@ def test_graph_and_installation_streams_are_separate(env: StoreEnv) -> None:
     assert env.audit.head(env.stream)[0] == 1
     (event,) = env.audit.read(env.stream)
     assert event["stream"] == env.stream
+
+
+def test_read_lines_are_the_raw_stream(env: StoreEnv) -> None:
+    _installation(env, 2)
+    env.write(lambda d: d.create())
+    lines = list(env.audit.read_lines(INSTALLATION_STREAM))
+    events = list(env.audit.read(INSTALLATION_STREAM))
+    assert [line.data for line in lines] == [jsonl_line(e) for e in events]
+    assert len({line.position for line in lines}) == 2
+    (graph_line,) = env.audit.read_lines(env.stream)
+    assert graph_line.data == jsonl_line(next(env.audit.read(env.stream)))
+
+
+def test_read_lines_of_an_empty_stream(env: StoreEnv) -> None:
+    assert list(env.audit.read_lines(INSTALLATION_STREAM)) == []
+    assert list(env.audit.read_lines(env.stream)) == []

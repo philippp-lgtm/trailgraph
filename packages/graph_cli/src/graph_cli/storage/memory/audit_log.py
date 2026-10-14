@@ -5,11 +5,12 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator, Mapping
 
-from graph_cli.kernel.canonical import GENESIS_HASH, JsonValue
+from graph_cli.kernel.canonical import GENESIS_HASH, JsonValue, jsonl_line
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
     AuditEventDraft,
+    AuditLine,
     AuditReceipt,
     AuditStream,
 )
@@ -58,6 +59,11 @@ class InMemoryAuditLog:
     def read(self, stream: AuditStream, *, from_seq: int = 1) -> Iterator[Mapping[str, JsonValue]]:
         events = list(self._streams.get(stream, ()))
         yield from events[max(from_seq, 1) - 1 :]
+
+    def read_lines(self, stream: AuditStream) -> Iterator[AuditLine]:
+        events = list(self._streams.get(stream, ()))
+        for index, document in enumerate(events):
+            yield AuditLine(f"memory:{index}", jsonl_line(document))
 
     def head(self, stream: AuditStream) -> tuple[int, str]:
         link = self._link(stream)

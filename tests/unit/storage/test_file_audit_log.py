@@ -79,6 +79,38 @@ def test_invalid_last_line_is_truncated_too(tmp_path: Path) -> None:
     assert env.notes[0]["tail"] == "invalid"
 
 
+def test_reader_ignores_an_invalid_last_line(tmp_path: Path) -> None:
+    """A complete but unreadable last line is a tail for readers too, as for ``head``."""
+    env = Env(tmp_path)
+    env.append(2)
+    with open(env.segment, "ab") as handle:
+        handle.write(b"garbage\n")
+    assert [e["seq"] for e in env.log.read(INSTALLATION_STREAM)] == [1, 2]
+    assert env.log.head(INSTALLATION_STREAM)[0] == 2
+
+
+def test_read_lines_hand_out_damage_and_torn_tails(tmp_path: Path) -> None:
+    env = Env(tmp_path)
+    env.append(3)
+    lines = env.segment.read_bytes().splitlines(keepends=True)
+    env.segment.write_bytes(lines[0] + b"not json\n" + lines[2] + b'{"torn')
+    raw = list(env.log.read_lines(INSTALLATION_STREAM))
+    assert [line.data for line in raw] == [lines[0], b"not json\n", lines[2], b'{"torn']
+    offsets = [0, len(lines[0]), len(lines[0]) + 9, len(lines[0]) + 9 + len(lines[2])]
+    assert [line.position for line in raw] == [f"{env.segment.name}:{o}" for o in offsets]
+
+
+def test_read_lines_cross_segments(tmp_path: Path) -> None:
+    env = Env(tmp_path, segment_bytes=1)
+    env.append(3)
+    raw = list(env.log.read_lines(INSTALLATION_STREAM))
+    names = [segment_name("events-", n) for n in range(1, 4)]
+    assert [line.position for line in raw] == [f"{name}:0" for name in names]
+    assert b"".join(line.data for line in raw) == b"".join(
+        (env.log.installation_dir / name).read_bytes() for name in names
+    )
+
+
 def test_interior_damage_refuses_appends_and_reads(tmp_path: Path) -> None:
     env = Env(tmp_path)
     env.append(3)
@@ -144,5 +176,6 @@ def test_unknown_stream_names(tmp_path: Path) -> None:
 def test_reads_create_nothing(tmp_path: Path) -> None:
     log = FileAuditLog(tmp_path / "root")
     assert list(log.read(INSTALLATION_STREAM)) == []
+    assert list(log.read_lines(INSTALLATION_STREAM)) == []
     assert log.head(INSTALLATION_STREAM) == (GENESIS.seq, GENESIS.hash)
     assert not (tmp_path / "root").exists()

@@ -6,9 +6,11 @@ The installation stream lives in ``<data_root>/audit/`` with its own
 FileStore write session under the graph lock.
 
 ``read`` yields the parsed documents of all complete lines without checking
-the chain: verification belongs to ``graph_cli.audit`` (P1 item 4). A torn
-last line is ignored (B5.9); an unparseable complete line is
-``backend.corrupt``. ``head`` is the last chain-verified position.
+the chain: verification belongs to ``graph_cli.audit``. A torn or
+unparseable last line is a tail and ignored (B5.9, as in ``head``); an
+unparseable interior line is ``backend.corrupt``. ``read_lines`` hands the
+raw lines to the verifier, which reports damage as findings. ``head`` is the
+last chain-verified position.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
     AuditEventDraft,
+    AuditLine,
     AuditReceipt,
     AuditSink,
     AuditStream,
@@ -147,20 +150,34 @@ class FileAuditLog:
             return
         segments = log.segments()
         for index, (_, name) in enumerate(segments):
+            last_segment = index == len(segments) - 1
             data = log.path(name).read_bytes()
             lines = data.split(b"\n")
             complete, rest = lines[:-1], lines[-1]
             for number, line in enumerate(complete):
-                document = _parse(line, stream, name, number)
+                is_tail = last_segment and not rest and number == len(complete) - 1
+                document = _parse(line, stream, name, number, tail=is_tail)
+                if document is None:
+                    return
                 seq = document.get("seq")
                 if not isinstance(seq, int) or seq >= from_seq:
                     yield document
-            if rest and index < len(segments) - 1:
+            if rest and not last_segment:
                 raise GraphCliError(
                     "backend.corrupt",
                     "audit segment ends in a torn line",
                     details={"stream": stream, "segment": name},
                 )
+
+    def read_lines(self, stream: AuditStream) -> Iterator[AuditLine]:
+        log = self._log(stream)
+        if not log.directory.is_dir():
+            return
+        for _, name in log.segments():
+            offset = 0
+            for line in log.path(name).read_bytes().splitlines(keepends=True):
+                yield AuditLine(f"{name}:{offset}", line)
+                offset += len(line)
 
     def head(self, stream: AuditStream) -> tuple[int, str]:
         log = self._log(stream)
@@ -170,7 +187,10 @@ class FileAuditLog:
         return end.seq, end.hash
 
 
-def _parse(line: bytes, stream: str, segment: str, number: int) -> Mapping[str, JsonValue]:
+def _parse(
+    line: bytes, stream: str, segment: str, number: int, *, tail: bool
+) -> Mapping[str, JsonValue] | None:
+    """Parse one complete line; an unreadable last line is a tail (``None``), else corrupt."""
     try:
         document = parse_json(line)
     except CanonicalError as exc:
@@ -179,6 +199,8 @@ def _parse(line: bytes, stream: str, segment: str, number: int) -> Mapping[str, 
     else:
         reason = "not a JSON object"
     if not isinstance(document, Mapping):
+        if tail:
+            return None
         raise GraphCliError(
             "backend.corrupt",
             f"audit line is unreadable: {reason}",
