@@ -1,0 +1,35 @@
+# User-specific, untracked files — never commit these
+CLAUDE.local.md
+local/
+.claude/
+
+# Project data (kept locally, not tracked)
+data/
+
+# Secrets and environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
