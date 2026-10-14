@@ -3,6 +3,7 @@
 import json
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from harness import CliRunner
@@ -39,3 +40,13 @@ def admin(run_cli: CliRunner, *args: str, env: dict[str, str] | None = None) -> 
     outcome = parse(run_cli("graph-admin", *args, "--json", env=env))
     assert outcome.stderr == "", outcome.stderr
     return outcome
+
+
+def data_root(env: dict[str, str]) -> Path:
+    """The default data root of the isolated env (B12.1 step 4)."""
+    return (Path(env["XDG_DATA_HOME"]) / "graph_cli").resolve()
+
+
+def init(run_cli: CliRunner, env: dict[str, str]) -> Path:
+    assert admin(run_cli, "init").code == 0
+    return data_root(env)
