@@ -500,13 +500,29 @@ class FileSession:
             pending.close()
             self._broken = True
 
+    def claim_receipt(self, receipt: AuditReceipt) -> None:
+        """A maintenance effect consumes the receipt of its intent (B5.7)."""
+        self._check_usable()
+        check_receipt(
+            receipt,
+            event_id=None,
+            stream=self._store.stream,
+            session_token=self._token,
+            used_events=self._used,
+        )
+        self._used.add(receipt.event_id)
+
     # ---- commit --------------------------------------------------------
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
         self._check_usable()
         store = self._store
         check_receipt(
-            receipt, tx=tx, stream=store.stream, session_token=self._token, used_events=self._used
+            receipt,
+            event_id=tx.event_id,
+            stream=store.stream,
+            session_token=self._token,
+            used_events=self._used,
         )
         check_tx(tx, graph_id=store.graph_id, head=self._head, view=self._view())
         record, line = seal_tx(tx, self._end)

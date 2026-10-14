@@ -16,6 +16,7 @@ TX_SEGMENT_PREFIX: Final = ""
 AUDIT_SEGMENT_PREFIX: Final = "events-"
 DEFAULT_SEGMENT_BYTES: Final = 64 * 1024 * 1024  # B4 open point: roll at 64 MiB
 REVISION_FILE_RE: Final = re.compile(r"^r([0-9]{6,})\.json$")
+STAGING_PREFIX: Final = ".tmp-"  # graphs/.tmp-<id>, ontology/.tmp-<version>; readers ignore them
 
 
 def segment_name(prefix: str, first_seq: int) -> str:
@@ -41,6 +42,17 @@ class GraphLayout:
     @property
     def lock(self) -> Path:
         return self.root / ".lock"
+
+    @property
+    def manifest(self) -> Path:
+        return self.root / "manifest.toml"
+
+    @property
+    def ontology(self) -> Path:
+        return self.root / "ontology"
+
+    def release_dir(self, version: str) -> Path:
+        return self.ontology / version
 
     @property
     def data(self) -> Path:
@@ -73,7 +85,7 @@ class GraphLayout:
 def init_graph_dir(root: Path, syncer: Syncer) -> GraphLayout:
     """Lay out an empty graph: ``data/txlog``, ``data/entities``, ``audit/``, ``.lock``.
 
-    Used by tests now and by ``create_graph`` (P1 item 5). Idempotent.
+    Used by ``create_graph`` on the staging directory and by tests. Idempotent.
     """
     layout = GraphLayout(root)
     for directory in (layout.txlog, layout.entities, layout.audit):

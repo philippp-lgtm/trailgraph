@@ -6,7 +6,7 @@ Payloads are kernel types only; no paths, SQL or backend types cross the port.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -121,11 +121,27 @@ class GraphStoreWrite(Protocol):
 
 
 class MaintenanceSession(WriteSession, Protocol):
-    def replace_manifest(self, manifest: ManifestData, receipt: AuditReceipt) -> None: ...
+    """A write session plus the maintenance effects (W.e); no recovery on open."""
+
+    def manifest(self) -> ManifestData:
+        """The manifest as it is now, read under the graph lock."""
+        ...
+
+    def release_hashes(self) -> Mapping[str, str]:
+        """Installed release versions and the C.2 hash of their ``compiled.json``."""
+        ...
+
+    def read_release_file(self, version: str, name: str) -> bytes: ...
+
+    def replace_manifest(self, manifest: ManifestData, receipt: AuditReceipt) -> None:
+        """Atomic manifest switch; ``receipt`` is this session's intent (B5.7)."""
+        ...
 
     def install_release(
         self, version: str, files: Mapping[str, bytes], receipt: AuditReceipt
-    ) -> None: ...
+    ) -> None:
+        """Publish ``ontology/<version>/`` atomically; it never changes afterwards (B7.4)."""
+        ...
 
     def recover(self) -> RecoveryReport: ...
 
@@ -136,8 +152,34 @@ class MaintenanceSession(WriteSession, Protocol):
     def reindex(self) -> None: ...
 
 
+class RegistrySession(Protocol):
+    """Holds the installation registry lock (W.a, W.f)."""
+
+    def manifests(self) -> Sequence[ManifestData]:
+        """Every graph's manifest, archived ones included."""
+        ...
+
+    def create_graph(
+        self,
+        manifest: ManifestData,
+        genesis: AuditEventDraft,
+        *,
+        version: str,
+        files: Mapping[str, bytes],
+        announce: Callable[[AuditReceipt], AuditReceipt],
+    ) -> AuditReceipt:
+        """W.f: stage the graph with its genesis event and first release, call
+        ``announce`` with the genesis receipt (it appends the installation event
+        with the anchor), then publish the graph. Returns the genesis receipt."""
+        ...
+
+
 class GraphStoreMaintenance(Protocol):
-    def create_graph(self, manifest: ManifestData, genesis: AuditEventDraft) -> AuditReceipt: ...
+    def graph_ids(self) -> Sequence[GraphId]:
+        """Every published graph, in id order."""
+        ...
+
+    def registry(self, *, timeout_s: float) -> AbstractContextManager[RegistrySession]: ...
 
     def maintenance_session(
         self, graph: GraphId, *, timeout_s: float

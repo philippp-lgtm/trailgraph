@@ -12,7 +12,8 @@ import errno
 import fcntl
 import os
 import sys
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
 from typing import Final, Literal, Protocol
 
 Durability = Literal["full", "fsync"]
@@ -105,3 +106,28 @@ def ensure_dir(path: Path, syncer: Syncer) -> bool:
             continue
         syncer.sync_dir(directory.parent)
     return bool(missing)
+
+
+def write_tree(root: Path, files: Mapping[str, bytes], syncer: Syncer) -> None:
+    """Write ``files`` (relative POSIX paths) below a fresh ``root``; sync files and dirs.
+
+    ``root`` is a private staging directory, so files are written in place;
+    the caller publishes it with one rename.
+    """
+    directories = {root}
+    ensure_dir(root, syncer)
+    for name in sorted(files):
+        parts = PurePosixPath(name).parts
+        if not parts or name.startswith("/") or any(p in ("", ".", "..") for p in parts):
+            raise ValueError(f"not a relative file name: {name!r}")
+        path = root.joinpath(*parts)
+        ensure_dir(path.parent, syncer)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, FILE_MODE)
+        try:
+            write_all(fd, files[name])
+            syncer.sync_file(fd)
+        finally:
+            os.close(fd)
+        directories.add(path.parent)
+    for directory in sorted(directories):
+        syncer.sync_dir(directory)

@@ -27,6 +27,11 @@ class CrashPoint(StrEnum):
     # Recovery must be idempotent when it is itself interrupted.
     RECOVERY_AFTER_TRUNCATE = "recovery.after_truncate"
     RECOVERY_AFTER_MATERIALIZE = "recovery.after_materialize"
+    # Maintenance effects (W.e, W.f): the commit point is the rename.
+    CREATE_BEFORE_ANNOUNCE = "create.before_announce"
+    CREATE_BEFORE_RENAME = "create.before_rename"
+    RELEASE_BEFORE_RENAME = "release.before_rename"
+    MANIFEST_BEFORE_RENAME = "manifest.before_rename"
 
 
 # Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3").
@@ -35,6 +40,15 @@ EXTRA_POINTS: Final = frozenset(
         CrashPoint.TX_BEFORE_WRITE,
         CrashPoint.RECOVERY_AFTER_TRUNCATE,
         CrashPoint.RECOVERY_AFTER_MATERIALIZE,
+    }
+)
+# Points of the maintenance effects (P1 item 5), outside the write-path table.
+MAINT_POINTS: Final = frozenset(
+    {
+        CrashPoint.CREATE_BEFORE_ANNOUNCE,
+        CrashPoint.CREATE_BEFORE_RENAME,
+        CrashPoint.RELEASE_BEFORE_RENAME,
+        CrashPoint.MANIFEST_BEFORE_RENAME,
     }
 )
 

@@ -127,7 +127,11 @@ class MemorySession:
         store = self._store
         head = store.head()
         check_receipt(
-            receipt, tx=tx, stream=store._stream, session_token=self._token, used_events=self._used
+            receipt,
+            event_id=tx.event_id,
+            stream=store._stream,
+            session_token=self._token,
+            used_events=self._used,
         )
         check_tx(tx, graph_id=store.graph_id, head=head, view=store._view.at(head.seq))
         record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))

@@ -38,17 +38,20 @@ def _violation(rule: str, message: str, **details: JsonValue) -> GraphCliError:
 def check_receipt(
     receipt: AuditReceipt,
     *,
-    tx: AuthorizedTx,
+    event_id: EventId | None,
     stream: AuditStream,
     session_token: object,
     used_events: Set[EventId],
 ) -> None:
-    """B5.7: a graph-stream receipt from this session, for this tx, used once."""
+    """B5.7: a graph-stream receipt from this session, for this event, used once.
+
+    ``event_id`` is the tx's event; maintenance effects pass ``None``.
+    """
     if receipt.session_token is not session_token:
         raise _violation("receipt_session", "the audit receipt is from another session")
     if receipt.stream != stream:
         raise _violation("receipt_stream", "the audit receipt is not from the graph stream")
-    if receipt.event_id != tx.event_id:
+    if event_id is not None and receipt.event_id != event_id:
         raise _violation("receipt_event", "the audit receipt is for another event")
     if receipt.event_id in used_events:
         raise _violation("receipt_reused", "the audit receipt was already used")

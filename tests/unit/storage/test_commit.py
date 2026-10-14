@@ -280,14 +280,24 @@ class TestReceipt:
 
     def _rule(self, tx: AuthorizedTx, receipt: AuditReceipt, used: set[EventId]) -> str:
         with pytest.raises(GraphCliError) as info:
-            check_receipt(receipt, tx=tx, stream=self.stream, session_token=TOKEN, used_events=used)
+            check_receipt(
+                receipt,
+                event_id=tx.event_id,
+                stream=self.stream,
+                session_token=TOKEN,
+                used_events=used,
+            )
         assert info.value.code == "internal.error"
         return str(info.value.details["rule"])
 
     def test_valid(self, log: MemLog) -> None:
         tx = self._tx(log)
         check_receipt(
-            self._receipt(tx), tx=tx, stream=self.stream, session_token=TOKEN, used_events=set()
+            self._receipt(tx),
+            event_id=tx.event_id,
+            stream=self.stream,
+            session_token=TOKEN,
+            used_events=set(),
         )
 
     def test_rules(self, log: MemLog) -> None:
