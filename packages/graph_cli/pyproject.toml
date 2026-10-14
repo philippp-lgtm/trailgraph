@@ -3,7 +3,10 @@ name = "graph_cli"
 version = "0.1.0.dev0"
 description = "Domain-agnostic knowledge graph shell: application CLI (graph)."
 requires-python = ">=3.12"
-dependencies = ["click>=8.1"]
+dependencies = [
+    "click>=8.1",
+    "pyyaml>=6.0.2",
+]
 
 [project.scripts]
 graph = "graph_cli.app_cli.main:main"

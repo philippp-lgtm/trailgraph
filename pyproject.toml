@@ -9,9 +9,11 @@ dependencies = ["graph_cli", "graph_cli_admin"]
 [dependency-groups]
 dev = [
     "import-linter>=2.1",
+    "jsonschema>=4.23",
     "mypy>=1.11",
     "pytest>=8.3",
     "ruff>=0.6",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.uv]
