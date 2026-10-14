@@ -33,6 +33,7 @@ UNKNOWN_ACTION: Final = "integrity.audit.unknown_action"
 INTENT_WITHOUT_EFFECT: Final = "integrity.audit.intent_without_effect"
 TX_WITHOUT_INTENT: Final = "integrity.audit.tx_without_intent"
 ANCHOR_MISMATCH: Final = "integrity.audit.anchor_mismatch"
+PIN_MISMATCH: Final = "integrity.audit.pin_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -53,7 +54,7 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "unknown_action", Severity.WARNING, "An event names an action outside the known taxonomy."
     ),
     _integrity(
-        "intent_without_effect", Severity.INFO, "A write intent has no committed tx (benign crash)."
+        "intent_without_effect", Severity.INFO, "An intent has no committed effect (benign crash)."
     ),
     _integrity(
         "tx_without_intent",
@@ -62,5 +63,8 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     ),
     _integrity(
         "anchor_mismatch", Severity.ERROR, "An installation anchor does not match the graph stream."
+    ),
+    _integrity(
+        "pin_mismatch", Severity.ERROR, "The manifest pin differs from the recorded pin events."
     ),
 )

@@ -200,8 +200,15 @@ SCENARIOS: dict[str, Callable[[Scene], None]] = {
 }
 
 
+# Codes whose scenario needs manifests and releases (tests/tamper/test_maint_verify.py).
+MAINT_SCENARIO_CODES = {finding_codes.PIN_MISMATCH}
+
+
 def test_every_audit_code_has_one_scenario() -> None:
-    assert set(SCENARIOS) == {spec.code for spec in finding_codes.FINDING_CODES}
+    assert set(SCENARIOS) | MAINT_SCENARIO_CODES == {
+        spec.code for spec in finding_codes.FINDING_CODES
+    }
+    assert not set(SCENARIOS) & MAINT_SCENARIO_CODES
 
 
 def test_clean_installation_verifies_clean(tmp_path: Path) -> None:

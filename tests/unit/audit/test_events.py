@@ -202,7 +202,17 @@ def test_route_graph_scoped_maint_to_the_graph_then_an_anchor(world: World, acti
         env=ENV,
         graph=world.graph,
     )
-    graph_event = events.maintenance(ts=world.clock.now(), event_id=world.event_id(), **common)  # type: ignore[arg-type]
+    pin = world.graph.pin
+    change = {
+        "maint.ontology_release": events.release_change("1.0.0", pin.artifact_hash, world.graph_id),
+        "maint.ontology_pin": events.pin_change(pin, pin),
+    }.get(action)
+    graph_event = events.maintenance(
+        ts=world.clock.now(),
+        event_id=world.event_id(),
+        change=change,
+        **common,  # type: ignore[arg-type]
+    )
     assert graph_event.stream == graph_stream(str(world.graph_id))
     anchored = events.maintenance(
         ts=world.clock.now(),

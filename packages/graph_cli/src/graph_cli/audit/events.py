@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Final, Literal
+from uuid import UUID
 
 from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
@@ -28,7 +29,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, sort_findings
-from graph_cli.kernel.ids import EntityId, EventId
+from graph_cli.kernel.ids import EntityId, EventId, format_id
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
     AuditEventDraft,
@@ -227,6 +228,26 @@ def graph_genesis(
         target=None,
     )
     return _checked(body)
+
+
+def release_change(version: str, artifact_hash: str, release_id: UUID) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.ontology_release`` intent: the release it installs."""
+    return {
+        "release": {
+            "version": version,
+            "artifact_hash": artifact_hash,
+            "release_id": format_id(release_id),
+        }
+    }
+
+
+def pin_change(old: OntologyPin, new: OntologyPin) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.ontology_pin`` intent: the manifest pin before and after.
+
+    ``from`` is read under the graph lock, so consecutive pin intents chain
+    (``audit.verify`` walks them against the manifest, B5.12).
+    """
+    return {"pin": {"from": old.to_json(), "to": new.to_json()}}
 
 
 def anchor(receipt: AuditReceipt) -> dict[str, JsonValue]:

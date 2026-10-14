@@ -32,6 +32,8 @@ MAINT_EFFECT_ACTIONS: Final = MAINT_ACTIONS - {
     Action("maint.audit_anchor"),
 }
 
+RELEASE_ACTION: Final = "maint.ontology_release"
+PIN_ACTION: Final = "maint.ontology_pin"
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
@@ -268,6 +270,8 @@ def _routing_problems(
             problems.append("only ok events carry change")
         elif not isinstance(change, Mapping):
             problems.append("change is not an object")
+    if graph_id is not None and status == "ok":
+        problems.extend(_maint_change_problems(_actions(event), change))
     anchors = event.get("anchors")
     if anchors is not None:
         if stream != INSTALLATION:
@@ -339,6 +343,43 @@ def _change_problems(change: JsonValue) -> list[str]:
         if not all(_is_hash(entry[k]) for k in keys - {"id", "rev"}):
             return [shape]
     return []
+
+
+def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
+    """Graph-stream maintenance intents name their effect (P1 item 5, plan M4)."""
+    problems = []
+    entries = change if isinstance(change, Mapping) else {}
+    if RELEASE_ACTION in actions:
+        release = entries.get("release")
+        if not (
+            isinstance(release, Mapping)
+            and set(release) == {"version", "artifact_hash", "release_id"}
+            and isinstance(release["version"], str)
+            and _is_hash(release["artifact_hash"])
+            and is_canonical_uuid(release["release_id"])
+        ):
+            problems.append(
+                "a release intent needs change.release{version, artifact_hash, release_id}"
+            )
+    if PIN_ACTION in actions:
+        pin = entries.get("pin")
+        if not (
+            isinstance(pin, Mapping)
+            and set(pin) == {"from", "to"}
+            and all(_is_pin(pin[k]) for k in ("from", "to"))
+        ):
+            problems.append("a pin intent needs change.pin{from, to}")
+    return problems
+
+
+def _is_pin(pin: JsonValue) -> bool:
+    return (
+        isinstance(pin, Mapping)
+        and set(pin) == {"bundle", "version", "artifact_hash"}
+        and isinstance(pin["bundle"], str)
+        and isinstance(pin["version"], str)
+        and _is_hash(pin["artifact_hash"])
+    )
 
 
 def _optional_problems(event: Mapping[str, JsonValue]) -> list[str]:

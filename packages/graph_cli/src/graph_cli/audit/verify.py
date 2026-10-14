@@ -13,8 +13,10 @@ does not cascade into findings for every later line:
 - ``hash_mismatch`` (content edited) is independent of the chain position;
   so are ``unknown_schema``, ``event_malformed`` and ``unknown_action``.
 
-``cross_check`` matches write intents with the tx log (B5.6, B5.12) and
-``check_anchors`` matches installation anchors with graph streams (B5.11).
+``cross_check`` matches write intents with the tx log (B5.6, B5.12),
+``check_maintenance`` judges maintenance intents by their effects and walks
+the pin events against the manifest, and ``check_anchors`` matches
+installation anchors with graph streams (B5.11).
 ``verify_graph`` and ``verify_installation`` compose them for
 ``graph-admin audit verify``. The caller passes the txs only when storage
 verified the tx log clean, so a damaged log does not cascade into
@@ -28,7 +30,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from graph_cli.audit import finding_codes as codes
-from graph_cli.audit.schema import AUDIT_SCHEMA, event_problems, is_write_intent, unknown_actions
+from graph_cli.audit.schema import (
+    AUDIT_SCHEMA,
+    PIN_ACTION,
+    RELEASE_ACTION,
+    event_problems,
+    is_write_intent,
+    unknown_actions,
+)
 from graph_cli.kernel.canonical import (
     GENESIS_HASH,
     CanonicalError,
@@ -40,7 +49,23 @@ from graph_cli.kernel.canonical import (
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditLine, AuditStream, graph_stream
-from graph_cli.kernel.records import TxRecord
+from graph_cli.kernel.records import OntologyPin, TxRecord
+
+
+@dataclass(frozen=True, slots=True)
+class MaintEffects:
+    """The maintenance effects found on disk, for judging maintenance intents (B5.6).
+
+    ``manifest_pin`` is ``None`` when it cannot be trusted (storage reported
+    ``integrity.storage.pin_mismatch``); the pin walk is then skipped.
+    ``anchored`` are the graph-stream seqs named by installation anchors: the
+    companion event of a maintenance op is appended only after its effect,
+    so an anchored intent is committed (W.e).
+    """
+
+    manifest_pin: OntologyPin | None
+    releases: Mapping[str, str]  # installed version -> artifact hash of its compiled.json
+    anchored: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +218,134 @@ def cross_check(
     return findings
 
 
+def check_maintenance(
+    graph_id: GraphId, events: Iterable[Mapping[str, JsonValue]], effects: MaintEffects
+) -> list[Finding]:
+    """Release intents need their release, pin intents their manifest (B5.6, B5.12).
+
+    Pin intents record the manifest pin before (``from``, read under the
+    lock) and after (``to``). Walking them from the genesis pin, an intent
+    is committed if the next observed pin (the next intent's ``from``, at
+    the end the manifest) equals its ``to``; it is an interrupted op if that
+    pin is still its ``from`` and no anchor proves the effect; anything else
+    means the manifest changed outside maintenance (``pin_mismatch``, after
+    which no pin intent is judged: no cascades).
+    """
+    stream = graph_stream(str(graph_id))
+    ok = [e for e in events if _ok(e)]
+    findings = []
+    for event, release in _effects(ok, RELEASE_ACTION, "release"):
+        if event.get("seq") in effects.anchored:
+            continue
+        if effects.releases.get(str(release.get("version"))) != release.get("artifact_hash"):
+            findings.append(
+                _finding(
+                    codes.INTENT_WITHOUT_EFFECT,
+                    {"stream": stream, "seq": event.get("seq")},
+                    "release intent without its installed release (an interrupted release)",
+                )
+            )
+    if effects.manifest_pin is not None:
+        findings += _pin_walk(stream, ok, effects)
+    return findings
+
+
+def _ok(event: Mapping[str, JsonValue]) -> bool:
+    result = event.get("result")
+    return isinstance(result, Mapping) and result.get("status") == "ok"
+
+
+def _effects(
+    events: Iterable[Mapping[str, JsonValue]], action: str, key: str
+) -> list[tuple[Mapping[str, JsonValue], Mapping[str, JsonValue]]]:
+    """Intents carrying ``action`` with a well-formed ``change.<key>``; malformed ones are
+    ``event_malformed`` already and not judged again."""
+    found = []
+    for event in events:
+        actions, change = event.get("actions"), event.get("change")
+        if not (isinstance(actions, list) and action in actions and isinstance(change, Mapping)):
+            continue
+        effect = change.get(key)
+        if isinstance(effect, Mapping):
+            found.append((event, effect))
+    return found
+
+
+def _pin_walk(
+    stream: AuditStream, events: Sequence[Mapping[str, JsonValue]], effects: MaintEffects
+) -> list[Finding]:
+    assert effects.manifest_pin is not None
+    state: JsonValue = None
+    for event in events:
+        if event.get("seq") == 1 and event.get("actions") == ["maint.graph_create"]:
+            graph = event.get("graph")
+            state = graph.get("ontology") if isinstance(graph, Mapping) else None
+    orphans: list[Finding] = []
+    pending: tuple[Mapping[str, JsonValue], JsonValue, JsonValue] | None = None
+
+    def mismatch(
+        target: Mapping[str, JsonValue], expected: JsonValue, actual: JsonValue
+    ) -> list[Finding]:
+        return [
+            _finding(
+                codes.PIN_MISMATCH,
+                target,
+                "the manifest pin changed outside the recorded pin events",
+                expected=expected,
+                actual=actual,
+            )
+        ]
+
+    def settle(observed: JsonValue) -> bool:
+        """Judge ``pending`` by the pin observed after it; False on a mismatch."""
+        nonlocal state
+        if pending is None:
+            return state is None or observed == state
+        event, old, new = pending
+        if observed == new:
+            state = new
+            return True
+        if observed == old and event.get("seq") not in effects.anchored:
+            orphans.append(
+                _finding(
+                    codes.INTENT_WITHOUT_EFFECT,
+                    {"stream": stream, "seq": event.get("seq")},
+                    "pin intent without its manifest switch (an interrupted pin)",
+                )
+            )
+            state = old
+            return True
+        return False
+
+    for event, pin in _effects(events, PIN_ACTION, "pin"):
+        old, new = pin.get("from"), pin.get("to")
+        if not settle(old):
+            expected = pending[2] if pending is not None else state
+            return mismatch({"stream": stream, "seq": event.get("seq")}, expected, old)
+        pending = (event, old, new)
+    manifest = effects.manifest_pin.to_json()
+    if not settle(manifest):
+        expected = pending[2] if pending is not None else state
+        return mismatch({"stream": stream, "path": "manifest.toml"}, expected, manifest)
+    return orphans
+
+
+def anchored_seqs(
+    installation_events: Iterable[Mapping[str, JsonValue]],
+) -> dict[str, frozenset[int]]:
+    """Per graph id, the graph-stream seqs named by installation anchors (B5.11)."""
+    found: dict[str, set[int]] = {}
+    for event in installation_events:
+        anchors = event.get("anchors")
+        if not isinstance(anchors, list):
+            continue
+        for anchor in anchors:
+            seq = anchor.get("seq") if isinstance(anchor, Mapping) else None
+            if isinstance(anchor, Mapping) and isinstance(seq, int):
+                found.setdefault(str(anchor.get("graph_id")), set()).add(seq)
+    return {graph_id: frozenset(seqs) for graph_id, seqs in found.items()}
+
+
 def check_anchors(
     installation_events: Iterable[Mapping[str, JsonValue]],
     graph_events: Mapping[str, Sequence[Mapping[str, JsonValue]]],
@@ -213,6 +366,17 @@ def check_anchors(
                 continue  # a shape problem, reported as event_malformed
             graph_id, seq = anchor.get("graph_id"), anchor.get("seq")
             stream_hashes = hashes.get(str(graph_id))
+            if stream_hashes is None and event.get("actions") == ["maint.graph_create"]:
+                # W.f appends this event before publishing the graph: a crash in
+                # between leaves exactly this (the staging dir is ignored).
+                findings.append(
+                    _finding(
+                        codes.INTENT_WITHOUT_EFFECT,
+                        target,
+                        f"graph create intent without the graph {graph_id} (an interrupted create)",
+                    )
+                )
+                continue
             if stream_hashes is None:
                 message = f"anchored graph stream {graph_id} is missing"
                 actual: JsonValue = None
@@ -241,13 +405,17 @@ def verify_graph(
     *,
     graph_id: GraphId,
     txs: Iterable[TxRecord] | None,
+    effects: MaintEffects | None = None,
     ext_actions: Iterable[str] = (),
 ) -> StreamReport:
-    """One graph stream plus the tx cross-check (``txs=None`` skips it: damaged tx log)."""
+    """One graph stream plus the cross-checks: ``txs=None`` skips the tx check (damaged
+    tx log), ``effects=None`` the maintenance check."""
     report = verify_stream(lines, stream=graph_stream(str(graph_id)), ext_actions=ext_actions)
-    if txs is None:
-        return report
-    extra = cross_check(graph_id, report.events, txs)
+    extra = []
+    if txs is not None:
+        extra += cross_check(graph_id, report.events, txs)
+    if effects is not None:
+        extra += check_maintenance(graph_id, report.events, effects)
     return dataclasses.replace(report, findings=(*report.findings, *extra))
 
 

@@ -1,0 +1,228 @@
+"""Maintenance intents judged by their effects, the pin walk and graph-create anchors.
+
+Contracts B5.6, B5.11, B5.12; plan M4 (P1 item 5).
+"""
+
+import pytest
+from support.audit_events import ENV, REQUEST, allow, graph_entry, maint_actor, sealed_lines
+from support.clock import StepClock
+from support.ids import SeededIdProvider
+
+from graph_cli.audit import events as builders
+from graph_cli.audit import finding_codes as codes
+from graph_cli.audit.schema import event_problems
+from graph_cli.audit.verify import (
+    MaintEffects,
+    anchored_seqs,
+    check_anchors,
+    check_maintenance,
+    verify_graph,
+)
+from graph_cli.kernel.canonical import JsonValue, hash_value, parse_json
+from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import EventId, GraphId
+from graph_cli.kernel.json_access import as_object
+from graph_cli.kernel.ports.audit import AuditEventDraft, AuditLine, AuditReceipt, graph_stream
+from graph_cli.kernel.records import OntologyPin
+
+Event = dict[str, JsonValue]
+
+
+def pin(n: int) -> OntologyPin:
+    return OntologyPin("example", f"1.{n}.0", hash_value({"pin": n}))
+
+
+class Stream:
+    """One graph stream built with the real builders: genesis at P0, then maintenance."""
+
+    def __init__(self, *, genesis: bool = True) -> None:
+        self.clock = StepClock()
+        self.ids = SeededIdProvider(self.clock, 3)
+        self.graph_id = GraphId(self.ids.new_id())
+        self.drafts: list[AuditEventDraft] = []
+        if genesis:
+            self.drafts.append(
+                builders.graph_genesis(
+                    actor=maint_actor(),
+                    decisions=[allow("maint.graph_create", "installation")],
+                    request=REQUEST,
+                    ts=self.clock.now(),
+                    event_id=self.event_id(),
+                    env=ENV,
+                    graph=graph_entry(self.graph_id, pin(0)),
+                )
+            )
+
+    def event_id(self) -> EventId:
+        return EventId(self.ids.new_id())
+
+    def maint(self, action: str, change: dict[str, JsonValue]) -> int:
+        self.drafts.append(
+            builders.maintenance(
+                actor=maint_actor(),
+                decisions=[allow(action, f"graph:{self.graph_id}")],
+                request=REQUEST,
+                ts=self.clock.now(),
+                event_id=self.event_id(),
+                env=ENV,
+                graph=graph_entry(self.graph_id, pin(0)),
+                change=change,
+            )
+        )
+        return len(self.drafts)
+
+    def pin(self, old: int, new: int) -> int:
+        return self.maint("maint.ontology_pin", builders.pin_change(pin(old), pin(new)))
+
+    def release(self, n: int) -> int:
+        change = builders.release_change(pin(n).version, pin(n).artifact_hash, self.ids.new_id())
+        return self.maint("maint.ontology_release", change)
+
+    def events(self) -> list[Event]:
+        return [dict(as_object(parse_json(line), "e")) for line in sealed_lines(self.drafts)]
+
+    def check(
+        self,
+        manifest: int | None,
+        *,
+        releases: tuple[int, ...] = (),
+        anchored: tuple[int, ...] = (),
+    ) -> list[tuple[str, JsonValue]]:
+        effects = MaintEffects(
+            manifest_pin=None if manifest is None else pin(manifest),
+            releases={pin(n).version: pin(n).artifact_hash for n in releases},
+            anchored=frozenset(anchored),
+        )
+        findings = check_maintenance(self.graph_id, self.events(), effects)
+        return [(f.code, f.target.get("seq", f.target.get("path"))) for f in findings]
+
+
+IWE = codes.INTENT_WITHOUT_EFFECT
+PIN = codes.PIN_MISMATCH
+
+
+def test_no_pin_events_need_the_genesis_pin() -> None:
+    stream = Stream()
+    assert stream.check(0) == []
+    assert stream.check(1) == [(PIN, "manifest.toml")]
+
+
+@pytest.mark.parametrize(
+    ("pins", "manifest", "anchored", "expected"),
+    [
+        ([(0, 1)], 1, (), []),
+        ([(0, 1)], 0, (), [(IWE, 2)]),  # interrupted before the manifest rename
+        ([(0, 1)], 0, (2,), [(PIN, "manifest.toml")]),  # anchored: it did switch
+        ([(0, 1)], 5, (), [(PIN, "manifest.toml")]),
+        ([(0, 1), (1, 2)], 2, (), []),
+        ([(0, 1), (0, 2)], 2, (), [(IWE, 2)]),  # the first attempt died, the retry worked
+        ([(0, 1), (0, 2)], 0, (), [(IWE, 2), (IWE, 3)]),
+        ([(0, 1), (3, 4)], 4, (), [(PIN, 3)]),  # the manifest moved between the ops
+        ([(5, 1)], 1, (), [(PIN, 2)]),  # the first op did not start at the genesis pin
+        ([(0, 1), (0, 2)], 0, (2,), [(PIN, 3)]),  # anchored first op, second starts at 0
+    ],
+)
+def test_pin_walk(
+    pins: list[tuple[int, int]],
+    manifest: int,
+    anchored: tuple[int, ...],
+    expected: list[tuple[str, JsonValue]],
+) -> None:
+    stream = Stream()
+    for old, new in pins:
+        stream.pin(old, new)
+    assert stream.check(manifest, anchored=anchored) == expected
+
+
+def test_no_manifest_pin_skips_the_walk() -> None:
+    stream = Stream()
+    stream.pin(3, 4)
+    assert stream.check(None) == []
+
+
+def test_without_genesis_the_first_op_sets_the_start() -> None:
+    stream = Stream(genesis=False)
+    stream.pin(7, 1)
+    assert stream.check(1) == []
+    assert stream.check(7) == [(IWE, 1)]
+
+
+def test_release_intents() -> None:
+    stream = Stream()
+    stream.release(1)
+    stream.release(2)
+    stream.release(3)
+    assert stream.check(None, releases=(1, 2, 3)) == []
+    assert stream.check(None, releases=(1,), anchored=(3,)) == [(IWE, 4)]
+
+
+def test_a_release_with_another_hash_is_no_effect() -> None:
+    stream = Stream()
+    stream.release(1)
+    effects = MaintEffects(None, {pin(1).version: pin(2).artifact_hash})
+    (finding,) = check_maintenance(stream.graph_id, stream.events(), effects)
+    assert finding.code == IWE
+
+
+def test_verify_graph_runs_the_maintenance_check() -> None:
+    stream = Stream()
+    stream.pin(0, 1)
+    lines = [AuditLine(f"memory:{n}", line) for n, line in enumerate(sealed_lines(stream.drafts))]
+    effects = MaintEffects(pin(0), {})
+    report = verify_graph(lines, graph_id=stream.graph_id, txs=None, effects=effects)
+    assert [f.code for f in report.findings] == [IWE]
+    assert verify_graph(lines, graph_id=stream.graph_id, txs=None).findings == ()
+
+
+def test_change_shapes_are_checked() -> None:
+    stream = Stream()
+    with pytest.raises(GraphCliError, match=r"change\.pin"):
+        stream.maint("maint.ontology_pin", {"pin": {"from": pin(0).to_json()}})
+    with pytest.raises(GraphCliError, match=r"change\.release"):
+        stream.maint("maint.ontology_release", {})
+    stream.pin(0, 1)
+    event = stream.events()[-1]
+    event["change"] = {"pin": {"from": pin(0).to_json(), "to": "1.1.0"}}
+    assert event_problems(event) == ["a pin intent needs change.pin{from, to}"]
+
+
+# ---- installation anchors ------------------------------------------------------
+
+
+def _create_event(stream: Stream, graph_id: GraphId) -> Event:
+    receipt = AuditReceipt(
+        graph_stream(str(graph_id)), stream.event_id(), 1, pin(9).artifact_hash, None
+    )
+    draft = builders.maintenance(
+        actor=maint_actor(),
+        decisions=[allow("maint.graph_create", "installation")],
+        request=REQUEST,
+        ts=stream.clock.now(),
+        event_id=stream.event_id(),
+        env=ENV,
+        graph=graph_entry(graph_id, pin(0)),
+        anchors=[receipt],
+    )
+    return dict(as_object(parse_json(sealed_lines([draft])[0]), "e"))
+
+
+def test_graph_create_without_its_graph_is_an_interrupted_create() -> None:
+    stream = Stream()
+    missing = GraphId(stream.ids.new_id())
+    (finding,) = check_anchors([_create_event(stream, missing)], {})
+    assert (finding.code, finding.severity.value) == (IWE, "info")
+
+
+def test_other_anchors_into_a_missing_graph_mismatch() -> None:
+    stream = Stream()
+    event = _create_event(stream, GraphId(stream.ids.new_id()))
+    event["actions"] = ["maint.audit_anchor"]
+    (finding,) = check_anchors([event], {})
+    assert finding.code == codes.ANCHOR_MISMATCH
+
+
+def test_anchored_seqs() -> None:
+    stream = Stream()
+    first, second = GraphId(stream.ids.new_id()), GraphId(stream.ids.new_id())
+    events = [_create_event(stream, first), _create_event(stream, second), {"anchors": "bad"}]
+    assert anchored_seqs(events) == {str(first): frozenset({1}), str(second): frozenset({1})}
