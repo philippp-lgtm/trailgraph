@@ -40,9 +40,12 @@ class AsOf:
 
 @dataclass(frozen=True, slots=True)
 class Cmp:
+    """``numeric`` compares decimal strings as numbers; the planner sets it (B13.13)."""
+
     field: FieldName
     op: CmpOp
     value: JsonValue = None
+    numeric: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,7 @@ class RelConstraint:
 class OrderKey:
     field: FieldName
     descending: bool = False
+    numeric: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +91,7 @@ class Query:
     order: tuple[OrderKey, ...] = ()  # "id" is always appended as the final key
     limit: int = 50
     offset: int = 0
-    fields: tuple[FieldName, ...] | None = None
+    fields: tuple[FieldName, ...] | None = None  # rendering hint for services; ignored by storage
     as_of: AsOf | None = None  # v1: must be None (B8.8, services enforce)
 
     def __post_init__(self) -> None:
