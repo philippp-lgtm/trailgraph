@@ -1,0 +1,145 @@
+"""The output envelope ``graph_cli.envelope/1`` and its renderings (contracts B9.1-B9.11).
+
+JSON mode writes exactly one document plus ``\\n`` to stdout. Text mode
+renders the same result: data on stdout, warnings and errors on stderr.
+Every envelope key is always present (B9.2); unused ones are ``null`` or
+``[]``.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Final
+
+from graph_cli.cli_kit.hints import hint_for
+from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
+
+ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
+
+
+@dataclass(frozen=True, slots=True)
+class Result:
+    """What a command returns; ``text`` overrides the generic text rendering of ``data``."""
+
+    data: JsonValue = None
+    graph: Mapping[str, JsonValue] | None = None
+    warnings: tuple[WarningRecord, ...] = ()
+    hints: tuple[Mapping[str, JsonValue], ...] = ()
+    text: str | None = None
+    page: Mapping[str, JsonValue] | None = field(default=None)
+
+
+def error_json(error: GraphCliError, *, program: str) -> dict[str, JsonValue]:
+    """B9.8: ``{code, category, retryable, message, hint, details}``."""
+    return {
+        "code": error.code,
+        "category": error.category.value,
+        "retryable": error.retryable,
+        "message": error.message,
+        "hint": hint_for(error.code, error.details, program=program),
+        "details": dict(error.details),
+    }
+
+
+def envelope(
+    command: str | None,
+    *,
+    program: str,
+    result: Result | None = None,
+    error: GraphCliError | None = None,
+    warnings: Sequence[WarningRecord] = (),
+) -> dict[str, JsonValue]:
+    all_warnings = [*warnings, *(result.warnings if result else ())]
+    return {
+        "schema": ENVELOPE_SCHEMA,
+        "ok": error is None,
+        "command": command,
+        "graph": dict(result.graph) if result and result.graph is not None else None,
+        "data": result.data if result and error is None else None,
+        "page": dict(result.page) if result and result.page is not None else None,
+        "hints": [dict(h) for h in result.hints] if result and error is None else [],
+        "warnings": [w.to_json() for w in all_warnings],
+        "error": error_json(error, program=program) if error is not None else None,
+    }
+
+
+def render_json(document: Mapping[str, JsonValue]) -> str:
+    return json.dumps(document, ensure_ascii=False, sort_keys=False) + "\n"
+
+
+def render_text(document: Mapping[str, JsonValue], *, text: str | None = None) -> tuple[str, str]:
+    """``(stdout, stderr)`` of the text rendering."""
+    out = ""
+    if document["ok"]:
+        out = text if text is not None else _block(document["data"])
+    err_lines = []
+    warnings = document["warnings"]
+    assert isinstance(warnings, list)
+    for warning in warnings:
+        assert isinstance(warning, Mapping)
+        err_lines.append(f"warning: {warning['code']}: {warning['message']}")
+    error = document["error"]
+    if isinstance(error, Mapping):
+        err_lines.append(f"error: {error['code']}: {error['message']}")
+        details = error["details"]
+        findings = details.get("findings") if isinstance(details, Mapping) else None
+        if isinstance(findings, list):
+            err_lines += _findings(findings)
+        if error["hint"]:
+            err_lines.append(f"hint: {error['hint']}")
+    hints = document["hints"]
+    if isinstance(hints, list):
+        for hint in hints:
+            if isinstance(hint, Mapping):
+                err_lines.append(f"hint: {hint.get('text')}: {hint.get('command')}")
+    return out, "".join(line + "\n" for line in err_lines)
+
+
+def _findings(findings: Sequence[JsonValue]) -> list[str]:
+    lines = []
+    for finding in findings:
+        if not isinstance(finding, Mapping):
+            continue
+        target = finding.get("target")
+        where = ""
+        if isinstance(target, Mapping):
+            where = ", ".join(f"{k}={v}" for k, v in target.items())
+        code, message = finding.get("code"), finding.get("message")
+        lines.append(f"  {finding.get('severity')} {code} [{where}] {message}")
+    return lines
+
+
+def _block(value: JsonValue, indent: int = 0) -> str:
+    """A generic, YAML-like rendering for people; machines use ``--json``."""
+    pad = "  " * indent
+    if isinstance(value, Mapping):
+        lines = []
+        for key, item in value.items():
+            if isinstance(item, Mapping | list) and item:
+                lines.append(f"{pad}{key}:\n{_block(item, indent + 1)}")
+            else:
+                lines.append(f"{pad}{key}: {_scalar(item)}\n")
+        return "".join(lines)
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, Mapping) and item:
+                body = _block(item, indent + 1)
+                lines.append(f"{pad}- {body.lstrip()}")
+            else:
+                lines.append(f"{pad}- {_scalar(item)}\n")
+        return "".join(lines)
+    return "" if value is None else f"{pad}{_scalar(value)}\n"
+
+
+def _scalar(value: JsonValue) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Mapping | list):
+        return "[]" if isinstance(value, list) else "{}"
+    return str(value)

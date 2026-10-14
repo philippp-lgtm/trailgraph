@@ -1,0 +1,1 @@
+{"schema": "graph_cli.envelope/1", "ok": true, "command": "thing show", "graph": {"id": "g", "name": "example_graph"}, "data": {"name": "x", "tags": ["a", "b"], "nested": {"n": 1, "none": null}}, "page": null, "hints": [], "warnings": [{"code": "config.unknown_key", "message": "unknown key 'x'", "details": {"key": "x"}}], "error": null}
