@@ -10,9 +10,10 @@ strict split between usage and maintenance:
 
 Status: foundation. The kernel (ids, canonical JSON, registries, ports), the
 ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
-semver classifier, JSON Schema export) and storage (FileStore and
-InMemoryStore behind the storage ports) exist. No commands beyond `--help`
-and `--version` yet.
+semver classifier, JSON Schema export), storage (FileStore and InMemoryStore
+behind the storage ports), audit, authorization, the catalog and
+`graph-admin` exist. The application CLI `graph` has no commands beyond
+`--help` and `--version` yet.
 
 ## Repository layout
 
@@ -61,7 +62,8 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view, reference query evaluator |
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
-| `storage.files.maintenance` | `FileStoreMaintenance`: `verify`, `recover`, `reindex` (admin only) |
+| `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, `verify`, `recover`, `reindex` (admin only) |
 
 FileStore in short (POSIX only, local filesystems only):
 
@@ -76,6 +78,10 @@ FileStore in short (POSIX only, local filesystems only):
 - Every write session first recovers: it truncates a torn last line and
   writes missing derived files. Damage inside the log stops writes with
   `backend.corrupt` until repair.
+- Maintenance effects are published with one rename each: a new graph
+  directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
+  the manifest. A failure before the rename leaves only the staging state,
+  which readers ignore.
 
 ## Audit, authorization and identity
 
@@ -86,7 +92,7 @@ pure: storage appends and chains the events, audit never touches files.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 The verifier reads raw lines (`AuditSink.read_lines`) and reports damage as
@@ -109,6 +115,57 @@ the `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
 harness. Malformed values are dropped with a warning and never block. Only
 `catalog` and the admin wiring may read the process environment.
 
+## Catalog and configuration
+
+`graph_cli.catalog` locates everything; both CLIs use the same code.
+
+| Module | Content |
+| --- | --- |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default |
+| `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
+| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
+| `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
+| `catalog.identity` | identity providers and the actor (see above) |
+
+Locations (XDG; macOS uses the same paths):
+
+| What | Where |
+| --- | --- |
+| Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
+| Data root | `graph-admin --data-root`, then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
+| State (operational log) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+
+Unknown config or manifest keys are warnings; an unknown `format_version`
+or an invalid value stops the command.
+
+## Maintenance CLI
+
+`graph-admin` is run from the repository checkout. Every command prints the
+`graph_cli.envelope/1` envelope: text by default, one JSON document with
+`--json` (or `GRAPH_CLI_OUTPUT=json`). Exit codes follow the error category
+(0 ok, 1 refused or invalid, 2 usage, 3 denied, 4 conflict, 5 unavailable,
+6 internal error).
+
+| Command | What it does |
+| --- | --- |
+| `init` | create the data root and, if missing, `config.toml` with a device id |
+| `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology |
+| `graph list`, `graph show REF` | list graphs; show manifest, head and installed releases |
+| `ontology validate DIR` | compile and check an authored ontology |
+| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
+| `audit verify` | check every chain, tx log, revision file and manifest pin; exit 1 on error findings |
+| `audit anchor` | record every graph stream's head in the installation stream |
+
+Every change is audited: an intent in the graph's stream, the effect, then
+an installation event anchoring the intent. A release must bump the version
+at least as much as the changes require; a new major version on a graph
+with data is refused until migrations exist. Verification reports an
+interrupted operation as info and anchors only graphs without errors.
+`cli_kit` (envelope, error rendering, hints) is shared with the application
+CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
+and `graph_cli_admin.services_admin` holds the procedures.
+
 ## Tests
 
 | Kind | Where | What |
@@ -116,9 +173,10 @@ harness. Malformed values are dropped with a warning and never block. Only
 | unit | `tests/unit/` | modules in isolation |
 | contract | `tests/contract/` | the storage ports on every backend and both toy ontologies |
 | golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts |
-| crash | `tests/crash/` | `kill -9` of a child process at every named fault point |
+| crash | `tests/crash/` | `kill -9` of a child process at every named fault point; interrupted maintenance operations |
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
+| CLI | `tests/cli/` | `graph-admin` as a subprocess: commands, envelopes, exit codes, one scenario per admin code |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
