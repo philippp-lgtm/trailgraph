@@ -17,19 +17,15 @@ leaves the staging state behind, as a kill -9 would; readers ignore
 from __future__ import annotations
 
 import os
-import re
 import shutil
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Final
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import (
-    CanonicalError,
     JsonValue,
-    hash_value,
-    parse_json,
     pretty_bytes,
 )
 from graph_cli.kernel.errors import GraphCliError
@@ -70,8 +66,16 @@ from graph_cli.storage.files.layout import (
     init_graph_dir,
 )
 from graph_cli.storage.files.locking import acquire
-from graph_cli.storage.files.manifest import format_manifest, parse_manifest
+from graph_cli.storage.files.manifest import format_manifest
 from graph_cli.storage.files.recovery import recover
+from graph_cli.storage.files.releases import (
+    COMPILED_FILE,
+    VERSION_RE,
+    is_relative_name,
+    read_manifest,
+    read_release_file,
+    release_hashes,
+)
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
 from graph_cli.storage.finding_codes import (
@@ -179,7 +183,7 @@ class FileRegistrySession:
         maintenance = self._maintenance
         found = []
         for graph_id in maintenance.graph_ids():
-            found.append(read_manifest(GraphLayout(maintenance.graphs_dir / str(graph_id))))
+            found.append(read_manifest(GraphLayout(maintenance.graphs_dir / str(graph_id)))[0])
         return found
 
     def create_graph(
@@ -282,7 +286,7 @@ class FileMaintenanceSession:
 
     def manifest(self) -> ManifestData:
         self._check_open()
-        return read_manifest(self._store.layout)
+        return read_manifest(self._store.layout)[0]
 
     def release_hashes(self) -> Mapping[str, str]:
         self._check_open()
@@ -404,7 +408,7 @@ class Verifier:
         """The manifest pins a release whose ``compiled.json`` has the pinned hash (B7.6)."""
         layout = self.store.layout
         try:
-            pin = read_manifest(layout).entry.pin
+            pin = read_manifest(layout)[0].entry.pin
         except GraphCliError as exc:
             self.add(PIN_MISMATCH, {"path": "manifest.toml"}, f"the pin cannot be read: {exc}")
             return
@@ -541,80 +545,16 @@ class Verifier:
             self.add(HEAD_INCONSISTENT, target, "head.json audit position does not match")
 
 
-_VERSION_RE: Final = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-COMPILED_FILE: Final = "compiled.json"
-
-
-def read_manifest(layout: GraphLayout) -> ManifestData:
-    """The graph's manifest; warnings about unknown keys are the catalog's to report."""
-    source = f"graphs/{layout.root.name}/manifest.toml"
-    try:
-        data = layout.manifest.read_bytes()
-    except FileNotFoundError:
-        raise GraphCliError(
-            "config.invalid", f"{source} is missing", details={"file": source, "key": ""}
-        ) from None
-    except OSError as exc:
-        raise _unavailable(f"cannot read {source}", exc) from exc
-    return parse_manifest(data, source=source)[0]
-
-
-def release_hashes(layout: GraphLayout) -> dict[str, str]:
-    """Installed versions and the C.2 hash of their ``compiled.json`` (unreadable: left out)."""
-    try:
-        names = os.listdir(layout.ontology)
-    except FileNotFoundError:
-        return {}
-    except OSError as exc:
-        raise _unavailable("cannot list releases", exc) from exc
-    found = {}
-    for name in sorted(names):
-        if not _VERSION_RE.match(name):
-            continue
-        try:
-            document = parse_json((layout.release_dir(name) / COMPILED_FILE).read_bytes())
-        except (OSError, CanonicalError):
-            continue
-        found[name] = hash_value(document)
-    return found
-
-
-def read_release_file(layout: GraphLayout, version: str, name: str) -> bytes:
-    if not _VERSION_RE.match(version) or not _is_relative_name(name):
-        raise GraphCliError("internal.error", f"bad release file reference {version}/{name}")
-    path = layout.release_dir(version).joinpath(*PurePosixPath(name).parts)
-    try:
-        return path.read_bytes()
-    except FileNotFoundError:
-        raise GraphCliError(
-            "ontology.artifact_missing",
-            f"release {version} has no file {name}",
-            details={"version": version, "file": name},
-        ) from None
-    except OSError as exc:
-        raise _unavailable("cannot read a release file", exc) from exc
-
-
 def _check_release(version: str, files: Mapping[str, bytes]) -> None:
-    if not _VERSION_RE.match(version):
+    if not VERSION_RE.match(version):
         raise GraphCliError(
             "internal.error", f"release version {version!r} is not MAJOR.MINOR.PATCH"
         )
-    bad = sorted(name for name in files if not _is_relative_name(name))
+    bad = sorted(name for name in files if not is_relative_name(name))
     if bad or COMPILED_FILE not in files:
         raise GraphCliError(
             "internal.error", f"bad release file names: {bad or 'no compiled.json'}"
         )
-
-
-def _is_relative_name(name: str) -> bool:
-    parts = PurePosixPath(name).parts
-    return (
-        bool(parts)
-        and not name.startswith("/")
-        and "\\" not in name
-        and all(part not in ("", ".", "..") for part in parts)
-    )
 
 
 def _is_graph_dir_name(name: str) -> bool:
