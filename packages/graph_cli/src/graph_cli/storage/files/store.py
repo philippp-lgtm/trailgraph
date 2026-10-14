@@ -71,6 +71,7 @@ from graph_cli.storage.files.segments import (
     LogCorruption,
     LogPosition,
     LogScan,
+    OpLog,
     PendingAppend,
     SegmentedLog,
 )
@@ -157,7 +158,8 @@ class _ViewCache:
             self._view.apply(parse_tx(record.document))
         self._link, self._position = result.end, result.position
         if self._view.seq < seq:
-            raise _corrupt(f"tx log ends at seq {self._view.seq}, expected {seq}")
+            details = corruption_details(result.corruption) if result.corruption else {}
+            raise _corrupt(f"the tx log is damaged before seq {seq}; repair is needed", **details)
 
     def committed(self, record: TxRecord, position: LogPosition) -> None:
         """A writer of this instance appended ``record``; skip re-reading it."""
@@ -179,8 +181,10 @@ class FileStore:
         syncer: Syncer | None = None,
         faults: FaultHook | None = None,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
+        oplog: OpLog | None = None,
     ) -> None:
         self.layout = GraphLayout(graph_dir)
+        self.oplog = oplog
         self.graph_id = graph_id
         self.stream = graph_stream(str(graph_id))
         self.syncer: Syncer = syncer if syncer is not None else OsSyncer(durability)
@@ -236,51 +240,44 @@ class FileStore:
                 details={"graph_id": str(self.graph_id)},
             )
 
-    def read_checkpoint(self) -> tuple[HeadFile | None, list[WarningRecord]]:
+    def read_checkpoint(self) -> tuple[HeadFile | None, str | None]:
+        """The checkpoint, or ``None`` plus why it cannot be used."""
         try:
             data = self.layout.head.read_bytes()
         except FileNotFoundError:
-            return None, []
+            return None, None
         except OSError as exc:
             raise _unavailable("cannot read head.json", exc) from exc
         try:
-            return parse_head_file(data), []
+            return parse_head_file(data), None
         except ValueError as exc:
-            return None, [WarningRecord(_PENDING, f"head.json is unreadable: {exc}")]
+            return None, f"head.json is unreadable: {exc}"
 
     def read_state(self) -> LogState:
         """Checkpoint plus tx-log scan; falls back to a full scan when they disagree."""
         self._require_layout()
-        checkpoint, warnings = self.read_checkpoint()
+        checkpoint, problem = self.read_checkpoint()
+        reasons = [problem] if problem else []
         try:
             scan = None
             if checkpoint is not None:
                 scan = self.txlog.scan(checkpoint.link, at=checkpoint.txlog)
                 if scan.corruption is not None:
-                    scan = None
-                    full = self.txlog.scan()
-                    if full.corruption is None:
-                        warnings.append(
-                            WarningRecord(_PENDING, "head.json does not match the tx log")
-                        )
-                    checkpoint = None
-                    scan = full
+                    reasons.append("head.json does not match the tx log")
+                    checkpoint, scan = None, None
             if scan is None:
                 scan = self.txlog.scan()
-                if checkpoint is None and scan.records and not warnings:
-                    warnings.append(WarningRecord(_PENDING, "head.json is missing"))
+                if not reasons and scan.records:
+                    reasons.append("head.json is missing")
         except OSError as exc:
             raise _unavailable("cannot read the tx log", exc) from exc
+        details: dict[str, JsonValue] = {}
         if scan.corruption is not None:
-            warnings.append(
-                WarningRecord(
-                    _PENDING,
-                    "the tx log is damaged; reads stop before the damage",
-                    details=corruption_details(scan.corruption),
-                )
-            )
+            reasons.append("the tx log is damaged; reads stop before the damage")
+            details = corruption_details(scan.corruption)
+        warnings = (WarningRecord(_PENDING, "; ".join(reasons), details),) if reasons else ()
         tail = tuple(parse_tx(record.document) for record in scan.records)
-        return LogState(checkpoint, tail, scan, tuple(warnings))
+        return LogState(checkpoint, tail, scan, warnings)
 
     def scan_audit(self, checkpoint: HeadFile | None) -> LogScan:
         try:
@@ -418,30 +415,20 @@ class FileSession:
         self._used: set[EventId] = set()
         self._open = True
         self._broken = False
-        state = store.read_state()
-        if state.scan.corruption is not None:
-            raise _corrupt(
-                "the tx log is damaged; writes are refused until repair",
-                **corruption_details(state.scan.corruption),
-            )
-        audit = store.scan_audit(state.checkpoint)
-        if audit.corruption is not None:
-            raise _corrupt(
-                "the graph audit stream is damaged; writes are refused until repair",
-                **corruption_details(audit.corruption),
-            )
-        if state.scan.tail != "clean" or audit.tail != "clean":
-            raise GraphCliError("backend.unavailable", "the graph needs recovery")
+        # Recovery needs the store's primitives, so it is imported here (no import cycle).
+        from graph_cli.storage.files.recovery import recover
+
+        recovered = recover(store, oplog=store.oplog)
+        self.recovery = recovered.report
+        state, audit = recovered.state, recovered.audit
         self._end = state.end
         self._position = state.scan.position
         self._head = state.head
         self._audit_link = audit.end
         self._audit_position = audit.position
-        self._pending: list[TxRecord] = list(state.tail)
+        self._pending: list[TxRecord] = []
         self._view_seq = state.end.seq
         store.view_at(self._view_seq)
-        if self._pending or (state.checkpoint is None and state.end.seq > 0):
-            self._roll_forward()
 
     # ---- session state -------------------------------------------------
 
@@ -559,7 +546,7 @@ class FileSession:
     # ---- derived files -------------------------------------------------
 
     def _roll_forward(self) -> None:
-        """Materialize every pending tx, then write the checkpoint (section 4.2 steps 2-3)."""
+        """Materialize the txs committed in this session, then write the checkpoint."""
         materialize(self._store, self._pending)
         self._pending.clear()
         if self._end.seq > 0:
