@@ -2,14 +2,15 @@
 
 Every ``model.*`` code has exactly one broken fixture under
 ``tests/fixtures/broken/<code>/`` (completeness test). ``data.*`` codes are
-added together with ``validate_write``.
+owned here too (except ``data.temporal.*``, owned by temporal_knowledge);
+each has one broken change-set fixture.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-from graph_cli.kernel.findings import FindingCodeSpec, Layer, Severity
+from graph_cli.kernel.findings import FindingCodeSpec, Layer, Severity, When
 
 _E = Severity.ERROR
 _W = Severity.WARNING
@@ -23,6 +24,20 @@ def _model(layer: Layer, name: str, summary: str, severity: Severity = _E) -> Fi
         default_severity=severity,
         when="release",
         fixture="broken_ontology",
+        summary=summary,
+    )
+
+
+def _data(
+    layer: Layer, name: str, summary: str, severity: Severity = _E, when: When = "write"
+) -> FindingCodeSpec:
+    return FindingCodeSpec(
+        code=f"data.{layer}.{name}",
+        scope="data",
+        layer=layer,
+        default_severity=severity,
+        when=when,
+        fixture="broken_changeset",
         summary=summary,
     )
 
@@ -74,6 +89,37 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     # rule
     _model("rule", "unknown_scope", "A rule scope names an unknown class."),
     _model("rule", "unknown_attribute", "A rule names an attribute its scope lacks."),
+    # data: write path (validate_write) and batch (check_graph)
+    _data("structural", "unknown_type", "The type does not exist."),
+    _data("structural", "abstract_type", "The type is abstract."),
+    _data("structural", "unknown_attribute", "The type has no such attribute."),
+    _data("structural", "missing_required", "A required value is missing."),
+    _data("structural", "datatype_mismatch", "A value does not have the declared datatype."),
+    _data("structural", "facet_violation", "A value violates a facet of its datatype."),
+    _data("structural", "enum_value_unknown", "A value is not a member of its enum."),
+    _data("structural", "cardinality_many", "A list where one value belongs, or vice versa."),
+    _data("structural", "float_not_allowed", "A value contains a floating point number."),
+    _data("referential", "unknown_relation", "The relation does not exist."),
+    _data("referential", "target_missing", "The edge target does not exist."),
+    _data("referential", "domain_violation", "The relation does not apply to the source type."),
+    _data("referential", "range_violation", "The relation does not accept the target type."),
+    _data("referential", "cardinality_out", "Too few or too many outgoing edges."),
+    _data("referential", "qualifier_unknown", "The relation has no such qualifier."),
+    _data("referential", "target_not_active", "The edge target is superseded or retracted.", _W),
+    _data("referential", "edge_missing", "No single edge matches the unlink."),
+    _data("referential", "cardinality_in", "Too few or too many incoming edges.", when="batch"),
+    _data("semantic", "unique_violation", "A unique value or an alias is already used."),
+    _data("semantic", "cycle", "An acyclic relation forms a cycle."),
+    _data("rule", "violated", "A rule does not hold."),
+    _data("lifecycle", "invalid_initial_state", "The state is not an initial state."),
+    _data("lifecycle", "transition_not_allowed", "The lifecycle has no such transition."),
+    _data("lifecycle", "guard_failed", "A transition guard does not hold."),
+    _data(
+        "lifecycle",
+        "direct_update_of_lifecycle_attribute",
+        "Lifecycle attributes change only through transitions.",
+    ),
+    _data("mutability", "immutable_changed", "An immutable value was changed or removed."),
 )
 
 FINDING_SPECS: Final = {spec.code: spec for spec in FINDING_CODES}

@@ -35,6 +35,7 @@ from graph_cli.kernel.ids import (
     TERM_REF_RE,
     AbbrevRef,
     EdgeId,
+    EntityId,
     EntityRef,
     TermRef,
     parse_entity_ref,
@@ -182,6 +183,35 @@ class ChangeSet:
 def op_action(op: Op) -> Action:
     """The action an op is authorized and audited as (B3 op catalog)."""
     return OP_ACTIONS[op.OP]
+
+
+@dataclass(frozen=True, slots=True)
+class OpEffect:
+    """What one op did to the working copy; the validator judges it (W4).
+
+    Produced by ``temporal_knowledge.normalize``, read by the data validator;
+    it lives here because the validator sits below temporal_knowledge.
+
+    ``entity`` is the op's subject (``by`` for supersede). ``applied`` is
+    false when normalize skipped the op (a ``data.temporal.*`` finding) or
+    could not apply it (``problem``: transition without a lifecycle
+    attribute, unlink without exactly one matching edge).
+    """
+
+    index: int
+    op: str
+    entity: EntityId
+    applied: bool = True
+    names: tuple[str, ...] = ()  # create/update: attributes given; update: set and unset
+    attr: str | None = None  # transition
+    from_state: JsonValue = None
+    to_state: str | None = None
+    initial: tuple[tuple[str, JsonValue], ...] = ()  # create: lifecycle values after the op
+    edge_id: EdgeId | None = None  # link: added; unlink: removed
+    rel: TermRef | None = None
+    targets: tuple[EntityId, ...] = ()  # supersede targets; retract target
+    alias: str | None = None  # set_alias: the requested alias
+    problem: str | None = None
 
 
 # ---- reading input -------------------------------------------------------------------------

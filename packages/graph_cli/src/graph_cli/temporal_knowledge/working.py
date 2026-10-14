@@ -13,9 +13,10 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.changeset import OpEffect
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.findings import Finding
-from graph_cli.kernel.ids import EdgeId, EntityId, TermRef
+from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.query_eval import run_neighbors, run_query
@@ -28,32 +29,6 @@ from graph_cli.kernel.records import (
 )
 
 _ALL: Query = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
-
-
-@dataclass(frozen=True, slots=True)
-class OpEffect:
-    """What one op did to the working copy; the validator judges it (W4).
-
-    ``entity`` is the op's subject (``by`` for supersede). ``applied`` is
-    false when normalize skipped the op (a ``data.temporal.*`` finding) or
-    could not apply it (``problem``: transition without a lifecycle
-    attribute, unlink without exactly one matching edge).
-    """
-
-    index: int
-    op: str
-    entity: EntityId
-    applied: bool = True
-    names: tuple[str, ...] = ()  # create/update: attributes given; update: set and unset
-    attr: str | None = None  # transition
-    from_state: JsonValue = None
-    to_state: str | None = None
-    initial: tuple[tuple[str, JsonValue], ...] = ()  # create: lifecycle values after the op
-    edge_id: EdgeId | None = None  # link: added; unlink: removed
-    rel: TermRef | None = None
-    targets: tuple[EntityId, ...] = ()  # supersede targets; retract target
-    alias: str | None = None  # set_alias: the requested alias
-    problem: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

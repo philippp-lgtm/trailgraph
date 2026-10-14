@@ -43,6 +43,7 @@ from graph_cli.kernel.changeset import (
     CreateOp,
     LinkOp,
     Op,
+    OpEffect,
     RetractOp,
     SetAliasOp,
     SupersedeOp,
@@ -73,7 +74,7 @@ from graph_cli.kernel.records import (
 )
 from graph_cli.ontology_layer.model import ClassDef, CompiledModel
 from graph_cli.ontology_layer.values import coerce_text
-from graph_cli.temporal_knowledge.working import OpEffect, WorkingState
+from graph_cli.temporal_knowledge.working import WorkingState
 
 SUPERSEDES: Final = TermRef("core:supersedes")
 RETRACTS: Final = TermRef("core:retracts")
