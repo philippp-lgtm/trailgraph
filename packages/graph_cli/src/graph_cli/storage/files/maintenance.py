@@ -535,9 +535,11 @@ class Verifier:
         resumed = self.store.txlog.scan(checkpoint.link, at=checkpoint.txlog)
         if resumed.corruption is not None:
             self.add(HEAD_INCONSISTENT, target, "head.json points into the wrong place")
+        audit = self.store.auditlog.scan()
+        if audit.corruption is not None:
+            return  # a damaged audit stream is the audit verifier's finding (no cascades)
         audit_hashes = {
-            record.document.get("seq"): record.document.get("hash")
-            for record in self.store.auditlog.scan().records
+            record.document.get("seq"): record.document.get("hash") for record in audit.records
         }
         if checkpoint.audit_link.seq and (
             audit_hashes.get(checkpoint.audit_link.seq) != checkpoint.audit_link.hash

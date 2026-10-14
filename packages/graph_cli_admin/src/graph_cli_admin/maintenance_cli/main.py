@@ -13,6 +13,7 @@ import click
 
 from graph_cli.cli_kit.runner import run
 from graph_cli_admin.maintenance_cli import hints, wiring
+from graph_cli_admin.maintenance_cli.commands.audit import audit_group
 from graph_cli_admin.maintenance_cli.commands.graph import graph_group
 from graph_cli_admin.maintenance_cli.commands.init import init_command
 from graph_cli_admin.maintenance_cli.commands.ontology import ontology_group
@@ -28,6 +29,7 @@ def cli() -> None:
 cli.add_command(init_command)
 cli.add_command(graph_group)
 cli.add_command(ontology_group)
+cli.add_command(audit_group)
 
 
 def main() -> None:

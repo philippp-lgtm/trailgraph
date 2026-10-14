@@ -132,6 +132,16 @@ def test_more_pin_mismatches(tmp_path: Path) -> None:
     assert verify(maintenance, env.graph_id) == [finding_codes.PIN_MISMATCH]
 
 
+def test_audit_damage_is_left_to_the_audit_verifier(tmp_path: Path) -> None:
+    """No cascade: an edited audit line behind the checkpoint is no storage finding."""
+    env, store, maintenance = setup(tmp_path)
+    segment = store.auditlog.path(store.auditlog.segments()[0][1])
+    lines = segment.read_bytes().splitlines(keepends=True)
+    lines[1] = lines[1].replace(b'"ts":"', b'"ts":"9', 1)
+    segment.write_bytes(b"".join(lines))
+    assert verify(maintenance, env.graph_id) == []
+
+
 def test_verify_does_not_recover(tmp_path: Path) -> None:
     env, store, maintenance = setup(tmp_path)
     segment = store.txlog.path(store.txlog.segments()[-1][1])

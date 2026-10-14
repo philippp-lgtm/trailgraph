@@ -11,8 +11,9 @@ Every builder checks its own output against ``audit.schema``; a violation is
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Literal
+from typing import Final, Literal, Protocol
 from uuid import UUID
 
 from graph_cli.audit.schema import (
@@ -33,7 +34,6 @@ from graph_cli.kernel.ids import EntityId, EventId, format_id
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
     AuditEventDraft,
-    AuditReceipt,
     AuditStream,
     graph_stream,
 )
@@ -41,6 +41,29 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta
 
 RefusalStatus = Literal["denied", "invalid", "conflict", "error"]
+
+
+class Anchorable(Protocol):
+    """A position in a graph stream: an ``AuditReceipt`` or a verified stream head."""
+
+    @property
+    def stream(self) -> AuditStream: ...
+
+    @property
+    def seq(self) -> int: ...
+
+    @property
+    def hash(self) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StreamHead:
+    """The last event of a graph stream, for ``audit verify`` and ``audit anchor``."""
+
+    stream: AuditStream
+    seq: int
+    hash: str
+
 
 # B5.2: installation-scoped maintenance; every other maintenance action with an
 # event is graph-scoped (graph stream, then an installation event with an anchor).
@@ -162,7 +185,7 @@ def maintenance(
     change: Mapping[str, JsonValue] | None = None,
     reason: str | None = None,
     target: Mapping[str, Sequence[str]] | None = None,
-    anchors: Sequence[AuditReceipt] = (),
+    anchors: Sequence[Anchorable] = (),
 ) -> AuditEventDraft:
     """An ``ok`` maintenance event, routed by its actions (B5.2).
 
@@ -250,7 +273,7 @@ def pin_change(old: OntologyPin, new: OntologyPin) -> dict[str, JsonValue]:
     return {"pin": {"from": old.to_json(), "to": new.to_json()}}
 
 
-def anchor(receipt: AuditReceipt) -> dict[str, JsonValue]:
+def anchor(receipt: Anchorable) -> dict[str, JsonValue]:
     """``{graph_id, seq, hash}`` of an appended graph-stream event (B5.11)."""
     graph_id = receipt.stream.removeprefix("graph:")
     if receipt.stream == INSTALLATION or graph_id == receipt.stream:
