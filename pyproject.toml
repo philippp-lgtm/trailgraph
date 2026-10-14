@@ -116,3 +116,22 @@ source_modules = [
     "graph_cli_admin.services_admin",
 ]
 forbidden_modules = ["click"]
+
+# Authored YAML (schema IR, later policy) is parsed only by the ontology layer
+# and access_control; runtime documents are canonical JSON (contracts C.7, D4).
+[[tool.importlinter.contracts]]
+name = "Only the ontology layer and access control parse YAML"
+type = "forbidden"
+source_modules = [
+    "graph_cli.kernel",
+    "graph_cli.query",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.app_cli",
+]
+forbidden_modules = ["yaml"]

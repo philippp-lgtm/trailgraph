@@ -8,7 +8,10 @@ strict split between usage and maintenance:
 - `graph-admin` (distribution `graph_cli_admin`): the maintenance CLI. Not on
   `PATH`; creates graphs, versions ontologies, archives graphs.
 
-Status: repository skeleton. No commands beyond `--help` and `--version` yet.
+Status: foundation. The kernel (ids, canonical JSON, registries, ports) and
+the ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
+semver classifier, JSON Schema export) exist. No commands beyond `--help` and
+`--version` yet.
 
 ## Repository layout
 
@@ -56,6 +59,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 uv run lint-imports
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files after an intended change
 ```
 
 Run the CLIs from the checkout:
@@ -70,3 +74,13 @@ uv run graph-admin --help
 CLIs are tested as subprocesses (`tests/conftest.py`: `run_cli`). Every run
 gets a throwaway `HOME` and XDG directories and no `GRAPH_CLI_*` variables, so
 tests never touch real user config, data or state.
+
+### Fixtures
+
+`tests/fixtures/` holds two unrelated toy ontologies (`notes_and_sources`,
+`inventory` with a version series), one broken ontology per `model.*` finding
+code, and role mappings for role-based contract tests (`tests/support/roles.py`).
+Core tests never name a fixture type; a leak test keeps fixture vocabulary out
+of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
+`SeededIdProvider`) live in `tests/support/`. Golden files live in
+`tests/goldens/` and next to the fixtures they describe.
