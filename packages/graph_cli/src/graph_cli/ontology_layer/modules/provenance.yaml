@@ -1,0 +1,43 @@
+# Opt-in standard module for claims (Decision 11). Graphs that need
+# epistemics import it; nothing in the core depends on it.
+format: graph_cli.ir/1
+module:
+  id: provenance
+  prefix: provenance
+  version: 1.0.0
+  summary: Claims with their own evidence, confidence and validity period.
+
+enums:
+  Confidence:
+    summary: How strongly a claim is believed.
+    values:
+      low: {summary: Plausible but weakly supported.}
+      medium: {summary: Supported by some evidence.}
+      high: {summary: Supported by strong evidence.}
+
+classes:
+  Claim:
+    summary: A statement asserted to be true, recorded separately from what asserts it.
+    description: >-
+      Validity in time uses the system fields valid_from and valid_to of the
+      claim's revisions.
+    attributes:
+      statement:
+        summary: The asserted statement in plain language.
+        type: text
+        required: true
+      confidence:
+        summary: How strongly the claim is believed.
+        type: Confidence
+
+relations:
+  supported_by:
+    summary: Evidence that supports the claim.
+    domain: Claim
+    inverse_label: supports
+  contradicts:
+    summary: The claim cannot be true together with the target claim.
+    domain: Claim
+    range: Claim
+    characteristics: [symmetric]
+    inverse_label: contradicted_by

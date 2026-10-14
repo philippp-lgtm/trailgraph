@@ -1,0 +1,25 @@
+# Role -> term mapping for role-based contract tests (support/roles.py).
+format_version = 1
+ontology = "notes_and_sources"
+version = "1.0.0"
+
+[core]
+lifecycle_type = "nas:Note"
+lifecycle_attribute = "nas:Note.status"
+guarded_transition = { lifecycle = "nas:NoteLifecycle", from = "draft", to = "published" }
+required_relation = "nas:about"
+acyclic_relation = "nas:broader"
+unique_attribute = "nas:Topic.label"
+immutable_attribute = "nas:WebPage.url"
+enum_attribute = "nas:Note.kind"
+supersede_target_type = "nas:Note"
+retractable_type = "nas:Note"
+write_rule = "nas.summary_cites_source"
+batch_rule = "nas.topic_not_orphan"
+
+[feature]
+abstract_type = "nas:Source"
+subtype = "nas:WebPage"
+qualified_relation = "nas:cites"
+transitive_relation = "nas:broader"
+claim_type = "provenance:Claim"

@@ -1,0 +1,693 @@
+{
+  "bundle": {
+    "id": "inventory",
+    "version": "1.0.0"
+  },
+  "classes": {
+    "inv:Category": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "name": {
+          "annotations": {},
+          "declared_in": "inv:Category",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Unique name of the category.",
+          "type": "string",
+          "unique": true
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "CAT",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A group of similar items."
+    },
+    "inv:Item": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "acquired_on": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "summary": "Date the item was acquired.",
+          "type": "date",
+          "unique": false
+        },
+        "condition": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "summary": "Physical condition.",
+          "type": "inv:Condition",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Display name of the item.",
+          "type": "string",
+          "unique": false
+        },
+        "quantity": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": 1,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Number of units.",
+          "type": "inv:Quantity",
+          "unique": false
+        },
+        "serial_number": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "summary": "Serial number, if the item has one.",
+          "type": "inv:SerialNumber",
+          "unique": true
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "inv:Item",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "lifecycle",
+          "many": false,
+          "mutability": "lifecycle",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Availability state.",
+          "type": "inv:ItemLifecycle",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "ITEM",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A physical thing that is tracked."
+    },
+    "inv:Location": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "code": {
+          "annotations": {},
+          "declared_in": "inv:Location",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Short unique code printed on the location.",
+          "type": "string",
+          "unique": true
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "inv:Location",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "summary": "Display name of the location.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "LOC",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A place where items are stored."
+    }
+  },
+  "datatypes": {
+    "inv:Quantity": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 0
+      },
+      "summary": "Non-negative count of units."
+    },
+    "inv:SerialNumber": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^[A-Z0-9-]{4,32}$"
+      },
+      "summary": "Serial number assigned by the manufacturer."
+    }
+  },
+  "enums": {
+    "inv:Condition": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "Physical condition of an item.",
+      "values": [
+        {
+          "name": "new",
+          "summary": "Unused."
+        },
+        {
+          "name": "good",
+          "summary": "Used, fully functional."
+        },
+        {
+          "name": "worn",
+          "summary": "Visible wear, still functional."
+        },
+        {
+          "name": "damaged",
+          "summary": "Not safe or not able to be used."
+        }
+      ]
+    }
+  },
+  "lifecycles": {
+    "inv:ItemLifecycle": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "initial": [
+        "ordered"
+      ],
+      "states": [
+        {
+          "name": "ordered",
+          "summary": "Bought but not received."
+        },
+        {
+          "name": "in_stock",
+          "summary": "Received and available."
+        },
+        {
+          "name": "in_use",
+          "summary": "Handed out and in use."
+        },
+        {
+          "name": "retired",
+          "summary": "Out of service for good."
+        }
+      ],
+      "summary": "Availability of an item.",
+      "terminal": [
+        "retired"
+      ],
+      "transitions": [
+        {
+          "from": "ordered",
+          "guards": [],
+          "summary": "Receive the item.",
+          "to": "in_stock"
+        },
+        {
+          "from": "in_stock",
+          "guards": [
+            {
+              "expr": {
+                "not": {
+                  "eq": [
+                    {
+                      "attr": "condition"
+                    },
+                    {
+                      "const": "damaged"
+                    }
+                  ]
+                }
+              },
+              "id": "inv.usable",
+              "summary": "Damaged items cannot be used."
+            }
+          ],
+          "summary": "Hand the item out.",
+          "to": "in_use"
+        },
+        {
+          "from": "in_use",
+          "guards": [],
+          "summary": "Return the item.",
+          "to": "in_stock"
+        },
+        {
+          "from": "ordered",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "in",
+                      "rel": "inv:part_of",
+                      "where": {
+                        "record_status": [
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "const": 0
+                  }
+                ]
+              },
+              "id": "inv.no_active_parts",
+              "summary": "An item with active parts cannot be retired."
+            }
+          ],
+          "summary": "Take the item out of service.",
+          "to": "retired"
+        },
+        {
+          "from": "in_stock",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "in",
+                      "rel": "inv:part_of",
+                      "where": {
+                        "record_status": [
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "const": 0
+                  }
+                ]
+              },
+              "id": "inv.no_active_parts",
+              "summary": "An item with active parts cannot be retired."
+            }
+          ],
+          "summary": "Take the item out of service.",
+          "to": "retired"
+        },
+        {
+          "from": "in_use",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "in",
+                      "rel": "inv:part_of",
+                      "where": {
+                        "record_status": [
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "const": 0
+                  }
+                ]
+              },
+              "id": "inv.no_active_parts",
+              "summary": "An item with active parts cannot be retired."
+            }
+          ],
+          "summary": "Take the item out of service.",
+          "to": "retired"
+        }
+      ]
+    }
+  },
+  "modules": [
+    {
+      "extensions": {},
+      "id": "core",
+      "namespace": "urn:graph_cli:onto:core#",
+      "prefix": "core",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "inventory",
+      "namespace": "urn:graph_cli:onto:inventory#",
+      "prefix": "inv",
+      "summary": "Physical items, where they are stored and how they are grouped.",
+      "version": "1.0.0"
+    }
+  ],
+  "prefixes": {
+    "core": "urn:graph_cli:onto:core#",
+    "inv": "urn:graph_cli:onto:inventory#"
+  },
+  "relations": {
+    "core:derived_from": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "derivation_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source was derived from a specific revision of the target."
+    },
+    "core:retracts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "retracted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source withdraws the target; created only by the retract operation."
+    },
+    "core:source": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "source_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The target is where the information in the source came from."
+    },
+    "core:supersedes": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "superseded_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source replaces the target; created only by the supersede operation."
+    },
+    "inv:in_category": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "inv:Item"
+      ],
+      "inverse_label": "has_item",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "inv:Category"
+      ],
+      "renamed_from": null,
+      "summary": "The item belongs to the category."
+    },
+    "inv:located_in": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "inv:Item"
+      ],
+      "inverse_label": "holds",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "inv:Location"
+      ],
+      "renamed_from": null,
+      "summary": "Where an item is stored."
+    },
+    "inv:part_of": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "inv:Item"
+      ],
+      "inverse_label": "has_part",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "inv:Item"
+      ],
+      "renamed_from": null,
+      "summary": "The item is a component of a larger item."
+    },
+    "inv:within": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "inv:Location"
+      ],
+      "inverse_label": "contains",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "inv:Location"
+      ],
+      "renamed_from": null,
+      "summary": "The location is inside a larger location."
+    }
+  },
+  "rules": [
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "or": [
+          {
+            "ge": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "inv:located_in"
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          },
+          {
+            "ge": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "inv:within"
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          }
+        ]
+      },
+      "id": "inv.location_not_empty",
+      "severity": "warning",
+      "summary": "A location holds items or contains other locations.",
+      "target": "inv:Location",
+      "when": "batch"
+    },
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "implies": [
+          {
+            "exists": {
+              "attr": "serial_number"
+            }
+          },
+          {
+            "eq": [
+              {
+                "attr": "quantity"
+              },
+              {
+                "const": 1
+              }
+            ]
+          }
+        ]
+      },
+      "id": "inv.serial_single_unit",
+      "severity": "error",
+      "summary": "Serialized items have quantity 1.",
+      "target": "inv:Item",
+      "when": "write"
+    }
+  ],
+  "schema": "graph_cli.compiled_ontology/1"
+}

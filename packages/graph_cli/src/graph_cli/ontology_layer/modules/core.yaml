@@ -1,0 +1,25 @@
+# Built-in module, implicitly imported by every module (contracts B7.8).
+# Holds only the minimal provenance relations; their write semantics
+# (supersede, retract, target_rev) are implemented by temporal_knowledge.
+format: graph_cli.ir/1
+module:
+  id: core
+  prefix: core
+  version: 1.0.0
+  summary: Minimal provenance relations shared by every graph.
+
+relations:
+  supersedes:
+    summary: The source replaces the target; created only by the supersede operation.
+    characteristics: [acyclic]
+    inverse_label: superseded_by
+  retracts:
+    summary: The source withdraws the target; created only by the retract operation.
+    inverse_label: retracted_by
+  derived_from:
+    summary: The source was derived from a specific revision of the target.
+    characteristics: [acyclic]
+    inverse_label: derivation_of
+  source:
+    summary: The target is where the information in the source came from.
+    inverse_label: source_of

@@ -1,0 +1,23 @@
+# Role -> term mapping for role-based contract tests (support/roles.py).
+format_version = 1
+ontology = "inventory"
+version = "1.0.0"
+
+[core]
+lifecycle_type = "inv:Item"
+lifecycle_attribute = "inv:Item.status"
+guarded_transition = { lifecycle = "inv:ItemLifecycle", from = "in_stock", to = "in_use" }
+required_relation = "inv:located_in"
+acyclic_relation = "inv:within"
+unique_attribute = "inv:Location.code"
+immutable_attribute = "inv:Location.code"
+enum_attribute = "inv:Item.condition"
+supersede_target_type = "inv:Item"
+retractable_type = "inv:Item"
+write_rule = "inv.serial_single_unit"
+batch_rule = "inv.location_not_empty"
+
+[feature]
+named_datatype_attribute = "inv:Item.quantity"
+default_attribute = "inv:Item.quantity"
+tree_relation = "inv:within"

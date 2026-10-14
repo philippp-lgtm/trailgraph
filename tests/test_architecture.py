@@ -45,6 +45,7 @@ def wheels(tmp_path_factory: pytest.TempPathFactory) -> dict[str, list[str]]:
 def test_app_wheel_contains_no_admin_code_or_fixtures(wheels: dict[str, list[str]]) -> None:
     files = wheels["graph_cli"]
     assert any(f.startswith("graph_cli/") for f in files)
+    assert "graph_cli/ontology_layer/modules/core.yaml" in files  # built-in modules ship
     assert not [f for f in files if f.startswith("graph_cli_admin")]
     assert not [f for f in files if "fixtures" in f or f.startswith("tests/")]
 

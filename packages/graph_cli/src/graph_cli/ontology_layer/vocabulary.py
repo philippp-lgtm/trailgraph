@@ -1,0 +1,81 @@
+"""Fixed vocabulary of the IR ``graph_cli.ir/1`` and the compiled form (contracts B7).
+
+Only generic schema words live here; no domain term may ever appear in this
+package (vocabulary leak test).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Final
+
+IR_FORMAT: Final = "graph_cli.ir/1"
+COMPILED_SCHEMA: Final = "graph_cli.compiled_ontology/1"
+DIFF_SCHEMA: Final = "graph_cli.ontology_diff/1"
+
+CORE_MODULE: Final = "core"
+DEFAULT_NAMESPACE: Final = "urn:graph_cli:onto:{module}#"
+
+BASE_TYPES: Final = frozenset(
+    {
+        "string",
+        "text",
+        "integer",
+        "decimal",
+        "boolean",
+        "date",
+        "datetime",
+        "duration",
+        "iri",
+        "json",
+        "external_ref",
+    }
+)
+# Base types whose values are not scalars: unique and facets do not apply.
+NON_SCALAR_BASES: Final = frozenset({"json", "external_ref"})
+
+FACETS_BY_BASE: Final[dict[str, frozenset[str]]] = {
+    "string": frozenset({"min_length", "max_length", "pattern", "single_line"}),
+    "text": frozenset({"min_length", "max_length", "pattern", "single_line"}),
+    "iri": frozenset({"min_length", "max_length", "pattern"}),
+    "integer": frozenset({"min", "max"}),
+}
+ALL_FACETS: Final = frozenset({"min", "max", "min_length", "max_length", "pattern", "single_line"})
+
+MUTABILITY_CLASSES: Final = ("immutable", "lifecycle", "content", "operational")
+# Strictness order for the classifier: a move to a higher rank is stricter.
+MUTABILITY_RANK: Final[dict[str, int]] = {"operational": 0, "content": 1, "immutable": 2}
+
+CHARACTERISTICS: Final = ("acyclic", "symmetric", "transitive")
+SEVERITIES: Final = ("error", "warning")
+RULE_TIMINGS: Final = ("write", "batch")
+MAPPING_KINDS: Final = ("exact", "close", "related", "broad", "narrow")
+
+# Reserved system field names (B7.8): never attribute names.
+SYSTEM_FIELDS: Final = frozenset(
+    {
+        "id",
+        "type",
+        "rev",
+        "record_status",
+        "alias",
+        "created_at",
+        "recorded_at",
+        "tx_id",
+        "tx_seq",
+        "valid_from",
+        "valid_to",
+        "content_hash",
+        "ontology_version",
+    }
+)
+# Reserved edge keys: never qualifier names.
+EDGE_FIELDS: Final = frozenset({"edge_id", "rel", "target", "target_rev", "valid_from", "valid_to"})
+
+MODULE_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+PREFIX_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
+TYPE_NAME_RE: Final = re.compile(r"^[A-Z][A-Za-z0-9]{0,63}$")  # classes, datatypes, enums, ...
+LOWER_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")  # relations, attributes, values, ids
+NAMESPACE_NS_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,31}$")  # annotation namespaces
+CURIE_RE: Final = re.compile(r"^([a-z][a-z0-9_]{0,15}):([A-Za-z][A-Za-z0-9_]{0,63})$")
+DISPLAY_PREFIX_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}$")
