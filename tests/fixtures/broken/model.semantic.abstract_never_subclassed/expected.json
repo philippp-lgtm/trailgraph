@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.abstract_never_subclassed",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Shape"
+  }
+}

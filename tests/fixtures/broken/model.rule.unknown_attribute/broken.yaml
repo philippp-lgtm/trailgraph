@@ -1,0 +1,24 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true
+
+rules:
+  - id: labelled
+    summary: Things have a label.
+    severity: error
+    when: write
+    scope: Thing
+    then:
+      - {attr: title, value_presence: PRESENT}

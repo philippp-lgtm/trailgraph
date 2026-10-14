@@ -1,0 +1,8 @@
+{
+  "code": "model.structural.cardinality_min_gt_max",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "relations.next.cardinality.out"
+  }
+}

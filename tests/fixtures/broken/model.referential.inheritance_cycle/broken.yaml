@@ -1,0 +1,21 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+classes:
+  Alpha:
+    summary: Extends Beta.
+    is_a: Beta
+  Beta:
+    summary: Extends Alpha.
+    is_a: Alpha
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true

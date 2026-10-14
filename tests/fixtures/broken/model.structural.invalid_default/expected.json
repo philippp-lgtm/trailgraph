@@ -1,0 +1,8 @@
+{
+  "code": "model.structural.invalid_default",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.rank.default"
+  }
+}

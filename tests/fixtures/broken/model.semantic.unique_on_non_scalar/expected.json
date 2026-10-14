@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.unique_on_non_scalar",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.tags.unique"
+  }
+}

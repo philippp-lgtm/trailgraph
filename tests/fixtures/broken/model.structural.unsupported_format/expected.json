@@ -1,0 +1,8 @@
+{
+  "code": "model.structural.unsupported_format",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "format"
+  }
+}

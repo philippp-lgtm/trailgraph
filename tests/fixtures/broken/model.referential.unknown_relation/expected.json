@@ -1,0 +1,8 @@
+{
+  "code": "model.referential.unknown_relation",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "rules.has_links.then[0].count.rel"
+  }
+}

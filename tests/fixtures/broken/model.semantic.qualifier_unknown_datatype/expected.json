@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.qualifier_unknown_datatype",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "relations.next.qualifiers.weight.type"
+  }
+}

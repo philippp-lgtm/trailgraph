@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.attribute_redefined",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.label"
+  }
+}

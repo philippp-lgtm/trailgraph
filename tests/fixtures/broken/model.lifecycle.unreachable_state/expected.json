@@ -1,0 +1,8 @@
+{
+  "code": "model.lifecycle.unreachable_state",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "lifecycles.Flow.states.lost"
+  }
+}

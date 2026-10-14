@@ -1,0 +1,8 @@
+{
+  "code": "model.referential.unknown_parent",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.is_a"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "code": "model.referential.inverse_label_collision",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "relations.follows.inverse_label"
+  }
+}

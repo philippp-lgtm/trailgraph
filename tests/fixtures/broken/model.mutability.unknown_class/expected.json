@@ -1,0 +1,8 @@
+{
+  "code": "model.mutability.unknown_class",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.label.mutability"
+  }
+}

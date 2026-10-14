@@ -1,0 +1,17 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+  imports:
+    - {module: broken_cycle, version: "^1.0"}
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true

@@ -1,0 +1,8 @@
+{
+  "code": "model.lifecycle.terminal_has_outgoing",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "lifecycles.Flow.transitions[1].from"
+  }
+}

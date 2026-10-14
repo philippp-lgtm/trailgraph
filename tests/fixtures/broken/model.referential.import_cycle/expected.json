@@ -1,0 +1,8 @@
+{
+  "code": "model.referential.import_cycle",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken_cycle",
+    "path": "module.imports[0]"
+  }
+}

@@ -1,0 +1,8 @@
+format: graph_cli.ir/1
+module:
+  id: broken_cycle
+  prefix: brc
+  version: 1.0.0
+  summary: Imports the module that imports it.
+  imports:
+    - {module: broken, version: "^1.0"}

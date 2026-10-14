@@ -1,0 +1,29 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true
+      state:
+        summary: Progress.
+        lifecycle: Flow
+        required: true
+
+lifecycles:
+  Flow:
+    summary: Progress of a thing.
+    states:
+      open: {summary: Started., initial: true}
+      closed: {summary: Finished., terminal: true}
+    transitions:
+      - {from: open, to: closed, summary: Finish.}
+      - {from: closed, to: open, summary: Reopen.}
