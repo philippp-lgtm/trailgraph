@@ -45,7 +45,7 @@ Dependencies point down only. Enforced by import-linter
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
 `graph_cli_admin`. Within `graph_cli_admin`, `maintenance_cli` sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
-and storage adapters import only `kernel`. The storage maintenance port
+and storage adapters, `audit` and `access_control` import only `kernel`. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other.
 
@@ -77,6 +77,38 @@ FileStore in short (POSIX only, local filesystems only):
   writes missing derived files. Damage inside the log stops writes with
   `backend.corrupt` until repair.
 
+## Audit, authorization and identity
+
+`graph_cli.audit` builds and verifies `graph_cli.audit/1` events. It is
+pure: storage appends and chains the events, audit never touches files.
+
+| Module | Content |
+| --- | --- |
+| `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
+| `audit.schema` | the event shape; builders refuse their own output if it misses it |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.finding_codes` | `integrity.audit.*` |
+
+The verifier reads raw lines (`AuditSink.read_lines`) and reports damage as
+findings instead of stopping at it. Each damaged line gives at most one chain
+finding, so one deleted or edited line does not flood the report. A write
+intent without a committed transaction is the benign trace of an interrupted
+write (info); a transaction without its intent is an error. Events carry
+ids, types, hashes and reason text, never attribute values.
+
+`graph_cli.access_control.authorize()` is the one decision point. It is pure
+and answers for one (action, resource) pair: the app entrypoint never gets a
+`maint.*` action, then the first matching allow rule of the policy, else
+deny, then the obligations (`require_reason`, `max_batch`). Version 1 reads
+no policy files; `BuiltinPolicySource` serves the built-in policy.
+
+`graph_cli.catalog.identity` builds the one `ActorContext` per invocation.
+The OS user is the verified principal. Agent and session are asserted, from
+the `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
+`GRAPH_CLI_PARENT_SESSION_ID` variables first, then from the coding agent
+harness. Malformed values are dropped with a warning and never block. Only
+`catalog` and the admin wiring may read the process environment.
+
 ## Tests
 
 | Kind | Where | What |
@@ -86,13 +118,15 @@ FileStore in short (POSIX only, local filesystems only):
 | golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts |
 | crash | `tests/crash/` | `kill -9` of a child process at every named fault point |
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation |
-| tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage finding code |
+| tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
 by default and take a few seconds. Storage tests build transactions with a
 test-only builder (`tests/support/txbuilder.py`) driven by the compiled toy
-ontologies.
+ontologies. Storage tests use minimal audit bodies
+(`tests/support/drafts.py`); tests that verify audit streams use real events
+(`tests/support/audit_events.py`).
 
 ## Development
 
