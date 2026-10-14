@@ -25,6 +25,9 @@ EdgeId = NewType("EdgeId", UUID)
 TermRef = NewType("TermRef", str)  # CURIE "<prefix>:<Term>"
 
 ALIAS_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}-[0-9]{4,}$")
+ALIAS_PREFIX_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}$")
+GRAPH_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")  # B1.11
+TERM_REF_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,15}:[A-Za-z][A-Za-z0-9_]{0,63}$")
 LOCAL_RE: Final = re.compile(r"^@[a-z][a-z0-9_]{0,63}$")
 ABBREV_RE: Final = re.compile(r"^[0-9a-f]{8,32}$")
 _UUID_TEXT_RE: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")

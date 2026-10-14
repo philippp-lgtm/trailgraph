@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from typing import Final
 
@@ -17,6 +18,7 @@ type JsonObject = Mapping[str, JsonValue]
 MAX_SAFE_INT: Final = 2**53 - 1
 HASH_PREFIX: Final = "sha256:"
 GENESIS_HASH: Final = HASH_PREFIX + "0" * 64
+HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class CanonicalError(ValueError):

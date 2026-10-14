@@ -15,7 +15,7 @@ from typing import Final
 
 from graph_cli.kernel.actions import MAINT_ACTIONS, Action, is_known_action
 from graph_cli.kernel.actor import ActorContext, Assurance
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.clock import format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import format_id, parse_id
@@ -32,7 +32,6 @@ MAINT_EFFECT_ACTIONS: Final = MAINT_ACTIONS - {
     Action("maint.audit_anchor"),
 }
 
-HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
