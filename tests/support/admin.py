@@ -50,3 +50,35 @@ def data_root(env: dict[str, str]) -> Path:
 def init(run_cli: CliRunner, env: dict[str, str]) -> Path:
     assert admin(run_cli, "init").code == 0
     return data_root(env)
+
+
+def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, count: int) -> None:
+    """Instance data written the way item 6's write path will: real intent, then commit."""
+    from graph_cli.kernel.ids import GraphId, parse_id
+    from graph_cli.storage.files.store import FileStore
+    from support import audit_events
+    from support.clock import StepClock
+    from support.fixtures import compiled_model
+    from support.ids import SeededIdProvider
+    from support.stores import snapshot_state
+    from support.txbuilder import TxBuilder
+
+    gid = GraphId(parse_id(graph_id))
+    clock = StepClock(start="2030-01-01T00:00:00Z")
+    builder = TxBuilder(
+        compiled_model(ontology, version),
+        graph_id=gid,
+        ids=SeededIdProvider(clock, 11),
+        clock=clock,
+    )
+    store = FileStore(root / "graphs" / graph_id, gid)
+    for _ in range(count):
+        with store.session(timeout_s=5) as session:
+            draft = builder.begin(
+                snapshot_state(session.snapshot()), session.head(), session.alias_counters()
+            )
+            builder.random_tx(draft)
+            tx = draft.build()
+            before = audit_events.before_hashes(session.snapshot(), tx)
+            receipt = session.append_audit(audit_events.intent(tx, before=before))
+            session.commit(tx, receipt)

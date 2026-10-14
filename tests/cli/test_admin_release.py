@@ -1,0 +1,131 @@
+"""S: graph-admin ontology release (contracts B7.4, B7.12, B7.14, W.e; plan M7).
+
+One scenario per refusal code plus the inventory version series.
+"""
+
+from pathlib import Path
+
+import pytest
+from harness import CliRunner
+from support.admin import Outcome, admin, init, write_random_txs
+from support.fixtures import ONTOLOGIES, compiled_model
+
+from graph_cli.audit.verify import verify_stream
+from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
+from graph_cli.storage.files.audit_log import FileAuditLog
+
+INVENTORY = ONTOLOGIES / "inventory"
+
+
+@pytest.fixture
+def root(run_cli: CliRunner, isolated_env: dict[str, str]) -> Path:
+    return init(run_cli, isolated_env)
+
+
+def create(run_cli: CliRunner, version: str = "1.0.0") -> str:
+    outcome = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY / version)
+    )
+    assert outcome.code == 0, outcome.envelope
+    graph_id: str = outcome.data["id"]
+    return graph_id
+
+
+def release(run_cli: CliRunner, source: Path) -> Outcome:
+    return admin(run_cli, "ontology", "release", "example_graph", str(source))
+
+
+def variant(tmp_path: Path, base: str, version: str, *, summary: str | None = None) -> Path:
+    """An authored copy of a fixture version under another version number."""
+    text = (INVENTORY / base / "inventory.yaml").read_text()
+    text = text.replace(f"  version: {base}\n", f"  version: {version}\n", 1)
+    if summary is not None:
+        text = text.replace("  summary: ", f"  summary: {summary} ", 1)
+    target = tmp_path / f"{base}_as_{version}"
+    target.mkdir()
+    (target / "inventory.yaml").write_text(text)
+    return target
+
+
+def test_the_inventory_series(run_cli: CliRunner, root: Path) -> None:
+    graph_id = create(run_cli)
+    for version, level in (("1.0.1", "patch"), ("1.1.0", "minor"), ("2.0.0", "major")):
+        outcome = release(run_cli, INVENTORY / version)
+        assert outcome.code == 0, outcome.envelope
+        assert (outcome.data["released"], outcome.data["pinned"]) == (True, True)
+        assert outcome.data["diff"]["level"] == level
+        model = compiled_model("inventory", version)
+        assert outcome.data["to"]["artifact_hash"] == model.artifact_hash
+        assert outcome.envelope["graph"]["ontology"]["version"] == version
+        assert (root / "graphs" / graph_id / "ontology" / version / "diff.json").is_file()
+    shown = admin(run_cli, "graph", "show", "example_graph").data
+    assert shown["releases"] == ["1.0.0", "1.0.1", "1.1.0", "2.0.0"]
+    assert shown["ontology"]["version"] == "2.0.0"
+    audit = FileAuditLog(root)
+    graph_report = verify_stream(
+        audit.read_lines(graph_stream(graph_id)), stream=graph_stream(graph_id)
+    )
+    installation = verify_stream(audit.read_lines(INSTALLATION_STREAM), stream=INSTALLATION_STREAM)
+    assert graph_report.findings == () and installation.findings == ()
+    assert [e["actions"][0] for e in graph_report.events] == [
+        "maint.graph_create",
+        *["maint.ontology_release", "maint.ontology_pin"] * 3,
+    ]
+    assert len(installation.events) == 7  # create plus one companion per operation
+
+
+def test_rerunning_a_pinned_release_changes_nothing(run_cli: CliRunner, root: Path) -> None:
+    create(run_cli)
+    assert release(run_cli, INVENTORY / "1.0.1").code == 0
+    before = FileAuditLog(root).head(INSTALLATION_STREAM)
+    outcome = release(run_cli, INVENTORY / "1.0.1")
+    assert outcome.code == 0
+    assert (outcome.data["released"], outcome.data["pinned"]) == (False, False)
+    assert FileAuditLog(root).head(INSTALLATION_STREAM) == before
+
+
+def test_release_exists(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    create(run_cli)
+    other = variant(tmp_path, "1.0.0", "1.0.0", summary="Changed.")
+    outcome = release(run_cli, other)
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.release_exists")
+
+
+def test_version_bump_insufficient(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    create(run_cli)
+    minor_as_patch = variant(tmp_path, "1.1.0", "1.0.2")
+    outcome = release(run_cli, minor_as_patch)
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.version_bump_insufficient")
+    assert outcome.error["details"] == {"from": "1.0.0", "to": "1.0.2", "level": "minor"}
+
+
+def test_downgrades_are_insufficient(run_cli: CliRunner, root: Path) -> None:
+    create(run_cli, "1.0.1")
+    outcome = release(run_cli, INVENTORY / "1.0.0")
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.version_bump_insufficient")
+
+
+def test_version_bump_excessive_is_a_warning(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli)
+    patch_as_minor = variant(tmp_path, "1.0.1", "1.1.0")
+    outcome = release(run_cli, patch_as_minor)
+    assert outcome.code == 0
+    assert outcome.warning_codes == ["admin.version_bump_excessive"]
+
+
+def test_migration_required(run_cli: CliRunner, root: Path) -> None:
+    graph_id = create(run_cli, "1.1.0")
+    write_random_txs(root, graph_id, ontology="inventory", version="1.1.0", count=3)
+    outcome = release(run_cli, INVENTORY / "2.0.0")
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.migration_required")
+    assert outcome.error["details"]["seq"] == 3
+
+
+def test_archived_graph(run_cli: CliRunner, root: Path) -> None:
+    graph_id = create(run_cli)
+    manifest = root / "graphs" / graph_id / "manifest.toml"
+    manifest.write_text(manifest.read_text().replace('state = "active"', 'state = "archived"'))
+    outcome = release(run_cli, INVENTORY / "1.0.1")
+    assert (outcome.code, outcome.error["code"]) == (1, "graph.archived")

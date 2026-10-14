@@ -10,7 +10,8 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState, json_option, leaf
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
-from graph_cli_admin.services_admin import ontology
+from graph_cli_admin.services_admin import graphs, ontology
+from graph_cli_admin.services_admin.release import release
 
 source_argument = click.argument("source", type=click.Path(path_type=Path, file_okay=False))
 module_option = click.option(
@@ -86,3 +87,32 @@ def diff_command(
         old = ontology.compile_source(against, module).model
     report, bump = ontology.diff(old, new.model)
     return Result(data={**report.to_json(), "bump": bump}, graph=graph)
+
+
+@ontology_group.command("release")
+@click.argument("graph_ref", metavar="GRAPH")
+@source_argument
+@module_option
+@data_root_option
+@json_option
+@leaf
+def release_command(
+    state: CommandState, graph_ref: str, source: Path, module: str | None, data_root: Path | None
+) -> Result:
+    """Publish SOURCE as a release of GRAPH and pin the graph to it.
+
+    The version bump must cover the changes against the pinned release;
+    re-running a release that is already pinned changes nothing.
+
+    \b
+    Examples:
+      graph-admin ontology release example_graph data/example_graph/ontology
+      graph-admin ontology release example_graph ./onto --module inventory --json
+    """
+    ctx = admin_context(state, data_root)
+    outcome = release(ctx, graph_ref=graph_ref, source=source, module=module)
+    return Result(
+        data=outcome.data,
+        graph=graphs.envelope_graph(outcome.entry, outcome.seq),
+        warnings=outcome.warnings,
+    )
