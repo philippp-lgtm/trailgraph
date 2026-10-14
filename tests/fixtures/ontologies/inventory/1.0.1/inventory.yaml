@@ -1,0 +1,158 @@
+# Toy ontology B (test_fixtures.md): structure, cardinality, lifecycles,
+# named datatypes; imports core only, which proves claims are opt-in.
+format: graph_cli.ir/1
+module:
+  id: inventory
+  prefix: inv
+  version: 1.0.1
+  summary: Physical items, where they are stored and how they are grouped.
+
+datatypes:
+  SerialNumber:
+    summary: Serial number assigned by the manufacturer.
+    base: string
+    pattern: '^[A-Z0-9-]{4,32}$'
+  Quantity:
+    summary: Number of units; never negative.
+    base: integer
+    min: 0
+
+enums:
+  Condition:
+    summary: Physical condition of an item.
+    values:
+      new: {summary: Unused.}
+      good: {summary: "Used, fully functional."}
+      worn: {summary: "Visible wear, still functional."}
+      damaged: {summary: Not safe or not able to be used.}
+
+lifecycles:
+  ItemLifecycle:
+    summary: Availability of an item.
+    states:
+      ordered: {summary: Bought but not received., initial: true}
+      in_stock: {summary: Received and available.}
+      in_use: {summary: Handed out and in use.}
+      retired: {summary: Out of service for good., terminal: true}
+    transitions:
+      - {from: ordered, to: in_stock, summary: Receive the item.}
+      - from: in_stock
+        to: in_use
+        summary: Hand the item out.
+        guards:
+          - id: usable
+            summary: Damaged items cannot be used.
+            require:
+              - none_of:
+                  - {attr: condition, equals_string: damaged}
+      - {from: in_use, to: in_stock, summary: Return the item.}
+      - from: [ordered, in_stock, in_use]
+        to: retired
+        summary: Take the item out of service.
+        guards:
+          - id: no_active_parts
+            summary: An item with active parts cannot be retired.
+            require:
+              - count: {rel: part_of, direction: in, where: {record_status: [active]}}
+                equals_number: 0
+
+classes:
+  Item:
+    summary: A physical object whose location and state are tracked.
+    display_prefix: ITEM
+    attributes:
+      name:
+        summary: Display name of the item.
+        type: string
+        required: true
+      serial_number:
+        summary: Serial number, if the item has one.
+        type: SerialNumber
+        unique: true
+        mutability: immutable
+      quantity:
+        summary: Number of units.
+        type: Quantity
+        required: true
+        default: 1
+      condition:
+        summary: Physical condition.
+        type: Condition
+      acquired_on:
+        summary: Date the item was acquired.
+        type: date
+        mutability: immutable
+      status:
+        summary: Availability state.
+        lifecycle: ItemLifecycle
+        required: true
+  Location:
+    summary: A place where items are stored.
+    display_prefix: LOC
+    attributes:
+      name:
+        summary: Display name of the location.
+        type: string
+        required: true
+      code:
+        summary: Short unique code printed on the location.
+        type: string
+        required: true
+        unique: true
+        mutability: immutable
+  Category:
+    summary: A group of similar items.
+    display_prefix: CAT
+    attributes:
+      name:
+        summary: Unique name of the category.
+        type: string
+        required: true
+        unique: true
+
+relations:
+  located_in:
+    summary: The location where an item is currently stored.
+    domain: Item
+    range: Location
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: holds
+  part_of:
+    summary: The item is a component of a larger item.
+    domain: Item
+    range: Item
+    cardinality: {out: {max: 1}}
+    characteristics: [acyclic]
+    inverse_label: has_part
+  within:
+    summary: The location is inside a larger location.
+    domain: Location
+    range: Location
+    cardinality: {out: {max: 1}}
+    characteristics: [acyclic]
+    inverse_label: contains
+  in_category:
+    summary: The item belongs to the category.
+    domain: Item
+    range: Category
+    inverse_label: has_item
+
+rules:
+  - id: serial_single_unit
+    summary: Serialized items have quantity 1.
+    severity: error
+    when: write
+    scope: Item
+    if:
+      - {attr: serial_number, value_presence: PRESENT}
+    then:
+      - {attr: quantity, equals_number: 1}
+  - id: location_not_empty
+    summary: A location holds items or contains other locations.
+    severity: warning
+    when: batch
+    scope: Location
+    then:
+      - any_of:
+          - {count: {rel: located_in, direction: in}, minimum_value: 1}
+          - {count: {rel: within, direction: in}, minimum_value: 1}

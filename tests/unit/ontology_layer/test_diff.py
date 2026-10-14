@@ -1,0 +1,149 @@
+"""Semver classifier (contracts B7.12): fixture version series goldens and rule table."""
+
+from dataclasses import replace
+from itertools import pairwise
+
+import pytest
+from support.fixtures import ONTOLOGIES, assert_golden, compiled_model, ontology_versions
+
+from graph_cli.kernel.canonical import pretty_bytes
+from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
+from graph_cli.ontology_layer.compiler import compile_bundle
+from graph_cli.ontology_layer.diff import check_bump, classify
+from graph_cli.ontology_layer.model import CompiledModel
+
+SERIES = ontology_versions("inventory")
+PAIRS = list(pairwise(SERIES))
+
+
+def test_version_series_golden() -> None:
+    reports = [
+        classify(compiled_model("inventory", a), compiled_model("inventory", b)).to_json()
+        for a, b in PAIRS
+    ]
+    document = {"schema": "graph_cli.fixture_diffs/1", "ontology": "inventory", "diffs": reports}
+    assert_golden(ONTOLOGIES / "inventory" / "expected_diffs.json", pretty_bytes(document))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "level", "count"),
+    [
+        ("1.0.0", "1.0.1", "patch", 3),
+        ("1.0.1", "1.1.0", "minor", 4),
+        ("1.1.0", "2.0.0", "major", 3),
+    ],
+)
+def test_series_levels(old: str, new: str, level: str, count: int) -> None:
+    report = classify(compiled_model("inventory", old), compiled_model("inventory", new))
+    assert report.level == level
+    assert len(report.changes) == count
+    assert all(change.level == level for change in report.changes)
+    assert check_bump(report) == "ok"
+
+
+def test_declared_rename_and_breaking_changes() -> None:
+    report = classify(compiled_model("inventory", "1.1.0"), compiled_model("inventory", "2.0.0"))
+    assert [(c.path, c.kind) for c in report.changes] == [
+        ("classes.inv:Item.attributes.name", "rename"),
+        ("enums.inv:Condition.values.worn", "remove_enum_value"),
+        ("relations.inv:in_category.cardinality.out.min", "tighten_cardinality"),
+    ]
+    assert dict(report.changes[0].detail) == {"to": "label"}
+
+
+def test_bump_checks() -> None:
+    report = classify(compiled_model("inventory", "1.0.1"), compiled_model("inventory", "1.1.0"))
+    assert check_bump(replace(report, to_version="1.0.2")) == "insufficient"
+    assert check_bump(replace(report, to_version="2.0.0")) == "excessive"
+    assert check_bump(replace(report, to_version="1.0.0")) == "insufficient"
+
+
+def test_identical_models_have_no_changes() -> None:
+    model = compiled_model("notes_and_sources")
+    report = classify(model, model)
+    assert (report.level, report.changes) == ("none", ())
+
+
+HEADER = "format: graph_cli.ir/1\nmodule: {{id: sample, prefix: smp, version: {v}, summary: S.}}\n"
+BODY = """datatypes:
+  Code: {summary: Code., base: string, max_length: 10}
+classes:
+  Thing:
+    summary: A thing.
+    attributes:
+      code: {summary: Code., type: Code, mutability: immutable}
+      state: {summary: State., lifecycle: Flow}
+  Other:
+    summary: Another thing.
+relations:
+  link: {summary: Link., domain: Thing, range: Thing}
+lifecycles:
+  Flow:
+    summary: Flow.
+    states:
+      open: {summary: Open., initial: true}
+      held: {summary: Held.}
+      shut: {summary: Shut., terminal: true}
+    transitions:
+      - {from: open, to: held}
+      - {from: held, to: shut}
+"""
+
+
+def model(body: str, version: str) -> CompiledModel:
+    text = HEADER.format(v=version) + body
+    outcome = compile_bundle("sample", LayeredSource(MappingSource({"sample": text.encode()})))
+    assert outcome.model is not None, [f.to_json() for f in outcome.findings]
+    return outcome.model
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "kind", "level"),
+    [
+        ("max_length: 10", "max_length: 5", "tighten_facet", "major"),
+        ("max_length: 10", "max_length: 20", "loosen_facet", "minor"),
+        ("range: Thing}", "range: [Thing, Other]}", "widen_range", "minor"),
+        ("domain: Thing,", "domain: Other,", "change_domain", "major"),
+        ("mutability: immutable", "mutability: content", "loosen_mutability", "minor"),
+        (
+            "{summary: Code., type: Code, mutability: immutable}",
+            "{summary: Code., type: string}",
+            "change_type",
+            "major",
+        ),
+        (
+            "      - {from: held, to: shut}\n",
+            "      - {from: held, to: shut}\n      - {from: open, to: shut}\n",
+            "add_transition",
+            "minor",
+        ),
+        (
+            "  Other:\n    summary: Another thing.\n",
+            "  Renamed:\n    summary: Another thing.\n    renamed_from: Other\n",
+            "rename",
+            "major",
+        ),
+        (
+            "relations:\n",
+            "rules:\n  - {id: r1, summary: R., severity: error, when: write, "
+            "scope: Thing, then: [{attr: code, value_presence: PRESENT}]}\nrelations:\n",
+            "add_error_rule",
+            "major",
+        ),
+        (
+            "transitions:\n      - {from: open, to: held}",
+            "transitions:\n      - from: open\n"
+            "        to: held\n        guards:\n          - id: g1\n            summary: G.\n"
+            "            require: [{attr: code, value_presence: PRESENT}]",
+            "add_guard",
+            "major",
+        ),
+    ],
+)
+def test_rule_table(old: str, new: str, kind: str, level: str) -> None:
+    assert old in BODY
+    report = classify(model(BODY, "1.0.0"), model(BODY.replace(old, new), "2.0.0"))
+    assert (kind, level) in [(c.kind, c.level) for c in report.changes], report.to_json()
+    assert report.level == max(
+        (c.level for c in report.changes), key=("patch", "minor", "major").index
+    )

@@ -1,0 +1,95 @@
+{
+  "diffs": [
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "change_summary",
+          "level": "patch",
+          "path": "classes.inv:Item"
+        },
+        {
+          "detail": {},
+          "kind": "change_summary",
+          "level": "patch",
+          "path": "datatypes.inv:Quantity"
+        },
+        {
+          "detail": {},
+          "kind": "change_summary",
+          "level": "patch",
+          "path": "relations.inv:located_in"
+        }
+      ],
+      "from": "1.0.0",
+      "level": "patch",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.0.1"
+    },
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_attribute",
+          "level": "minor",
+          "path": "classes.inv:Item.attributes.note"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.inv:Supplier"
+        },
+        {
+          "detail": {},
+          "kind": "add_enum_value",
+          "level": "minor",
+          "path": "enums.inv:Condition.values.refurbished"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.inv:supplied_by"
+        }
+      ],
+      "from": "1.0.1",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.1.0"
+    },
+    {
+      "changes": [
+        {
+          "detail": {
+            "to": "label"
+          },
+          "kind": "rename",
+          "level": "major",
+          "path": "classes.inv:Item.attributes.name"
+        },
+        {
+          "detail": {},
+          "kind": "remove_enum_value",
+          "level": "major",
+          "path": "enums.inv:Condition.values.worn"
+        },
+        {
+          "detail": {
+            "from": 0,
+            "to": 1
+          },
+          "kind": "tighten_cardinality",
+          "level": "major",
+          "path": "relations.inv:in_category.cardinality.out.min"
+        }
+      ],
+      "from": "1.1.0",
+      "level": "major",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "2.0.0"
+    }
+  ],
+  "ontology": "inventory",
+  "schema": "graph_cli.fixture_diffs/1"
+}
