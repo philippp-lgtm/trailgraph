@@ -10,8 +10,8 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.ports.storage import EMPTY_HEAD
 from graph_cli.kernel.query_ast import Cmp, NeighborQuery, Not, OrderKey, Query, RelConstraint
+from graph_cli.kernel.query_eval import run_neighbors, run_query
 from graph_cli.kernel.records import revision_meta
-from graph_cli.storage.common.evaluate import run_neighbors, run_query
 from graph_cli.storage.common.view import GraphView
 
 

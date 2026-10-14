@@ -59,7 +59,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 
 | Package | Content |
 | --- | --- |
-| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view, reference query evaluator |
+| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`) |
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |

@@ -1,7 +1,9 @@
 """Reference semantics of ``Query`` and ``NeighborQuery`` (contracts B13.5, B13.13).
 
 Every backend must return exactly what this module returns for the same
-state. The rules:
+state. It lives in the kernel because storage adapters and the write
+pipeline's working state (``temporal_knowledge``) both evaluate queries and
+are sibling layers. The rules:
 
 - **Fields.** A reserved system field (B7.8) reads the revision; any other
   name reads ``attrs``. A JSON ``null`` counts as missing.

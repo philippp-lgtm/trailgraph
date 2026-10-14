@@ -20,18 +20,18 @@ from graph_cli.kernel.query_ast import (
     Query,
     RelConstraint,
 )
+from graph_cli.kernel.query_eval import (
+    field_value,
+    run_neighbors,
+    run_query,
+    strict_equal,
+)
 from graph_cli.kernel.records import (
     EdgeRecord,
     RecordStatus,
     Revision,
     content_hash,
     content_projection,
-)
-from graph_cli.storage.common.evaluate import (
-    field_value,
-    run_neighbors,
-    run_query,
-    strict_equal,
 )
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)

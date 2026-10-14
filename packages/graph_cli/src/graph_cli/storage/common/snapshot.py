@@ -7,8 +7,8 @@ from collections.abc import Mapping, Sequence
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
+from graph_cli.kernel.query_eval import run_neighbors, run_query
 from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta
-from graph_cli.storage.common.evaluate import run_neighbors, run_query
 from graph_cli.storage.common.view import ViewAt
 
 

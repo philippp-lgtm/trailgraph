@@ -40,6 +40,7 @@ from graph_cli.kernel.ports.storage import (
     WriteSession,
 )
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
+from graph_cli.kernel.query_eval import run_neighbors, run_query
 from graph_cli.kernel.records import (
     EdgeRecord,
     Revision,
@@ -53,7 +54,6 @@ from graph_cli.kernel.records import (
 from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, ChainLink, link_of, seal
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
-from graph_cli.storage.common.evaluate import run_neighbors, run_query
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.snapshot import ViewSnapshot, resolve_at_seq
 from graph_cli.storage.common.view import GraphView, ViewAt
