@@ -17,7 +17,7 @@ from graph_cli.storage.common.faults import CrashPoint
 
 
 def _audit_count(env: StoreEnv) -> int:
-    return env.audit.head(env.stream)[0]
+    return env.audit_head()[0]
 
 
 def test_idempotency_lookup_scope(env: StoreEnv) -> None:
@@ -48,11 +48,11 @@ def test_append_audit_seals_the_graph_stream(env: StoreEnv) -> None:
         receipts = [session.append_audit(draft(env.stream, e, env.clock.now())) for e in tx_ids]
     assert [r.seq for r in receipts] == [1, 2]
     assert [r.event_id for r in receipts] == tx_ids
-    events = list(env.audit.read(env.stream))
+    events = list(env.audit_events())
     assert [e["seq"] for e in events] == [1, 2]
     assert all(e["stream"] == env.stream for e in events)
     assert [e["hash"] for e in events] == [r.hash for r in receipts]
-    assert env.audit.head(env.stream) == (2, receipts[1].hash)
+    assert env.audit_head() == (2, receipts[1].hash)
     lines = b"".join(jsonl_line(e) for e in events)
     assert scan(lines, GENESIS).end.seq == 2
 
@@ -128,24 +128,34 @@ def test_receipts_are_bound_to_session_and_tx(env: StoreEnv) -> None:
     assert env.store.head().seq == 1
 
 
-def test_failing_audit_append_refuses_and_changes_nothing(env: StoreEnv) -> None:
-    """B3.4 (store side): no receipt, no tx; the write cannot proceed."""
+AUDIT_POINTS = [
+    CrashPoint.AUDIT_BEFORE_WRITE,
+    CrashPoint.AUDIT_AFTER_WRITE_BEFORE_SYNC,
+    CrashPoint.AUDIT_AFTER_SYNC,
+]
+TX_POINTS = [CrashPoint.TX_BEFORE_WRITE, CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC]
+
+
+@pytest.mark.parametrize("point", AUDIT_POINTS)
+def test_failing_audit_append_refuses_and_changes_nothing(env: StoreEnv, point: CrashPoint) -> None:
+    """B3.4 (store side): no receipt, no tx; an unacknowledged event is rolled back."""
     env.write(lambda d: d.create())
-    head, audit_head = env.store.head(), env.audit.head(env.stream)
-    env.faults.armed = {CrashPoint.AUDIT_BEFORE_WRITE}
+    head, audit_head = env.store.head(), env.audit_head()
+    env.faults.armed = {point}
     with pytest.raises(GraphCliError) as info:
         env.write(lambda d: d.create())
     assert (info.value.code, info.value.retryable) == ("audit.unavailable", True)
     assert env.store.head() == head
-    assert env.audit.head(env.stream) == audit_head
+    assert env.audit_head() == audit_head
     env.faults.armed = set()
     env.write(lambda d: d.create())
     assert env.store.head().seq == 2
 
 
-def test_failing_tx_append_leaves_an_orphan_intent(env: StoreEnv) -> None:
+@pytest.mark.parametrize("point", TX_POINTS)
+def test_failing_tx_append_leaves_an_orphan_intent(env: StoreEnv, point: CrashPoint) -> None:
     head = env.store.head()
-    env.faults.armed = {CrashPoint.TX_BEFORE_WRITE}
+    env.faults.armed = {point}
     with pytest.raises(GraphCliError) as info:
         env.write(lambda d: d.create())
     assert (info.value.code, info.value.retryable) == ("backend.unavailable", True)
@@ -205,7 +215,7 @@ def test_seq_contiguity_and_chain_after_500_random_ops(env: StoreEnv) -> None:
     result = scan(lines, GENESIS)
     assert (result.end.seq, result.corruption, result.tail) == (500, None, "clean")
     assert result.end.hash == env.store.head().hash
-    events = b"".join(jsonl_line(e) for e in env.audit.read(env.stream))
+    events = b"".join(jsonl_line(e) for e in env.audit_events())
     assert scan(events, GENESIS).end.seq == 500
     seen: set[EntityId] = set()
     for record in records:

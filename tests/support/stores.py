@@ -5,16 +5,22 @@ ontology. Tests talk to the ports only; the factory is the single place that
 knows how a backend is built.
 """
 
-from collections.abc import Callable
+import fcntl
+import os
+import sys
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from graph_cli.kernel.authz import AuthorizedTx
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import EntityId, GraphId
 from graph_cli.kernel.ports.audit import AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import CommitResult, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
+from graph_cli.storage.files.layout import init_graph_dir
+from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
 from graph_cli.storage.memory.store import InMemoryStore
 from support.clock import StepClock
@@ -24,9 +30,33 @@ from support.memlog import model
 from support.txbuilder import FuncState, TxBuilder, TxDraft
 
 ALL_STATUSES = frozenset({"active", "superseded", "retracted"})
-BACKENDS = ("memory",)
+BACKENDS = ("memory", "files")
 
-Store = InMemoryStore
+Store = InMemoryStore | FileStore
+
+
+def fd_path(fd: int) -> str:
+    """The path of an open descriptor (darwin: F_GETPATH, Linux: /proc)."""
+    if sys.platform == "darwin":
+        raw = fcntl.fcntl(fd, 50, b"\0" * 1024)  # F_GETPATH
+        return os.fsdecode(raw.rstrip(b"\0"))
+    return os.readlink(f"/proc/self/fd/{fd}")
+
+
+class RecordingSyncer:
+    """A no-op syncer that records what would have been synced, in order (plan D2)."""
+
+    def __init__(self, *, record: bool = False) -> None:
+        self.record = record
+        self.calls: list[tuple[str, str]] = []
+
+    def sync_file(self, fd: int) -> None:
+        if self.record:
+            self.calls.append(("file", fd_path(fd)))
+
+    def sync_dir(self, path: Path) -> None:
+        if self.record:
+            self.calls.append(("dir", str(path)))
 
 
 class FaultSwitch:
@@ -70,7 +100,25 @@ class StoreEnv:
             clock=self.clock,
             seed=self.seed,
         )
-        self.store, self.audit = make_backend(self.backend, self.graph_id, self.root, self.faults)
+        self.syncer = RecordingSyncer()
+        self.store, self.audit = make_backend(
+            self.backend, self.graph_id, self.root, self.faults, self.syncer
+        )
+
+    def audit_head(self) -> tuple[int, str]:
+        """Head of this graph's audit stream."""
+        if self.audit is not None:
+            return self.audit.head(self.stream)
+        assert isinstance(self.store, FileStore)
+        end = self.store.auditlog.scan().end
+        return end.seq, end.hash
+
+    def audit_events(self) -> Iterator[Mapping[str, JsonValue]]:
+        if self.audit is not None:
+            yield from self.audit.read(self.stream)
+            return
+        assert isinstance(self.store, FileStore)
+        yield from (record.document for record in self.store.auditlog.scan().records)
 
     def write(
         self,
@@ -96,9 +144,13 @@ class StoreEnv:
 
 
 def make_backend(
-    backend: str, graph_id: GraphId, root: Path, faults: FaultSwitch
-) -> tuple[Store, AuditSink]:
+    backend: str, graph_id: GraphId, root: Path, faults: FaultSwitch, syncer: RecordingSyncer
+) -> tuple[Store, AuditSink | None]:
     if backend == "memory":
         audit = InMemoryAuditLog(faults=faults)
         return InMemoryStore(graph_id, audit=audit, faults=faults), audit
+    if backend == "files":
+        graph_dir = root / "graphs" / str(graph_id)
+        init_graph_dir(graph_dir, syncer)
+        return FileStore(graph_dir, graph_id, syncer=syncer, faults=faults), None
     raise AssertionError(f"unknown backend {backend!r}")

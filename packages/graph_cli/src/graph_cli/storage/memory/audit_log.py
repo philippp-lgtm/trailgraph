@@ -35,14 +35,16 @@ class InMemoryAuditLog:
     ) -> AuditReceipt:
         """Seal and append one event; the caller holds the stream's lock."""
         body, event_id = audit_body(event, stream)
+        events = self._streams.setdefault(stream, [])
+        document, _ = seal(body, self._link(stream))
         try:
             fire(self._faults, CrashPoint.AUDIT_BEFORE_WRITE)
-            events = self._streams.setdefault(stream, [])
-            document, _ = seal(body, self._link(stream))
             events.append(document)
             fire(self._faults, CrashPoint.AUDIT_AFTER_WRITE_BEFORE_SYNC)
             fire(self._faults, CrashPoint.AUDIT_AFTER_SYNC)
         except OSError as exc:
+            if events and events[-1] is document:
+                events.pop()  # an unacknowledged event is rolled back, as in FileStore
             raise GraphCliError(
                 "audit.unavailable", f"audit append failed: {exc}", details={"stream": stream}
             ) from exc

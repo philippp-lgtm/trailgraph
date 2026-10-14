@@ -1,0 +1,20 @@
+{
+  "alias_counters": {
+    "CAT": 2
+  },
+  "audit": {
+    "hash": "sha256:3a1813b1a5fc43c762e7324a8d7de1ba030653e99fb28eb60712a17f128d5676",
+    "offset": 788,
+    "segment": "events-000000000001.jsonl",
+    "seq": 2
+  },
+  "hash": "sha256:a6d8e7635769e4d06de5d496453f372af39dcbfb8b7d3d745059d5155ea8fe18",
+  "recorded_at": "2026-01-01T00:00:00.007Z",
+  "schema": "graph_cli.head/1",
+  "seq": 2,
+  "tx_id": "019b76da-a808-74aa-ba1e-8584e443df78",
+  "txlog": {
+    "offset": 4307,
+    "segment": "000000000001.jsonl"
+  }
+}

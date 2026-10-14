@@ -133,6 +133,7 @@ class MemorySession:
         record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))
         try:
             fire(store._faults, CrashPoint.TX_BEFORE_WRITE)
+            fire(store._faults, CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC)
         except OSError as exc:
             raise GraphCliError("backend.unavailable", f"tx append failed: {exc}") from exc
         store._apply(record)

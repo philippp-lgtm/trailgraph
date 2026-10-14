@@ -12,6 +12,12 @@ from graph_cli.storage.common.chain import GENESIS, scan
 from graph_cli.storage.common.faults import CrashPoint
 
 
+@pytest.fixture(autouse=True)
+def _needs_sink(env: StoreEnv) -> None:
+    if env.audit is None:
+        pytest.skip("FileAuditLog lands with the installation audit log")
+
+
 def _installation(env: StoreEnv, count: int) -> list[EventId]:
     ids = [EventId(env.ids.new_id()) for _ in range(count)]
     for event_id in ids:
