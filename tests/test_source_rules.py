@@ -39,6 +39,7 @@ ENV_AND_OS = {
     ("socket", "gethostname"),
     ("platform", "node"),
     ("getpass", "getuser"),
+    ("pwd", "getpwuid"),
 }
 
 WALL_CLOCK_ALLOWED = {"graph_cli.kernel.clock"}
@@ -130,6 +131,7 @@ def test_env_and_os_identity_only_in_wiring() -> None:
         ("import os\nos.environ['X']", "env"),
         ("from os import getenv", "env"),
         ("import socket\nsocket.gethostname()", "env"),
+        ("import pwd\npwd.getpwuid(0)", "env"),
     ],
 )
 def test_positive_controls(source: str, rule: str) -> None:
