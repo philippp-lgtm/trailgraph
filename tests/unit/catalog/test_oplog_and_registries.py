@@ -10,6 +10,7 @@ from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.registries import all_finding_codes
 from graph_cli.ontology_layer import finding_codes as ontology_codes
 from graph_cli.storage import finding_codes as storage_codes
+from graph_cli.temporal_knowledge import finding_codes as temporal_codes
 
 
 def test_oplog_appends_one_line_per_note(tmp_path: Path) -> None:
@@ -31,7 +32,12 @@ def test_oplog_failures_are_swallowed(tmp_path: Path) -> None:
 
 def test_finding_code_union() -> None:
     codes = all_finding_codes()
-    owners = (ontology_codes.FINDING_CODES, audit_codes.FINDING_CODES, storage_codes.FINDING_CODES)
+    owners = (
+        ontology_codes.FINDING_CODES,
+        temporal_codes.FINDING_CODES,
+        audit_codes.FINDING_CODES,
+        storage_codes.FINDING_CODES,
+    )
     assert len(codes) == sum(len(specs) for specs in owners)
     assert list(codes) == sorted(codes)
     assert {"integrity.audit.pin_mismatch", "integrity.storage.pin_mismatch"} <= set(codes)

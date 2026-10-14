@@ -13,8 +13,14 @@ from graph_cli.audit import finding_codes as audit_codes
 from graph_cli.kernel.findings import FindingCodeSpec
 from graph_cli.ontology_layer import finding_codes as ontology_codes
 from graph_cli.storage import finding_codes as storage_codes
+from graph_cli.temporal_knowledge import finding_codes as temporal_codes
 
-_OWNERS = (ontology_codes.FINDING_CODES, audit_codes.FINDING_CODES, storage_codes.FINDING_CODES)
+_OWNERS = (
+    ontology_codes.FINDING_CODES,
+    temporal_codes.FINDING_CODES,
+    audit_codes.FINDING_CODES,
+    storage_codes.FINDING_CODES,
+)
 
 
 def all_finding_codes() -> Mapping[str, FindingCodeSpec]:
