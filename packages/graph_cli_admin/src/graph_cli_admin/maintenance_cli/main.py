@@ -14,6 +14,7 @@ import click
 from graph_cli.cli_kit.runner import run
 from graph_cli_admin.maintenance_cli import hints, wiring
 from graph_cli_admin.maintenance_cli.commands.init import init_command
+from graph_cli_admin.maintenance_cli.commands.ontology import ontology_group
 from graph_cli_admin.services_admin import error_codes
 
 
@@ -24,6 +25,7 @@ def cli() -> None:
 
 
 cli.add_command(init_command)
+cli.add_command(ontology_group)
 
 
 def main() -> None:

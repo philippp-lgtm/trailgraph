@@ -1,0 +1,29 @@
+{
+  "artifact_hash": "sha256:a6c5a0de1c81c7a69905c1bf79d59c8f1413d6a96c525a1ee3a5eabbea735857",
+  "bundle": "inventory",
+  "classification": {
+    "computed": "patch",
+    "declared": "patch"
+  },
+  "compiler": {
+    "ir_format": "graph_cli.ir/1",
+    "name": "graph_cli",
+    "version": "<version>"
+  },
+  "files": {
+    "compiled.json": "sha256:e768422de77e0ce7bfcc5f78fe600ef4ccd7dfbfe652050a17a6c4eac1c7ad7e",
+    "diff.json": "sha256:0ef008f31111ca9869d0bf7091a0690eb03d50694f1ecd11b70c764421567954",
+    "exports/jsonschema/inv.Category.json": "sha256:2c9eccd2a21a6fbd73a2511679ea14edec442fc6d421e9395bbccd2975c73342",
+    "exports/jsonschema/inv.Item.json": "sha256:bb3897a9e583bf64e0b6e7f8396e4cfa7d418bfb4a62ef80c5cece2c2c139ca4",
+    "exports/jsonschema/inv.Location.json": "sha256:8f3e9cbb9d4a303e95f7a3d5662f5d969076d9fbb8c677701c069afd5ffa9a8b",
+    "source/inventory.yaml": "sha256:02ac77b345342ca6d19370c5a22c2a4d6a98cc132884d0d762358bf3259efe99"
+  },
+  "previous": {
+    "artifact_hash": "sha256:1000dc2326c864c1e8c74585315ffcb77ff8c953645d6c0a1991fcf6acc39259",
+    "version": "1.0.0"
+  },
+  "release_id": "01a13e93-4000-76c1-b082-532b629f6fbe",
+  "released_at": "2026-10-15T08:00:00.000Z",
+  "schema": "graph_cli.ontology_release/1",
+  "version": "1.0.1"
+}
