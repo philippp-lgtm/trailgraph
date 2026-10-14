@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Final
 
 type JsonValue = bool | int | str | Sequence[JsonValue] | Mapping[str, JsonValue] | None
@@ -147,17 +147,19 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def parse_json(data: bytes | str) -> JsonValue:
+def parse_json(data: bytes | str, *, floats: Callable[[str], str] | None = None) -> JsonValue:
     """Parse JSON strictly into the C.1 data model.
 
     Refuses floats, NaN/Infinity, duplicate keys, out-of-range integers,
-    lone surrogates and NUL.
+    lone surrogates and NUL. ``floats`` turns float literals into a string
+    (subclass) instead, for input documents whose validator reports them
+    (``kernel.changeset.FloatLiteral``).
     """
     try:
         text = data.decode("utf-8") if isinstance(data, bytes) else data
         value: JsonValue = json.loads(
             text,
-            parse_float=_reject_float,
+            parse_float=_reject_float if floats is None else floats,
             parse_constant=_reject_constant,
             object_pairs_hook=_unique_object,
         )

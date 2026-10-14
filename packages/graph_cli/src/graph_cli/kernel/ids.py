@@ -38,7 +38,7 @@ _COUNTER_MAX: Final = 0xFFF
 
 @dataclass(frozen=True, slots=True)
 class LocalRef:
-    name: str
+    name: str  # without the leading "@"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +52,41 @@ class AbbrevRef:
 
 
 EntityRef = EntityId | LocalRef | AliasRef | AbbrevRef
+
+
+def parse_entity_ref(
+    text: str, *, allow_local: bool = False, allow_abbrev: bool = False
+) -> EntityRef | None:
+    """Classify a reference by grammar (B1.9); ``None`` when nothing fits.
+
+    The grammars are disjoint: full UUID (or ``urn:uuid:``), alias,
+    ``@local`` (change sets only, stored without ``@``), abbreviation (8-32
+    hex of the id's trailing random part; CLI arguments only). Callers choose
+    the error code for ``None``.
+    """
+    if allow_local and LOCAL_RE.match(text):
+        return LocalRef(text[1:])
+    if ALIAS_RE.match(text):
+        return AliasRef(text)
+    try:
+        return EntityId(parse_id(text))
+    except GraphCliError:
+        pass
+    if allow_abbrev and ABBREV_RE.match(text.lower()):
+        return AbbrevRef(text.lower())
+    return None
+
+
+def ref_text(ref: EntityRef) -> str:
+    """The canonical text of a reference: full id, alias, ``@name`` or the hex suffix."""
+    match ref:
+        case LocalRef(name):
+            return f"@{name}"
+        case AliasRef(alias):
+            return alias
+        case AbbrevRef(suffix):
+            return suffix
+    return format_id(ref)
 
 
 def parse_id(text: str) -> UUID:
