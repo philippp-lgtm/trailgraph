@@ -34,3 +34,14 @@ Where it goes instead:
 `.gitignore` and never `git add -f` them. Before committing, check the diff for
 anything user- or environment-specific and move it to one of the destinations
 above.
+
+Examples in tracked files must be generic. Never use names, paths, or
+structures from `local/`, `CLAUDE.local.md`, or other untracked or
+user-specific content as examples. Prefer neutral placeholders (e.g.
+`data_models`, `example_service`) or names of tracked files.
+
+## Naming conventions
+
+- Directory names are always lowercase.
+- No spaces in directory names.
+- Use `_` as the word separator instead of `-` (e.g. `data_models`).
