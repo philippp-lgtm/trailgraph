@@ -1,0 +1,113 @@
+# Workspace root. Not a distribution itself; the two distributions live in
+# packages/ (graph_cli: app CLI, graph_cli_admin: maintenance CLI).
+[project]
+name = "graph_cli_workspace"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["graph_cli", "graph_cli_admin"]
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.1",
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+graph_cli = { workspace = true }
+graph_cli_admin = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = ["--strict-markers", "--import-mode=importlib"]
+markers = ["slow: builds distributions or spawns many processes"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+packages = ["graph_cli", "graph_cli_admin"]
+
+# Dependencies point down only. See the layer table in docs/README.md.
+[tool.importlinter]
+root_packages = ["graph_cli", "graph_cli_admin"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "graph_cli layers"
+type = "layers"
+layers = [
+    "graph_cli.app_cli",
+    "graph_cli.cli_kit",
+    "graph_cli.catalog",
+    "graph_cli.extensions",
+    "graph_cli.services",
+    "graph_cli.audit | graph_cli.access_control | graph_cli.temporal_knowledge | graph_cli.storage",
+    "graph_cli.query",
+    "graph_cli.ontology_layer",
+    "graph_cli.kernel",
+]
+
+[[tool.importlinter.contracts]]
+name = "graph_cli_admin layers"
+type = "layers"
+layers = [
+    "graph_cli_admin.maintenance_cli",
+    "graph_cli_admin.services_admin",
+]
+
+[[tool.importlinter.contracts]]
+name = "App distribution never imports the maintenance distribution"
+type = "forbidden"
+source_modules = ["graph_cli"]
+forbidden_modules = ["graph_cli_admin"]
+
+# Storage adapters see kernel types only (no ontology semantics, no query
+# planning). The query AST lives in the kernel for this reason.
+[[tool.importlinter.contracts]]
+name = "Storage adapters import only the kernel"
+type = "forbidden"
+source_modules = ["graph_cli.storage"]
+forbidden_modules = [
+    "graph_cli.ontology_layer",
+    "graph_cli.query",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.app_cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only CLI layers use the CLI framework"
+type = "forbidden"
+source_modules = [
+    "graph_cli.kernel",
+    "graph_cli.ontology_layer",
+    "graph_cli.query",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli_admin.services_admin",
+]
+forbidden_modules = ["click"]

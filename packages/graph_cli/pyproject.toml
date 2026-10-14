@@ -1,0 +1,13 @@
+[project]
+name = "graph_cli"
+version = "0.1.0.dev0"
+description = "Domain-agnostic knowledge graph shell: application CLI (graph)."
+requires-python = ">=3.12"
+dependencies = ["click>=8.1"]
+
+[project.scripts]
+graph = "graph_cli.app_cli.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"

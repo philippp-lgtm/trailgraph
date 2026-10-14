@@ -1,0 +1,16 @@
+[project]
+name = "graph_cli_admin"
+version = "0.1.0.dev0"
+description = "Domain-agnostic knowledge graph shell: maintenance CLI (graph-admin)."
+requires-python = ">=3.12"
+dependencies = ["graph_cli", "click>=8.1"]
+
+[project.scripts]
+graph-admin = "graph_cli_admin.maintenance_cli.main:main"
+
+[tool.uv.sources]
+graph_cli = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
