@@ -1,4 +1,5 @@
-"""FileStore worker for P tests: ``writer`` commits txs, ``reader`` checks snapshots.
+"""FileStore worker for P tests: ``writer`` commits txs, ``reader`` checks snapshots,
+``denier`` appends denials to the installation audit stream.
 
 All workers wait for the barrier file, so they start at the same time.
 """
@@ -8,9 +9,11 @@ from pathlib import Path
 from uuid import UUID
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.query_ast import Query
+from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.files.store import FileStore
+from support import audit_events
 from support.clock import StepClock
 from support.drafts import intent
 from support.ids import SeededIdProvider
@@ -52,7 +55,12 @@ def writer(spec: dict[str, object]) -> None:
             else:
                 builder.random_tx(draft)
             tx = draft.build()
-            session.commit(tx, session.append_audit(intent(tx)))
+            if spec.get("real_audit"):
+                before = audit_events.before_hashes(session.snapshot(), tx)
+                event = audit_events.intent(tx, before=before)
+            else:
+                event = intent(tx)
+            session.commit(tx, session.append_audit(event))
         tx_ids.append(str(tx.tx_id))
         aliases += [alias for _, alias in tx.alias_allocations]
     emit({"tx_ids": tx_ids, "aliases": aliases})
@@ -88,10 +96,22 @@ def reader(spec: dict[str, object]) -> None:
     emit({"snapshots": len(seqs), "seqs": sorted(set(seqs))})
 
 
+def denier(spec: dict[str, object]) -> None:
+    log = FileAuditLog(Path(str(spec["data_root"])), durability="fsync", lock_timeout_s=60)
+    clock = StepClock()
+    ids = SeededIdProvider(clock, seed=2000 + int(str(spec["worker"])))
+    wait_for(Path(str(spec["barrier"])))
+    seqs = []
+    for _ in range(int(str(spec["count"]))):
+        receipt = log.append_installation(audit_events.denial(EventId(ids.new_id()), clock.now()))
+        seqs.append(receipt.seq)
+    emit({"seqs": seqs})
+
+
 def main() -> None:
     spec = args()
     try:
-        {"writer": writer, "reader": reader}[spec["mode"]](spec)
+        {"writer": writer, "reader": reader, "denier": denier}[spec["mode"]](spec)
     except (AssertionError, GraphCliError) as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         sys.exit(1)

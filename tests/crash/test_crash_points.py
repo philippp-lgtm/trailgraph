@@ -3,9 +3,10 @@
 The child commits a three-revision tx with the real syncer and sends itself
 SIGKILL at the point. The parent then checks the durable state lock-free,
 what a reader sees, the state after recovery, and that a retry with the
-same idempotency key commits exactly once (storage side of K.a). kill -9
-keeps the page cache, so a line written before the kill is complete; torn
-lines are proven by the tamper tests (K.b).
+same idempotency key commits exactly once (storage side of K.a). The audit
+verifier gives the table's verify column, after the crash and after the
+retry. kill -9 keeps the page cache, so a line written before the kill is
+complete; torn lines are proven by the tamper tests (K.b).
 """
 
 import os
@@ -13,13 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from support.audit_events import finding_codes_of, verify_graph_stream
 from support.crash_runner import run_child
-from support.drafts import intent
 from support.stores import StoreEnv, snapshot_state
 
+from graph_cli.audit.finding_codes import INTENT_WITHOUT_EFFECT
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.ids import EntityId
+from graph_cli.kernel.ports.audit import AuditEventDraft
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.store import FileStore
 
@@ -38,25 +41,29 @@ class Row:
     revisions: str  # none | partial | all
     head_seq: int
     recovers: bool  # recovery has something to do
+    verify: tuple[str, ...]  # audit verify findings: none, or the benign orphan intent
 
 
+CLEAN: tuple[str, ...] = ()
+ORPHAN = (INTENT_WITHOUT_EFFECT,)
 ROWS = {
-    CrashPoint.AUDIT_BEFORE_WRITE: Row(2, False, "none", 2, False),  # K0
-    CrashPoint.AUDIT_AFTER_WRITE_BEFORE_SYNC: Row(3, False, "none", 2, False),  # K1
-    CrashPoint.AUDIT_AFTER_SYNC: Row(3, False, "none", 2, False),  # K2
-    CrashPoint.TX_BEFORE_WRITE: Row(3, False, "none", 2, False),  # K2 (extra point)
-    CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC: Row(3, True, "none", 2, True),  # K2, line complete
-    CrashPoint.TX_AFTER_SYNC: Row(3, True, "none", 2, True),  # K3
-    CrashPoint.MATERIALIZE_AFTER_FIRST_FILE: Row(3, True, "partial", 2, True),  # K3
-    CrashPoint.MATERIALIZE_BEFORE_DIR_SYNC: Row(3, True, "all", 2, True),  # K3
-    CrashPoint.HEAD_BEFORE_RENAME: Row(3, True, "all", 2, True),  # K4
-    CrashPoint.HEAD_AFTER_RENAME: Row(3, True, "all", 3, False),  # K5
+    CrashPoint.AUDIT_BEFORE_WRITE: Row(2, False, "none", 2, False, CLEAN),  # K0
+    CrashPoint.AUDIT_AFTER_WRITE_BEFORE_SYNC: Row(3, False, "none", 2, False, ORPHAN),  # K1
+    CrashPoint.AUDIT_AFTER_SYNC: Row(3, False, "none", 2, False, ORPHAN),  # K2
+    CrashPoint.TX_BEFORE_WRITE: Row(3, False, "none", 2, False, ORPHAN),  # K2 (extra point)
+    CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC: Row(3, True, "none", 2, True, CLEAN),  # K2, K.e
+    CrashPoint.TX_AFTER_SYNC: Row(3, True, "none", 2, True, CLEAN),  # K3
+    CrashPoint.MATERIALIZE_AFTER_FIRST_FILE: Row(3, True, "partial", 2, True, CLEAN),  # K3
+    CrashPoint.MATERIALIZE_BEFORE_DIR_SYNC: Row(3, True, "all", 2, True, CLEAN),  # K3
+    CrashPoint.HEAD_BEFORE_RENAME: Row(3, True, "all", 2, True, CLEAN),  # K4
+    CrashPoint.HEAD_AFTER_RENAME: Row(3, True, "all", 3, False, CLEAN),  # K5
 }
 
 
-def prepare(tmp_path: Path) -> tuple[StoreEnv, AuthorizedTx]:
-    """Two committed txs, then a third tx (two creates and one update) built but not run."""
-    env = StoreEnv("files", "inventory", tmp_path)
+def prepare(tmp_path: Path) -> tuple[StoreEnv, AuthorizedTx, AuditEventDraft]:
+    """Two committed txs, then a third tx (two creates and one update) built but not run,
+    with its write intent."""
+    env = StoreEnv("files", "inventory", tmp_path, real_audit=True)
     created: list[EntityId] = []
     env.write(lambda d: created.append(d.create()))
     env.write(lambda d: d.create())
@@ -68,8 +75,9 @@ def prepare(tmp_path: Path) -> tuple[StoreEnv, AuthorizedTx]:
         draft.create()
         draft.update(created[0])
         tx = draft.build(idempotency_key=KEY)
+        audit = env.intent(tx, session.snapshot())
     assert len(tx.revisions) == 3
-    return env, tx
+    return env, tx, audit
 
 
 def store_of(env: StoreEnv) -> FileStore:
@@ -89,23 +97,29 @@ def revision_files(store: FileStore, tx: AuthorizedTx) -> int:
     return sum(store.layout.revision_path(r.id, r.rev).exists() for r in tx.revisions)
 
 
-def retry(env: StoreEnv, store: FileStore, tx: AuthorizedTx, committed: bool) -> None:
+def retry(store: FileStore, tx: AuthorizedTx, audit: AuditEventDraft, committed: bool) -> None:
     with store.session(timeout_s=5) as session:
         found = session.lookup_idempotency(KEY, tx.actor.principal.id or "")
         if committed:
             assert found is not None and found.tx_id == tx.tx_id
             return
         assert found is None
-        session.commit(tx, session.append_audit(intent(tx)))
+        # The services mint a fresh event id for the retry (W.9); the store only
+        # needs the receipt to match the tx.
+        session.commit(tx, session.append_audit(audit))
+
+
+def audit_verify(env: StoreEnv, store: FileStore) -> tuple[str, ...]:
+    return tuple(finding_codes_of(verify_graph_stream(store, env.audit, env.graph_id)))
 
 
 @pytest.mark.parametrize("point", list(ROWS), ids=str)
 def test_crash_point(tmp_path: Path, point: CrashPoint) -> None:
-    env, tx = prepare(tmp_path)
+    env, tx, audit = prepare(tmp_path)
     row = ROWS[point]
     store = store_of(env)
     child = run_child(
-        store.layout.root, str(env.graph_id), point.value, tx=tx, audit_body=intent(tx).body
+        store.layout.root, str(env.graph_id), point.value, tx=tx, audit_body=audit.body
     )
     assert child.returncode == -9, child.stderr
 
@@ -119,6 +133,7 @@ def test_crash_point(tmp_path: Path, point: CrashPoint) -> None:
     assert head_seq(store) == row.head_seq
     if point is CrashPoint.HEAD_BEFORE_RENAME:
         assert store.layout.head.with_name("head.json.tmp").exists()
+    assert audit_verify(env, store) == row.verify
 
     # a lock-free reader before recovery
     snapshot = store.snapshot()
@@ -132,20 +147,21 @@ def test_crash_point(tmp_path: Path, point: CrashPoint) -> None:
     if row.committed:
         assert revision_files(store, tx) == 3
         assert head_seq(store) == BASE_SEQ + 1
-    retry(env, store, tx, row.committed)
+    retry(store, tx, audit, row.committed)
     records = store.changes_since(0)
     assert [r.seq for r in records] == [1, 2, 3]
     assert [r.tx_id for r in records if r.idempotency_key == KEY] == [tx.tx_id]
     assert env.audit_head()[0] == row.audit_events + (not row.committed)
     assert head_seq(store) == 3
+    assert audit_verify(env, store) == row.verify
 
 
 def interrupted_recovery(tmp_path: Path) -> tuple[StoreEnv, FileStore, AuthorizedTx]:
     """A committed tx whose files were deferred, plus torn tails on both logs."""
-    env, tx = prepare(tmp_path)
+    env, tx, audit = prepare(tmp_path)
     env.faults.armed = {CrashPoint.TX_AFTER_SYNC}
     with env.store.session(timeout_s=5) as session:
-        result = session.commit(tx, session.append_audit(intent(tx)))
+        result = session.commit(tx, session.append_audit(audit))
     env.faults.armed = set()
     assert [w.code for w in result.warnings] == ["storage.materialization_deferred"]
     store = store_of(env)
@@ -186,14 +202,14 @@ def test_crash_after_recovery_materialize(tmp_path: Path) -> None:
 
 def test_kill_leaves_no_stale_lock(tmp_path: Path) -> None:
     """W.c: the OS releases the lock of a killed writer."""
-    env, tx = prepare(tmp_path)
+    env, tx, audit = prepare(tmp_path)
     store = store_of(env)
     child = run_child(
         store.layout.root,
         str(env.graph_id),
         CrashPoint.TX_AFTER_SYNC.value,
         tx=tx,
-        audit_body=intent(tx).body,
+        audit_body=audit.body,
     )
     assert child.returncode == -9
     assert store.layout.lock.exists()

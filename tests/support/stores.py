@@ -15,7 +15,7 @@ from pathlib import Path
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import EntityId, GraphId
-from graph_cli.kernel.ports.audit import AuditSink, graph_stream
+from graph_cli.kernel.ports.audit import AuditEventDraft, AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import CommitResult, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
@@ -24,6 +24,7 @@ from graph_cli.storage.files.layout import init_graph_dir
 from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
 from graph_cli.storage.memory.store import InMemoryStore
+from support import audit_events
 from support.clock import StepClock
 from support.drafts import intent
 from support.ids import SeededIdProvider
@@ -88,6 +89,7 @@ class StoreEnv:
     root: Path
     seed: int = 0
     faults: FaultSwitch = field(default_factory=FaultSwitch)
+    real_audit: bool = False  # graph_cli.audit events instead of minimal drafts
 
     def __post_init__(self) -> None:
         self.clock = StepClock()
@@ -128,8 +130,14 @@ class StoreEnv:
             )
             edit(draft)
             tx = draft.build(idempotency_key=idempotency_key, principal=principal, reason=reason)
-            receipt = session.append_audit(intent(tx))
+            receipt = session.append_audit(self.intent(tx, session.snapshot()))
             return tx, session.commit(tx, receipt)
+
+    def intent(self, tx: AuthorizedTx, snapshot: Snapshot) -> AuditEventDraft:
+        """The intent this env appends for ``tx``; ``snapshot`` is the pre-state."""
+        if not self.real_audit:
+            return intent(tx)
+        return audit_events.intent(tx, before=audit_events.before_hashes(snapshot, tx))
 
     def random(self, count: int) -> None:
         for _ in range(count):

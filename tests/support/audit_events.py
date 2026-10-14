@@ -12,16 +12,17 @@ from datetime import datetime
 from typing import Final
 
 from graph_cli.audit import events
+from graph_cli.audit.verify import StreamReport, verify_graph
 from graph_cli.kernel.actions import Action
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.authz import AuthorizedTx, Decision
 from graph_cli.kernel.canonical import hash_value, jsonl_line
 from graph_cli.kernel.ids import EntityId, EventId, GraphId
 from graph_cli.kernel.json_access import as_object, req_str
-from graph_cli.kernel.ports.audit import AuditEventDraft
+from graph_cli.kernel.ports.audit import AuditEventDraft, AuditSink, graph_stream
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.kernel.ports.storage import Snapshot
-from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta
+from graph_cli.kernel.ports.storage import GraphStoreRead, Snapshot
+from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
 from graph_cli.storage.common.chain import GENESIS, ChainLink, link_of, seal
 from support.txbuilder import actor
 
@@ -55,9 +56,11 @@ def authorized(tx: AuthorizedTx) -> AuthorizedTx:
     """``tx`` with one allow decision per op action, as ``services.write`` will attach."""
     ops = tx.changeset.get("ops", [])
     assert isinstance(ops, list)
-    actions = sorted({_OP_ACTIONS[req_str(as_object(op, "op"), "op")] for op in ops})
+    actions = {_OP_ACTIONS[req_str(as_object(op, "op"), "op")] for op in ops}
+    if not actions:  # the random walk may touch an entity without a recorded op
+        actions = {"write.create" if r.rev == 1 else "write.update" for r in tx.revisions}
     resource = f"graph:{tx.graph_id}"
-    return dataclasses.replace(tx, decisions=tuple(allow(a, resource) for a in actions))
+    return dataclasses.replace(tx, decisions=tuple(allow(a, resource) for a in sorted(actions)))
 
 
 def before_hashes(snapshot: Snapshot, tx: AuthorizedTx) -> dict[EntityId, str]:
@@ -107,3 +110,22 @@ def sealed_lines(drafts: Sequence[AuditEventDraft], start: ChainLink = GENESIS) 
         link = link_of(document)
         lines.append(line)
     return lines
+
+
+def all_txs(store: GraphStoreRead) -> list[TxRecord]:
+    records: list[TxRecord] = []
+    while True:
+        page = store.changes_since(records[-1].seq if records else 0)
+        if not page:
+            return records
+        records.extend(page)
+
+
+def verify_graph_stream(store: GraphStoreRead, audit: AuditSink, graph_id: GraphId) -> StreamReport:
+    """What ``graph-admin audit verify`` will run for one graph with a clean tx log."""
+    lines = audit.read_lines(graph_stream(str(graph_id)))
+    return verify_graph(lines, graph_id=graph_id, txs=all_txs(store))
+
+
+def finding_codes_of(report: StreamReport) -> list[str]:
+    return sorted(f.code for f in report.findings)

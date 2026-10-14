@@ -186,3 +186,11 @@ def test_verify_installation_composes_anchors() -> None:
     raw = [AuditLine(f"memory:{n}", line) for n, line in enumerate(lines)]
     report = verify_installation(raw, graphs={str(graph.graph_id): graph_report})
     assert [f.code for f in report.findings] == [codes.ANCHOR_MISMATCH]
+
+
+def test_a_retry_that_repeats_the_event_id_leaves_one_orphan() -> None:
+    graph = Graph()
+    graph.random(1)
+    graph.drafts.insert(0, graph.drafts[0])  # the first attempt died after its intent
+    findings = cross_check(graph.graph_id, graph.events(), graph.txs)
+    assert [(f.code, f.target["seq"]) for f in findings] == [(codes.INTENT_WITHOUT_EFFECT, 1)]

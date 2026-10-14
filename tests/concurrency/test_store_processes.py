@@ -1,15 +1,18 @@
 """P: concurrent FileStore writers and readers in real processes.
 
-Contracts B1.8, B4.2, B4.10, B13.8.
+Contracts B1.8, B4.2, B4.10, B5.3, B13.8.
 """
 
 from pathlib import Path
 from typing import Any
 
 import pytest
+from support.audit_events import verify_graph_stream
 from support.procs import release, result, spawn
 from support.stores import StoreEnv
 
+from graph_cli.audit.verify import verify_installation
+from graph_cli.kernel.ports.audit import INSTALLATION_STREAM
 from graph_cli.storage.common.chain import GENESIS, scan
 from graph_cli.storage.files.store import FileStore
 
@@ -106,3 +109,55 @@ def test_readers_never_see_partial_txs(tmp_path: Path) -> None:
         assert report["seqs"][-1] == 65
     observed = {seq for report in reports for seq in report["seqs"]}
     assert len(observed) > 2, "readers should observe intermediate states"
+
+
+def test_audit_chains_stay_valid_across_graphs_and_denials(tmp_path: Path) -> None:
+    """B5.3: writers in two graphs plus processes appending denials; every stream
+    verifies clean and the installation stream holds every denial once."""
+    envs = [StoreEnv("files", "inventory", tmp_path, seed=seed, real_audit=True) for seed in (0, 1)]
+    barrier = tmp_path / "go"
+    procs = []
+    for env in envs:
+        assert isinstance(env.store, FileStore)
+        base = common(env, env.store, barrier)
+        procs += [
+            spawn(
+                "store",
+                {
+                    **base,
+                    "mode": "writer",
+                    "worker": n,
+                    "count": 15,
+                    "kind": "random",
+                    "real_audit": True,
+                },
+            )
+            for n in range(2)
+        ]
+    deniers = [
+        spawn(
+            "store",
+            {
+                "mode": "denier",
+                "worker": n,
+                "count": 20,
+                "data_root": str(tmp_path),
+                "barrier": str(barrier),
+            },
+        )
+        for n in range(3)
+    ]
+    release(barrier)
+    for proc in procs:
+        assert len(result(proc, timeout=120)["tx_ids"]) == 15
+    seqs = sorted(seq for proc in deniers for seq in result(proc, timeout=120)["seqs"])
+    assert seqs == list(range(1, 61))
+    reports = {}
+    for env in envs:
+        report = verify_graph_stream(env.store, env.audit, env.graph_id)
+        assert report.findings == () and report.head[0] == 30
+        reports[str(env.graph_id)] = report
+    installation = verify_installation(
+        envs[0].audit.read_lines(INSTALLATION_STREAM), graphs=reports
+    )
+    assert installation.findings == () and installation.head[0] == 60

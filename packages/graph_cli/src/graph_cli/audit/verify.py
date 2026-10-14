@@ -139,20 +139,28 @@ def verify_stream(
 def cross_check(
     graph_id: GraphId, events: Iterable[Mapping[str, JsonValue]], txs: Iterable[TxRecord]
 ) -> list[Finding]:
-    """Every tx has its ``ok`` write intent; every write intent has its tx or is benign."""
+    """Every tx has its ``ok`` write intent; every write intent has its tx or is benign.
+
+    Each intent serves one tx. A retried request may repeat an event id; the
+    tx then takes the latest unused intent and the earlier one stays an orphan.
+    """
     stream = graph_stream(str(graph_id))
-    intents = {event.get("event_id"): event for event in events if is_write_intent(event)}
-    committed: set[JsonValue] = set()
+    intents = [event for event in events if is_write_intent(event)]
+    by_id: dict[JsonValue, list[int]] = {}
+    for index, event in enumerate(intents):
+        by_id.setdefault(event.get("event_id"), []).append(index)
+    used: set[int] = set()
     findings = []
     for tx in txs:
         target: dict[str, JsonValue] = {"graph_id": str(graph_id), "tx_seq": tx.seq}
-        event = intents.get(str(tx.event_id))
-        if event is None or str(tx.event_id) in committed:
+        free = [i for i in by_id.get(str(tx.event_id), ()) if i not in used]
+        if not free:
             findings.append(
                 _finding(codes.TX_WITHOUT_INTENT, target, f"no write intent {tx.event_id}")
             )
             continue
-        committed.add(str(tx.event_id))
+        used.add(free[-1])
+        event = intents[free[-1]]
         change = event.get("change")
         if not isinstance(change, Mapping):
             change = {}  # a malformed intent: event_malformed already, and no match here
@@ -173,8 +181,8 @@ def cross_check(
                     actual={k: recorded[k] for k in differing},
                 )
             )
-    for event_id, event in intents.items():
-        if event_id not in committed:
+    for index, event in enumerate(intents):
+        if index not in used:
             findings.append(
                 _finding(
                     codes.INTENT_WITHOUT_EFFECT,
