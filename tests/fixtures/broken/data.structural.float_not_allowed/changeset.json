@@ -1,0 +1,11 @@
+{
+  "ops": [
+    {
+      "attrs": {"name": "I", "quantity": 1.5},
+      "edges": [{"rel": "inv:located_in", "target": "@room"}],
+      "local": "i",
+      "op": "create",
+      "type": "inv:Item"
+    }
+  ]
+}

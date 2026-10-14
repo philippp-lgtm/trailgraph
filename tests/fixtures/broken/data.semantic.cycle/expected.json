@@ -1,0 +1,11 @@
+{
+  "code": "data.semantic.cycle",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "room",
+    "path": "edges.inv:within",
+    "type": "inv:Location"
+  }
+}

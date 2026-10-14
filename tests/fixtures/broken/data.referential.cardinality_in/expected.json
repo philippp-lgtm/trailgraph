@@ -1,0 +1,10 @@
+{
+  "code": "data.referential.cardinality_in",
+  "phase": "batch",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "box",
+    "path": "incoming.broken:labels",
+    "type": "broken:Box"
+  }
+}

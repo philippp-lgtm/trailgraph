@@ -1,0 +1,10 @@
+{
+  "ops": [
+    {
+      "id": "@room",
+      "op": "link",
+      "rel": "inv:part_of",
+      "target": "@desk"
+    }
+  ]
+}

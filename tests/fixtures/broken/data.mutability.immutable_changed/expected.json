@@ -1,0 +1,11 @@
+{
+  "code": "data.mutability.immutable_changed",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "room",
+    "path": "attrs.code",
+    "type": "inv:Location"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "code": "data.structural.unknown_attribute",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "i",
+    "path": "attrs.colour",
+    "type": "inv:Item"
+  }
+}

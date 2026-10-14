@@ -1,0 +1,11 @@
+{
+  "code": "data.structural.abstract_type",
+  "ontology": "notes_and_sources",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "s",
+    "path": "type",
+    "type": "nas:Source"
+  }
+}

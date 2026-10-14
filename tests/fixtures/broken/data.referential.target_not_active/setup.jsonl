@@ -1,0 +1,2 @@
+{"ops": [{"attrs": {"code": "R1", "name": "Room"}, "local": "room", "op": "create", "type": "inv:Location"}, {"attrs": {"name": "Old"}, "edges": [{"rel": "inv:located_in", "target": "@room"}], "local": "old", "op": "create", "type": "inv:Item"}, {"attrs": {"name": "New"}, "edges": [{"rel": "inv:located_in", "target": "@room"}], "local": "new", "op": "create", "type": "inv:Item"}]}
+{"ops": [{"by": "@new", "op": "supersede", "targets": ["@old"]}], "reason": "replaced"}

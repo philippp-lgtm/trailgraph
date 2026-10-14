@@ -1,0 +1,2 @@
+{"ops": [{"attrs": {"code": "R1", "name": "Room"}, "local": "room", "op": "create", "type": "inv:Location"}, {"attrs": {"condition": "damaged", "name": "Desk"}, "edges": [{"rel": "inv:located_in", "target": "@room"}], "local": "desk", "op": "create", "type": "inv:Item"}]}
+{"ops": [{"id": "@desk", "op": "transition", "to": "in_stock"}]}

@@ -1,0 +1,10 @@
+{
+  "ops": [
+    {
+      "id": "@desk",
+      "op": "unlink",
+      "rel": "inv:part_of",
+      "target": "@room"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "code": "data.semantic.unique_violation",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "copy",
+    "path": "attrs.code",
+    "type": "inv:Location"
+  }
+}

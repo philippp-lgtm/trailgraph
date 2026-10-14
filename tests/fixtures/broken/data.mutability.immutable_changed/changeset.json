@@ -1,0 +1,11 @@
+{
+  "ops": [
+    {
+      "id": "@room",
+      "op": "update",
+      "set": {
+        "code": "R2"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "code": "data.temporal.record_not_active",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "old",
+    "path": "record_status",
+    "type": "inv:Item"
+  }
+}

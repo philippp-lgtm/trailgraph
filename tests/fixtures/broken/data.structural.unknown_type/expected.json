@@ -1,0 +1,11 @@
+{
+  "code": "data.structural.unknown_type",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "g",
+    "path": "type",
+    "type": "inv:Gadget"
+  }
+}

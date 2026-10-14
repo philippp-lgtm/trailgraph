@@ -1,0 +1,11 @@
+{
+  "code": "data.referential.cardinality_out",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "i",
+    "path": "edges.inv:located_in",
+    "type": "inv:Item"
+  }
+}

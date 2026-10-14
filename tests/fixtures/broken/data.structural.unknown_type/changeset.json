@@ -1,0 +1,10 @@
+{
+  "ops": [
+    {
+      "attrs": {},
+      "local": "g",
+      "op": "create",
+      "type": "inv:Gadget"
+    }
+  ]
+}

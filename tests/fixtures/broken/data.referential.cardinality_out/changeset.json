@@ -1,0 +1,12 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "name": "I"
+      },
+      "local": "i",
+      "op": "create",
+      "type": "inv:Item"
+    }
+  ]
+}

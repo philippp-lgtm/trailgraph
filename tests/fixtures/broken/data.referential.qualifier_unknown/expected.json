@@ -1,0 +1,11 @@
+{
+  "code": "data.referential.qualifier_unknown",
+  "ontology": "notes_and_sources",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "n",
+    "path": "edges.nas:cites.qualifiers.page",
+    "type": "nas:Note"
+  }
+}

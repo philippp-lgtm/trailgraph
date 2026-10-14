@@ -1,0 +1,11 @@
+{
+  "code": "data.structural.float_not_allowed",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "i",
+    "path": "attrs.quantity",
+    "type": "inv:Item"
+  }
+}

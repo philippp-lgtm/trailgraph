@@ -1,0 +1,18 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "name": "I"
+      },
+      "edges": [
+        {
+          "rel": "inv:located_in",
+          "target": "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"
+        }
+      ],
+      "local": "i",
+      "op": "create",
+      "type": "inv:Item"
+    }
+  ]
+}

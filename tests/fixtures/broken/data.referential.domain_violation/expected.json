@@ -1,0 +1,11 @@
+{
+  "code": "data.referential.domain_violation",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "room",
+    "path": "edges.inv:part_of",
+    "type": "inv:Location"
+  }
+}

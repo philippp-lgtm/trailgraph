@@ -1,0 +1,11 @@
+{
+  "code": "data.lifecycle.guard_failed",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "desk",
+    "path": "attrs.status",
+    "type": "inv:Item"
+  }
+}

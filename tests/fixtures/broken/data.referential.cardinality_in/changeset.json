@@ -1,0 +1,12 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "name": "B"
+      },
+      "local": "box",
+      "op": "create",
+      "type": "broken:Box"
+    }
+  ]
+}

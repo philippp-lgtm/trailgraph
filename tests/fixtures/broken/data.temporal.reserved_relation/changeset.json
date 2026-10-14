@@ -1,0 +1,10 @@
+{
+  "ops": [
+    {
+      "id": "@desk",
+      "op": "link",
+      "rel": "core:supersedes",
+      "target": "@room"
+    }
+  ]
+}

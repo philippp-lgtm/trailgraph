@@ -1,0 +1,11 @@
+{
+  "code": "data.referential.edge_missing",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "desk",
+    "path": "edges.inv:part_of",
+    "type": "inv:Item"
+  }
+}

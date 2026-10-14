@@ -1,0 +1,11 @@
+{
+  "code": "data.referential.range_violation",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "desk",
+    "path": "edges.inv:in_category",
+    "type": "inv:Item"
+  }
+}

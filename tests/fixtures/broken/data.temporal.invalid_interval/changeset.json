@@ -1,0 +1,20 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "name": "I"
+      },
+      "edges": [
+        {
+          "rel": "inv:located_in",
+          "target": "@room"
+        }
+      ],
+      "local": "i",
+      "op": "create",
+      "type": "inv:Item",
+      "valid_from": "2026-03-01",
+      "valid_to": "2026-02-01"
+    }
+  ]
+}

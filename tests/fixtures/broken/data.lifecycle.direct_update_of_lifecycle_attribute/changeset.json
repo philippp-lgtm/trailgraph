@@ -1,0 +1,11 @@
+{
+  "ops": [
+    {
+      "id": "@desk",
+      "op": "update",
+      "set": {
+        "status": "in_stock"
+      }
+    }
+  ]
+}

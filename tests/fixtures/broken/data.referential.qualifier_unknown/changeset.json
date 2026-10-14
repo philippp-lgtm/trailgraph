@@ -1,0 +1,27 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "body": "text",
+        "kind": "observation",
+        "title": "N"
+      },
+      "edges": [
+        {
+          "rel": "nas:about",
+          "target": "@topic"
+        },
+        {
+          "qualifiers": {
+            "page": "3"
+          },
+          "rel": "nas:cites",
+          "target": "@web"
+        }
+      ],
+      "local": "n",
+      "op": "create",
+      "type": "nas:Note"
+    }
+  ]
+}

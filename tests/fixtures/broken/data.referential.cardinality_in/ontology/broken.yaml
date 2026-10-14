@@ -1,0 +1,25 @@
+# Own module: the toy ontologies have no relation with a minimum of incoming edges.
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: broken
+  version: 1.0.0
+  summary: A box must be labelled by at least one tag.
+
+classes:
+  Box:
+    summary: Something that gets labelled.
+    attributes:
+      name: {summary: Name of the box., type: string, required: true}
+  Tag:
+    summary: A label.
+    attributes:
+      name: {summary: Name of the tag., type: string, required: true}
+
+relations:
+  labels:
+    summary: The tag labels the box.
+    domain: Tag
+    range: Box
+    cardinality: {in: {min: 1}}
+    inverse_label: labelled_by

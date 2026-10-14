@@ -1,0 +1,13 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "code": "R1",
+        "name": "Copy"
+      },
+      "local": "copy",
+      "op": "create",
+      "type": "inv:Location"
+    }
+  ]
+}

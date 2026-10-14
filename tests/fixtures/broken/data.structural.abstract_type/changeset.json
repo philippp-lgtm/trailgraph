@@ -1,0 +1,12 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "title": "S"
+      },
+      "local": "s",
+      "op": "create",
+      "type": "nas:Source"
+    }
+  ]
+}

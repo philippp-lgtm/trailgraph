@@ -1,0 +1,11 @@
+{
+  "code": "data.structural.enum_value_unknown",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "i",
+    "path": "attrs.condition",
+    "type": "inv:Item"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "colour": "red",
+        "name": "I"
+      },
+      "edges": [
+        {
+          "rel": "inv:located_in",
+          "target": "@room"
+        }
+      ],
+      "local": "i",
+      "op": "create",
+      "type": "inv:Item"
+    }
+  ]
+}

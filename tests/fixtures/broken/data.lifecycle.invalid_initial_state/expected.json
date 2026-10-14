@@ -1,0 +1,11 @@
+{
+  "code": "data.lifecycle.invalid_initial_state",
+  "ontology": "inventory",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "i",
+    "path": "attrs.status",
+    "type": "inv:Item"
+  }
+}

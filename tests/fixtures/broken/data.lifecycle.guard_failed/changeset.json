@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "id": "@desk",
+      "op": "transition",
+      "to": "in_use"
+    }
+  ]
+}

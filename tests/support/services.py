@@ -178,9 +178,10 @@ class ServiceEnv:
     root: Path
     faults: FaultSwitch = field(default_factory=FaultSwitch)
     name: str = "example_graph"
+    model_override: CompiledModel | None = None  # memory backend only
 
     def __post_init__(self) -> None:
-        self.model = compiled_model(self.ontology)
+        self.model = self.model_override or compiled_model(self.ontology)
         self.clock = StepClock(start="2030-01-01T00:00:00Z")
         self.ids = SeededIdProvider(self.clock, 5)
         self.factory = OpsFactory(self.model)
