@@ -8,14 +8,15 @@ segment may end in a tail (torn or invalid last line) or be empty.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from graph_cli.kernel.canonical import JsonObject
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.storage.common.chain import GENESIS, ChainLink, TailState, scan
 from graph_cli.storage.files.durable import FILE_MODE, Syncer, write_all
 from graph_cli.storage.files.layout import parse_segment_name, segment_name
@@ -208,3 +209,20 @@ def _broken(link: ChainLink, at: LogPosition, reason: str) -> LogScan:
     return LogScan(
         (), link, at, "clean", b"", LogCorruption(at.segment, at.offset, link.seq + 1, reason)
     )
+
+
+OpLog = Callable[[Mapping[str, JsonValue]], None]
+"""Receives operational notes (truncations, roll-forward); written to the state dir by catalog."""
+
+
+def truncation_note(log: SegmentedLog, result: LogScan, *, stream: str) -> dict[str, JsonValue]:
+    """What a tail truncation removes, for the operational log (B5.9, plan D9)."""
+    assert result.position is not None
+    return {
+        "event": "tail_truncated",
+        "stream": stream,
+        "segment": result.position.segment,
+        "offset": result.position.offset,
+        "tail": result.tail,
+        "removed_b64": base64.b64encode(result.tail_bytes).decode("ascii"),
+    }

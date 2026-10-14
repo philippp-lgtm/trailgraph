@@ -19,6 +19,7 @@ from graph_cli.kernel.ports.audit import AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import CommitResult, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
+from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.files.layout import init_graph_dir
 from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
@@ -107,18 +108,10 @@ class StoreEnv:
 
     def audit_head(self) -> tuple[int, str]:
         """Head of this graph's audit stream."""
-        if self.audit is not None:
-            return self.audit.head(self.stream)
-        assert isinstance(self.store, FileStore)
-        end = self.store.auditlog.scan().end
-        return end.seq, end.hash
+        return self.audit.head(self.stream)
 
     def audit_events(self) -> Iterator[Mapping[str, JsonValue]]:
-        if self.audit is not None:
-            yield from self.audit.read(self.stream)
-            return
-        assert isinstance(self.store, FileStore)
-        yield from (record.document for record in self.store.auditlog.scan().records)
+        return self.audit.read(self.stream)
 
     def write(
         self,
@@ -145,12 +138,13 @@ class StoreEnv:
 
 def make_backend(
     backend: str, graph_id: GraphId, root: Path, faults: FaultSwitch, syncer: RecordingSyncer
-) -> tuple[Store, AuditSink | None]:
+) -> tuple[Store, AuditSink]:
     if backend == "memory":
         audit = InMemoryAuditLog(faults=faults)
         return InMemoryStore(graph_id, audit=audit, faults=faults), audit
     if backend == "files":
         graph_dir = root / "graphs" / str(graph_id)
         init_graph_dir(graph_dir, syncer)
-        return FileStore(graph_dir, graph_id, syncer=syncer, faults=faults), None
+        store = FileStore(graph_dir, graph_id, syncer=syncer, faults=faults)
+        return store, FileAuditLog(root, syncer=syncer, faults=faults)
     raise AssertionError(f"unknown backend {backend!r}")
