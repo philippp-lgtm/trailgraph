@@ -233,6 +233,30 @@ class CompiledModel:
             (*self.datatypes, *self.enums, *self.lifecycles, *self.classes, *self.relations)
         )
 
+    def is_a(self, class_curie: str, ancestor: str) -> bool:
+        """``class_curie`` is ``ancestor`` or one of its subclasses."""
+        if class_curie == ancestor:
+            return True
+        found = self.classes.get(class_curie)
+        return found is not None and ancestor in found.ancestors
+
+    def is_a_any(self, class_curie: str, ancestors: tuple[str, ...]) -> bool:
+        """``ancestors == ()`` means any class (relation domain and range)."""
+        return not ancestors or any(self.is_a(class_curie, a) for a in ancestors)
+
+    def subtypes(self, class_curie: str) -> tuple[str, ...]:
+        """The class and every subclass, sorted."""
+        return tuple(sorted(c for c in self.classes if self.is_a(c, class_curie)))
+
+    def value_base(self, kind: AttributeKind, type_ref: str) -> str:
+        """The base type of a value: enum values and lifecycle states are strings."""
+        if kind == "datatype":
+            return self.datatypes[type_ref].base
+        return type_ref if kind == "base" else "string"
+
+    def facets(self, kind: AttributeKind, type_ref: str) -> Mapping[str, JsonValue]:
+        return self.datatypes[type_ref].facets if kind == "datatype" else {}
+
 
 def _mappings_json(mappings: Mapping[str, tuple[str, ...]]) -> dict[str, JsonValue]:
     return {kind: list(values) for kind, values in mappings.items()}

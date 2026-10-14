@@ -135,14 +135,15 @@ def strict_equal(a: JsonValue, b: JsonValue) -> bool:
     return type(a) is type(b) and a == b
 
 
-def _equal(a: JsonValue, b: JsonValue, numeric: bool) -> bool:
+def values_equal(a: JsonValue, b: JsonValue, numeric: bool = False) -> bool:
+    """``eq`` semantics; ``numeric`` compares decimal strings and integers as numbers."""
     if numeric:
         left, right = _decimal(a), _decimal(b)
         return left is not None and right is not None and left == right
     return strict_equal(a, b)
 
 
-def _order(a: JsonValue, b: JsonValue, numeric: bool) -> int | None:
+def order_values(a: JsonValue, b: JsonValue, numeric: bool = False) -> int | None:
     """-1/0/1 for comparable values, ``None`` when the pair has no order."""
     left: object
     right: object
@@ -181,12 +182,12 @@ def _match_cmp(revision: Revision, cmp: Cmp) -> bool:
         return False
     match cmp.op:
         case "eq":
-            return _equal(value, cmp.value, cmp.numeric)
+            return values_equal(value, cmp.value, cmp.numeric)
         case "ne":
-            return not _equal(value, cmp.value, cmp.numeric)
+            return not values_equal(value, cmp.value, cmp.numeric)
         case "in":
             assert isinstance(cmp.value, list | tuple)
-            return any(_equal(value, item, cmp.numeric) for item in cmp.value)
+            return any(values_equal(value, item, cmp.numeric) for item in cmp.value)
         case "contains":
             if isinstance(value, str):
                 return isinstance(cmp.value, str) and cmp.value in value
@@ -195,7 +196,7 @@ def _match_cmp(revision: Revision, cmp: Cmp) -> bool:
             return False
         case "prefix":
             return isinstance(value, str) and value.startswith(str(cmp.value))
-    result = _order(value, cmp.value, cmp.numeric)
+    result = order_values(value, cmp.value, cmp.numeric)
     if result is None:
         return False
     return {"lt": result < 0, "le": result <= 0, "gt": result > 0, "ge": result >= 0}[cmp.op]
