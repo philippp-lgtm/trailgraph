@@ -234,6 +234,8 @@ class TxDraft:
         prefix, _, number = alias.rpartition("-")
         self.counters[prefix] = max(self.counters.get(prefix, 0), int(number))
         self.work[entity].alias = alias
+        # One allocation per entity per tx: a second one in the same tx replaces the first.
+        self.allocations = [(e, a) for e, a in self.allocations if e != entity]
         self.allocations.append((entity, alias))
 
     # ---- result --------------------------------------------------------
