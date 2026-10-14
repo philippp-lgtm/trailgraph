@@ -22,6 +22,7 @@ CORE_ROLES: Mapping[str, str] = {
     "lifecycle_type": "class",
     "lifecycle_attribute": "attribute",
     "guarded_transition": "transition",
+    "guard_breaking_update": "attrs",
     "required_relation": "relation",
     "acyclic_relation": "relation",
     "unique_attribute": "attribute",
@@ -86,6 +87,9 @@ def resolve_role(model: CompiledModel, role: str, value: object) -> object:
         assert isinstance(value, str)
         cls, _, attr = value.rpartition(".")
         return model.classes[cls].attributes[attr]
+    if kind == "attrs":
+        assert isinstance(value, dict)
+        return dict(value)
     if kind == "rule":
         (rule,) = [r for r in model.rules if r.id == value]
         return rule

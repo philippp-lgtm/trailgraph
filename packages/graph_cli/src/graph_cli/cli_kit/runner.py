@@ -101,7 +101,7 @@ def run(
         program=invocation.program,
         result=state.result,
         error=error,
-        warnings=state.warnings,
+        warnings=[*state.warnings, *(error.warnings if error is not None else ())],
     )
     if json_mode:
         out.write(render_json(document))

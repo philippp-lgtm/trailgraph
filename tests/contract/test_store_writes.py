@@ -81,6 +81,21 @@ def test_append_audit_refuses_bad_drafts(env: StoreEnv, body_change: dict[str, o
     assert _audit_count(env) == 0
 
 
+def test_commit_needs_an_allow_decision_per_op_action(env: StoreEnv) -> None:
+    """B6.10: defence in depth against a caller that skipped authorization."""
+    with env.store.session(timeout_s=5) as session:
+        built = env.builder.begin(
+            snapshot_state(session.snapshot()), session.head(), session.alias_counters()
+        )
+        built.create()
+        tx = replace(built.build(), decisions=())
+        receipt = session.append_audit(intent(tx))
+        with pytest.raises(GraphCliError) as info:
+            session.commit(tx, receipt)
+        assert info.value.details["rule"] == "decisions"
+    assert env.store.head().seq == 0
+
+
 def test_commit_preconditions_leave_the_store_unchanged(env: StoreEnv) -> None:
     env.write(lambda d: d.create())
     head = env.store.head()

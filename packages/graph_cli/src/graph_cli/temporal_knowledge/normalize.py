@@ -115,7 +115,7 @@ class _Run:
     model: CompiledModel
     refs: Mapping[str, EntityId]
     new_id: Callable[[], UUID]
-    alias_prefixes: Mapping[str, str]
+    alias_prefixes: Mapping[TermRef, str]
     allocate_aliases: bool
     counters: dict[str, int]
     work: dict[EntityId, _Work] = field(default_factory=dict)
@@ -402,12 +402,12 @@ class _Run:
         involved = [entity] if by is None or by == entity else [entity, by]
         ok = [self.active_or_report(e, op.OP) for e in involved]
         if not all(ok):
-            self.effects.append(OpEffect(index, op.OP, entity, applied=False, targets=(entity,)))
+            self.effects.append(OpEffect(index, op.OP, entity, applied=False))
             return
         if by is not None:
             self.touch(by).edges.append(self.new_edge(RETRACTS, entity, {}, None))
         self.touch(entity).record_status = "retracted"
-        self.effects.append(OpEffect(index, op.OP, entity, targets=(entity,)))
+        self.effects.append(OpEffect(index, op.OP, entity, targets=() if by is None else (by,)))
 
     def set_alias(self, index: int, op: SetAliasOp) -> None:
         entity = self.resolve(op.id)
@@ -500,7 +500,7 @@ def normalize(
     tx_seq: int,
     pin_version: str,
     alias_counters: Mapping[str, int],
-    alias_prefixes: Mapping[str, str],
+    alias_prefixes: Mapping[TermRef, str],
     allocate_aliases: bool = True,
 ) -> WorkingState:
     """Apply ``ops`` to a working copy of ``base`` (W.10).

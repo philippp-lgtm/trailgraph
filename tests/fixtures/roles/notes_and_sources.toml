@@ -7,6 +7,7 @@ version = "1.0.0"
 lifecycle_type = "nas:Note"
 lifecycle_attribute = "nas:Note.status"
 guarded_transition = { lifecycle = "nas:NoteLifecycle", from = "draft", to = "published" }
+guard_breaking_update = { body = "" }
 required_relation = "nas:about"
 acyclic_relation = "nas:broader"
 unique_attribute = "nas:Topic.label"

@@ -49,6 +49,14 @@ def fail(state: CommandState) -> Result:
     )
 
 
+@thing.command("unrecorded")
+@json_option
+@leaf
+def unrecorded(state: CommandState) -> Result:
+    warning = WarningRecord("audit.refusal_not_recorded", "not audited", {"cause": "x"})
+    raise GraphCliError("write.invalid", "invalid", warnings=(warning,))
+
+
 @thing.command("noroot")
 @json_option
 @leaf
@@ -166,3 +174,10 @@ def test_every_error_code_has_a_hint_entry() -> None:
 def test_render_text_of_empty_data() -> None:
     document = {"ok": True, "data": None, "warnings": [], "error": None, "hints": []}
     assert render_text(document) == ("", "")
+
+
+def test_error_warnings_ride_along_in_the_envelope() -> None:
+    code, out, _ = invoke("thing", "unrecorded", "--json")
+    document = json.loads(out)
+    assert code == 1 and document["error"]["code"] == "write.invalid"
+    assert [w["code"] for w in document["warnings"]] == ["audit.refusal_not_recorded"]

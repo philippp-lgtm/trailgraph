@@ -1,4 +1,4 @@
-"""Static source rules that import-linter cannot express (contracts ID.6, T.3, B2.2).
+"""Static source rules that import-linter cannot express (contracts ID.6, T.3, B2.2, B3.1).
 
 Each rule scans the AST of every module in both distributions and has a
 positive control, so a broken scanner cannot pass silently.
@@ -43,6 +43,7 @@ ENV_AND_OS = {
 }
 
 WALL_CLOCK_ALLOWED = {"graph_cli.kernel.clock"}
+COMMIT_ALLOWED = ("graph_cli.services.write", "graph_cli.storage")
 ENV_ALLOWED_PREFIXES = ("graph_cli.catalog", "graph_cli_admin.maintenance_cli.wiring")
 
 
@@ -85,6 +86,16 @@ def _forbidden_access(tree: ast.Module, forbidden: set[tuple[str, str]]) -> list
     return hits
 
 
+def _commit_calls(tree: ast.Module) -> list[str]:
+    return [
+        "commit"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "commit"
+    ]
+
+
 def _violations(
     check: Callable[[ast.Module], list[str]], allowed: Callable[[str], bool]
 ) -> dict[str, list[str]]:
@@ -118,6 +129,13 @@ def test_env_and_os_identity_only_in_wiring() -> None:
         lambda t: _forbidden_access(t, ENV_AND_OS), lambda n: n.startswith(ENV_ALLOWED_PREFIXES)
     )
     assert found == {}
+
+
+def test_only_the_write_service_commits() -> None:
+    """B3.1: WriteService.apply is the only caller of WriteSession.commit in graph_cli."""
+    found = _violations(_commit_calls, lambda n: n.startswith(COMMIT_ALLOWED))
+    assert found == {}
+    assert _commit_calls(ast.parse("session.commit(tx, receipt)"))
 
 
 @pytest.mark.parametrize(

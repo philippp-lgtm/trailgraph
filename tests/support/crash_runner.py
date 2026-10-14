@@ -14,6 +14,7 @@ from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import TxRecord, tx_from_json, tx_to_json
 from support.procs import spawn
+from support.txbuilder import allow_ops
 
 
 def tx_payload(tx: AuthorizedTx) -> dict[str, JsonValue]:
@@ -39,6 +40,12 @@ def tx_payload(tx: AuthorizedTx) -> dict[str, JsonValue]:
     return tx_to_json(record)
 
 
+def _ops(changeset: Mapping[str, JsonValue]) -> list[Mapping[str, JsonValue]]:
+    ops = changeset.get("ops", [])
+    assert isinstance(ops, list)
+    return [op for op in ops if isinstance(op, Mapping)]
+
+
 def tx_from_payload(data: Mapping[str, JsonValue]) -> AuthorizedTx:
     record = tx_from_json(data)
     return AuthorizedTx(
@@ -48,7 +55,7 @@ def tx_from_payload(data: Mapping[str, JsonValue]) -> AuthorizedTx:
         seq=record.seq,
         recorded_at=record.recorded_at,
         actor=record.actor,
-        decisions=(),
+        decisions=allow_ops(record.graph_id, _ops(record.changeset)),
         changeset=record.changeset,
         changeset_hash=record.changeset_hash,
         resolution=record.resolution,

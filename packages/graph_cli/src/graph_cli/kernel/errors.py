@@ -22,15 +22,23 @@ class GraphCliError(Exception):
 
     An unregistered code, or a warning code, turns the error itself into
     ``internal.error`` (R.3): a wrong code is a bug, not a user problem.
+    ``warnings`` ride along with the error into the envelope (e.g.
+    ``audit.refusal_not_recorded``, B3.14).
     """
 
     code: str
     spec: ErrorSpec
     message: str
     details: Mapping[str, JsonValue]
+    warnings: tuple[WarningRecord, ...]
 
     def __init__(
-        self, code: str, message: str, *, details: Mapping[str, JsonValue] | None = None
+        self,
+        code: str,
+        message: str,
+        *,
+        details: Mapping[str, JsonValue] | None = None,
+        warnings: tuple[WarningRecord, ...] = (),
     ) -> None:
         spec = lookup_error_code(code)
         if spec is None or spec.category is ErrorCategory.WARNING:
@@ -43,6 +51,7 @@ class GraphCliError(Exception):
         self.spec = spec
         self.message = message
         self.details = MappingProxyType(dict(details or {}))
+        self.warnings = warnings
 
     @property
     def category(self) -> ErrorCategory:

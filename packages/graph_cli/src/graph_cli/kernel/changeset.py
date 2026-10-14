@@ -209,7 +209,7 @@ class OpEffect:
     initial: tuple[tuple[str, JsonValue], ...] = ()  # create: lifecycle values after the op
     edge_id: EdgeId | None = None  # link: added; unlink: removed
     rel: TermRef | None = None
-    targets: tuple[EntityId, ...] = ()  # supersede targets; retract target
+    targets: tuple[EntityId, ...] = ()  # other entities touched: supersede targets, retract by
     alias: str | None = None  # set_alias: the requested alias
     problem: str | None = None
 

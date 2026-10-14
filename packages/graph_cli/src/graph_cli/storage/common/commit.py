@@ -9,11 +9,12 @@ are checked here.
 
 from __future__ import annotations
 
-from collections.abc import Set
+from collections.abc import Mapping, Set
 from dataclasses import replace
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import CanonicalError, JsonValue
+from graph_cli.kernel.changeset import OP_ACTIONS
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import ALIAS_RE, EntityId, EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt, AuditStream
@@ -69,6 +70,7 @@ def check_tx(tx: AuthorizedTx, *, graph_id: GraphId, head: Head, view: ViewAt) -
         raise _violation("recorded_at", "recorded_at moves backwards (B4.3)")
     if not tx.revisions:
         raise _violation("empty", "the tx has no revisions")
+    _check_decisions(tx)
     touched: dict[EntityId, Revision] = {}
     for revision in tx.revisions:
         if revision.id in touched:
@@ -84,6 +86,21 @@ def check_tx(tx: AuthorizedTx, *, graph_id: GraphId, head: Head, view: ViewAt) -
                     target=str(edge.target),
                 )
     _check_aliases(tx, touched, view)
+
+
+def _check_decisions(tx: AuthorizedTx) -> None:
+    """B6.10: an allow decision covers the action of every op (defence in depth)."""
+    ops = tx.changeset.get("ops")
+    if not isinstance(ops, list | tuple):
+        raise _violation("changeset", "the change set has no ops")
+    allowed = tx.allowed_actions()
+    for op in ops:
+        name = op.get("op") if isinstance(op, Mapping) else None
+        action = OP_ACTIONS.get(name) if isinstance(name, str) else None
+        if action is None:
+            raise _violation("changeset", f"unknown op {name!r}")
+        if action not in allowed:
+            raise _violation("decisions", f"no allow decision for {action}", action=action)
 
 
 def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision | None) -> None:

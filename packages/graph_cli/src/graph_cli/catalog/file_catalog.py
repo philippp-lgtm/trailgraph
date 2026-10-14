@@ -19,6 +19,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, format_id, parse_id
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, ManifestData
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
+from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
@@ -44,10 +45,12 @@ class FileCatalog:
         *,
         settings: StorageSettings | None = None,
         oplog: OpLog | None = None,
+        faults: FaultHook | None = None,
     ) -> None:
         self.data_root = data_root
         self.settings = settings or StorageSettings()
         self.oplog = oplog
+        self.faults = faults  # crash tests only; production passes None (K.d)
         self._warnings: dict[tuple[str, str], WarningRecord] = {}
 
     @property
@@ -128,6 +131,7 @@ class FileCatalog:
             graph,
             durability=self.settings.durability,
             oplog=self.oplog,
+            faults=self.faults,
         )
 
     def _layout(self, graph: GraphId) -> GraphLayout:

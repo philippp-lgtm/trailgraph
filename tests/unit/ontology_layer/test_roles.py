@@ -20,6 +20,7 @@ CHECKS: dict[str, Callable[[object], bool]] = {
     ),
     "lifecycle_attribute": lambda a: isinstance(a, AttributeDef) and a.kind == "lifecycle",
     "guarded_transition": lambda t: isinstance(t, TransitionDef) and bool(t.guards),
+    "guard_breaking_update": lambda a: isinstance(a, dict) and bool(a),
     "required_relation": lambda r: isinstance(r, RelationDef) and r.out.min >= 1,
     "acyclic_relation": lambda r: isinstance(r, RelationDef) and "acyclic" in r.characteristics,
     "unique_attribute": lambda a: isinstance(a, AttributeDef) and a.unique,

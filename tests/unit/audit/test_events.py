@@ -246,7 +246,9 @@ def test_builders_refuse_bad_input(world: World) -> None:
     other = graph_entry(GraphId(world.ids.new_id()), world.builder.pin)
     base = dict(actor=maint_actor(), request=REQUEST, ts=world.clock.now(), env=ENV)
     attempts = [
-        lambda: events.write_intent(first, graph=world.graph, env=ENV),  # no decisions
+        lambda: events.write_intent(
+            dataclasses.replace(first, decisions=()), graph=world.graph, env=ENV
+        ),  # no decisions
         lambda: events.write_intent(authorized(first), graph=other, env=ENV),
         lambda: events.maintenance(
             decisions=[allow("maint.repair", "installation")], event_id=world.event_id(), **base

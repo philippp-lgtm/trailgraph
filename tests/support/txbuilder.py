@@ -16,8 +16,9 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from graph_cli.kernel.actor import ABSENT, ActorContext, Assurance, ClientInfo, Entrypoint, Facet
-from graph_cli.kernel.authz import AuthorizedTx
+from graph_cli.kernel.authz import AuthorizedTx, Decision
 from graph_cli.kernel.canonical import JsonValue, hash_value
+from graph_cli.kernel.changeset import OP_ACTIONS
 from graph_cli.kernel.clock import Clock
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, IdProvider, TermRef, TxId
 from graph_cli.kernel.ports.storage import Head
@@ -36,6 +37,14 @@ SUPERSEDES = TermRef("core:supersedes")
 RETRACTS = TermRef("core:retracts")
 EXTERNAL_GRAPH = "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"
 EXTERNAL_ENTITY = "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"
+
+
+def allow_ops(graph_id: GraphId, ops: Sequence[Mapping[str, JsonValue]]) -> tuple[Decision, ...]:
+    """One allow decision per op action: what services.write attaches (B6.10)."""
+    actions = sorted({OP_ACTIONS[str(op["op"])] for op in ops})
+    resource = f"graph:{graph_id}"
+    policy = hash_value({"policy": "test"})
+    return tuple(Decision("allow", a, resource, "test.allow", policy) for a in actions)
 
 
 def actor(principal: str = "test:1") -> ActorContext:
@@ -270,7 +279,7 @@ class TxDraft:
             seq=seq,
             recorded_at=recorded_at,
             actor=actor(principal),
-            decisions=(),
+            decisions=allow_ops(builder.graph_id, self.ops),
             changeset=changeset,
             changeset_hash=hash_value(changeset),
             resolution={"locals": {}, "refs": {}},
