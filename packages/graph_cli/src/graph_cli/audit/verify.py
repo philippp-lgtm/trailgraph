@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
+    MAINT_EFFECT_ACTIONS,
     PIN_ACTION,
     RELEASE_ACTION,
     event_problems,
@@ -58,9 +59,9 @@ class MaintEffects:
 
     ``manifest_pin`` is ``None`` when it cannot be trusted (storage reported
     ``integrity.storage.pin_mismatch``); the pin walk is then skipped.
-    ``anchored`` are the graph-stream seqs named by installation anchors: the
-    companion event of a maintenance op is appended only after its effect,
-    so an anchored intent is committed (W.e).
+    ``anchored`` are the graph-stream seqs named by companion anchors
+    (``effect_anchors``): a companion is appended only after its effect, so
+    an anchored intent is committed (W.e).
     """
 
     manifest_pin: OntologyPin | None
@@ -330,14 +331,22 @@ def _pin_walk(
     return orphans
 
 
-def anchored_seqs(
+def effect_anchors(
     installation_events: Iterable[Mapping[str, JsonValue]],
 ) -> dict[str, frozenset[int]]:
-    """Per graph id, the graph-stream seqs named by installation anchors (B5.11)."""
+    """Per graph id, the graph-stream seqs anchored by companion events (W.e).
+
+    Only a companion, an installation event carrying a maintenance action
+    with effect, proves its intent committed: it is appended after the
+    rename. Anchors of ``audit verify`` and ``audit anchor`` record stream
+    heads and prove nothing about the anchored event's effect.
+    """
     found: dict[str, set[int]] = {}
     for event in installation_events:
-        anchors = event.get("anchors")
-        if not isinstance(anchors, list):
+        anchors, actions = event.get("anchors"), event.get("actions")
+        if not isinstance(anchors, list) or not isinstance(actions, list):
+            continue
+        if not any(a in MAINT_EFFECT_ACTIONS for a in actions):
             continue
         for anchor in anchors:
             seq = anchor.get("seq") if isinstance(anchor, Mapping) else None

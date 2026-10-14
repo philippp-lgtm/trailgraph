@@ -27,8 +27,8 @@ from graph_cli.audit import events
 from graph_cli.audit.verify import (
     MaintEffects,
     StreamReport,
-    anchored_seqs,
     check_anchors,
+    effect_anchors,
     verify_graph,
     verify_stream,
 )
@@ -68,7 +68,7 @@ def verify(ctx: AdminContext) -> Verification:
     installation = verify_stream(
         ctx.audit.read_lines(INSTALLATION_STREAM), stream=INSTALLATION_STREAM
     )
-    anchored = anchored_seqs(installation.events)
+    anchored = effect_anchors(installation.events)
     findings: list[Finding] = list(installation.findings)
     reports: dict[str, StreamReport] = {}
     graphs: list[JsonValue] = []

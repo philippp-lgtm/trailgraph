@@ -19,8 +19,8 @@ from graph_cli.audit import events as builders
 from graph_cli.audit import finding_codes as audit_codes
 from graph_cli.audit.verify import (
     MaintEffects,
-    anchored_seqs,
     check_anchors,
+    effect_anchors,
     verify_graph,
     verify_stream,
 )
@@ -106,7 +106,7 @@ class Scene(Installation):
         installation = verify_stream(
             self.audit.read_lines(INSTALLATION_STREAM), stream=INSTALLATION_STREAM
         )
-        anchored = anchored_seqs(installation.events)
+        anchored = effect_anchors(installation.events)
         findings = list(installation.findings)
         graph_events = {}
         for graph_id in self.maintenance.graph_ids():

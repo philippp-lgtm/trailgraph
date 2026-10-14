@@ -13,9 +13,9 @@ from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.schema import event_problems
 from graph_cli.audit.verify import (
     MaintEffects,
-    anchored_seqs,
     check_anchors,
     check_maintenance,
+    effect_anchors,
     verify_graph,
 )
 from graph_cli.kernel.canonical import JsonValue, hash_value, parse_json
@@ -221,8 +221,10 @@ def test_other_anchors_into_a_missing_graph_mismatch() -> None:
     assert finding.code == codes.ANCHOR_MISMATCH
 
 
-def test_anchored_seqs() -> None:
+def test_effect_anchors() -> None:
     stream = Stream()
     first, second = GraphId(stream.ids.new_id()), GraphId(stream.ids.new_id())
-    events = [_create_event(stream, first), _create_event(stream, second), {"anchors": "bad"}]
-    assert anchored_seqs(events) == {str(first): frozenset({1}), str(second): frozenset({1})}
+    head = _create_event(stream, GraphId(stream.ids.new_id()))
+    head["actions"] = ["maint.audit_verify"]  # anchors a stream head, proves no effect
+    events = [_create_event(stream, first), _create_event(stream, second), head, {"anchors": "x"}]
+    assert effect_anchors(events) == {str(first): frozenset({1}), str(second): frozenset({1})}
