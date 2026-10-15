@@ -12,8 +12,8 @@ Status: foundation. The kernel (ids, canonical JSON, registries, ports), the
 ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
 semver classifier, JSON Schema export, data validation), storage (FileStore
 and InMemoryStore behind the storage ports), audit, authorization, the
-catalog, the write pipeline (`WriteService`) and `graph-admin` exist. The
-application CLI `graph` has no commands beyond `--help` and `--version` yet.
+catalog, the write pipeline (`WriteService`), the read services, `graph`
+(reads, writes, `apply`, `describe`) and `graph-admin` exist.
 
 ## Repository layout
 
@@ -125,6 +125,8 @@ harness. Malformed values are dropped with a warning and never block. Only
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
+| `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection |
+| `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services |
 | `catalog.identity` | identity providers and the actor (see above) |
 
 Locations (XDG; macOS uses the same paths):
@@ -132,7 +134,7 @@ Locations (XDG; macOS uses the same paths):
 | What | Where |
 | --- | --- |
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
-| Data root | `graph-admin --data-root`, then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
+| Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
 | State (operational log) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
 
 Unknown config or manifest keys are warnings; an unknown `format_version`
@@ -167,6 +169,51 @@ validates against the current state without the lock, without ids and
 without any audit or file change. A JSONL batch commits one document per
 transaction, carries local names to later documents and stops at the first
 failure.
+
+## Application CLI
+
+`graph` is the agent and user surface; it reads and writes instance data of
+existing graphs and never creates a data root or a graph. Output, exit codes
+and hints are those of `graph-admin` (see below): the
+`graph_cli.envelope/1` envelope as text or, with `--json`, as one JSON
+document.
+
+| Command | What it does |
+| --- | --- |
+| `whoami` | the acting identity (principal, agent, session, project) and what the policy allows |
+| `graphs` | the graphs this project may use |
+| `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
+| `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`) |
+| `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them |
+| `find` | entities by `--type`, `--where`, `--rel`/`--in-rel`; sorted, paged (`--limit`, `--offset`) with a next-page hint |
+| `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`) |
+| `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
+| `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
+| `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin) |
+
+Graph selection: `--graph`, then `GRAPH_CLI_GRAPH`, then the `default` of
+the nearest `.graph_cli.toml` up from the working directory. The pointer
+file lists the graphs a project may use (`graphs`), optionally a `default`
+and a `project` name for the actor; it cannot move the data root. There is
+no implicit default graph.
+
+References in arguments are full ids, aliases or 8-32 trailing hex digits of
+an id; change set documents allow full ids, aliases and `@local` names only.
+Writes take `--dry-run`, `--reason`, `--idempotency-key` and, on
+single-entity commands, `--expect REV`. `find` filters are flags without
+shell metacharacters: `--where attr=value` or `--where attr:op=value` with
+`op` in `eq ne lt le gt ge contains prefix in exists`, all AND-ed. `apply`
+reads and checks every document first (broken input writes nothing), then
+commits one transaction per document in order and stops at the first
+failure; `data.results` reports each processed document and the exit code is
+that of the failure. Reads, `--help`, dry runs and usage errors write
+nothing, audit files included. `--as-of` is reserved and refused.
+
+Commands are declared as data in `graph_cli.app_cli.commands`
+(`cli_kit.spec.CommandSpec`); the click tree and the inventory are built from
+the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
+and `neighbors` flags into the query AST; `services.read` and
+`services.describe` answer them.
 
 ## Maintenance CLI
 
@@ -207,7 +254,7 @@ and `graph_cli_admin.services_admin` holds the procedures.
 | crash | `tests/crash/` | `kill -9` of a child process at every named fault point, for storage commits and for the write service with a retry; interrupted maintenance operations |
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
-| CLI | `tests/cli/` | `graph-admin` as a subprocess: commands, envelopes, exit codes, one scenario per admin code |
+| CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
