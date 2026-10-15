@@ -375,12 +375,20 @@ def _disjoint(
             raise _malformed(_join(path, key), f"given in both {what}")
 
 
+def normalize_valid_time(text: str) -> str:
+    """A date stays ``YYYY-MM-DD``, a timestamp becomes T.1 (B8.5).
+
+    Anything else is ``usage.invalid_argument``.
+    """
+    if len(text) == 10:
+        return parse_date(text).isoformat()
+    return format_timestamp(parse_timestamp(text))
+
+
 def _valid_time(value: JsonValue, path: str) -> str:
     text = _str(value, path)
     try:
-        if len(text) == 10:
-            return parse_date(text).isoformat()
-        return format_timestamp(parse_timestamp(text))
+        return normalize_valid_time(text)
     except GraphCliError as exc:
         raise _malformed(path, exc.message, expected="YYYY-MM-DD or RFC 3339") from None
 

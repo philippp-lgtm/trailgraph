@@ -22,6 +22,133 @@
   "commands": [
     {
       "path": [
+        "create"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.create",
+      "summary": "Create one entity of a type.",
+      "args": [
+        {
+          "name": "type",
+          "type": "term",
+          "required": true,
+          "repeatable": false,
+          "summary": "Type CURIE."
+        }
+      ],
+      "options": [
+        {
+          "name": "--set",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value, coerced by the attribute's datatype."
+        },
+        {
+          "name": "--set-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=<json>, a typed value."
+        },
+        {
+          "name": "--edge",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "relation=<id>: an outgoing edge."
+        },
+        {
+          "name": "--valid-from",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Start of validity: date or RFC 3339 timestamp."
+        },
+        {
+          "name": "--valid-to",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "End of validity: date or RFC 3339 timestamp."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph create <type> --set <attr>=<value>",
+          "summary": "Create with one attribute."
+        },
+        {
+          "command": "graph create <type> --set <attr>=<value> --edge <relation>=<id> --dry-run --json",
+          "summary": "Preview the result."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "describe",
         "commands"
       ],
@@ -564,6 +691,141 @@
     },
     {
       "path": [
+        "link"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.link",
+      "summary": "Add an edge from one entity to another.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        },
+        {
+          "name": "rel",
+          "type": "term",
+          "required": true,
+          "repeatable": false,
+          "summary": "Relation CURIE."
+        },
+        {
+          "name": "target",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Target id, alias or id suffix."
+        }
+      ],
+      "options": [
+        {
+          "name": "--qualifier",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "qualifier=value on the edge."
+        },
+        {
+          "name": "--qualifier-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "qualifier=<json> on the edge."
+        },
+        {
+          "name": "--target-rev",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "The target revision the edge refers to."
+        },
+        {
+          "name": "--expect",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the entity is at this revision."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph link <id> <relation> <id>",
+          "summary": "Link two entities."
+        },
+        {
+          "command": "graph link <id> <relation> <id> --qualifier <attr>=<value> --json",
+          "summary": "Link with a qualifier."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "neighbors"
       ],
       "kind": "read",
@@ -663,6 +925,248 @@
     },
     {
       "path": [
+        "unlink"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.unlink",
+      "summary": "Remove an edge by relation and target, or by edge id.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        },
+        {
+          "name": "rel",
+          "type": "term",
+          "required": false,
+          "repeatable": false,
+          "summary": "Relation CURIE."
+        },
+        {
+          "name": "target",
+          "type": "entity_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Target id, alias or id suffix."
+        }
+      ],
+      "options": [
+        {
+          "name": "--edge-id",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "The edge id instead of REL and TARGET."
+        },
+        {
+          "name": "--expect",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the entity is at this revision."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph unlink <id> <relation> <id>",
+          "summary": "Remove the edge to a target."
+        },
+        {
+          "command": "graph unlink <id> --edge-id <id> --json",
+          "summary": "Remove one edge by id."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "update"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.update",
+      "summary": "Set or unset attributes of one entity.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--set",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value, coerced by the attribute's datatype."
+        },
+        {
+          "name": "--set-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=<json>, a typed value."
+        },
+        {
+          "name": "--unset",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Attribute to remove."
+        },
+        {
+          "name": "--expect",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the entity is at this revision."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph update <id> --set <attr>=<value>",
+          "summary": "Change one attribute."
+        },
+        {
+          "command": "graph update <id> --unset <attr> --expect 3 --json",
+          "summary": "Remove one, guarded by revision."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "whoami"
       ],
       "kind": "meta",
@@ -701,7 +1205,11 @@
     "read.find",
     "read.get",
     "read.list",
-    "read.traverse"
+    "read.traverse",
+    "write.create",
+    "write.link",
+    "write.unlink",
+    "write.update"
   ],
   "error_codes": [
     {
@@ -710,9 +1218,34 @@
       "exit": 3
     },
     {
+      "code": "access.reason_required",
+      "category": "denied",
+      "exit": 3
+    },
+    {
+      "code": "audit.unavailable",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "backend.corrupt",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "backend.lock_timeout",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
       "code": "backend.unavailable",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "changeset.too_large",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "config.forbidden_key",
@@ -725,6 +1258,16 @@
       "exit": 5
     },
     {
+      "code": "conflict.idempotency_key_reuse",
+      "category": "conflict",
+      "exit": 4
+    },
+    {
+      "code": "conflict.version_mismatch",
+      "category": "conflict",
+      "exit": 4
+    },
+    {
       "code": "entity.ambiguous_ref",
       "category": "refused",
       "exit": 1
@@ -732,6 +1275,11 @@
     {
       "code": "entity.not_found",
       "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "graph.archived",
+      "category": "refused",
       "exit": 1
     },
     {
@@ -750,12 +1298,22 @@
       "exit": 2
     },
     {
+      "code": "graph.readonly",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "internal.error",
       "category": "internal",
       "exit": 6
     },
     {
       "code": "ontology.artifact_missing",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "ontology.pin_mismatch",
       "category": "unavailable",
       "exit": 5
     },
@@ -773,6 +1331,11 @@
       "code": "usage.invalid_argument",
       "category": "usage",
       "exit": 2
+    },
+    {
+      "code": "write.invalid",
+      "category": "invalid",
+      "exit": 1
     }
   ]
 }

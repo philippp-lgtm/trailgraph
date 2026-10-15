@@ -47,11 +47,12 @@ class ParamSpec:
     positional: bool = False
     choices: tuple[str, ...] = ()
     default: JsonValue = None
+    keyword: str | None = None  # the handler's keyword when the name would clash
 
     @property
     def dest(self) -> str:
         """The handler's keyword argument."""
-        return self.name.lstrip("-").replace("-", "_")
+        return self.keyword or self.name.lstrip("-").replace("-", "_")
 
     def to_json(self) -> dict[str, JsonValue]:
         data: dict[str, JsonValue] = {
