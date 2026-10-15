@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:10648d43007669a4aebb07fccb0d47ad16ea1f214fcdcf7a27cc41d717cef92c"
+  inventory_hash: "sha256:ba9e14a010d9ddee809b1d222487c9b3269c5f3b2835aa8ff968ee79940bd007"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -27,7 +27,7 @@ against it and audited. The CLI is on `PATH`.
 - Never guess a type, field, relation or state name. Ask `graph describe`.
 - Reads never change anything. Writes are recorded with who made them.
 - `graph skills` commands install agent skills such as this one. Run them
-  only when the user asks.
+  only when the user asks; `graph skills check` only reads and is safe.
 
 ## Workflow
 
@@ -96,6 +96,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph lookup` | read | Find entities by name: main, alternative and hidden labels; ranked candidates. |
 | `graph neighbors` | read | Show the entities connected to one entity, up to three hops. |
 | `graph retract` | write | Withdraw an entity; needs --reason. |
+| `graph skills check` | meta | Check that installed agent skills equal what this program installs now. |
 | `graph skills emit` | meta | Write the agent skills of this program and named graphs into a directory. |
 | `graph skills install` | meta | Install or refresh the agent skills of this program and its graphs. |
 | `graph supersede` | write | Replace entities by another one; needs --reason. |

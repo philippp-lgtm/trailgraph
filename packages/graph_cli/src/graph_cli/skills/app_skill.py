@@ -74,7 +74,7 @@ against it and audited. The CLI is on `PATH`.
 - Never guess a type, field, relation or state name. Ask `graph describe`.
 - Reads never change anything. Writes are recorded with who made them.
 - `graph skills` commands install agent skills such as this one. Run them
-  only when the user asks.
+  only when the user asks; `graph skills check` only reads and is safe.
 
 ## Workflow
 

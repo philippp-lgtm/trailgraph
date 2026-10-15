@@ -415,3 +415,113 @@ def test_source_behind_ontology_warns(run_cli: CliRunner, published: str, tmp_pa
     )
     assert outcome.code == 0, outcome.envelope
     assert outcome.warning_codes == ["skills.source_behind_ontology"]
+
+
+# ---- check ---------------------------------------------------------------------------
+
+
+def check(run_cli: CliRunner, project: Path, **kw: Any) -> Any:
+    return app(run_cli, "skills", "check", "--scope", "project", "--dir", str(project), **kw)
+
+
+def statuses(outcome: Any) -> dict[str, str]:
+    return {s["skill"]: s["status"] for s in outcome.data["skills"]}
+
+
+def test_check_fresh_and_program_block(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:
+    from harness import BIN_DIR
+
+    project = new_project(tmp_path)
+    assert install(run_cli, "--scope", "project", "--dir", str(project)).code == 0
+    before = snapshot(home, project)
+    outcome = check(run_cli, project)
+    assert outcome.code == 0, outcome.envelope
+    assert statuses(outcome) == {"graph-cli": "fresh"}
+    assert outcome.data["ok_count"] == 1 and outcome.data["counts"] == {"fresh": 1}
+    program = outcome.data["program"]
+    assert program["name"] == "graph"
+    assert program["executable"] == str((BIN_DIR / "graph").resolve())  # this program (F6)
+    assert snapshot(home, project) == before  # check only reads
+
+
+def test_check_reports_every_status(run_cli: CliRunner, published: str, tmp_path: Path) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    skills = project / ".claude" / "skills"
+    missing = check(run_cli, project)
+    assert (missing.code, missing.error["code"]) == (1, "skills.check_failed")
+    assert statuses(missing) == {"graph-cli": "missing"}
+    assert missing.error["details"]["counts"] == {"missing": 1}
+    assert missing.error["hint"] == (
+        f"graph skills install --scope project --dir {project.resolve()}"
+    )
+
+    args = ("--scope", "project", "--dir", str(project), "--graph", "example_graph")
+    assert install(run_cli, *args).code == 0
+    assert statuses(check(run_cli, project)) == {
+        "graph-cli": "fresh",
+        "graph-example-graph": "fresh",
+    }
+
+    changed = tmp_path / "changed" / "graph-example-graph"
+    shutil.copytree(GRAPH_SKILL, changed)
+    (changed / "references" / "model.md").write_text("# Model\n\nRepublished.\n")
+    assert admin(run_cli, "graph", "skill", "publish", "example_graph", str(changed)).code == 0
+    stale = check(run_cli, project)
+    assert stale.code == 1
+    assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
+    assert stale.data["ok_count"] == 1  # the partial result keeps the list (B9.2)
+
+    (skills / "graph-example-graph" / "SKILL.md").write_text("edited")
+    (skills / "graph-cli" / "notes.md").write_text("extra")
+    (skills / "graph-other").mkdir()
+    (skills / "graph-other" / "SKILL.md").write_text("someone else's")
+    outcome = check(run_cli, project)
+    assert statuses(outcome) == {
+        "graph-cli": "unexpected",
+        "graph-example-graph": "modified",
+        "graph-other": "foreign",
+    }
+    assert outcome.error["details"]["counts"] == {"modified": 1, "unexpected": 1, "foreign": 1}
+
+
+def test_check_unavailable_graph_skill(run_cli: CliRunner, published: str, tmp_path: Path) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project), "--graph", "example_graph")
+    assert install(run_cli, *args).code == 0
+    create_graph(run_cli, "other_graph")
+    (project / ".graph_cli.toml").write_text(POINTER.format(graphs="other_graph"))
+    outcome = check(run_cli, project, cwd=tmp_path)
+    assert outcome.code == 1
+    (skill,) = [s for s in outcome.data["skills"] if s["skill"] == "graph-example-graph"]
+    assert skill == {
+        "skill": "graph-example-graph",
+        "kind": "graph",
+        "status": "unavailable",
+        "graph": published,
+        "reason": "graph.not_in_project",
+    }
+
+
+def test_check_warns_when_the_source_is_behind_the_ontology(
+    run_cli: CliRunner, published: str, tmp_path: Path
+) -> None:
+    from support.fixtures import ONTOLOGIES
+
+    project = new_project(tmp_path)
+    args = ("--scope", "project", "--dir", str(project), "--graph", "example_graph")
+    assert install(run_cli, *args).code == 0
+    released = admin(
+        run_cli, "ontology", "release", "example_graph", str(ONTOLOGIES / "inventory" / "1.0.1")
+    )
+    assert released.code == 0, released.envelope
+    outcome = check(run_cli, project)
+    assert outcome.code == 0, outcome.envelope  # warnings never change the exit code
+    assert outcome.warning_codes == ["skills.source_behind_ontology"]
+
+
+def test_check_text_mode_prints_the_list_and_the_error(run_cli: CliRunner, tmp_path: Path) -> None:
+    project = new_project(tmp_path)
+    result = run_cli("graph", "skills", "check", "--scope", "project", "--dir", str(project))
+    assert result.returncode == 1
+    assert "graph-cli" in result.stdout and "missing" in result.stdout
+    assert "skills.check_failed" in result.stderr

@@ -1249,6 +1249,65 @@
     {
       "path": [
         "skills",
+        "check"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Check that installed agent skills equal what this program installs now.",
+      "args": [],
+      "options": [
+        {
+          "name": "--scope",
+          "type": "choice",
+          "required": true,
+          "repeatable": false,
+          "summary": "user: the agent's user skills; project: <dir>/.claude/skills.",
+          "choices": [
+            "user",
+            "project"
+          ]
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory for --scope project; default: the working directory."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph skills check --scope project --dir <dir>",
+          "summary": "Check one project."
+        },
+        {
+          "command": "graph skills check --scope user --json",
+          "summary": "Per-skill status as JSON."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "internal.error",
+        "skills.check_failed",
+        "skills.target_invalid",
+        "usage.invalid_argument",
+        "usage.missing_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "skills",
         "emit"
       ],
       "kind": "meta",
@@ -2043,6 +2102,11 @@
       "code": "ontology.pin_mismatch",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "skills.check_failed",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "skills.modified",

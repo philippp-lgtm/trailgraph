@@ -48,6 +48,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `internal.error` | internal | 6 |
 | `ontology.artifact_missing` | unavailable | 5 |
 | `ontology.pin_mismatch` | unavailable | 5 |
+| `skills.check_failed` | invalid | 1 |
 | `skills.modified` | refused | 1 |
 | `skills.not_owned` | refused | 1 |
 | `skills.source_invalid` | invalid | 1 |

@@ -47,7 +47,7 @@ def main() -> None:
         program(),
         sys.argv[1:],
         Invocation(wiring.PROGRAM, json_mode, debug),
-        services=wiring.AppServices(env, Path.cwd()),
+        services=wiring.AppServices(env, Path.cwd(), wiring.process_executable()),
         out=sys.stdout,
         err=sys.stderr,
     )

@@ -1,11 +1,12 @@
-"""``graph skills emit|install`` (D15 Q1, Q3, Q5).
+"""``graph skills emit|install|check`` (D15 Q1, Q3-Q5).
 
 Skill 1 is rendered in-process from this program's own inventory; graph
 skills come from the graphs' published slots, read with ``read.describe``
 through the read service, so the pointer allowlist applies (for
 ``--scope project`` the pointer as seen from the project directory). The
 app writes outside the runtime area only into the directory named on the
-command line. Every refusal is found before anything is written.
+command line. Every refusal is found before anything is written. ``check``
+compares what is installed with what this very process renders now (F6).
 """
 
 from __future__ import annotations
@@ -26,10 +27,12 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.skills import sources
 from graph_cli.skills.install import (
+    STATUSES,
     Installed,
     RenderedSkill,
     SkillTarget,
     apply_install,
+    check,
     emit_skills,
     plan_install,
     refusal,
@@ -267,6 +270,35 @@ def install(
     )
 
 
+# ---- check ---------------------------------------------------------------------------
+
+
+def check_command(state: CommandState, scope: str, dir: str | None) -> Result:
+    target = target_of(state, scope, dir)
+    installed = scan(target)
+    wanted, unavailable = wanted_skills(state, target, installed, ())
+    statuses = check(installed, wanted, unavailable=unavailable)
+    counts = {status: sum(s.status == status for s in statuses) for status in STATUSES}
+    program = {**program_block(), "executable": services(state).executable}
+    data: dict[str, JsonValue] = {
+        "target": target.to_json(),
+        "program": program,
+        "skills": [s.to_json() for s in statuses],
+        "ok_count": counts["fresh"],
+        "counts": {status: n for status, n in counts.items() if n},
+    }
+    bad = [s for s in statuses if s.status != "fresh"]
+    if not bad:
+        return Result(data=data)
+    error = GraphCliError(
+        "skills.check_failed",
+        f"{len(bad)} of {len(statuses)} skills are not fresh: "
+        + ", ".join(f"{s.name} {s.status}" for s in bad),
+        details={**target.details(), "counts": data["counts"]},
+    )
+    return Result(data=data, error=error)
+
+
 SPECS: Final = (
     CommandSpec(
         path=("skills", "emit"),
@@ -315,5 +347,30 @@ SPECS: Final = (
         " exist). Skill 1 is always installed, graph skills named with --graph, and every"
         " graph skill installed here before is refreshed. Directories without our marker"
         " (.graph_cli_skill.json) or edited by hand are replaced only with --force.",
+    ),
+    CommandSpec(
+        path=("skills", "check"),
+        kind="meta",
+        surface="meta",
+        action=None,
+        summary="Check that installed agent skills equal what this program installs now.",
+        params=(SCOPE, DIR),
+        examples=(
+            Example("graph skills check --scope project --dir <dir>", "Check one project."),
+            Example("graph skills check --scope user --json", "Per-skill status as JSON."),
+        ),
+        errors=(
+            "config.invalid",
+            "config.forbidden_key",
+            "usage.missing_argument",
+            "skills.check_failed",
+            "skills.target_invalid",
+        ),
+        handler=check_command,
+        description="Statuses: fresh, stale (installed unchanged, but the program or the"
+        " published graph skill changed since), modified (edited by hand), unexpected (extra"
+        " files), foreign (not installed by this program), missing, unavailable (the graph"
+        " is gone, not visible here or has no published skill). Exit 0 only when every"
+        " skill is fresh. Only reads.",
     ),
 )

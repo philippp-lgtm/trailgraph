@@ -349,6 +349,24 @@ Usage: `graph retract REF [OPTIONS]`
 | `graph retract <id> --reason <value>` | Withdraw an entity. |
 | `graph retract <id> --by <id> --reason <value> --json` | Withdraw, citing a correction. |
 
+## graph skills check
+
+Check that installed agent skills equal what this program installs now.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 5, 6.
+
+Usage: `graph skills check [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. |
+| `--dir` | directory | no | no | Project directory for --scope project; default: the working directory. |
+
+| Example | Summary |
+|---|---|
+| `graph skills check --scope project --dir <dir>` | Check one project. |
+| `graph skills check --scope user --json` | Per-skill status as JSON. |
+
 ## graph skills emit
 
 Write the agent skills of this program and named graphs into a directory.

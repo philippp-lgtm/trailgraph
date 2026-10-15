@@ -12,6 +12,7 @@ renders as an error envelope; nothing is created on disk (B12.4).
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,15 @@ CLAUDE_CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"  # relocates the user's ~/.claude
 
 def process_env() -> dict[str, str]:
     return dict(os.environ)
+
+
+def process_executable() -> str | None:
+    """The path this program runs from, resolved (D15 Q4: a check names the program
+    that checked, so a checkout's ``uv run graph`` is not mistaken for the installed one)."""
+    if not sys.argv or not sys.argv[0]:
+        return None
+    path = Path(sys.argv[0])
+    return str(path.resolve()) if path.exists() else sys.argv[0]
 
 
 def output_mode(env: Mapping[str, str]) -> tuple[bool, bool]:
@@ -81,6 +91,7 @@ class AppServices:
 
     env: Mapping[str, str]
     cwd: Path
+    executable: str | None = None  # the running program's own path (sys.argv[0]), F6
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
 
