@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from harness import CliRunner
-from support.admin import Outcome, admin, init, write_random_txs
+from support.admin import Outcome, admin, init, write_documents
 from support.fixtures import ONTOLOGIES, compiled_model
 
 from graph_cli.audit.verify import verify_stream
@@ -115,12 +115,54 @@ def test_version_bump_excessive_is_a_warning(
     assert outcome.warning_codes == ["admin.version_bump_excessive"]
 
 
+LOCATIONS = [
+    {
+        "op": "create",
+        "type": "inv:Location",
+        "local": "room",
+        "attrs": {"name": "Room", "code": "R1"},
+    },
+    {
+        "op": "create",
+        "type": "inv:Location",
+        "local": "shelf",
+        "attrs": {"name": "Shelf", "code": "R1-S1"},
+        "edges": [{"rel": "inv:within", "target": "@room"}],
+    },
+]
+ITEM = {
+    "op": "create",
+    "type": "inv:Item",
+    "attrs": {"name": "Hammer"},
+    "edges": [{"rel": "inv:located_in", "target": "@shelf"}],
+}
+
+
 def test_migration_required(run_cli: CliRunner, root: Path) -> None:
-    graph_id = create(run_cli, "1.1.0")
-    write_random_txs(root, graph_id, ontology="inventory", version="1.1.0", count=3)
+    """B7.14: data with error findings under the new major refuses the release."""
+    create(run_cli, "1.1.0")
+    write_documents(root, "example_graph", [{"ops": [*LOCATIONS, ITEM]}])
     outcome = release(run_cli, INVENTORY / "2.0.0")
     assert (outcome.code, outcome.error["code"]) == (1, "admin.migration_required")
-    assert outcome.error["details"]["seq"] == 3
+    details = outcome.error["details"]
+    assert details["seq"] == 1
+    assert details["counts"] == {
+        "data.referential.cardinality_out": 1,  # in_category tightened to 1..n
+        "data.structural.missing_required": 1,  # label
+        "data.structural.unknown_attribute": 1,  # name, renamed to label
+    }
+    assert {f["code"] for f in details["findings"]} == set(details["counts"])
+    show = admin(run_cli, "graph", "show", "example_graph")
+    assert show.data["ontology"]["version"] == "1.1.0"
+
+
+def test_major_release_on_data_that_checks_clean(run_cli: CliRunner, root: Path) -> None:
+    """B7.14: no migration needed when check_graph finds no errors under the new major."""
+    create(run_cli, "1.1.0")
+    write_documents(root, "example_graph", [{"ops": LOCATIONS}])
+    outcome = release(run_cli, INVENTORY / "2.0.0")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["pinned"] is True and outcome.data["to"]["version"] == "2.0.0"
 
 
 def test_archived_graph(run_cli: CliRunner, root: Path) -> None:

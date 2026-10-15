@@ -12,13 +12,16 @@ installation event anchoring the intent:
 Refused before any event: archived graph (``graph.archived``), the version
 installed with other content (``admin.release_exists``), a bump smaller
 than the changes (``admin.version_bump_insufficient``, also downgrades),
-a higher major on a graph with data (``admin.migration_required``; until
-``check_graph`` exists, item 6). A larger bump than needed is a warning.
+a higher major on a graph whose data has error findings under the new
+version (``check_graph`` under the lock, B7.14: ``admin.migration_required``
+with the counts and the first 20 findings). A larger bump than needed is a
+warning.
 Re-running a release that is already pinned changes nothing.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -26,11 +29,13 @@ from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.ontology_layer.model import load_compiled
+from graph_cli.ontology_layer.data_validator import check_graph
+from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli_admin.services_admin.context import AdminContext, request
 from graph_cli_admin.services_admin.ontology import (
@@ -39,6 +44,8 @@ from graph_cli_admin.services_admin.ontology import (
     diff,
     release_files,
 )
+
+MAX_FINDINGS = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,11 +111,7 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
                 details=bump_details,
             )
         if Version.parse(target.version).major > Version.parse(current.version).major and head.seq:
-            raise GraphCliError(
-                "admin.migration_required",
-                f"the graph has data; {target.version} is a new major version",
-                details={**bump_details, "seq": head.seq},
-            )
+            _check_data(compiled.model, session, bump_details, head.seq)
         warnings: tuple[WarningRecord, ...] = ()
         if bump == "excessive":
             warnings = (
@@ -135,6 +138,25 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
         _companion(ctx, entry, pin_decisions, meta, receipt)
         data["pinned"] = True
         return Released(pinned.entry, data, head.seq, warnings)
+
+
+def _check_data(
+    model: CompiledModel, session: MaintenanceSession, bump: dict[str, JsonValue], seq: int
+) -> None:
+    """B7.14: data under a new major must check clean, else a migration is needed."""
+    errors = [f for f in check_graph(model, session.snapshot()) if f.severity is Severity.ERROR]
+    if errors:
+        counts = Counter(f.code for f in errors)
+        raise GraphCliError(
+            "admin.migration_required",
+            f"{len(errors)} error findings under {bump['to']}; the data needs a migration",
+            details={
+                **bump,
+                "seq": seq,
+                "counts": dict(sorted(counts.items())),
+                "findings": [f.to_json() for f in errors[:MAX_FINDINGS]],
+            },
+        )
 
 
 def _check_state(entry: GraphEntry) -> None:

@@ -82,3 +82,35 @@ def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, 
             before = audit_events.before_hashes(session.snapshot(), tx)
             receipt = session.append_audit(audit_events.intent(tx, before=before))
             session.commit(tx, receipt)
+
+
+def write_documents(root: Path, graph: str, documents: list[dict[str, Any]]) -> list[int]:
+    """Instance data through the real WriteService on the CLI's data root; returns the seqs."""
+    from graph_cli.access_control.policy import BuiltinPolicySource
+    from graph_cli.catalog.file_catalog import FileCatalog
+    from graph_cli.kernel.canonical import hash_value
+    from graph_cli.kernel.records import EnvInfo, RequestMeta
+    from graph_cli.services.write import WriteRequest, WriteService
+    from graph_cli.storage.files.audit_log import FileAuditLog
+    from support.clock import StepClock
+    from support.ids import SeededIdProvider
+    from support.services import app_actor
+
+    clock = StepClock(start="2030-01-01T00:00:00Z")
+    service = WriteService(
+        catalog=FileCatalog(root),
+        audit=FileAuditLog(root),
+        policy=BuiltinPolicySource(),
+        clock=clock,
+        ids=SeededIdProvider(clock, 13),
+        env=EnvInfo("<data root>", "default"),
+    )
+    requests = [
+        WriteRequest(
+            app_actor(), graph, service.parse(doc), False, RequestMeta("apply", hash_value(doc))
+        )
+        for doc in documents
+    ]
+    outcome = service.apply_batch(requests)
+    assert outcome.error is None, outcome.error.details if outcome.error else None
+    return [r.seq or 0 for r in outcome.results]
