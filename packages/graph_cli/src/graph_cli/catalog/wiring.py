@@ -36,6 +36,7 @@ from graph_cli.services.write import WriteConfig, WriteService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
 PROGRAM: Final = "graph"
+CLAUDE_CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"  # relocates the user's ~/.claude (D15 step 0)
 
 
 def process_env() -> dict[str, str]:
@@ -69,6 +70,10 @@ class AppContext:
         """B12.5: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer default."""
         return select_graph(self.catalog, flag=flag, env_value=self.graph_env, pointer=self.pointer)
 
+    def select_for(self, ref: str, pointer: PointerFile | None) -> GraphEntry:
+        """A named graph as a project with ``pointer`` would see it (D15 Q3)."""
+        return select_graph(self.catalog, flag=ref, env_value=None, pointer=pointer)
+
 
 @dataclass
 class AppServices:
@@ -89,6 +94,36 @@ class AppServices:
             project=pointer.project if pointer is not None else None,
             providers=config.identity_providers,
         )
+
+    def path(self, value: str) -> Path:
+        """A path from the command line or env: ``~`` is ``HOME``, relative is from cwd."""
+        home = self.env.get("HOME")
+        if home and (value == "~" or value.startswith("~/")):
+            value = home + value[1:]
+        return (self.cwd / value).resolve()
+
+    def skill_dirs(self, scope: str, directory: str | None) -> tuple[Path, Path | None]:
+        """D15 Q3: ``(agent configuration directory, project directory)``. ``user`` is
+        ``$CLAUDE_CONFIG_DIR``, else ``$HOME/.claude`` (D15 step 0); ``project`` is
+        ``<dir>/.claude`` with ``<dir>`` defaulting to the working directory."""
+        if scope == "project":
+            project = self.path(directory) if directory is not None else self.cwd.resolve()
+            return project / ".claude", project
+        configured = self.env.get(CLAUDE_CONFIG_ENV)
+        if configured:
+            return self.path(configured), None
+        home = self.env.get("HOME")
+        if not home:
+            raise GraphCliError(
+                "skills.target_invalid",
+                "HOME is not set; the user skill directory is unknown",
+                details={"scope": "user", "cause": "no_home"},
+            )
+        return self.path(home) / ".claude", None
+
+    def pointer_at(self, directory: Path) -> tuple[PointerFile | None, tuple[WarningRecord, ...]]:
+        """The project pointer as seen from ``directory`` (B12.6 walk-up)."""
+        return find_pointer(directory)
 
     def context(self, warnings: list[WarningRecord]) -> AppContext:
         if self._context is None:

@@ -1,19 +1,21 @@
-"""``graph skills emit`` (D15 Q1, Q3).
+"""``graph skills emit|install`` (D15 Q1, Q3, Q5).
 
 Skill 1 is rendered in-process from this program's own inventory; graph
 skills come from the graphs' published slots, read with ``read.describe``
-through the read service, so the pointer allowlist applies. The app writes
-outside the runtime area only into the directory named on the command line.
+through the read service, so the pointer allowlist applies (for
+``--scope project`` the pointer as seen from the project directory). The
+app writes outside the runtime area only into the directory named on the
+command line. Every refusal is found before anything is written.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from graph_cli import __version__
 from graph_cli.app_cli.commands.common import PROGRAM, services
+from graph_cli.catalog.pointer import PointerFile
 from graph_cli.catalog.wiring import AppContext
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
@@ -23,7 +25,18 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.skills import sources
-from graph_cli.skills.install import RenderedSkill, emit_skills
+from graph_cli.skills.install import (
+    Installed,
+    RenderedSkill,
+    SkillTarget,
+    apply_install,
+    emit_skills,
+    plan_install,
+    refusal,
+    require_target,
+    scan,
+)
+from graph_cli.skills.tree import GRAPH_SKILL_PREFIX
 
 GRAPHS: Final = ParamSpec(
     "--graph",
@@ -33,6 +46,20 @@ GRAPHS: Final = ParamSpec(
     keyword="graphs",
 )
 EMIT_FORCE: Final = ParamSpec("--force", "flag", "Replace skill directories that exist.")
+FORCE: Final = ParamSpec(
+    "--force", "flag", "Replace skill directories that are not ours or were edited by hand."
+)
+SCOPE: Final = ParamSpec(
+    "--scope",
+    "choice",
+    "user: the agent's user skills; project: <dir>/.claude/skills.",
+    required=True,
+    choices=("user", "project"),
+)
+DIR: Final = ParamSpec(
+    "--dir", "directory", "Project directory for --scope project; default: the working directory."
+)
+DRY_RUN: Final = ParamSpec("--dry-run", "flag", "Show what would be installed; write nothing.")
 OUT: Final = ParamSpec(
     "--out", "directory", "Existing directory to write one directory per skill into.", required=True
 )
@@ -86,13 +113,8 @@ def named_graph_skills(
     return [graph_skill(ctx, entry, warnings) for entry in entries.values()]
 
 
-def directory(state: CommandState, value: str) -> Path:
-    path = Path(value)
-    return path if path.is_absolute() else services(state).cwd / path
-
-
 def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) -> Result:
-    target = directory(state, out)
+    target = services(state).path(out)
     if not target.is_dir():
         raise GraphCliError(
             "usage.invalid_argument",
@@ -122,6 +144,129 @@ def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) ->
     )
 
 
+# ---- install -----------------------------------------------------------------------
+
+# A marked graph skill whose graph cannot be refreshed is reported and left alone.
+UNAVAILABLE: Final = frozenset(
+    {
+        "graph.not_found",
+        "graph.not_in_project",
+        "access.denied",
+        "backend.unavailable",
+        "skills.source_missing",
+        "skills.source_invalid",
+    }
+)
+
+
+def target_of(state: CommandState, scope: str, dir: str | None) -> SkillTarget:
+    if scope == "user" and dir is not None:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--dir names a project; it does not go with --scope user",
+            details={"argument": "dir"},
+        )
+    chosen: Literal["user", "project"] = "user" if scope == "user" else "project"
+    config_dir, project = services(state).skill_dirs(chosen, dir)
+    target = SkillTarget(chosen, config_dir, project)
+    require_target(target)
+    return target
+
+
+def pointer_of(state: CommandState, ctx: AppContext, target: SkillTarget) -> PointerFile | None:
+    """Q3 visibility: a project gets the skills of the graphs it may use."""
+    if target.dir is None:
+        return ctx.pointer
+    pointer, warnings = services(state).pointer_at(target.dir)
+    state.warnings += warnings
+    return pointer
+
+
+def installed_graph_ref(found: Installed) -> str | None:
+    """Which graph a marked graph skill belongs to: the marker's id, else (legacy marker)
+    the name ``graph-<graph>``."""
+    if found.integrity not in ("intact", "legacy", "modified", "unexpected"):
+        return None
+    if found.marker is not None:
+        graph = found.marker.source.get("graph")
+        if isinstance(graph, dict) and isinstance(graph.get("id"), str):
+            return str(graph["id"])
+    if found.kind == "graph" and found.name.startswith(GRAPH_SKILL_PREFIX):
+        return found.name.removeprefix(GRAPH_SKILL_PREFIX).replace("-", "_")
+    return None
+
+
+def wanted_skills(
+    state: CommandState,
+    target: SkillTarget,
+    installed: dict[str, Installed],
+    graphs: Sequence[str],
+) -> tuple[list[RenderedSkill], dict[str, dict[str, JsonValue]]]:
+    """Skill 1, the named graph skills and the graph skills already installed by us.
+
+    A named graph that cannot be installed is an error; an installed one becomes
+    ``unavailable`` (``{skill: {graph, reason}}``).
+    """
+    wanted = [app_skill()]
+    unavailable: dict[str, dict[str, JsonValue]] = {}
+    refresh = {
+        name: ref
+        for name, found in installed.items()
+        if found.kind == "graph" and (ref := installed_graph_ref(found)) is not None
+    }
+    if not graphs and not refresh:
+        return wanted, unavailable
+    ctx = services(state).context(state.warnings)
+    pointer = pointer_of(state, ctx, target)
+    entries: dict[str, GraphEntry] = {}
+    for ref in graphs:
+        entry = ctx.select_for(ref, pointer)
+        entries.setdefault(str(entry.id), entry)
+    named = [graph_skill(ctx, entry, state.warnings) for entry in entries.values()]
+    wanted += named
+    for name, ref in sorted(refresh.items()):
+        if name in {skill.name for skill in named}:
+            continue
+        try:
+            entry = ctx.select_for(ref, pointer)
+            wanted.append(graph_skill(ctx, entry, state.warnings))
+        except GraphCliError as exc:
+            if exc.code not in UNAVAILABLE:
+                raise
+            unavailable[name] = {"graph": ref, "reason": exc.code}
+    return wanted, unavailable
+
+
+def install(
+    state: CommandState,
+    scope: str,
+    dir: str | None,
+    graphs: tuple[str, ...],
+    force: bool,
+    dry_run: bool,
+) -> Result:
+    target = target_of(state, scope, dir)
+    installed = scan(target)
+    wanted, unavailable = wanted_skills(state, target, installed, graphs)
+    plan = plan_install(target, installed, wanted, force=force)
+    error = refusal(plan, {"graphs": list(graphs)})
+    if error is not None:
+        raise error
+    if not dry_run:
+        apply_install(plan)
+    return Result(
+        data={
+            "target": target.to_json(),
+            "dry_run": dry_run,
+            "program": program_block(),
+            "skills": [step.to_json() for step in plan.steps],
+            "unavailable": [
+                {"skill": name, **details} for name, details in sorted(unavailable.items())
+            ],
+        }
+    )
+
+
 SPECS: Final = (
     CommandSpec(
         path=("skills", "emit"),
@@ -139,6 +284,36 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "skills.not_owned", "skills.target_invalid"),
         handler=emit,
-        description="One directory per skill, without an install marker.",
+        description="One directory per skill, without an install marker. Install skills"
+        " for an agent with `graph skills install` instead.",
+    ),
+    CommandSpec(
+        path=("skills", "install"),
+        kind="meta",
+        surface="meta",
+        action=None,
+        summary="Install or refresh the agent skills of this program and its graphs.",
+        params=(SCOPE, DIR, GRAPHS, FORCE, DRY_RUN),
+        examples=(
+            Example("graph skills install --scope project --dir <dir>", "Into one project."),
+            Example(
+                "graph skills install --scope user --graph <graph> --json",
+                "For every project of the user, with one graph skill.",
+            ),
+            Example("graph skills install --scope project --dry-run --json", "Show the plan."),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            "usage.missing_argument",
+            "skills.not_owned",
+            "skills.modified",
+            "skills.target_invalid",
+        ),
+        handler=install,
+        description="--scope user installs into $CLAUDE_CONFIG_DIR/skills, else"
+        " ~/.claude/skills; --scope project into <dir>/.claude/skills (<dir>/.claude must"
+        " exist). Skill 1 is always installed, graph skills named with --graph, and every"
+        " graph skill installed here before is refreshed. Directories without our marker"
+        " (.graph_cli_skill.json) or edited by hand are replaced only with --force.",
     ),
 )

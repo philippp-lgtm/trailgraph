@@ -164,3 +164,254 @@ def test_emitted_graph_skill_copy_is_independent_of_the_source(
     shutil.copytree(GRAPH_SKILL, moved)
     emitted = emit_all(run_cli, tmp_path)
     assert emitted["graph-example-graph"] == skill_files(moved)
+
+
+# ---- install -------------------------------------------------------------------------
+
+MARKER = ".graph_cli_skill.json"
+
+
+def new_project(tmp_path: Path, *, claude: bool = True, pointer: str | None = None) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+    if claude:
+        (project / ".claude").mkdir()
+    if pointer is not None:
+        (project / ".graph_cli.toml").write_text(POINTER.format(graphs=pointer))
+    return project
+
+
+def install(run_cli: CliRunner, *args: str, cwd: Path | None = None, **kw: Any) -> Any:
+    return app(run_cli, "skills", "install", *args, cwd=cwd, **kw)
+
+
+def installed(skills: Path) -> dict[str, dict[str, bytes]]:
+    return {p.name: skill_files(p) for p in sorted(skills.iterdir())}
+
+
+def without_marker(files: dict[str, bytes]) -> dict[str, bytes]:
+    return {k: v for k, v in files.items() if k != MARKER}
+
+
+def test_install_into_a_project(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:
+    project = new_project(tmp_path)
+    before = snapshot(home)
+    outcome = install(run_cli, "--scope", "project", "--dir", str(project))
+    assert outcome.code == 0, outcome.envelope
+    skills = project / ".claude" / "skills"
+    assert outcome.data["target"] == {
+        "scope": "project",
+        "dir": str(project.resolve()),
+        "path": str(skills.resolve()),
+    }
+    assert [(s["skill"], s["action"]) for s in outcome.data["skills"]] == [("graph-cli", "create")]
+    assert outcome.data["dry_run"] is False and outcome.data["unavailable"] == []
+    files = installed(skills)
+    assert list(files) == ["graph-cli"]
+    assert without_marker(files["graph-cli"]) == committed_skill()
+    assert MARKER in files["graph-cli"]
+    assert sorted(p.name for p in (project / ".claude").iterdir()) == ["skills"]  # no staging
+    assert snapshot(home) == before
+
+    tree = snapshot(project)
+    again = install(run_cli, "--scope", "project", "--dir", str(project))
+    assert [s["action"] for s in again.data["skills"]] == ["unchanged"]
+    assert snapshot(project) == tree  # byte-identical
+
+
+def test_install_defaults_to_the_working_directory(run_cli: CliRunner, tmp_path: Path) -> None:
+    project = new_project(tmp_path)
+    outcome = install(run_cli, "--scope", "project", cwd=project)
+    assert outcome.code == 0, outcome.envelope
+    assert (project / ".claude" / "skills" / "graph-cli" / "SKILL.md").is_file()
+
+
+def test_install_needs_the_agent_directory(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:
+    project = new_project(tmp_path, claude=False)
+    before = snapshot(home, project)
+    outcome = install(run_cli, "--scope", "project", "--dir", str(project))
+    assert (outcome.code, outcome.error["code"]) == (1, "skills.target_invalid")
+    assert outcome.error["hint"] == f"mkdir {project.resolve() / '.claude'}"
+    user = install(run_cli, "--scope", "user")
+    assert (user.code, user.error["code"]) == (1, "skills.target_invalid")
+    assert user.error["details"]["path"] == str(home.resolve() / ".claude")
+    assert snapshot(home, project) == before
+
+
+def test_install_without_scope_writes_nothing(
+    run_cli: CliRunner, home: Path, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path)
+    (home / ".claude").mkdir()
+    before = snapshot(home, project)
+    outcome = install(run_cli, cwd=project)
+    assert (outcome.code, outcome.error["code"]) == (2, "usage.missing_argument")
+    wrong = install(run_cli, "--scope", "user", "--dir", str(project), cwd=project)
+    assert (wrong.code, wrong.error["code"]) == (2, "usage.invalid_argument")
+    assert snapshot(home, project) == before
+
+
+def test_install_for_the_user(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:
+    (home / ".claude").mkdir()
+    project = new_project(tmp_path)
+    outside = snapshot(project)
+    outcome = install(run_cli, "--scope", "user", cwd=project)
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["target"] == {
+        "scope": "user",
+        "path": str(home.resolve() / ".claude" / "skills"),
+    }
+    assert [p.relative_to(home).as_posix() for p in sorted((home / ".claude").rglob("*"))][:2] == [
+        ".claude/skills",
+        ".claude/skills/graph-cli",
+    ]
+    assert snapshot(project) == outside
+
+
+def test_install_for_the_user_follows_claude_config_dir(
+    run_cli: CliRunner, home: Path, tmp_path: Path
+) -> None:
+    config = tmp_path / "agent_config"
+    config.mkdir()
+    (home / ".claude").mkdir()
+    before = snapshot(home)
+    outcome = install(run_cli, "--scope", "user", env={"CLAUDE_CONFIG_DIR": str(config)})
+    assert outcome.code == 0, outcome.envelope
+    assert (config / "skills" / "graph-cli" / "SKILL.md").is_file()
+    assert snapshot(home) == before
+
+
+def test_foreign_and_edited_directories_need_force(
+    run_cli: CliRunner, home: Path, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path)
+    skills = project / ".claude" / "skills"
+    (skills / "graph-cli").mkdir(parents=True)
+    (skills / "graph-cli" / "SKILL.md").write_text("mine")
+    (skills / "pdf").mkdir()  # unrelated skills are never touched
+    (skills / "pdf" / "SKILL.md").write_text("other")
+    args = ("--scope", "project", "--dir", str(project))
+    before = snapshot(project)
+    refused = install(run_cli, *args)
+    assert (refused.code, refused.error["code"]) == (1, "skills.not_owned")
+    assert (
+        refused.error["hint"]
+        == f"graph skills install --scope project --dir {project.resolve()} --force"
+    )
+    assert refused.data is None
+    assert snapshot(project) == before
+    forced = install(run_cli, *args, "--force")
+    assert forced.code == 0 and forced.data["skills"][0]["action"] == "replace"
+    assert without_marker(installed(skills)["graph-cli"]) == committed_skill()
+    assert installed(skills)["pdf"] == {"SKILL.md": b"other"}
+
+    (skills / "graph-cli" / "SKILL.md").write_text("edited by hand")
+    edited = install(run_cli, *args)
+    assert (edited.code, edited.error["code"]) == (1, "skills.modified")
+    assert edited.error["details"]["refused"] == [{"skill": "graph-cli", "installed": "modified"}]
+    assert install(run_cli, *args, "--force").code == 0
+
+
+def test_dry_run_writes_nothing(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:
+    project = new_project(tmp_path)
+    before = snapshot(home, project)
+    outcome = install(run_cli, "--scope", "project", "--dir", str(project), "--dry-run")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["dry_run"] is True
+    assert [s["action"] for s in outcome.data["skills"]] == ["create"]
+    assert snapshot(home, project) == before
+
+
+def test_legacy_marker_is_replaced(run_cli: CliRunner, tmp_path: Path) -> None:
+    project = new_project(tmp_path)
+    old = project / ".claude" / "skills" / "graph-cli"
+    old.mkdir(parents=True)
+    (old / "SKILL.md").write_text("old copy")
+    (old / ".graph_cli_install").write_text("installed by the former script\n")
+    outcome = install(run_cli, "--scope", "project", "--dir", str(project))
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["skills"][0] == {
+        "skill": "graph-cli",
+        "kind": "app",
+        "action": "replace",
+        "installed": "legacy",
+    }
+    assert set(skill_files(old)) == {*committed_skill(), MARKER}
+
+
+def test_graph_skills_install_and_refresh(
+    run_cli: CliRunner, published: str, home: Path, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    before = snapshot(home)
+    outcome = install(run_cli, *args, "--graph", "example_graph")
+    assert outcome.code == 0, outcome.envelope
+    assert [s["skill"] for s in outcome.data["skills"]] == ["graph-cli", "graph-example-graph"]
+    skills = project / ".claude" / "skills"
+    graph_skill = installed(skills)["graph-example-graph"]
+    assert without_marker(graph_skill) == skill_files(GRAPH_SKILL)
+    assert snapshot(home) == before  # reading the data root writes nothing
+
+    changed = tmp_path / "changed" / "graph-example-graph"
+    shutil.copytree(GRAPH_SKILL, changed)
+    (changed / "references" / "model.md").write_text("# Model\n\nRepublished.\n")
+    republish = admin(run_cli, "graph", "skill", "publish", "example_graph", str(changed))
+    assert republish.code == 0, republish.envelope
+    refreshed = install(run_cli, *args)  # no --graph: what is installed is refreshed
+    assert refreshed.code == 0, refreshed.envelope
+    assert [(s["skill"], s["action"]) for s in refreshed.data["skills"]] == [
+        ("graph-cli", "unchanged"),
+        ("graph-example-graph", "replace"),
+    ]
+    assert installed(skills)["graph-example-graph"]["references/model.md"] == (
+        b"# Model\n\nRepublished.\n"
+    )
+
+
+def test_graph_skills_follow_the_project_pointer(
+    run_cli: CliRunner, published: str, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "other_graph")
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    assert install(run_cli, *args, "--graph", "example_graph").code == 0
+    # Run from elsewhere: the project's pointer decides, not the working directory's.
+    (project / ".graph_cli.toml").write_text(POINTER.format(graphs="other_graph"))
+    refused = install(run_cli, *args, "--graph", "example_graph", cwd=tmp_path)
+    assert (refused.code, refused.error["code"]) == (1, "graph.not_in_project")
+    left = install(run_cli, *args, cwd=tmp_path)
+    assert left.code == 0, left.envelope
+    assert left.data["unavailable"] == [
+        {"skill": "graph-example-graph", "graph": published, "reason": "graph.not_in_project"}
+    ]
+    assert [s["skill"] for s in left.data["skills"]] == ["graph-cli"]
+    assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()
+
+
+def test_install_a_graph_without_published_skill(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph")
+    project = new_project(tmp_path)
+    before = snapshot(project)
+    outcome = install(
+        run_cli, "--scope", "project", "--dir", str(project), "--graph", "example_graph"
+    )
+    assert (outcome.code, outcome.error["code"]) == (1, "skills.source_missing")
+    assert snapshot(project) == before
+
+
+def test_source_behind_ontology_warns(run_cli: CliRunner, published: str, tmp_path: Path) -> None:
+    from support.fixtures import ONTOLOGIES
+
+    released = admin(
+        run_cli, "ontology", "release", "example_graph", str(ONTOLOGIES / "inventory" / "1.0.1")
+    )
+    assert released.code == 0, released.envelope
+    project = new_project(tmp_path)
+    outcome = install(
+        run_cli, "--scope", "project", "--dir", str(project), "--graph", "example_graph"
+    )
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == ["skills.source_behind_ontology"]

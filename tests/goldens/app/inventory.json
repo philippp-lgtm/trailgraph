@@ -1315,6 +1315,97 @@
     },
     {
       "path": [
+        "skills",
+        "install"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Install or refresh the agent skills of this program and its graphs.",
+      "args": [],
+      "options": [
+        {
+          "name": "--scope",
+          "type": "choice",
+          "required": true,
+          "repeatable": false,
+          "summary": "user: the agent's user skills; project: <dir>/.claude/skills.",
+          "choices": [
+            "user",
+            "project"
+          ]
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory for --scope project; default: the working directory."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": true,
+          "summary": "Also the skill of this graph (name or id); repeatable."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace skill directories that are not ours or were edited by hand."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be installed; write nothing."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph skills install --scope project --dir <dir>",
+          "summary": "Into one project."
+        },
+        {
+          "command": "graph skills install --scope user --graph <graph> --json",
+          "summary": "For every project of the user, with one graph skill."
+        },
+        {
+          "command": "graph skills install --scope project --dry-run --json",
+          "summary": "Show the plan."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "skills.modified",
+        "skills.not_owned",
+        "skills.source_invalid",
+        "skills.source_missing",
+        "skills.target_invalid",
+        "usage.invalid_argument",
+        "usage.missing_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "supersede"
       ],
       "kind": "write",
@@ -1954,6 +2045,11 @@
       "exit": 5
     },
     {
+      "code": "skills.modified",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "skills.not_owned",
       "category": "refused",
       "exit": 1
@@ -1995,6 +2091,11 @@
     },
     {
       "code": "usage.invalid_input",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "usage.missing_argument",
       "category": "usage",
       "exit": 2
     },

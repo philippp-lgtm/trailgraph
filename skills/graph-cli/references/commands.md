@@ -368,6 +368,28 @@ Usage: `graph skills emit [OPTIONS]`
 | `graph skills emit --out <dir>` | Write the skill of this program. |
 | `graph skills emit --out <dir> --graph <graph> --json` | Also the skill of one graph. |
 
+## graph skills install
+
+Install or refresh the agent skills of this program and its graphs.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph skills install [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. |
+| `--dir` | directory | no | no | Project directory for --scope project; default: the working directory. |
+| `--graph` | graph_ref | no | yes | Also the skill of this graph (name or id); repeatable. |
+| `--force` | flag | no | no | Replace skill directories that are not ours or were edited by hand. |
+| `--dry-run` | flag | no | no | Show what would be installed; write nothing. |
+
+| Example | Summary |
+|---|---|
+| `graph skills install --scope project --dir <dir>` | Into one project. |
+| `graph skills install --scope user --graph <graph> --json` | For every project of the user, with one graph skill. |
+| `graph skills install --scope project --dry-run --json` | Show the plan. |
+
 ## graph supersede
 
 Replace entities by another one; needs --reason.
