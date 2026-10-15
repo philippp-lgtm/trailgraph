@@ -115,12 +115,24 @@ def parse_rel_flag(text: str, argument: str) -> tuple[str, tuple[str, ...]]:
     return rel, targets
 
 
+def check_paging(limit: int, offset: int) -> None:
+    if not 1 <= limit <= MAX_LIMIT:
+        raise _usage("--limit", f"expected 1..{MAX_LIMIT}", actual=limit)
+    if offset < 0:
+        raise _usage("--offset", "expected 0 or more", actual=offset)
+
+
+def check_types(model: CompiledModel, types: Iterable[str]) -> None:
+    """Every ``--type`` names a class (``term.unknown`` with did-you-mean)."""
+    for name in types:
+        if name not in model.classes:
+            raise unknown_term("type", name, model.classes)
+
+
 class _Planner:
     def __init__(self, model: CompiledModel, types: tuple[str, ...]) -> None:
         self.model = model
-        for name in types:
-            if name not in model.classes:
-                raise unknown_term("type", name, model.classes)
+        check_types(model, types)
         self.classes = sorted({c for t in types for c in model.subtypes(t)}) or sorted(
             model.classes
         )
@@ -189,10 +201,7 @@ class _Planner:
 
 
 def plan_find(model: CompiledModel, spec: FindSpec) -> Query:
-    if not 1 <= spec.limit <= MAX_LIMIT:
-        raise _usage("--limit", f"expected 1..{MAX_LIMIT}", actual=spec.limit)
-    if spec.offset < 0:
-        raise _usage("--offset", "expected 0 or more", actual=spec.offset)
+    check_paging(spec.limit, spec.offset)
     planner = _Planner(model, spec.types)
     preds = [planner.where(text) for text in spec.where]
     rels = [RelConstraint(planner.relation(rel), "out", targets) for rel, targets in spec.rels] + [

@@ -56,6 +56,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("entity.not_found", _C.NOT_FOUND, False, "The entity does not exist."),
     ErrorSpec("entity.ambiguous_ref", _C.REFUSED, False, "The reference matches several entities."),
     ErrorSpec("term.unknown", _C.NOT_FOUND, False, "Unknown type, relation or attribute name."),
+    ErrorSpec("term.no_labels", _C.REFUSED, False, "The requested types have no label roles."),
     ErrorSpec("changeset.malformed", _C.USAGE, False, "The change set document is malformed."),
     ErrorSpec("changeset.local_ref_unresolved", _C.REFUSED, False, "A local name is not bound."),
     ErrorSpec("changeset.local_ref_duplicate", _C.REFUSED, False, "A local name is bound twice."),

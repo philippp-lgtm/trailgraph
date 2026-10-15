@@ -8,7 +8,7 @@ import pytest
 from support.fixtures import GOLDENS, assert_golden
 
 from graph_cli.cli_kit.envelope import Result, render_text
-from graph_cli.cli_kit.hints import known_hint_codes
+from graph_cli.cli_kit.hints import hint_for, known_hint_codes
 from graph_cli.cli_kit.runner import CommandState, Invocation, json_option, leaf, run
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -178,6 +178,15 @@ def test_every_error_code_has_a_hint_entry() -> None:
     """B9.9: a template or an explicit None for every non-warning code."""
     errors = {c for c, spec in ERROR_CODES.items() if spec.category is not ErrorCategory.WARNING}
     assert errors <= known_hint_codes()
+
+
+def test_no_labels_hint_names_the_type_to_describe() -> None:
+    assert hint_for("term.no_labels", {"types": ["ex:Thing"]}, program="graph") == (
+        "graph describe type ex:Thing"
+    )
+    for types in ([], ["ex:Thing", "ex:Other"]):
+        hint = hint_for("term.no_labels", {"types": types}, program="graph")
+        assert hint == "graph describe types"
 
 
 def test_render_text_of_empty_data() -> None:

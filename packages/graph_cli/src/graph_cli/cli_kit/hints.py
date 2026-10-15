@@ -35,6 +35,14 @@ def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe types"
 
 
+def _labels(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Where the label roles of a type show (its fields' ``role``)."""
+    types = details.get("types")
+    if isinstance(types, list) and len(types) == 1 and isinstance(types[0], str):
+        return f"{program} describe type {types[0]}"
+    return f"{program} describe types"
+
+
 def _get(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Re-read the entity before retrying (B3.11)."""
     entity = details.get("id")
@@ -54,6 +62,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "entity.not_found": None,
     "entity.ambiguous_ref": None,
     "term.unknown": _types,
+    "term.no_labels": _labels,
     "changeset.malformed": None,
     "changeset.local_ref_unresolved": None,
     "changeset.local_ref_duplicate": None,
