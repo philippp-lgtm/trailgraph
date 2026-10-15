@@ -13,8 +13,8 @@ ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
 semver classifier, JSON Schema export, data validation), storage (FileStore
 and InMemoryStore behind the storage ports), audit, authorization, the
 catalog, the write pipeline (`WriteService`), the read services, `graph`
-(reads, writes, `apply`, `describe`), `graph-admin` and the generated
-`graph-cli` agent skill exist.
+(reads, writes, `apply`, `describe`, `skills`), `graph-admin` and the
+generated `graph-cli` agent skill exist.
 
 ## Repository layout
 
@@ -65,7 +65,8 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, `verify`, `recover`, `reindex` (admin only) |
+| `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, `verify`, `recover`, `reindex` (admin only) |
 
 FileStore in short (POSIX only, local filesystems only):
 
@@ -82,8 +83,9 @@ FileStore in short (POSIX only, local filesystems only):
   `backend.corrupt` until repair.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
-  the manifest. A failure before the rename leaves only the staging state,
-  which readers ignore.
+  the manifest, the graph skill's `source.json` (its files are written once
+  under their hash before). A failure before the rename leaves only the
+  staging state, which readers ignore.
 
 ## Audit, authorization and identity
 
@@ -193,6 +195,9 @@ document.
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin) |
+| `skills emit --out DIR` | write skill 1 and, with `--graph`, published graph skills into a directory (one directory per skill, no marker) |
+| `skills install --scope user\|project` | install or refresh the agent skills (see "Skills") |
+| `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
 
 Graph selection: `--graph`, then `GRAPH_CLI_GRAPH`, then the `default` of
 the nearest `.graph_cli.toml` up from the working directory. The pointer
@@ -245,7 +250,8 @@ them.
 | --- | --- |
 | `init` | create the data root and, if missing, `config.toml` with a device id |
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
-| `graph list`, `graph show REF` | list graphs with title and language; show manifest, head and installed releases |
+| `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
+| `graph skill publish GRAPH DIR` | publish a hand-written skill directory as the graph's skill (`--dry-run`, `--reason`) |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
@@ -287,8 +293,68 @@ render of the live inventory), check every generated table against the
 inventory and the envelope keys against the renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
 placeholders outside `<graph> <type> <id> <attr> <value> <relation>
-<state> <file> <json> <seq>`, paths, ids and non-ASCII text. The skill
-names no graph type; graph-specific skills come later.
+<state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
+skill names no graph type.
+
+### Graph skills
+
+A graph skill (`graph-<graph>`, `_` becomes `-`) says what one graph holds
+and how to use it. The maintainer writes it as a complete skill directory
+and publishes it into the graph's runtime area:
+
+```sh
+uv run graph-admin graph skill publish <graph> <dir> --dry-run
+uv run graph-admin graph skill publish <graph> <dir> --reason "<why>"
+```
+
+Publishing checks the directory (`graph_cli.skills.tree`): the name equals
+the directory and the frontmatter `name`, regular UTF-8 files only, no
+dotfiles, `SKILL.md` at most 500 lines and the tree at most 256 KB, and no
+maintenance vocabulary (`graph-admin`, `maint.*`, `admin.*`, the data root
+option and variable) or local paths. It is audited as
+`maint.graph_configure` and records the ontology version it was written
+for; the same files against the same version publish nothing. `graph`
+reads published skills with `read.describe`, so a project only gets the
+skills of the graphs its pointer allows.
+
+### Installing skills
+
+`graph skills install` copies skill 1 and graph skills into an agent skill
+directory. There is no default target:
+
+- `--scope project [--dir DIR]`: `DIR/.claude/skills/` (`DIR` defaults to
+  the working directory; `DIR/.claude/` must exist).
+- `--scope user`: the user skill directory, `$CLAUDE_CONFIG_DIR/skills/`
+  when that variable is set, else `~/.claude/skills/` (the configuration
+  directory must exist).
+
+Skill 1 is always installed, graph skills named with `--graph`, and every
+graph skill installed there before is refreshed; one whose graph is gone,
+no longer visible or unpublished is reported as `unavailable` and left
+alone. Each installed directory carries the marker `.graph_cli_skill.json`
+(program, source, file hashes); a directory without it, or with files that
+differ from it, is replaced only with `--force`. Unrelated skill
+directories are never touched. Each skill is swapped in with renames from a
+staging directory next to `skills/`, so an agent never sees a half copy.
+`--dry-run` shows the plan. `graph skills check` reports each skill as
+`fresh`, `stale`, `modified`, `unexpected`, `foreign`, `missing` or
+`unavailable` and names the program that checked (`data.program.executable`).
+
+Installing `graph` itself is not a `graph` command. A recipe that keeps the
+tool's dependencies on the workspace lock (`uv tool install` ignores
+`uv.lock`):
+
+```sh
+uv export --frozen --package graph-cli --no-hashes --no-emit-workspace \
+  --no-dev --no-header -o <file>
+uv tool install --reinstall --constraints <file> ./packages/graph_cli
+graph skills install --scope project --dir <dir> --graph <graph>
+graph skills check --scope project --dir <dir>
+```
+
+Run `install` and `check` with the installed `graph`, not with `uv run
+graph` from the checkout: `check` compares against the program that runs
+it.
 
 ## Tests
 
@@ -301,7 +367,7 @@ names no graph type; graph-specific skills come later.
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
-| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks, structure |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output), structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
@@ -348,8 +414,9 @@ tests never touch real user config, data or state.
 `inventory` with a version series), one broken ontology per `model.*` finding
 code, one broken change set per `data.*` finding code, seed change sets for
 both ontologies (`tests/fixtures/seeds/`, applied through the write
-service), and role mappings for role-based contract tests
-(`tests/support/roles.py`).
+service), role mappings for role-based contract tests
+(`tests/support/roles.py`) and a graph skill for the `inventory` test graph
+(`tests/fixtures/skills/`).
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in
