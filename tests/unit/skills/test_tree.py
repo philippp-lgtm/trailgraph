@@ -37,7 +37,7 @@ def test_a_valid_tree_has_no_problems() -> None:
 
 def test_graph_skill_names() -> None:
     assert graph_skill_name("example_graph") == NAME
-    assert graph_skill_name("kb") == "graph-kb"
+    assert graph_skill_name("notes") == "graph-notes"
 
 
 @pytest.mark.parametrize("name", ["Graph-x", "graph_x", "graph--x", "-x", "x" * 65])
