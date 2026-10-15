@@ -39,7 +39,7 @@ def release_files(model: CompiledModel) -> dict[str, bytes]:
 
 def manifest(graph_id: GraphId, name: str, pin: OntologyPin) -> ManifestData:
     entry = GraphEntry(graph_id, name, "active", pin, {}, ())
-    return ManifestData(entry, None, CREATED_AT, StoreInfo("files", 1))
+    return ManifestData(entry, CREATED_AT, StoreInfo("files", 1))
 
 
 def with_pin(data: ManifestData, pin: OntologyPin) -> ManifestData:

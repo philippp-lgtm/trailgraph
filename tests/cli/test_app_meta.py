@@ -52,10 +52,12 @@ def test_whoami_with_env_and_a_forged_entrypoint(run_cli: CliRunner) -> None:
 
 
 def test_graphs_and_the_pointer_allowlist(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
-    create_graph(run_cli, "alpha")
+    create_graph(run_cli, "alpha", title="Items and where they are")
     create_graph(run_cli, "beta", "notes_and_sources")
     listed = app(run_cli, "graphs")
     assert [g["name"] for g in listed.data["items"]] == ["alpha", "beta"]
+    # The title tells an agent what each graph is for; absent is null (P1.5 Q6).
+    assert [g["title"] for g in listed.data["items"]] == ["Items and where they are", None]
     assert listed.data["hidden_count"] == 0
     here = project(tmp_path)
     narrowed = app(run_cli, "graphs", cwd=here)

@@ -140,7 +140,7 @@ SPECS: Final = (
         params=(),
         examples=(
             Example("graph graphs", "List the visible graphs."),
-            Example("graph graphs --json", "The graphs as JSON, with the hidden count."),
+            Example("graph graphs --json", "The graphs as JSON with titles, and the hidden count."),
         ),
         errors=("config.invalid", "config.forbidden_key", "access.denied"),
         handler=graphs,

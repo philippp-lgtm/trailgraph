@@ -49,8 +49,8 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
 def format_manifest(manifest: ManifestData) -> bytes:
     entry = manifest.entry
     graph: list[tuple[str, TomlValue]] = [("id", format_id(entry.id)), ("name", entry.name)]
-    if manifest.title is not None:
-        graph.append(("title", manifest.title))
+    if entry.title is not None:
+        graph.append(("title", entry.title))
     graph += [("state", entry.state), ("created_at", format_timestamp(manifest.created_at))]
     tables: list[TomlTable] = [
         (None, [("format_version", MANIFEST_FORMAT)]),
@@ -134,10 +134,10 @@ def parse_manifest(data: bytes, *, source: str) -> tuple[ManifestData, tuple[War
         ),
         alias_prefixes=alias_prefixes,
         extensions=tuple(enabled),
+        title=title,
     )
     manifest = ManifestData(
         entry=entry,
-        title=title,
         created_at=reader.timestamp(graph, "graph.created_at"),
         store=StoreInfo(
             reader.text(store, "store.backend"), reader.integer(store, "store.format_version")

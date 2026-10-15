@@ -183,7 +183,7 @@ document.
 | Command | What it does |
 | --- | --- |
 | `whoami` | the acting identity (principal, agent, session, project) and what the policy allows |
-| `graphs` | the graphs this project may use |
+| `graphs` | the graphs this project may use, with the title that says what each is for |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`) |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them |

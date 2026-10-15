@@ -44,8 +44,10 @@ def create(
     )
     decisions = ctx.authorize([("maint.graph_create", "installation")], request=meta)
     now = ctx.clock.now()
-    entry = GraphEntry(GraphId(ctx.ids.new_id()), name, "active", pin, alias_prefixes(compiled), ())
-    manifest = ManifestData(entry, title, now, STORE)
+    entry = GraphEntry(
+        GraphId(ctx.ids.new_id()), name, "active", pin, alias_prefixes(compiled), (), title
+    )
+    manifest = ManifestData(entry, now, STORE)
     genesis = events.graph_genesis(
         actor=ctx.actor,
         decisions=decisions,
@@ -98,7 +100,7 @@ def describe(manifest: ManifestData) -> dict[str, JsonValue]:
     return {
         "id": str(entry.id),
         "name": entry.name,
-        "title": manifest.title,
+        "title": entry.title,
         "state": entry.state,
         "created_at": format_timestamp(manifest.created_at),
         "ontology": entry.pin.to_json(),

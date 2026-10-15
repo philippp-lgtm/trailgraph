@@ -26,10 +26,10 @@ def manifest(*, title: str | None = 'Example "graph"\tone') -> ManifestData:
         pin=OntologyPin("inventory", "1.1.0", HASH),
         alias_prefixes={TermRef("inv:Item"): "ITEM", TermRef("inv:Location"): "LOC"},
         extensions=(),
+        title=title,
     )
     return ManifestData(
         entry=entry,
-        title=title,
         created_at=datetime(2026, 10, 14, 19, 0, tzinfo=UTC),
         store=StoreInfo("files", 1),
     )
@@ -52,7 +52,7 @@ def test_key_order_is_fixed() -> None:
 
 def test_title_is_optional() -> None:
     parsed, _ = parse_manifest(format_manifest(manifest(title=None)), source="m")
-    assert parsed.title is None
+    assert parsed.entry.title is None
 
 
 @pytest.mark.parametrize(

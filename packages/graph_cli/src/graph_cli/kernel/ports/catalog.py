@@ -25,6 +25,7 @@ class GraphEntry:
     pin: OntologyPin
     alias_prefixes: Mapping[TermRef, str]
     extensions: tuple[str, ...]
+    title: str | None = None  # human-readable purpose, shown by `graph graphs` (P1.5)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +39,6 @@ class ManifestData:
     """Typed ``manifest.toml`` content (B12). Written only by graph-admin."""
 
     entry: GraphEntry
-    title: str | None
     created_at: datetime
     store: StoreInfo
 

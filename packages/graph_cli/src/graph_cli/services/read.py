@@ -196,6 +196,7 @@ class ReadService:
         for entry in shown:
             item = graph_json(entry, None)
             del item["seq"]
+            item["title"] = entry.title
             items.append(item)
         return items, len(entries) - len(shown), self._catalog.warnings
 

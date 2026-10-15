@@ -26,10 +26,13 @@ def app(
     return outcome
 
 
-def create_graph(run_cli: CliRunner, name: str, ontology: str = "inventory") -> str:
+def create_graph(
+    run_cli: CliRunner, name: str, ontology: str = "inventory", *, title: str | None = None
+) -> str:
     version = compiled_model(ontology).bundle_version
+    extra = ["--title", title] if title is not None else []
     outcome = admin(
-        run_cli, "graph", "create", name, "--ontology", str(ONTOLOGIES / ontology / version)
+        run_cli, "graph", "create", name, "--ontology", str(ONTOLOGIES / ontology / version), *extra
     )
     assert outcome.code == 0, outcome.envelope
     graph_id: str = outcome.data["id"]
