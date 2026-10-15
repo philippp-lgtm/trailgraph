@@ -20,6 +20,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.graph_name_taken": _graph_list,
     "admin.migration_required": None,
     "admin.integrity_errors": None,
+    "admin.skill_invalid": None,  # the files to fix are in details.problems
 }
 
 

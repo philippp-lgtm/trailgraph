@@ -171,4 +171,6 @@ def show(ctx: AdminContext, ref: str) -> tuple[GraphEntry, dict[str, JsonValue]]
     data = describe(manifest)
     data["seq"] = head.seq
     data["releases"] = sorted(release_hashes(layout))
+    skill = ctx.catalog.read_skill(entry.id)
+    data["skill"] = skill.summary() if skill is not None else None
     return entry, data

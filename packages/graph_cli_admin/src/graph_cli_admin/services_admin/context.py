@@ -6,6 +6,7 @@ read the environment, the clock or the filesystem layout on their own.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from graph_cli.access_control.authorize import authorize
@@ -15,10 +16,14 @@ from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.catalog.resolve import Roots
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId, IdProvider
+from graph_cli.kernel.ports.audit import AuditReceipt
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySource
+from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
@@ -72,3 +77,50 @@ class AdminContext:
             )
             raise GraphCliError(first.code, f"{first.action} on {first.resource} is not permitted")
         return decisions
+
+    def intent(
+        self,
+        session: MaintenanceSession,
+        entry: GraphEntry,
+        decisions: tuple[Decision, ...],
+        meta: RequestMeta,
+        change: Mapping[str, JsonValue],
+        *,
+        reason: str | None = None,
+    ) -> AuditReceipt:
+        """The graph-stream intent of a maintenance effect (W.e), durable on return."""
+        event = events.maintenance(
+            actor=self.actor,
+            decisions=decisions,
+            request=meta,
+            ts=self.clock.now(),
+            event_id=self.event_id(),
+            env=self.env,
+            graph=entry,
+            change=change,
+            reason=reason,
+        )
+        return session.append_audit(event)
+
+    def anchor(
+        self,
+        entry: GraphEntry,
+        decisions: tuple[Decision, ...],
+        meta: RequestMeta,
+        receipt: AuditReceipt,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        """The installation event anchoring a committed intent (B5.2, B5.11)."""
+        event = events.maintenance(
+            actor=self.actor,
+            decisions=decisions,
+            request=meta,
+            ts=self.clock.now(),
+            event_id=self.event_id(),
+            env=self.env,
+            graph=entry,
+            reason=reason,
+            anchors=[receipt],
+        )
+        self.audit.append_installation(event)

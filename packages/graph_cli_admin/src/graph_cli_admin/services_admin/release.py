@@ -26,11 +26,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from graph_cli.audit import events
-from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Severity
-from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
@@ -133,15 +131,15 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
                 released_at=ctx.clock.now(),
             )
             change = events.release_change(target.version, target.artifact_hash, release_id)
-            receipt = _intent(ctx, session, entry, release_decisions, meta, change)
+            receipt = ctx.intent(session, entry, release_decisions, meta, change)
             session.install_release(target.version, files, receipt)
-            _companion(ctx, entry, release_decisions, meta, receipt)
+            ctx.anchor(entry, release_decisions, meta, receipt)
             data["released"] = True
         change = events.pin_change(current, target)
-        receipt = _intent(ctx, session, entry, pin_decisions, meta, change)
+        receipt = ctx.intent(session, entry, pin_decisions, meta, change)
         pinned = replace(manifest, entry=replace(entry, pin=target))
         session.replace_manifest(pinned, receipt)
-        _companion(ctx, entry, pin_decisions, meta, receipt)
+        ctx.anchor(entry, pin_decisions, meta, receipt)
         data["pinned"] = True
         return Released(pinned.entry, data, head.seq, warnings)
 
@@ -170,45 +168,3 @@ def _check_state(entry: GraphEntry) -> None:
         raise GraphCliError(
             "graph.archived", f"graph {entry.name} is archived", details={"graph_id": str(entry.id)}
         )
-
-
-def _intent(
-    ctx: AdminContext,
-    session: MaintenanceSession,
-    entry: GraphEntry,
-    decisions: tuple[Decision, ...],
-    meta: RequestMeta,
-    change: dict[str, JsonValue],
-) -> AuditReceipt:
-    event = events.maintenance(
-        actor=ctx.actor,
-        decisions=decisions,
-        request=meta,
-        ts=ctx.clock.now(),
-        event_id=ctx.event_id(),
-        env=ctx.env,
-        graph=entry,
-        change=change,
-    )
-    return session.append_audit(event)
-
-
-def _companion(
-    ctx: AdminContext,
-    entry: GraphEntry,
-    decisions: tuple[Decision, ...],
-    meta: RequestMeta,
-    receipt: AuditReceipt,
-) -> None:
-    """The installation event anchoring a committed intent (B5.2, B5.11)."""
-    event = events.maintenance(
-        actor=ctx.actor,
-        decisions=decisions,
-        request=meta,
-        ts=ctx.clock.now(),
-        event_id=ctx.event_id(),
-        env=ctx.env,
-        graph=entry,
-        anchors=[receipt],
-    )
-    ctx.audit.append_installation(event)

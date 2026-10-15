@@ -21,6 +21,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.graph_name_taken", _C.REFUSED, False, "The graph name is already used."),
     ErrorSpec("admin.migration_required", _C.REFUSED, False, "The change needs a migration."),
     ErrorSpec("admin.integrity_errors", _C.INVALID, False, "Verification found errors."),
+    ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
 )
 

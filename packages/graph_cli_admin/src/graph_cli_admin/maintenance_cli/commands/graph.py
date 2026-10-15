@@ -1,4 +1,4 @@
-"""``graph-admin graph create|list|show``."""
+"""``graph-admin graph create|list|show`` and ``graph-admin graph skill publish``."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import click
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState, json_option, leaf
 from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
-from graph_cli_admin.services_admin import graphs
+from graph_cli_admin.services_admin import graphs, skill
 
 
 @click.group("graph")
@@ -100,3 +100,45 @@ def show(state: CommandState, ref: str, data_root: Path | None) -> Result:
     return Result(
         data=data, graph=graphs.envelope_graph(entry, seq if isinstance(seq, int) else None)
     )
+
+
+@graph_group.group("skill")
+def skill_group() -> None:
+    """Publish the graph skill that the app installs for agents."""
+
+
+@skill_group.command("publish")
+@click.argument("ref")
+@click.argument(
+    "source",
+    metavar="DIR",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+)
+@click.option("--reason", help="Why the skill changes; recorded in the audit event.")
+@click.option("--dry-run", is_flag=True, help="Validate and show the change without writing.")
+@data_root_option
+@json_option
+@leaf
+def publish(
+    state: CommandState,
+    ref: str,
+    source: Path,
+    reason: str | None,
+    dry_run: bool,
+    data_root: Path | None,
+) -> Result:
+    """Publish DIR as the skill of graph REF (name or id).
+
+    DIR is a complete skill directory named graph-<graph> (underscores become
+    dashes). Publishing the same files again changes nothing.
+
+    \b
+    Examples:
+      graph-admin graph skill publish example_graph data/example_graph/skill/graph-example-graph
+      graph-admin graph skill publish example_graph ./graph-example-graph --dry-run --json
+    """
+    ctx = admin_context(state, data_root)
+    published = skill.publish(
+        ctx, graph_ref=ref, source=source.resolve(), reason=reason, dry_run=dry_run
+    )
+    return Result(data=published.data, graph=graphs.envelope_graph(published.entry, published.seq))
