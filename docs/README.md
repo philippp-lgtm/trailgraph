@@ -13,8 +13,9 @@ ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
 semver classifier, JSON Schema export, data validation), storage (FileStore
 and InMemoryStore behind the storage ports), audit, authorization, the
 catalog, the write pipeline (`WriteService`), the read services, `graph`
-(reads, writes, `apply`, `describe`, `skills`), `graph-admin` and the
-generated `graph-cli` agent skill exist.
+(reads, writes, `apply`, `describe`, `skills`), `graph-admin`, the
+generated `graph-cli` agent skill and per-graph skills (static, or generated
+from a template and the live model) exist.
 
 ## Repository layout
 
@@ -251,7 +252,8 @@ them.
 | `init` | create the data root and, if missing, `config.toml` with a device id |
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
 | `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
-| `graph skill publish GRAPH DIR` | publish a hand-written skill directory as the graph's skill (`--dry-run`, `--reason`) |
+| `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
+| `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
@@ -299,23 +301,75 @@ skill names no graph type.
 ### Graph skills
 
 A graph skill (`graph-<graph>`, `_` becomes `-`) says what one graph holds
-and how to use it. The maintainer writes it as a complete skill directory
-and publishes it into the graph's runtime area:
+and how to use it. The maintainer writes a skill directory and publishes it
+into the graph's runtime area. Its kind follows the content:
 
-```sh
-uv run graph-admin graph skill publish <graph> <dir> --dry-run
-uv run graph-admin graph skill publish <graph> <dir> --reason "<why>"
-```
+- `generated`: `SKILL.md` is a template. A line consisting only of
+  `<!-- graph_cli:block <name> -->` is replaced by a block generated from
+  the graph's live model and manifest; the frontmatter, all other prose and
+  extra files (`references/*.md`) are curated and kept. `graph` renders the
+  template at every `skills emit|install|check` with the model of the
+  graph's current pin, so after an ontology release an installed copy is
+  `stale` and `graph skills install` refreshes it; no republish is needed.
+- `static`: no marker. The files are the skill, installed as they are; a
+  skill published against another ontology release than the pin gives the
+  warning `skills.source_behind_ontology`.
+
+| Block | Renders |
+| --- | --- |
+| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); read the `graph-cli` skill first |
+| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
+| `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label |
+| `constraints` | transition guards, write-once fields, rules with severity |
+| `names` | the alias format (`SCOPE-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask |
+| `model` | a pointer to `references/model.md` and `graph describe type` |
+
+Each block may be used once; an unknown block name is refused. Every
+generated skill also gets `references/model.md` (every type of the model,
+imported ones included, with all fields, lifecycles, relations and rules),
+so a template may not contain a file of that name. A stamp after the
+frontmatter names the graph, the ontology release and the template hash;
+the program version and the time are not in it, so a new program with the
+same render stays `fresh`. Blocks use only the model and the manifest,
+never graph data (no counts, no records). Curated examples may name real
+aliases.
 
 Publishing checks the directory (`graph_cli.skills.tree`): the name equals
 the directory and the frontmatter `name`, regular UTF-8 files only, no
 dotfiles, `SKILL.md` at most 500 lines and the tree at most 256 KB, and no
 maintenance vocabulary (`graph-admin`, `maint.*`, `admin.*`, the data root
-option and variable) or local paths. It is audited as
-`maint.graph_configure` and records the ontology version it was written
-for; the same files against the same version publish nothing. `graph`
-reads published skills with `read.describe`, so a project only gets the
-skills of the graphs its pointer allows.
+option and variable) or local paths. A template is also rendered against
+the current pin exactly as `graph` will render it, and its curated text is
+checked against the model and the app inventory (`graph_cli.skills.names`):
+every CURIE with a model prefix names a type, relation, enum, lifecycle or
+datatype; every `graph <command>` in code names a command and only its
+flags; aliases with a graph prefix have the live format (`SCOPE-1` is
+refused), and in code an alias with a prefix the graph does not use is
+reported. Any problem refuses (`admin.skill_invalid`, `details.problems`
+with `rule` `template`, `term`, `command`, `alias` next to the tree rules).
+Publishing is audited as `maint.graph_configure` and records the ontology
+version it was checked against; the same files against the same version
+publish nothing. `graph` reads published skills with `read.describe`, so a
+project only gets the skills of the graphs its pointer allows. When the
+model or the program changes later, `graph` checks the curated text again
+at every render and warns with `skills.source_unknown_names` (the skill is
+still installed, its model part is right); a template it cannot render (a
+block from a newer publisher) is `skills.source_invalid`.
+
+The authoring loop: edit the template, preview, read, publish, install.
+
+```sh
+uv run graph-admin graph skill render <graph> <dir> --out <preview>
+uv run graph-admin graph skill publish <graph> <dir> --dry-run
+uv run graph-admin graph skill publish <graph> <dir> --reason "<why>"
+graph skills install --scope project --dir <project>
+```
+
+`render` writes `<preview>/graph-<graph>/` exactly as `graph skills
+install` would (without the marker), with this checkout's program, and
+reports what publish would refuse (exit 1, the preview is written anyway);
+it changes nothing in the data root. A non-empty preview directory is
+replaced only with `--force`.
 
 ### Installing skills
 
@@ -339,6 +393,9 @@ staging directory next to `skills/`, so an agent never sees a half copy.
 `--dry-run` shows the plan. `graph skills check` reports each skill as
 `fresh`, `stale`, `modified`, `unexpected`, `foreign`, `missing` or
 `unavailable` and names the program that checked (`data.program.executable`).
+A generated graph skill is `stale` after a new program, a republish or an
+ontology release changed its render; the marker's `source.model` names the
+ontology release it was rendered with.
 
 Installing `graph` itself is not a `graph` command. A recipe that keeps the
 tool's dependencies on the workspace lock (`uv tool install` ignores
@@ -367,7 +424,7 @@ it.
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
-| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output), structure |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
@@ -415,8 +472,10 @@ tests never touch real user config, data or state.
 code, one broken change set per `data.*` finding code, seed change sets for
 both ontologies (`tests/fixtures/seeds/`, applied through the write
 service), role mappings for role-based contract tests
-(`tests/support/roles.py`) and a graph skill for the `inventory` test graph
-(`tests/fixtures/skills/`).
+(`tests/support/roles.py`) and graph skills for the `inventory` test graph
+(`tests/fixtures/skills/`: a static one, a template with curated text, and
+`blocks/` with every block once, rendered for both toy ontologies into
+`tests/goldens/skills/`).
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in
