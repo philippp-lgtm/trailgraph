@@ -20,8 +20,8 @@ from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.catalog.identity import IdentityInputs, resolve_actor
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import JsonValue, hash_value
-from graph_cli.kernel.changeset import ChangeSet, parse_changeset
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.changeset import ChangeSet, parse_changeset, read_documents
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
 from graph_cli.kernel.ports.catalog import GraphEntry
@@ -29,6 +29,7 @@ from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snap
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
+from graph_cli.services.read import ReadService
 from graph_cli.services.write import (
     BatchResult,
     WriteConfig,
@@ -42,12 +43,14 @@ from graph_cli.storage.memory.store import InMemoryStore
 from support.admin_context import admin_context
 from support.audit_events import allow
 from support.clock import StepClock
-from support.fixtures import ONTOLOGIES, compiled_model
+from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
 from support.graphs import pin_of, release_files
 from support.ids import SeededIdProvider
 from support.stores import ALL_STATUSES, FaultSwitch
 
 ENV = EnvInfo(data_root="<data root>", root_source="default")
+SEEDS = FIXTURES / "seeds"
+SEED_REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
 
 
 def app_actor(uid: int = 501, user: str = "tester") -> ActorContext:
@@ -93,7 +96,13 @@ class MemoryCatalog:
         )
         self.audit.append(graph_stream(str(entry.id)), genesis, session_token=object())
 
-    def list_graphs(self, *, include_archived: bool = False) -> Sequence[GraphEntry]:
+    @property
+    def warnings(self) -> tuple[WarningRecord, ...]:
+        return ()
+
+    def list_graphs(
+        self, *, include_archived: bool = False, skip_unreadable: bool = False
+    ) -> Sequence[GraphEntry]:
         found = sorted(self.entries.values(), key=lambda e: (e.name, e.id))
         return [e for e in found if include_archived or e.state != "archived"]
 
@@ -219,6 +228,24 @@ class ServiceEnv:
             env=ENV,
             config=WriteConfig(lock_timeout_s=5.0, **config),
         )
+
+    def make_reader(self, policy: Any = None) -> ReadService:
+        return ReadService(
+            catalog=self.catalog,
+            audit=self.audit,
+            policy=policy or BuiltinPolicySource(),
+            clock=self.clock,
+            ids=self.ids,
+            env=ENV,
+        )
+
+    def apply_seed(self) -> BatchResult:
+        documents = read_documents((SEEDS / self.ontology / "changes.jsonl").read_bytes())
+        requests = [
+            WriteRequest(self.actor, self.name, self.service.parse(doc), False, SEED_REQUEST)
+            for doc in documents
+        ]
+        return self.service.apply_batch(requests)
 
     # ---- requests ------------------------------------------------------
 

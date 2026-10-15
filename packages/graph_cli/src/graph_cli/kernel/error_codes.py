@@ -94,6 +94,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("audit.refusal_not_recorded", _C.WARNING, False, "A refusal was not audited."),
     ErrorSpec("ontology.pin_mismatch_read", _C.WARNING, False, "Read with a mismatching artifact."),
     ErrorSpec("graph.archived_read", _C.WARNING, False, "The graph is archived."),
+    ErrorSpec(
+        "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
+    ),
     ErrorSpec("config.unknown_key", _C.WARNING, False, "A configuration key is unknown."),
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
 )

@@ -28,6 +28,7 @@ from graph_cli.storage.files.store import FileStore
 
 FILES_BACKEND = "files"
 FILES_FORMAT = 1  # [store] format_version of the FileStore layout (section 5)
+UNREADABLE = frozenset({"config.invalid", "format.unsupported_version", "backend.unavailable"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +56,7 @@ class FileCatalog:
 
     @property
     def warnings(self) -> tuple[WarningRecord, ...]:
-        """Unknown manifest keys seen so far, once per file and key."""
+        """Unknown manifest keys (once per file and key) and unreadable graphs seen so far."""
         return tuple(self._warnings.values())
 
     @property
@@ -85,16 +86,34 @@ class FileCatalog:
             self._warnings[(str(warning.details["file"]), str(warning.details["key"]))] = warning
         return data
 
-    def manifests(self, *, include_archived: bool = True) -> list[ManifestData]:
-        found = [self.manifest(graph) for graph in self.graph_ids()]
+    def manifests(
+        self, *, include_archived: bool = True, skip_unreadable: bool = False
+    ) -> list[ManifestData]:
+        found = []
+        for graph in self.graph_ids():
+            try:
+                found.append(self.manifest(graph))
+            except GraphCliError as exc:
+                if not skip_unreadable or exc.code not in UNREADABLE:
+                    raise
+                self._warnings[(str(graph), "")] = WarningRecord(
+                    "graph.unreadable",
+                    f"graph {graph} has an unreadable manifest and is not listed",
+                    {"graph_id": str(graph), "cause": exc.code},
+                )
         if not include_archived:
             found = [m for m in found if m.entry.state != "archived"]
         return sorted(found, key=lambda m: (m.entry.name, m.entry.id))
 
     # ---- Catalog port ----------------------------------------------------
 
-    def list_graphs(self, *, include_archived: bool = False) -> Sequence[GraphEntry]:
-        return [m.entry for m in self.manifests(include_archived=include_archived)]
+    def list_graphs(
+        self, *, include_archived: bool = False, skip_unreadable: bool = False
+    ) -> Sequence[GraphEntry]:
+        manifests = self.manifests(
+            include_archived=include_archived, skip_unreadable=skip_unreadable
+        )
+        return [m.entry for m in manifests]
 
     def resolve(self, ref: str) -> GraphEntry:
         """Name or id, archived graphs included (names are unique across all, B1.11)."""

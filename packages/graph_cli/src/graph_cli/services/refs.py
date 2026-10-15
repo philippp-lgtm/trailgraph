@@ -51,6 +51,7 @@ from graph_cli.kernel.ids import (
     EntityRef,
     LocalRef,
     TermRef,
+    parse_entity_ref,
     ref_text,
 )
 from graph_cli.kernel.ports.storage import Snapshot
@@ -150,6 +151,25 @@ class _Resolver:
         if revision is None:
             raise _not_found(ref_text(ref), "")
         return revision.type
+
+
+def resolve_ref(text: str, snapshot: Snapshot) -> tuple[EntityId, tuple[WarningRecord, ...]]:
+    """One reference from a CLI argument: full id, alias or abbreviation (B1.9).
+
+    A full id is returned as given (the caller checks existence where it matters).
+    """
+    ref = parse_entity_ref(text, allow_abbrev=True)
+    if ref is None:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"not an entity reference: {text!r}",
+            details={"expected": "a full id, an alias or 8-32 trailing hex digits", "actual": text},
+        )
+    resolver = _Resolver(snapshot, NO_BINDINGS, True, {})
+    found = resolver.ref(ref, "", subject=False)
+    assert not isinstance(found, LocalRef | AbbrevRef)
+    entity = resolver.refs[found.alias] if isinstance(found, AliasRef) else found
+    return entity, tuple(resolver.warnings.values())
 
 
 def _not_found(text: str, path: str) -> GraphCliError:
