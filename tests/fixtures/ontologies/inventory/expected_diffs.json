@@ -29,6 +29,15 @@
     {
       "changes": [
         {
+          "detail": {
+            "from": null,
+            "to": "label"
+          },
+          "kind": "add_role",
+          "level": "minor",
+          "path": "classes.inv:Item.attributes.name"
+        },
+        {
           "detail": {},
           "kind": "add_attribute",
           "level": "minor",

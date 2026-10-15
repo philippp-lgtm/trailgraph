@@ -29,7 +29,7 @@ def test_version_series_golden() -> None:
     ("old", "new", "level", "count"),
     [
         ("1.0.0", "1.0.1", "patch", 3),
-        ("1.0.1", "1.1.0", "minor", 4),
+        ("1.0.1", "1.1.0", "minor", 5),
         ("1.1.0", "2.0.0", "major", 3),
     ],
 )
@@ -72,6 +72,7 @@ classes:
     summary: A thing.
     attributes:
       code: {summary: Code., type: Code, mutability: immutable}
+      title: {summary: Title., type: string, role: label}
       state: {summary: State., lifecycle: Flow}
   Other:
     summary: Another thing.
@@ -105,6 +106,9 @@ def model(body: str, version: str) -> CompiledModel:
         ("range: Thing}", "range: [Thing, Other]}", "widen_range", "minor"),
         ("domain: Thing,", "domain: Other,", "change_domain", "major"),
         ("mutability: immutable", "mutability: content", "loosen_mutability", "minor"),
+        ("mutability: immutable}", "mutability: immutable, role: alt_label}", "add_role", "minor"),
+        ("type: string, role: label}", "type: string}", "remove_role", "major"),
+        ("role: label}", "role: hidden_label}", "change_role", "major"),
         (
             "{summary: Code., type: Code, mutability: immutable}",
             "{summary: Code., type: string}",

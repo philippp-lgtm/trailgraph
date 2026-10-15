@@ -65,6 +65,7 @@ classes:
         summary: Display name of the item.
         type: string
         required: true
+        role: label
         renamed_from: name
       serial_number:
         summary: Serial number, if the item has one.

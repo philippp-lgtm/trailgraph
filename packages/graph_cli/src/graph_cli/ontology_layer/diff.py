@@ -355,6 +355,16 @@ class _Differ:
                 "minor" if looser else "major",
                 **{"from": old.mutability, "to": new.mutability},
             )
+        if old.role != new.role:
+            # Adding a role only lets lookups find more; removing or switching it
+            # changes which names readers and generated skills rely on.
+            kind = "add" if old.role is None else "remove" if new.role is None else "change"
+            self.add(
+                path,
+                f"{kind}_role",
+                "minor" if kind == "add" else "major",
+                **{"from": old.role, "to": new.role},
+            )
 
     # ---- relations ---------------------------------------------------------------------------
 
