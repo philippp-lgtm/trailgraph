@@ -7,7 +7,7 @@ import pytest
 from support.clock import FixedClock
 
 from graph_cli.kernel.actor import ABSENT, ActorContext, Assurance, ClientInfo, Entrypoint, Facet
-from graph_cli.kernel.canonical import GENESIS_HASH, hash_document
+from graph_cli.kernel.canonical import GENESIS_HASH, hash_document, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, TermRef, TxId
 from graph_cli.kernel.records import (
@@ -128,3 +128,11 @@ def test_tx_round_trip_and_hash() -> None:
     assert data["alias_allocations"] == [{"entity": str(uid(1)), "alias": "THING-0001"}]
     assert tx_from_json(data) == tx
     assert hash_document(data) == tx.hash
+
+
+def test_request_meta_digest_covers_command_and_args() -> None:
+    meta = RequestMeta.of("get", {"graph": "g", "ref": "x"})
+    assert meta.command == "get"
+    assert meta.args_digest == hash_value({"command": "get", "args": {"graph": "g", "ref": "x"}})
+    assert RequestMeta.of("get", {"ref": "x", "graph": "g"}) == meta
+    assert RequestMeta.of("find", {"graph": "g", "ref": "x"}).args_digest != meta.args_digest

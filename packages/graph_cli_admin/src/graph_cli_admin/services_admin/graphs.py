@@ -18,9 +18,10 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GRAPH_NAME_RE, GraphId, TermRef
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
-from graph_cli_admin.services_admin.context import AdminContext, request
+from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import Compiled, compile_source, release_files
 
 STORE = StoreInfo("files", 1)
@@ -37,7 +38,7 @@ def create(
         )
     compiled = compile_source(source, module)
     pin = compiled.pin
-    meta = request(
+    meta = RequestMeta.of(
         "graph create",
         {"name": name, "title": title, "ontology": pin.to_json()},
     )

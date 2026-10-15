@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from graph_cli.app_cli.commands.common import GRAPH, context, request
+from graph_cli.app_cli.commands.common import GRAPH, context
 from graph_cli.app_cli.commands.write import EXPECT_ERRORS
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
@@ -22,6 +22,7 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet, changeset_hash, read_documents
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.read import graph_json
 from graph_cli.services.write import WriteRequest, WriteService
 
@@ -76,7 +77,7 @@ def apply(state: CommandState, file: str, graph: str | None, dry_run: bool) -> R
             graph=str(entry.id),
             changeset=changeset,
             dry_run=dry_run,
-            request=request(
+            request=RequestMeta.of(
                 "apply",
                 {
                     "graph": entry.name,

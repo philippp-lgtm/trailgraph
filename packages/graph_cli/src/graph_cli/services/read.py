@@ -21,7 +21,7 @@ from graph_cli.audit import events
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS, Action
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
-from graph_cli.kernel.canonical import JsonValue, hash_value
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TermRef
@@ -320,8 +320,3 @@ _INSTALLATION_READS = frozenset({Action("read.list"), Action("read.describe")})
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:
     return [str(source) for source, _ in snapshot.incoming(entity, TermRef(rel))]
-
-
-def request_meta(command: str, args: dict[str, JsonValue]) -> RequestMeta:
-    """C.10: the digest covers the request DTO, not raw argv."""
-    return RequestMeta(command, hash_value({"command": command, "args": args}))

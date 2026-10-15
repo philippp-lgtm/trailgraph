@@ -6,7 +6,6 @@ read the environment, the clock or the filesystem layout on their own.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 from graph_cli.access_control.authorize import authorize
@@ -16,7 +15,6 @@ from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.catalog.resolve import Roots
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
-from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.clock import Clock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId, IdProvider
@@ -74,8 +72,3 @@ class AdminContext:
             )
             raise GraphCliError(first.code, f"{first.action} on {first.resource} is not permitted")
         return decisions
-
-
-def request(command: str, args: Mapping[str, JsonValue]) -> RequestMeta:
-    """C.10: the digest covers the request DTO, not raw argv."""
-    return RequestMeta(command, hash_value({"command": command, "args": dict(args)}))

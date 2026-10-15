@@ -5,12 +5,13 @@ from __future__ import annotations
 import shlex
 from typing import Final
 
-from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context, request
+from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, FindSpec, parse_rel_flag
 from graph_cli.services.read import GraphRead, refuse_as_of
 
@@ -28,7 +29,7 @@ def _open(
     ctx = context(state)
     entry = ctx.select(graph)
     view = ctx.reader.open(
-        ctx.actor, entry, action, request(command, {"graph": entry.name, **args})
+        ctx.actor, entry, action, RequestMeta.of(command, {"graph": entry.name, **args})
     )
     state.warnings += view.warnings
     return view

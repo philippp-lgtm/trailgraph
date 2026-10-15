@@ -38,9 +38,9 @@ from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findin
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
 from graph_cli.kernel.ports.storage import GraphStoreRead
-from graph_cli.kernel.records import TxRecord
+from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
-from graph_cli_admin.services_admin.context import AdminContext, request
+from graph_cli_admin.services_admin.context import AdminContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +63,7 @@ class Verification:
 
 
 def verify(ctx: AdminContext) -> Verification:
-    meta = request("audit verify", {})
+    meta = RequestMeta.of("audit verify", {})
     decisions = ctx.authorize([("maint.audit_verify", "installation")], request=meta)
     installation = verify_stream(
         ctx.audit.read_lines(INSTALLATION_STREAM), stream=INSTALLATION_STREAM
@@ -149,7 +149,7 @@ def all_txs(store: GraphStoreRead) -> list[TxRecord]:
 
 def anchor(ctx: AdminContext) -> dict[str, JsonValue]:
     """One ``maint.audit_anchor`` event with the chain-verified head of every graph stream."""
-    meta = request("audit anchor", {})
+    meta = RequestMeta.of("audit anchor", {})
     decisions = ctx.authorize([("maint.audit_anchor", "installation")], request=meta)
     heads = []
     for graph_id in ctx.maintenance.graph_ids():

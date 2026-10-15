@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Final
 
-from graph_cli.app_cli.commands.common import GRAPH, context, request
+from graph_cli.app_cli.commands.common import GRAPH, context
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
@@ -37,6 +37,7 @@ from graph_cli.kernel.changeset import (
 )
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import TERM_REF_RE, EdgeId, EntityRef, TermRef, parse_entity_ref, parse_id
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.plan import split_assignment
 from graph_cli.services.read import graph_json
 from graph_cli.services.write import WriteRequest
@@ -146,7 +147,7 @@ def _apply(
     changeset = _changeset(op, reason, idempotency_key)
     ctx = context(state)
     entry = ctx.select(graph)
-    meta = request(
+    meta = RequestMeta.of(
         command,
         {
             "graph": entry.name,

@@ -65,6 +65,11 @@ class RequestMeta:
     command: str
     args_digest: str
 
+    @classmethod
+    def of(cls, command: str, args: Mapping[str, JsonValue]) -> RequestMeta:
+        """C.10: the digest covers the request DTO, not raw argv."""
+        return cls(command, hash_value({"command": command, "args": dict(args)}))
+
 
 @dataclass(frozen=True, slots=True)
 class EnvInfo:

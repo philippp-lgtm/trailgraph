@@ -37,7 +37,7 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
-from graph_cli_admin.services_admin.context import AdminContext, request
+from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     COMPILED_FILE,
     compile_source,
@@ -62,7 +62,9 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
     entry = ctx.catalog.resolve(graph_ref)
     _check_state(entry)
     resource = f"graph:{entry.id}"
-    meta = request("ontology release", {"graph": str(entry.id), "ontology": target.to_json()})
+    meta = RequestMeta.of(
+        "ontology release", {"graph": str(entry.id), "ontology": target.to_json()}
+    )
     release_decisions = ctx.authorize(
         [("maint.ontology_release", resource)], request=meta, graph=entry.id
     )

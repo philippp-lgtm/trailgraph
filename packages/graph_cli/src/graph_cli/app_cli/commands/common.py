@@ -7,8 +7,6 @@ from typing import Final
 from graph_cli.catalog.wiring import AppContext, AppServices
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import ParamSpec
-from graph_cli.kernel.canonical import JsonValue, hash_value
-from graph_cli.kernel.records import RequestMeta
 
 PROGRAM: Final = "graph"
 GRAPH: Final = ParamSpec(
@@ -26,8 +24,3 @@ def services(state: CommandState) -> AppServices:
 
 def context(state: CommandState) -> AppContext:
     return services(state).context(state.warnings)
-
-
-def request(command: str, args: dict[str, JsonValue]) -> RequestMeta:
-    """C.10: the digest covers the request DTO, not raw argv."""
-    return RequestMeta(command, hash_value({"command": command, "args": args}))

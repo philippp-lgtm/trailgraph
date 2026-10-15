@@ -10,13 +10,13 @@ from graph_cli.app_cli.commands.common import (
     JSON_OPTION,
     PROGRAM,
     context,
-    request,
 )
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.inventory import build_inventory
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead
 
@@ -40,7 +40,9 @@ def whoami(state: CommandState) -> Result:
 def graphs(state: CommandState) -> Result:
     ctx = context(state)
     allowed = ctx.pointer.graphs if ctx.pointer is not None else None
-    items, hidden, warnings = ctx.reader.graphs(ctx.actor, request("graphs", {}), allowed=allowed)
+    items, hidden, warnings = ctx.reader.graphs(
+        ctx.actor, RequestMeta.of("graphs", {}), allowed=allowed
+    )
     state.warnings += warnings
     return Result(data={"items": items, "hidden_count": hidden})
 
@@ -65,7 +67,7 @@ def _view(state: CommandState, graph: str | None, command: str) -> GraphRead:
     ctx = context(state)
     entry = ctx.select(graph)
     view = ctx.reader.open(
-        ctx.actor, entry, "read.describe", request(command, {"graph": entry.name})
+        ctx.actor, entry, "read.describe", RequestMeta.of(command, {"graph": entry.name})
     )
     state.warnings += view.warnings
     return view
