@@ -56,6 +56,7 @@ name = "graph_cli layers"
 type = "layers"
 layers = [
     "graph_cli.app_cli",
+    "graph_cli.skills",
     "graph_cli.cli_kit",
     "graph_cli.catalog",
     "graph_cli.extensions",
@@ -97,6 +98,26 @@ forbidden_modules = [
     "graph_cli.catalog",
     "graph_cli.cli_kit",
     "graph_cli.app_cli",
+]
+
+# Skill generators read only the public inventory and model description (B11),
+# never the declarations or services behind them.
+[[tool.importlinter.contracts]]
+name = "Skill generators import only the kernel"
+type = "forbidden"
+source_modules = ["graph_cli.skills"]
+forbidden_modules = [
+    "graph_cli.app_cli",
+    "graph_cli.cli_kit",
+    "graph_cli.catalog",
+    "graph_cli.extensions",
+    "graph_cli.services",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.storage",
+    "graph_cli.query",
+    "graph_cli.ontology_layer",
 ]
 
 # Audit events and authorization decisions are pure functions over kernel
