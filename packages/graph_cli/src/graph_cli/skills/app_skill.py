@@ -73,6 +73,8 @@ against it and audited. The CLI is on `PATH`.
   graph's types, fields and relations. This skill never does.
 - Never guess a type, field, relation or state name. Ask `graph describe`.
 - Reads never change anything. Writes are recorded with who made them.
+- `graph skills` commands install agent skills such as this one. Run them
+  only when the user asks.
 
 ## Workflow
 
@@ -159,6 +161,22 @@ ERROR_KEYS: Final = ("code", "category", "retryable", "message", "hint", "detail
 
 def render_app_skill(inventory: Mapping[str, JsonValue]) -> dict[str, str]:
     """``{relative path: content}`` of ``skills/graph-cli/``; refuses what it cannot render."""
+    doc, commands, codes = _ordered(inventory)
+    return {
+        SKILL_FILE: _skill(doc, commands, codes),
+        COMMANDS_FILE: _commands_file(commands),
+        ERRORS_FILE: _errors_file(codes),
+    }
+
+
+def inventory_hash(inventory: Mapping[str, JsonValue]) -> str:
+    """``metadata.inventory_hash`` of the rendered skill: C.1 hash, commands and codes sorted."""
+    return hash_value(_ordered(inventory)[0])
+
+
+def _ordered(
+    inventory: Mapping[str, JsonValue],
+) -> tuple[JsonObject, list[JsonObject], list[JsonObject]]:
     doc = _checked(inventory)
     commands = sorted(
         (as_object(c, "commands[]") for c in req_list(doc, "commands")),
@@ -169,11 +187,7 @@ def render_app_skill(inventory: Mapping[str, JsonValue]) -> dict[str, str]:
         key=lambda e: req_str(e, "code"),
     )
     doc = {**doc, "commands": list(commands), "error_codes": list(codes)}  # stamp order-free
-    return {
-        SKILL_FILE: _skill(doc, commands, codes),
-        COMMANDS_FILE: _commands_file(commands),
-        ERRORS_FILE: _errors_file(codes),
-    }
+    return doc, commands, codes
 
 
 def _checked(inventory: Mapping[str, JsonValue]) -> JsonObject:

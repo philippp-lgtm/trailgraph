@@ -13,11 +13,15 @@ import json
 import re
 from collections.abc import Callable
 from functools import cache
+from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
-from support.fixtures import GOLDENS
+from harness import CliRunner
+from support.admin import admin, init
+from support.app import app, create_graph
+from support.fixtures import FIXTURES, GOLDENS
 from support.skills import SKILL_DIR, committed_files
 from test_vocabulary_leak import deny_list
 
@@ -39,6 +43,7 @@ ALLOWED_PLACEHOLDERS = {
     "<file>",
     "<json>",
     "<seq>",
+    "<dir>",
 }
 
 
@@ -263,6 +268,28 @@ class TestLeaks:
         assert leaks(files) == []
         files["SKILL.md"] += "\n" + plant(*vocabulary()) + "\n"
         assert any(x.startswith(kind + ":") for x in leaks(files))
+
+    def test_emit_output_has_no_leaks(
+        self, run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+    ) -> None:
+        """D15: every ``graph skills emit`` output, skill 1 and a published graph skill.
+        A graph skill names its graph's model on purpose, so vocabulary and CURIEs are
+        allowed there; the publish refusal of ``graph-admin`` is the positive control
+        (``tests/cli/test_admin_skill.py``)."""
+        init(run_cli, isolated_env)
+        create_graph(run_cli, "example_graph")
+        source = FIXTURES / "skills" / "graph-example-graph"
+        assert admin(run_cli, "graph", "skill", "publish", "example_graph", str(source)).code == 0
+        out = tmp_path / "out"
+        out.mkdir()
+        outcome = app(run_cli, "skills", "emit", "--out", str(out), "--graph", "example_graph")
+        assert outcome.code == 0, outcome.envelope
+        emitted = {skill.name: committed_files(skill) for skill in sorted(out.iterdir())}
+        assert sorted(emitted) == ["graph-cli", "graph-example-graph"]
+        assert leaks(emitted["graph-cli"]) == []
+        graph_leaks = leaks(emitted["graph-example-graph"])
+        assert [x for x in graph_leaks if not x.startswith(("vocabulary:", "curie:"))] == []
+        assert graph_leaks, "positive control: the graph skill does name its model"
 
 
 # --- structure -------------------------------------------------------------------------

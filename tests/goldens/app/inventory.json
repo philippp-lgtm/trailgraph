@@ -1248,6 +1248,73 @@
     },
     {
       "path": [
+        "skills",
+        "emit"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Write the agent skills of this program and named graphs into a directory.",
+      "args": [],
+      "options": [
+        {
+          "name": "--out",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "Existing directory to write one directory per skill into."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": true,
+          "summary": "Also the skill of this graph (name or id); repeatable."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace skill directories that exist."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph skills emit --out <dir>",
+          "summary": "Write the skill of this program."
+        },
+        {
+          "command": "graph skills emit --out <dir> --graph <graph> --json",
+          "summary": "Also the skill of one graph."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "internal.error",
+        "skills.not_owned",
+        "skills.source_invalid",
+        "skills.source_missing",
+        "skills.target_invalid",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "supersede"
       ],
       "kind": "write",
@@ -1885,6 +1952,26 @@
       "code": "ontology.pin_mismatch",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "skills.not_owned",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "skills.source_invalid",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "skills.source_missing",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "skills.target_invalid",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "temporal.as_of_unsupported",

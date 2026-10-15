@@ -88,6 +88,28 @@ def test_generated_commands_parse_and_call_the_handler() -> None:
     assert code == 2
 
 
+def test_required_options_and_directories() -> None:
+    """A required option is enforced (click treats an explicit default as given)."""
+    spec = CommandSpec(
+        path=("put",),
+        kind="meta",
+        surface="meta",
+        action=None,
+        summary="Put.",
+        params=(ParamSpec("--out", "directory", "Where.", required=True),),
+        examples=(Example("prog put --out <dir>", "Put."), Example("prog put --json", "x")),
+        errors=(),
+        handler=echo,
+    )
+    group = build_click(click.Group("prog"), (spec,))
+    out = io.StringIO()
+    code = run(group, ["put", "--json"], Invocation("prog"), out=out, err=io.StringIO())
+    assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage.missing_argument"
+    out = io.StringIO()
+    code = run(group, ["put", "--out", "x", "--json"], Invocation("prog"), out=out, err=out)
+    assert code == 0 and json.loads(out.getvalue())["data"] == {"out": "x"}
+
+
 def test_help_shows_examples() -> None:
     out, err = io.StringIO(), io.StringIO()
     with pytest.raises(SystemExit) as info:

@@ -349,6 +349,25 @@ Usage: `graph retract REF [OPTIONS]`
 | `graph retract <id> --reason <value>` | Withdraw an entity. |
 | `graph retract <id> --by <id> --reason <value> --json` | Withdraw, citing a correction. |
 
+## graph skills emit
+
+Write the agent skills of this program and named graphs into a directory.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph skills emit [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--out` | directory | yes | no | Existing directory to write one directory per skill into. |
+| `--graph` | graph_ref | no | yes | Also the skill of this graph (name or id); repeatable. |
+| `--force` | flag | no | no | Replace skill directories that exist. |
+
+| Example | Summary |
+|---|---|
+| `graph skills emit --out <dir>` | Write the skill of this program. |
+| `graph skills emit --out <dir> --graph <graph> --json` | Also the skill of one graph. |
+
 ## graph supersede
 
 Replace entities by another one; needs --reason.

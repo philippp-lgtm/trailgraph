@@ -33,7 +33,10 @@ def program() -> click.Group:
     return build_click(
         cli,
         all_specs(),
-        group_help={"describe": "Describe the commands, or the ontology of a graph."},
+        group_help={
+            "describe": "Describe the commands, or the ontology of a graph.",
+            "skills": "Write, install and check the agent skills of this program and its graphs.",
+        },
     )
 
 

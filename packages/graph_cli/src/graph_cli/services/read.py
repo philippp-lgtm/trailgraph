@@ -26,7 +26,7 @@ from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TermRef
 from graph_cli.kernel.ports.audit import AuditSink
-from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
+from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Query
@@ -185,6 +185,14 @@ class ReadService:
         read, _ = self._catalog.store_for(entry.id)
         snapshot = read.snapshot()
         return GraphRead(entry, model, snapshot, (*warnings, *snapshot.warnings))
+
+    def skill(
+        self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
+    ) -> SkillSlot | None:
+        """The graph's published skill (D15 Q1): a description of the graph, so
+        ``read.describe`` on ``graph:<id>``; ``None`` when none is published."""
+        self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
+        return self._catalog.read_skill(entry.id)
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None

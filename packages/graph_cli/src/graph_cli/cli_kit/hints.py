@@ -59,14 +59,17 @@ def _mkdir(details: Mapping[str, JsonValue], program: str) -> str | None:
 
 
 def _install(details: Mapping[str, JsonValue], program: str, *, force: bool) -> str | None:
-    """Re-run ``skills install`` for the same target and graphs (D15)."""
-    scope = details.get("scope")
-    if not isinstance(scope, str):
+    """Re-run ``skills install`` (or ``skills emit``) for the same target and graphs (D15)."""
+    scope, out = details.get("scope"), details.get("out")
+    if isinstance(scope, str):
+        words = [program, "skills", "install", "--scope", scope]
+        target = details.get("dir")
+        if isinstance(target, str):
+            words += ["--dir", shlex.quote(target)]
+    elif isinstance(out, str):
+        words = [program, "skills", "emit", "--out", shlex.quote(out)]
+    else:
         return None
-    words = [program, "skills", "install", "--scope", scope]
-    target = details.get("dir")
-    if isinstance(target, str):
-        words += ["--dir", shlex.quote(target)]
     graphs = details.get("graphs")
     if isinstance(graphs, list):
         for graph in graphs:

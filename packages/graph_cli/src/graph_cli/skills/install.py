@@ -321,6 +321,50 @@ def _swap(target: SkillTarget, skill: RenderedSkill) -> None:
             old.unlink()
 
 
+# ---- emit --------------------------------------------------------------------
+
+
+def emit_skills(
+    out: Path,
+    skills: Sequence[RenderedSkill],
+    *,
+    force: bool,
+    details: Mapping[str, JsonValue] = EMPTY,
+) -> list[Step]:
+    """Write ``<out>/<skill>/`` without a marker (plugin layout); an existing non-empty
+    directory is replaced only with ``force`` (``skills.not_owned``)."""
+    steps = []
+    for skill in skills:
+        dest = out / skill.name
+        exists = dest.is_symlink() or dest.exists()
+        occupied = exists and (not dest.is_dir() or any(dest.iterdir()))
+        action: Action = "refused" if occupied and not force else "replace" if exists else "create"
+        steps.append(Step(skill, action, "foreign" if occupied else None))
+    refused = [s.skill.name for s in steps if s.action == "refused"]
+    if refused:
+        raise GraphCliError(
+            "skills.not_owned",
+            f"{', '.join(refused)} exists in {out}; pass --force to replace it",
+            details={**details, "refused": [{"skill": n, "installed": "foreign"} for n in refused]},
+        )
+    try:
+        for step in steps:
+            dest = out / step.skill.name
+            if step.action == "replace":
+                if dest.is_dir() and not dest.is_symlink():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            write_tree(dest, step.skill.files)
+    except OSError as exc:
+        raise GraphCliError(
+            "skills.target_invalid",
+            f"cannot write the skills: {exc.strerror or exc}",
+            details={**details, "path": str(out), "cause": "io"},
+        ) from exc
+    return steps
+
+
 # ---- check -------------------------------------------------------------------
 
 

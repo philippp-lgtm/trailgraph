@@ -48,6 +48,10 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `internal.error` | internal | 6 |
 | `ontology.artifact_missing` | unavailable | 5 |
 | `ontology.pin_mismatch` | unavailable | 5 |
+| `skills.not_owned` | refused | 1 |
+| `skills.source_invalid` | invalid | 1 |
+| `skills.source_missing` | not_found | 1 |
+| `skills.target_invalid` | refused | 1 |
 | `temporal.as_of_unsupported` | refused | 1 |
 | `term.no_labels` | refused | 1 |
 | `term.unknown` | not_found | 1 |

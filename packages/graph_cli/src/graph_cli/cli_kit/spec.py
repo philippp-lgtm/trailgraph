@@ -32,6 +32,7 @@ ParamType = Literal[
     "json_assignment",
     "filter",
     "file",
+    "directory",
 ]
 Kind = Literal["read", "write", "meta"]
 Surface = Literal["model", "retrieve", "act", "trace", "meta"]
@@ -108,10 +109,14 @@ def _click_param(param: ParamSpec) -> click.Parameter:
         kwargs.update(type=click.Choice(param.choices), default=param.default)
     elif param.type == "integer":
         kwargs.update(type=click.INT, default=param.default)
+    elif param.type == "directory":
+        kwargs.update(type=click.Path(file_okay=False), default=param.default)
     else:
         kwargs.update(default=param.default)
     if param.repeatable:
         kwargs.update(multiple=True, default=())
+    if param.required:
+        kwargs.pop("default", None)  # click treats an explicit default as given
     return click.Option([param.name, param.dest], **kwargs)
 
 
