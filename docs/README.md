@@ -321,7 +321,7 @@ into the graph's runtime area. Its kind follows the content:
 | `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
 | `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label |
 | `constraints` | transition guards, write-once fields, rules with severity |
-| `names` | the alias format (`SCOPE-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask |
+| `names` | the alias format (`ITEM-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask |
 | `model` | a pointer to `references/model.md` and `graph describe type` |
 
 Each block may be used once; an unknown block name is refused. Every
@@ -343,7 +343,7 @@ the current pin exactly as `graph` will render it, and its curated text is
 checked against the model and the app inventory (`graph_cli.skills.names`):
 every CURIE with a model prefix names a type, relation, enum, lifecycle or
 datatype; every `graph <command>` in code names a command and only its
-flags; aliases with a graph prefix have the live format (`SCOPE-1` is
+flags; aliases with a graph prefix have the live format (`ITEM-1` is
 refused), and in code an alias with a prefix the graph does not use is
 reported. Any problem refuses (`admin.skill_invalid`, `details.problems`
 with `rule` `template`, `term`, `command`, `alias` next to the tree rules).

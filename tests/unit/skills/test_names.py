@@ -86,10 +86,10 @@ def test_good_text_has_no_problems() -> None:
         ),
         ("item ITEM-00001", "item ITEM-0001", "alias", "ITEM-00001"),
         (
-            "`graph get SCOPE-0001`",
+            "`graph get NOTE-0001`",
             "`graph get ITEM-0001`",
             "alias",
-            "SCOPE-0001 has a prefix this graph does not use",
+            "NOTE-0001 has a prefix this graph does not use",
         ),
     ],
 )
@@ -101,7 +101,7 @@ def test_each_rule_with_a_positive_control(wrong: str, right: str, rule: str, me
 
 
 def test_prefixes_outside_the_model_and_generated_blocks_are_not_checked() -> None:
-    assert problems("`other:Thing`, https://example.org/a:b and SCOPE-1 in prose.\n") == []
+    assert problems("`other:Thing`, https://example.org/a:b and NOTE-1 in prose.\n") == []
     # The types block names every inv: term; only the curated text around it is read.
     assert problems("<!-- graph_cli:block types -->\n<!-- graph_cli:block names -->\n") == []
 

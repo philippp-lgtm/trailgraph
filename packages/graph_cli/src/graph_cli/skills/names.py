@@ -10,7 +10,7 @@ does not have. Checked, each with rule:
   block) names a command of the inventory, and every ``--flag`` after it is
   an option of that command or a global option.
 - ``alias``: an alias-shaped token with a prefix of the graph has the live
-  format (``SCOPE-0001``, not ``SCOPE-1``, F12); in code, an alias with four
+  format (``ITEM-0001``, not ``ITEM-1``, F12); in code, an alias with four
   or more digits and a prefix the graph does not have is reported too
   (text like ``UTF-8`` stays plain). Whether the entity exists is not checked:
   data changes, the model part does not name data (Q4).
