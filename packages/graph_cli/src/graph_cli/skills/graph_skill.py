@@ -456,8 +456,8 @@ def _names(doc: _Model) -> list[str]:
     lines.append(
         "- Names are not unique, so `lookup` returns candidates. Use the returned alias or id"
         " only when exactly one candidate matches exactly (`match.kind` is `exact`). With"
-        " several candidates, or only prefix matches, list them with their names and ask"
-        " which one is meant; never answer about the closest one on your own."
+        " several candidates, or only prefix matches, do not answer about one of them first:"
+        " list them with their names and ask which one is meant, then answer."
     )
     return lines
 

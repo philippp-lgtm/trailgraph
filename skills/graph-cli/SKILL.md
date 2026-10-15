@@ -41,8 +41,9 @@ against it and audited. The CLI is on `PATH`.
    `page.next_offset` or the hint when `page.truncated` is true. To find
    something by name, `graph lookup <value> --json` lists candidates, since
    names are not unique. Use the returned id only when exactly one
-   candidate matches exactly (`match.kind` is `exact`); otherwise show the
-   candidates and ask which one is meant.
+   candidate matches exactly (`match.kind` is `exact`). With several
+   candidates, or only prefix matches, do not answer about one of them
+   first: list them and ask which one is meant, then answer.
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
