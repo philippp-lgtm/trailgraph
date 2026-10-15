@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.label_not_single",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.name.many"
+  }
+}

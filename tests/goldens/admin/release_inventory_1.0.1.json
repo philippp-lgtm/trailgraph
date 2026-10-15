@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:a6c5a0de1c81c7a69905c1bf79d59c8f1413d6a96c525a1ee3a5eabbea735857",
+  "artifact_hash": "sha256:569a096aa6d36ce07fa716fc7a0ca54e958d02793672f87270fb612d59d1770a",
   "bundle": "inventory",
   "classification": {
     "computed": "patch",
@@ -11,7 +11,7 @@
     "version": "<version>"
   },
   "files": {
-    "compiled.json": "sha256:e768422de77e0ce7bfcc5f78fe600ef4ccd7dfbfe652050a17a6c4eac1c7ad7e",
+    "compiled.json": "sha256:fa07cd11d9dcde55300627568a9c927e6e765eeaa945414390aea21c7344c349",
     "diff.json": "sha256:0ef008f31111ca9869d0bf7091a0690eb03d50694f1ecd11b70c764421567954",
     "exports/jsonschema/inv.Category.json": "sha256:2c9eccd2a21a6fbd73a2511679ea14edec442fc6d421e9395bbccd2975c73342",
     "exports/jsonschema/inv.Item.json": "sha256:bb3897a9e583bf64e0b6e7f8396e4cfa7d418bfb4a62ef80c5cece2c2c139ca4",
@@ -19,7 +19,7 @@
     "source/inventory.yaml": "sha256:02ac77b345342ca6d19370c5a22c2a4d6a98cc132884d0d762358bf3259efe99"
   },
   "previous": {
-    "artifact_hash": "sha256:1000dc2326c864c1e8c74585315ffcb77ff8c953645d6c0a1991fcf6acc39259",
+    "artifact_hash": "sha256:2d78eeb07d92ec06dd976b24a54852f2c70cd8988e48cbb3aae94f93844b85d1",
     "version": "1.0.0"
   },
   "release_id": "01a13e93-4000-76c1-b082-532b629f6fbe",

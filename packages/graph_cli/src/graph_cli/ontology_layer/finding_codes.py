@@ -73,6 +73,9 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _model("semantic", "qualifier_unknown_datatype", "A qualifier names an unknown type."),
     _model("semantic", "unique_on_non_scalar", "Uniqueness is declared on a non-scalar value."),
     _model("semantic", "attribute_redefined", "A class redefines an inherited attribute."),
+    _model("semantic", "role_not_applicable", "A label role is set on a non-string attribute."),
+    _model("semantic", "label_not_single", "A main label attribute is declared many."),
+    _model("semantic", "duplicate_label", "A class has more than one main label attribute."),
     # lifecycle
     _model("lifecycle", "no_initial_state", "A lifecycle has no initial state."),
     _model("lifecycle", "unreachable_state", "A state cannot be reached from an initial state."),

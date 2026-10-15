@@ -20,6 +20,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Unique name of the category.",
           "type": "string",
           "unique": true
@@ -49,6 +50,7 @@
           "mutability": "immutable",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "Date the item was acquired.",
           "type": "date",
           "unique": false
@@ -64,6 +66,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "Physical condition.",
           "type": "inv:Condition",
           "unique": false
@@ -79,6 +82,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Display name of the item.",
           "type": "string",
           "unique": false
@@ -94,6 +98,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Number of units.",
           "type": "inv:Quantity",
           "unique": false
@@ -109,6 +114,7 @@
           "mutability": "immutable",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "Serial number, if the item has one.",
           "type": "inv:SerialNumber",
           "unique": true
@@ -124,6 +130,7 @@
           "mutability": "lifecycle",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Availability state.",
           "type": "inv:ItemLifecycle",
           "unique": false
@@ -153,6 +160,7 @@
           "mutability": "immutable",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Short unique code printed on the location.",
           "type": "string",
           "unique": true
@@ -168,6 +176,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Display name of the location.",
           "type": "string",
           "unique": false

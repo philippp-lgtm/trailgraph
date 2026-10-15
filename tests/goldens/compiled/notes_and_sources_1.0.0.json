@@ -22,6 +22,7 @@
           "mutability": "immutable",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "ISBN of the edition.",
           "type": "nas:Isbn",
           "unique": false
@@ -37,6 +38,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "Publishing house.",
           "type": "string",
           "unique": false
@@ -52,6 +54,7 @@
           "mutability": "operational",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "When the source was last retrieved.",
           "type": "date",
           "unique": false
@@ -67,6 +70,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Title of the source.",
           "type": "string",
           "unique": false
@@ -100,6 +104,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Text of the note.",
           "type": "text",
           "unique": false
@@ -115,6 +120,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "What the note records.",
           "type": "nas:NoteKind",
           "unique": false
@@ -130,6 +136,7 @@
           "mutability": "lifecycle",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Editorial state.",
           "type": "nas:NoteLifecycle",
           "unique": false
@@ -145,6 +152,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Headline of the note.",
           "type": "string",
           "unique": false
@@ -178,6 +186,7 @@
           "mutability": "operational",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "When the source was last retrieved.",
           "type": "date",
           "unique": false
@@ -193,6 +202,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Title of the source.",
           "type": "string",
           "unique": false
@@ -222,6 +232,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "What the topic covers.",
           "type": "text",
           "unique": false
@@ -237,6 +248,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Unique name of the topic.",
           "type": "string",
           "unique": true
@@ -268,6 +280,7 @@
           "mutability": "operational",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "When the source was last retrieved.",
           "type": "date",
           "unique": false
@@ -283,6 +296,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Title of the source.",
           "type": "string",
           "unique": false
@@ -298,6 +312,7 @@
           "mutability": "immutable",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "Address of the page.",
           "type": "iri",
           "unique": false
@@ -331,6 +346,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": false,
+          "role": null,
           "summary": "How strongly the claim is believed.",
           "type": "provenance:Confidence",
           "unique": false
@@ -346,6 +362,7 @@
           "mutability": "content",
           "renamed_from": null,
           "required": true,
+          "role": null,
           "summary": "The asserted statement in plain language.",
           "type": "text",
           "unique": false

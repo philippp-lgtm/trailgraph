@@ -10,11 +10,12 @@ from support.fixtures import (
     ontology_versions,
 )
 
-from graph_cli.kernel.canonical import canonical_bytes, pretty_bytes
+from graph_cli.kernel.canonical import canonical_bytes, hash_value, pretty_bytes
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
-from graph_cli.ontology_layer.model import load_compiled, model_from_json
+from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
 
 ALL_VERSIONS = [(name, v) for name in TOY_ONTOLOGIES for v in ontology_versions(name)]
 
@@ -152,3 +153,122 @@ def test_unknown_references_name_their_likely_candidates() -> None:
     assert relation.message.endswith("did you mean 'provenance:supported_by'?")
     assert found["model.referential.unknown_parent"].expected == ["provenance:Claim"]
     assert found["model.structural.unknown_datatype"].expected == ["string"]
+
+
+_ROLES = """\
+format: graph_cli.ir/1
+module:
+  id: example_module
+  prefix: ex
+  version: 1.0.0
+  summary: Label roles on string attributes.
+
+datatypes:
+  ShortText:
+    summary: One line of text.
+    base: string
+    single_line: true
+
+classes:
+  Base:
+    summary: Common base.
+    attributes:
+      name:
+        summary: Main name.
+        type: ShortText
+        role: label
+  Thing:
+    summary: Something that is tracked.
+    is_a: Base
+    attributes:
+      synonyms:
+        summary: Other names.
+        type: string
+        many: true
+        role: alt_label
+      misspellings:
+        summary: Searchable, never shown.
+        type: string
+        many: true
+        role: hidden_label
+      code:
+        summary: Not a label.
+        type: string
+"""
+
+
+def roles_model() -> CompiledModel:
+    source = LayeredSource(MappingSource({"example_module": _ROLES.encode()}))
+    outcome = compile_bundle("example_module", source)
+    assert outcome.model is not None and not outcome.findings, outcome.findings
+    return outcome.model
+
+
+def test_label_roles_compile_and_are_inherited() -> None:
+    thing = roles_model().classes["ex:Thing"]
+    roles = {name: a.role for name, a in thing.attributes.items()}
+    assert roles == {
+        "name": "label",
+        "synonyms": "alt_label",
+        "misspellings": "hidden_label",
+        "code": None,
+    }
+    assert thing.attributes["name"].declared_in == "ex:Base"
+    compiled = roles_model().to_json()["classes"]
+    assert compiled["ex:Thing"]["attributes"]["code"]["role"] is None  # B7.7: always written
+
+
+def test_unknown_role_is_an_invalid_value() -> None:
+    text = _ROLES.replace("role: hidden_label", "role: nickname")
+    outcome = compile_bundle(
+        "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
+    )
+    assert [(f.code, f.target["path"]) for f in outcome.findings] == [
+        ("model.structural.invalid_value", "classes.Thing.attributes.misspellings.role")
+    ]
+
+
+@pytest.mark.parametrize("type_ref", ["text", "integer", "iri", "json", "external_ref"])
+def test_roles_need_a_string_type(type_ref: str) -> None:
+    text = _ROLES.replace(
+        "type: string\n        many: true\n        role: alt_label",
+        f"type: {type_ref}\n        many: true\n        role: alt_label",
+    )
+    outcome = compile_bundle(
+        "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
+    )
+    assert [(f.code, f.target["path"]) for f in outcome.findings] == [
+        ("model.semantic.role_not_applicable", "classes.Thing.attributes.synonyms.role")
+    ]
+
+
+def test_document_without_role_reads_as_null() -> None:
+    # Artifacts released before label roles have no "role" key; they still load.
+    document = roles_model().to_json()
+    for cls in document["classes"].values():  # type: ignore[union-attr]
+        for attribute in cls["attributes"].values():  # type: ignore[index]
+            del attribute["role"]  # type: ignore[arg-type]
+    old = model_from_json(document)
+    assert all(a.role is None for c in old.classes.values() for a in c.attributes.values())
+    assert load_compiled(pretty_bytes(document), expected_hash=hash_value(document)) == old
+
+
+def test_unknown_role_in_a_document_is_a_shape_error() -> None:
+    document = roles_model().to_json()
+    document["classes"]["ex:Thing"]["attributes"]["code"]["role"] = "nickname"  # type: ignore[call-overload,index]
+    with pytest.raises(JsonShapeError, match="unknown label role"):
+        model_from_json(document)
+
+
+def test_second_label_in_one_class_is_reported_at_the_later_one() -> None:
+    # Base gets a second label; Thing inherits both and is not reported again.
+    main = "        role: label\n"
+    text = _ROLES.replace(
+        main, main + "      title:\n        summary: Title.\n        type: string\n" + main, 1
+    )
+    outcome = compile_bundle(
+        "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
+    )
+    assert [(f.code, f.target["path"]) for f in outcome.findings] == [
+        ("model.semantic.duplicate_label", "classes.Base.attributes.title.role")
+    ]

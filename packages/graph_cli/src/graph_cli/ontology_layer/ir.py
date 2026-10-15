@@ -24,6 +24,7 @@ from graph_cli.ontology_layer.vocabulary import (
     DEFAULT_NAMESPACE,
     DISPLAY_PREFIX_RE,
     IR_FORMAT,
+    LABEL_ROLES,
     LOWER_NAME_RE,
     MAPPING_KINDS,
     MODULE_ID_RE,
@@ -111,6 +112,7 @@ class IrAttribute:
     unique: bool
     default: YamlNode | None  # converted per resolved type by the compiler
     mutability: str
+    role: str | None  # one of LABEL_ROLES
     renamed_from: str | None
     doc: Doc
     path: str
@@ -454,6 +456,7 @@ class _Parser:
                 "unique",
                 "default",
                 "mutability",
+                "role",
                 "renamed_from",
                 *_DOC,
             ),
@@ -490,6 +493,7 @@ class _Parser:
             unique=self.r.boolean(data.get("unique"), join(path, "unique")),
             default=data.get("default"),
             mutability=mutability,
+            role=self.r.choice(data.get("role"), join(path, "role"), LABEL_ROLES),
             renamed_from=self.r.name(
                 data.get("renamed_from"), join(path, "renamed_from"), LOWER_NAME_RE
             ),

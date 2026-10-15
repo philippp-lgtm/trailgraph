@@ -91,6 +91,7 @@ class _Compiler:
             unique=attribute.unique,
             default=default,
             mutability=attribute.mutability,
+            role=attribute.role,
             declared_in=owner,
             renamed_from=attribute.renamed_from,
             doc=_doc(attribute.doc),

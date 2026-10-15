@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.findings import Finding, sort_findings
@@ -229,6 +229,12 @@ class _Validator:
                 for owner in self.b.ancestors(curie)
                 for attr_name in self._declared(owner)
             }
+            labels = [
+                f"{owner}.{attr.name}"
+                for owner in self.b.ancestors(curie)
+                for attr in self._declared(owner).values()
+                if attr.role == "label"
+            ]
             for attribute in cls.attributes.values():
                 self.attribute(module_id, attribute)
                 if attribute.name in inherited:
@@ -238,6 +244,17 @@ class _Validator:
                         attribute.path,
                         f"{attribute.name!r} is inherited from {inherited[attribute.name]}",
                     )
+                if attribute.role == "label":
+                    if labels:
+                        self.add(
+                            "model.semantic.duplicate_label",
+                            module_id,
+                            f"{attribute.path}.role",
+                            f"class {name!r} already has the main label {labels[0]}",
+                            expected=labels[0],
+                            actual=attribute.name,
+                        )
+                    labels.append(f"{curie}.{attribute.name}")
             if cls.abstract and not any(
                 self.b.parent(m, c) == curie for m, _, c in self.b.classes()
             ):
@@ -248,10 +265,10 @@ class _Validator:
                     f"abstract class {name!r} has no subclass, so it can never have entities",
                 )
 
-    def _declared(self, curie: str) -> Iterable[str]:
+    def _declared(self, curie: str) -> Mapping[str, IrAttribute]:
         found = self.b.term(curie, "class")
         if found is None:
-            return ()
+            return {}
         cls = found[1]
         assert isinstance(cls, IrClass)
         return cls.attributes
@@ -266,6 +283,7 @@ class _Validator:
                 f"{attribute.name!r} is a reserved system field",
             )
         base: str | None = None
+        resolved_kind: str | None = None
         if attribute.lifecycle is not None:
             if self.b.resolve(module_id, attribute.lifecycle, "lifecycle") is None:
                 self.unknown(
@@ -303,6 +321,7 @@ class _Validator:
                 )
             else:
                 base = self._base(*resolved)
+                resolved_kind = resolved[0]
             if attribute.mutability == "lifecycle":
                 self.add(
                     "model.mutability.lifecycle_attribute_not_lifecycle",
@@ -311,6 +330,8 @@ class _Validator:
                     "only attributes with a lifecycle may have mutability 'lifecycle'",
                     actual=attribute.mutability,
                 )
+        if attribute.role is not None:
+            self.role(module_id, attribute, base, resolved_kind)
         if attribute.unique and (attribute.many or base in NON_SCALAR_BASES):
             self.add(
                 "model.semantic.unique_on_non_scalar",
@@ -321,6 +342,32 @@ class _Validator:
         _, problem = attribute_default(self.b, module_id, attribute)
         if problem:
             self.add("model.structural.invalid_default", module_id, f"{path}.default", problem)
+
+    def role(
+        self, module_id: str, attribute: IrAttribute, base: str | None, kind: str | None
+    ) -> None:
+        """Label roles name things: strings (not text, enums or lifecycles); the main label single.
+
+        An unresolved type is reported as such and not judged here.
+        """
+        path = attribute.path
+        if attribute.lifecycle is not None or (
+            kind is not None and (kind == "enum" or base != "string")
+        ):
+            self.add(
+                "model.semantic.role_not_applicable",
+                module_id,
+                f"{path}.role",
+                f"role {attribute.role!r} needs type string or a datatype over string",
+                actual=attribute.type or attribute.lifecycle,
+            )
+        if attribute.role == "label" and attribute.many:
+            self.add(
+                "model.semantic.label_not_single",
+                module_id,
+                f"{path}.many",
+                "the main label holds one value; use alt_label for further names",
+            )
 
     def _base(self, kind: str, type_ref: str) -> str:
         if kind == "datatype":

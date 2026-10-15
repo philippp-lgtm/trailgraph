@@ -8,7 +8,7 @@
     "segment": "events-000000000001.jsonl",
     "seq": 2
   },
-  "hash": "sha256:a6d8e7635769e4d06de5d496453f372af39dcbfb8b7d3d745059d5155ea8fe18",
+  "hash": "sha256:35bd3d84d876a585d09cff5ca6e2a69d86ff0839d32c525d432b135194a46a7a",
   "recorded_at": "2026-01-01T00:00:00.007Z",
   "schema": "graph_cli.head/1",
   "seq": 2,

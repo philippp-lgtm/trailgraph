@@ -50,6 +50,8 @@ CHARACTERISTICS: Final = ("acyclic", "symmetric", "transitive")
 SEVERITIES: Final = ("error", "warning")
 RULE_TIMINGS: Final = ("write", "batch")
 MAPPING_KINDS: Final = ("exact", "close", "related", "broad", "narrow")
+# SKOS label roles of an attribute, main name first (prefLabel, altLabel, hiddenLabel).
+LABEL_ROLES: Final = ("label", "alt_label", "hidden_label")
 
 # Reserved system field names (B7.8): never attribute names.
 SYSTEM_FIELDS: Final = frozenset(

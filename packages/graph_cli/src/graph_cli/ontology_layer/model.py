@@ -3,7 +3,9 @@
 The runtime reads only this form. Every documented key is always present;
 ``null`` is meaningful where it appears (``extends``, ``inverse_label``,
 ``max`` = unbounded, ``default`` = none, ``description``, ``renamed_from``,
-``display_prefix``). ``artifact_hash`` is the C.2 hash of the JSON document.
+``display_prefix``, ``role`` = no label role). A document without ``role``
+(written before label roles) reads as ``null``. ``artifact_hash`` is the C.2
+hash of the JSON document.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from graph_cli.kernel.json_access import (
     req_str,
     str_list,
 )
-from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA
+from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA, LABEL_ROLES
 
 AttributeKind = Literal["base", "datatype", "enum", "lifecycle"]
 
@@ -140,6 +142,7 @@ class AttributeDef:
     unique: bool
     default: JsonValue  # None = no default
     mutability: str
+    role: str | None  # one of LABEL_ROLES
     declared_in: str
     renamed_from: str | None
     doc: TermDoc
@@ -297,6 +300,7 @@ def _attribute_json(a: AttributeDef) -> dict[str, JsonValue]:
         "unique": a.unique,
         "default": a.default,
         "mutability": a.mutability,
+        "role": a.role,
         "declared_in": a.declared_in,
         "renamed_from": a.renamed_from,
         **a.doc.to_json(),
@@ -374,6 +378,12 @@ def _kind(value: str, path: str) -> AttributeKind:
         return _KINDS[value]
     except KeyError:
         raise JsonShapeError(f"{path}: unknown kind {value!r}") from None
+
+
+def _role(value: str | None, path: str) -> str | None:
+    if value is not None and value not in LABEL_ROLES:
+        raise JsonShapeError(f"{path}role: unknown label role {value!r}")
+    return value
 
 
 def _named_values(data: JsonObject, key: str, path: str) -> tuple[NamedValue, ...]:
@@ -454,6 +464,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
                 unique=req_bool(a, "unique", path),
                 default=req(a, "default", path),
                 mutability=req_str(a, "mutability", path),
+                role=_role(opt_str(a, "role", path), path),
                 declared_in=req_str(a, "declared_in", path),
                 renamed_from=opt_str(a, "renamed_from", path),
                 doc=TermDoc.from_json(a, path),
