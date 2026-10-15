@@ -7,7 +7,8 @@ is imported implicitly by every module. Built-in modules (``core``,
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+import difflib
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -102,6 +103,26 @@ class IrBundle:
                 return None
             owner = owners[0]
         return self.curie(owner, name) if name in _terms(self.modules[owner], kind) else None
+
+    def suggest(
+        self, module_id: str, ref: str, kinds: Iterable[TermKind], extra: Iterable[str] = ()
+    ) -> list[str]:
+        """Up to three names ``ref`` may have meant, written as ``module_id`` would write them.
+
+        The same name in another visible module comes first (a missing or wrong
+        prefix, such as ``supported_by`` for ``provenance:supported_by``), then
+        close spellings.
+        """
+        forms = list(extra)
+        for owner in self.visible(module_id):
+            for kind in kinds:
+                for name in _terms(self.modules[owner], kind):
+                    forms.append(name if owner == module_id else self.curie(owner, name))
+        match = CURIE_RE.match(ref)
+        name = ref if match is None else match.group(2)
+        same_name = [form for form in forms if form != ref and form.rpartition(":")[2] == name]
+        close = difflib.get_close_matches(ref, forms, n=3)
+        return list(dict.fromkeys([*same_name, *close]))[:3]
 
     def resolve_type(self, module_id: str, ref: str) -> tuple[str, str] | None:
         """An attribute or qualifier type: ``("base"|"datatype"|"enum", type)``."""

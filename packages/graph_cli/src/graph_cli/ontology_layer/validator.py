@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.findings import Finding, sort_findings
-from graph_cli.ontology_layer.bundle import IrBundle
+from graph_cli.ontology_layer.bundle import IrBundle, TermKind
 from graph_cli.ontology_layer.expressions import AttrCond, Cond, CountCond, iter_conditions
 from graph_cli.ontology_layer.ir import IrAttribute, IrClass, IrDatatype, IrEnum, IrLifecycle
 from graph_cli.ontology_layer.report import Report
@@ -89,6 +89,14 @@ def attribute_default(
     return (None, violation) if violation else (value, None)
 
 
+_SUGGEST_KINDS: dict[str, tuple[TermKind, ...]] = {
+    "class": ("class",),
+    "lifecycle": ("lifecycle",),
+    "relation": ("relation",),
+    "type": ("datatype", "enum"),
+}
+
+
 class _Validator:
     def __init__(self, bundle: IrBundle, report: Report) -> None:
         self.b = bundle
@@ -96,6 +104,14 @@ class _Validator:
 
     def add(self, code: str, module: str, path: str, message: str, **extra: JsonValue) -> None:
         self.report.add(code, module, path, message, **extra)  # type: ignore[arg-type]
+
+    def unknown(self, code: str, module_id: str, path: str, what: str, ref: str) -> None:
+        """A reference that does not resolve; names close candidates in message and ``expected``."""
+        extra = sorted(BASE_TYPES) if what == "type" else ()
+        found = self.b.suggest(module_id, ref, _SUGGEST_KINDS[what], extra)
+        hint = "; did you mean " + " or ".join(repr(name) for name in found) + "?" if found else ""
+        message = f"{what} {ref!r} does not exist{hint}"
+        self.add(code, module_id, path, message, expected=list(found) or None, actual=ref)
 
     def run(self) -> None:
         for module_id in self.b.order:
@@ -201,12 +217,12 @@ class _Validator:
         for name, cls in module.classes.items():
             curie = self.b.curie(module_id, name)
             if cls.is_a is not None and self.b.parent(module_id, cls) is None:
-                self.add(
+                self.unknown(
                     "model.referential.unknown_parent",
                     module_id,
                     f"{cls.path}.is_a",
-                    f"class {cls.is_a!r} does not exist",
-                    actual=cls.is_a,
+                    "class",
+                    cls.is_a,
                 )
             inherited = {
                 attr_name: owner
@@ -252,12 +268,12 @@ class _Validator:
         base: str | None = None
         if attribute.lifecycle is not None:
             if self.b.resolve(module_id, attribute.lifecycle, "lifecycle") is None:
-                self.add(
+                self.unknown(
                     "model.referential.unknown_lifecycle",
                     module_id,
                     f"{path}.lifecycle",
-                    f"lifecycle {attribute.lifecycle!r} does not exist",
-                    actual=attribute.lifecycle,
+                    "lifecycle",
+                    attribute.lifecycle,
                 )
             if attribute.mutability != "lifecycle":
                 self.add(
@@ -278,12 +294,12 @@ class _Validator:
         elif attribute.type is not None:
             resolved = self.b.resolve_type(module_id, attribute.type)
             if resolved is None:
-                self.add(
+                self.unknown(
                     "model.structural.unknown_datatype",
                     module_id,
                     f"{path}.type",
-                    f"type {attribute.type!r} does not exist",
-                    actual=attribute.type,
+                    "type",
+                    attribute.type,
                 )
             else:
                 base = self._base(*resolved)
@@ -355,12 +371,12 @@ class _Validator:
             for key, refs in (("domain", relation.domain), ("range", relation.range)):
                 for index, ref in enumerate(refs):
                     if self.b.resolve(module_id, ref, "class") is None:
-                        self.add(
+                        self.unknown(
                             f"model.referential.unknown_{key}",
                             module_id,
                             f"{relation.path}.{key}" + (f"[{index}]" if len(refs) > 1 else ""),
-                            f"class {ref!r} does not exist",
-                            actual=ref,
+                            "class",
+                            ref,
                         )
             for direction, bounds in (("out", relation.out), ("in", relation.into)):
                 if bounds.max is not None and bounds.min > bounds.max:
@@ -379,12 +395,12 @@ class _Validator:
                         f"{qualifier.name!r} is a reserved edge field",
                     )
                 if self.b.resolve_type(module_id, qualifier.type) is None:
-                    self.add(
+                    self.unknown(
                         "model.semantic.qualifier_unknown_datatype",
                         module_id,
                         f"{qualifier.path}.type",
-                        f"type {qualifier.type!r} does not exist",
-                        actual=qualifier.type,
+                        "type",
+                        qualifier.type,
                     )
 
     def inverse_labels(self) -> None:
@@ -503,33 +519,33 @@ class _Validator:
                         )
             elif isinstance(cond, CountCond):
                 if self.b.resolve(module_id, cond.rel, "relation") is None:
-                    self.add(
+                    self.unknown(
                         "model.referential.unknown_relation",
                         module_id,
                         f"{cond.path}.count.rel",
-                        f"relation {cond.rel!r} does not exist",
-                        actual=cond.rel,
+                        "relation",
+                        cond.rel,
                     )
                 for ref in cond.types:
                     if self.b.resolve(module_id, ref, "class") is None:
-                        self.add(
+                        self.unknown(
                             "model.referential.unknown_term",
                             module_id,
                             f"{cond.path}.count.where.type",
-                            f"class {ref!r} does not exist",
-                            actual=ref,
+                            "class",
+                            ref,
                         )
 
     def rules(self, module_id: str) -> None:
         for rule in self.b.modules[module_id].rules:
             scope = self.b.resolve(module_id, rule.scope, "class")
             if scope is None:
-                self.add(
+                self.unknown(
                     "model.rule.unknown_scope",
                     module_id,
                     f"{rule.path}.scope",
-                    f"class {rule.scope!r} does not exist",
-                    actual=rule.scope,
+                    "class",
+                    rule.scope,
                 )
             scopes = [] if scope is None else [scope]
             self.conditions(module_id, (*(rule.if_ or ()), *rule.then), scopes, guard=False)

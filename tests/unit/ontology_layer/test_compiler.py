@@ -12,7 +12,7 @@ from support.fixtures import (
 
 from graph_cli.kernel.canonical import canonical_bytes, pretty_bytes
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.ontology_layer.bundle import LayeredSource
+from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import load_compiled, model_from_json
 
@@ -111,3 +111,44 @@ def test_rules_are_lowered_with_implies() -> None:
         ]
     }
     assert list(rules) == sorted(rules)
+
+
+_IMPORTS_PROVENANCE = """\
+format: graph_cli.ir/1
+module:
+  id: example_module
+  prefix: ex
+  version: 1.0.0
+  summary: Imports provenance and refers to its terms.
+  imports:
+    - {module: provenance, version: 1.0.0}
+
+classes:
+  Finding:
+    summary: A claim found while working.
+    is_a: Claim
+    attributes:
+      label:
+        summary: Display label.
+        type: strnig
+
+rules:
+  - id: is_supported
+    summary: A finding is supported.
+    severity: warning
+    when: batch
+    scope: Finding
+    then:
+      - {count: {rel: supported_by}, minimum_value: 1}
+"""
+
+
+def test_unknown_references_name_their_likely_candidates() -> None:
+    source = LayeredSource(MappingSource({"example_module": _IMPORTS_PROVENANCE.encode()}))
+    outcome = compile_bundle("example_module", source)
+    found = {f.code: f for f in outcome.findings}
+    relation = found["model.referential.unknown_relation"]
+    assert relation.expected == ["provenance:supported_by"]
+    assert relation.message.endswith("did you mean 'provenance:supported_by'?")
+    assert found["model.referential.unknown_parent"].expected == ["provenance:Claim"]
+    assert found["model.structural.unknown_datatype"].expected == ["string"]
