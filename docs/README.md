@@ -318,7 +318,7 @@ into the graph's runtime area. Its kind follows the content:
 | Block | Renders |
 | --- | --- |
 | `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); read the `graph-cli` skill first |
-| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
+| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
 | `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label |
 | `constraints` | transition guards, write-once fields, rules with severity |
 | `names` | the alias format (`ITEM-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask |

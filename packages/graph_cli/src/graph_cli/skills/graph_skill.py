@@ -16,7 +16,8 @@ Blocks (each one optional):
 
 - ``start``: how to tell the graph is reachable, read the ``graph-cli`` skill first.
 - ``types``: the entity types (types with an alias prefix; without any, every
-  concrete type) with their fields, enum values inline (F11), and states.
+  concrete type) with their supertypes, fields, enum values inline (F11), and
+  states.
 - ``relations``: the relations touching those types.
 - ``constraints``: transition guards, write-once fields and rules.
 - ``names``: the live alias format (F12), what ``graph lookup`` matches per
@@ -260,10 +261,13 @@ def _types(doc: _Model) -> list[str]:
         alias = doc.prefixes.get(curie)
         name = _code(curie) + (f" ({_code(format_alias(alias, 1))})" if alias else "")
         fields = [_field(f) for f in _ordered_fields(body) if f.get("kind") != "lifecycle"]
+        ancestors = _strings(body.get("ancestors"))  # relations of a supertype apply too
+        what = _plain(opt_str(body, "summary"))
+        what += f" Is a {_codes(ancestors, ' and ')}." if ancestors else ""
         rows.append(
             [
                 name,
-                _plain(opt_str(body, "summary")),
+                what.strip(),
                 "; ".join(fields) or "none",
                 _states(body),
             ]

@@ -126,6 +126,7 @@ def test_without_alias_prefixes_every_concrete_type_is_listed() -> None:
     rows = re.findall(r"^\| `([a-z]+:[A-Za-z]+)` \|", skill, re.MULTILINE)
     concrete = [c for c, d in sorted(model.classes.items()) if not d.abstract]
     assert rows[: len(concrete)] == concrete
+    assert "| `nas:Book` | A published book. Is a `nas:Source`. |" in skill  # its relations apply
     assert "Aliases:" not in skill
 
 
