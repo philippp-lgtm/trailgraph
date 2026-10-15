@@ -338,6 +338,195 @@
     },
     {
       "path": [
+        "find"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.find",
+      "summary": "Find entities by type, field filters and relations; paged.",
+      "args": [],
+      "options": [
+        {
+          "name": "--type",
+          "type": "term",
+          "required": false,
+          "repeatable": true,
+          "summary": "Type CURIE, subtypes included."
+        },
+        {
+          "name": "--where",
+          "type": "filter",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists)."
+        },
+        {
+          "name": "--rel",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Outgoing relation, optionally =<id>."
+        },
+        {
+          "name": "--in-rel",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Incoming relation, optionally =<id>."
+        },
+        {
+          "name": "--include-inactive",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Include superseded and retracted entities."
+        },
+        {
+          "name": "--sort",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Field to sort by, optionally :desc."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many results.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read an earlier state (tx:<seq>); reserved."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph find --type <type> --where <attr>=<value>",
+          "summary": "Filter by a field."
+        },
+        {
+          "command": "graph find --type <type> --rel <relation>=<id> --json",
+          "summary": "Filter by a relation."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      }
+    },
+    {
+      "path": [
+        "get"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.get",
+      "summary": "Show one entity by id, alias or id suffix.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read an earlier state (tx:<seq>); reserved."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph get <id>",
+          "summary": "Show one entity."
+        },
+        {
+          "command": "graph get <id> --graph <graph> --json",
+          "summary": "The entity as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "graphs"
       ],
       "kind": "read",
@@ -372,6 +561,105 @@
         6
       ],
       "limits": {}
+    },
+    {
+      "path": [
+        "neighbors"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.traverse",
+      "summary": "Show the entities connected to one entity, up to three hops.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--rel",
+          "type": "term",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only these relations."
+        },
+        {
+          "name": "--direction",
+          "type": "choice",
+          "required": false,
+          "repeatable": false,
+          "summary": "Edge direction.",
+          "choices": [
+            "out",
+            "in",
+            "both"
+          ],
+          "default": "both"
+        },
+        {
+          "name": "--depth",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Hops, 1 to 3.",
+          "default": 1
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read an earlier state (tx:<seq>); reserved."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph neighbors <id>",
+          "summary": "Direct neighbors."
+        },
+        {
+          "command": "graph neighbors <id> --rel <relation> --direction out --depth 2 --json",
+          "summary": "Two hops along one relation."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "depth": 3
+      }
     },
     {
       "path": [
@@ -410,7 +698,10 @@
   ],
   "actions": [
     "read.describe",
-    "read.list"
+    "read.find",
+    "read.get",
+    "read.list",
+    "read.traverse"
   ],
   "error_codes": [
     {
@@ -432,6 +723,16 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "entity.ambiguous_ref",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "entity.not_found",
+      "category": "not_found",
+      "exit": 1
     },
     {
       "code": "graph.not_found",
@@ -457,6 +758,11 @@
       "code": "ontology.artifact_missing",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "temporal.as_of_unsupported",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "term.unknown",
