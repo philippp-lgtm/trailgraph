@@ -45,7 +45,8 @@ def create_args(op: dict[str, Any], ids: dict[str, str]) -> list[str]:
     for name, value in op.get("attrs", {}).items():
         args += ["--set-json", f"{name}={json.dumps(value)}"]
     for edge in op.get("edges", []):
-        args += ["--edge", f"{edge['rel']}={ids[edge['target'][1:]]}"]
+        target = edge["target"]
+        args += ["--edge", f"{edge['rel']}={ids[target[1:]] if target.startswith('@') else target}"]
     return args
 
 
@@ -59,3 +60,18 @@ def cli_create(
         assert outcome.code == 0, outcome.envelope
         ids[op["local"]] = outcome.data["entities"][0]["id"]
     return ids
+
+
+def prepared_create(run_cli: CliRunner, factory: OpsFactory, cls: str) -> dict[str, Any]:
+    """Create the required targets of ``cls`` through ``graph create``; return the create op
+    for ``cls`` itself with full target ids and no local, as ``graph create`` builds it."""
+    *targets, op = factory.create(cls, "x")
+    ids: dict[str, str] = {}
+    for target in targets:
+        outcome = app(run_cli, *create_args(target, ids), env=ENV)
+        assert outcome.code == 0, outcome.envelope
+        ids[target["local"]] = outcome.data["entities"][0]["id"]
+    resolved = {key: value for key, value in op.items() if key != "local"}
+    if "edges" in op:
+        resolved["edges"] = [{**e, "target": ids[e["target"][1:]]} for e in op["edges"]]
+    return resolved

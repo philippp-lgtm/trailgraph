@@ -3,7 +3,8 @@
 Arguments: ``root``, ``graph``, ``documents`` (change set documents applied
 in order, each as its own request), optional ``point`` (a crash point at
 which the process sends itself SIGKILL), optional ``barrier`` (wait for the
-file first) and ``worker`` (seed). Production parts throughout: system
+file first), ``worker`` (seed) and ``uid`` (the principal; the CLI's own uid
+when a ``graph`` retry must share the idempotency scope). Production parts throughout: system
 clock, UUIDv7 provider, FileCatalog, FileAuditLog, built-in policy. Emits
 one result per document: ``{"seq", "replay", "aliases"}`` or ``{"error"}``.
 """
@@ -47,7 +48,7 @@ def main() -> None:
         env=EnvInfo("<data root>", "flag"),
         config=WriteConfig(lock_timeout_s=60),
     )
-    actor = app_actor()
+    actor = app_actor(uid=spec["uid"]) if "uid" in spec else app_actor()
     if spec.get("barrier"):
         wait_for(Path(spec["barrier"]))
     results: list[dict[str, Any]] = []
