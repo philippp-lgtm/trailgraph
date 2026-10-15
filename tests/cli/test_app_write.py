@@ -1,19 +1,15 @@
 """S: graph create, update, link and unlink on both fixtures (plan A7; contracts B3, B3.10,
 B3.11, B3.16, B3.18). Role-based: values come from the compiled model, no type is named."""
 
-import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from harness import CliRunner
 from support.admin import Outcome, init
-from support.app import app, codes, create_graph
+from support.app import ENV, app, cli_create, codes, create_args, create_graph
 from support.fixtures import TOY_ONTOLOGIES, compiled_model
 from support.roles import Roles, load_roles
 from support.services import OpsFactory
-
-ENV = {"GRAPH_CLI_GRAPH": "example_graph"}
 
 
 @pytest.fixture(params=TOY_ONTOLOGIES)
@@ -36,27 +32,6 @@ def roles(ontology: str) -> Roles:
 @pytest.fixture
 def factory(ontology: str) -> OpsFactory:
     return OpsFactory(compiled_model(ontology))
-
-
-def create_args(op: dict[str, Any], ids: dict[str, str]) -> list[str]:
-    args = ["create", op["type"]]
-    for name, value in op.get("attrs", {}).items():
-        args += ["--set-json", f"{name}={json.dumps(value)}"]
-    for edge in op.get("edges", []):
-        args += ["--edge", f"{edge['rel']}={ids[edge['target'][1:]]}"]
-    return args
-
-
-def cli_create(
-    run_cli: CliRunner, factory: OpsFactory, cls: str, local: str = "x"
-) -> dict[str, str]:
-    """Create ``cls`` and its required targets through ``graph create``; local -> id."""
-    ids: dict[str, str] = {}
-    for op in factory.create(cls, local):
-        outcome = app(run_cli, *create_args(op, ids), env=ENV)
-        assert outcome.code == 0, outcome.envelope
-        ids[op["local"]] = outcome.data["entities"][0]["id"]
-    return ids
 
 
 def string_attr(factory: OpsFactory, cls: str) -> str:

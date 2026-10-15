@@ -7,6 +7,7 @@ fixture; feature roles may be absent (tests then skip).
 """
 
 import tomllib
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -101,3 +102,19 @@ def resolve_role(model: CompiledModel, role: str, value: object) -> object:
         if (t.from_state, t.to_state) == (value["from"], value["to"])
     ]
     return transition
+
+
+def lifecycle_path(model: CompiledModel, lifecycle: str, start: str, goal: str) -> list[str]:
+    """The states after ``start`` on a shortest transition path to ``goal``."""
+    transitions = model.lifecycles[lifecycle].transitions
+    queue: deque[list[str]] = deque([[start]])
+    while queue:
+        path = queue.popleft()
+        if path[-1] == goal:
+            return path[1:]
+        queue.extend(
+            [*path, t.to_state]
+            for t in transitions
+            if t.from_state == path[-1] and t.to_state not in path
+        )
+    raise AssertionError(f"{goal} is not reachable from {start}")

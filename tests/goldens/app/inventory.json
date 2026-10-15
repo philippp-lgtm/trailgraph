@@ -925,6 +925,326 @@
     },
     {
       "path": [
+        "retract"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.retract",
+      "summary": "Withdraw an entity; needs --reason.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--by",
+          "type": "entity_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "The entity that retracts it."
+        },
+        {
+          "name": "--expect",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the entity is at this revision."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph retract <id> --reason <value>",
+          "summary": "Withdraw an entity."
+        },
+        {
+          "command": "graph retract <id> --by <id> --reason <value> --json",
+          "summary": "Withdraw, citing a correction."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "supersede"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.supersede",
+      "summary": "Replace entities by another one; needs --reason.",
+      "args": [
+        {
+          "name": "by",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "The replacement."
+        },
+        {
+          "name": "targets",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": true,
+          "summary": "Entities it replaces."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph supersede <id> <id> --reason <value>",
+          "summary": "One replaces another."
+        },
+        {
+          "command": "graph supersede <id> <id> <id> --reason <value> --json",
+          "summary": "One replaces two."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "transition"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.transition",
+      "summary": "Move an entity's lifecycle to another state.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Target state."
+        }
+      ],
+      "options": [
+        {
+          "name": "--attr",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Lifecycle attribute, if the type has several."
+        },
+        {
+          "name": "--expect",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Refuse unless the entity is at this revision."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph transition <id> <state>",
+          "summary": "Change the state."
+        },
+        {
+          "command": "graph transition <id> <state> --dry-run --json",
+          "summary": "Check guards without writing."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "unlink"
       ],
       "kind": "write",
@@ -1208,6 +1528,9 @@
     "read.traverse",
     "write.create",
     "write.link",
+    "write.retract",
+    "write.supersede",
+    "write.transition",
     "write.unlink",
     "write.update"
   ],

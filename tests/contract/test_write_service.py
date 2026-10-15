@@ -3,13 +3,12 @@
 Role-based: tests never name a type; they ask the fixture's roles file.
 """
 
-from collections import deque
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-from support.roles import Roles, load_roles
+from support.roles import Roles, lifecycle_path, load_roles
 from support.services import ServiceEnv
 from support.trees import tree_hash
 
@@ -213,21 +212,6 @@ def test_storage_warnings_are_passed_on(svc: ServiceEnv, roles: Roles) -> None:
     assert svc.head_seq() == 1
 
 
-def _path_to(svc: ServiceEnv, lifecycle: str, start: str, goal: str) -> list[str]:
-    transitions = svc.model.lifecycles[lifecycle].transitions
-    queue: deque[list[str]] = deque([[start]])
-    while queue:
-        path = queue.popleft()
-        if path[-1] == goal:
-            return path[1:]
-        queue.extend(
-            [*path, t.to_state]
-            for t in transitions
-            if t.from_state == path[-1] and t.to_state not in path
-        )
-    raise AssertionError(f"{goal} is not reachable from {start}")
-
-
 def test_lifecycle_and_guard_paths(svc: ServiceEnv, roles: Roles) -> None:
     cls = roles.term("lifecycle_type")
     attr = roles.term("lifecycle_attribute").rpartition(".")[2]
@@ -236,7 +220,9 @@ def test_lifecycle_and_guard_paths(svc: ServiceEnv, roles: Roles) -> None:
     lifecycle = svc.model.lifecycles[guarded["lifecycle"]]
     good, bad = created(svc.create(cls, "good"), "good"), created(svc.create(cls, "bad"), "bad")
     for entity in (good, bad):
-        for state in _path_to(svc, guarded["lifecycle"], lifecycle.initial[0], guarded["from"]):
+        for state in lifecycle_path(
+            svc.model, guarded["lifecycle"], lifecycle.initial[0], guarded["from"]
+        ):
             svc.apply({"op": "transition", "id": entity, "to": state})
     breaking = roles.get("guard_breaking_update")
     assert isinstance(breaking, dict)
