@@ -26,6 +26,7 @@ class GraphEntry:
     alias_prefixes: Mapping[TermRef, str]
     extensions: tuple[str, ...]
     title: str | None = None  # human-readable purpose, shown by `graph graphs` (P1.5)
+    language: str | None = None  # BCP 47 default language of the values (Q18 stage 2)
 
 
 @dataclass(frozen=True, slots=True)

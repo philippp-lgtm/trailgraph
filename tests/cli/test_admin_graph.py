@@ -10,6 +10,7 @@ from support.trees import tree_hash
 
 from graph_cli.audit.verify import check_anchors, verify_stream
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
+from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.storage.files.audit_log import FileAuditLog
 
 INVENTORY = ONTOLOGIES / "inventory" / "1.0.0"
@@ -81,6 +82,7 @@ def test_list_and_show(run_cli: CliRunner, root: Path) -> None:
     create(run_cli, "alpha", NOTES, "--title", "Example notes")
     items = admin(run_cli, "graph", "list").data["items"]
     assert [(i["name"], i["title"]) for i in items] == [("alpha", "Example notes"), ("zeta", None)]
+    assert [i["language"] for i in items] == [None, None]
     for ref in ("zeta", str(first["id"])):
         shown = admin(run_cli, "graph", "show", ref)
         assert shown.data["id"] == first["id"]
@@ -88,6 +90,36 @@ def test_list_and_show(run_cli: CliRunner, root: Path) -> None:
         assert shown.envelope["graph"]["name"] == "zeta"
     missing = admin(run_cli, "graph", "show", "nope")
     assert (missing.code, missing.error["code"]) == (1, "graph.not_found")
+
+
+def test_language_is_stored_in_canonical_case(run_cli: CliRunner, root: Path) -> None:
+    data = create(run_cli, "example_graph", INVENTORY, "--language", "de-ch")
+    assert data["language"] == "de-CH"
+    manifest = root / "graphs" / str(data["id"]) / "manifest.toml"
+    assert 'language = "de-CH"' in manifest.read_text()
+    assert admin(run_cli, "graph", "show", "example_graph").data["language"] == "de-CH"
+    (item,) = admin(run_cli, "graph", "list").data["items"]
+    assert item["language"] == "de-CH"
+    graph_report = verify_stream(
+        FileAuditLog(root).read_lines(graph_stream(str(data["id"]))),
+        stream=graph_stream(str(data["id"])),
+    )
+    (genesis,) = graph_report.events
+    model = compiled_model("inventory")
+    pin = OntologyPin(model.bundle_id, model.bundle_version, model.artifact_hash).to_json()
+    args = {"name": "example_graph", "title": None, "language": "de-CH", "ontology": pin}
+    assert genesis["request"]["args_digest"] == RequestMeta.of("graph create", args).args_digest
+
+
+@pytest.mark.parametrize("tag", ["de_CH", "x-foo", "i-klingon", ""])
+def test_invalid_language_is_a_usage_error(run_cli: CliRunner, root: Path, tag: str) -> None:
+    before = tree_hash(root)
+    outcome = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY), "--language", tag
+    )
+    assert (outcome.code, outcome.error["code"]) == (2, "usage.invalid_argument")
+    assert outcome.error["details"]["argument"] == "language"
+    assert tree_hash(root) == before
 
 
 def test_name_taken(run_cli: CliRunner, root: Path) -> None:

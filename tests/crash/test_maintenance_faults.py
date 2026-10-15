@@ -33,7 +33,14 @@ def ctx(tmp_path: Path, faults: FaultSwitch) -> AdminContext:
 
 
 def create(ctx: AdminContext) -> None:
-    graphs.create(ctx, name="example_graph", source=INVENTORY / "1.0.0", module=None, title=None)
+    graphs.create(
+        ctx,
+        name="example_graph",
+        source=INVENTORY / "1.0.0",
+        module=None,
+        title=None,
+        language=None,
+    )
 
 
 def verify_codes(ctx: AdminContext) -> list[str]:

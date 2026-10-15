@@ -28,6 +28,10 @@ def graph_group() -> None:
 )
 @click.option("--module", help="Main module id, if the directory holds several.")
 @click.option("--title", help="Human-readable title.")
+@click.option(
+    "--language",
+    help="BCP 47 default language of the values (e.g. en, de-CH); fixed after create.",
+)
 @data_root_option
 @json_option
 @leaf
@@ -37,6 +41,7 @@ def create(
     source: Path,
     module: str | None,
     title: str | None,
+    language: str | None,
     data_root: Path | None,
 ) -> Result:
     """Create graph NAME pinned to the first release of an authored ontology.
@@ -45,9 +50,12 @@ def create(
     Examples:
       graph-admin graph create example_graph --ontology data/example_graph/ontology
       graph-admin graph create example_graph --ontology ./onto --title "Example" --json
+      graph-admin graph create example_graph --ontology ./onto --language en
     """
     ctx = admin_context(state, data_root)
-    manifest = graphs.create(ctx, name=name, source=source, module=module, title=title)
+    manifest = graphs.create(
+        ctx, name=name, source=source, module=module, title=title, language=language
+    )
     return Result(
         data=graphs.describe(manifest), graph=graphs.envelope_graph(manifest.entry, seq=0)
     )

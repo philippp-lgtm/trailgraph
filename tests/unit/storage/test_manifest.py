@@ -18,7 +18,9 @@ GRAPH_ID = GraphId(UUID("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"))
 HASH = "sha256:" + "5d0e" * 16
 
 
-def manifest(*, title: str | None = 'Example "graph"\tone') -> ManifestData:
+def manifest(
+    *, title: str | None = 'Example "graph"\tone', language: str | None = None
+) -> ManifestData:
     entry = GraphEntry(
         id=GRAPH_ID,
         name="example_graph",
@@ -27,6 +29,7 @@ def manifest(*, title: str | None = 'Example "graph"\tone') -> ManifestData:
         alias_prefixes={TermRef("inv:Item"): "ITEM", TermRef("inv:Location"): "LOC"},
         extensions=(),
         title=title,
+        language=language,
     )
     return ManifestData(
         entry=entry,
@@ -53,6 +56,43 @@ def test_key_order_is_fixed() -> None:
 def test_title_is_optional() -> None:
     parsed, _ = parse_manifest(format_manifest(manifest(title=None)), source="m")
     assert parsed.entry.title is None
+
+
+def test_language_round_trip() -> None:
+    data = format_manifest(manifest(language="de-CH"))
+    assert '\nlanguage = "de-CH"\nstate = ' in data.decode()  # after title (C.8)
+    parsed, warnings = parse_manifest(data, source="m")
+    assert parsed == manifest(language="de-CH")
+    assert warnings == ()
+
+
+def test_manifest_without_language_loads_unchanged() -> None:
+    # Graphs created before Q18 stage 2 have no key: no default, no migration.
+    data = (GOLDENS / "storage" / "manifest.toml").read_bytes()
+    assert b"language" not in data
+    parsed, warnings = parse_manifest(data, source="m")
+    assert parsed.entry.language is None
+    assert format_manifest(parsed) == data
+    assert warnings == ()
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("7", "must be a string"),
+        ('"de_CH"', "well-formed"),
+        ('"x-foo"', "well-formed"),
+        ('""', "well-formed"),
+        ('"de-ch"', "canonical case ('de-CH')"),
+    ],
+)
+def test_bad_language_is_config_invalid(value: str, message: str) -> None:
+    text = format_manifest(manifest(language="de-CH")).decode()
+    text = text.replace('language = "de-CH"', f"language = {value}", 1)
+    with pytest.raises(GraphCliError) as caught:
+        parse_manifest(text.encode(), source="m")
+    assert (caught.value.code, caught.value.details["key"]) == ("config.invalid", "graph.language")
+    assert message in caught.value.message
 
 
 @pytest.mark.parametrize(

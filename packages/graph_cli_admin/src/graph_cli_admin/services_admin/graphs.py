@@ -16,6 +16,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GRAPH_NAME_RE, GraphId, TermRef
+from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.records import RequestMeta
@@ -28,24 +29,47 @@ STORE = StoreInfo("files", 1)
 
 
 def create(
-    ctx: AdminContext, *, name: str, source: Path, module: str | None, title: str | None
+    ctx: AdminContext,
+    *,
+    name: str,
+    source: Path,
+    module: str | None,
+    title: str | None,
+    language: str | None,
 ) -> ManifestData:
+    """``language`` is stored in canonical case and fixed until P2 ``graph configure``."""
     if not GRAPH_NAME_RE.match(name):
         raise GraphCliError(
             "usage.invalid_argument",
             f"graph name {name!r} must match {GRAPH_NAME_RE.pattern}",
             details={"argument": "name"},
         )
+    if language is not None:
+        canonical = normalize_language_tag(language)
+        if canonical is None:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"language {language!r} is not a well-formed BCP 47 tag (e.g. en, de-CH)",
+                details={"argument": "language"},
+            )
+        language = canonical
     compiled = compile_source(source, module)
     pin = compiled.pin
     meta = RequestMeta.of(
         "graph create",
-        {"name": name, "title": title, "ontology": pin.to_json()},
+        {"name": name, "title": title, "language": language, "ontology": pin.to_json()},
     )
     decisions = ctx.authorize([("maint.graph_create", "installation")], request=meta)
     now = ctx.clock.now()
     entry = GraphEntry(
-        GraphId(ctx.ids.new_id()), name, "active", pin, alias_prefixes(compiled), (), title
+        GraphId(ctx.ids.new_id()),
+        name,
+        "active",
+        pin,
+        alias_prefixes(compiled),
+        (),
+        title,
+        language,
     )
     manifest = ManifestData(entry, now, STORE)
     genesis = events.graph_genesis(
@@ -101,6 +125,7 @@ def describe(manifest: ManifestData) -> dict[str, JsonValue]:
         "id": str(entry.id),
         "name": entry.name,
         "title": entry.title,
+        "language": entry.language,
         "state": entry.state,
         "created_at": format_timestamp(manifest.created_at),
         "ontology": entry.pin.to_json(),
@@ -130,6 +155,7 @@ def list_graphs(ctx: AdminContext, *, include_archived: bool) -> list[JsonValue]
             "id": str(m.entry.id),
             "name": m.entry.name,
             "title": m.entry.title,
+            "language": m.entry.language,
             "state": m.entry.state,
             "ontology": {"bundle": m.entry.pin.bundle, "version": m.entry.pin.version},
         }

@@ -212,7 +212,14 @@ class ServiceEnv:
             from graph_cli_admin.services_admin.graphs import create
 
             source = ONTOLOGIES / self.ontology / self.model.bundle_version
-            create(admin_context(self.root), name=self.name, source=source, module=None, title=None)
+            create(
+                admin_context(self.root),
+                name=self.name,
+                source=source,
+                module=None,
+                title=None,
+                language=None,
+            )
             self.catalog = FileCatalog(self.root, faults=self.faults)
             self.audit = FileAuditLog(self.root, faults=self.faults)
         self.entry = self.catalog.resolve(self.name)

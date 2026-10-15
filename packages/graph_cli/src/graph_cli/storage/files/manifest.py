@@ -27,6 +27,7 @@ from graph_cli.kernel.ids import (
     format_id,
     parse_id,
 )
+from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.ports.catalog import GraphEntry, GraphState, ManifestData, StoreInfo
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.storage.files.tomlw import TomlTable, TomlValue, dumps
@@ -38,7 +39,7 @@ GRAPH_STATES: Final[tuple[GraphState, ...]] = get_args(GraphState)
 # Every documented key per table; anything else is an unknown key (V.4).
 _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "": frozenset({"format_version", "graph", "ontology", "store", "alias", "extensions"}),
-    "graph": frozenset({"id", "name", "title", "state", "created_at"}),
+    "graph": frozenset({"id", "name", "title", "language", "state", "created_at"}),
     "ontology": frozenset({"bundle", "version", "artifact_hash"}),
     "store": frozenset({"backend", "format_version"}),
     "alias": frozenset({"prefixes"}),
@@ -51,6 +52,8 @@ def format_manifest(manifest: ManifestData) -> bytes:
     graph: list[tuple[str, TomlValue]] = [("id", format_id(entry.id)), ("name", entry.name)]
     if entry.title is not None:
         graph.append(("title", entry.title))
+    if entry.language is not None:
+        graph.append(("language", entry.language))
     graph += [("state", entry.state), ("created_at", format_timestamp(manifest.created_at))]
     tables: list[TomlTable] = [
         (None, [("format_version", MANIFEST_FORMAT)]),
@@ -123,6 +126,15 @@ def parse_manifest(data: bytes, *, source: str) -> tuple[ManifestData, tuple[War
     title = graph.get("title")
     if title is not None and not isinstance(title, str):
         raise reader.invalid("graph.title", "must be a string")
+    language = graph.get("language")
+    if language is not None:
+        if not isinstance(language, str):
+            raise reader.invalid("graph.language", "must be a string")
+        canonical = normalize_language_tag(language)
+        if canonical is None:
+            raise reader.invalid("graph.language", "is not a well-formed BCP 47 language tag")
+        if canonical != language:
+            raise reader.invalid("graph.language", f"is not in canonical case ({canonical!r})")
     entry = GraphEntry(
         id=reader.graph_id(graph),
         name=name,
@@ -135,6 +147,7 @@ def parse_manifest(data: bytes, *, source: str) -> tuple[ManifestData, tuple[War
         alias_prefixes=alias_prefixes,
         extensions=tuple(enabled),
         title=title,
+        language=language,
     )
     manifest = ManifestData(
         entry=entry,
