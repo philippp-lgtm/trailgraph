@@ -51,6 +51,19 @@ class Compiled:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class PinnedModel:
+    """A pinned release's model with the hash it was verified against (B7.6).
+
+    The pin covers the stored document. ``model.artifact_hash`` re-serializes
+    with the current writer and differs for artifacts written before a key
+    was added, so release metadata takes the pinned hash.
+    """
+
+    model: CompiledModel
+    artifact_hash: str
+
+
 class _RecordingSource:
     """The workspace directory; remembers which modules the bundle loaded from it."""
 
@@ -129,7 +142,7 @@ def diff(old: CompiledModel, new: CompiledModel) -> tuple[DiffReport, BumpCheck]
 def release_files(
     compiled: Compiled,
     *,
-    previous: CompiledModel | None,
+    previous: PinnedModel | None,
     release_id: UUID,
     released_at: datetime,
 ) -> dict[str, bytes]:
@@ -145,13 +158,13 @@ def release_files(
         "artifact_hash": model.artifact_hash,
     }
     if previous is not None:
-        report, _ = diff(previous, model)
+        report, _ = diff(previous.model, model)
         files[DIFF_FILE] = pretty_bytes(report.to_json())
         metadata["previous"] = {
-            "version": previous.bundle_version,
+            "version": previous.model.bundle_version,
             "artifact_hash": previous.artifact_hash,
         }
-        declared = _declared_level(previous.bundle_version, model.bundle_version)
+        declared = _declared_level(previous.model.bundle_version, model.bundle_version)
         metadata["classification"] = {"declared": declared, "computed": report.level}
     for name, schema in export_jsonschema(model).items():
         files[f"exports/jsonschema/{name}"] = pretty_bytes(schema)

@@ -3,7 +3,10 @@
 The artifact is read and checked against the pin on every call, so a write
 always sees the files as they are (``ontology.pin_mismatch``,
 ``ontology.artifact_missing``). Parsed models are cached by the raw bytes'
-hash: identical bytes give the identical model without parsing again.
+hash: identical bytes give the identical model without parsing again. The
+cache keeps the pin hash a model was verified against: the pin covers the
+stored document, and ``CompiledModel.artifact_hash`` re-serializes with the
+current writer, which differs for artifacts written before a key was added.
 """
 
 from __future__ import annotations
@@ -24,16 +27,17 @@ class ModelCache:
 
     def __init__(self, catalog: Catalog) -> None:
         self._catalog = catalog
-        self._models: dict[str, CompiledModel] = {}
+        self._models: dict[str, tuple[str, CompiledModel]] = {}  # bytes hash -> (pin, model)
 
     def load(self, entry: GraphEntry) -> CompiledModel:
         pin = entry.pin
         data = self._catalog.read_release_file(entry.id, pin.version, COMPILED_FILE)
         key = hash_bytes(data)
-        model = self._models.get(key)
-        if model is None or model.artifact_hash != pin.artifact_hash:
-            model = load_compiled(data, expected_hash=pin.artifact_hash)
-            self._models[key] = model
+        cached = self._models.get(key)
+        if cached is not None and cached[0] == pin.artifact_hash:
+            return cached[1]
+        model = load_compiled(data, expected_hash=pin.artifact_hash)
+        self._models[key] = (pin.artifact_hash, model)
         return model
 
     def load_for_read(self, entry: GraphEntry) -> tuple[CompiledModel, tuple[WarningRecord, ...]]:

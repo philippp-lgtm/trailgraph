@@ -10,7 +10,7 @@ from support.ids import SeededIdProvider
 from graph_cli.kernel.canonical import hash_bytes, hash_value, parse_json
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_admin.services_admin import error_codes
-from graph_cli_admin.services_admin.ontology import compile_source, release_files
+from graph_cli_admin.services_admin.ontology import PinnedModel, compile_source, release_files
 
 INVENTORY = ONTOLOGIES / "inventory"
 
@@ -20,10 +20,13 @@ def admin_codes() -> None:
     error_codes.register()
 
 
-def build(version: str, previous: str | None) -> dict[str, bytes]:
+def build(version: str, previous: str | None, previous_hash: str | None = None) -> dict[str, bytes]:
     clock = FixedClock("2026-10-15T08:00:00Z")
     compiled = compile_source(INVENTORY / version)
-    old = compiled_model("inventory", previous) if previous else None
+    old = None
+    if previous:
+        model = compiled_model("inventory", previous)
+        old = PinnedModel(model, previous_hash or model.artifact_hash)
     return release_files(
         compiled, previous=old, release_id=SeededIdProvider(clock).new_id(), released_at=clock.now()
     )
@@ -50,6 +53,14 @@ def test_release_layout_and_metadata_golden() -> None:
         GOLDENS / "admin" / "release_inventory_1.0.1.json",
         (json.dumps(release, indent=2, sort_keys=True) + "\n").encode(),
     )
+
+
+def test_previous_hash_is_the_pinned_one() -> None:
+    # An artifact written before a compiled key was added recompiles to another
+    # hash; the release records the hash the graph was pinned to.
+    pinned = "sha256:" + "ab" * 32
+    release = json.loads(build("1.0.1", "1.0.0", pinned)["release.json"])
+    assert release["previous"] == {"version": "1.0.0", "artifact_hash": pinned}
 
 
 def test_first_release_has_no_diff() -> None:

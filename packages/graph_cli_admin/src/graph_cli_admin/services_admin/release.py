@@ -40,6 +40,7 @@ from graph_cli.ontology_layer.semver import Version
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     COMPILED_FILE,
+    PinnedModel,
     compile_source,
     diff,
     release_files,
@@ -126,7 +127,10 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
         if target.version not in installed:
             release_id = ctx.ids.new_id()
             files = release_files(
-                compiled, previous=old_model, release_id=release_id, released_at=ctx.clock.now()
+                compiled,
+                previous=PinnedModel(old_model, current.artifact_hash),
+                release_id=release_id,
+                released_at=ctx.clock.now(),
             )
             change = events.release_change(target.version, target.artifact_hash, release_id)
             receipt = _intent(ctx, session, entry, release_decisions, meta, change)
