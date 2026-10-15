@@ -3,7 +3,10 @@
 Projections for agents: types, one type with its fields, lifecycles and
 relations in both directions, relations, fields, lifecycles. Deterministic
 (sorted), no timestamps; unknown terms are ``term.unknown`` with
-``did_you_mean``.
+``did_you_mean``. Functions of a graph entry and its compiled model, so
+the app (a read view) and graph-admin (the pinned model) describe a graph
+the same way; ``describe_model`` bundles every document a graph skill is
+rendered from.
 """
 
 from __future__ import annotations
@@ -11,9 +14,9 @@ from __future__ import annotations
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.ontology_layer.model import Bound, ClassDef, CompiledModel, LifecycleDef
 from graph_cli.query.plan import unknown_term
-from graph_cli.services.read import GraphRead
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
 
@@ -22,15 +25,11 @@ def _bound(bound: Bound) -> str:
     return f"{bound.min}..{'n' if bound.max is None else bound.max}"
 
 
-def _envelope(view: GraphRead, **body: JsonValue) -> dict[str, JsonValue]:
+def _envelope(entry: GraphEntry, model: CompiledModel, **body: JsonValue) -> dict[str, JsonValue]:
     return {
         "schema": MODEL_SCHEMA,
-        "graph": {
-            "id": str(view.entry.id),
-            "name": view.entry.name,
-            "language": view.entry.language,
-        },
-        "ontology": {"bundle": view.model.bundle_id, "version": view.model.bundle_version},
+        "graph": {"id": str(entry.id), "name": entry.name, "language": entry.language},
+        "ontology": {"bundle": model.bundle_id, "version": model.bundle_version},
         **body,
     }
 
@@ -92,17 +91,15 @@ def _lifecycles(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
     ]
 
 
-def describe_types(view: GraphRead) -> dict[str, JsonValue]:
-    model = view.model
+def describe_types(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
     types: list[JsonValue] = [
         {"curie": c, "abstract": d.abstract, "extends": d.extends, "summary": d.doc.summary}
         for c, d in sorted(model.classes.items())
     ]
-    return _envelope(view, types=types)
+    return _envelope(entry, model, types=types)
 
 
-def describe_type(view: GraphRead, curie: str) -> dict[str, JsonValue]:
-    model = view.model
+def describe_type(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
     cls = _class(model, curie)
     out: list[JsonValue] = []
     into: list[JsonValue] = []
@@ -134,7 +131,7 @@ def describe_type(view: GraphRead, curie: str) -> dict[str, JsonValue]:
         "extends": cls.extends,
         "ancestors": list(cls.ancestors),
         "subtypes": [c for c in model.subtypes(curie) if c != curie],
-        "alias_prefix": view.entry.alias_prefixes.get(curie),  # type: ignore[call-overload]
+        "alias_prefix": entry.alias_prefixes.get(curie),  # type: ignore[call-overload]
         "summary": cls.doc.summary,
         "description": cls.doc.description,
         "fields": _fields(model, cls),
@@ -147,11 +144,10 @@ def describe_type(view: GraphRead, curie: str) -> dict[str, JsonValue]:
             if model.is_a(curie, r.target)
         ],
     }
-    return _envelope(view, type=body)
+    return _envelope(entry, model, type=body)
 
 
-def describe_relations(view: GraphRead) -> dict[str, JsonValue]:
-    model = view.model
+def describe_relations(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
     relations: list[JsonValue] = [
         {
             "curie": name,
@@ -165,19 +161,31 @@ def describe_relations(view: GraphRead) -> dict[str, JsonValue]:
         }
         for name, r in sorted(model.relations.items())
     ]
-    return _envelope(view, relations=relations)
+    return _envelope(entry, model, relations=relations)
 
 
-def describe_fields(view: GraphRead, curie: str) -> dict[str, JsonValue]:
-    cls = _class(view.model, curie)
-    return _envelope(view, type=curie, fields=_fields(view.model, cls))
+def describe_fields(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
+    cls = _class(model, curie)
+    return _envelope(entry, model, type=curie, fields=_fields(model, cls))
 
 
-def describe_lifecycle(view: GraphRead, curie: str) -> dict[str, JsonValue]:
+def describe_lifecycle(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
     """The lifecycles of a class, or one lifecycle by its CURIE."""
-    model = view.model
     if curie in model.lifecycles:
-        return _envelope(view, lifecycles=[_lifecycle(curie, model.lifecycles[curie], None)])
+        return _envelope(
+            entry, model, lifecycles=[_lifecycle(curie, model.lifecycles[curie], None)]
+        )
     if curie not in model.classes:
         raise unknown_term("type or lifecycle", curie, (*model.classes, *model.lifecycles))
-    return _envelope(view, type=curie, lifecycles=_lifecycles(model, model.classes[curie]))
+    return _envelope(entry, model, type=curie, lifecycles=_lifecycles(model, model.classes[curie]))
+
+
+def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
+    """The model documents a graph skill is rendered from (``graph_cli.skills``): what
+    ``describe types``, ``describe type <T>`` for every class and ``describe relations``
+    print, as ``{types, type: {curie: document}, relations}``."""
+    return {
+        "types": describe_types(entry, model),
+        "type": {curie: describe_type(entry, model, curie) for curie in sorted(model.classes)},
+        "relations": describe_relations(entry, model),
+    }

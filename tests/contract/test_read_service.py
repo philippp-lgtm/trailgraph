@@ -133,7 +133,7 @@ def test_reads_write_nothing(svc: ServiceEnv, roles: Roles, tmp_path: Path) -> N
     view = open_view(svc, reader)
     reader.find(view, FindSpec(types=(roles.term("lifecycle_type"),)))
     reader.graphs(svc.actor, REQUEST, allowed=None)
-    describe.describe_types(view)
+    describe.describe_types(view.entry, view.model)
     assert (tree_hash(tmp_path), len(svc.installation_events())) == before
 
 
@@ -174,20 +174,32 @@ def test_graphs_and_whoami(svc: ServiceEnv) -> None:
 def test_describe_projections(svc: ServiceEnv, roles: Roles) -> None:
     view = open_view(svc)
     cls = roles.term("lifecycle_type")
-    types = describe.describe_types(view)
+    types = describe.describe_types(view.entry, view.model)
     assert types["schema"] == "graph_cli.model/1"
     assert cls in [t["curie"] for t in types["types"]]  # type: ignore[index, union-attr]
-    one = describe.describe_type(view, cls)["type"]
+    one = describe.describe_type(view.entry, view.model, cls)["type"]
     assert isinstance(one, dict)
     assert one["lifecycles"] and one["fields"]
     assert roles.term("required_relation") in [r["curie"] for r in one["relations_out"]]  # type: ignore[index, union-attr]
-    lifecycle = describe.describe_lifecycle(view, cls)["lifecycles"]
+    lifecycle = describe.describe_lifecycle(view.entry, view.model, cls)["lifecycles"]
     assert lifecycle == one["lifecycles"]
-    assert describe.describe_relations(view)["relations"]
-    assert describe.describe_fields(view, cls)["fields"] == one["fields"]
+    assert describe.describe_relations(view.entry, view.model)["relations"]
+    assert describe.describe_fields(view.entry, view.model, cls)["fields"] == one["fields"]
     with pytest.raises(GraphCliError) as info:
-        describe.describe_type(view, cls + "x")
+        describe.describe_type(view.entry, view.model, cls + "x")
     assert info.value.code == "term.unknown" and info.value.details["did_you_mean"]
+
+
+def test_describe_model_bundles_the_documents(svc: ServiceEnv) -> None:
+    """The graph skill input: exactly what the describe commands print, one ``type`` each."""
+    view = open_view(svc)
+    bundle = describe.describe_model(view.entry, view.model)
+    assert bundle["types"] == describe.describe_types(view.entry, view.model)
+    assert bundle["relations"] == describe.describe_relations(view.entry, view.model)
+    assert bundle["type"] == {
+        curie: describe.describe_type(view.entry, view.model, curie)
+        for curie in sorted(view.model.classes)
+    }
 
 
 def lookup_ids(reader: ReadService, view: GraphRead, **changes: Any) -> list[str]:

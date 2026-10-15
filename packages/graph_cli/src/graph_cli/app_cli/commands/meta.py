@@ -75,27 +75,35 @@ def _view(state: CommandState, graph: str | None, command: str) -> GraphRead:
 
 def describe_types(state: CommandState, graph: str | None) -> Result:
     view = _view(state, graph, "describe types")
-    return Result(data=describe.describe_types(view), graph=view.envelope_graph())
+    return Result(data=describe.describe_types(view.entry, view.model), graph=view.envelope_graph())
 
 
 def describe_type(state: CommandState, type: str, graph: str | None) -> Result:
     view = _view(state, graph, "describe type")
-    return Result(data=describe.describe_type(view, type), graph=view.envelope_graph())
+    return Result(
+        data=describe.describe_type(view.entry, view.model, type), graph=view.envelope_graph()
+    )
 
 
 def describe_relations(state: CommandState, graph: str | None) -> Result:
     view = _view(state, graph, "describe relations")
-    return Result(data=describe.describe_relations(view), graph=view.envelope_graph())
+    return Result(
+        data=describe.describe_relations(view.entry, view.model), graph=view.envelope_graph()
+    )
 
 
 def describe_fields(state: CommandState, type: str, graph: str | None) -> Result:
     view = _view(state, graph, "describe fields")
-    return Result(data=describe.describe_fields(view, type), graph=view.envelope_graph())
+    return Result(
+        data=describe.describe_fields(view.entry, view.model, type), graph=view.envelope_graph()
+    )
 
 
 def describe_lifecycle(state: CommandState, type: str, graph: str | None) -> Result:
     view = _view(state, graph, "describe lifecycle")
-    return Result(data=describe.describe_lifecycle(view, type), graph=view.envelope_graph())
+    return Result(
+        data=describe.describe_lifecycle(view.entry, view.model, type), graph=view.envelope_graph()
+    )
 
 
 def _describe(
