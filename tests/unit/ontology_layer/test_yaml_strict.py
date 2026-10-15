@@ -57,6 +57,29 @@ def test_refused(text: str, message: str) -> None:
         load_strict(text)
 
 
+def test_flow_mapping_entry_without_value_is_refused() -> None:
+    text = "values:\n  x: {summary: Used, still works.}\n"
+    with pytest.raises(YamlError, match=r"'still works\.' has no value") as info:
+        load_strict(text)
+    assert (info.value.line, info.value.column) == (2, 22)
+    assert str(info.value).startswith("line 2, column 22: ")
+    with pytest.raises(YamlError, match="'b' has no value"):
+        load_strict("a: {b:}\n")
+
+
+def test_flow_mappings_with_values_and_quoted_commas_load() -> None:
+    root = load_strict("a: {x: null, y: ~, z: ''}\nb: {summary: 'Used, still works.'}\nc:\n")
+    assert isinstance(root, YamlMap)
+    a = root.items["a"]
+    assert isinstance(a, YamlMap)
+    assert all(isinstance(v, YamlScalar) and v.is_null() for k, v in a.items.items() if k != "z")
+    b = root.items["b"]
+    assert isinstance(b, YamlMap)
+    summary = b.items["summary"]
+    assert isinstance(summary, YamlScalar) and summary.text == "Used, still works."
+    assert isinstance(root.items["c"], YamlScalar)  # block mapping: an empty value stays null
+
+
 def test_empty_and_invalid_utf8() -> None:
     assert load_strict("") is None
     with pytest.raises(YamlError):

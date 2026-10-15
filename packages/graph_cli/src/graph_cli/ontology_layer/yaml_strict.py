@@ -5,6 +5,9 @@ PyYAML construct Python objects:
 
 - duplicate keys, anchors, aliases, explicit tags, complex keys and
   multi-document streams are errors
+- an entry without a value in a flow mapping is an error: a comma ends a
+  plain value there, so ``{summary: Used, still works.}`` would silently
+  become a second key ``still works.``
 - there is no implicit typing: every scalar keeps its source text and
   whether it was plain or quoted; the consumer converts it according to its
   schema (YAML 1.2 core rules for booleans, integers and null)
@@ -27,9 +30,13 @@ _INT_RE: Final = re.compile(r"^[-+]?[0-9]+$")
 
 
 class YamlError(ValueError):
-    def __init__(self, message: str, line: int | None = None) -> None:
-        super().__init__(message if line is None else f"line {line}: {message}")
+    def __init__(self, message: str, line: int | None = None, column: int | None = None) -> None:
+        where = "" if line is None else f"line {line}"
+        if where and column is not None:
+            where += f", column {column}"
+        super().__init__(f"{where}: {message}" if where else message)
         self.line = line
+        self.column = column
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +76,16 @@ def _line(event: yaml.Event) -> int:
     return mark.line + 1 if mark is not None else 0
 
 
+def _column(event: yaml.Event) -> int | None:
+    mark = event.start_mark
+    return mark.column + 1 if mark is not None else None
+
+
+def _missing_flow_value(value: YamlNode) -> bool:
+    """A flow mapping entry written without ``:`` and value (or with nothing after ``:``)."""
+    return isinstance(value, YamlScalar) and value.plain and value.text == ""
+
+
 class _Builder:
     def __init__(self, events: list[yaml.Event]) -> None:
         self._events = events
@@ -102,13 +119,22 @@ class _Builder:
             items: dict[str, YamlNode] = {}
             key_lines: dict[str, int] = {}
             while not isinstance(self._events[self._pos], yaml.MappingEndEvent):
+                key_event = self._events[self._pos]
                 key = self.node()
                 if not isinstance(key, YamlScalar):
                     raise YamlError("mapping keys must be scalars", _line(event))
                 if key.text in items:
                     raise YamlError(f"duplicate key {key.text!r}", key.line)
                 key_lines[key.text] = key.line
-                items[key.text] = self.node()
+                value = self.node()
+                if event.flow_style and _missing_flow_value(value):
+                    raise YamlError(
+                        f"flow mapping entry {key.text!r} has no value; a comma ends a"
+                        " plain value inside {...}: quote the value or use block style",
+                        key.line,
+                        _column(key_event),
+                    )
+                items[key.text] = value
             self._next()
             return YamlMap(items, key_lines, _line(event))
         raise YamlError(f"unexpected YAML event {type(event).__name__}", _line(event))
