@@ -766,7 +766,7 @@
         },
         {
           "command": "graph graphs --json",
-          "summary": "The graphs as JSON with titles, and the hidden count."
+          "summary": "The graphs as JSON with titles and languages, and the hidden count."
         }
       ],
       "errors": [

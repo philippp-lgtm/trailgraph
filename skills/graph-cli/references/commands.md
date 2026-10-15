@@ -230,7 +230,7 @@ Usage: `graph graphs`
 | Example | Summary |
 |---|---|
 | `graph graphs` | List the visible graphs. |
-| `graph graphs --json` | The graphs as JSON with titles, and the hidden count. |
+| `graph graphs --json` | The graphs as JSON with titles and languages, and the hidden count. |
 
 ## graph link
 

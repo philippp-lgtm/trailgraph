@@ -27,10 +27,16 @@ def app(
 
 
 def create_graph(
-    run_cli: CliRunner, name: str, ontology: str = "inventory", *, title: str | None = None
+    run_cli: CliRunner,
+    name: str,
+    ontology: str = "inventory",
+    *,
+    title: str | None = None,
+    language: str | None = None,
 ) -> str:
     version = compiled_model(ontology).bundle_version
     extra = ["--title", title] if title is not None else []
+    extra += ["--language", language] if language is not None else []
     outcome = admin(
         run_cli, "graph", "create", name, "--ontology", str(ONTOLOGIES / ontology / version), *extra
     )

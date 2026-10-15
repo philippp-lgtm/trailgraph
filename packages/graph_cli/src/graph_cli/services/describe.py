@@ -25,7 +25,11 @@ def _bound(bound: Bound) -> str:
 def _envelope(view: GraphRead, **body: JsonValue) -> dict[str, JsonValue]:
     return {
         "schema": MODEL_SCHEMA,
-        "graph": {"id": str(view.entry.id), "name": view.entry.name},
+        "graph": {
+            "id": str(view.entry.id),
+            "name": view.entry.name,
+            "language": view.entry.language,
+        },
         "ontology": {"bundle": view.model.bundle_id, "version": view.model.bundle_version},
         **body,
     }

@@ -183,9 +183,9 @@ document.
 | Command | What it does |
 | --- | --- |
 | `whoami` | the acting identity (principal, agent, session, project) and what the policy allows |
-| `graphs` | the graphs this project may use, with the title that says what each is for |
+| `graphs` | the graphs this project may use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
-| `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`) |
+| `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint |
 | `lookup TEXT` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); ranked candidates, paged |
@@ -244,8 +244,8 @@ them.
 | Command | What it does |
 | --- | --- |
 | `init` | create the data root and, if missing, `config.toml` with a device id |
-| `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology |
-| `graph list`, `graph show REF` | list graphs; show manifest, head and installed releases |
+| `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
+| `graph list`, `graph show REF` | list graphs with title and language; show manifest, head and installed releases |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
