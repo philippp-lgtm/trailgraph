@@ -260,6 +260,19 @@ class CompiledModel:
     def facets(self, kind: AttributeKind, type_ref: str) -> Mapping[str, JsonValue]:
         return self.datatypes[type_ref].facets if kind == "datatype" else {}
 
+    def label_attributes(self, class_curie: str) -> tuple[tuple[str, str], ...]:
+        """``(attribute, role)`` of a class's effective label-role attributes.
+
+        Ordered main label, alternative labels, hidden labels, then by name.
+        """
+        attributes = self.classes[class_curie].attributes
+        return tuple(
+            sorted(
+                ((name, a.role) for name, a in attributes.items() if a.role is not None),
+                key=lambda pair: (LABEL_ROLES.index(pair[1]), pair[0]),
+            )
+        )
+
 
 def _mappings_json(mappings: Mapping[str, tuple[str, ...]]) -> dict[str, JsonValue]:
     return {kind: list(values) for kind, values in mappings.items()}

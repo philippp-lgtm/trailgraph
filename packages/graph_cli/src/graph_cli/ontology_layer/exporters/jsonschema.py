@@ -5,6 +5,10 @@ revisions. Fidelity is deliberately partial: lifecycles become plain enums
 (no transitions or guards), and rules, mutability, uniqueness, relations and
 the no-float rule for ``json`` values are not expressed. The validator stays
 the authority; the export is a convenience for external tools.
+
+A label role is the annotation ``x-graph_cli-role`` on the property (draft
+2020-12 collects unknown keywords as annotations; ``$comment`` is not one).
+Validators in a strict mode, such as Ajv's, need the keyword registered.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE
 
 DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
+ROLE_KEYWORD: Final = "x-graph_cli-role"
 
 _UUID: Final = {
     "type": "string",
@@ -81,6 +86,8 @@ def _attribute_schema(model: CompiledModel, attribute: AttributeDef) -> dict[str
         {"type": "array", "items": value} if attribute.many else dict(value)
     )
     schema["description"] = attribute.doc.summary
+    if attribute.role is not None:
+        schema[ROLE_KEYWORD] = attribute.role
     if attribute.default is not None:
         schema["default"] = attribute.default
     return schema

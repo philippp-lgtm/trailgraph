@@ -51,6 +51,7 @@ classes:
         summary: Title of the source.
         type: string
         required: true
+        role: label
       retrieved_at:
         summary: When the source was last retrieved.
         type: date
@@ -83,6 +84,7 @@ classes:
         summary: Headline of the note.
         type: string
         required: true
+        role: label
       body:
         summary: Text of the note.
         type: text
@@ -104,6 +106,17 @@ classes:
         type: string
         required: true
         unique: true
+        role: label
+      synonyms:
+        summary: Other names of the topic, including abbreviations.
+        type: string
+        many: true
+        role: alt_label
+      misspellings:
+        summary: Wrong spellings that should still find the topic; never shown.
+        type: string
+        many: true
+        role: hidden_label
       description:
         summary: What the topic covers.
         type: text

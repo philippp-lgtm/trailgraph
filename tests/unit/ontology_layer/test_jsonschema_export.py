@@ -5,7 +5,11 @@ from jsonschema import Draft202012Validator
 from support.fixtures import TOY_ONTOLOGIES, compiled_model
 
 from graph_cli.kernel.canonical import canonical_bytes
-from graph_cli.ontology_layer.exporters.jsonschema import export_jsonschema, schema_file_name
+from graph_cli.ontology_layer.exporters.jsonschema import (
+    ROLE_KEYWORD,
+    export_jsonschema,
+    schema_file_name,
+)
 
 
 @pytest.mark.parametrize("name", TOY_ONTOLOGIES)
@@ -58,3 +62,19 @@ def test_defaults_and_descriptions_are_exported() -> None:
     }
     assert schema["$id"] == "urn:graph_cli:onto:inventory/Item/attrs"
     assert schema["$comment"] == "attrs of urn:graph_cli:onto:inventory#Item"
+
+
+def test_label_roles_are_annotations() -> None:
+    files = export_jsonschema(compiled_model("notes_and_sources"))
+    topic = files[schema_file_name("nas:Topic")]["properties"]
+    assert isinstance(topic, dict)
+    assert topic["label"][ROLE_KEYWORD] == "label"  # type: ignore[index]
+    assert topic["synonyms"][ROLE_KEYWORD] == "alt_label"  # type: ignore[index]
+    assert topic["synonyms"]["type"] == "array"  # type: ignore[index]
+    assert topic["misspellings"][ROLE_KEYWORD] == "hidden_label"  # type: ignore[index]
+    assert ROLE_KEYWORD not in topic["description"]  # type: ignore[operator]
+    page = files[schema_file_name("nas:WebPage")]["properties"]
+    assert page["title"][ROLE_KEYWORD] == "label"  # type: ignore[index]  # inherited
+    # An annotation, not an assertion: values validate as before.
+    attrs = {"label": "Physics", "synonyms": ["Natural philosophy"]}
+    assert list(validator("notes_and_sources", "nas:Topic").iter_errors(attrs)) == []

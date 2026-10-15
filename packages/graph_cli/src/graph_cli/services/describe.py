@@ -51,6 +51,7 @@ def _fields(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
             "unique": a.unique,
             "default": a.default,
             "mutability": a.mutability,
+            "role": a.role,
             "limits": dict(model.facets(a.kind, a.type)),
             "values": list(model.enums[a.type].value_names()) if a.kind == "enum" else None,
             "declared_in": a.declared_in,

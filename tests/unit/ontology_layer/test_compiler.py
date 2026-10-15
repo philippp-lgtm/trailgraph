@@ -272,3 +272,14 @@ def test_second_label_in_one_class_is_reported_at_the_later_one() -> None:
     assert [(f.code, f.target["path"]) for f in outcome.findings] == [
         ("model.semantic.duplicate_label", "classes.Base.attributes.title.role")
     ]
+
+
+def test_label_attributes_are_ordered_by_role_then_name() -> None:
+    model = roles_model()
+    assert model.label_attributes("ex:Thing") == (
+        ("name", "label"),
+        ("synonyms", "alt_label"),
+        ("misspellings", "hidden_label"),
+    )
+    assert model.label_attributes("ex:Base") == (("name", "label"),)
+    assert compiled_model("notes_and_sources").label_attributes("nas:Book") == (("title", "label"),)

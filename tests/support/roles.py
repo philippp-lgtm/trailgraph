@@ -43,6 +43,10 @@ FEATURE_ROLES: Mapping[str, str] = {
     "named_datatype_attribute": "attribute",
     "default_attribute": "attribute",
     "tree_relation": "relation",
+    "label_type": "class",
+    "label_attribute": "attribute",
+    "alt_label_attribute": "attribute",
+    "hidden_label_attribute": "attribute",
 }
 
 

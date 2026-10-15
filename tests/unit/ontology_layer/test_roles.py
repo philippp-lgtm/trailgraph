@@ -42,6 +42,12 @@ CHECKS: dict[str, Callable[[object], bool]] = {
     "tree_relation": lambda r: (
         isinstance(r, RelationDef) and "acyclic" in r.characteristics and r.out.max == 1
     ),
+    "label_type": lambda c: (
+        isinstance(c, ClassDef) and any(a.role == "label" for a in c.attributes.values())
+    ),
+    "label_attribute": lambda a: isinstance(a, AttributeDef) and a.role == "label",
+    "alt_label_attribute": lambda a: isinstance(a, AttributeDef) and a.role == "alt_label",
+    "hidden_label_attribute": lambda a: isinstance(a, AttributeDef) and a.role == "hidden_label",
 }
 
 
