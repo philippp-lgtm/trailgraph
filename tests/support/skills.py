@@ -75,11 +75,4 @@ def render_inputs(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(model documents, graph block)`` of ``render_graph_skill`` for a fixture model."""
     entry = graph_entry(model, prefixes=prefixes)
-    block = graph_block(
-        id=str(entry.id),
-        name=entry.name,
-        title=entry.title,
-        language=entry.language,
-        alias_prefixes=entry.alias_prefixes,
-    )
-    return describe_model(entry, model), block
+    return describe_model(entry, model), graph_block(entry)

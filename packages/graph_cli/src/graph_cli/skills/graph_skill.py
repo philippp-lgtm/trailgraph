@@ -33,7 +33,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonObject, JsonValue, canonical_bytes
 from graph_cli.kernel.ids import ALIAS_DIGITS, format_alias
 from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, req_obj, req_str
-from graph_cli.kernel.ports.catalog import skill_hash
+from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
 from graph_cli.skills.markdown import table
 from graph_cli.skills.template import MODEL_FILE, Template, parse_template
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
@@ -98,21 +98,16 @@ def render_checked(
     return (None, problems) if problems else (rendered, [])
 
 
-def graph_block(
-    *,
-    id: str,
-    name: str,
-    title: str | None,
-    language: str | None,
-    alias_prefixes: Mapping[str, str],
-) -> dict[str, JsonValue]:
-    """The ``graph`` input of ``render_graph_skill``."""
+def graph_block(entry: GraphEntry) -> dict[str, JsonValue]:
+    """The ``graph`` input of ``render_graph_skill``: what the manifest says of the graph."""
     return {
-        "id": id,
-        "name": name,
-        "title": title,
-        "language": language,
-        "alias_prefixes": {str(curie): alias_prefixes[curie] for curie in sorted(alias_prefixes)},
+        "id": str(entry.id),
+        "name": entry.name,
+        "title": entry.title,
+        "language": entry.language,
+        "alias_prefixes": {
+            str(curie): entry.alias_prefixes[curie] for curie in sorted(entry.alias_prefixes)
+        },
     }
 
 

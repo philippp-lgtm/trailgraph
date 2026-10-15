@@ -22,6 +22,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.migration_required", _C.REFUSED, False, "The change needs a migration."),
     ErrorSpec("admin.integrity_errors", _C.INVALID, False, "Verification found errors."),
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
+    ErrorSpec(
+        "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
+    ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
 )
 

@@ -168,3 +168,181 @@ def test_text_mode_names_the_problems(run_cli: CliRunner, graph_id: str, tmp_pat
     result = run_cli("graph-admin", "graph", "skill", "publish", "example_graph", str(broken))
     assert result.returncode == 1
     assert "admin.skill_invalid" in result.stderr and "frontmatter" in result.stderr
+
+
+# ---- generated graph skills (templates) -------------------------------------------------
+
+TEMPLATE = FIXTURES / "skills" / "template" / "graph-example-graph"
+
+
+def copy_template(tmp_path: Path) -> Path:
+    target = tmp_path / "template" / "graph-example-graph"
+    shutil.copytree(TEMPLATE, target)
+    return target
+
+
+def render(run_cli: CliRunner, source: Path, out: Path, *args: str) -> Outcome:
+    return admin(
+        run_cli, "graph", "skill", "render", "example_graph", str(source), "--out", str(out), *args
+    )
+
+
+def test_publish_a_template_as_generated(run_cli: CliRunner, root: Path, graph_id: str) -> None:
+    files, _ = read_tree(TEMPLATE)
+    outcome = publish(run_cli, TEMPLATE, "--reason", "generated skill")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["to"]["kind"] == "generated"
+    assert outcome.data["to"]["hash"] == skill_hash(files)
+    assert outcome.data["files"] == ["SKILL.md", "references/recipes.md"]  # the template as is
+    assert admin(run_cli, "graph", "show", "example_graph").data["skill"]["kind"] == "generated"
+    intent = graph_events(root, graph_id)[-1]
+    assert intent["change"] == {"skill": {"from": None, "to": skill_hash(files)}}
+    verified = admin(run_cli, "audit", "verify")
+    assert verified.code == 0 and verified.data["counts"] == {"error": 0, "warning": 0, "info": 0}
+
+    static = publish(run_cli, SKILL)  # switching back to a static skill is one more change
+    assert static.code == 0 and static.data["to"]["kind"] == "static"
+    assert static.data["from"]["kind"] == "generated"
+
+
+def test_an_invalid_template_lists_one_problem_per_rule(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    broken = copy_template(tmp_path)
+    skill_md = broken / "SKILL.md"
+    text = skill_md.read_text()
+    text = text.replace("<!-- graph_cli:block model -->", "<!-- graph_cli:block samples -->")
+    skill_md.write_text(text)
+    (broken / "references" / "model.md").write_text("# Mine\n")
+    before = tree_hash(root)
+    outcome = publish(run_cli, broken)
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.skill_invalid")
+    problems = outcome.error["details"]["problems"]
+    assert [(p["rule"], p["path"]) for p in problems] == [
+        ("template", "references/model.md"),
+        ("template", "SKILL.md"),
+    ]
+    assert "unknown block 'samples'" in problems[1]["message"]
+
+    curated = copy_template(tmp_path / "second")
+    skill_md = curated / "SKILL.md"
+    text = skill_md.read_text().replace("`inv:Item` is stored", "`inv:Thing` is stored")
+    text = text.replace("--direction out", "--towards out").replace("ITEM-0001", "ITEM-1")
+    skill_md.write_text(text)
+    outcome = publish(run_cli, curated)
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.skill_invalid")
+    rules = [p["rule"] for p in outcome.error["details"]["problems"]]
+    assert sorted(rules) == ["alias", "command", "term"]
+    assert tree_hash(root) == before
+
+
+def test_a_template_with_maintenance_vocabulary_is_refused(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """L positive control for generated skills: curated text is leak-checked too."""
+    broken = copy_template(tmp_path)
+    recipes = broken / "references" / "recipes.md"
+    recipes.write_text(recipes.read_text() + "\nAsk for graph-admin access.\n")
+    outcome = publish(run_cli, broken)
+    assert outcome.error["code"] == "admin.skill_invalid"
+    (leak,) = outcome.error["details"]["problems"]
+    assert (leak["rule"], leak["path"]) == ("leak", "references/recipes.md")
+    assert publish(run_cli, copy_template(tmp_path / "clean")).code == 0  # positive control
+
+
+def test_a_template_must_render_under_the_size_limit(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    from graph_cli.skills.tree import MAX_SKILL_LINES
+
+    big = copy_template(tmp_path)
+    skill_md = big / "SKILL.md"
+    lines = MAX_SKILL_LINES - skill_md.read_text().count("\n") - 5
+    skill_md.write_text(skill_md.read_text() + "Filler.\n" * lines)  # the template still fits
+    outcome = publish(run_cli, big)
+    assert outcome.error["code"] == "admin.skill_invalid"
+    (problem,) = outcome.error["details"]["problems"]
+    assert (problem["rule"], problem["path"]) == ("size", "SKILL.md")
+
+
+def test_render_writes_the_preview_and_changes_nothing(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    out = tmp_path / "preview"
+    out.mkdir()
+    before = tree_hash(root)
+    outcome = render(run_cli, TEMPLATE, out)
+    assert outcome.code == 0, outcome.envelope
+    data = outcome.data
+    assert (data["skill"], data["kind"], data["problems"]) == (
+        "graph-example-graph",
+        "generated",
+        [],
+    )
+    assert data["files"] == ["SKILL.md", "references/model.md", "references/recipes.md"]
+    assert data["model"]["version"] == "1.0.0"
+    files, problems = read_tree(out / "graph-example-graph")
+    assert problems == [] and sorted(files) == data["files"]
+    text = files["SKILL.md"].decode()
+    assert "graph_cli:block" not in text and "`inv:Item` (`ITEM-0001`)" in text
+    assert "the ontology inventory 1.0.0" in text  # the stamp names the pin it rendered
+    assert tree_hash(root) == before  # no slot change, no event
+    assert admin(run_cli, "graph", "show", "example_graph").data["skill"] is None
+
+    refused = render(run_cli, TEMPLATE, out)
+    assert (refused.code, refused.error["code"]) == (1, "admin.skill_render_exists")
+    assert refused.error["hint"] == (
+        f"graph-admin graph skill render example_graph {TEMPLATE} --out {out.resolve()} --force"
+    )
+    forced = render(run_cli, TEMPLATE, out, "--force")
+    assert forced.code == 0, forced.envelope
+    assert read_tree(out / "graph-example-graph")[0] == files
+
+
+def test_render_reports_what_publish_would_refuse(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    curated = copy_template(tmp_path)
+    skill_md = curated / "SKILL.md"
+    skill_md.write_text(skill_md.read_text().replace("ITEM-0001", "ITEM-1"))
+    out = tmp_path / "preview"
+    out.mkdir()
+    outcome = render(run_cli, curated, out)
+    assert (outcome.code, outcome.error["code"]) == (1, "admin.skill_invalid")
+    assert [p["rule"] for p in outcome.data["problems"]] == ["alias"]  # partial result
+    assert (out / "graph-example-graph" / "SKILL.md").is_file()
+
+    broken = copy_template(tmp_path / "broken")
+    (broken / "SKILL.md").write_text("no frontmatter\n<!-- graph_cli:block types -->\n")
+    nothing = tmp_path / "nothing"
+    nothing.mkdir()
+    refused = render(run_cli, broken, nothing)
+    assert refused.error["code"] == "admin.skill_invalid" and refused.data is None
+    assert list(nothing.iterdir()) == []
+
+
+def test_render_of_a_static_skill_is_its_files(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    out = tmp_path / "preview"
+    out.mkdir()
+    outcome = render(run_cli, SKILL, out)
+    assert outcome.code == 0 and outcome.data["kind"] == "static"
+    assert read_tree(out / "graph-example-graph")[0] == read_tree(SKILL)[0]
+
+
+def test_publish_checks_the_template_against_the_current_pin(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """A curated name the pinned model lacks is refused; after a release that has it, the
+    same template publishes (inventory 1.1.0 adds inv:Supplier)."""
+    curated = copy_template(tmp_path)
+    recipes = curated / "references" / "recipes.md"
+    recipes.write_text(recipes.read_text() + "\nSuppliers are `inv:Supplier` entities.\n")
+    refused = publish(run_cli, curated)
+    assert [p["rule"] for p in refused.error["details"]["problems"]] == ["term"]
+    released = admin(
+        run_cli, "ontology", "release", "example_graph", str(ONTOLOGIES / "inventory" / "1.1.0")
+    )
+    assert released.code == 0, released.envelope
+    assert publish(run_cli, curated).code == 0

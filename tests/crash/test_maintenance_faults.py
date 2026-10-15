@@ -14,6 +14,7 @@ from support.stores import FaultSwitch
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
+from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
 from graph_cli_admin.services_admin import audit, graphs
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.release import release
@@ -106,7 +107,14 @@ def test_pin_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
 def test_skill_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
     """D15 Q8: the old slot (here: none) stays; skill intents are not walked yet."""
     create(ctx)
-    run = lambda: publish(ctx, graph_ref="example_graph", source=SKILL, reason=None, dry_run=False)  # noqa: E731
+    run = lambda: publish(  # noqa: E731
+        ctx,
+        graph_ref="example_graph",
+        source=SKILL,
+        reason=None,
+        dry_run=False,
+        inventory=app_inventory(),
+    )
     interrupted(faults, CrashPoint.SKILL_BEFORE_RENAME, run)
     graph = ctx.catalog.resolve("example_graph")
     assert ctx.catalog.read_skill(graph.id) is None
