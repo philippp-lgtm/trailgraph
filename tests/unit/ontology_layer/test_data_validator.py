@@ -198,6 +198,10 @@ def test_valid_writes_on_both_fixtures_have_no_findings() -> None:
             ["data.mutability.immutable_changed"],
         ),
         ([{"op": "update", "id": D, "set": {"acquired_on": "2026-01-01"}}], []),  # write-once
+        (
+            [{"op": "update", "id": D, "unset": ["colour"]}],
+            ["data.structural.unknown_attribute"],
+        ),
     ],
 )
 def test_inventory_layers(ops: list[dict[str, Any]], expected: list[str]) -> None:

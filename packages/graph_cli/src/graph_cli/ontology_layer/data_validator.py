@@ -549,7 +549,15 @@ def _judge_effect(checker: _Checker, effect: OpEffect, revision: Revision, cls: 
     elif effect.op == "update" and effect.applied:
         for name in effect.names:
             attribute = cls.attributes.get(name)
-            if attribute is not None and attribute.kind == "lifecycle":
+            if attribute is None and name not in revision.attrs:  # an unset; a set is reported
+                checker.add(
+                    "data.structural.unknown_attribute",
+                    revision,
+                    f"attrs.{name}",
+                    f"{revision.type} has no attribute {name!r}",
+                    expected=_close(name, cls.attributes),
+                )
+            elif attribute is not None and attribute.kind == "lifecycle":
                 checker.add(
                     "data.lifecycle.direct_update_of_lifecycle_attribute",
                     revision,
