@@ -80,6 +80,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("config.invalid", _C.UNAVAILABLE, False, "The configuration is invalid."),
     ErrorSpec("config.forbidden_key", _C.UNAVAILABLE, False, "A configuration key is not allowed."),
     ErrorSpec("policy.invalid", _C.UNAVAILABLE, False, "The policy document is invalid."),
+    ErrorSpec("skills.target_invalid", _C.REFUSED, False, "The skill directory is not usable."),
+    ErrorSpec("skills.not_owned", _C.REFUSED, False, "A skill directory was not installed by us."),
+    ErrorSpec("skills.modified", _C.REFUSED, False, "An installed skill was edited by hand."),
+    ErrorSpec("skills.source_missing", _C.NOT_FOUND, False, "The graph has no published skill."),
+    ErrorSpec("skills.source_invalid", _C.INVALID, False, "The published skill is invalid."),
+    ErrorSpec("skills.check_failed", _C.INVALID, False, "Installed skills are not up to date."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),
@@ -99,6 +105,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
     ),
     ErrorSpec("config.unknown_key", _C.WARNING, False, "A configuration key is unknown."),
+    ErrorSpec(
+        "skills.source_behind_ontology",
+        _C.WARNING,
+        False,
+        "A graph skill was published for an older ontology version.",
+    ),
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
 )
 

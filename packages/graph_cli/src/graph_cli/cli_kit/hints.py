@@ -7,6 +7,7 @@ code has an entry: a function of ``(details, program)`` or an explicit
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable, Mapping
 from typing import Final
 
@@ -49,6 +50,47 @@ def _get(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} get {entity}" if isinstance(entity, str) else None
 
 
+def _mkdir(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A missing configuration directory of the skill target (D15)."""
+    path = details.get("path")
+    if details.get("cause") == "missing" and isinstance(path, str):
+        return f"mkdir {shlex.quote(path)}"
+    return None
+
+
+def _install(details: Mapping[str, JsonValue], program: str, *, force: bool) -> str | None:
+    """Re-run ``skills install`` for the same target and graphs (D15)."""
+    scope = details.get("scope")
+    if not isinstance(scope, str):
+        return None
+    words = [program, "skills", "install", "--scope", scope]
+    target = details.get("dir")
+    if isinstance(target, str):
+        words += ["--dir", shlex.quote(target)]
+    graphs = details.get("graphs")
+    if isinstance(graphs, list):
+        for graph in graphs:
+            if isinstance(graph, str):
+                words += ["--graph", shlex.quote(graph)]
+    return " ".join([*words, "--force"] if force else words)
+
+
+def _force(details: Mapping[str, JsonValue], program: str) -> str | None:
+    return _install(details, program, force=True)
+
+
+def _refresh(details: Mapping[str, JsonValue], program: str) -> str | None:
+    return _install(details, program, force=False)
+
+
+def _publish(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Graph skills are published by the maintainer (D15 Q2)."""
+    graph = details.get("graph")
+    if not isinstance(graph, str):
+        return None
+    return f"{ADMIN_PROGRAM} graph skill publish {shlex.quote(graph)} <dir>"
+
+
 _BASE: Final[dict[str, Hint | None]] = {
     "usage.invalid_argument": _help,
     "usage.unknown_command": _help,
@@ -86,6 +128,12 @@ _BASE: Final[dict[str, Hint | None]] = {
     "config.invalid": None,
     "config.forbidden_key": None,
     "policy.invalid": None,
+    "skills.target_invalid": _mkdir,
+    "skills.not_owned": _force,
+    "skills.modified": _force,
+    "skills.source_missing": _publish,
+    "skills.source_invalid": None,
+    "skills.check_failed": _refresh,
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}
