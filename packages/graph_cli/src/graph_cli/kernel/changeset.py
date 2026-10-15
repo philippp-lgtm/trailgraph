@@ -42,6 +42,7 @@ from graph_cli.kernel.ids import (
     parse_id,
     ref_text,
 )
+from graph_cli.kernel.records import EdgeRecord
 
 CHANGESET_SCHEMA: Final = "graph_cli.changeset/1"
 MAX_OPS: Final = 1000
@@ -195,7 +196,8 @@ class OpEffect:
     ``entity`` is the op's subject (``by`` for supersede). ``applied`` is
     false when normalize skipped the op (a ``data.temporal.*`` finding) or
     could not apply it (``problem``: transition without a lifecycle
-    attribute, unlink without exactly one matching edge).
+    attribute, unlink without exactly one matching edge). ``edge`` is the edge an
+    unlink removed, so that an edge added and removed in one change set is judged too.
     """
 
     index: int
@@ -209,6 +211,7 @@ class OpEffect:
     initial: tuple[tuple[str, JsonValue], ...] = ()  # create: lifecycle values after the op
     edge_id: EdgeId | None = None  # link: added; unlink: removed
     rel: TermRef | None = None
+    edge: EdgeRecord | None = None  # unlink: the removed edge
     targets: tuple[EntityId, ...] = ()  # other entities touched: supersede targets, retract by
     alias: str | None = None  # set_alias: the requested alias
     problem: str | None = None

@@ -433,3 +433,96 @@ def test_check_graph_ignores_inactive_entities_for_rules() -> None:
     )
     assert check_graph(INV, DictSnapshot(ROOM, DESK, bad)) == []
     assert eid("bad") == bad.id
+
+
+GHOST = "0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"  # an id with no entity
+
+
+@pytest.mark.parametrize(
+    ("ops", "expected"),
+    [
+        (
+            [{"op": "unlink", "id": D, "rel": "inv:bogus", "target": R}],
+            ["data.referential.unknown_relation"],
+        ),
+        (
+            [{"op": "unlink", "id": R, "rel": "inv:part_of", "target": D}],
+            ["data.referential.domain_violation"],
+        ),
+        (
+            [
+                {"op": "link", "id": D, "rel": "inv:bogus", "target": R},
+                {"op": "unlink", "id": D, "rel": "inv:bogus", "target": R},
+            ],
+            ["data.referential.unknown_relation"],
+        ),
+        (
+            [
+                {"op": "link", "id": R, "rel": "inv:part_of", "target": D},
+                {"op": "unlink", "id": R, "rel": "inv:part_of", "target": D},
+            ],
+            ["data.referential.domain_violation"],
+        ),
+        (
+            [
+                {"op": "link", "id": D, "rel": "inv:part_of", "target": GHOST},
+                {"op": "unlink", "id": D, "rel": "inv:part_of", "target": GHOST},
+            ],
+            ["data.referential.target_missing"],
+        ),
+        (
+            [
+                item(
+                    edges=[
+                        {"rel": "inv:located_in", "target": R},
+                        {"rel": "inv:bogus", "target": R},
+                    ]
+                ),
+                {"op": "unlink", "id": "@x", "rel": "inv:bogus", "target": R},
+            ],
+            ["data.referential.unknown_relation"],
+        ),
+        (
+            [{"op": "transition", "id": D, "attr": "colour", "to": "in_use"}],
+            ["data.structural.unknown_attribute"],
+        ),
+        (
+            [{"op": "transition", "id": D, "attr": "name", "to": "in_use"}],
+            ["data.lifecycle.transition_not_allowed"],
+        ),
+        (
+            [
+                {"op": "update", "id": D, "set": {"colour": "red"}},
+                {"op": "update", "id": D, "unset": ["colour"]},
+            ],
+            ["data.structural.unknown_attribute"],
+        ),
+    ],
+)
+def test_names_from_ops_are_judged_without_the_post_state(
+    ops: list[dict[str, Any]], expected: list[str]
+) -> None:
+    assert inv(*ops) == expected
+
+
+def test_qualifiers_of_a_removed_edge_are_judged() -> None:
+    link = {"op": "link", "id": N, "rel": "nas:cites", "target": W, "qualifiers": {"page": 3}}
+    unlink = {"op": "unlink", "id": N, "rel": "nas:cites", "target": W}
+    assert nas(link, unlink) == ["data.referential.qualifier_unknown"]
+    valid = {**link, "qualifiers": {"locator": "p. 3"}}
+    assert nas(valid, unlink) == []
+
+
+def test_unlinking_an_existing_edge_is_not_judged_again() -> None:
+    broken = revision("broken", "inv:Item", {**DESK.attrs, "serial_number": "SN-0005"})
+    broken = replace(broken, edges=(*DESK.edges, edge("inv:bogus", "room", name="bogus")))
+    base = DictSnapshot(ROOM, broken)
+    unlink = {"op": "unlink", "id": str(broken.id), "rel": "inv:bogus", "target": R}
+    assert codes(judge(INV, unlink, base=base)[1]) == []
+
+
+def test_an_unknown_target_state_is_named() -> None:
+    _, findings = judge(INV, {"op": "transition", "id": D, "to": "lost"}, base=INV_BASE)
+    (finding,) = findings
+    assert finding.code == "data.lifecycle.transition_not_allowed"
+    assert "'lost' is not a state of" in finding.message

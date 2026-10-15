@@ -340,7 +340,9 @@ class _Run:
             return
         work = self.touch(entity)
         work.edges = [e for e in work.edges if e.edge_id != edge.edge_id]
-        self.effects.append(OpEffect(index, op.OP, entity, edge_id=edge.edge_id, rel=edge.rel))
+        self.effects.append(
+            OpEffect(index, op.OP, entity, edge_id=edge.edge_id, rel=edge.rel, edge=edge)
+        )
 
     def transition(self, index: int, op: TransitionOp) -> None:
         entity = self.resolve(op.id)

@@ -50,7 +50,7 @@ from graph_cli.kernel.ids import EdgeId, EntityId, TermRef, parse_id
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Query
 from graph_cli.kernel.query_eval import strict_equal
-from graph_cli.kernel.records import RECORD_STATUSES, Revision
+from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.ontology_layer.evaluate import evaluate
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE, check_facets
@@ -151,7 +151,9 @@ class _Checker:
         local = self.local_names.get(revision.id)
         if local is not None:
             target["local"] = local
-        self.findings.append(Finding(severity, code, target, message, expected, actual, rule_id))
+        finding = Finding(severity, code, target, message, expected, actual, rule_id)
+        if finding not in self.findings:  # two ops may name the same problem
+            self.findings.append(finding)
 
     # ---- structure -----------------------------------------------------
 
@@ -275,56 +277,8 @@ class _Checker:
     def edges(self, revision: Revision, *, new_edges: frozenset[EdgeId] | None) -> None:
         counts: Counter[str] = Counter()
         for edge in revision.edges:
-            path = f"edges.{edge.rel}"
-            relation = self.model.relations.get(edge.rel)
-            if relation is None:
-                self.add(
-                    "data.referential.unknown_relation",
-                    revision,
-                    path,
-                    f"relation {edge.rel} does not exist",
-                    expected=_close(edge.rel, self.model.relations),
-                )
-                continue
-            counts[edge.rel] += 1
-            target = self.snapshot.get(edge.target)
-            if target is None:
-                self.add(
-                    "data.referential.target_missing",
-                    revision,
-                    path,
-                    f"target {edge.target} does not exist",
-                )
-                continue
-            if not self.model.is_a_any(revision.type, relation.domain):
-                self.add(
-                    "data.referential.domain_violation",
-                    revision,
-                    path,
-                    f"{edge.rel} does not apply to {revision.type}",
-                    expected=list(relation.domain),
-                )
-            if target.type in self.model.classes and not self.model.is_a_any(
-                target.type, relation.range
-            ):
-                self.add(
-                    "data.referential.range_violation",
-                    revision,
-                    path,
-                    f"{edge.rel} does not accept a {target.type} target",
-                    expected=list(relation.range),
-                    actual=target.type,
-                )
-            self.qualifiers(revision, edge.rel, edge.qualifiers)
-            new = new_edges is None or edge.edge_id in new_edges
-            if new and target.record_status != "active" and edge.rel not in PROVENANCE_RELATIONS:
-                self.add(
-                    "data.referential.target_not_active",
-                    revision,
-                    path,
-                    f"target {edge.target} is {target.record_status}",
-                    severity=Severity.WARNING,
-                )
+            if self.edge(revision, edge, new=new_edges is None or edge.edge_id in new_edges):
+                counts[edge.rel] += 1
         for name, relation in self.model.relations.items():
             if not self.model.is_a_any(revision.type, relation.domain):
                 continue
@@ -343,6 +297,58 @@ class _Checker:
                     expected=bound,
                     actual=count,
                 )
+
+    def edge(self, revision: Revision, edge: EdgeRecord, *, new: bool) -> bool:
+        """One edge of ``revision``; true when its relation exists (it counts)."""
+        path = f"edges.{edge.rel}"
+        relation = self.model.relations.get(edge.rel)
+        if relation is None:
+            self.add(
+                "data.referential.unknown_relation",
+                revision,
+                path,
+                f"relation {edge.rel} does not exist",
+                expected=_close(edge.rel, self.model.relations),
+            )
+            return False
+        target = self.snapshot.get(edge.target)
+        if target is None:
+            self.add(
+                "data.referential.target_missing",
+                revision,
+                path,
+                f"target {edge.target} does not exist",
+            )
+            return True
+        if not self.model.is_a_any(revision.type, relation.domain):
+            self.add(
+                "data.referential.domain_violation",
+                revision,
+                path,
+                f"{edge.rel} does not apply to {revision.type}",
+                expected=list(relation.domain),
+            )
+        if target.type in self.model.classes and not self.model.is_a_any(
+            target.type, relation.range
+        ):
+            self.add(
+                "data.referential.range_violation",
+                revision,
+                path,
+                f"{edge.rel} does not accept a {target.type} target",
+                expected=list(relation.range),
+                actual=target.type,
+            )
+        self.qualifiers(revision, edge.rel, edge.qualifiers)
+        if new and target.record_status != "active" and edge.rel not in PROVENANCE_RELATIONS:
+            self.add(
+                "data.referential.target_not_active",
+                revision,
+                path,
+                f"target {edge.target} is {target.record_status}",
+                severity=Severity.WARNING,
+            )
+        return True
 
     def qualifiers(self, revision: Revision, rel: str, values: Mapping[str, JsonValue]) -> None:
         relation = self.model.relations[rel]
@@ -506,12 +512,12 @@ def validate_write(
     checker.cycles(rev for rev, _ in checkable.values())
     for effect in effects:
         if effect.entity in checkable:
-            _judge_effect(checker, effect, *checkable[effect.entity])
+            _judge_effect(checker, before, effect, *checkable[effect.entity])
         elif effect.entity not in touched:  # an op that could not apply touched nothing
             revision = after.get(effect.entity)
             cls = None if revision is None else model.classes.get(revision.type)
             if revision is not None and cls is not None and not cls.abstract:
-                _judge_effect(checker, effect, revision, cls)
+                _judge_effect(checker, before, effect, revision, cls)
     _aliases(checker, before, after, effects, alias_allocations)
     return sort_findings(checker.findings)
 
@@ -530,7 +536,10 @@ def _immutables(checker: _Checker, previous: Revision, revision: Revision, cls: 
             )
 
 
-def _judge_effect(checker: _Checker, effect: OpEffect, revision: Revision, cls: ClassDef) -> None:
+def _judge_effect(
+    checker: _Checker, before: Snapshot, effect: OpEffect, revision: Revision, cls: ClassDef
+) -> None:
+    """Names an op carries are judged even when the post-state no longer shows them."""
     model = checker.model
     if effect.op == "create":
         for name, value in effect.initial:
@@ -566,12 +575,41 @@ def _judge_effect(checker: _Checker, effect: OpEffect, revision: Revision, cls: 
                 )
     elif effect.op == "transition":
         _judge_transition(checker, effect, revision, cls)
-    elif effect.op == "unlink" and effect.problem is not None:
+    elif effect.op == "unlink":
+        _judge_unlink(checker, before, effect, revision)
+
+
+def _judge_unlink(
+    checker: _Checker, before: Snapshot, effect: OpEffect, revision: Revision
+) -> None:
+    if effect.edge is not None:
+        previous = before.get(effect.entity)
+        if previous is None or all(e.edge_id != effect.edge.edge_id for e in previous.edges):
+            checker.edge(revision, effect.edge, new=True)  # added and removed in this write
+        return
+    if effect.problem is None:
+        return
+    path = "edges" if effect.rel is None else f"edges.{effect.rel}"
+    relation = None if effect.rel is None else checker.model.relations.get(effect.rel)
+    if effect.rel is not None and relation is None:
         checker.add(
-            "data.referential.edge_missing",
+            "data.referential.unknown_relation",
             revision,
-            "edges" if effect.rel is None else f"edges.{effect.rel}",
-            f"unlink found {effect.problem}",
+            path,
+            f"relation {effect.rel} does not exist",
+            expected=_close(effect.rel, checker.model.relations),
+        )
+    elif relation is not None and not checker.model.is_a_any(revision.type, relation.domain):
+        checker.add(
+            "data.referential.domain_violation",
+            revision,
+            path,
+            f"{effect.rel} does not apply to {revision.type}",
+            expected=list(relation.domain),
+        )
+    else:
+        checker.add(
+            "data.referential.edge_missing", revision, path, f"unlink found {effect.problem}"
         )
 
 
@@ -579,12 +617,22 @@ def _judge_transition(
     checker: _Checker, effect: OpEffect, revision: Revision, cls: ClassDef
 ) -> None:
     path = "attrs" if effect.attr is None else f"attrs.{effect.attr}"
+    if effect.attr is not None and effect.attr not in cls.attributes:
+        checker.add(
+            "data.structural.unknown_attribute",
+            revision,
+            path,
+            f"{revision.type} has no attribute {effect.attr!r}",
+            expected=_close(effect.attr, cls.attributes),
+        )
+        return
     if effect.problem is not None:
         checker.add("data.lifecycle.transition_not_allowed", revision, path, effect.problem)
         return
     if not effect.applied or effect.attr is None:
         return
-    lifecycle = checker.model.lifecycles[cls.attributes[effect.attr].type]
+    lifecycle_ref = cls.attributes[effect.attr].type
+    lifecycle = checker.model.lifecycles[lifecycle_ref]
     allowed = [t for t in lifecycle.transitions if t.from_state == effect.from_state]
     match = next((t for t in allowed if t.to_state == effect.to_state), None)
     if match is None:
@@ -592,7 +640,9 @@ def _judge_transition(
             "data.lifecycle.transition_not_allowed",
             revision,
             path,
-            f"no transition from {effect.from_state!r} to {effect.to_state!r}",
+            f"no transition from {effect.from_state!r} to {effect.to_state!r}"
+            if effect.to_state in lifecycle.state_names()
+            else f"{effect.to_state!r} is not a state of {lifecycle_ref}",
             expected=sorted({t.to_state for t in allowed}) or None,
             actual=effect.to_state,
         )
