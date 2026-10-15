@@ -83,7 +83,7 @@ def test_decimal_and_many_valued_fields() -> None:
         (FindSpec(types=("inv:Iten",)), "term.unknown", "type"),
         (FindSpec(where=("colour=red",)), "term.unknown", "field"),
         (FindSpec(types=("inv:Location",), where=("quantity=1",)), "term.unknown", "field"),
-        (FindSpec(rels=(("inv:stored_in", None),)), "term.unknown", "relation"),
+        (FindSpec(rels=(("inv:stored_in", ()),)), "term.unknown", "relation"),
         (FindSpec(where=("quantity:approx=1",)), "usage.invalid_argument", None),
         (FindSpec(where=("quantity=many",)), "usage.invalid_argument", None),
         (FindSpec(where=("quantity",)), "usage.invalid_argument", None),
@@ -111,16 +111,21 @@ def test_did_you_mean() -> None:
 
 def test_relations() -> None:
     query = plan_find(
-        INV, FindSpec(rels=(("inv:located_in", ID),), in_rels=(("inv:part_of", None),))
+        INV, FindSpec(rels=(("inv:located_in", (ID,)),), in_rels=(("inv:part_of", ()),))
     )
     assert query.rels == (
-        RelConstraint("inv:located_in", "out", ID),  # type: ignore[arg-type]
-        RelConstraint("inv:part_of", "in", None),  # type: ignore[arg-type]
+        RelConstraint("inv:located_in", "out", (ID,)),  # type: ignore[arg-type]
+        RelConstraint("inv:part_of", "in", ()),  # type: ignore[arg-type]
     )
-    assert parse_rel_flag("inv:part_of=ITEM-0001", "--rel") == ("inv:part_of", "ITEM-0001")
-    assert parse_rel_flag("inv:part_of", "--rel") == ("inv:part_of", None)
-    with pytest.raises(GraphCliError):
-        parse_rel_flag("inv:part_of=", "--rel")
+    assert parse_rel_flag("inv:part_of=ITEM-0001", "--rel") == ("inv:part_of", ("ITEM-0001",))
+    assert parse_rel_flag("inv:part_of=ITEM-0001,ITEM-0002", "--rel") == (
+        "inv:part_of",
+        ("ITEM-0001", "ITEM-0002"),
+    )
+    assert parse_rel_flag("inv:part_of", "--rel") == ("inv:part_of", ())
+    for bad in ("inv:part_of=", "inv:part_of=ITEM-0001,", "inv:part_of=,ITEM-0001", "=ITEM-0001"):
+        with pytest.raises(GraphCliError):
+            parse_rel_flag(bad, "--rel")
 
 
 def test_neighbors() -> None:

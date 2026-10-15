@@ -234,21 +234,22 @@ class ReadService:
         view: GraphRead,
         spec: FindSpec,
         *,
-        rel_refs: Sequence[tuple[str, str | None]] = (),
-        in_rel_refs: Sequence[tuple[str, str | None]] = (),
+        rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
+        in_rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
         warnings: list[WarningRecord] = []
 
         def resolve(
-            pairs: Sequence[tuple[str, str | None]],
-        ) -> tuple[tuple[str, EntityId | None], ...]:
+            pairs: Sequence[tuple[str, Sequence[str]]],
+        ) -> tuple[tuple[str, tuple[EntityId, ...]], ...]:
             resolved = []
-            for rel, text in pairs:
-                entity = None
-                if text is not None:
+            for rel, texts in pairs:
+                entities: list[EntityId] = []
+                for text in texts:
                     entity, found = resolve_ref(text, view.snapshot)
                     warnings.extend(found)
-                resolved.append((rel, entity))
+                    entities.append(entity)
+                resolved.append((rel, tuple(sorted(set(entities)))))
             return tuple(resolved)
 
         spec = FindSpec(

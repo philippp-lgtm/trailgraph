@@ -90,7 +90,7 @@ def test_find_pages_and_filters(svc: ServiceEnv, roles: Roles) -> None:
     _, filtered, _ = reader.find(view, FindSpec(types=(cls,), where=(f"{enum_attr}:exists=true",)))
     assert 0 < filtered.total <= page.total
     rel = roles.term("required_relation")
-    _, related, _ = reader.find(view, FindSpec(types=(cls,), limit=500), rel_refs=[(rel, None)])
+    _, related, _ = reader.find(view, FindSpec(types=(cls,), limit=500), rel_refs=[(rel, ())])
     assert related.total == page.total  # every active one has its required relation
     assert all(item["type"] for item in rest["items"])  # type: ignore[index, union-attr]
 

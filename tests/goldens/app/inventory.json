@@ -585,14 +585,14 @@
           "type": "string",
           "required": false,
           "repeatable": true,
-          "summary": "Outgoing relation, optionally =<id>."
+          "summary": "Outgoing relation, optionally =<id>[,<id>...]."
         },
         {
           "name": "--in-rel",
           "type": "string",
           "required": false,
           "repeatable": true,
-          "summary": "Incoming relation, optionally =<id>."
+          "summary": "Incoming relation, optionally =<id>[,<id>...]."
         },
         {
           "name": "--include-inactive",
@@ -647,6 +647,10 @@
         {
           "command": "graph find --type <type> --rel <relation>=<id> --json",
           "summary": "Filter by a relation."
+        },
+        {
+          "command": "graph find --type <type> --rel <relation>=<id>,<id> --json",
+          "summary": "An edge to any of the listed entities."
         }
       ],
       "errors": [

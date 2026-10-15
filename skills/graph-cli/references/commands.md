@@ -178,8 +178,8 @@ Usage: `graph find [OPTIONS]`
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE, subtypes included. |
 | `--where` | filter | no | yes | attr=value or attr:op=value (ne lt le gt ge contains prefix in exists). |
-| `--rel` | string | no | yes | Outgoing relation, optionally =<id>. |
-| `--in-rel` | string | no | yes | Incoming relation, optionally =<id>. |
+| `--rel` | string | no | yes | Outgoing relation, optionally =<id>[,<id>...]. |
+| `--in-rel` | string | no | yes | Incoming relation, optionally =<id>[,<id>...]. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--sort` | string | no | yes | Field to sort by, optionally :desc. |
 | `--limit` | integer | no | no | Page size, at most 500. |
@@ -195,6 +195,7 @@ Usage: `graph find [OPTIONS]`
 |---|---|
 | `graph find --type <type> --where <attr>=<value>` | Filter by a field. |
 | `graph find --type <type> --rel <relation>=<id> --json` | Filter by a relation. |
+| `graph find --type <type> --rel <relation>=<id>,<id> --json` | An edge to any of the listed entities. |
 
 ## graph get
 

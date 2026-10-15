@@ -79,6 +79,27 @@ def test_find_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: R
     assert related.envelope["page"]["total"] == page["total"]
 
 
+def test_find_rel_matches_any_listed_target(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    cls, rel = roles.term("lifecycle_type"), roles.term("required_relation")
+    items = app(run_cli, "find", "--type", cls, "--limit", "500", env=ENV).data["items"]
+    targets = sorted({e["target"] for i in items for e in i["edges"] if e["rel"] == rel})
+    assert len(targets) >= 2
+    first, second = targets[:2]
+    alias = app(run_cli, "get", second, env=ENV).data["entity"]["alias"] or second
+
+    def matching(*refs: str) -> set[str]:
+        flag = f"{rel}={','.join(refs)}"
+        outcome = app(run_cli, "find", "--type", cls, "--rel", flag, "--limit", "500", env=ENV)
+        assert outcome.code == 0, outcome.envelope
+        return {i["id"] for i in outcome.data["items"]}
+
+    either = matching(first, alias)
+    assert either == matching(first) | matching(second)
+    assert matching(first) and matching(second) and either != matching(first)
+    empty = app(run_cli, "find", "--type", cls, "--rel", f"{rel}={first},", env=ENV)
+    assert (empty.code, empty.error["code"]) == (2, "usage.invalid_argument")
+
+
 def test_find_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     cls = roles.term("lifecycle_type")
     unknown = app(run_cli, "find", "--type", cls + "x", env=ENV)

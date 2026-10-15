@@ -11,8 +11,8 @@ expanded), validated fields, values of the right JSON type. The flag syntax
   system field. Values are coerced by the attribute's base type, like
   ``--set``; ``in`` takes a comma list, ``exists`` takes ``true|false``. On
   a many-valued attribute ``=`` means membership.
-- ``--rel rel[=target]`` and ``--in-rel rel[=source]``; targets are resolved
-  by the caller.
+- ``--rel rel[=target,...]`` and ``--in-rel rel[=source,...]``: an edge to
+  (from) any of the listed entities; targets are resolved by the caller.
 - ``--sort field[:desc]`` (repeatable), ``--limit`` (at most 500),
   ``--offset``, ``--include-inactive``.
 
@@ -73,8 +73,8 @@ _SYSTEM_BASES: Final = {
 class FindSpec:
     types: tuple[str, ...] = ()
     where: tuple[str, ...] = ()
-    rels: tuple[tuple[str, EntityId | None], ...] = ()
-    in_rels: tuple[tuple[str, EntityId | None], ...] = ()
+    rels: tuple[tuple[str, tuple[EntityId, ...]], ...] = ()
+    in_rels: tuple[tuple[str, tuple[EntityId, ...]], ...] = ()
     include_inactive: bool = False
     sort: tuple[str, ...] = ()
     limit: int = DEFAULT_LIMIT
@@ -106,12 +106,13 @@ def split_assignment(text: str, argument: str) -> tuple[str, str]:
     return name, value
 
 
-def parse_rel_flag(text: str, argument: str) -> tuple[str, str | None]:
-    """``rel`` or ``rel=target``; the target stays text for the caller to resolve."""
-    rel, sep, target = text.partition("=")
-    if not rel or (sep and not target):
-        raise _usage(argument, f"expected rel or rel=<id>, got {text!r}", actual=text)
-    return rel, target if sep else None
+def parse_rel_flag(text: str, argument: str) -> tuple[str, tuple[str, ...]]:
+    """``rel`` or ``rel=target[,target...]``; targets stay text for the caller to resolve."""
+    rel, sep, listed = text.partition("=")
+    targets = tuple(listed.split(",")) if sep else ()
+    if not rel or (sep and not all(targets)):
+        raise _usage(argument, f"expected rel or rel=<id>[,<id>...], got {text!r}", actual=text)
+    return rel, targets
 
 
 class _Planner:
@@ -194,8 +195,8 @@ def plan_find(model: CompiledModel, spec: FindSpec) -> Query:
         raise _usage("--offset", "expected 0 or more", actual=spec.offset)
     planner = _Planner(model, spec.types)
     preds = [planner.where(text) for text in spec.where]
-    rels = [RelConstraint(planner.relation(rel), "out", target) for rel, target in spec.rels] + [
-        RelConstraint(planner.relation(rel), "in", source) for rel, source in spec.in_rels
+    rels = [RelConstraint(planner.relation(rel), "out", targets) for rel, targets in spec.rels] + [
+        RelConstraint(planner.relation(rel), "in", sources) for rel, sources in spec.in_rels
     ]
     return Query(
         types=tuple(TermRef(c) for c in planner.classes) if spec.types else (),

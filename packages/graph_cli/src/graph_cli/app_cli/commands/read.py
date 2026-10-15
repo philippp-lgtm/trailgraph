@@ -160,9 +160,14 @@ SPECS: Final = (
                 "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists).",
                 repeatable=True,
             ),
-            ParamSpec("--rel", "string", "Outgoing relation, optionally =<id>.", repeatable=True),
             ParamSpec(
-                "--in-rel", "string", "Incoming relation, optionally =<id>.", repeatable=True
+                "--rel", "string", "Outgoing relation, optionally =<id>[,<id>...].", repeatable=True
+            ),
+            ParamSpec(
+                "--in-rel",
+                "string",
+                "Incoming relation, optionally =<id>[,<id>...].",
+                repeatable=True,
             ),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec("--sort", "string", "Field to sort by, optionally :desc.", repeatable=True),
@@ -177,6 +182,10 @@ SPECS: Final = (
             Example("graph find --type <type> --where <attr>=<value>", "Filter by a field."),
             Example(
                 "graph find --type <type> --rel <relation>=<id> --json", "Filter by a relation."
+            ),
+            Example(
+                "graph find --type <type> --rel <relation>=<id>,<id> --json",
+                "An edge to any of the listed entities.",
             ),
         ),
         errors=(*REF_ERRORS, "term.unknown"),

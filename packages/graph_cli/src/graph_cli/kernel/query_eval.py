@@ -218,11 +218,13 @@ def matches(revision: Revision, pred: Pred) -> bool:
 def _match_rel(universe: Universe, revision: Revision, rel: RelConstraint) -> bool:
     if rel.direction == "out":
         found = any(
-            edge.rel == rel.rel and rel.target in (None, edge.target) for edge in revision.edges
+            edge.rel == rel.rel and (not rel.targets or edge.target in rel.targets)
+            for edge in revision.edges
         )
     elif rel.direction == "in":
         found = any(
-            rel.target in (None, source) for source, _ in universe.incoming(revision.id, rel.rel)
+            not rel.targets or source in rel.targets
+            for source, _ in universe.incoming(revision.id, rel.rel)
         )
     else:
         raise _invalid(f"unknown direction {rel.direction!r}")

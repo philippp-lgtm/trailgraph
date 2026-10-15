@@ -70,7 +70,7 @@ Pred = Cmp | And | Or | Not
 class RelConstraint:
     rel: TermRef
     direction: Literal["out", "in"]
-    target: EntityId | None = None
+    targets: tuple[EntityId, ...] = ()  # the other end is any of these; () = any entity
     exists: bool = True
 
 

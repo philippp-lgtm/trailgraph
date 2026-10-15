@@ -230,10 +230,16 @@ def test_relation_constraints() -> None:
         ]
     )
     assert ids(universe, Query(rels=(RelConstraint(REL, "out"),))) == [1, 2]
-    assert ids(universe, Query(rels=(RelConstraint(REL, "out", target=eid(3)),))) == [2]
+    assert ids(universe, Query(rels=(RelConstraint(REL, "out", targets=(eid(3),)),))) == [2]
+    either = RelConstraint(REL, "out", targets=(eid(2), eid(3)))
+    assert ids(universe, Query(rels=(either,))) == [1, 2]
+    neither = RelConstraint(REL, "out", targets=(eid(2), eid(3)), exists=False)
+    assert ids(universe, Query(rels=(neither,))) == [3]
     assert ids(universe, Query(rels=(RelConstraint(REL, "out", exists=False),))) == [3]
     assert ids(universe, Query(rels=(RelConstraint(REL, "in"),))) == [2, 3]
-    assert ids(universe, Query(rels=(RelConstraint(OTHER, "in", target=eid(1)),))) == [3]
+    assert ids(universe, Query(rels=(RelConstraint(OTHER, "in", targets=(eid(1),)),))) == [3]
+    from_either = RelConstraint(REL, "in", targets=(eid(1), eid(2)))
+    assert ids(universe, Query(rels=(from_either,))) == [2, 3]
     both = (RelConstraint(REL, "in"), RelConstraint(REL, "out"))
     assert ids(universe, Query(rels=both)) == [2]
 
