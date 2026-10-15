@@ -3,8 +3,13 @@
 Skill 1 is rendered from this program's own inventory (the same document
 ``graph describe commands`` prints), never from another ``graph`` on
 ``PATH`` (F6). A graph skill comes from the graph's published slot and is
-dispatched on the slot kind: ``static`` files are the skill as is. Item 3
-adds the kind ``generated`` here; the commands do not change.
+dispatched on the slot kind: ``static`` files are the skill as is; a
+``generated`` slot holds a template, rendered with the model of the graph's
+current pin (``graph_cli.skills.graph_skill``), so an ontology release
+changes the render and an installed copy becomes ``stale`` without a
+republish. Its curated text is checked against that model and this
+program's inventory; problems are the warning ``skills.source_unknown_names``
+and the skill is still installed (the model part is right).
 """
 
 from __future__ import annotations
@@ -14,13 +19,16 @@ from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.json_access import as_object, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
 from graph_cli.skills.app_skill import SKILL_NAME, inventory_hash, render_app_skill
+from graph_cli.skills.graph_skill import graph_block, render_checked
 from graph_cli.skills.install import RenderedSkill, rendered
-from graph_cli.skills.tree import graph_skill_name, validate
+from graph_cli.skills.names import check_names
+from graph_cli.skills.template import GENERATED, STATIC, parse_template
+from graph_cli.skills.tree import Problem, graph_skill_name, validate
 
-STATIC: Final = "static"
-KINDS: Final = (STATIC,)
+KINDS: Final = (STATIC, GENERATED)
 
 
 def app_skill(
@@ -37,37 +45,80 @@ def app_skill(
 
 
 def graph_skill(
-    entry: GraphEntry, slot: SkillSlot, program: Mapping[str, JsonValue]
-) -> RenderedSkill:
-    """The skill of ``entry`` from its slot; ``skills.source_invalid`` if it cannot be used."""
+    entry: GraphEntry,
+    slot: SkillSlot,
+    program: Mapping[str, JsonValue],
+    model: Mapping[str, JsonValue] | None = None,
+    inventory: Mapping[str, JsonValue] | None = None,
+) -> tuple[RenderedSkill, list[WarningRecord]]:
+    """The skill of ``entry`` from its slot; ``skills.source_invalid`` if it cannot be used.
+
+    A ``generated`` slot needs ``model`` (the documents of the current pin) and
+    ``inventory`` (this program's, for the checks of the curated text).
+    """
     name = graph_skill_name(entry.name)
     details: dict[str, JsonValue] = {"graph": entry.name, "skill": name}
     if slot.kind not in KINDS:
         raise GraphCliError(
             "skills.source_invalid",
             f"the skill of graph {entry.name} has kind {slot.kind!r}, which this program"
-            f" cannot install (known: {', '.join(KINDS)})",
+            f" cannot install (known: {', '.join(KINDS)}); a newer graph may be needed",
             details={**details, "kind": slot.kind},
         )
-    problems = validate(slot.files, name=name)
-    if problems:
-        raise GraphCliError(
-            "skills.source_invalid",
-            f"the published skill of graph {entry.name} is invalid: {problems[0].message}",
-            details={**details, "problems": [p.to_json() for p in problems]},
-        )
     pin = slot.published_against
-    return rendered(
-        name,
-        "graph",
-        slot.files,
-        program=program,
-        source={
-            "graph": {"id": str(entry.id), "name": entry.name},
-            "source_kind": slot.kind,
-            "hash": slot.hash,
-            "published_against": {"bundle": pin.bundle, "version": pin.version},
-        },
+    source: dict[str, JsonValue] = {
+        "graph": {"id": str(entry.id), "name": entry.name},
+        "source_kind": slot.kind,
+        "hash": slot.hash,
+        "published_against": {"bundle": pin.bundle, "version": pin.version},
+    }
+    warnings: list[WarningRecord] = []
+    if slot.kind == STATIC:
+        files: Mapping[str, bytes] = slot.files
+        _require(entry, details, validate(slot.files, name=name))
+    else:
+        if model is None or inventory is None:
+            raise ValueError("a generated graph skill needs the model and the inventory")
+        graph = graph_block(entry)
+        found, problems = render_checked(slot.files, model, graph, name=name)
+        _require(entry, details, problems)
+        template, _ = parse_template(slot.files)
+        assert found is not None and template is not None  # render_checked found no problem
+        files = found
+        ontology = req_obj(req_obj(as_object(dict(model), "model"), "types"), "ontology")
+        source["model"] = {
+            "bundle": req_str(ontology, "bundle"),
+            "version": req_str(ontology, "version"),
+        }
+        unknown = check_names(template, model, graph, inventory)
+        if unknown:
+            warnings.append(unknown_names(entry, unknown))
+    return rendered(name, "graph", files, program=program, source=source), warnings
+
+
+def unknown_names(entry: GraphEntry, problems: list[Problem]) -> WarningRecord:
+    """``skills.source_unknown_names``: curated text names what the model or this program
+    does not have (Q3); the skill is installed anyway, its model part is right."""
+    first = problems[0]
+    more = f" and {len(problems) - 1} more" if len(problems) > 1 else ""
+    return WarningRecord(
+        "skills.source_unknown_names",
+        f"the hand-written part of the skill of graph {entry.name} names something this"
+        f" graph's model or this program does not have ({first.path}: {first.message}{more});"
+        " ask the graph's maintainer to update and publish the skill again",
+        {"graph": entry.name, "problems": [p.to_json() for p in problems]},
+    )
+
+
+def _require(entry: GraphEntry, details: dict[str, JsonValue], problems: list[Problem]) -> None:
+    if not problems:
+        return
+    newer = any(p.rule == "template" for p in problems)
+    raise GraphCliError(
+        "skills.source_invalid",
+        f"the published skill of graph {entry.name} is invalid: {problems[0].message}"
+        + ("; a newer version of graph may know this template" if newer else ""),
+        details={**details, "problems": [p.to_json() for p in problems]},
     )
 
 

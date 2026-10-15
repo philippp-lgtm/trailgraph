@@ -34,6 +34,7 @@ from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
 from graph_cli.query.plan import FindSpec, plan_find, plan_neighbors
+from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
 
@@ -193,6 +194,15 @@ class ReadService:
         ``read.describe`` on ``graph:<id>``; ``None`` when none is published."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         return self._catalog.read_skill(entry.id)
+
+    def skill_model(
+        self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
+    ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
+        """The model documents a generated graph skill is rendered with: those of the
+        graph's current pin, as ``graph describe`` prints them (``read.describe``)."""
+        self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
+        model, warnings = self._models.load_for_read(entry)
+        return describe_model(entry, model), warnings
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None

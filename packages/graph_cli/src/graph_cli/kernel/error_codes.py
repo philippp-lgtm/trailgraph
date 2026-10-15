@@ -111,6 +111,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A graph skill was published for an older ontology version.",
     ),
+    ErrorSpec(
+        "skills.source_unknown_names",
+        _C.WARNING,
+        False,
+        "A graph skill names terms, commands or aliases that do not exist.",
+    ),
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
 )
 

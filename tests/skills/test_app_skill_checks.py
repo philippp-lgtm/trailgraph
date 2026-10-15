@@ -269,17 +269,20 @@ class TestLeaks:
         files["SKILL.md"] += "\n" + plant(*vocabulary()) + "\n"
         assert any(x.startswith(kind + ":") for x in leaks(files))
 
+    @pytest.mark.parametrize("source", ["graph-example-graph", "template/graph-example-graph"])
     def test_emit_output_has_no_leaks(
-        self, run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+        self, run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path, source: str
     ) -> None:
-        """D15: every ``graph skills emit`` output, skill 1 and a published graph skill.
-        A graph skill names its graph's model on purpose, so vocabulary and CURIEs are
-        allowed there; the publish refusal of ``graph-admin`` is the positive control
-        (``tests/cli/test_admin_skill.py``)."""
+        """D15: every ``graph skills emit`` output, skill 1 and a published graph skill,
+        static or generated from a template. A graph skill names its graph's model on
+        purpose, so vocabulary and CURIEs are allowed there; the publish refusals of
+        ``graph-admin`` are the positive controls (``tests/cli/test_admin_skill.py``)."""
         init(run_cli, isolated_env)
         create_graph(run_cli, "example_graph")
-        source = FIXTURES / "skills" / "graph-example-graph"
-        assert admin(run_cli, "graph", "skill", "publish", "example_graph", str(source)).code == 0
+        directory = FIXTURES / "skills" / source
+        assert (
+            admin(run_cli, "graph", "skill", "publish", "example_graph", str(directory)).code == 0
+        )
         out = tmp_path / "out"
         out.mkdir()
         outcome = app(run_cli, "skills", "emit", "--out", str(out), "--graph", "example_graph")

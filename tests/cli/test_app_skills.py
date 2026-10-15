@@ -5,6 +5,7 @@ Tests that write prove with tree snapshots that nothing outside the named
 target changed (positive control: ``test_snapshots_see_a_write``).
 """
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ import pytest
 from harness import CliRunner
 from support.admin import admin, init
 from support.app import app, create_graph
-from support.fixtures import FIXTURES
+from support.fixtures import FIXTURES, ONTOLOGIES
 from support.skills import SKILL_DIR, committed_files
 from support.trees import tree_hash
 
@@ -525,3 +526,175 @@ def test_check_text_mode_prints_the_list_and_the_error(run_cli: CliRunner, tmp_p
     assert result.returncode == 1
     assert "graph-cli" in result.stdout and "missing" in result.stdout
     assert "skills.check_failed" in result.stderr
+
+
+# ---- generated graph skills -------------------------------------------------------------
+
+TEMPLATE = FIXTURES / "skills" / "template" / "graph-example-graph"
+
+
+@pytest.fixture
+def generated(run_cli: CliRunner, root: Path) -> str:
+    """``example_graph`` with the fixture template published (kind generated)."""
+    graph_id = create_graph(run_cli, "example_graph")
+    outcome = admin(run_cli, "graph", "skill", "publish", "example_graph", str(TEMPLATE))
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["to"]["kind"] == "generated"
+    return graph_id
+
+
+def release(run_cli: CliRunner, source: Path) -> None:
+    outcome = admin(run_cli, "ontology", "release", "example_graph", str(source))
+    assert outcome.code == 0, outcome.envelope
+
+
+def marker_of(skill: Path) -> dict[str, Any]:
+    marker: dict[str, Any] = json.loads((skill / MARKER).read_text())
+    return marker
+
+
+def test_install_a_generated_graph_skill(
+    run_cli: CliRunner, generated: str, home: Path, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    before = snapshot(home)
+    outcome = install(run_cli, *args, "--graph", "example_graph")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == []
+    skill = project / ".claude" / "skills" / "graph-example-graph"
+    files = skill_files(skill)
+    assert sorted(without_marker(files)) == [
+        "SKILL.md",
+        "references/model.md",
+        "references/recipes.md",
+    ]
+    text = files["SKILL.md"].decode()
+    assert "graph_cli:block" not in text and "`inv:Item` (`ITEM-0001`)" in text
+    assert "## Rules for you" in text  # the curated text stays
+    source = marker_of(skill)["source"]
+    assert source["source_kind"] == "generated"
+    assert source["model"] == {"bundle": "inventory", "version": "1.0.0"}
+    assert source["published_against"] == {"bundle": "inventory", "version": "1.0.0"}
+    assert snapshot(home) == before
+    assert statuses(check(run_cli, project)) == {
+        "graph-cli": "fresh",
+        "graph-example-graph": "fresh",
+    }
+
+
+def test_render_previews_exactly_what_install_writes(
+    run_cli: CliRunner, generated: str, tmp_path: Path
+) -> None:
+    preview = tmp_path / "preview"
+    preview.mkdir()
+    rendered = admin(
+        run_cli, "graph", "skill", "render", "example_graph", str(TEMPLATE), "--out", str(preview)
+    )
+    assert rendered.code == 0, rendered.envelope
+    project = new_project(tmp_path)
+    args = ("--scope", "project", "--dir", str(project), "--graph", "example_graph")
+    assert install(run_cli, *args).code == 0
+    installed_files = skill_files(project / ".claude" / "skills" / "graph-example-graph")
+    assert without_marker(installed_files) == skill_files(preview / "graph-example-graph")
+    emitted = emit_all(run_cli, tmp_path)
+    assert emitted["graph-example-graph"] == without_marker(installed_files)
+
+
+def test_a_release_makes_the_copy_stale_and_install_refreshes_it(
+    run_cli: CliRunner, generated: str, tmp_path: Path
+) -> None:
+    """Q1: the model part follows the pin; no republish is needed."""
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    assert install(run_cli, *args, "--graph", "example_graph").code == 0
+    release(run_cli, ONTOLOGIES / "inventory" / "1.1.0")
+    stale = check(run_cli, project)
+    assert stale.code == 1 and stale.warning_codes == []  # no source_behind_ontology
+    assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
+    refreshed = install(run_cli, *args)
+    assert refreshed.code == 0, refreshed.envelope
+    assert [(s["skill"], s["action"]) for s in refreshed.data["skills"]] == [
+        ("graph-cli", "unchanged"),
+        ("graph-example-graph", "replace"),
+    ]
+    skill = project / ".claude" / "skills" / "graph-example-graph"
+    assert "`inv:Supplier` (`SUP-0001`)" not in (skill / "SKILL.md").read_text()  # no prefix
+    assert "`refurbished`" in (skill / "SKILL.md").read_text()  # the new enum value
+    assert marker_of(skill)["source"]["model"] == {"bundle": "inventory", "version": "1.1.0"}
+    assert statuses(check(run_cli, project)) == {
+        "graph-cli": "fresh",
+        "graph-example-graph": "fresh",
+    }
+
+
+def without_relation(tmp_path: Path, relation: str) -> Path:
+    """Inventory 1.0.0 without one relation, as release 2.0.0 (a major change)."""
+    lines = (ONTOLOGIES / "inventory" / "1.0.0" / "inventory.yaml").read_text().split("\n")
+    start = lines.index(f"  {relation}:")
+    end = next(i for i in range(start + 1, len(lines)) if not lines[i].startswith("    "))
+    changed = "\n".join(lines[:start] + lines[end:]).replace("version: 1.0.0", "version: 2.0.0")
+    source = tmp_path / "ontology_2.0.0"
+    source.mkdir()
+    (source / "inventory.yaml").write_text(changed)
+    return source
+
+
+def test_a_removed_term_warns_and_still_installs(
+    run_cli: CliRunner, generated: str, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    assert install(run_cli, *args, "--graph", "example_graph").code == 0
+    release(run_cli, without_relation(tmp_path, "in_category"))
+    outcome = install(run_cli, *args)
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == ["skills.source_unknown_names"]
+    (warning,) = outcome.envelope["warnings"]
+    assert warning["details"]["graph"] == "example_graph"
+    assert [p["rule"] for p in warning["details"]["problems"]] == ["term"]
+    assert "inv:in_category" in warning["message"] and "graph-admin" not in warning["message"]
+    skill = project / ".claude" / "skills" / "graph-example-graph"
+    assert marker_of(skill)["source"]["model"]["version"] == "2.0.0"
+    checked = check(run_cli, project)
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["skills.source_unknown_names"]
+
+
+def plant_slot(root: Path, graph_id: str, files: dict[str, bytes]) -> None:
+    """A slot as a newer publisher could write it (consistent hash and source.json)."""
+    from graph_cli.kernel.canonical import pretty_bytes
+    from graph_cli.kernel.ports.catalog import SkillSlot, skill_hash
+    from graph_cli.kernel.records import OntologyPin
+    from graph_cli.skills.tree import write_tree
+
+    skill = root / "graphs" / graph_id / "skill"
+    current = json.loads((skill / "source.json").read_text())
+    pin = current["published_against"]
+    digest = skill_hash(files)
+    slot = SkillSlot(
+        "generated", digest, OntologyPin(pin["bundle"], pin["version"], pin["artifact_hash"]), files
+    )
+    write_tree(skill / "files" / digest.removeprefix("sha256:"), files)
+    (skill / "source.json").write_bytes(pretty_bytes(slot.source_json()))
+
+
+def test_an_unknown_block_makes_the_skill_unavailable(
+    run_cli: CliRunner, generated: str, root: Path, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    assert install(run_cli, *args, "--graph", "example_graph").code == 0
+    files, _ = read_tree(TEMPLATE)
+    files["SKILL.md"] += b"\n<!-- graph_cli:block samples -->\n"
+    plant_slot(root, generated, files)
+    named = install(run_cli, *args, "--graph", "example_graph")
+    assert (named.code, named.error["code"]) == (1, "skills.source_invalid")
+    assert "a newer version of graph" in named.error["message"]
+    assert named.error["details"]["problems"][0]["rule"] == "template"
+    marked = install(run_cli, *args)
+    assert marked.code == 0, marked.envelope
+    assert marked.data["unavailable"] == [
+        {"skill": "graph-example-graph", "graph": generated, "reason": "skills.source_invalid"}
+    ]
+    assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()

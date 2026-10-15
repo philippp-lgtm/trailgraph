@@ -39,6 +39,7 @@ from graph_cli.skills.install import (
     require_target,
     scan,
 )
+from graph_cli.skills.template import GENERATED
 from graph_cli.skills.tree import GRAPH_SKILL_PREFIX
 
 GRAPHS: Final = ParamSpec(
@@ -81,16 +82,22 @@ def program_block() -> dict[str, JsonValue]:
     return {"name": PROGRAM, "version": __version__}
 
 
-def app_skill() -> RenderedSkill:
-    """Skill 1 from the inventory of this very process (F6), never from a subprocess."""
+def app_inventory() -> dict[str, JsonValue]:
+    """The inventory of this very process (F6), never of a subprocess."""
     from graph_cli.app_cli.commands import all_specs
     from graph_cli.app_cli.commands.meta import inventory
 
-    return sources.app_skill(inventory(all_specs()), program_block())
+    return inventory(all_specs())
+
+
+def app_skill() -> RenderedSkill:
+    """Skill 1 from the inventory of this very process (F6)."""
+    return sources.app_skill(app_inventory(), program_block())
 
 
 def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord]) -> RenderedSkill:
-    """The published skill of ``entry``; ``skills.source_missing`` when there is none."""
+    """The published skill of ``entry``; ``skills.source_missing`` when there is none. A
+    template (kind ``generated``) is rendered with the model of the graph's current pin."""
     request = RequestMeta.of("skills", {"graph": entry.name})
     slot = ctx.reader.skill(ctx.actor, entry, request)
     if slot is None:
@@ -102,7 +109,14 @@ def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord
     warning = sources.behind_ontology(entry, slot)
     if warning is not None:
         warnings.append(warning)
-    return sources.graph_skill(entry, slot, program_block())
+    model, inventory = None, None
+    if slot.kind == GENERATED:
+        model, model_warnings = ctx.reader.skill_model(ctx.actor, entry, request)
+        warnings += model_warnings
+        inventory = app_inventory()
+    skill, found = sources.graph_skill(entry, slot, program_block(), model, inventory)
+    warnings += found
+    return skill
 
 
 def named_graph_skills(
@@ -367,8 +381,9 @@ SPECS: Final = (
             "skills.target_invalid",
         ),
         handler=check_command,
-        description="Statuses: fresh, stale (installed unchanged, but the program or the"
-        " published graph skill changed since), modified (edited by hand), unexpected (extra"
+        description="Statuses: fresh, stale (installed unchanged, but the program, the"
+        " published graph skill or, for a generated one, the graph's ontology changed since),"
+        " modified (edited by hand), unexpected (extra"
         " files), foreign (not installed by this program), missing, unavailable (the graph"
         " is gone, not visible here or has no published skill). Exit 0 only when every"
         " skill is fresh. Only reads.",

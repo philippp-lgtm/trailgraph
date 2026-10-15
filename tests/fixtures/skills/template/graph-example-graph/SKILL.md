@@ -23,6 +23,7 @@ description: "Items, their locations and their stock in the test graph example_g
 
 - Every `inv:Item` is stored somewhere: create it with its `inv:located_in`
   edge in the same call.
+- Group items with `inv:in_category` edges to an `inv:Category`.
 - Preview every write with `--dry-run` first.
 
 ## Reading
