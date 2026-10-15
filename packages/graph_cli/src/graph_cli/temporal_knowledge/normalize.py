@@ -19,8 +19,9 @@ recorded ``OpEffect`` per op, so each problem is reported once.
   unknown attribute, stays the given string; a ``many`` attribute becomes a
   one-element list.
 - **Aliases** (B1.8): a create of a type with a configured prefix (exact
-  type) gets ``<PREFIX>-<n:04d>``; ``set_alias`` renames, and an explicit
-  alias above an auto prefix's counter advances it. Each entity keeps at
+  type) gets ``kernel.ids.format_alias`` (``<PREFIX>-<n:04d>``);
+  ``set_alias`` renames, and an explicit alias above an auto prefix's
+  counter advances it. Each entity keeps at
   most one allocation per tx.
 - **Supersede, retract** set ``record_status`` and add their ``core:``
   edges; ``core:derived_from`` edges added without ``target_rev`` get the
@@ -63,6 +64,7 @@ from graph_cli.kernel.ids import (
     LocalRef,
     TermRef,
     TxId,
+    format_alias,
 )
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.records import (
@@ -263,7 +265,7 @@ class _Run:
         prefix = self.alias_prefixes.get(op.type)
         if prefix is not None and self.allocate_aliases:
             number = self.counters.get(prefix, 0) + 1
-            work.alias = f"{prefix}-{number:04d}"
+            work.alias = format_alias(prefix, number)
             self.allocate(entity, work.alias)
         names = tuple(sorted({*op.attrs, *op.attrs_text}))
         self.effects.append(OpEffect(index, op.OP, entity, names=names, initial=tuple(initial)))

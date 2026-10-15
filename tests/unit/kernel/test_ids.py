@@ -14,6 +14,7 @@ from graph_cli.kernel.ids import (
     ALIAS_RE,
     LOCAL_RE,
     Uuid7Provider,
+    format_alias,
     format_id,
     id_timestamp_ms,
     is_uuid7,
@@ -99,3 +100,13 @@ def test_reference_grammars() -> None:
     assert not LOCAL_RE.match("@Shelf")
     assert ABBREV_RE.match("0718293a")
     assert not ABBREV_RE.match("0718293")
+
+
+def test_format_alias_is_the_minted_format() -> None:
+    """F12: one format for minted aliases and the examples of generated graph skills."""
+    assert format_alias("ITEM", 7) == "ITEM-0007"
+    assert format_alias("LOC", 123456) == "LOC-123456"
+    assert all(ALIAS_RE.match(format_alias("A1", n)) for n in (1, 9999, 10000))
+    for prefix, number in (("item", 1), ("ITEM", 0), ("TOOLONGPREFIX", 1)):
+        with pytest.raises(ValueError):
+            format_alias(prefix, number)

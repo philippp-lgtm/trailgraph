@@ -24,6 +24,7 @@ EventId = NewType("EventId", UUID)
 EdgeId = NewType("EdgeId", UUID)
 TermRef = NewType("TermRef", str)  # CURIE "<prefix>:<Term>"
 
+ALIAS_DIGITS: Final = 4  # minted aliases are zero-padded to at least this width (B1.8)
 ALIAS_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}-[0-9]{4,}$")
 ALIAS_PREFIX_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}$")
 GRAPH_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")  # B1.11
@@ -87,6 +88,16 @@ def ref_text(ref: EntityRef) -> str:
         case AbbrevRef(suffix):
             return suffix
     return format_id(ref)
+
+
+def format_alias(prefix: str, number: int) -> str:
+    """The alias minted for the ``number``-th entity of a prefix: ``ITEM-0007`` (B1.8).
+
+    The one alias format; generated graph skills show examples with it (F12).
+    """
+    if not ALIAS_PREFIX_RE.match(prefix) or number < 1:
+        raise ValueError(f"no alias for prefix {prefix!r} and number {number}")
+    return f"{prefix}-{number:0{ALIAS_DIGITS}d}"
 
 
 def parse_id(text: str) -> UUID:
