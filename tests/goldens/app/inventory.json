@@ -22,6 +22,92 @@
   "commands": [
     {
       "path": [
+        "apply"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": null,
+      "summary": "Apply change set documents (JSON or JSONL) from a file or stdin.",
+      "args": [
+        {
+          "name": "file",
+          "type": "file",
+          "required": true,
+          "repeatable": false,
+          "summary": "Path of the input, or - for stdin."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate every document without writing."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph apply - --json",
+          "summary": "Apply documents from stdin."
+        },
+        {
+          "command": "graph apply <file> --dry-run --json",
+          "summary": "Check a file without writing."
+        }
+      ],
+      "errors": [
+        "access.batch_too_large",
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.local_ref_duplicate",
+        "changeset.local_ref_unresolved",
+        "changeset.malformed",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "conflict.seq_mismatch",
+        "conflict.version_mismatch",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "format.unsupported_version",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "usage.invalid_input",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "create"
       ],
       "kind": "write",
@@ -1536,6 +1622,11 @@
   ],
   "error_codes": [
     {
+      "code": "access.batch_too_large",
+      "category": "denied",
+      "exit": 3
+    },
+    {
       "code": "access.denied",
       "category": "denied",
       "exit": 3
@@ -1566,6 +1657,21 @@
       "exit": 5
     },
     {
+      "code": "changeset.local_ref_duplicate",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "changeset.local_ref_unresolved",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "changeset.malformed",
+      "category": "usage",
+      "exit": 2
+    },
+    {
       "code": "changeset.too_large",
       "category": "refused",
       "exit": 1
@@ -1586,6 +1692,11 @@
       "exit": 4
     },
     {
+      "code": "conflict.seq_mismatch",
+      "category": "conflict",
+      "exit": 4
+    },
+    {
       "code": "conflict.version_mismatch",
       "category": "conflict",
       "exit": 4
@@ -1599,6 +1710,11 @@
       "code": "entity.not_found",
       "category": "not_found",
       "exit": 1
+    },
+    {
+      "code": "format.unsupported_version",
+      "category": "unavailable",
+      "exit": 5
     },
     {
       "code": "graph.archived",
@@ -1652,6 +1768,11 @@
     },
     {
       "code": "usage.invalid_argument",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "usage.invalid_input",
       "category": "usage",
       "exit": 2
     },

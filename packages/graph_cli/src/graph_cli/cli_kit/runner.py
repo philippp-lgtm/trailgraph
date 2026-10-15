@@ -81,6 +81,8 @@ def run(
         )
         if isinstance(code, int) and state.result is None:
             return code  # --help, --version
+        if state.result is not None:
+            error = state.result.error
     except click.UsageError as exc:
         if exc.ctx is not None and state.command is None:
             state.command = _command_name(exc.ctx) or None

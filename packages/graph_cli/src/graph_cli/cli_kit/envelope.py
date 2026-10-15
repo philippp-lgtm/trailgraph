@@ -22,7 +22,11 @@ ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
 
 @dataclass(frozen=True, slots=True)
 class Result:
-    """What a command returns; ``text`` overrides the generic text rendering of ``data``."""
+    """What a command returns; ``text`` overrides the generic text rendering of ``data``.
+
+    A partial result sets ``error``: the envelope then fails with it and still
+    carries ``data`` (B3.9: ``graph apply`` reports the documents it processed).
+    """
 
     data: JsonValue = None
     graph: Mapping[str, JsonValue] | None = None
@@ -30,6 +34,7 @@ class Result:
     hints: tuple[Mapping[str, JsonValue], ...] = ()
     text: str | None = None
     page: Mapping[str, JsonValue] | None = field(default=None)
+    error: GraphCliError | None = None
 
 
 def error_json(error: GraphCliError, *, program: str) -> dict[str, JsonValue]:
@@ -58,7 +63,7 @@ def envelope(
         "ok": error is None,
         "command": command,
         "graph": dict(result.graph) if result and result.graph is not None else None,
-        "data": result.data if result and error is None else None,
+        "data": result.data if result and (error is None or error is result.error) else None,
         "page": dict(result.page) if result and result.page is not None else None,
         "hints": [dict(h) for h in result.hints] if result and error is None else [],
         "warnings": [w.to_json() for w in all_warnings],
@@ -73,7 +78,7 @@ def render_json(document: Mapping[str, JsonValue]) -> str:
 def render_text(document: Mapping[str, JsonValue], *, text: str | None = None) -> tuple[str, str]:
     """``(stdout, stderr)`` of the text rendering."""
     out = ""
-    if document["ok"]:
+    if document["ok"] or document["data"] is not None:
         out = text if text is not None else _block(document["data"])
     err_lines = []
     warnings = document["warnings"]

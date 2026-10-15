@@ -64,6 +64,14 @@ def noroot(state: CommandState) -> Result:
     raise GraphCliError("backend.unavailable", "no data root", details={"data_root": "/r"})
 
 
+@thing.command("partial")
+@json_option
+@leaf
+def partial(state: CommandState) -> Result:
+    error = GraphCliError("conflict.seq_mismatch", "document 1: the graph changed")
+    return Result(data={"results": [{"index": 0, "ok": True}]}, hints=({"text": "t"},), error=error)
+
+
 @thing.command("boom")
 @json_option
 @leaf
@@ -182,3 +190,15 @@ def test_error_warnings_ride_along_in_the_envelope() -> None:
     document = json.loads(out)
     assert code == 1 and document["error"]["code"] == "write.invalid"
     assert [w["code"] for w in document["warnings"]] == ["audit.refusal_not_recorded"]
+
+
+def test_partial_result_keeps_data_and_fails_with_its_error() -> None:
+    code, out, err = invoke("thing", "partial", "--json")
+    document = json.loads(out)
+    assert (code, err) == (4, "")
+    assert document["ok"] is False and document["error"]["code"] == "conflict.seq_mismatch"
+    assert document["data"] == {"results": [{"index": 0, "ok": True}]}
+    assert document["hints"] == []
+    code, out, err = invoke("thing", "partial")
+    assert code == 4 and "results" in out
+    assert err.startswith("error: conflict.seq_mismatch: document 1")
