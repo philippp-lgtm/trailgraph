@@ -13,7 +13,8 @@ ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
 semver classifier, JSON Schema export, data validation), storage (FileStore
 and InMemoryStore behind the storage ports), audit, authorization, the
 catalog, the write pipeline (`WriteService`), the read services, `graph`
-(reads, writes, `apply`, `describe`) and `graph-admin` exist.
+(reads, writes, `apply`, `describe`), `graph-admin` and the generated
+`graph-cli` agent skill exist.
 
 ## Repository layout
 
@@ -22,7 +23,7 @@ packages/
   graph_cli/src/graph_cli/              application distribution
   graph_cli_admin/src/graph_cli_admin/  maintenance distribution
 tests/                                  tests for both distributions
-skills/                                 agent skills
+skills/                                 agent skills (skill directories use `-`)
 docs/                                   documentation
 ```
 
@@ -34,6 +35,7 @@ Dependencies point down only. Enforced by import-linter
 | Layer | `graph_cli` subpackage |
 | --- | --- |
 | CLI | `app_cli` |
+| Skill generators | `skills` |
 | CLI infrastructure | `cli_kit` |
 | Registry and wiring | `catalog` |
 | Extensions | `extensions` |
@@ -244,6 +246,34 @@ interrupted operation as info and anchors only graphs without errors.
 CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
 and `graph_cli_admin.services_admin` holds the procedures.
 
+## Skills
+
+`skills/graph-cli/` is the agent skill for `graph` (Agent Skills format:
+`SKILL.md` with `name` and `description` frontmatter, details under
+`references/`). It is generated, never edited by hand:
+`graph_cli.skills.app_skill.render_app_skill` turns the app inventory
+(`graph describe commands --json`, `graph_cli.inventory/1`) into
+`SKILL.md` (workflow, habits, envelope, command overview, exit codes),
+`references/commands.md` (arguments, options, limits and examples per
+command) and `references/errors.md` (every error code and what to do per
+category). The renderer reads nothing but that document and imports only
+the kernel (import contract). The frontmatter `metadata` carries the
+inventory hash and program version.
+
+Regenerate after a change to a command declaration, then review the diff:
+
+```sh
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/skills
+```
+
+The tests fail on a stale skill (the committed files must equal a fresh
+render of the live inventory), check every generated table against the
+inventory and the envelope keys against the renderer (docs-vs-code), and
+reject leaks: fixture vocabulary, maintenance commands, actions or codes,
+placeholders outside `<graph> <type> <id> <attr> <value> <relation>
+<state> <file> <json> <seq>`, paths, ids and non-ASCII text. The skill
+names no graph type; graph-specific skills come later.
+
 ## Tests
 
 | Kind | Where | What |
@@ -255,6 +285,7 @@ and `graph_cli_admin.services_admin` holds the procedures.
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks, structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
@@ -279,7 +310,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 uv run lint-imports
-GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files after an intended change
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files and the generated skill after an intended change
 ```
 
 Run the CLIs from the checkout:
