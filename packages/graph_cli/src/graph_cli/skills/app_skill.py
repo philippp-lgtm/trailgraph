@@ -93,13 +93,17 @@ against it and audited. The CLI is on `PATH`.
 - Pass `--idempotency-key` with a key of your choice; retrying with the same
   key never writes twice.
 - Pass `--expect` with the `rev` you read so that a concurrent change is a
-  conflict instead of a lost update.
+  conflict instead of a lost update. `graph get` shows it as
+  `data.entity.rev`; a write returns the new one in `data.entities[].rev`.
 - Give `--reason` when the change needs one; some operations require it.
 - Nothing is deleted. Correct with `graph supersede` (a newer entity
   replaces older ones) or `graph retract` (withdrawn); state changes go
   through `graph transition`.
 - Prefer the single-operation commands. `graph apply` takes change set
-  documents for batches; dry-run them first.
+  documents for batches: write the document to a file, dry-run it with
+  `graph apply <file> --dry-run --json`, then apply it. Its idempotency key
+  is `idempotency_key` in the document, or `--idempotency-key` for a file
+  with a single document.
 - `graph whoami --json` shows who you act as and what you may do.
 
 ## Output envelope
@@ -108,6 +112,8 @@ Every `--json` call prints one JSON object on stdout.
 
 - Keys, always present: {envelope_keys}.
 - `ok` tells success; `data` holds the result, `page` the paging of lists.
+- Read the whole object; cutting it with `head` or similar loses fields
+  such as `rev`.
 - On failure `error` holds {error_keys}. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.

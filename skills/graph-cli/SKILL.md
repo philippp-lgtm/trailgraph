@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:f008d539bd0d75fc1c8ec1bfffd4353b9db45bad06aa2cbb590256604aa29b7a"
+  inventory_hash: "sha256:33969229dc4f251ecc7314af32c745ce135684705c104b39b7104bcc916baec6"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -46,13 +46,17 @@ against it and audited. The CLI is on `PATH`.
 - Pass `--idempotency-key` with a key of your choice; retrying with the same
   key never writes twice.
 - Pass `--expect` with the `rev` you read so that a concurrent change is a
-  conflict instead of a lost update.
+  conflict instead of a lost update. `graph get` shows it as
+  `data.entity.rev`; a write returns the new one in `data.entities[].rev`.
 - Give `--reason` when the change needs one; some operations require it.
 - Nothing is deleted. Correct with `graph supersede` (a newer entity
   replaces older ones) or `graph retract` (withdrawn); state changes go
   through `graph transition`.
 - Prefer the single-operation commands. `graph apply` takes change set
-  documents for batches; dry-run them first.
+  documents for batches: write the document to a file, dry-run it with
+  `graph apply <file> --dry-run --json`, then apply it. Its idempotency key
+  is `idempotency_key` in the document, or `--idempotency-key` for a file
+  with a single document.
 - `graph whoami --json` shows who you act as and what you may do.
 
 ## Output envelope
@@ -61,6 +65,8 @@ Every `--json` call prints one JSON object on stdout.
 
 - Keys, always present: `schema`, `ok`, `command`, `graph`, `data`, `page`, `hints`, `warnings`, `error`.
 - `ok` tells success; `data` holds the result, `page` the paging of lists.
+- Read the whole object; cutting it with `head` or similar loses fields
+  such as `rev`.
 - On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.

@@ -60,7 +60,7 @@ WRITE_ERRORS: Final = (
 EXPECT_ERRORS: Final = (*WRITE_ERRORS, "conflict.version_mismatch")
 
 
-def _usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliError:
+def usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliError:
     return GraphCliError(
         "usage.invalid_argument",
         f"{argument}: {message}",
@@ -71,19 +71,19 @@ def _usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliErr
 def _ref(text: str, argument: str) -> EntityRef:
     ref = parse_entity_ref(text, allow_abbrev=True)
     if ref is None:
-        raise _usage(argument, "expected a full id, an alias or 8-32 trailing hex digits", text)
+        raise usage(argument, "expected a full id, an alias or 8-32 trailing hex digits", text)
     return ref
 
 
 def _term(text: str, argument: str) -> TermRef:
     if not TERM_REF_RE.match(text):
-        raise _usage(argument, "expected a CURIE <prefix>:<Term>", text)
+        raise usage(argument, "expected a CURIE <prefix>:<Term>", text)
     return TermRef(text)
 
 
 def _name(text: str, argument: str) -> str:
     if not NAME_RE.match(text):
-        raise _usage(argument, "expected a lowercase name", text)
+        raise usage(argument, "expected a lowercase name", text)
     return text
 
 
@@ -92,7 +92,7 @@ def _texts(values: Sequence[str], argument: str) -> dict[str, str]:
     for value in values:
         name, text = split_assignment(value, argument)
         if _name(name, argument) in result:
-            raise _usage(argument, f"{name!r} is given twice", value)
+            raise usage(argument, f"{name!r} is given twice", value)
         result[name] = text
     return result
 
@@ -102,18 +102,18 @@ def _json_values(values: Sequence[str], argument: str) -> dict[str, JsonValue]:
     for value in values:
         name, text = split_assignment(value, argument)
         if _name(name, argument) in result:
-            raise _usage(argument, f"{name!r} is given twice", value)
+            raise usage(argument, f"{name!r} is given twice", value)
         try:
             result[name] = load_document(text)
         except GraphCliError as exc:
-            raise _usage(argument, f"{name!r} is not valid JSON: {exc.message}", text) from None
+            raise usage(argument, f"{name!r} is not valid JSON: {exc.message}", text) from None
     return result
 
 
 def _merge(texts: dict[str, str], values: dict[str, JsonValue], argument: str) -> None:
     for name in texts:
         if name in values:
-            raise _usage(argument, f"{name!r} is given with --set and {argument}", name)
+            raise usage(argument, f"{name!r} is given with --set and {argument}", name)
 
 
 def _time(text: str | None, argument: str) -> str | None:
@@ -122,14 +122,14 @@ def _time(text: str | None, argument: str) -> str | None:
     try:
         return normalize_valid_time(text)
     except GraphCliError as exc:
-        raise _usage(argument, exc.message, text) from None
+        raise usage(argument, exc.message, text) from None
 
 
 def _changeset(op: Op, reason: str | None, idempotency_key: str | None) -> ChangeSet:
     if reason is not None and (not reason.strip() or len(reason) > MAX_REASON):
-        raise _usage("--reason", f"expected 1 to {MAX_REASON} characters")
+        raise usage("--reason", f"expected 1 to {MAX_REASON} characters")
     if idempotency_key is not None and not IDEMPOTENCY_KEY_RE.match(idempotency_key):
-        raise _usage("--idempotency-key", "expected [A-Za-z0-9._:-]{1,128}", idempotency_key)
+        raise usage("--idempotency-key", "expected [A-Za-z0-9._:-]{1,128}", idempotency_key)
     return ChangeSet(ops=(op,), reason=reason, idempotency_key=idempotency_key)
 
 
@@ -235,7 +235,7 @@ def update(
     names = [_name(name, "--unset") for name in unset]
     for name in names:
         if name in texts or name in values:
-            raise _usage("--unset", f"{name!r} is both set and unset", name)
+            raise usage("--unset", f"{name!r} is both set and unset", name)
     if not (texts or values or names):
         raise GraphCliError("usage.missing_argument", "update needs --set, --set-json or --unset")
     op = UpdateOp(_ref(ref, "ref"), values, texts, tuple(dict.fromkeys(names)), expect)
@@ -276,7 +276,7 @@ def link(
     values = _json_values(qualifier_json, "--qualifier-json")
     _merge(texts, values, "--qualifier-json")
     if target_rev is not None and target_rev < 1:
-        raise _usage("--target-rev", "expected 1 or more", target_rev)
+        raise usage("--target-rev", "expected 1 or more", target_rev)
     spec = EdgeSpec(_term(rel, "rel"), _ref(target, "target"), {**texts, **values}, target_rev)
     op = LinkOp(_ref(ref, "ref"), spec, expect)
     args: dict[str, JsonValue] = {
@@ -318,7 +318,7 @@ def unlink(
         try:
             op = UnlinkOp(_ref(ref, "ref"), edge_id=EdgeId(parse_id(edge_id)), expect_rev=expect)
         except GraphCliError:
-            raise _usage("--edge-id", "expected a full edge id", edge_id) from None
+            raise usage("--edge-id", "expected a full edge id", edge_id) from None
     else:
         assert rel is not None and target is not None
         op = UnlinkOp(
@@ -387,7 +387,7 @@ def supersede(
 ) -> Result:
     refs = [_ref(t, "targets") for t in targets]
     if len(set(refs)) != len(refs):
-        raise _usage("targets", "a target is listed twice")
+        raise usage("targets", "a target is listed twice")
     op = SupersedeOp(_ref(by, "by"), tuple(refs))
     args: dict[str, JsonValue] = {"by": by, "targets": list(targets)}
     return _apply(

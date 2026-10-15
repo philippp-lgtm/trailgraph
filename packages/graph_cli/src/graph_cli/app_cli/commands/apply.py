@@ -6,21 +6,29 @@ writes nothing (exit 2). Each document is one tx, in order; locals bound by
 earlier documents stay resolvable. Processing stops at the first failure:
 ``data.results[]`` reports each processed document and the failure is the
 envelope error, so the exit code is that of the first failure.
+``--idempotency-key`` sets the key of a single document; JSONL input keeps
+one ``idempotency_key`` per document.
 """
 
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
 from graph_cli.app_cli.commands.common import GRAPH, context
-from graph_cli.app_cli.commands.write import EXPECT_ERRORS
+from graph_cli.app_cli.commands.write import EXPECT_ERRORS, usage
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.changeset import ChangeSet, changeset_hash, read_documents
+from graph_cli.kernel.changeset import (
+    IDEMPOTENCY_KEY_RE,
+    ChangeSet,
+    changeset_hash,
+    read_documents,
+)
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.read import graph_json
@@ -67,9 +75,37 @@ def _parse(writer: WriteService, data: bytes) -> list[ChangeSet]:
     return changesets
 
 
-def apply(state: CommandState, file: str, graph: str | None, dry_run: bool) -> Result:
+def _with_key(changesets: list[ChangeSet], key: str | None) -> list[ChangeSet]:
+    if key is None:
+        return changesets
+    if not IDEMPOTENCY_KEY_RE.match(key):
+        raise usage("--idempotency-key", "expected [A-Za-z0-9._:-]{1,128}", key)
+    if len(changesets) != 1:
+        raise usage(
+            "--idempotency-key",
+            f"applies to a single document, got {len(changesets)}; "
+            "set idempotency_key in each document instead",
+            key,
+        )
+    (changeset,) = changesets
+    if changeset.idempotency_key not in (None, key):
+        raise usage(
+            "--idempotency-key",
+            f"differs from the document's idempotency_key {changeset.idempotency_key!r}",
+            key,
+        )
+    return [replace(changeset, idempotency_key=key)]
+
+
+def apply(
+    state: CommandState,
+    file: str,
+    graph: str | None,
+    dry_run: bool,
+    idempotency_key: str | None,
+) -> Result:
     ctx = context(state)
-    changesets = _parse(ctx.writer, _read(file))
+    changesets = _with_key(_parse(ctx.writer, _read(file)), idempotency_key)
     entry = ctx.select(graph)
     requests = [
         WriteRequest(
@@ -147,6 +183,12 @@ APPLY: Final = CommandSpec(
         ),
         GRAPH,
         ParamSpec("--dry-run", "flag", "Validate every document without writing."),
+        ParamSpec(
+            "--idempotency-key",
+            "string",
+            "Key that makes a retry safe; single document only, else idempotency_key "
+            "in each document.",
+        ),
     ),
     examples=(
         Example(f"graph apply {STDIN} --json", "Apply documents from stdin."),

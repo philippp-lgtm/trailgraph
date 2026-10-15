@@ -20,6 +20,7 @@ Usage: `graph apply FILE [OPTIONS]`
 |---|---|---|---|---|
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--dry-run` | flag | no | no | Validate every document without writing. |
+| `--idempotency-key` | string | no | no | Key that makes a retry safe; single document only, else idempotency_key in each document. |
 
 | Example | Summary |
 |---|---|

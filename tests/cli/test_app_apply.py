@@ -146,3 +146,32 @@ def test_broken_input_writes_nothing(
     empty = app(run_cli, "apply", "-", env=ENV, input="\n")
     assert (empty.code, empty.error["code"]) == (2, "usage.invalid_input")
     assert tree_hash(root) == before
+
+
+def test_idempotency_key_option_for_a_single_document(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    cls = roles.term("lifecycle_type")
+    ops = factory.create(cls, "a")
+    one = jsonl({"ops": ops})
+    first = app(run_cli, "apply", "-", "--idempotency-key", "k-1", env=ENV, input=one)
+    assert first.code == 0, first.envelope
+    again = app(run_cli, "apply", "-", "--idempotency-key", "k-1", env=ENV, input=one)
+    assert again.code == 0 and again.data["results"][0]["result"]["idempotent_replay"]
+    other = jsonl({"ops": factory.create(cls, "b")})
+    reused = app(run_cli, "apply", "-", "--idempotency-key", "k-1", env=ENV, input=other)
+    assert reused.error["code"] == "conflict.idempotency_key_reuse"
+    same = jsonl({"ops": ops, "idempotency_key": "k-1"})
+    assert app(run_cli, "apply", "-", "--idempotency-key", "k-1", env=ENV, input=same).code == 0
+    before = tree_hash(root)
+    refused = [
+        (one + one, "applies to a single document, got 2"),
+        (jsonl({"ops": factory.create(cls, "c"), "idempotency_key": "k-2"}), "differs"),
+        (one, "expected [A-Za-z0-9._:-]{1,128}"),
+    ]
+    for (documents, message), key in zip(refused, ["k-3", "k-3", "bad key"], strict=True):
+        outcome = app(run_cli, "apply", "-", "--idempotency-key", key, env=ENV, input=documents)
+        assert (outcome.code, outcome.error["code"]) == (2, "usage.invalid_argument")
+        assert message in outcome.error["message"]
+        assert outcome.error["details"]["argument"] == "--idempotency-key"
+    assert tree_hash(root) == before

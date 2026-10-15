@@ -51,6 +51,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Validate every document without writing."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe; single document only, else idempotency_key in each document."
         }
       ],
       "examples": [

@@ -208,7 +208,9 @@ shell metacharacters: `--where attr=value` or `--where attr:op=value` with
 reads and checks every document first (broken input writes nothing), then
 commits one transaction per document in order and stops at the first
 failure; `data.results` reports each processed document and the exit code is
-that of the failure. Reads, `--help`, dry runs and usage errors write
+that of the failure. Its idempotency key is `idempotency_key` in each
+document; `apply --idempotency-key` sets it for input with a single document
+and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
 nothing, audit files included. `--as-of` is reserved and refused.
 
 Commands are declared as data in `graph_cli.app_cli.commands`
