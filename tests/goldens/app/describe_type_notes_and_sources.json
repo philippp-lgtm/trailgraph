@@ -1,0 +1,183 @@
+{
+  "graph": {
+    "name": "example_graph"
+  },
+  "ontology": {
+    "bundle": "notes_and_sources",
+    "version": "1.0.0"
+  },
+  "schema": "graph_cli.model/1",
+  "type": {
+    "abstract": false,
+    "alias_prefix": "NOTE",
+    "ancestors": [],
+    "curie": "nas:Note",
+    "description": null,
+    "extends": null,
+    "fields": [
+      {
+        "base": "text",
+        "declared_in": "nas:Note",
+        "default": null,
+        "kind": "base",
+        "limits": {},
+        "many": false,
+        "mutability": "content",
+        "name": "body",
+        "required": true,
+        "summary": "Text of the note.",
+        "type": "text",
+        "unique": false,
+        "values": null
+      },
+      {
+        "base": "string",
+        "declared_in": "nas:Note",
+        "default": null,
+        "kind": "enum",
+        "limits": {},
+        "many": false,
+        "mutability": "content",
+        "name": "kind",
+        "required": true,
+        "summary": "What the note records.",
+        "type": "nas:NoteKind",
+        "unique": false,
+        "values": [
+          "observation",
+          "summary",
+          "question"
+        ]
+      },
+      {
+        "base": "string",
+        "declared_in": "nas:Note",
+        "default": null,
+        "kind": "lifecycle",
+        "limits": {},
+        "many": false,
+        "mutability": "lifecycle",
+        "name": "status",
+        "required": true,
+        "summary": "Editorial state.",
+        "type": "nas:NoteLifecycle",
+        "unique": false,
+        "values": null
+      },
+      {
+        "base": "string",
+        "declared_in": "nas:Note",
+        "default": null,
+        "kind": "base",
+        "limits": {},
+        "many": false,
+        "mutability": "content",
+        "name": "title",
+        "required": true,
+        "summary": "Headline of the note.",
+        "type": "string",
+        "unique": false,
+        "values": null
+      }
+    ],
+    "lifecycles": [
+      {
+        "attr": "status",
+        "initial": [
+          "draft"
+        ],
+        "lifecycle": "nas:NoteLifecycle",
+        "states": [
+          {
+            "name": "draft",
+            "summary": "Being written."
+          },
+          {
+            "name": "published",
+            "summary": "Visible and citable."
+          },
+          {
+            "name": "archived",
+            "summary": "Kept for history only."
+          }
+        ],
+        "summary": "Editorial state of a note.",
+        "terminal": [
+          "archived"
+        ],
+        "transitions": [
+          {
+            "from": "draft",
+            "guards": [
+              {
+                "id": "nas.body_not_empty",
+                "summary": "A note needs a body before it is published."
+              }
+            ],
+            "to": "published"
+          },
+          {
+            "from": "published",
+            "guards": [],
+            "to": "draft"
+          },
+          {
+            "from": "draft",
+            "guards": [],
+            "to": "archived"
+          },
+          {
+            "from": "published",
+            "guards": [],
+            "to": "archived"
+          }
+        ]
+      }
+    ],
+    "relations_in": [],
+    "relations_out": [
+      {
+        "cardinality": "1..n",
+        "curie": "nas:about",
+        "inverse_label": "has_note",
+        "qualifiers": [],
+        "range": [
+          "nas:Topic"
+        ],
+        "summary": "The note is about the topic."
+      },
+      {
+        "cardinality": "0..n",
+        "curie": "nas:asserts",
+        "inverse_label": "asserted_in",
+        "qualifiers": [],
+        "range": [
+          "provenance:Claim"
+        ],
+        "summary": "The note asserts the claim."
+      },
+      {
+        "cardinality": "0..n",
+        "curie": "nas:cites",
+        "inverse_label": "cited_by",
+        "qualifiers": [
+          "locator"
+        ],
+        "range": [
+          "nas:Source"
+        ],
+        "summary": "The note uses information from the source."
+      }
+    ],
+    "rules": [
+      {
+        "id": "nas.summary_cites_source",
+        "severity": "error",
+        "summary": "A published summary note cites at least one source.",
+        "when": "write"
+      }
+    ],
+    "subtypes": [],
+    "summary": "A short piece of writing about one or more topics."
+  }
+}

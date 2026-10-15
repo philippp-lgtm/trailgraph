@@ -26,26 +26,41 @@ def _help(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} --help"
 
 
+def _graphs(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Where the selectable graphs are listed (B12.5)."""
+    return f"{program} graph list" if program == ADMIN_PROGRAM else f"{program} graphs"
+
+
+def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
+    return f"{program} describe types"
+
+
+def _get(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Re-read the entity before retrying (B3.11)."""
+    entity = details.get("id")
+    return f"{program} get {entity}" if isinstance(entity, str) else None
+
+
 _BASE: Final[dict[str, Hint | None]] = {
     "usage.invalid_argument": _help,
     "usage.unknown_command": _help,
     "usage.missing_argument": _help,
     "usage.invalid_input": None,
-    "graph.not_selected": None,
-    "graph.not_found": None,
-    "graph.not_in_project": None,
+    "graph.not_selected": _graphs,
+    "graph.not_found": _graphs,
+    "graph.not_in_project": _graphs,
     "graph.archived": None,
     "graph.readonly": None,
     "entity.not_found": None,
     "entity.ambiguous_ref": None,
-    "term.unknown": None,
+    "term.unknown": _types,
     "changeset.malformed": None,
     "changeset.local_ref_unresolved": None,
     "changeset.local_ref_duplicate": None,
     "changeset.too_large": None,
     "write.invalid": None,
     "temporal.as_of_unsupported": None,
-    "conflict.version_mismatch": None,
+    "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,
     "conflict.idempotency_key_reuse": None,
     "access.denied": None,

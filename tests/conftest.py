@@ -40,6 +40,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
         *args: str,
         input: str | None = None,
         env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         executable = BIN_DIR / program
         assert executable.exists(), f"console script not installed: {executable}"
@@ -49,7 +50,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
             capture_output=True,
             text=True,
             env={**isolated_env, **(env or {})},
-            cwd=tmp_path,
+            cwd=cwd or tmp_path,
             timeout=60,
         )
 

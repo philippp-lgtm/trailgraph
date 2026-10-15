@@ -1,0 +1,255 @@
+{
+  "graph": {
+    "name": "example_graph"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "schema": "graph_cli.model/1",
+  "type": {
+    "abstract": false,
+    "alias_prefix": "ITEM",
+    "ancestors": [],
+    "curie": "inv:Item",
+    "description": null,
+    "extends": null,
+    "fields": [
+      {
+        "base": "date",
+        "declared_in": "inv:Item",
+        "default": null,
+        "kind": "base",
+        "limits": {},
+        "many": false,
+        "mutability": "immutable",
+        "name": "acquired_on",
+        "required": false,
+        "summary": "Date the item was acquired.",
+        "type": "date",
+        "unique": false,
+        "values": null
+      },
+      {
+        "base": "string",
+        "declared_in": "inv:Item",
+        "default": null,
+        "kind": "enum",
+        "limits": {},
+        "many": false,
+        "mutability": "content",
+        "name": "condition",
+        "required": false,
+        "summary": "Physical condition.",
+        "type": "inv:Condition",
+        "unique": false,
+        "values": [
+          "new",
+          "good",
+          "worn",
+          "damaged"
+        ]
+      },
+      {
+        "base": "string",
+        "declared_in": "inv:Item",
+        "default": null,
+        "kind": "base",
+        "limits": {},
+        "many": false,
+        "mutability": "content",
+        "name": "name",
+        "required": true,
+        "summary": "Display name of the item.",
+        "type": "string",
+        "unique": false,
+        "values": null
+      },
+      {
+        "base": "integer",
+        "declared_in": "inv:Item",
+        "default": 1,
+        "kind": "datatype",
+        "limits": {
+          "min": 0
+        },
+        "many": false,
+        "mutability": "content",
+        "name": "quantity",
+        "required": true,
+        "summary": "Number of units.",
+        "type": "inv:Quantity",
+        "unique": false,
+        "values": null
+      },
+      {
+        "base": "string",
+        "declared_in": "inv:Item",
+        "default": null,
+        "kind": "datatype",
+        "limits": {
+          "pattern": "^[A-Z0-9-]{4,32}$"
+        },
+        "many": false,
+        "mutability": "immutable",
+        "name": "serial_number",
+        "required": false,
+        "summary": "Serial number, if the item has one.",
+        "type": "inv:SerialNumber",
+        "unique": true,
+        "values": null
+      },
+      {
+        "base": "string",
+        "declared_in": "inv:Item",
+        "default": null,
+        "kind": "lifecycle",
+        "limits": {},
+        "many": false,
+        "mutability": "lifecycle",
+        "name": "status",
+        "required": true,
+        "summary": "Availability state.",
+        "type": "inv:ItemLifecycle",
+        "unique": false,
+        "values": null
+      }
+    ],
+    "lifecycles": [
+      {
+        "attr": "status",
+        "initial": [
+          "ordered"
+        ],
+        "lifecycle": "inv:ItemLifecycle",
+        "states": [
+          {
+            "name": "ordered",
+            "summary": "Bought but not received."
+          },
+          {
+            "name": "in_stock",
+            "summary": "Received and available."
+          },
+          {
+            "name": "in_use",
+            "summary": "Handed out and in use."
+          },
+          {
+            "name": "retired",
+            "summary": "Out of service for good."
+          }
+        ],
+        "summary": "Availability of an item.",
+        "terminal": [
+          "retired"
+        ],
+        "transitions": [
+          {
+            "from": "ordered",
+            "guards": [],
+            "to": "in_stock"
+          },
+          {
+            "from": "in_stock",
+            "guards": [
+              {
+                "id": "inv.usable",
+                "summary": "Damaged items cannot be used."
+              }
+            ],
+            "to": "in_use"
+          },
+          {
+            "from": "in_use",
+            "guards": [],
+            "to": "in_stock"
+          },
+          {
+            "from": "ordered",
+            "guards": [
+              {
+                "id": "inv.no_active_parts",
+                "summary": "An item with active parts cannot be retired."
+              }
+            ],
+            "to": "retired"
+          },
+          {
+            "from": "in_stock",
+            "guards": [
+              {
+                "id": "inv.no_active_parts",
+                "summary": "An item with active parts cannot be retired."
+              }
+            ],
+            "to": "retired"
+          },
+          {
+            "from": "in_use",
+            "guards": [
+              {
+                "id": "inv.no_active_parts",
+                "summary": "An item with active parts cannot be retired."
+              }
+            ],
+            "to": "retired"
+          }
+        ]
+      }
+    ],
+    "relations_in": [
+      {
+        "cardinality": "0..n",
+        "curie": "inv:part_of",
+        "from": [
+          "inv:Item"
+        ],
+        "inverse_label": "has_part",
+        "summary": "The item is a component of a larger item."
+      }
+    ],
+    "relations_out": [
+      {
+        "cardinality": "0..n",
+        "curie": "inv:in_category",
+        "inverse_label": "has_item",
+        "qualifiers": [],
+        "range": [
+          "inv:Category"
+        ],
+        "summary": "The item belongs to the category."
+      },
+      {
+        "cardinality": "1..1",
+        "curie": "inv:located_in",
+        "inverse_label": "holds",
+        "qualifiers": [],
+        "range": [
+          "inv:Location"
+        ],
+        "summary": "Where an item is stored."
+      },
+      {
+        "cardinality": "0..1",
+        "curie": "inv:part_of",
+        "inverse_label": "has_part",
+        "qualifiers": [],
+        "range": [
+          "inv:Item"
+        ],
+        "summary": "The item is a component of a larger item."
+      }
+    ],
+    "rules": [
+      {
+        "id": "inv.serial_single_unit",
+        "severity": "error",
+        "summary": "Serialized items have quantity 1.",
+        "when": "write"
+      }
+    ],
+    "subtypes": [],
+    "summary": "A physical thing that is tracked."
+  }
+}

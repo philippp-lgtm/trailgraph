@@ -119,6 +119,7 @@ def test_text_mode() -> None:
     assert err.splitlines() == [
         "error: graph.not_found: no graph 'x'",
         "  error integrity.audit.seq_gap [stream=s, seq=3] gap",
+        "hint: prog graphs",
     ]
 
 

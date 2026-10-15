@@ -138,14 +138,19 @@ def _command(spec: CommandSpec) -> click.Command:
     return json_option(command)
 
 
-def build_click(group: click.Group, specs: Sequence[CommandSpec]) -> click.Group:
+def build_click(
+    group: click.Group,
+    specs: Sequence[CommandSpec],
+    *,
+    group_help: Mapping[str, str] | None = None,
+) -> click.Group:
     """Attach one click command per spec under ``group``, creating subgroups by path."""
     for spec in specs:
         parent = group
         for part in spec.path[:-1]:
             child = parent.commands.get(part)
             if child is None:
-                child = click.Group(part, help=f"{part} commands.")
+                child = click.Group(part, help=(group_help or {}).get(part, f"{part} commands."))
                 parent.add_command(child)
             assert isinstance(child, click.Group), f"{part} is a command and a group"
             parent = child

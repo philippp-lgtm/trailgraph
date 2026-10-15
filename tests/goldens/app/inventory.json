@@ -1,0 +1,472 @@
+{
+  "schema": "graph_cli.inventory/1",
+  "program": "graph",
+  "program_version": "0.1.0.dev0",
+  "surface": "app",
+  "global_options": [
+    {
+      "name": "--json",
+      "type": "flag",
+      "required": false,
+      "repeatable": false,
+      "summary": "Write one JSON envelope to stdout."
+    },
+    {
+      "name": "--graph",
+      "type": "graph_ref",
+      "required": false,
+      "repeatable": false,
+      "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+    }
+  ],
+  "commands": [
+    {
+      "path": [
+        "describe",
+        "commands"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Describe every command of this program (graph_cli.inventory/1).",
+      "args": [],
+      "options": [],
+      "examples": [
+        {
+          "command": "graph describe commands --json",
+          "summary": "The command inventory."
+        },
+        {
+          "command": "graph describe commands",
+          "summary": "The inventory as text."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        2,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
+        "fields"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the fields of one type with datatypes and limits.",
+      "args": [
+        {
+          "name": "type",
+          "type": "term",
+          "required": true,
+          "repeatable": false,
+          "summary": "Type CURIE."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe fields <type>",
+          "summary": "Fields of one type."
+        },
+        {
+          "command": "graph describe fields <type> --json",
+          "summary": "Fields as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
+        "lifecycle"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Show the lifecycles of a type, or one lifecycle by name.",
+      "args": [
+        {
+          "name": "type",
+          "type": "term",
+          "required": true,
+          "repeatable": false,
+          "summary": "Type CURIE."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe lifecycle <type>",
+          "summary": "States and transitions of a type."
+        },
+        {
+          "command": "graph describe lifecycle <type> --json",
+          "summary": "Lifecycles as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
+        "relations"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the relations of the selected graph's ontology.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe relations",
+          "summary": "All relations."
+        },
+        {
+          "command": "graph describe relations --json",
+          "summary": "Relations as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
+        "type"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Describe one type: fields, lifecycles, relations and rules.",
+      "args": [
+        {
+          "name": "type",
+          "type": "term",
+          "required": true,
+          "repeatable": false,
+          "summary": "Type CURIE."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe type <type>",
+          "summary": "Everything about one type."
+        },
+        {
+          "command": "graph describe type <type> --json",
+          "summary": "The type as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
+        "types"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the types of the selected graph's ontology.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe types",
+          "summary": "All types with summaries."
+        },
+        {
+          "command": "graph describe types --graph <graph> --json",
+          "summary": "Types of one graph."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "graphs"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.list",
+      "summary": "List the graphs this project may use.",
+      "args": [],
+      "options": [],
+      "examples": [
+        {
+          "command": "graph graphs",
+          "summary": "List the visible graphs."
+        },
+        {
+          "command": "graph graphs --json",
+          "summary": "The graphs as JSON, with the hidden count."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "whoami"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Show who is acting: the identity facets and what the policy allows.",
+      "args": [],
+      "options": [],
+      "examples": [
+        {
+          "command": "graph whoami",
+          "summary": "Show the acting identity."
+        },
+        {
+          "command": "graph whoami --json",
+          "summary": "The identity and permissions as JSON."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        2,
+        5,
+        6
+      ],
+      "limits": {}
+    }
+  ],
+  "actions": [
+    "read.describe",
+    "read.list"
+  ],
+  "error_codes": [
+    {
+      "code": "access.denied",
+      "category": "denied",
+      "exit": 3
+    },
+    {
+      "code": "backend.unavailable",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "config.forbidden_key",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "config.invalid",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "graph.not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "graph.not_in_project",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "graph.not_selected",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "internal.error",
+      "category": "internal",
+      "exit": 6
+    },
+    {
+      "code": "ontology.artifact_missing",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "term.unknown",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "usage.invalid_argument",
+      "category": "usage",
+      "exit": 2
+    }
+  ]
+}

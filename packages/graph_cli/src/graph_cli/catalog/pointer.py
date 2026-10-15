@@ -127,14 +127,14 @@ def select_graph(
         shown, hidden = visible_graphs(catalog.list_graphs(), pointer)
         raise GraphCliError(
             "graph.not_selected",
-            "no graph selected; pass --graph, set GRAPH_CLI_GRAPH or a pointer default",
+            "no graph selected; select one by name or id",
             details={"candidates": [e.name for e in shown], "hidden_count": hidden},
         )
     entry = catalog.resolve(choice)
     if pointer is not None and not pointer.allows(entry):
         raise GraphCliError(
             "graph.not_in_project",
-            f"graph {entry.name} is not in this project's pointer file",
+            f"graph {entry.name} is not allowed by this project's pointer file",
             details={
                 "graph": entry.name,
                 "allowed": list(pointer.graphs),
