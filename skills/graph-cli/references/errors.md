@@ -49,6 +49,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `ontology.artifact_missing` | unavailable | 5 |
 | `ontology.pin_mismatch` | unavailable | 5 |
 | `temporal.as_of_unsupported` | refused | 1 |
+| `term.no_labels` | refused | 1 |
 | `term.unknown` | not_found | 1 |
 | `usage.invalid_argument` | usage | 2 |
 | `usage.invalid_input` | usage | 2 |

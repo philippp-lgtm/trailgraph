@@ -923,6 +923,125 @@
     },
     {
       "path": [
+        "lookup"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.find",
+      "summary": "Find entities by name: main, alternative and hidden labels; ranked candidates.",
+      "args": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The name to look for."
+        }
+      ],
+      "options": [
+        {
+          "name": "--type",
+          "type": "term",
+          "required": false,
+          "repeatable": true,
+          "summary": "Type CURIE, subtypes included."
+        },
+        {
+          "name": "--match",
+          "type": "choice",
+          "required": false,
+          "repeatable": false,
+          "summary": "Whole name, or names that start with the text.",
+          "choices": [
+            "exact",
+            "prefix"
+          ],
+          "default": "exact"
+        },
+        {
+          "name": "--ignore-accents",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also match with accents and other combining marks ignored."
+        },
+        {
+          "name": "--include-inactive",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Include superseded and retracted entities."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many results.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read an earlier state (tx:<seq>); reserved."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph lookup <value>",
+          "summary": "Entities named exactly so, any type."
+        },
+        {
+          "command": "graph lookup <value> --type <type> --match prefix --json",
+          "summary": "Names of one type that start with the text."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "term.no_labels",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      }
+    },
+    {
+      "path": [
         "neighbors"
       ],
       "kind": "read",
@@ -1769,6 +1888,11 @@
     },
     {
       "code": "temporal.as_of_unsupported",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "term.no_labels",
       "category": "refused",
       "exit": 1
     },

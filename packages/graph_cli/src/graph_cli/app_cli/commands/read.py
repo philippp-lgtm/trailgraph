@@ -1,8 +1,12 @@
-"""``graph get``, ``graph find`` and ``graph neighbors`` (contracts §4.3, B8.8, B8.12, B9.7)."""
+"""``graph get``, ``graph find``, ``graph lookup`` and ``graph neighbors``.
+
+Contracts §4.3, B8.8, B8.12, B9.7.
+"""
 
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 from typing import Final
 
 from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context
@@ -12,6 +16,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, FindSpec, parse_rel_flag
 from graph_cli.services.read import GraphRead, refuse_as_of
 
@@ -33,6 +38,35 @@ def _open(
     )
     state.warnings += view.warnings
     return view
+
+
+def _command_line(
+    command: str,
+    positional: tuple[str, ...],
+    graph: str,
+    options: tuple[tuple[str, tuple[str, ...]], ...],
+    switches: tuple[str, ...],
+    limit: int,
+    offset: int | None = None,
+) -> str:
+    """A copy-pasteable read command; ``offset`` given for the next page."""
+    parts = [PROGRAM, command, *positional, "--graph", graph]
+    for flag, values in options:
+        for value in values:
+            parts += [flag, value]
+    parts += switches
+    if limit != DEFAULT_LIMIT or offset is not None:
+        parts += ["--limit", str(limit)]
+    if offset is not None:
+        parts += ["--offset", str(offset)]
+    return shlex.join(parts)
+
+
+def _next_page(page: dict[str, JsonValue], line: Callable[[int], str]) -> tuple[Hint, ...]:
+    next_offset = page["next_offset"]
+    if not isinstance(next_offset, int):
+        return ()
+    return ({"text": "More results available", "command": line(next_offset)},)
 
 
 def get(state: CommandState, ref: str, graph: str | None, as_of: str | None) -> Result:
@@ -83,23 +117,79 @@ def find(
     )
     state.warnings += warnings
     page_json = page.to_json()
-    hints: tuple[dict[str, JsonValue], ...] = ()
-    next_offset = page_json["next_offset"]
-    if isinstance(next_offset, int):
-        parts = [PROGRAM, "find", "--graph", view.entry.name]
-        for flag, values in (
-            ("--type", type),
-            ("--where", where),
-            ("--rel", rel),
-            ("--in-rel", in_rel),
-            ("--sort", sort),
-        ):
-            for value in values:
-                parts += [flag, value]
-        if include_inactive:
-            parts.append("--include-inactive")
-        parts += ["--limit", str(limit), "--offset", str(next_offset)]
-        hints = ({"text": "More results available", "command": shlex.join(parts)},)
+    options = (
+        ("--type", type),
+        ("--where", where),
+        ("--rel", rel),
+        ("--in-rel", in_rel),
+        ("--sort", sort),
+    )
+    switches = ("--include-inactive",) if include_inactive else ()
+
+    def line(next_offset: int) -> str:
+        return _command_line("find", (), view.entry.name, options, switches, limit, next_offset)
+
+    hints = _next_page(page_json, line)
+    return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
+
+
+def lookup(
+    state: CommandState,
+    text: str,
+    type: tuple[str, ...],
+    match: str,
+    ignore_accents: bool,
+    include_inactive: bool,
+    limit: int,
+    offset: int,
+    graph: str | None,
+    as_of: str | None,
+) -> Result:
+    refuse_as_of(as_of)
+    args: dict[str, JsonValue] = {
+        "text": text,
+        "type": list(type),
+        "match": match,
+        "ignore_accents": ignore_accents,
+        "include_inactive": include_inactive,
+        "limit": limit,
+        "offset": offset,
+    }
+    view = _open(state, graph, "read.find", "lookup", args)
+    spec = LookupSpec(
+        text=text,
+        types=type,
+        match=match,
+        ignore_accents=ignore_accents,
+        include_inactive=include_inactive,
+        limit=limit,
+        offset=offset,
+    )
+    data, page = context(state).reader.lookup(view, spec)
+    page_json = page.to_json()
+    switches = tuple(
+        flag
+        for flag, on in (
+            ("--ignore-accents", ignore_accents),
+            ("--include-inactive", include_inactive),
+        )
+        if on
+    )
+
+    def line(match_kind: str, next_offset: int | None = None) -> str:
+        options = (("--type", type), ("--match", (match_kind,) if match_kind != "exact" else ()))
+        return _command_line(
+            "lookup", (text,), view.entry.name, options, switches, limit, next_offset
+        )
+
+    hints = _next_page(page_json, lambda next_offset: line(match, next_offset))
+    if not page.total and match == "exact":
+        hints = (
+            {
+                "text": "No exact match; try names that start with the text",
+                "command": line("prefix"),
+            },
+        )
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
@@ -126,6 +216,8 @@ def neighbors(
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
 
+
+Hint = dict[str, JsonValue]
 
 REF: Final = ParamSpec(
     "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True
@@ -190,6 +282,50 @@ SPECS: Final = (
         ),
         errors=(*REF_ERRORS, "term.unknown"),
         handler=find,
+        limits={"limit": MAX_LIMIT},
+    ),
+    CommandSpec(
+        path=("lookup",),
+        kind="read",
+        surface="retrieve",
+        action="read.find",
+        summary="Find entities by name: main, alternative and hidden labels; ranked candidates.",
+        description=(
+            "Matches case- and Unicode-insensitively. Labels are not identifiers: use the "
+            "returned id for get, writes and change sets."
+        ),
+        params=(
+            ParamSpec("text", "string", "The name to look for.", required=True, positional=True),
+            ParamSpec("--type", "term", "Type CURIE, subtypes included.", repeatable=True),
+            ParamSpec(
+                "--match",
+                "choice",
+                "Whole name, or names that start with the text.",
+                choices=MATCH_KINDS,
+                default="exact",
+            ),
+            ParamSpec(
+                "--ignore-accents",
+                "flag",
+                "Also match with accents and other combining marks ignored.",
+            ),
+            ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
+            ParamSpec(
+                "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many results.", default=0),
+            GRAPH,
+            AS_OF,
+        ),
+        examples=(
+            Example("graph lookup <value>", "Entities named exactly so, any type."),
+            Example(
+                "graph lookup <value> --type <type> --match prefix --json",
+                "Names of one type that start with the text.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, "temporal.as_of_unsupported", "term.unknown", "term.no_labels"),
+        handler=lookup,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
