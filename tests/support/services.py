@@ -24,7 +24,7 @@ from graph_cli.kernel.changeset import ChangeSet, parse_changeset, read_document
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
-from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
@@ -79,6 +79,7 @@ class MemoryCatalog:
         self.entries: dict[GraphId, GraphEntry] = {}
         self.stores: dict[GraphId, InMemoryStore] = {}
         self.files: dict[tuple[GraphId, str, str], bytes] = {}
+        self.skills: dict[GraphId, SkillSlot] = {}
 
     def add(self, entry: GraphEntry, model: CompiledModel, event_id: EventId) -> None:
         self.entries[entry.id] = entry
@@ -117,6 +118,9 @@ class MemoryCatalog:
             return self.files[(graph, version, name)]
         except KeyError:
             raise GraphCliError("ontology.artifact_missing", f"no {version}/{name}") from None
+
+    def read_skill(self, graph: GraphId) -> SkillSlot | None:
+        return self.skills.get(graph)
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.stores[graph]

@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Final, Literal, Protocol
 
+from graph_cli.kernel.canonical import JsonValue, hash_bytes, hash_value
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.ids import GraphId, TermRef
 from graph_cli.kernel.records import OntologyPin
@@ -44,6 +45,40 @@ class ManifestData:
     store: StoreInfo
 
 
+SKILL_SOURCE_SCHEMA: Final = "graph_cli.skill_source/1"
+
+
+def skill_hash(files: Mapping[str, bytes]) -> str:
+    """C.2 hash of a skill tree: the hash of ``{path: sha256 of the bytes}``."""
+    return hash_value({name: hash_bytes(files[name]) for name in sorted(files)})
+
+
+@dataclass(frozen=True, slots=True)
+class SkillSlot:
+    """The published skill of a graph (D15 Q2), written only by graph-admin.
+
+    ``kind`` says how the files become a skill: ``static`` files are the
+    skill as is. ``published_against`` is the graph's ontology pin at publish
+    time.
+    """
+
+    kind: str
+    hash: str
+    published_against: OntologyPin
+    files: Mapping[str, bytes]
+
+    def summary(self) -> dict[str, JsonValue]:
+        return {
+            "kind": self.kind,
+            "hash": self.hash,
+            "published_against": self.published_against.to_json(),
+        }
+
+    def source_json(self) -> dict[str, JsonValue]:
+        """The slot's ``source.json`` document."""
+        return {"schema": SKILL_SOURCE_SCHEMA, **self.summary()}
+
+
 class Catalog(Protocol):
     def list_graphs(
         self, *, include_archived: bool = False, skip_unreadable: bool = False
@@ -63,7 +98,21 @@ class Catalog(Protocol):
 
     def read_release_file(self, graph: GraphId, version: str, name: str) -> bytes: ...
 
+    def read_skill(self, graph: GraphId) -> SkillSlot | None:
+        """The graph's published skill, or ``None`` when none was published (D15 Q2)."""
+        ...
+
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]: ...
 
 
-__all__ = ["Catalog", "GraphEntry", "GraphState", "ManifestData", "OntologyPin", "StoreInfo"]
+__all__ = [
+    "SKILL_SOURCE_SCHEMA",
+    "Catalog",
+    "GraphEntry",
+    "GraphState",
+    "ManifestData",
+    "OntologyPin",
+    "SkillSlot",
+    "StoreInfo",
+    "skill_hash",
+]

@@ -273,6 +273,12 @@ def pin_change(old: OntologyPin, new: OntologyPin) -> dict[str, JsonValue]:
     return {"pin": {"from": old.to_json(), "to": new.to_json()}}
 
 
+def skill_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that publishes the graph skill
+    (D15 Q2): the tree hash before (``None`` for the first publish) and after."""
+    return {"skill": {"from": old_hash, "to": new_hash}}
+
+
 def anchor(receipt: Anchorable) -> dict[str, JsonValue]:
     """``{graph_id, seq, hash}`` of an appended graph-stream event (B5.11)."""
     graph_id = receipt.stream.removeprefix("graph:")

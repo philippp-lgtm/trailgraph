@@ -206,6 +206,7 @@ def test_route_graph_scoped_maint_to_the_graph_then_an_anchor(world: World, acti
     change = {
         "maint.ontology_release": events.release_change("1.0.0", pin.artifact_hash, world.graph_id),
         "maint.ontology_pin": events.pin_change(pin, pin),
+        "maint.graph_configure": events.skill_change(None, pin.artifact_hash),
     }.get(action)
     graph_event = events.maintenance(
         ts=world.clock.now(),
@@ -283,6 +284,41 @@ def test_builders_refuse_bad_input(world: World) -> None:
         with pytest.raises(GraphCliError) as info:
             attempt()  # type: ignore[no-untyped-call]
         assert info.value.code == "internal.error"
+
+
+def test_skill_changes_name_both_tree_hashes(world: World) -> None:
+    """D15 Q2: a skill publish intent carries ``change.skill{from, to}``."""
+    pin = world.graph.pin
+    common = dict(
+        actor=maint_actor(),
+        decisions=[allow("maint.graph_configure", f"graph:{world.graph_id}")],
+        request=REQUEST,
+        env=ENV,
+        graph=world.graph,
+    )
+    for change in (
+        events.skill_change(None, pin.artifact_hash),
+        events.skill_change(pin.artifact_hash, pin.artifact_hash),
+    ):
+        events.maintenance(
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            change=change,
+            **common,  # type: ignore[arg-type]
+        )
+    for bad in (
+        {"skill": {"from": None}},
+        {"skill": {"from": "x", "to": pin.artifact_hash}},
+        {"skill": {"from": None, "to": None}},
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            events.maintenance(
+                ts=world.clock.now(),
+                event_id=world.event_id(),
+                change=bad,
+                **common,  # type: ignore[arg-type]
+            )
+        assert "change.skill" in caught.value.message
 
 
 def test_invalid_events_keep_twenty_findings(world: World) -> None:

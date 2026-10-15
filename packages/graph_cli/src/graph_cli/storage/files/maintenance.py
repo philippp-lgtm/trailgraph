@@ -8,8 +8,9 @@ an application session.
 Maintenance effects are published by one rename each, which is their commit
 point: ``graphs/.tmp-<id>`` -> ``graphs/<id>`` (graph create, under the
 registry lock ``<root>/.lock``), ``ontology/.tmp-<version>`` ->
-``ontology/<version>`` and ``manifest.toml.tmp`` -> ``manifest.toml``
-(under the graph lock, after the intent event). A failure before the rename
+``ontology/<version>``, ``manifest.toml.tmp`` -> ``manifest.toml`` and
+``skill/source.json.tmp`` -> ``skill/source.json`` (under the graph lock,
+after the intent event). A failure before the rename
 leaves the staging state behind, as a kill -9 would; readers ignore
 ``.tmp-*`` entries.
 """
@@ -33,7 +34,7 @@ from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EntityId, GraphId, format_id, parse_id
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, graph_stream
-from graph_cli.kernel.ports.catalog import ManifestData
+from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot, skill_hash
 from graph_cli.kernel.ports.storage import (
     CommitResult,
     GraphStoreMaintenance,
@@ -77,6 +78,7 @@ from graph_cli.storage.files.releases import (
     release_hashes,
 )
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
+from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
 from graph_cli.storage.finding_codes import (
     HEAD_INCONSISTENT,
@@ -332,6 +334,39 @@ class FileMaintenanceSession:
             store.syncer.sync_dir(layout.ontology)
         except OSError as exc:
             raise _unavailable("cannot install the release", exc) from exc
+
+    def read_skill(self) -> SkillSlot | None:
+        self._check_open()
+        return read_skill(self._store.layout)
+
+    def replace_skill(self, slot: SkillSlot, receipt: AuditReceipt) -> None:
+        """Publish ``skill/`` (D15 Q2): write the tree once under its hash, then switch
+        ``source.json`` with one rename (the commit point); unreferenced trees go last."""
+        store = self._store
+        bad = sorted(name for name in slot.files if not is_relative_name(name))
+        if bad or not slot.files or skill_hash(slot.files) != slot.hash:
+            raise GraphCliError("internal.error", f"bad skill slot: {bad or 'hash or files'}")
+        self._writer().claim_receipt(receipt)
+        layout = store.layout
+        tree = layout.skill_files(slot.hash)
+        try:
+            ensure_dir(tree.parent, store.syncer)
+            if not tree.is_dir():
+                staging = tree.parent / f"{STAGING_PREFIX}{tree.name}"
+                if staging.exists():
+                    shutil.rmtree(staging)
+                write_tree(staging, slot.files, store.syncer)
+                os.rename(staging, tree)
+                store.syncer.sync_dir(tree.parent)
+            temp = write_temp(layout.skill_source, pretty_bytes(slot.source_json()), store.syncer)
+            fire(store.faults, CrashPoint.SKILL_BEFORE_RENAME)
+            os.replace(temp, layout.skill_source)
+            store.syncer.sync_dir(layout.skill)
+            for name in sorted(os.listdir(tree.parent)):
+                if name != tree.name:
+                    shutil.rmtree(tree.parent / name)
+        except OSError as exc:
+            raise _unavailable("cannot publish the skill", exc) from exc
 
     # ---- maintenance ---------------------------------------------------
 

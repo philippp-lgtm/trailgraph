@@ -34,6 +34,7 @@ MAINT_EFFECT_ACTIONS: Final = MAINT_ACTIONS - {
 
 RELEASE_ACTION: Final = "maint.ontology_release"
 PIN_ACTION: Final = "maint.ontology_pin"
+CONFIGURE_ACTION: Final = "maint.graph_configure"
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
@@ -369,6 +370,15 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             and all(_is_pin(pin[k]) for k in ("from", "to"))
         ):
             problems.append("a pin intent needs change.pin{from, to}")
+    if CONFIGURE_ACTION in actions and "skill" in entries:
+        skill = entries["skill"]
+        if not (
+            isinstance(skill, Mapping)
+            and set(skill) == {"from", "to"}
+            and (skill["from"] is None or _is_hash(skill["from"]))
+            and _is_hash(skill["to"])
+        ):
+            problems.append("a skill change needs change.skill{from: hash or null, to: hash}")
     return problems
 
 

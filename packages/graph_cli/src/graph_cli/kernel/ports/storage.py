@@ -18,7 +18,7 @@ from graph_cli.kernel.errors import EMPTY, WarningRecord
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef, TxId
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
-from graph_cli.kernel.ports.catalog import ManifestData
+from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta, TxRecord
 
@@ -141,6 +141,14 @@ class MaintenanceSession(WriteSession, Protocol):
         self, version: str, files: Mapping[str, bytes], receipt: AuditReceipt
     ) -> None:
         """Publish ``ontology/<version>/`` atomically; it never changes afterwards (B7.4)."""
+        ...
+
+    def read_skill(self) -> SkillSlot | None:
+        """The graph's published skill as it is now (D15 Q2)."""
+        ...
+
+    def replace_skill(self, slot: SkillSlot, receipt: AuditReceipt) -> None:
+        """Publish the graph skill atomically, replacing the previous one (D15 Q2)."""
         ...
 
     def recover(self) -> RecoveryReport: ...

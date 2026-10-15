@@ -32,6 +32,7 @@ class CrashPoint(StrEnum):
     CREATE_BEFORE_RENAME = "create.before_rename"
     RELEASE_BEFORE_RENAME = "release.before_rename"
     MANIFEST_BEFORE_RENAME = "manifest.before_rename"
+    SKILL_BEFORE_RENAME = "skill.before_rename"
 
 
 # Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3").
@@ -49,6 +50,7 @@ MAINT_POINTS: Final = frozenset(
         CrashPoint.CREATE_BEFORE_RENAME,
         CrashPoint.RELEASE_BEFORE_RENAME,
         CrashPoint.MANIFEST_BEFORE_RENAME,
+        CrashPoint.SKILL_BEFORE_RENAME,
     }
 )
 

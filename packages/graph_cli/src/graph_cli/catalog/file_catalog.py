@@ -17,13 +17,14 @@ from typing import TYPE_CHECKING
 
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, format_id, parse_id
-from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, ManifestData
+from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, ManifestData, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
+from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileStore
 
 FILES_BACKEND = "files"
@@ -129,6 +130,9 @@ class FileCatalog:
 
     def read_release_file(self, graph: GraphId, version: str, name: str) -> bytes:
         return read_release_file(self._layout(graph), version, name)
+
+    def read_skill(self, graph: GraphId) -> SkillSlot | None:
+        return read_skill(self._layout(graph))
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.file_store(graph)

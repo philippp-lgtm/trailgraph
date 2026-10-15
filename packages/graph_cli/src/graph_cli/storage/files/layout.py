@@ -55,6 +55,18 @@ class GraphLayout:
         return self.ontology / version
 
     @property
+    def skill(self) -> Path:
+        """The published graph skill (D15 Q2): ``source.json`` and ``files/<hash hex>/``."""
+        return self.root / "skill"
+
+    @property
+    def skill_source(self) -> Path:
+        return self.skill / "source.json"
+
+    def skill_files(self, digest: str) -> Path:
+        return self.skill / "files" / digest.removeprefix("sha256:")
+
+    @property
     def data(self) -> Path:
         return self.root / "data"
 
