@@ -110,6 +110,59 @@ def test_required_options_and_directories() -> None:
     assert code == 0 and json.loads(out.getvalue())["data"] == {"out": "x"}
 
 
+def test_global_options_stand_before_or_after_the_subcommand() -> None:
+    """clig.dev: flags order-independent; a conflict or an option the command lacks is refused."""
+    where = ParamSpec("--where", "string", "Which place.")
+    spec = CommandSpec(
+        path=("look",),
+        kind="read",
+        surface="retrieve",
+        action=None,
+        summary="Look.",
+        params=(where,),
+        examples=(Example("prog look --where <place>", "Look."), Example("prog look --json", "x")),
+        errors=(),
+        handler=echo,
+    )
+    many = CommandSpec(
+        path=("gather",),
+        kind="read",
+        surface="retrieve",
+        action=None,
+        summary="Gather.",
+        params=(ParamSpec("--where", "string", "Places.", repeatable=True, keyword="places"),),
+        examples=(Example("prog gather --where <place>", "x"), Example("prog gather --json", "x")),
+        errors=(),
+        handler=echo,
+    )
+    globals_ = (ParamSpec("--json", "flag", "JSON."), where)
+
+    def call(*argv: str) -> tuple[int, dict[str, Any]]:
+        group = build_click(click.Group("prog"), (spec, many, SPECS[1]), global_options=globals_)
+        out = io.StringIO()
+        code = run(group, list(argv), Invocation("prog"), out=out, err=io.StringIO())
+        return code, json.loads(out.getvalue())
+
+    for argv in (
+        ("--where", "here", "--json", "look"),
+        ("--json", "look", "--where", "here"),
+        ("--where", "here", "look", "--where", "here", "--json"),
+    ):
+        code, document = call(*argv)
+        assert (code, document["data"]) == (0, {"where": "here"}), argv
+    code, document = call("--where", "here", "look", "--where", "there", "--json")
+    assert (code, document["error"]["code"]) == (2, "usage.invalid_argument")
+    assert "given twice" in document["error"]["message"]
+    code, document = call("--where", "here", "whoami", "--json")
+    assert (code, document["error"]["code"]) == (2, "usage.invalid_argument")
+    assert document["command"] == "whoami"
+    assert call("--json", "whoami")[0] == 0
+    code, document = call("--where", "here", "gather", "--where", "there", "--json")
+    assert (code, document["data"]) == (0, {"places": ["here", "there"]})
+    code, document = call("--where", "here", "gather", "--where", "here", "--json")
+    assert (code, document["data"]) == (0, {"places": ["here"]})
+
+
 def test_help_shows_examples() -> None:
     out, err = io.StringIO(), io.StringIO()
     with pytest.raises(SystemExit) as info:

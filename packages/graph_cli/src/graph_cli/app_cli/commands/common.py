@@ -14,6 +14,7 @@ GRAPH: Final = ParamSpec(
 )
 AS_OF: Final = ParamSpec("--as-of", "string", "Read an earlier state (tx:<seq>); reserved.")
 JSON_OPTION: Final = ParamSpec("--json", "flag", "Write one JSON envelope to stdout.")
+GLOBAL_OPTIONS: Final = (JSON_OPTION, GRAPH)  # also accepted before the subcommand
 
 
 def services(state: CommandState) -> AppServices:

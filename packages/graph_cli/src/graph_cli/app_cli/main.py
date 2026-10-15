@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from graph_cli.app_cli.commands import all_specs
+from graph_cli.app_cli.commands.common import GLOBAL_OPTIONS
 from graph_cli.catalog import wiring
 from graph_cli.cli_kit.runner import Invocation, run
 from graph_cli.cli_kit.spec import build_click
@@ -37,6 +38,7 @@ def program() -> click.Group:
             "describe": "Describe the commands, or the ontology of a graph.",
             "skills": "Write, install and check the agent skills of this program and its graphs.",
         },
+        global_options=GLOBAL_OPTIONS,
     )
 
 

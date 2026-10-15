@@ -5,6 +5,7 @@ parameters, examples and the error codes it may raise. ``build_click``
 generates the click tree from the declarations and ``inventory`` describes
 the same declarations, so help, parsing and the inventory cannot drift.
 Every command gets ``--json``; ``--help`` shows the summary and the examples.
+Global options are accepted before the subcommand as well as after it.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ class CommandSpec:
     description: str | None = None
 
 
-def _click_param(param: ParamSpec) -> click.Parameter:
+def _click_param(param: ParamSpec, **extra: Any) -> click.Parameter:
     if param.positional:
         return click.Argument(
             [param.dest],
@@ -117,7 +118,19 @@ def _click_param(param: ParamSpec) -> click.Parameter:
         kwargs.update(multiple=True, default=())
     if param.required:
         kwargs.pop("default", None)  # click treats an explicit default as given
-    return click.Option([param.name, param.dest], **kwargs)
+    return click.Option([param.name, param.dest], **kwargs, **extra)
+
+
+def _global_option(param: ParamSpec) -> click.Parameter:
+    """The option on the root group; ``leaf`` hands its value to the command."""
+
+    def keep(ctx: click.Context, _param: click.Parameter, value: Any) -> None:
+        if value is not None and value is not False:
+            state = ctx.find_object(CommandState)
+            assert state is not None, "run() provides the CommandState"
+            state.global_values[param.name] = value
+
+    return _click_param(param, expose_value=False, callback=keep)
 
 
 def _help(spec: CommandSpec) -> str:
@@ -149,8 +162,15 @@ def build_click(
     specs: Sequence[CommandSpec],
     *,
     group_help: Mapping[str, str] | None = None,
+    global_options: Sequence[ParamSpec] = (),
 ) -> click.Group:
-    """Attach one click command per spec under ``group``, creating subgroups by path."""
+    """Attach one click command per spec under ``group``, creating subgroups by path.
+
+    ``global_options`` are added to ``group`` too, so they may stand before the
+    subcommand; every command that takes them must declare them itself.
+    """
+    for option in global_options:
+        group.params.append(_global_option(option))
     for spec in specs:
         parent = group
         for part in spec.path[:-1]:

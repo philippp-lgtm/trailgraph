@@ -106,7 +106,8 @@ Every `--json` call prints one JSON object on stdout.
 | `graph update` | write | Set or unset attributes of one entity. |
 | `graph whoami` | meta | Show who is acting: the identity facets and what the policy allows. |
 
-Global options:
+Global options, before or after the command (`graph --graph <graph> find`
+equals `graph find --graph <graph>`):
 
 | Option | Type | Summary |
 |---|---|---|

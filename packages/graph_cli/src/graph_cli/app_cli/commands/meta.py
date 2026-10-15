@@ -6,8 +6,8 @@ from typing import Final
 
 from graph_cli import __version__
 from graph_cli.app_cli.commands.common import (
+    GLOBAL_OPTIONS,
     GRAPH,
-    JSON_OPTION,
     PROGRAM,
     context,
 )
@@ -59,7 +59,7 @@ def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:
         program=PROGRAM,
         version=__version__,
         surface="app",
-        global_options=(JSON_OPTION, GRAPH),
+        global_options=GLOBAL_OPTIONS,
     )
 
 

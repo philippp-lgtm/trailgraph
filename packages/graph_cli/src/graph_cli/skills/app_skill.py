@@ -129,7 +129,8 @@ Every `--json` call prints one JSON object on stdout.
 
 {commands_table}
 
-Global options:
+Global options, before or after the command (`graph --graph <graph> find`
+equals `graph find --graph <graph>`):
 
 {global_table}
 

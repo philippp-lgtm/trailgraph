@@ -5,7 +5,8 @@ a click usage error (``usage.*``, exit 2) and any other exception
 (``internal.error``, exit 6; a trace on stderr only in debug mode). cli_kit
 reads no environment: the composition root passes JSON mode and debug in
 an ``Invocation``. ``--json`` is honoured anywhere in argv, so even a usage
-error renders as an envelope.
+error renders as an envelope. Global options given before the subcommand
+reach the command as if given after it (``leaf``).
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ class CommandState:
     command: str | None = None
     result: Result | None = None
     warnings: list[WarningRecord] = field(default_factory=list)
+    global_values: dict[str, Any] = field(default_factory=dict)  # option name -> value
 
 
 json_option = click.option(
@@ -57,6 +59,7 @@ def leaf(fn: Callable[..., Result]) -> Callable[..., None]:
         state = ctx.find_object(CommandState)
         assert state is not None, "run() provides the CommandState"
         state.command = _command_name(ctx)
+        _take_global_values(ctx, state, kwargs)
         kwargs.pop("json_mode", None)
         state.result = fn(state, *args, **kwargs)
 
@@ -112,6 +115,22 @@ def run(
         out.write(stdout)
         err.write(stderr)
     return exit_code_for(error.category) if error is not None else EXIT_OK
+
+
+def _take_global_values(ctx: click.Context, state: CommandState, kwargs: dict[str, Any]) -> None:
+    """Hand options given before the subcommand to the command's own parameters."""
+    for option, value in state.global_values.items():
+        param = next((p for p in ctx.command.params if option in p.opts), None)
+        if param is None or param.name is None:
+            raise click.NoSuchOption(option, ctx=ctx)
+        given = kwargs.get(param.name)
+        if isinstance(param, click.Option) and param.multiple:
+            values = tuple(given or ())
+            kwargs[param.name] = values if value in values else (value, *values)
+        elif given is None or given is False:
+            kwargs[param.name] = value
+        elif given != value:
+            raise click.UsageError(f"{option} is given twice with different values.", ctx=ctx)
 
 
 def _command_name(ctx: click.Context) -> str:

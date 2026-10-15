@@ -100,6 +100,11 @@ def test_graph_selection(run_cli: CliRunner, root: Path, tmp_path: Path) -> None
     assert (
         app(run_cli, "describe", "types", "--graph", "alpha").envelope["graph"]["name"] == "alpha"
     )
+    assert (
+        app(run_cli, "--graph", "alpha", "describe", "types").envelope["graph"]["name"] == "alpha"
+    )
+    twice = app(run_cli, "--graph", "alpha", "describe", "types", "--graph", "beta")
+    assert (twice.code, twice.error["code"]) == (2, "usage.invalid_argument")
     here = project(tmp_path)
     outside = app(run_cli, "describe", "types", "--graph", "beta", cwd=here)
     assert (outside.code, outside.error["code"]) == (1, "graph.not_in_project")

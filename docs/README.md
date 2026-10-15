@@ -206,6 +206,13 @@ file lists the graphs a project may use (`graphs`), optionally a `default`
 and a `project` name for the actor; it cannot move the data root. There is
 no implicit default graph.
 
+The global options `--json` and `--graph` may stand before or after the
+command (`graph --graph <graph> find ...` equals `graph find ... --graph
+<graph>`). Given twice with different values is a usage error (a
+repeatable `--graph`, as in `skills install`, collects both), and a
+command that takes no graph (`graphs`, `whoami`) refuses `--graph` in
+either position.
+
 References in arguments are full ids, aliases or 8-32 trailing hex digits of
 an id; change set documents allow full ids, aliases and `@local` names only.
 Writes take `--dry-run`, `--reason`, `--idempotency-key` and, on
