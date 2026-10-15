@@ -188,6 +188,7 @@ document.
 | `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`) |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint |
+| `lookup TEXT` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); ranked candidates, paged |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
@@ -213,11 +214,24 @@ document; `apply --idempotency-key` sets it for input with a single document
 and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
 nothing, audit files included. `--as-of` is reserved and refused.
 
+Names come from label roles in the ontology: an attribute of type `string`
+(or a datatype over it) may carry `role: label` (the main name, single, at
+most one per class), `alt_label` (synonyms, abbreviations) or
+`hidden_label` (searchable, never shown), as in SKOS. `describe` shows the
+role of each field and the JSON Schema export annotates it as
+`x-graph_cli-role`. `lookup` matches normalized text (`kernel.text`: NFKC,
+casefold, whitespace collapsed; never stored) and ranks exact before prefix
+matches, main before alternative before hidden labels, then shorter names;
+a hidden-label match does not echo its value. Labels are not identifiers:
+references stay ids, aliases and `@local` names. Types without label roles
+are `term.no_labels`.
+
 Commands are declared as data in `graph_cli.app_cli.commands`
 (`cli_kit.spec.CommandSpec`); the click tree and the inventory are built from
 the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
-and `neighbors` flags into the query AST; `services.read` and
-`services.describe` answer them.
+and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
+matches and ranks `lookup`; `services.read` and `services.describe` answer
+them.
 
 ## Maintenance CLI
 

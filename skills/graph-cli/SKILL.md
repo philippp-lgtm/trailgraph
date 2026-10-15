@@ -36,7 +36,9 @@ against it and audited. The CLI is on `PATH`.
    `graph describe type <type> --json` for fields, relations and lifecycles.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Follow
-   `page.next_offset` or the hint when `page.truncated` is true.
+   `page.next_offset` or the hint when `page.truncated` is true. To find
+   something by name, `graph lookup <value> --json` lists candidates; pick
+   one and use its returned id, since names are not unique.
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
