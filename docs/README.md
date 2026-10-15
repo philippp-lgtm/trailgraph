@@ -10,10 +10,10 @@ strict split between usage and maintenance:
 
 Status: foundation. The kernel (ids, canonical JSON, registries, ports), the
 ontology layer (schema IR `graph_cli.ir/1`: loader, validator, compiler,
-semver classifier, JSON Schema export), storage (FileStore and InMemoryStore
-behind the storage ports), audit, authorization, the catalog and
-`graph-admin` exist. The application CLI `graph` has no commands beyond
-`--help` and `--version` yet.
+semver classifier, JSON Schema export, data validation), storage (FileStore
+and InMemoryStore behind the storage ports), audit, authorization, the
+catalog, the write pipeline (`WriteService`) and `graph-admin` exist. The
+application CLI `graph` has no commands beyond `--help` and `--version` yet.
 
 ## Repository layout
 
@@ -138,6 +138,36 @@ Locations (XDG; macOS uses the same paths):
 Unknown config or manifest keys are warnings; an unknown `format_version`
 or an invalid value stops the command.
 
+## Write pipeline
+
+Every change to instance data is a change set (`graph_cli.changeset/1`) and
+goes through one path, `graph_cli.services.write.WriteService`; it is the
+only caller of `WriteSession.commit`.
+
+| Module | Content |
+| --- | --- |
+| `kernel.changeset` | change set DTOs, strict parsing (`changeset.malformed` with `details.path`), limits (1000 ops, 8 MiB), the canonical form and its hash, JSON/JSONL input readers |
+| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments |
+| `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
+| `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity) and `check_graph` (every entity, batch rules included) |
+| `ontology_layer.evaluate` | guards and rules of the compiled expression AST |
+| `services.write` | `WriteService.apply` and `apply_batch` |
+
+A write runs in this order: check the graph state and the pinned ontology
+artifact, resolve references, authorize every (action, type) pair, take the
+graph lock, re-check state and pin, replay an idempotent retry, check
+`expect_seq`/`expect_rev`, normalize, validate, append the audit intent,
+commit. Ops apply in order to one working copy, each touched entity gets
+one new revision, and a change set commits completely or not at all.
+Validation reports findings (`data.*`) instead of stopping at the first
+problem; error findings refuse the write (`write.invalid`), warnings ride
+along with the result. Refusals are audited: denials in the installation
+stream, invalid and conflicting writes in the graph's stream. A dry run
+validates against the current state without the lock, without ids and
+without any audit or file change. A JSONL batch commits one document per
+transaction, carries local names to later documents and stops at the first
+failure.
+
 ## Maintenance CLI
 
 `graph-admin` is run from the repository checkout. Every command prints the
@@ -160,7 +190,8 @@ or an invalid value stops the command.
 Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version
 at least as much as the changes require; a new major version on a graph
-with data is refused until migrations exist. Verification reports an
+with data is released only if the data has no error findings under the new
+version (`check_graph`), otherwise the refusal lists them. Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 `cli_kit` (envelope, error rendering, hints) is shared with the application
 CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
@@ -171,10 +202,10 @@ and `graph_cli_admin.services_admin` holds the procedures.
 | Kind | Where | What |
 | --- | --- | --- |
 | unit | `tests/unit/` | modules in isolation |
-| contract | `tests/contract/` | the storage ports on every backend and both toy ontologies |
+| contract | `tests/contract/` | the storage ports and the write service on every backend and both toy ontologies; the seeds |
 | golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts |
-| crash | `tests/crash/` | `kill -9` of a child process at every named fault point; interrupted maintenance operations |
-| concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation |
+| crash | `tests/crash/` | `kill -9` of a child process at every named fault point, for storage commits and for the write service with a retry; interrupted maintenance operations |
+| concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph-admin` as a subprocess: commands, envelopes, exit codes, one scenario per admin code |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
@@ -184,7 +215,9 @@ by default and take a few seconds. Storage tests build transactions with a
 test-only builder (`tests/support/txbuilder.py`) driven by the compiled toy
 ontologies. Storage tests use minimal audit bodies
 (`tests/support/drafts.py`); tests that verify audit streams use real events
-(`tests/support/audit_events.py`).
+(`tests/support/audit_events.py`). Write service tests run on both backends
+through `tests/support/services.py` (an in-memory catalog, a builder with
+test clock and seeded ids, and a factory for valid creates of any class).
 
 ## Development
 
@@ -219,7 +252,10 @@ tests never touch real user config, data or state.
 
 `tests/fixtures/` holds two unrelated toy ontologies (`notes_and_sources`,
 `inventory` with a version series), one broken ontology per `model.*` finding
-code, and role mappings for role-based contract tests (`tests/support/roles.py`).
+code, one broken change set per `data.*` finding code, seed change sets for
+both ontologies (`tests/fixtures/seeds/`, applied through the write
+service), and role mappings for role-based contract tests
+(`tests/support/roles.py`).
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in
