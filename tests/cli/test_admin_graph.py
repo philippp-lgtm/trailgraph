@@ -78,9 +78,9 @@ def test_alias_prefixes_are_seeded_from_display_prefixes(run_cli: CliRunner, roo
 def test_list_and_show(run_cli: CliRunner, root: Path) -> None:
     assert admin(run_cli, "graph", "list").data == {"items": []}
     first = create(run_cli, "zeta")
-    create(run_cli, "alpha", NOTES)
+    create(run_cli, "alpha", NOTES, "--title", "Example notes")
     items = admin(run_cli, "graph", "list").data["items"]
-    assert [i["name"] for i in items] == ["alpha", "zeta"]
+    assert [(i["name"], i["title"]) for i in items] == [("alpha", "Example notes"), ("zeta", None)]
     for ref in ("zeta", str(first["id"])):
         shown = admin(run_cli, "graph", "show", ref)
         assert shown.data["id"] == first["id"]

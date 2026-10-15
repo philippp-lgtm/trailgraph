@@ -129,6 +129,7 @@ def list_graphs(ctx: AdminContext, *, include_archived: bool) -> list[JsonValue]
         {
             "id": str(m.entry.id),
             "name": m.entry.name,
+            "title": m.entry.title,
             "state": m.entry.state,
             "ontology": {"bundle": m.entry.pin.bundle, "version": m.entry.pin.version},
         }
