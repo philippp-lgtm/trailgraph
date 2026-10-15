@@ -431,7 +431,8 @@ class _Differ:
         old_rules = {r.id: r for r in old}
         new_rules = {r.id: r for r in new}
         for rule_id in sorted(old_rules.keys() - new_rules.keys()):
-            self.add(f"rules.{rule_id}", "remove_rule", "major")
+            error = old_rules[rule_id].severity == "error"
+            self.add(f"rules.{rule_id}", "remove_rule", "major" if error else "minor")
         for rule_id in sorted(new_rules.keys() - old_rules.keys()):
             error = new_rules[rule_id].severity == "error"
             self.add(
@@ -450,9 +451,13 @@ class _Differ:
                     "major" if stricter else "minor",
                     **{"from": a.severity, "to": b.severity},
                 )
+            # A rule that ends up a warning blocks nothing and invalidates no data,
+            # so changing what it checks is minor; an error rule's change is major
+            # because looser and stricter cannot be told apart in general.
+            level: ChangeLevel = "major" if b.severity == "error" else "minor"
             if a.when != b.when:
-                self.add(path, "change_timing", "major", **{"from": a.when, "to": b.when})
+                self.add(path, "change_timing", level, **{"from": a.when, "to": b.when})
             if a.target != b.target:
-                self.add(path, "change_target", "major", **{"from": a.target, "to": b.target})
+                self.add(path, "change_target", level, **{"from": a.target, "to": b.target})
             if a.expr != b.expr:
-                self.add(path, "change_expression", "major")
+                self.add(path, "change_expression", level)

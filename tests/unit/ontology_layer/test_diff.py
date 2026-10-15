@@ -147,3 +147,51 @@ def test_rule_table(old: str, new: str, kind: str, level: str) -> None:
     assert report.level == max(
         (c.level for c in report.changes), key=("patch", "minor", "major").index
     )
+
+
+def _rule(severity: str, when: str, then: str) -> str:
+    return (
+        f"rules:\n  - {{id: r1, summary: R., severity: {severity}, when: {when}, "
+        f"scope: Thing, then: [{then}]}}\nrelations:\n"
+    )
+
+
+_CODE = "{attr: code, value_presence: PRESENT}"
+_EITHER = (
+    "{any_of: [{attr: code, value_presence: PRESENT}, {attr: state, value_presence: PRESENT}]}"
+)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        # F8: loosening a warning rule must not force a major release
+        (_rule("warning", "write", _CODE), _rule("warning", "write", _EITHER), "minor"),
+        (_rule("warning", "write", _EITHER), _rule("warning", "write", _CODE), "minor"),
+        (_rule("warning", "write", _CODE), _rule("warning", "batch", _CODE), "minor"),
+        (_rule("warning", "write", _CODE), "relations:\n", "minor"),
+        (_rule("error", "write", _CODE), _rule("error", "write", _EITHER), "major"),
+        (_rule("error", "write", _CODE), _rule("error", "batch", _CODE), "major"),
+        (_rule("error", "write", _CODE), "relations:\n", "major"),
+        (_rule("error", "write", _CODE), _rule("warning", "write", _EITHER), "minor"),
+        (_rule("warning", "write", _CODE), _rule("error", "write", _EITHER), "major"),
+    ],
+    ids=[
+        "warning_loosened",
+        "warning_tightened",
+        "warning_timing",
+        "warning_removed",
+        "error_loosened",
+        "error_timing",
+        "error_removed",
+        "error_to_warning",
+        "warning_to_error",
+    ],
+)
+def test_rule_changes_follow_the_resulting_severity(old: str, new: str, expected: str) -> None:
+    before = model(BODY.replace("relations:\n", old), "1.0.0")
+    after = model(BODY.replace("relations:\n", new), "2.0.0")
+    report = classify(before, after)
+    rule_changes = [c for c in report.changes if c.path == "rules.smp.r1"]
+    assert rule_changes, report.to_json()
+    assert report.level == expected, report.to_json()
