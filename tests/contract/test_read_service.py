@@ -15,6 +15,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.query.lookup import LookupSpec
 from graph_cli.query.plan import FindSpec
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead, ReadService, refuse_as_of
@@ -187,3 +188,79 @@ def test_describe_projections(svc: ServiceEnv, roles: Roles) -> None:
     with pytest.raises(GraphCliError) as info:
         describe.describe_type(view, cls + "x")
     assert info.value.code == "term.unknown" and info.value.details["did_you_mean"]
+
+
+def lookup_ids(reader: ReadService, view: GraphRead, **changes: Any) -> list[str]:
+    data, _ = reader.lookup(view, LookupSpec(**changes))
+    return [item["id"] for item in data["items"]]  # type: ignore[index, union-attr]
+
+
+def first_with(svc: ServiceEnv, attribute: str, *, status: str = "active") -> Any:
+    curie, _, name = attribute.rpartition(".")
+    return next(
+        r
+        for r in svc.all_revisions()
+        if r.record_status == status and r.attrs.get(name) and svc.model.is_a(r.type, curie)
+    )
+
+
+def test_lookup_finds_main_alternative_and_hidden_labels(svc: ServiceEnv, roles: Roles) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    for role_name, role in (
+        ("label_attribute", "label"),
+        ("alt_label_attribute", "alt_label"),
+        ("hidden_label_attribute", "hidden_label"),
+    ):
+        attribute = str(roles.get(role_name))
+        name = attribute.rpartition(".")[2]
+        entity = first_with(svc, attribute)
+        value = entity.attrs[name]
+        text = (value[0] if isinstance(value, list) else value).swapcase()  # case-insensitive
+        data, page = reader.lookup(view, LookupSpec(text=text))
+        (item,) = [i for i in data["items"] if i["id"] == str(entity.id)]  # type: ignore[index, union-attr]
+        assert item["match"]["role"] == role and item["match"]["kind"] == "exact"  # type: ignore[index]
+        assert item["match"]["attr"] == name  # type: ignore[index]
+        shown = None if role == "hidden_label" else text.swapcase()
+        assert item["match"]["value"] == shown  # type: ignore[index]
+        assert item["type"] == entity.type and item["alias"] == entity.alias  # type: ignore[index]
+        assert page.total >= 1
+
+
+def test_lookup_skips_inactive_unless_asked(svc: ServiceEnv, roles: Roles) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    label_type = str(roles.get("label_type"))
+    old = next(
+        r
+        for r in svc.all_revisions()
+        if r.record_status != "active" and view.model.label_attributes(r.type)
+    )
+    attr = view.model.label_attributes(old.type)[0][0]
+    text = str(old.attrs[attr])
+    assert str(old.id) not in lookup_ids(reader, view, text=text)
+    assert str(old.id) in lookup_ids(reader, view, text=text, include_inactive=True)
+    typed, _ = reader.lookup(view, LookupSpec(text=text, types=(label_type,), limit=500))
+    assert all(view.model.is_a(i["type"], label_type) for i in typed["items"])  # type: ignore[index, union-attr]
+
+
+def test_lookup_pages_after_ranking(svc: ServiceEnv, roles: Roles) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    entity = first_with(svc, str(roles.get("label_attribute")))
+    prefix = str(entity.attrs[str(roles.get("label_attribute")).rpartition(".")[2]])[0]
+    every = lookup_ids(reader, view, text=prefix, match="prefix", limit=500)
+    assert str(entity.id) in every
+    data, page = reader.lookup(view, LookupSpec(text=prefix, match="prefix", limit=1, offset=1))
+    assert page.total == len(every) and page.shown == min(1, len(every) - 1)
+    assert [i["id"] for i in data["items"]] == every[1:2]  # type: ignore[index, union-attr]
+
+
+def test_lookup_refuses_types_without_labels(svc: ServiceEnv) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    bare = next(c for c in sorted(view.model.classes) if not view.model.label_attributes(c))
+    with pytest.raises(GraphCliError) as info:
+        reader.lookup(view, LookupSpec(text="x", types=(bare,)))
+    assert info.value.code == "term.no_labels"
+    assert info.value.details == {"types": [bare]}

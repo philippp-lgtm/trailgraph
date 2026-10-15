@@ -1,5 +1,5 @@
-"""Read services: graphs, get, find, neighbors, whoami (contracts §4.3, B2.10, B6.3, B6.12, B8.8,
-B8.12, B8.13, B9.7).
+"""Read services: graphs, get, find, lookup, neighbors, whoami (contracts §4.3, B2.10, B6.3,
+B6.12, B8.8, B8.12, B8.13, B9.7).
 
 Every read authorizes its action before touching storage; a denial is
 appended to the installation stream and raised. Reads write nothing else.
@@ -32,6 +32,7 @@ from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
 from graph_cli.query.plan import FindSpec, plan_find, plan_neighbors
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
@@ -266,6 +267,29 @@ class ReadService:
         page = view.snapshot.query(query)
         data: dict[str, JsonValue] = {"items": [entity_json(r) for r in page.items]}
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
+
+    def lookup(self, view: GraphRead, spec: LookupSpec) -> tuple[dict[str, JsonValue], Page]:
+        """Entities whose labels match, best first; one item per entity, its best match."""
+        plan = plan_lookup(view.model, spec)
+        found = []
+        for revision in view.snapshot.query(plan.query).items:
+            match = match_revision(plan, revision)
+            if match is not None:
+                found.append((rank_key(plan, revision, match), revision, match))
+        found.sort(key=lambda row: row[0])
+        shown = found[plan.offset : plan.offset + plan.limit]
+        items: list[JsonValue] = [
+            {
+                "id": str(revision.id),
+                "alias": revision.alias,
+                "type": revision.type,
+                "record_status": revision.record_status,
+                "label": main_label(plan, revision),
+                "match": match.to_json(),
+            }
+            for _, revision, match in shown
+        ]
+        return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
 
     def neighbors(
         self,
