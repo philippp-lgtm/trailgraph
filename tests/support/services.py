@@ -23,6 +23,7 @@ from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.changeset import ChangeSet, parse_changeset, read_documents
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
@@ -245,7 +246,7 @@ class ServiceEnv:
     def make_files(self, *, origins: Origins | None = None, **config: Any) -> FileService:
         return FileService(catalog=self.catalog, writer=self.service, origins=origins, **config)
 
-    def make_reader(self, policy: Any = None) -> ReadService:
+    def make_reader(self, policy: Any = None, activity: Any = None) -> ReadService:
         return ReadService(
             catalog=self.catalog,
             audit=self.audit,
@@ -253,6 +254,7 @@ class ServiceEnv:
             clock=self.clock,
             ids=self.ids,
             env=ENV,
+            activity=activity or NULL_ACTIVITY,
         )
 
     def apply_seed(self) -> BatchResult:
@@ -359,3 +361,13 @@ def iter_revisions(snapshot: Snapshot) -> Iterator[Any]:
 
 def pin_for(ontology: str, version: str | None = None) -> OntologyPin:
     return pin_of(compiled_model(ontology, version))
+
+
+class RecordingActivity:
+    """An activity sink that keeps every signal: ``(graph id, [entity ids])``."""
+
+    def __init__(self) -> None:
+        self.signals: list[tuple[str, list[str]]] = []
+
+    def reads(self, graph: GraphId, ids: Sequence[EntityId]) -> None:
+        self.signals.append((str(graph), [str(i) for i in ids]))

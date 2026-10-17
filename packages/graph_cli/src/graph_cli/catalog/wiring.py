@@ -20,6 +20,7 @@ from typing import Final
 
 from graph_cli import __version__
 from graph_cli.access_control.policy import BuiltinPolicySource
+from graph_cli.catalog.activity import SocketActivity, activity_dir
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.file_roots import FileRoots
@@ -31,6 +32,7 @@ from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo
 from graph_cli.services.files import FileService
@@ -177,8 +179,17 @@ class AppServices:
             env=env,
             config=WriteConfig(lock_timeout_s=config.lock_timeout_s),
         )
+        activity: ActivitySink = (
+            SocketActivity(activity_dir(roots.state_root)) if config.signal_reads else NULL_ACTIVITY
+        )
         reader = ReadService(
-            catalog=catalog, audit=audit, policy=policy, clock=clock, ids=ids, env=env
+            catalog=catalog,
+            audit=audit,
+            policy=policy,
+            clock=clock,
+            ids=ids,
+            env=env,
+            activity=activity,
         )
         context = AppContext(
             roots=roots,
@@ -194,6 +205,7 @@ class AppServices:
                 reader=reader,
                 origins=FileRoots.from_config(config.file_roots, self.env),
                 max_bytes=config.max_file_bytes,
+                activity=activity,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None,
         )

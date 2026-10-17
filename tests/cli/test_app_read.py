@@ -6,12 +6,14 @@ from pathlib import Path
 
 import pytest
 from harness import CliRunner
+from support.activity import short_dir
 from support.admin import init, write_documents
 from support.app import app, create_graph
 from support.fixtures import FIXTURES, TOY_ONTOLOGIES
 from support.roles import Roles, load_roles
 from support.trees import tree_hash
 
+from graph_cli.catalog.activity import ActivityListener
 from graph_cli.kernel.changeset import read_documents
 
 
@@ -221,3 +223,23 @@ def test_lookup_errors(run_cli: CliRunner, root: Path) -> None:
     assert blank.code == 2
     bad_match = app(run_cli, "lookup", "x", "--match", "contains", env=ENV)
     assert bad_match.code == 2
+
+
+def test_reads_reach_a_listening_view_only_when_enabled(
+    run_cli: CliRunner, root: Path, roles: Roles, isolated_env: dict[str, str]
+) -> None:
+    config = Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    with short_dir() as state:
+        env = {**ENV, "XDG_STATE_HOME": str(state)}
+        listener = ActivityListener.open(state / "graph_cli" / "activity")
+        try:
+            found = app(run_cli, "find", "--type", roles.term("lifecycle_type"), env=env)
+            assert found.code == 0 and listener.receive(0.2) == []  # off by default
+            config.write_text(config.read_text() + "\n[activity]\nsignal_reads = true\n")
+            entity = found.data["items"][0]
+            assert app(run_cli, "get", entity["alias"], env=env).code == 0
+            (event,) = listener.receive(2.0)
+            assert (event.graph, event.ids) == (found.envelope["graph"]["id"], (entity["id"],))
+        finally:
+            listener.close()
+        assert app(run_cli, "get", entity["alias"], env=env).code == 0  # no viewer left

@@ -21,7 +21,8 @@ them. ``FileService.add``:
 
 Reads (``path``, ``check``) are ``read.get`` on the graph and then on
 ``graph:<id>/type:<curie>`` of the file, so a policy can deny file content
-per type. They write nothing; ``check`` hashes the origin files.
+per type. They write nothing; ``check`` hashes the origin files. Both hand
+the ids they return to the activity sink (see ``services.read``).
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet, CreateOp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import TermRef
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, GraphStoreRead, StagedBlob
 from graph_cli.kernel.query_ast import Cmp, Query
@@ -219,12 +221,14 @@ class FileService:
         reader: ReadService | None = None,
         origins: Origins | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
+        activity: ActivitySink = NULL_ACTIVITY,
     ) -> None:
         self._catalog = catalog
         self._writer = writer
         self._reader = reader
         self._origins: Origins = origins if origins is not None else NoOrigins()
         self.max_bytes = max_bytes
+        self._activity = activity
         self._models = ModelCache(catalog)
 
     def add(self, request: FileAddRequest) -> FileAddResult:
@@ -304,6 +308,7 @@ class FileService:
             "path": path,
             "origin": self._origin_json(where),
         }
+        self._activity.reads(view.entry.id, [revision.id])
         return data, warnings
 
     def check(
@@ -354,6 +359,7 @@ class FileService:
                 }
             )
         counts_json: dict[str, JsonValue] = dict(counts)
+        self._activity.reads(view.entry.id, [r.id for r in revisions])
         return {"items": items, "counts": counts_json}, page, warnings
 
     def _file(

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from support.roles import Roles, load_roles
-from support.services import ServiceEnv
+from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
 from graph_cli.kernel.errors import GraphCliError
@@ -276,3 +276,47 @@ def test_lookup_refuses_types_without_labels(svc: ServiceEnv) -> None:
         reader.lookup(view, LookupSpec(text="x", types=(bare,)))
     assert info.value.code == "term.no_labels"
     assert info.value.details == {"types": [bare]}
+
+
+def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None:
+    activity = RecordingActivity()
+    reader = svc.make_reader(activity=activity)
+    view = open_view(svc, reader)
+    graph = str(view.entry.id)
+    entity = next(r for r in svc.all_revisions() if r.record_status == "active")
+    reader.get(view, str(entity.id))
+    data, _, _ = reader.find(view, FindSpec(types=(roles.term("lifecycle_type"),), limit=3))
+    found = [item["id"] for item in data["items"]]  # type: ignore[index, union-attr]
+    labels = [
+        r.attrs[a]
+        for r in svc.all_revisions()
+        if r.record_status == "active"
+        for a, role in view.model.label_attributes(r.type)
+        if role == "label" and isinstance(r.attrs.get(a), str)
+    ]
+    shown = (
+        [lookup_ids(reader, view, text=str(labels[0]))] if labels else []
+    )  # a model may have none
+    rel = roles.term("required_relation")
+    source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
+    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
+    neighbours = [item["entity"]["id"] for item in near["items"]]  # type: ignore[index, union-attr]
+    assert activity.signals == [
+        (graph, [str(entity.id)]),
+        (graph, found),
+        *((graph, ids) for ids in shown),
+        (graph, [str(source.id), *neighbours]),
+    ]
+
+
+def test_failed_and_denied_reads_signal_nothing(svc: ServiceEnv) -> None:
+    activity = RecordingActivity()
+    reader = svc.make_reader(activity=activity)
+    view = open_view(svc, reader)
+    with pytest.raises(GraphCliError):
+        reader.get(view, "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9")
+    with pytest.raises(GraphCliError):
+        reader.neighbors(view, "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9")
+    reader.graphs(svc.actor, REQUEST, allowed=None)
+    reader.whoami(svc.actor)
+    assert activity.signals == []

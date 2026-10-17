@@ -7,7 +7,9 @@ A read takes one lock-free snapshot and answers everything from it, so the
 envelope's ``graph.seq`` names the state that was read. A pinned artifact
 that does not match its hash is read with ``ontology.pin_mismatch_read``,
 an archived graph with ``graph.archived_read``. ``as_of`` is reserved: v1
-refuses it with ``temporal.as_of_unsupported``.
+refuses it with ``temporal.as_of_unsupported``. A successful ``get``,
+``find``, ``lookup`` or ``neighbors`` hands the ids it returns to the
+activity sink (a transient signal for ``graph-admin view``, no log).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TermRef
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot
 from graph_cli.kernel.ports.policy import PolicySource
@@ -125,9 +128,11 @@ class ReadService:
         clock: Clock,
         ids: IdProvider,
         env: EnvInfo,
+        activity: ActivitySink = NULL_ACTIVITY,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
+        self.activity = activity
         self._policy = policy
         self._clock = clock
         self._ids = ids
@@ -247,6 +252,7 @@ class ReadService:
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
         }
+        self.activity.reads(view.entry.id, [entity])
         return data, warnings
 
     def find(
@@ -285,6 +291,7 @@ class ReadService:
         query: Query = plan_find(view.model, spec)
         page = view.snapshot.query(query)
         data: dict[str, JsonValue] = {"items": [entity_json(r) for r in page.items]}
+        self.activity.reads(view.entry.id, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
     def lookup(self, view: GraphRead, spec: LookupSpec) -> tuple[dict[str, JsonValue], Page]:
@@ -308,6 +315,7 @@ class ReadService:
             }
             for _, revision, match in shown
         ]
+        self.activity.reads(view.entry.id, [revision.id for _, revision, _ in shown])
         return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
 
     def neighbors(
@@ -325,14 +333,16 @@ class ReadService:
                 "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(start)}
             )
         query = plan_neighbors(view.model, start, rels=rels, direction=direction, depth=depth)
+        found = view.snapshot.neighbors(query)
         items: list[JsonValue] = [
             {
                 "direction": "out" if edge.target == neighbor else "in",
                 "edge": edge.to_json(),
                 "entity": entity_json(revision),
             }
-            for neighbor, edge, revision in view.snapshot.neighbors(query)
+            for neighbor, edge, revision in found
         ]
+        self.activity.reads(view.entry.id, [start, *(neighbor for neighbor, _, _ in found)])
         return {"start": str(start), "items": items}, list(warnings)
 
     def whoami(self, actor: ActorContext) -> dict[str, JsonValue]:

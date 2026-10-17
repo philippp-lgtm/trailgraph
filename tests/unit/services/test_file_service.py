@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from support.services import ServiceEnv
+from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
 from graph_cli.kernel.canonical import JsonValue, hash_value
@@ -231,3 +231,23 @@ def test_origin_needs_a_root(svc: ServiceEnv, notes: Path, tmp_path: Path) -> No
     assert [w.code for w in result.warnings] == ["file.no_root"]
     skipped = add(files_of(svc, notes), svc, notes, no_origin=True)
     assert skipped.file["origin"] is None and skipped.warnings == ()
+
+
+def test_path_and_check_signal_the_files_they_read(svc: ServiceEnv, notes: Path) -> None:
+    file_id = str(add(files_of(svc, notes), svc, notes).entity["id"])
+    activity = RecordingActivity()
+    reader = svc.make_reader()
+    service = svc.make_files(reader=reader, activity=activity)
+    request = RequestMeta("file check", hash_value({}))
+    view = reader.open(svc.actor, svc.entry, "read.get", request)
+    service.check(view, [], limit=50, offset=0, actor=svc.actor, request=request)
+    service.check(view, ["FILE-0001"], limit=50, offset=0, actor=svc.actor, request=request)
+    graph = str(svc.entry.id)
+    assert activity.signals == [(graph, [file_id]), (graph, [file_id])]
+    if svc.backend == "files":
+        service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+        assert activity.signals[-1] == (graph, [file_id])
+    else:
+        with pytest.raises(GraphCliError):  # file.no_local_path: nothing was read
+            service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+        assert len(activity.signals) == 2
