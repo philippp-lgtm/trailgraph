@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,12 +46,14 @@ from graph_cli.kernel.ports.storage import (
     RecoveryReport,
     RegistrySession,
     Snapshot,
+    StagedBlob,
 )
-from graph_cli.kernel.records import TxRecord, revision_content_hash, revision_to_json
+from graph_cli.kernel.records import BlobInfo, TxRecord, revision_content_hash, revision_to_json
 from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, link_of, seal
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.view import GraphView
+from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import (
     Durability,
     OsSyncer,
@@ -81,6 +86,7 @@ from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
 from graph_cli.storage.finding_codes import (
+    BLOB_MISSING,
     HEAD_INCONSISTENT,
     PIN_MISMATCH,
     REVISION_HASH_MISMATCH,
@@ -280,6 +286,9 @@ class FileMaintenanceSession:
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
         return self._writer().commit(tx, receipt)
 
+    def publish_blob(self, staged: StagedBlob) -> BlobInfo:
+        return self._writer().publish_blob(staged)
+
     # ---- manifest and releases ------------------------------------------
 
     def _check_open(self) -> None:
@@ -383,6 +392,40 @@ class FileMaintenanceSession:
             raise GraphCliError("internal.error", "the maintenance session is closed")
         return sort_findings(Verifier(self._store).run())
 
+    # ---- blobs ---------------------------------------------------------
+
+    def _referenced(self) -> frozenset[str] | None:
+        """Blob hashes named by any tx; ``None`` when the tx log cannot be read whole."""
+        self._check_open()
+        view, damage = replay(self._store)
+        if damage is not None:
+            return None
+        return frozenset(h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs)
+
+    def blobs(self) -> Iterator[BlobInfo]:
+        self._check_open()
+        return blobs.listing(self._store.layout)
+
+    def staging(self) -> Iterator[tuple[str, datetime]]:
+        self._check_open()
+        return blobs.staging(self._store.layout)
+
+    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
+        """Missing, damaged, orphan and staged files; no orphans beyond tx-log damage."""
+        referenced = self._referenced()
+        return sort_findings(blobs.verify(self._store.layout, referenced, rehash_all=rehash))
+
+    def remove_blobs(
+        self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
+    ) -> None:
+        """Refuses a referenced hash; refuses everything when the tx log is damaged."""
+        referenced = self._referenced()
+        if referenced is None:
+            raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
+        self._writer().claim_receipt(receipt)
+        store = self._store
+        blobs.remove(store.layout, hashes, staging, referenced=referenced, syncer=store.syncer)
+
     def reindex(self) -> None:
         """Rebuild ``data/entities/`` and ``head.json`` from the tx log (B4.1).
 
@@ -436,8 +479,21 @@ class Verifier:
         self._revisions(view, materialized_seq, complete=complete)
         if complete:  # beyond damage nothing can be judged; no cascades
             self._head(view, checkpoint)
+        self._blobs(view)
         self._pin()
         return self.findings
+
+    def _blobs(self, view: GraphView) -> None:
+        """Every blob a verified tx names is stored (the full check is ``verify_blobs``)."""
+        layout = self.store.layout
+        referenced = {h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs}
+        try:
+            absent = blobs.missing(layout, referenced)
+        except OSError as exc:
+            raise _unavailable("cannot read the stored files", exc) from exc
+        for digest in absent:
+            target = {"path": blobs.relative(layout, digest)}
+            self.add(BLOB_MISSING, target, "a referenced file is missing")
 
     def _pin(self) -> None:
         """The manifest pins a release whose ``compiled.json`` has the pinned hash (B7.6)."""
@@ -462,27 +518,14 @@ class Verifier:
 
     def _tx_log(self) -> GraphView:
         """Replay the whole log; damage ends the replay with one finding."""
-        result = self.store.txlog.scan()
-        view = GraphView()
-        for record in result.records:
-            try:
-                view.apply(parse_tx(record.document))
-            except (GraphCliError, JsonShapeError) as exc:
-                self.add(
-                    TX_CHAIN_BROKEN,
-                    {"path": f"data/txlog/{record.start.segment}"},
-                    f"tx line has a bad shape: {exc}",
-                    actual={"offset": record.start.offset},
-                )
-                return view
-        if result.corruption is not None:
-            damage = result.corruption
+        view, damage = replay(self.store)
+        if damage is not None:
             self.add(
                 TX_CHAIN_BROKEN,
-                {"path": f"data/txlog/{damage.segment}"},
-                f"the tx log is damaged: {damage.reason}",
-                expected={"seq": damage.expected_seq},
-                actual={"offset": damage.offset},
+                {"path": damage.path},
+                damage.message,
+                expected=damage.expected,
+                actual=damage.actual,
             )
         return view
 
@@ -580,6 +623,38 @@ class Verifier:
             audit_hashes.get(checkpoint.audit_link.seq) != checkpoint.audit_link.hash
         ):
             self.add(HEAD_INCONSISTENT, target, "head.json audit position does not match")
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayDamage:
+    """Where a full replay of the tx log stopped, as a ``tx_chain_broken`` finding."""
+
+    path: str
+    message: str
+    expected: JsonValue
+    actual: JsonValue
+
+
+def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None]:
+    """The whole tx log as a view; the damage that ended the replay, if any."""
+    result = store.txlog.scan()
+    view = GraphView()
+    for record in result.records:
+        try:
+            view.apply(parse_tx(record.document))
+        except (GraphCliError, JsonShapeError) as exc:
+            path = f"data/txlog/{record.start.segment}"
+            message = f"tx line has a bad shape: {exc}"
+            return view, ReplayDamage(path, message, None, {"offset": record.start.offset})
+    if result.corruption is not None:
+        damage = result.corruption
+        return view, ReplayDamage(
+            f"data/txlog/{damage.segment}",
+            f"the tx log is damaged: {damage.reason}",
+            {"seq": damage.expected_seq},
+            {"offset": damage.offset},
+        )
+    return view, None
 
 
 def _check_release(version: str, files: Mapping[str, bytes]) -> None:

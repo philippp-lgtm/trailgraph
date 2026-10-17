@@ -1,4 +1,4 @@
-"""Crash worker: open a FileStore session and commit, dying at a named fault point."""
+"""Crash worker: stage a blob, open a FileStore session and commit, dying at a fault point."""
 
 import os
 import signal
@@ -27,7 +27,13 @@ def main() -> None:
         durability="fsync",
         faults=kill_at,
     )
+    staged = None
+    if "blob_file" in spec:
+        data = Path(spec["blob_file"]).read_bytes()
+        staged = store.stage_blob([data], max_bytes=len(data))
     with store.session(timeout_s=10) as session:
+        if staged is not None:
+            session.publish_blob(staged)
         if "tx" in spec:
             tx = tx_from_payload(spec["tx"])
             receipt = session.append_audit(AuditEventDraft(store.stream, spec["audit"]))

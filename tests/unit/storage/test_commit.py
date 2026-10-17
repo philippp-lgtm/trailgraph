@@ -318,5 +318,27 @@ def test_check_tx_needs_the_view_at_head(log: MemLog) -> None:
     draft = log.draft()
     draft.create()
     with pytest.raises(GraphCliError) as info:
-        check_tx(draft.build(), graph_id=log.graph_id, head=log.head, view=log.at(0))
+        check_tx(
+            draft.build(),
+            graph_id=log.graph_id,
+            head=log.head,
+            view=log.at(0),
+            blob_exists=log.blobs.__contains__,
+        )
     assert info.value.details["rule"] == "view_seq"
+
+
+def test_listed_blobs_must_be_stored_sorted_and_unique(log: MemLog) -> None:
+    _seeded(log)
+    first, second = "sha256:" + "1" * 64, "sha256:" + "2" * 64
+    draft = log.draft()
+    draft.create()
+    tx = draft.build()
+    for blobs in ((second, first), (first, first), (first,), ("sha256:" + "A" * 64,)):
+        with pytest.raises(GraphCliError) as info:
+            log.check(replace(tx, blobs=blobs))
+        assert info.value.details["rule"] == "blobs", blobs
+    log.blobs.update({first, second})
+    record = log.commit(replace(tx, blobs=(first, second)))
+    assert record.blobs == (first, second)
+    assert b'"blobs":["sha256:' in log.lines[-1]

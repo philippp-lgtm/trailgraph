@@ -36,6 +36,7 @@ def tx_payload(tx: AuthorizedTx) -> dict[str, JsonValue]:
         alias_allocations=tx.alias_allocations,
         prev_hash="",
         hash="",
+        blobs=tx.blobs,
     )
     return tx_to_json(record)
 
@@ -65,6 +66,7 @@ def tx_from_payload(data: Mapping[str, JsonValue]) -> AuthorizedTx:
         reason=record.reason,
         idempotency_key=record.idempotency_key,
         request=record.request,
+        blobs=record.blobs,
     )
 
 
@@ -75,11 +77,17 @@ def run_child(
     *,
     tx: AuthorizedTx | None = None,
     audit_body: Mapping[str, JsonValue] | None = None,
+    blob_file: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run one commit (or, without ``tx``, one empty session) and return the outcome."""
+    """Run one commit (or, without ``tx``, one empty session) and return the outcome.
+
+    With ``blob_file`` the child stages that file before the lock and publishes it
+    under the lock before the intent (W.11b)."""
     args: dict[str, Any] = {"graph_dir": str(graph_dir), "graph_id": graph_id, "point": point}
     if tx is not None:
         args.update(tx=tx_payload(tx), audit=dict(audit_body or {}))
+    if blob_file is not None:
+        args["blob_file"] = str(blob_file)
     proc = spawn("crash", args)
     out, err = proc.communicate(timeout=60)
     return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)

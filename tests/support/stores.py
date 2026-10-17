@@ -8,8 +8,8 @@ knows how a backend is built.
 import fcntl
 import os
 import sys
-from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from graph_cli.kernel.authz import AuthorizedTx
@@ -130,6 +130,23 @@ class StoreEnv:
             )
             edit(draft)
             tx = draft.build(idempotency_key=idempotency_key, principal=principal, reason=reason)
+            receipt = session.append_audit(self.intent(tx, session.snapshot()))
+            return tx, session.commit(tx, receipt)
+
+    def write_blobs(
+        self, edit: Callable[[TxDraft], object], contents: Sequence[bytes]
+    ) -> tuple[AuthorizedTx, CommitResult]:
+        """Like ``write``, with ``contents`` staged before the lock, published under it and
+        listed in the tx (W.11b)."""
+        staged = [self.store.stage_blob([data], max_bytes=len(data)) for data in contents]
+        with self.store.session(timeout_s=5) as session:
+            draft = self.builder.begin(
+                snapshot_state(session.snapshot()), session.head(), session.alias_counters()
+            )
+            edit(draft)
+            for blob in staged:
+                session.publish_blob(blob)
+            tx = replace(draft.build(), blobs=tuple(sorted({b.hash for b in staged})))
             receipt = session.append_audit(self.intent(tx, session.snapshot()))
             return tx, session.commit(tx, receipt)
 

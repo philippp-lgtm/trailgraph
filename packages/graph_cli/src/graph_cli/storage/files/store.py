@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +30,7 @@ from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, graph_stream
 from graph_cli.kernel.ports.storage import (
+    CAPABILITY_BLOB_LOCAL_PATH,
     CAPABILITY_SNAPSHOT_AT_SEQ,
     EMPTY_HEAD,
     CommitResult,
@@ -37,11 +38,13 @@ from graph_cli.kernel.ports.storage import (
     GraphStoreWrite,
     Head,
     Snapshot,
+    StagedBlob,
     WriteSession,
 )
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.query_eval import run_neighbors, run_query
 from graph_cli.kernel.records import (
+    BlobInfo,
     EdgeRecord,
     Revision,
     RevisionMeta,
@@ -57,6 +60,7 @@ from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.snapshot import ViewSnapshot, resolve_at_seq
 from graph_cli.storage.common.view import GraphView, ViewAt
+from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Durability, OsSyncer, Syncer, ensure_dir, write_temp
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.layout import (
@@ -196,10 +200,19 @@ class FileStore:
     # ---- read port -----------------------------------------------------
 
     def capabilities(self) -> frozenset[str]:
-        return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ})
+        return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ, CAPABILITY_BLOB_LOCAL_PATH})
 
     def head(self) -> Head:
         return self.read_state().head
+
+    def blob(self, digest: str) -> BlobInfo | None:
+        return blobs.info(self.layout, digest)
+
+    def read_blob(self, digest: str) -> Iterator[bytes]:
+        return blobs.read(self.layout, digest)
+
+    def blob_local_path(self, digest: str) -> Path | None:
+        return blobs.local_path(self.layout, digest)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
         state = self.read_state()
@@ -223,6 +236,13 @@ class FileStore:
                 session.close()
         finally:
             lock.release()
+
+    def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> blobs.FileStagedBlob:
+        """KB0: hashed into ``blobs/.tmp-*`` without the lock (an in-flight add)."""
+        self._require_layout()
+        return blobs.stage(
+            self.layout, chunks, max_bytes=max_bytes, syncer=self.syncer, faults=self.faults
+        )
 
     # ---- shared internals ----------------------------------------------
 
@@ -512,6 +532,13 @@ class FileSession:
         )
         self._used.add(receipt.event_id)
 
+    # ---- blobs ---------------------------------------------------------
+
+    def publish_blob(self, staged: StagedBlob) -> BlobInfo:
+        self._check_usable()
+        store = self._store
+        return blobs.publish(store.layout, staged, syncer=store.syncer, faults=store.faults)
+
     # ---- commit --------------------------------------------------------
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
@@ -524,7 +551,13 @@ class FileSession:
             session_token=self._token,
             used_events=self._used,
         )
-        check_tx(tx, graph_id=store.graph_id, head=self._head, view=self._view())
+        check_tx(
+            tx,
+            graph_id=store.graph_id,
+            head=self._head,
+            view=self._view(),
+            blob_exists=lambda digest: blobs.info(store.layout, digest) is not None,
+        )
         record, line = seal_tx(tx, self._end)
         pending: PendingAppend | None = None
         try:

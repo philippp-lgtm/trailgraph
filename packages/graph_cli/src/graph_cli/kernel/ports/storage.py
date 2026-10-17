@@ -1,15 +1,18 @@
 """Storage ports: read, write session and maintenance (contracts section 2, B4, B13).
 
 Payloads are kernel types only; no paths, SQL or backend types cross the port.
+The one exception is ``blob_local_path`` behind the capability of the same
+name (B13.2): a local backend hands out the read-only path of a stored file.
 ``GraphStoreMaintenance`` implementations are imported only by graph_cli_admin.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 from graph_cli.kernel.authz import AuthorizedTx
@@ -20,9 +23,10 @@ from graph_cli.kernel.ids import EntityId, GraphId, TermRef, TxId
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
-from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta, TxRecord
+from graph_cli.kernel.records import BlobInfo, EdgeRecord, Revision, RevisionMeta, TxRecord
 
 CAPABILITY_SNAPSHOT_AT_SEQ = "snapshot_at_seq"
+CAPABILITY_BLOB_LOCAL_PATH = "blob_local_path"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +88,23 @@ class Snapshot(Protocol):
     def neighbors(self, q: NeighborQuery) -> Sequence[tuple[EntityId, EdgeRecord, Revision]]: ...
 
 
+class StagedBlob(Protocol):
+    """Bytes hashed and held by a backend before the lock; published by a write session.
+
+    Opaque to callers: a synced staging file (FileStore) or bytes (memory).
+    """
+
+    @property
+    def hash(self) -> str: ...
+
+    @property
+    def size(self) -> int: ...
+
+    def discard(self) -> None:
+        """Drop the staged bytes; idempotent, and a no-op after a publish."""
+        ...
+
+
 class GraphStoreRead(Protocol):
     def capabilities(self) -> frozenset[str]: ...
 
@@ -94,6 +115,18 @@ class GraphStoreRead(Protocol):
         ...
 
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]: ...
+
+    def blob(self, digest: str) -> BlobInfo | None:
+        """The stored blob with this hash, lock-free; ``None`` when absent."""
+        ...
+
+    def read_blob(self, digest: str) -> Iterator[bytes]:
+        """The stored bytes in chunks; ``backend.corrupt`` when the blob is absent."""
+        ...
+
+    def blob_local_path(self, digest: str) -> Path | None:
+        """Capability ``blob_local_path``: the read-only file of a stored blob."""
+        ...
 
 
 class WriteSession(Protocol):
@@ -115,9 +148,20 @@ class WriteSession(Protocol):
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult: ...
 
+    def publish_blob(self, staged: StagedBlob) -> BlobInfo:
+        """Store a staged blob under its hash, durable on return (W.11b).
+
+        A blob already stored is kept as it is; the staged copy is discarded.
+        """
+        ...
+
 
 class GraphStoreWrite(Protocol):
     def session(self, *, timeout_s: float) -> AbstractContextManager[WriteSession]: ...
+
+    def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> StagedBlob:
+        """Hash and hold ``chunks`` without the lock; ``file.too_large`` beyond ``max_bytes``."""
+        ...
 
 
 class MaintenanceSession(WriteSession, Protocol):
@@ -158,6 +202,24 @@ class MaintenanceSession(WriteSession, Protocol):
         ...
 
     def reindex(self) -> None: ...
+
+    def blobs(self) -> Iterator[BlobInfo]:
+        """Every stored blob, in hash order."""
+        ...
+
+    def staging(self) -> Iterator[tuple[str, datetime]]:
+        """Blob staging leftovers: ``(name, last modified)``."""
+        ...
+
+    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
+        """``integrity.storage.blob_*`` findings; ``rehash`` reads every stored blob."""
+        ...
+
+    def remove_blobs(
+        self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
+    ) -> None:
+        """Delete unreferenced blobs and staging leftovers; ``receipt`` is the intent (W.e)."""
+        ...
 
 
 class RegistrySession(Protocol):

@@ -40,6 +40,7 @@ class MemLog:
     view: GraphView = field(default_factory=GraphView)
     head: Head = EMPTY_HEAD
     lines: list[bytes] = field(default_factory=list)
+    blobs: set[str] = field(default_factory=set)  # stored blob hashes
 
     def __post_init__(self) -> None:
         clock = StepClock()
@@ -57,7 +58,13 @@ class MemLog:
         return self.builder.begin(view_state(at), self.head, at.alias_counters())
 
     def check(self, tx: AuthorizedTx) -> None:
-        check_tx(tx, graph_id=self.graph_id, head=self.head, view=self.view.at())
+        check_tx(
+            tx,
+            graph_id=self.graph_id,
+            head=self.head,
+            view=self.view.at(),
+            blob_exists=self.blobs.__contains__,
+        )
 
     def commit(self, tx: AuthorizedTx) -> TxRecord:
         self.check(tx)

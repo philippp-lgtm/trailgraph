@@ -137,6 +137,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "skills.source_missing": _publish,
     "skills.source_invalid": None,
     "skills.check_failed": _refresh,
+    "file.too_large": None,
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}

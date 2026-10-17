@@ -9,11 +9,11 @@ are checked here.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Set
+from collections.abc import Callable, Mapping, Set
 from dataclasses import replace
 
 from graph_cli.kernel.authz import AuthorizedTx
-from graph_cli.kernel.canonical import CanonicalError, JsonValue
+from graph_cli.kernel.canonical import HASH_RE, CanonicalError, JsonValue
 from graph_cli.kernel.changeset import OP_ACTIONS
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import ALIAS_RE, EntityId, EventId, GraphId
@@ -58,7 +58,14 @@ def check_receipt(
         raise _violation("receipt_reused", "the audit receipt was already used")
 
 
-def check_tx(tx: AuthorizedTx, *, graph_id: GraphId, head: Head, view: ViewAt) -> None:
+def check_tx(
+    tx: AuthorizedTx,
+    *,
+    graph_id: GraphId,
+    head: Head,
+    view: ViewAt,
+    blob_exists: Callable[[str], bool],
+) -> None:
     """Structural preconditions of a commit against the state at ``head`` (D6)."""
     if tx.graph_id != graph_id:
         raise _violation("graph_id", "the tx is for another graph")
@@ -86,6 +93,18 @@ def check_tx(tx: AuthorizedTx, *, graph_id: GraphId, head: Head, view: ViewAt) -
                     target=str(edge.target),
                 )
     _check_aliases(tx, touched, view)
+    _check_blobs(tx, blob_exists)
+
+
+def _check_blobs(tx: AuthorizedTx, blob_exists: Callable[[str], bool]) -> None:
+    """Every listed blob is stored before the commit; the list is sorted and unique."""
+    if list(tx.blobs) != sorted(set(tx.blobs)):
+        raise _violation("blobs", "the blob list is not sorted and unique")
+    for digest in tx.blobs:
+        if not HASH_RE.match(digest):
+            raise _violation("blobs", "a blob hash is not sha256:<hex>", blob=digest)
+        if not blob_exists(digest):
+            raise _violation("blobs", "a listed blob is not stored", blob=digest)
 
 
 def _check_decisions(tx: AuthorizedTx) -> None:
@@ -176,6 +195,7 @@ def seal_tx(tx: AuthorizedTx, prev: ChainLink) -> tuple[TxRecord, bytes]:
         alias_allocations=tx.alias_allocations,
         prev_hash=prev.hash,
         hash="",
+        blobs=tx.blobs,
     )
     body = {k: v for k, v in tx_to_json(record).items() if k not in CHAIN_KEYS}
     try:

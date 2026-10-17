@@ -24,6 +24,10 @@ class CrashPoint(StrEnum):
     MATERIALIZE_BEFORE_DIR_SYNC = "materialize.before_dir_sync"
     HEAD_BEFORE_RENAME = "head.before_rename"
     HEAD_AFTER_RENAME = "head.after_rename"
+    # Section 4.1 windows KB0-KB2: a blob of the request, staged before the lock.
+    BLOB_AFTER_STAGE = "blob.after_stage"
+    BLOB_BEFORE_RENAME = "blob.before_rename"
+    BLOB_AFTER_RENAME = "blob.after_rename"
     # Recovery must be idempotent when it is itself interrupted.
     RECOVERY_AFTER_TRUNCATE = "recovery.after_truncate"
     RECOVERY_AFTER_MATERIALIZE = "recovery.after_materialize"

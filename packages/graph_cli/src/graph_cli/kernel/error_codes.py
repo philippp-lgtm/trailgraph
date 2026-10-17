@@ -86,6 +86,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("skills.source_missing", _C.NOT_FOUND, False, "The graph has no published skill."),
     ErrorSpec("skills.source_invalid", _C.INVALID, False, "The published skill is invalid."),
     ErrorSpec("skills.check_failed", _C.INVALID, False, "Installed skills are not up to date."),
+    ErrorSpec("file.too_large", _C.REFUSED, False, "The file exceeds the size limit."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),

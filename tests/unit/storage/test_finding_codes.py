@@ -12,7 +12,8 @@ def test_codes_follow_the_grammar_and_are_unique() -> None:
         assert FINDING_CODE_RE.match(spec.code)
         assert spec.code.startswith("integrity.storage.")
         assert (spec.when, spec.fixture) == ("verify", "tamper")
-        assert spec.default_severity is Severity.ERROR
+        info = spec.code in (finding_codes.BLOB_ORPHAN, finding_codes.BLOB_STAGING_LEFTOVER)
+        assert spec.default_severity is (Severity.INFO if info else Severity.ERROR)
 
 
 def test_constants_name_registered_codes() -> None:
@@ -36,6 +37,9 @@ def test_crash_points_cover_the_contract_table() -> None:
         "materialize.before_dir_sync",
         "head.before_rename",
         "head.after_rename",
+        "blob.after_stage",
+        "blob.before_rename",
+        "blob.after_rename",
     }
     assert {p.value for p in CrashPoint} - {
         p.value for p in EXTRA_POINTS | MAINT_POINTS

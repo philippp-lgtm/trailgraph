@@ -86,6 +86,16 @@ class GraphLayout:
     def audit(self) -> Path:
         return self.root / "audit"
 
+    @property
+    def blobs(self) -> Path:
+        """Stored file bytes by hash; created on first use, never reserved empty."""
+        return self.root / "blobs"
+
+    def blob_path(self, digest: str) -> Path:
+        """``blobs/sha256/<first 2 hex>/<64 hex>`` for a C.2 hash string."""
+        algorithm, _, hex_digest = digest.partition(":")
+        return self.blobs / algorithm / hex_digest[:2] / hex_digest
+
     def entity_dir(self, entity: EntityId) -> Path:
         """Sharded by the last two hex chars, which are random (L.1)."""
         return self.entities / entity.hex[-2:] / str(entity)

@@ -13,12 +13,13 @@ from typing import Final, Literal
 from uuid import UUID
 
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
+from graph_cli.kernel.canonical import HASH_RE, JsonObject, JsonValue, hash_value
 from graph_cli.kernel.clock import format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import EMPTY, GraphCliError
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, TermRef, TxId, parse_id
 from graph_cli.kernel.json_access import (
     JsonShapeError,
+    as_list,
     as_object,
     opt_int,
     opt_obj,
@@ -277,6 +278,15 @@ class TxRecord:
     alias_allocations: tuple[tuple[EntityId, str], ...]
     prev_hash: str
     hash: str
+    blobs: tuple[str, ...] = ()  # hashes of the blobs its revisions reference, sorted
+
+
+@dataclass(frozen=True, slots=True)
+class BlobInfo:
+    """A stored blob: its C.2 hash string and size in bytes."""
+
+    hash: str
+    size: int
 
 
 def tx_to_json(tx: TxRecord) -> dict[str, JsonValue]:
@@ -304,6 +314,8 @@ def tx_to_json(tx: TxRecord) -> dict[str, JsonValue]:
         data["reason"] = tx.reason
     if tx.idempotency_key is not None:
         data["idempotency_key"] = tx.idempotency_key
+    if tx.blobs:  # additive in graph_cli.tx/1: omitted when empty, older bytes unchanged
+        data["blobs"] = list(tx.blobs)
     return data
 
 
@@ -338,7 +350,21 @@ def tx_from_json(data: JsonObject) -> TxRecord:
         alias_allocations=tuple(allocations),
         prev_hash=req_str(data, "prev_hash"),
         hash=req_str(data, "hash"),
+        blobs=_blobs(data),
     )
+
+
+def _blobs(data: JsonObject) -> tuple[str, ...]:
+    value = data.get("blobs")
+    if value is None:
+        return ()
+    items = as_list(value, "blobs")
+    blobs = []
+    for i, item in enumerate(items):
+        if not isinstance(item, str) or not HASH_RE.match(item):
+            raise JsonShapeError(f"blobs[{i}]: not a sha256 hash string")
+        blobs.append(item)
+    return tuple(blobs)
 
 
 def _check_schema(data: JsonObject, expected: str, path: str) -> None:

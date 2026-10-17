@@ -3,6 +3,7 @@
 Contracts B4.1, B13.1, R.6, section 4.2; plan D9, D10.
 """
 
+import hashlib
 import json
 import shutil
 from collections.abc import Callable
@@ -15,23 +16,58 @@ from support.stores import StoreEnv, snapshot_state
 from support.trees import tree_hash
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.ids import EventId, GraphId
+from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.storage import finding_codes
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.store import FileStore
+
+CONTENT = b"synthetic stored bytes\n"
 
 
 def setup(tmp_path: Path) -> tuple[StoreEnv, FileStore, FileStoreMaintenance]:
     env = StoreEnv("files", "inventory", tmp_path, seed=5)
     env.random(12)
+    env.write_blobs(lambda d: d.create(), [CONTENT])
     assert isinstance(env.store, FileStore)
     publish_ontology(env.store.layout.root, env.graph_id, "inventory", env.syncer)
     return env, env.store, FileStoreMaintenance(tmp_path, syncer=env.syncer)
 
 
 def verify(maintenance: FileStoreMaintenance, graph: GraphId) -> list[str]:
+    """Storage ``verify`` plus the full blob check, each code once."""
     with maintenance.maintenance_session(graph, timeout_s=5) as session:
-        return [f.code for f in session.verify()]
+        codes = [f.code for f in session.verify()]
+        extra = [f.code for f in session.verify_blobs(rehash=True)]
+    return [*codes, *(c for c in dict.fromkeys(extra) if c not in codes)]
+
+
+def stored_blob(store: FileStore) -> Path:
+    (path,) = store.layout.blobs.glob("sha256/*/*")
+    return path
+
+
+def delete_blob(store: FileStore) -> None:
+    stored_blob(store).unlink()
+
+
+def flip_blob_byte(store: FileStore) -> None:
+    path = stored_blob(store)
+    path.chmod(0o644)
+    data = bytearray(path.read_bytes())
+    data[0] ^= 0x01
+    path.write_bytes(bytes(data))
+
+
+def add_orphan_blob(store: FileStore) -> None:
+    data = b"bytes no tx names\n"
+    path = store.layout.blob_path("sha256:" + hashlib.sha256(data).hexdigest())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def add_staging_leftover(store: FileStore) -> None:
+    (store.layout.blobs / ".tmp-leftover").write_bytes(CONTENT)
 
 
 def revision_files(store: FileStore) -> list[Path]:
@@ -85,6 +121,10 @@ SCENARIOS: dict[str, Callable[[FileStore], None]] = {
     finding_codes.REVISION_UNEXPECTED: add_revision_file,
     finding_codes.HEAD_INCONSISTENT: edit_head,
     finding_codes.PIN_MISMATCH: edit_pinned_release,
+    finding_codes.BLOB_MISSING: delete_blob,
+    finding_codes.BLOB_HASH_MISMATCH: flip_blob_byte,
+    finding_codes.BLOB_ORPHAN: add_orphan_blob,
+    finding_codes.BLOB_STAGING_LEFTOVER: add_staging_leftover,
 }
 
 
@@ -231,3 +271,36 @@ def test_unknown_graph_is_unavailable(tmp_path: Path) -> None:
         pass
     assert info.value.code == "backend.unavailable"
     assert not (tmp_path / "graphs" / str(other)).exists()
+
+
+def test_only_rehash_reads_the_stored_bytes(tmp_path: Path) -> None:
+    env, store, maintenance = setup(tmp_path)
+    flip_blob_byte(store)
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        assert session.verify() == []
+        assert session.verify_blobs(rehash=False) == []
+        (finding,) = session.verify_blobs(rehash=True)
+    assert finding.code == finding_codes.BLOB_HASH_MISMATCH
+    assert finding.target == {"path": str(stored_blob(store).relative_to(store.layout.root))}
+    assert finding.expected == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
+
+
+def test_storage_verify_reports_a_missing_blob(tmp_path: Path) -> None:
+    """``verify`` (and so ``audit verify``) sees a missing referenced blob, not the rest."""
+    env, store, maintenance = setup(tmp_path)
+    delete_blob(store)
+    add_staging_leftover(store)
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        assert [f.code for f in session.verify()] == [finding_codes.BLOB_MISSING]
+
+
+def test_blob_findings_beyond_damage_name_no_orphans(tmp_path: Path) -> None:
+    env, store, maintenance = setup(tmp_path)
+    edit_interior_tx_line(store)
+    add_orphan_blob(store)
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        assert session.verify_blobs(rehash=False) == []
+        unused = AuditReceipt(store.stream, EventId(env.ids.new_id()), 1, "", object())
+        with pytest.raises(GraphCliError) as info:
+            session.remove_blobs([], [], unused)
+    assert info.value.code == "backend.corrupt"

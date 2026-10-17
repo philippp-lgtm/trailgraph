@@ -17,7 +17,8 @@ from graph_cli.storage.common.view import GraphView
 
 def test_empty_store(env: StoreEnv) -> None:
     store = env.store
-    assert store.capabilities() == frozenset({"snapshot_at_seq"})
+    expected = {"snapshot_at_seq"} | ({"blob_local_path"} if env.backend == "files" else set())
+    assert store.capabilities() == expected
     assert store.head() == EMPTY_HEAD
     snapshot = store.snapshot()
     assert snapshot.seq == 0

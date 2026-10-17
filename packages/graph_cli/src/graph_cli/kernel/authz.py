@@ -82,6 +82,7 @@ class AuthorizedTx:
     reason: str | None
     idempotency_key: str | None
     request: RequestMeta
+    blobs: tuple[str, ...] = ()  # sorted hashes of every blob value in ``revisions``
 
     def allowed_actions(self) -> frozenset[Action]:
         return frozenset(d.action for d in self.decisions if d.effect == "allow")

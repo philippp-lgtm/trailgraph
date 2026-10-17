@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from graph_cli.kernel.authz import AuthorizedTx
@@ -19,9 +21,10 @@ from graph_cli.kernel.ports.storage import (
     GraphStoreWrite,
     Head,
     Snapshot,
+    StagedBlob,
     WriteSession,
 )
-from graph_cli.kernel.records import TxRecord
+from graph_cli.kernel.records import BlobInfo, TxRecord
 from graph_cli.storage.common.chain import ChainLink
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
@@ -47,6 +50,7 @@ class InMemoryStore:
         self._view = GraphView()
         self._head = EMPTY_HEAD
         self._lock = threading.Lock()
+        self._blobs: dict[str, bytes] = {}
 
     # ---- read port -----------------------------------------------------
 
@@ -61,6 +65,36 @@ class InMemoryStore:
 
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]:
         return self._view.at(self._head.seq).txs_since(seq, limit=limit)
+
+    def blob(self, digest: str) -> BlobInfo | None:
+        data = self._blobs.get(digest)
+        return BlobInfo(digest, len(data)) if data is not None else None
+
+    def read_blob(self, digest: str) -> Iterator[bytes]:
+        data = self._blobs.get(digest)
+        if data is None:
+            raise GraphCliError(
+                "backend.corrupt", "a stored file is missing", details={"blob": digest}
+            )
+        return iter((data,))
+
+    def blob_local_path(self, digest: str) -> Path | None:
+        return None  # no capability blob_local_path: the bytes live in memory
+
+    def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> MemoryStagedBlob:
+        parts: list[bytes] = []
+        size = 0
+        for chunk in chunks:
+            size += len(chunk)
+            if size > max_bytes:
+                raise GraphCliError(
+                    "file.too_large",
+                    f"the file is larger than {max_bytes} bytes",
+                    details={"max_bytes": max_bytes},
+                )
+            parts.append(chunk)
+        fire(self._faults, CrashPoint.BLOB_AFTER_STAGE)
+        return MemoryStagedBlob(b"".join(parts), self)
 
     # ---- write port ----------------------------------------------------
 
@@ -82,6 +116,19 @@ class InMemoryStore:
     def _apply(self, record: TxRecord) -> None:
         self._view.apply(record)
         self._head = Head(record.seq, record.tx_id, record.hash, record.recorded_at)
+
+
+class MemoryStagedBlob:
+    """Staged bytes of one ``InMemoryStore``."""
+
+    def __init__(self, data: bytes, store: InMemoryStore) -> None:
+        self.data: bytes | None = data
+        self.store = store
+        self.hash = "sha256:" + hashlib.sha256(data).hexdigest()
+        self.size = len(data)
+
+    def discard(self) -> None:
+        self.data = None
 
 
 class MemorySession:
@@ -122,6 +169,23 @@ class MemorySession:
         store = self._store
         return store.audit.append(store._stream, event, session_token=self._token)
 
+    def publish_blob(self, staged: StagedBlob) -> BlobInfo:
+        self._check_open()
+        store = self._store
+        if not isinstance(staged, MemoryStagedBlob) or staged.store is not store:
+            raise GraphCliError("internal.error", "the staged blob is not from this store")
+        if staged.hash not in store._blobs:
+            if staged.data is None:
+                raise GraphCliError("internal.error", "the staged blob was discarded")
+            try:
+                fire(store._faults, CrashPoint.BLOB_BEFORE_RENAME)
+            except OSError as exc:
+                raise GraphCliError("backend.unavailable", f"cannot store the file: {exc}") from exc
+            store._blobs[staged.hash] = staged.data
+            fire(store._faults, CrashPoint.BLOB_AFTER_RENAME)
+        staged.discard()
+        return BlobInfo(staged.hash, staged.size)
+
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
         self._check_open()
         store = self._store
@@ -133,7 +197,13 @@ class MemorySession:
             session_token=self._token,
             used_events=self._used,
         )
-        check_tx(tx, graph_id=store.graph_id, head=head, view=store._view.at(head.seq))
+        check_tx(
+            tx,
+            graph_id=store.graph_id,
+            head=head,
+            view=store._view.at(head.seq),
+            blob_exists=store._blobs.__contains__,
+        )
         record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))
         try:
             fire(store._faults, CrashPoint.TX_BEFORE_WRITE)
