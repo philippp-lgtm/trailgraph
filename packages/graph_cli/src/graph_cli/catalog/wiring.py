@@ -22,6 +22,7 @@ from graph_cli import __version__
 from graph_cli.access_control.policy import BuiltinPolicySource
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
+from graph_cli.catalog.file_roots import FileRoots
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, select_graph
@@ -32,6 +33,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo
+from graph_cli.services.files import FileService
 from graph_cli.services.read import ReadService
 from graph_cli.services.write import WriteConfig, WriteService
 from graph_cli.storage.files.audit_log import FileAuditLog
@@ -74,6 +76,7 @@ class AppContext:
     catalog: FileCatalog
     reader: ReadService
     writer: WriteService
+    files: FileService
     graph_env: str | None
 
     def select(self, flag: str | None) -> GraphEntry:
@@ -165,23 +168,31 @@ class AppServices:
         )
         policy = BuiltinPolicySource()
         env = EnvInfo(str(roots.data_root) if config.record_data_root else None, roots.root_source)
+        writer = WriteService(
+            catalog=catalog,
+            audit=audit,
+            policy=policy,
+            clock=clock,
+            ids=ids,
+            env=env,
+            config=WriteConfig(lock_timeout_s=config.lock_timeout_s),
+        )
+        reader = ReadService(
+            catalog=catalog, audit=audit, policy=policy, clock=clock, ids=ids, env=env
+        )
         context = AppContext(
             roots=roots,
             config=config,
             pointer=pointer,
             actor=actor,
             catalog=catalog,
-            reader=ReadService(
-                catalog=catalog, audit=audit, policy=policy, clock=clock, ids=ids, env=env
-            ),
-            writer=WriteService(
+            reader=reader,
+            writer=writer,
+            files=FileService(
                 catalog=catalog,
-                audit=audit,
-                policy=policy,
-                clock=clock,
-                ids=ids,
-                env=env,
-                config=WriteConfig(lock_timeout_s=config.lock_timeout_s),
+                writer=writer,
+                origins=FileRoots.from_config(config.file_roots, self.env),
+                max_bytes=config.max_file_bytes,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None,
         )

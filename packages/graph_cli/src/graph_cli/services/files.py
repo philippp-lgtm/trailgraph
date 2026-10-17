@@ -48,7 +48,6 @@ from graph_cli.services.write import WriteRequest, WriteResult, WriteService
 FILE_TYPE: Final = "files:File"
 MEDIA_TYPE_DATATYPE: Final = "files:MediaType"
 DEFAULT_MAX_BYTES: Final = 100 * 1024 * 1024
-MAX_MAX_BYTES: Final = 1024 * 1024 * 1024
 CHUNK_BYTES: Final = 1024 * 1024
 _ACTIVE: Final = frozenset({"active"})
 
@@ -60,12 +59,23 @@ class Origins(Protocol):
         """``{root, path}`` of an absolute, resolved path; ``None`` outside every root."""
         ...
 
+    def resolve(self, origin: Mapping[str, JsonValue]) -> Path:
+        """The origin's path on this machine; ``file.root_unknown`` if its root is not set."""
+        ...
+
 
 class NoOrigins:
     """No roots configured."""
 
     def origin_of(self, path: Path) -> dict[str, JsonValue] | None:
         return None
+
+    def resolve(self, origin: Mapping[str, JsonValue]) -> Path:
+        raise GraphCliError(
+            "file.root_unknown",
+            f"the file root {origin.get('root')!r} is not configured on this machine",
+            details={"root": origin.get("root")},
+        )
 
 
 @dataclass(frozen=True, slots=True)

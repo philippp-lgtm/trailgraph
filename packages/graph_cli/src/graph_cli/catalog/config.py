@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
 from graph_cli.catalog.identity import DEFAULT_PROVIDERS
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.tomlw import TomlTable, TomlValue, dumps
 
@@ -25,7 +26,18 @@ OutputMode = Literal["text", "json"]
 
 _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "": frozenset(
-        {"format_version", "device", "runtime", "paths", "identity", "storage", "audit", "output"}
+        {
+            "format_version",
+            "device",
+            "runtime",
+            "paths",
+            "identity",
+            "storage",
+            "audit",
+            "output",
+            "roots",
+            "files",
+        }
     ),
     "device": frozenset({"id", "name"}),
     "runtime": frozenset({"mode", "endpoint"}),
@@ -34,7 +46,11 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "storage": frozenset({"lock_timeout_s", "durability"}),
     "audit": frozenset({"record_data_root"}),
     "output": frozenset({"default"}),
+    "files": frozenset({"max_bytes"}),
 }
+_OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
+DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
+MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +65,8 @@ class Config:
     durability: Durability = "full"
     record_data_root: bool = True
     output: OutputMode = "text"
+    file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -84,9 +102,10 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
             if not isinstance(document[key], dict):
                 raise _invalid(path, key, "must be a table")
             tables[key] = document[key]
-            warnings += [
-                _unknown(path, f"{key}.{k}") for k in sorted(set(document[key]) - _KEYS[key])
-            ]
+            if key not in _OPEN_TABLES:
+                warnings += [
+                    _unknown(path, f"{key}.{k}") for k in sorted(set(document[key]) - _KEYS[key])
+                ]
 
     def get(dotted: str, kind: type | tuple[type, ...], what: str) -> Any:
         table, key = dotted.split(".")
@@ -117,6 +136,10 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     if output not in (None, "text", "json"):
         raise _invalid(path, "output.default", "must be 'text' or 'json'")
     record = get("audit.record_data_root", bool, "a boolean")
+    max_bytes = get("files.max_bytes", int, "an integer")
+    if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
+        raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
+    file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
         path=path,
@@ -131,8 +154,23 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         durability=durability or defaults.durability,
         record_data_root=record if record is not None else defaults.record_data_root,
         output=output or defaults.output,
+        file_roots=file_roots,
+        max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
     )
     return config, tuple(warnings)
+
+
+def _file_roots(path: Path, table: Mapping[str, Any]) -> dict[str, str]:
+    """``[roots]``: name -> absolute path or ``~/...``, like ``[paths] data_root``."""
+    roots: dict[str, str] = {}
+    for name in sorted(table):
+        value = table[name]
+        if FILE_ROOT_RE.match(name) is None:
+            raise _invalid(path, f"roots.{name}", f"is not a root name ({FILE_ROOT_RE.pattern})")
+        if not isinstance(value, str) or not value.startswith(("/", "~/")):
+            raise _invalid(path, f"roots.{name}", "must be an absolute path or start with ~/")
+        roots[name] = value
+    return roots
 
 
 def format_new_config(

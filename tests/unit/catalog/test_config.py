@@ -26,6 +26,11 @@ durability = "fsync"
 record_data_root = false
 [output]
 default = "json"
+[roots]
+notes = "~/synced/notes"
+archive_2 = "/srv/archive"
+[files]
+max_bytes = 2048
 """
 
 
@@ -50,7 +55,14 @@ def test_every_key() -> None:
         durability="fsync",
         record_data_root=False,
         output="json",
+        file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
+        max_file_bytes=2048,
     )
+
+
+def test_file_defaults() -> None:
+    config, _ = parse_config(b"format_version = 1\n", path=PATH)
+    assert (config.file_roots, config.max_file_bytes) == ({}, 100 * 1024 * 1024)
 
 
 def test_integer_timeout() -> None:
@@ -67,6 +79,8 @@ def test_unknown_keys_warn() -> None:
         ("config.unknown_key", "device.serial"),
         ("config.unknown_key", "extra"),
     ]
+    _, warnings = parse_config(b"format_version = 1\n[files]\nkeep = 1\n", path=PATH)
+    assert [w.details["key"] for w in warnings] == ["files.keep"]
 
 
 def test_unknown_major() -> None:
@@ -92,6 +106,14 @@ def test_unknown_major() -> None:
         ("format_version = 1\n[device]\nid = 7\n", "device.id"),
         ("format_version = 1\ndevice = 3\n", "device"),
         ("format_version = ", ""),
+        ('format_version = 1\n[roots]\nNotes = "/n"\n', "roots.Notes"),
+        ('format_version = 1\n[roots]\n"my-notes" = "/n"\n', "roots.my-notes"),
+        ('format_version = 1\n[roots]\nnotes = "relative/n"\n', "roots.notes"),
+        ("format_version = 1\n[roots]\nnotes = 3\n", "roots.notes"),
+        ("format_version = 1\nroots = 3\n", "roots"),
+        ("format_version = 1\n[files]\nmax_bytes = 0\n", "files.max_bytes"),
+        ("format_version = 1\n[files]\nmax_bytes = 1073741825\n", "files.max_bytes"),
+        ('format_version = 1\n[files]\nmax_bytes = "1M"\n', "files.max_bytes"),
     ],
 )
 def test_defects_are_config_invalid(body: str, key: str) -> None:
