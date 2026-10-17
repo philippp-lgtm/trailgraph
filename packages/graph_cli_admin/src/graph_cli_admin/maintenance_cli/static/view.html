@@ -144,6 +144,7 @@ h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12
     </ul>
     <label class="toggle"><input id="inactive" type="checkbox" checked> show superseded and retracted</label>
     <input id="search" type="search" placeholder="Search label, alias or type" aria-label="Search">
+    <label class="toggle"><input id="scale_nodes" type="checkbox"> scale nodes by number of connections</label>
     <label class="toggle"><input id="only_matches" type="checkbox"> hide entities that do not match</label>
     <div id="matches" class="muted"></div>
     <div id="types" aria-label="Types"></div>
@@ -163,11 +164,13 @@ const statusLine = document.getElementById("status");
 const eventList = document.getElementById("events");
 const showInactive = document.getElementById("inactive");
 const onlyMatches = document.getElementById("only_matches");
+const scaleNodes = document.getElementById("scale_nodes");
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const FLASH_MS = 1500;
 const MAX_EVENTS = 30;
 const RADIUS = 5;
+const MAX_RADIUS = 18;   // radius of the most connected node when scaling by connections
 
 let nodes = new Map();   // id -> {id, label, type, alias, status, x, y, vx, vy, flash, fixed}
 let links = new Map();   // edge id -> {id, source, target, rel}
@@ -651,22 +654,40 @@ function drawFlash(x, y, node, now) {
   ctx.lineWidth = 2.5;
   ctx.setLineDash(node.flash.kind === "read" ? [4, 3] : []);
   ctx.beginPath();
-  ctx.arc(x, y, RADIUS + 5 + grow, 0, 2 * Math.PI);
+  ctx.arc(x, y, node.r + 5 + grow, 0, 2 * Math.PI);
   ctx.stroke();
   if (node.flash.kind === "created") {
     ctx.beginPath();
-    ctx.arc(x, y, RADIUS + 10 + grow * 1.6, 0, 2 * Math.PI);
+    ctx.arc(x, y, node.r + 10 + grow * 1.6, 0, 2 * Math.PI);
     ctx.stroke();
   }
   ctx.globalAlpha = 0.35 * (1 - t);
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(x, y, RADIUS + 4, 0, 2 * Math.PI);
+  ctx.arc(x, y, node.r + 4, 0, 2 * Math.PI);
   ctx.fill();
   ctx.restore();
 }
 
+// Sets node.r: the base radius, or with scaling a radius relative to the most connected visible node.
+function updateRadii() {
+  const degree = new Map();
+  if (scaleNodes.checked) {
+    for (const link of links.values()) {
+      const a = nodes.get(link.source), b = nodes.get(link.target);
+      if (!a || !b || !visible(a) || !visible(b)) continue;
+      degree.set(a.id, (degree.get(a.id) || 0) + 1);
+      degree.set(b.id, (degree.get(b.id) || 0) + 1);
+    }
+  }
+  const max = Math.max(1, ...degree.values());
+  for (const node of nodes.values()) {
+    node.r = RADIUS + (MAX_RADIUS - RADIUS) * Math.sqrt((degree.get(node.id) || 0) / max);
+  }
+}
+
 function draw(now) {
+  updateRadii();
   const ratio = devicePixelRatio || 1;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -705,7 +726,7 @@ function draw(now) {
     if (node.flash) drawFlash(x, y, node, now);
     ctx.globalAlpha = dim ? 0.15 : 1;
     ctx.beginPath();
-    ctx.arc(x, y, RADIUS, 0, 2 * Math.PI);
+    ctx.arc(x, y, node.r, 0, 2 * Math.PI);
     if (node.status === "active") {
       ctx.fillStyle = colors.node;
       ctx.fill();
@@ -719,7 +740,7 @@ function draw(now) {
     ctx.globalAlpha = 1;
     if (selected && selected.kind === "node" && selected.id === node.id) {
       ctx.beginPath();
-      ctx.arc(x, y, RADIUS + 4, 0, 2 * Math.PI);
+      ctx.arc(x, y, node.r + 4, 0, 2 * Math.PI);
       ctx.lineWidth = 2;
       ctx.strokeStyle = colors["text-primary"];
       ctx.stroke();
@@ -733,9 +754,9 @@ function draw(now) {
     const text = node.label.length > 40 ? node.label.slice(0, 39) + "…" : node.label;
     ctx.lineWidth = 3;
     ctx.strokeStyle = colors["surface-1"];
-    ctx.strokeText(text, x + RADIUS + 4, y);
+    ctx.strokeText(text, x + node.r + 4, y);
     ctx.fillStyle = node.status === "active" ? colors["text-primary"] : colors["text-secondary"];
-    ctx.fillText(text, x + RADIUS + 4, y);
+    ctx.fillText(text, x + node.r + 4, y);
   }
 }
 
@@ -768,12 +789,13 @@ function frame(now) {
 // ---- interaction -----------------------------------------------------
 
 function nodeAt(sx, sy) {
-  let best = null, bestD = 12 * 12;
+  let best = null, bestD = Infinity;
   for (const node of nodes.values()) {
     if (!visible(node)) continue;
     const [x, y] = toScreen(node);
     const d = (x - sx) ** 2 + (y - sy) ** 2;
-    if (d < bestD) { best = node; bestD = d; }
+    const reach = Math.max(12, (node.r || RADIUS) + 4);
+    if (d < reach * reach && d < bestD) { best = node; bestD = d; }
   }
   return best;
 }
@@ -863,6 +885,7 @@ canvas.addEventListener("wheel", event => {
 canvas.addEventListener("dblclick", () => { autoFit = true; fit(); });
 showInactive.addEventListener("change", refilter);
 onlyMatches.addEventListener("change", refilter);
+scaleNodes.addEventListener("change", () => { alpha = Math.max(alpha, 0.3); });
 document.getElementById("search").addEventListener("input", event => {
   query = event.target.value.trim().toLowerCase();
   refilter();

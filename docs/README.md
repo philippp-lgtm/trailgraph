@@ -328,6 +328,8 @@ Escape closes the panel. The search box dims everything whose label,
 alias or type does not contain the text (Enter opens the first match);
 "hide entities that do not match" removes those instead, and one
 checkbox per type hides whole types. Attribute values are not searched.
+"scale nodes by number of connections" enlarges nodes in proportion to
+their edge count, relative to the most connected visible node.
 A Unix socket path is limited to about 100 bytes; with a
 very long state directory the view starts without reads and says so.
 
