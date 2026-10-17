@@ -49,7 +49,8 @@ def variant(tmp_path: Path, base: str, version: str, *, summary: str | None = No
 
 def test_the_inventory_series(run_cli: CliRunner, root: Path) -> None:
     graph_id = create(run_cli)
-    for version, level in (("1.0.1", "patch"), ("1.1.0", "minor"), ("2.0.0", "major")):
+    series = (("1.0.1", "patch"), ("1.1.0", "minor"), ("2.0.0", "major"), ("2.1.0", "minor"))
+    for version, level in series:
         outcome = release(run_cli, INVENTORY / version)
         assert outcome.code == 0, outcome.envelope
         assert (outcome.data["released"], outcome.data["pinned"]) == (True, True)
@@ -59,8 +60,8 @@ def test_the_inventory_series(run_cli: CliRunner, root: Path) -> None:
         assert outcome.envelope["graph"]["ontology"]["version"] == version
         assert (root / "graphs" / graph_id / "ontology" / version / "diff.json").is_file()
     shown = admin(run_cli, "graph", "show", "example_graph").data
-    assert shown["releases"] == ["1.0.0", "1.0.1", "1.1.0", "2.0.0"]
-    assert shown["ontology"]["version"] == "2.0.0"
+    assert shown["releases"] == ["1.0.0", "1.0.1", "1.1.0", "2.0.0", "2.1.0"]
+    assert shown["ontology"]["version"] == "2.1.0"
     audit = FileAuditLog(root)
     graph_report = verify_stream(
         audit.read_lines(graph_stream(graph_id)), stream=graph_stream(graph_id)
@@ -69,9 +70,9 @@ def test_the_inventory_series(run_cli: CliRunner, root: Path) -> None:
     assert graph_report.findings == () and installation.findings == ()
     assert [e["actions"][0] for e in graph_report.events] == [
         "maint.graph_create",
-        *["maint.ontology_release", "maint.ontology_pin"] * 3,
+        *["maint.ontology_release", "maint.ontology_pin"] * 4,
     ]
-    assert len(installation.events) == 7  # create plus one companion per operation
+    assert len(installation.events) == 9  # create plus one companion per operation
 
 
 def test_rerunning_a_pinned_release_changes_nothing(run_cli: CliRunner, root: Path) -> None:

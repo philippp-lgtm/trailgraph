@@ -97,6 +97,26 @@
       "level": "major",
       "schema": "graph_cli.ontology_diff/1",
       "to": "2.0.0"
+    },
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_attribute",
+          "level": "minor",
+          "path": "classes.inv:Item.attributes.weight"
+        },
+        {
+          "detail": {},
+          "kind": "add_warning_rule",
+          "level": "minor",
+          "path": "rules.inv.parts_within_weight"
+        }
+      ],
+      "from": "2.0.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "2.1.0"
     }
   ],
   "ontology": "inventory",

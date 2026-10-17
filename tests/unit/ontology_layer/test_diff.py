@@ -31,6 +31,7 @@ def test_version_series_golden() -> None:
         ("1.0.0", "1.0.1", "patch", 3),
         ("1.0.1", "1.1.0", "minor", 5),
         ("1.1.0", "2.0.0", "major", 3),
+        ("2.0.0", "2.1.0", "minor", 2),
     ],
 )
 def test_series_levels(old: str, new: str, level: str, count: int) -> None:
@@ -199,3 +200,35 @@ def test_rule_changes_follow_the_resulting_severity(old: str, new: str, expected
     rule_changes = [c for c in report.changes if c.path == "rules.smp.r1"]
     assert rule_changes, report.to_json()
     assert report.level == expected, report.to_json()
+
+
+_STATE = "      state: {summary: State., lifecycle: Flow}\n"
+_SIZED = BODY.replace(_STATE, _STATE + "      size: {summary: Size., type: integer}\n")
+_SUM = "{sum: {rel: link, direction: in, attr: size}, maximum_value: %s}"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "kind", "level"),
+    [
+        ("relations:\n", _rule("warning", "write", _SUM % "3"), "add_warning_rule", "minor"),
+        (
+            _rule("error", "write", _SUM % "3"),
+            _rule("error", "write", _SUM % "{attr: size}"),
+            "change_expression",
+            "major",
+        ),
+        (
+            _rule("warning", "write", _SUM % "3"),
+            _rule("warning", "write", _SUM % "{attr: size}"),
+            "change_expression",
+            "minor",
+        ),
+    ],
+    ids=["sum_warning_added", "sum_error_changed", "sum_warning_changed"],
+)
+def test_sum_rules_classify_like_other_rules(old: str, new: str, kind: str, level: str) -> None:
+    before = model(_SIZED.replace("relations:\n", old), "1.0.0")
+    after = model(_SIZED.replace("relations:\n", new), "2.0.0")
+    report = classify(before, after)
+    assert [(c.path, c.kind, c.level) for c in report.changes] == [("rules.smp.r1", kind, level)]
+    assert report.level == level

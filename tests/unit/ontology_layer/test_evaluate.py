@@ -292,6 +292,42 @@ def test_inventory_guards_and_rules() -> None:
     assert not evaluate(not_empty, shelf, DictSnapshot(room, shelf), INV)
 
 
+def test_inventory_parts_within_weight() -> None:
+    model = compiled_model("inventory", "2.1.0")
+    within = rule(model, "inv.parts_within_weight")
+
+    def judged(weight: Any, *part_weights: Any, retired: Any = None) -> bool:
+        attrs = {"label": "x"} if weight is None else {"label": "x", "weight": weight}
+        item = revision("item", "inv:Item", attrs)
+        parts = [
+            revision(
+                f"p{i}",
+                "inv:Item",
+                {"label": "p"} if w is None else {"label": "p", "weight": w},
+                [edge("inv:part_of", "item")],
+            )
+            for i, w in enumerate(part_weights)
+        ]
+        if retired is not None:
+            parts.append(
+                revision(
+                    "old",
+                    "inv:Item",
+                    {"label": "o", "weight": retired},
+                    [edge("inv:part_of", "item")],
+                    status="retracted",
+                )
+            )
+        return evaluate(within, item, DictSnapshot(item, *parts), model)
+
+    assert judged("10.0", "4.5", "5.50")  # exactly the item's weight
+    assert not judged("10.0", "4.5", "5.51")  # exceeds
+    assert judged("10.0", "4.5", None)  # a part without weight: not applicable
+    assert judged(None, "4.5", "9")  # the item without weight: not applicable
+    assert judged("1")  # no parts: not applicable
+    assert judged("10", "9", retired="5")  # retracted parts do not count
+
+
 def test_notes_guards_and_rules() -> None:
     body = guard(NAS, "nas:NoteLifecycle", "published")
     assert holds(body, {"body": "text"}, NAS, type="nas:Note")

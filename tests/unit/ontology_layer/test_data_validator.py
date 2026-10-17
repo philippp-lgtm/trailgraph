@@ -366,6 +366,44 @@ def test_sum_rule_findings_carry_the_sum_and_the_bound() -> None:
     ]
 
 
+def test_check_graph_reports_parts_heavier_than_their_item() -> None:
+    model = compiled_model("inventory", "2.1.0")
+
+    def thing(name: str, weight: str, *edges: Any) -> Any:
+        attrs = {"label": name, "quantity": 1, "status": "in_stock", "weight": weight}
+        placed = [edge("inv:located_in", "room"), edge("inv:in_category", "tools")]
+        return revision(name, "inv:Item", attrs, [*placed, *edges])
+
+    def snapshot(second: str) -> DictSnapshot:
+        parts = [
+            thing(n, w, edge("inv:part_of", "rack")) for n, w in (("p1", "2.5"), ("p2", second))
+        ]
+        tools = revision("tools", "inv:Category", {"name": "Tools"})
+        return DictSnapshot(ROOM, tools, thing("rack", "5.00"), *parts)
+
+    assert check_graph(model, snapshot("2.50")) == []  # positive control
+    (finding,) = check_graph(model, snapshot("2.75"))
+    assert (finding.code, finding.rule_id, finding.severity.value) == (
+        "data.rule.violated",
+        "inv.parts_within_weight",
+        "warning",
+    )
+    assert finding.target["id"] == str(eid("rack"))
+    weights = {
+        "rel": "inv:part_of",
+        "direction": "in",
+        "attr": "weight",
+        "where": {"record_status": ["active"]},
+    }
+    count = {k: v for k, v in weights.items() if k != "attr"}
+    assert finding.actual == [
+        {"operand": {"count": count}, "value": 2},
+        {"operand": {"const": 1}, "value": 1},
+        {"operand": {"sum": weights}, "value": "5.25"},
+        {"operand": {"attr": "weight"}, "value": "5.00"},
+    ]
+
+
 def test_rule_findings_without_aggregates_are_unchanged() -> None:
     _, findings = judge(INV, item(serial_number="SN-0002", quantity=2), base=INV_BASE)
     (finding,) = findings
