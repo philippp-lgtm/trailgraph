@@ -67,7 +67,8 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, `verify`, `recover`, `reindex` (admin only) |
+| `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 FileStore in short (POSIX only, local filesystems only):
 
@@ -82,6 +83,11 @@ FileStore in short (POSIX only, local filesystems only):
 - Every write session first recovers: it truncates a torn last line and
   writes missing derived files. Damage inside the log stops writes with
   `backend.corrupt` until repair.
+- Stored files live in `blobs/sha256/<first 2 hex>/<hash>` of the graph
+  directory, read-only and never changed. They are staged in
+  `blobs/.tmp-*` before the lock and published by one rename under it;
+  each transaction lists the hashes its revisions reference (`blobs`), so
+  verification and cleanup need no ontology.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
@@ -126,7 +132,8 @@ harness. Malformed values are dropped with a warning and never block. Only
 
 | Module | Content |
 | --- | --- |
-| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default, file roots, file size limit |
+| `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
@@ -159,11 +166,13 @@ only caller of `WriteSession.commit`.
 | `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch` |
+| `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path`, `check`; the built-in media type table |
 
 A write runs in this order: check the graph state and the pinned ontology
 artifact, resolve references, authorize every (action, type) pair, take the
 graph lock, re-check state and pin, replay an idempotent retry, check
-`expect_seq`/`expect_rev`, normalize, validate, append the audit intent,
+`expect_seq`/`expect_rev`, normalize, validate, publish the stored files
+the request staged and the transaction names, append the audit intent,
 commit. Ops apply in order to one working copy, each touched entity gets
 one new revision, and a change set commits completely or not at all.
 Validation reports findings (`data.*`) instead of stopping at the first
@@ -196,6 +205,9 @@ document.
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin) |
+| `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice (see "Files") |
+| `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |
+| `file check [REF...]` | compare origins with the stored content: `same`, `changed`, `missing`, `root_unknown`, `no_origin` |
 | `skills emit --out DIR` | write skill 1 and, with `--graph`, published graph skills into a directory (one directory per skill, no marker) |
 | `skills install --scope user\|project` | install or refresh the agent skills (see "Skills") |
 | `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
@@ -266,6 +278,8 @@ them.
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
 | `audit verify` | check every chain, tx log, revision file and manifest pin; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
+| `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
+| `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
 
 Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version
@@ -276,6 +290,61 @@ interrupted operation as info and anchors only graphs without errors.
 `cli_kit` (envelope, error rendering, hints) is shared with the application
 CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
 and `graph_cli_admin.services_admin` holds the procedures.
+
+## Files
+
+A graph whose ontology imports the standard module `files` (`imports:
+[{module: files, version: "^1.0"}]`) stores files: scans, documents,
+saved web pages, any media type. graph_cli stores, addresses and
+references them; it never reads what is in them. An agent reads a stored
+file itself and writes what it finds through the normal write commands.
+
+- `files:File` holds `title` (the main label), `content` (type `blob`:
+  `sha256:<hex>` of the bytes, unique among active files, immutable),
+  `media_type`, `file_name`, `origin` (type `local_path`), `source_url` and
+  `retrieved_at`. A graph module may subclass it (`is_a: files:File`) to
+  give files domain meaning.
+- `files:from_file` points from any entity to a file, with the qualifiers
+  `page` and `last_page` (from 1) and `locator` (a section, region or task
+  number).
+- A file's content never changes. A new version is a new `file add`
+  followed by `supersede`. Nothing that a revision ever referenced is
+  removed; `graph-admin files gc` removes only files no transaction names.
+- Web sources need no stored copy: an `iri` attribute plus a `date` for
+  the retrieval. A saved copy is a stored file with `source_url` and
+  `retrieved_at`. graph_cli fetches nothing from the network.
+
+Origins are machine-neutral: `{"root": <name>, "path": <relative path>}`
+against named roots that each machine maps in `config.toml`. The longest
+root that contains the file wins; without one the file gets no origin
+(warning `file.no_root`). An absolute path is never recorded.
+
+```toml
+[roots]
+notes = "~/path/to/synced/notes"   # absolute or ~/ (HOME)
+[files]
+max_bytes = 104857600              # per file, 1 B to 1 GiB; 100 MiB by default
+```
+
+Roots are added by hand. A root that is not configured on a machine makes
+`file path --origin` fail with `file.root_unknown`; `file check` reports
+`root_unknown`. Paths are compared as given after resolving symlinks:
+there is no case folding on case-insensitive file systems and no Unicode
+normalization, so a name stored in NFD on one machine may not resolve on
+another. The media type comes from a built-in table of magic bytes and
+extensions (`--media-type` overrides it), so it is the same on every
+machine.
+
+Audit events name stored files by hash and size only: never a file name,
+an origin path or content. Reading a file is not audited (reads never
+are). File bytes, names and origins are instance data like any attribute
+value: they live in the graph's `blobs/` and transaction log.
+
+Backups of the data root contain the stored files, so they may contain
+personal data (scans of documents). After a restore, run
+`graph-admin audit verify` (a missing stored file is an error there) and
+`graph-admin files verify --graph <graph> --rehash` (damaged bytes). Keep
+the data root on a local file system, as for the rest of the store.
 
 ## Skills
 
