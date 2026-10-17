@@ -35,6 +35,7 @@ MAINT_EFFECT_ACTIONS: Final = MAINT_ACTIONS - {
 RELEASE_ACTION: Final = "maint.ontology_release"
 PIN_ACTION: Final = "maint.ontology_pin"
 CONFIGURE_ACTION: Final = "maint.graph_configure"
+REPAIR_ACTION: Final = "maint.repair"
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
@@ -388,6 +389,17 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             and all(_is_pin(pin[k]) for k in ("from", "to"))
         ):
             problems.append("a pin intent needs change.pin{from, to}")
+    if REPAIR_ACTION in actions and ("blobs_removed" in entries or "staging_removed" in entries):
+        removed, staging = entries.get("blobs_removed"), entries.get("staging_removed")
+        if not (
+            (removed == [] or is_blob_list(removed))
+            and isinstance(staging, int)
+            and not isinstance(staging, bool)
+            and staging >= 0
+        ):
+            problems.append(
+                "a file removal needs change.blobs_removed[{hash, size}] and staging_removed"
+            )
     if CONFIGURE_ACTION in actions and "skill" in entries:
         skill = entries["skill"]
         if not (

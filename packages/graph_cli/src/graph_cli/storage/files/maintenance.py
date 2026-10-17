@@ -406,6 +406,12 @@ class FileMaintenanceSession:
         self._check_open()
         return blobs.listing(self._store.layout)
 
+    def orphan_blobs(self) -> Sequence[BlobInfo]:
+        referenced = self._referenced()
+        if referenced is None:
+            raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
+        return [b for b in blobs.listing(self._store.layout) if b.hash not in referenced]
+
     def staging(self) -> Iterator[tuple[str, datetime]]:
         self._check_open()
         return blobs.staging(self._store.layout)

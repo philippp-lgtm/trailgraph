@@ -108,7 +108,7 @@ def verify(ctx: AdminContext) -> Verification:
                 raise
             warnings = (_not_recorded(exc.message),)
     data: dict[str, JsonValue] = {
-        "counts": _counts(ordered),
+        "counts": counts_of(ordered),
         "graphs": graphs,
         "recorded": recorded,
         "findings": [f.to_json() for f in ordered],
@@ -171,7 +171,7 @@ def anchor(ctx: AdminContext) -> dict[str, JsonValue]:
     return {"seq": receipt.seq, "anchors": [events.anchor(head) for head in heads]}
 
 
-def _counts(findings: Sequence[Finding]) -> Mapping[str, JsonValue]:
+def counts_of(findings: Sequence[Finding]) -> Mapping[str, JsonValue]:
     counter = Counter(f.severity for f in findings)
     return {severity.value: counter.get(severity, 0) for severity in Severity}
 

@@ -133,6 +133,11 @@ def write_intent(
     return _checked(body)
 
 
+def blobs_removed(blobs: Sequence[BlobInfo], staging: int) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.repair`` intent that removes stored files (``files gc``)."""
+    return {"blobs_removed": blob_list(blobs) if blobs else [], "staging_removed": staging}
+
+
 def blob_list(blobs: Sequence[BlobInfo]) -> list[JsonValue]:
     """``[{hash, size}]`` by hash, each once: what an event may say about stored files."""
     unique = {b.hash: b.size for b in blobs}

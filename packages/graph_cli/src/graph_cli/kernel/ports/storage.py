@@ -207,6 +207,10 @@ class MaintenanceSession(WriteSession, Protocol):
         """Every stored blob, in hash order."""
         ...
 
+    def orphan_blobs(self) -> Sequence[BlobInfo]:
+        """Stored blobs no tx names; ``backend.corrupt`` when the tx log is damaged."""
+        ...
+
     def staging(self) -> Iterator[tuple[str, datetime]]:
         """Blob staging leftovers: ``(name, last modified)``."""
         ...

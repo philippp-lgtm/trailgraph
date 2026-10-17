@@ -23,7 +23,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditLine, AuditReceipt, graph_stream
-from graph_cli.kernel.records import OntologyPin
+from graph_cli.kernel.records import BlobInfo, OntologyPin
 
 Event = dict[str, JsonValue]
 
@@ -228,3 +228,19 @@ def test_effect_anchors() -> None:
     head["actions"] = ["maint.audit_verify"]  # anchors a stream head, proves no effect
     events = [_create_event(stream, first), _create_event(stream, second), head, {"anchors": "x"}]
     assert effect_anchors(events) == {str(first): frozenset({1}), str(second): frozenset({1})}
+
+
+def test_file_removals_name_hashes_and_sizes_only() -> None:
+    stream = Stream()
+    blob = BlobInfo("sha256:" + "a" * 64, 9)
+    stream.maint("maint.repair", builders.blobs_removed([blob], 2))
+    stream.maint("maint.repair", builders.blobs_removed([], 1))
+    assert stream.check(None) == []
+    for change in (
+        {"blobs_removed": [{"hash": blob.hash, "size": 9, "name": "a.pdf"}], "staging_removed": 0},
+        {"blobs_removed": [], "staging_removed": -1},
+        {"blobs_removed": [], "staging_removed": True},
+        {"blobs_removed": [{"hash": blob.hash}]},
+    ):
+        with pytest.raises(GraphCliError):
+            Stream().maint("maint.repair", change)  # type: ignore[arg-type]
