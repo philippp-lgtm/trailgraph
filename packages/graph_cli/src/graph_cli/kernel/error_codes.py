@@ -86,7 +86,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("skills.source_missing", _C.NOT_FOUND, False, "The graph has no published skill."),
     ErrorSpec("skills.source_invalid", _C.INVALID, False, "The published skill is invalid."),
     ErrorSpec("skills.check_failed", _C.INVALID, False, "Installed skills are not up to date."),
+    ErrorSpec("file.unreadable", _C.USAGE, False, "The path is not a readable regular file."),
     ErrorSpec("file.too_large", _C.REFUSED, False, "The file exceeds the size limit."),
+    ErrorSpec("file.module_missing", _C.REFUSED, False, "The graph's model has no files module."),
+    ErrorSpec("file.root_unknown", _C.NOT_FOUND, False, "The file root is not configured here."),
+    ErrorSpec("file.origin_missing", _C.NOT_FOUND, False, "The origin of the file is missing."),
+    ErrorSpec("file.no_local_path", _C.REFUSED, False, "The backend gives no local file path."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),
@@ -119,6 +124,8 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "A graph skill names terms, commands or aliases that do not exist.",
     ),
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
+    ErrorSpec("file.already_present", _C.WARNING, False, "The graph already stores this file."),
+    ErrorSpec("file.no_root", _C.WARNING, False, "No configured file root contains the file."),
 )
 
 ERROR_CODES: Final[Mapping[str, ErrorSpec]] = MappingProxyType({s.code: s for s in _BASE})

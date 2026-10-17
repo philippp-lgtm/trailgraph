@@ -32,7 +32,7 @@ from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditReceipt, graph_stream
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import EMPTY_HEAD, Head
-from graph_cli.kernel.records import Revision
+from graph_cli.kernel.records import BlobInfo, Revision
 
 MARKER = "MARKER-7f3a-attribute-value"
 
@@ -112,6 +112,35 @@ def test_events_never_carry_attribute_values(world: World) -> None:
     assert MARKER.encode() in canonical_bytes(dict(second.changeset))
     for draft in (intent(first), intent(second, before=before)):
         assert MARKER.encode() not in canonical_bytes(dict(draft.body))
+
+
+def test_write_intent_names_stored_files_by_hash_and_size(world: World) -> None:
+    first, _, _ = world.create_and_update()
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    blobs = [BlobInfo(b, 7), BlobInfo(a, 3), BlobInfo(b, 7)]
+    body = events.write_intent(first, graph=world.graph, env=ENV, blobs=blobs).body
+    change = as_object(body["change"], "change")
+    assert change["blobs"] == [{"hash": a, "size": 3}, {"hash": b, "size": 7}]
+    assert "blobs" not in as_object(intent(first).body["change"], "change")
+
+
+@pytest.mark.parametrize(
+    "blobs",
+    [
+        [],
+        [{"hash": "sha256:" + "a" * 64}],
+        [{"hash": "sha256:" + "a" * 64, "size": -1}],
+        [{"hash": "sha256:" + "a" * 64, "size": True}],
+        [{"hash": "sha256:" + "a" * 64, "size": 1, "name": "x.pdf"}],
+        [{"hash": "sha256:" + "b" * 64, "size": 1}, {"hash": "sha256:" + "a" * 64, "size": 1}],
+        "sha256:" + "a" * 64,
+    ],
+)
+def test_malformed_blob_lists_are_refused(world: World, blobs: object) -> None:
+    first, _, _ = world.create_and_update()
+    body = dict(intent(first).body)
+    body["change"] = {**as_object(body["change"], "change"), "blobs": blobs}  # type: ignore[dict-item]
+    assert any("blobs?" in p for p in event_problems(body, sealed=False))
 
 
 def test_updates_need_their_before_hash(world: World) -> None:

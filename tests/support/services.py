@@ -29,6 +29,7 @@ from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snap
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
+from graph_cli.services.files import FileService, Origins
 from graph_cli.services.read import ReadService
 from graph_cli.services.write import (
     BatchResult,
@@ -192,9 +193,10 @@ class ServiceEnv:
     faults: FaultSwitch = field(default_factory=FaultSwitch)
     name: str = "example_graph"
     model_override: CompiledModel | None = None  # memory backend only
+    version: str | None = None  # fixture version; the first one by default
 
     def __post_init__(self) -> None:
-        self.model = self.model_override or compiled_model(self.ontology)
+        self.model = self.model_override or compiled_model(self.ontology, self.version)
         self.clock = StepClock(start="2030-01-01T00:00:00Z")
         self.ids = SeededIdProvider(self.clock, 5)
         self.factory = OpsFactory(self.model)
@@ -239,6 +241,9 @@ class ServiceEnv:
             env=ENV,
             config=WriteConfig(lock_timeout_s=5.0, **config),
         )
+
+    def make_files(self, *, origins: Origins | None = None, **config: Any) -> FileService:
+        return FileService(catalog=self.catalog, writer=self.service, origins=origins, **config)
 
     def make_reader(self, policy: Any = None) -> ReadService:
         return ReadService(

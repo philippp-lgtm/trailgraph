@@ -121,6 +121,7 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _data("referential", "qualifier_unknown", "The relation has no such qualifier."),
     _data("referential", "target_not_active", "The edge target is superseded or retracted.", _W),
     _data("referential", "edge_missing", "No single edge matches the unlink."),
+    _data("referential", "blob_missing", "A file hash names no stored file."),
     _data("referential", "cardinality_in", "Too few or too many incoming edges.", when="batch"),
     _data("semantic", "unique_violation", "A unique value or an alias is already used."),
     _data("semantic", "cycle", "An acyclic relation forms a cycle."),

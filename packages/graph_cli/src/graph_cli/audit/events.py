@@ -38,7 +38,7 @@ from graph_cli.kernel.ports.audit import (
     graph_stream,
 )
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta
+from graph_cli.kernel.records import BlobInfo, EnvInfo, OntologyPin, RequestMeta
 
 RefusalStatus = Literal["denied", "invalid", "conflict", "error"]
 
@@ -86,9 +86,11 @@ def write_intent(
     graph: GraphEntry,
     env: EnvInfo,
     before: Mapping[EntityId, str] | None = None,
+    blobs: Sequence[BlobInfo] = (),
 ) -> AuditEventDraft:
     """The intent appended before ``tx`` commits (W.12). ``before`` maps every updated
-    entity (``rev > 1``) to the content hash of its previous revision."""
+    entity (``rev > 1``) to the content hash of its previous revision; ``blobs`` are the
+    files the request stored (W.11b), named by hash and size only (B5.8)."""
     if graph.id != tx.graph_id:
         raise _internal("the graph entry is not the tx's graph")
     entities: list[JsonValue] = []
@@ -119,13 +121,22 @@ def write_intent(
             "types": sorted({r.type for r in tx.revisions}),
         },
     )
-    body["change"] = {
+    change: dict[str, JsonValue] = {
         "tx_id": str(tx.tx_id),
         "tx_seq": tx.seq,
         "changeset_hash": tx.changeset_hash,
         "entities": entities,
     }
+    if blobs:
+        change["blobs"] = blob_list(blobs)
+    body["change"] = change
     return _checked(body)
+
+
+def blob_list(blobs: Sequence[BlobInfo]) -> list[JsonValue]:
+    """``[{hash, size}]`` by hash, each once: what an event may say about stored files."""
+    unique = {b.hash: b.size for b in blobs}
+    return [{"hash": h, "size": unique[h]} for h in sorted(unique)]
 
 
 def refusal(

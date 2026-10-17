@@ -16,8 +16,12 @@ graph_cli (B3.1). Steps:
 - W.9 ``recorded_at = max(now, head.recorded_at)`` (B4.3), tx and event ids;
   W.10 normalize; W.11 validate: error findings are ``write.invalid`` with
   ``details.findings``, warning findings ride along in the result.
-- W.12 the intent (with ``before`` hashes), W.13 the commit; storage
-  warnings are passed on.
+- W.11b the blobs the request staged (``WriteRequest.blobs``) and the tx
+  references are published under the lock; the tx lists every ``blob``
+  value of its revisions (``tx.blobs``). A ``blob`` value must name a stored
+  or staged blob (``data.referential.blob_missing``).
+- W.12 the intent (with ``before`` hashes and the published blobs' hash and
+  size), W.13 the commit; storage warnings are passed on.
 
 Refusals (B3.14): ``invalid`` and ``conflict`` go to the graph stream under
 the lock; if that append fails the original error is raised with warning
@@ -25,7 +29,8 @@ the lock; if that append fails the original error is raised with warning
 
 Dry-run (B3.10, W.d) runs W.1-W.4 and W.8-W.11 on a lock-free snapshot with
 placeholder ids that never leave the service: created entities report no
-id and no alias, finding targets name them by ``local``. A refused real
+id and no alias, finding targets name them by ``local``. Its blobs are
+hashed only, never staged on disk; they count as present. A refused real
 write names its creates the same way: their minted ids are never committed.
 """
 
@@ -33,7 +38,7 @@ from __future__ import annotations
 
 import itertools
 import sys
-from collections.abc import Iterator, Mapping, Sequence, Set
+from collections.abc import Callable, Iterator, Mapping, Sequence, Set
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Final
@@ -82,10 +87,11 @@ from graph_cli.kernel.ports.storage import (
     GraphStoreWrite,
     Head,
     Snapshot,
+    StagedBlob,
     WriteSession,
 )
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
-from graph_cli.ontology_layer.data_validator import validate_write
+from graph_cli.ontology_layer.data_validator import blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import NO_BINDINGS, Resolution, resolve_refs
@@ -111,6 +117,7 @@ class WriteRequest:
     request: RequestMeta
     bindings: Mapping[str, EntityId] = field(default=NO_BINDINGS)  # earlier documents (B3.9)
     allow_abbrev: bool = False  # references from CLI arguments (B1.9)
+    blobs: tuple[StagedBlob, ...] = ()  # staged by the caller, who discards them afterwards
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,7 +418,8 @@ class WriteService:
                 alias_counters=session.alias_counters(),
                 alias_prefixes=entry.alias_prefixes,
             )
-            findings = _validate(model, base, working)  # W.11
+            stored = _blob_check(request, prepared.read)
+            findings = _validate(model, base, working, stored)  # W.11
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
                 findings = [_scrub(f, working, working.created) for f in findings]
@@ -435,13 +443,20 @@ class WriteService:
                 reason=cs.reason,
                 idempotency_key=cs.idempotency_key,
                 request=request.request,
+                blobs=_tx_blobs(model, working),
             )
+            listed = frozenset(tx.blobs)
+            published = [
+                session.publish_blob(b) for b in request.blobs if b.hash in listed
+            ]  # W.11b
             before = {}
             for revision in tx.revisions:
                 previous_rev = base.get(revision.id)
                 if previous_rev is not None:
                     before[revision.id] = previous_rev.content_hash
-            intent = events.write_intent(tx, graph=entry, env=self._env, before=before)
+            intent = events.write_intent(
+                tx, graph=entry, env=self._env, before=before, blobs=published
+            )
             receipt = session.append_audit(intent)  # W.12
             committed = session.commit(tx, receipt)  # W.13
         return _result(
@@ -484,8 +499,9 @@ class WriteService:
             allocate_aliases=False,
         )
         hidden = placeholders.issued
+        stored = _blob_check(request, prepared.read)
         findings = [
-            _scrub(f, working, hidden) for f in _validate(prepared.model, snapshot, working)
+            _scrub(f, working, hidden) for f in _validate(prepared.model, snapshot, working, stored)
         ]
         if any(f.severity is Severity.ERROR for f in findings):
             raise _invalid(findings)
@@ -619,7 +635,12 @@ def _conflict(
     return None
 
 
-def _validate(model: CompiledModel, base: Snapshot, working: WorkingState) -> list[Finding]:
+def _validate(
+    model: CompiledModel,
+    base: Snapshot,
+    working: WorkingState,
+    blob_exists: Callable[[str], bool],
+) -> list[Finding]:
     found = validate_write(
         model,
         base,
@@ -628,8 +649,21 @@ def _validate(model: CompiledModel, base: Snapshot, working: WorkingState) -> li
         effects=working.effects,
         alias_allocations=working.alias_allocations,
         local_names={entity: name for name, entity in working.locals.items()},
+        blob_exists=blob_exists,
     )
     return sort_findings([*working.findings, *found])
+
+
+def _blob_check(request: WriteRequest, read: GraphStoreRead) -> Callable[[str], bool]:
+    """A blob is present when the request stages it or the store holds it."""
+    staged = frozenset(b.hash for b in request.blobs)
+    return lambda digest: digest in staged or read.blob(digest) is not None
+
+
+def _tx_blobs(model: CompiledModel, working: WorkingState) -> tuple[str, ...]:
+    """Every ``blob`` value of the tx's revisions, sorted and unique (tx ``blobs``)."""
+    found = {h for r in working.revisions.values() for h in blob_values(model, r)}
+    return tuple(sorted(found))
 
 
 def _invalid(findings: Sequence[Finding]) -> GraphCliError:

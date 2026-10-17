@@ -1,7 +1,8 @@
 """Write-service worker for K and P tests: the real pipeline over a data root.
 
 Arguments: ``root``, ``graph``, ``documents`` (change set documents applied
-in order, each as its own request), optional ``point`` (a crash point at
+in order, each as its own request), optional ``file`` (``{path,
+idempotency_key?}``, added through the FileService first), optional ``point`` (a crash point at
 which the process sends itself SIGKILL), optional ``barrier`` (wait for the
 file first), ``worker`` (seed) and ``uid`` (the principal; the CLI's own uid
 when a ``graph`` retry must share the idempotency scope). Production parts throughout: system
@@ -21,6 +22,7 @@ from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.records import EnvInfo, RequestMeta
+from graph_cli.services.files import FileAddRequest, FileService
 from graph_cli.services.write import WriteConfig, WriteRequest, WriteService
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
@@ -39,8 +41,9 @@ def main() -> None:
             os.kill(os.getpid(), signal.SIGKILL)
 
     clock = SystemClock()
+    catalog = FileCatalog(root, faults=kill_at if target else None)
     service = WriteService(
-        catalog=FileCatalog(root, faults=kill_at if target else None),
+        catalog=catalog,
         audit=FileAuditLog(root, durability="fsync", lock_timeout_s=60),
         policy=BuiltinPolicySource(),
         clock=clock,
@@ -52,7 +55,19 @@ def main() -> None:
     if spec.get("barrier"):
         wait_for(Path(spec["barrier"]))
     results: list[dict[str, Any]] = []
-    for document in spec["documents"]:
+    if "file" in spec:  # one ``graph file add`` through the FileService
+        files = FileService(catalog=catalog, writer=service)
+        added = files.add(
+            FileAddRequest(
+                actor=actor,
+                graph=spec["graph"],
+                path=Path(spec["file"]["path"]),
+                request=RequestMeta("file add", hash_value(spec["file"])),
+                idempotency_key=spec["file"].get("idempotency_key"),
+            )
+        )
+        results.append({"seq": added.seq, "existing": added.existing})
+    for document in spec.get("documents", ()):
         request = WriteRequest(
             actor=actor,
             graph=spec["graph"],

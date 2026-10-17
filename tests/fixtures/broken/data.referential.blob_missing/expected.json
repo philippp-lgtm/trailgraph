@@ -1,0 +1,10 @@
+{
+  "code": "data.referential.blob_missing",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "f",
+    "path": "attrs.content",
+    "type": "files:File"
+  }
+}

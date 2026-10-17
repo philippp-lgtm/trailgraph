@@ -1,0 +1,14 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "content": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "media_type": "text/plain",
+        "title": "F"
+      },
+      "local": "f",
+      "op": "create",
+      "type": "files:File"
+    }
+  ]
+}

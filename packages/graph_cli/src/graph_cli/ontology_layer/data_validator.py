@@ -36,6 +36,9 @@ from here.
   the attribute is declared (``declared_in`` and its subclasses); an alias
   set explicitly must not be bound already (B1.8).
 - **Immutable** is write-once: set while absent, never changed or removed.
+- **Blobs** (write path): a new or changed ``blob`` value names a stored file
+  or one the request stages (``blob_missing``); batch checks the shape only,
+  storage ``verify`` covers presence.
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ import difflib
 import re
 import sys
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from functools import cached_property
@@ -512,6 +515,48 @@ class _Checker:
                 )
 
 
+def blob_values(model: CompiledModel, revision: Revision) -> list[str]:
+    """The well-formed values of ``blob`` attributes of a revision, sorted and unique."""
+    cls = model.classes.get(revision.type)
+    if cls is None:
+        return []
+    found: set[str] = set()
+    for name, attribute in cls.attributes.items():
+        if model.value_base(attribute.kind, attribute.type) != "blob":
+            continue
+        value = revision.attrs.get(name)
+        items = value if isinstance(value, list | tuple) else [value]
+        found.update(v for v in items if isinstance(v, str) and blob_problem(v) is None)
+    return sorted(found)
+
+
+def _stored_blobs(
+    checker: _Checker,
+    previous: Revision | None,
+    revision: Revision,
+    cls: ClassDef,
+    blob_exists: Callable[[str], bool],
+) -> None:
+    """A new or changed ``blob`` value names a stored (or staged) blob."""
+    model = checker.model
+    for name, attribute in sorted(cls.attributes.items()):
+        if model.value_base(attribute.kind, attribute.type) != "blob" or name not in revision.attrs:
+            continue
+        value = revision.attrs[name]
+        if previous is not None and previous.attrs.get(name) == value:
+            continue
+        items = value if isinstance(value, list | tuple) else [value]
+        for item in items:
+            if isinstance(item, str) and blob_problem(item) is None and not blob_exists(item):
+                checker.add(
+                    "data.referential.blob_missing",
+                    revision,
+                    f"attrs.{name}",
+                    f"no stored file has the hash {item}",
+                    actual=item,
+                )
+
+
 def validate_write(
     model: CompiledModel,
     before: Snapshot,
@@ -521,8 +566,13 @@ def validate_write(
     effects: Sequence[OpEffect],
     alias_allocations: Sequence[tuple[EntityId, str]] = (),
     local_names: Mapping[EntityId, str] | None = None,
+    blob_exists: Callable[[str], bool] | None = None,
 ) -> list[Finding]:
-    """L1-L4 on the post-state of every touched entity (B3.17, W.11)."""
+    """L1-L4 on the post-state of every touched entity (B3.17, W.11).
+
+    ``blob_exists`` tells whether a blob is stored or staged by the request;
+    without it (batch) ``blob`` values are checked for their shape only.
+    """
     checker = _Checker(model, after, dict(local_names or {}))
     checkable: dict[EntityId, tuple[Revision, ClassDef]] = {}
     for entity in touched:
@@ -539,6 +589,8 @@ def validate_write(
         checker.edges(revision, new_edges=frozenset(e.edge_id for e in revision.edges) - old_edges)
         if previous is not None:
             _immutables(checker, previous, revision, cls)
+        if blob_exists is not None:
+            _stored_blobs(checker, previous, revision, cls, blob_exists)
     active = [rev for rev, _ in checkable.values() if rev.record_status == "active"]
     for revision in active:
         checker.unique_values(revision, checkable[revision.id][1])
