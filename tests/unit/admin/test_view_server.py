@@ -13,6 +13,9 @@ from support.roles import load_roles
 from support.services import ServiceEnv
 
 from graph_cli.catalog.activity import ActivityListener, SocketActivity
+from graph_cli.kernel.canonical import hash_value
+from graph_cli.kernel.records import RequestMeta
+from graph_cli.services.files import FileAddRequest
 from graph_cli_admin.maintenance_cli.commands.view import page
 from graph_cli_admin.maintenance_cli.view_server import ViewServer
 from graph_cli_admin.services_admin.view import open_view
@@ -100,3 +103,80 @@ def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: Servic
     SocketActivity(server.listener.path.parent).reads(svc.entry.id, [svc.txs()[-1].revisions[0].id])
     (read,) = events(stream, 1)
     assert read == {"kind": "read", "ids": [entity]}
+
+
+PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+
+@pytest.fixture
+def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
+    env = ServiceEnv("files", "notes_and_sources", tmp_path / "root", version="1.1.0")
+    assert env.apply_seed().error is None
+    document = tmp_path / "report.pdf"
+    document.write_bytes(PDF)
+    added = env.make_files().add(
+        FileAddRequest(
+            actor=env.actor,
+            graph=env.name,
+            path=document,
+            request=RequestMeta("file add", hash_value({"path": document.name})),
+        )
+    )
+    running = ViewServer(
+        open_view(admin_context(env.root), graph_ref=env.name), page=page(), poll_s=0.05
+    )
+    running.start()
+    try:
+        yield running, str(added.entity["id"]), env
+    finally:
+        running.stop()
+
+
+def test_entity_details_with_attributes_edges_and_agents(
+    server: ViewServer, svc: ServiceEnv
+) -> None:
+    revision = next(r for r in svc.all_revisions() if r.edges and r.record_status == "active")
+    response = get(server, f"/entity?id={revision.id}&t={server.token}")
+    data = json.loads(response.read())
+    assert response.status == 200
+    assert data["id"] == str(revision.id) and data["attrs"] == dict(revision.attrs)
+    assert [e["id"] for e in data["outgoing"]] == [str(e.edge_id) for e in revision.edges]
+    assert all(e["other"]["label"] for e in data["outgoing"])
+    assert data["file"] is None
+    assert data["history"][0]["rev"] == revision.rev
+    assert data["history"][0]["actor"]["label"] == "tester"  # the principal, no agent named
+    assert data["history"][0]["command"]
+    target = revision.edges[0].target
+    other = json.loads(get(server, f"/entity?id={target}&t={server.token}").read())
+    assert str(revision.id) in {e["other"]["id"] for e in other["incoming"]}
+
+
+def test_entity_errors(server: ViewServer) -> None:
+    missing = get(server, f"/entity?id=0192f3c0-0000-7000-8000-0000000000ff&t={server.token}")
+    assert missing.status == 404 and json.loads(missing.read())["code"] == "entity.not_found"
+    garbage = get(server, f"/entity?id=nope&t={server.token}")
+    assert garbage.status == 400 and json.loads(garbage.read())["code"] == "usage.invalid_argument"
+
+
+def test_a_stored_pdf_is_served_inline(file_server: tuple[ViewServer, str, ServiceEnv]) -> None:
+    server, entity, _ = file_server
+    details = json.loads(get(server, f"/entity?id={entity}&t={server.token}").read())
+    assert details["file"] == {
+        "media_type": "application/pdf",
+        "size": len(PDF),
+        "stored": True,
+        "inline": True,
+    }
+    response = get(server, f"/blob?id={entity}&t={server.token}")
+    assert response.status == 200 and response.read() == PDF
+    assert response.getheader("Content-Type") == "application/pdf"
+    assert str(response.getheader("Content-Disposition")).startswith("inline;")
+    policy = str(response.getheader("Content-Security-Policy"))
+    assert "default-src 'none'" in policy and "script-src" not in policy
+    assert get(server, f"/blob?id={entity}").status == 403  # no token
+
+
+def test_a_blob_only_for_files(server: ViewServer, svc: ServiceEnv) -> None:
+    response = get(server, f"/blob?id={svc.all_revisions()[0].id}&t={server.token}")
+    assert response.status == 400
+    assert json.loads(response.read())["code"] == "usage.invalid_argument"

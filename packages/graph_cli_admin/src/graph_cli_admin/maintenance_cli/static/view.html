@@ -57,7 +57,7 @@ canvas.dragging { cursor: grabbing; }
 #tooltip .title { font-weight: 600; word-break: break-word; }
 #tooltip .meta { color: var(--text-secondary); }
 aside {
-  width: 300px; flex: none; border-left: 1px solid var(--border);
+  width: 360px; flex: none; border-left: 1px solid var(--border);
   background: var(--surface-2); display: flex; flex-direction: column; min-height: 0;
 }
 aside section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -82,6 +82,42 @@ label.toggle { display: flex; gap: 6px; align-items: center; margin-top: 8px; co
 #events .body { min-width: 0; }
 #events .what { word-break: break-word; }
 #events .when { color: var(--text-muted); font-size: 12px; }
+#search { width: 100%; font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; margin-top: 8px; }
+#types { display: grid; gap: 2px; margin-top: 6px; max-height: 140px; overflow-y: auto; }
+#types label { display: flex; gap: 6px; align-items: center; color: var(--text-secondary); }
+#types .count { color: var(--text-muted); margin-left: auto; }
+#matches { margin-top: 4px; font-size: 12px; }
+#detail { padding: 10px 14px 12px; border-bottom: 1px solid var(--border); overflow-y: auto; max-height: 55%; flex: none; }
+#detail[hidden] { display: none; }
+#detail h3 { font-size: 14px; margin: 0; word-break: break-word; }
+#detail h4 { font-size: 11px; margin: 12px 0 4px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+#detail .meta { color: var(--text-secondary); word-break: break-word; }
+#detail dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; }
+#detail dt { color: var(--text-muted); }
+#detail dd { margin: 0; word-break: break-word; white-space: pre-wrap; min-width: 0; }
+#detail ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#detail li { word-break: break-word; }
+#detail .small { font-size: 12px; color: var(--text-muted); }
+#detail .close { float: right; }
+button, a.button {
+  font: inherit; color: var(--text-primary); background: var(--surface-1); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; cursor: pointer;
+}
+button:hover, a.button:hover { background: var(--surface-2); }
+.link { color: var(--updated); cursor: pointer; background: none; border: 0; padding: 0; text-align: left; }
+.link:hover { text-decoration: underline; }
+.actions { display: flex; gap: 6px; margin-top: 6px; }
+#events li.clickable { cursor: pointer; }
+#events li.clickable:hover { background: var(--surface-1); }
+#preview {
+  position: absolute; inset: 12px; display: none; flex-direction: column;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.25);
+}
+#preview .bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+#preview .bar .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#preview iframe, #preview img { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+#preview img { object-fit: contain; }
 h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12px 14px 0; text-transform: uppercase; letter-spacing: 0.04em; }
 </style>
 </head>
@@ -89,6 +125,10 @@ h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12
 <div id="stage">
   <canvas id="canvas" aria-label="Graph: entities as dots, edges as lines"></canvas>
   <div id="tooltip" role="tooltip"></div>
+  <div id="preview" role="dialog" aria-label="File preview">
+    <div class="bar"><span class="name" id="preview_name"></span><button id="preview_close" type="button">Close</button></div>
+    <div id="preview_body" style="display:flex;flex:1;min-height:0"></div>
+  </div>
 </div>
 <aside>
   <section>
@@ -103,8 +143,13 @@ h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12
       <li><svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring read" cx="7" cy="7" r="5"/></svg>read <span id="reads" class="muted"></span></li>
     </ul>
     <label class="toggle"><input id="inactive" type="checkbox" checked> show superseded and retracted</label>
-    <div class="muted hint">Drag to pan, wheel to zoom, double-click to fit.</div>
+    <input id="search" type="search" placeholder="Search label, alias or type" aria-label="Search">
+    <label class="toggle"><input id="only_matches" type="checkbox"> hide entities that do not match</label>
+    <div id="matches" class="muted"></div>
+    <div id="types" aria-label="Types"></div>
+    <div class="muted hint">Drag to pan, wheel to zoom, double-click to fit. Click a node or an edge for details.</div>
   </section>
+  <div id="detail" hidden></div>
   <h2>Activity</h2>
   <ul id="events" aria-live="polite"></ul>
 </aside>
@@ -117,6 +162,7 @@ const tooltip = document.getElementById("tooltip");
 const statusLine = document.getElementById("status");
 const eventList = document.getElementById("events");
 const showInactive = document.getElementById("inactive");
+const onlyMatches = document.getElementById("only_matches");
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const FLASH_MS = 1500;
@@ -131,6 +177,10 @@ let loading = false;
 let alpha = 1;           // layout temperature
 let view = {x: 0, y: 0, k: 1};
 let hover = null;
+let hoverLink = null;
+let query = "";          // lower-case search text; non-matching entities are dimmed
+let hiddenTypes = new Set();
+let selected = null;     // {kind: "node", id} or {kind: "link", id}
 let colors = {};
 let autoFit = true;      // fit the graph into view until the user pans or zooms
 const LABEL_ALL = 80;    // up to this many visible nodes every label shows
@@ -146,8 +196,52 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", readColors
 
 // ---- data ------------------------------------------------------------
 
+function matches(node) {
+  if (!query) return true;
+  return [node.label, node.alias, node.type].some(v => v && v.toLowerCase().includes(query));
+}
+
 function visible(node) {
-  return showInactive.checked || node.status === "active";
+  if (!showInactive.checked && node.status !== "active") return false;
+  if (hiddenTypes.has(node.type)) return false;
+  return !(query && onlyMatches.checked && !matches(node));
+}
+
+function typeName(type) {
+  return type.includes(":") ? type.slice(type.lastIndexOf(":") + 1) : type;
+}
+
+function refilter() {
+  let found = 0;
+  if (query) for (const node of nodes.values()) if (visible(node) && matches(node)) found++;
+  document.getElementById("matches").textContent = query ? `${found} match${found === 1 ? "" : "es"}` : "";
+  alpha = Math.max(alpha, 0.3);
+  if (autoFit) fit();
+}
+
+function buildTypes() {
+  const counts = new Map();
+  for (const node of nodes.values()) counts.set(node.type, (counts.get(node.type) || 0) + 1);
+  const box = document.getElementById("types");
+  box.replaceChildren();
+  for (const type of [...counts.keys()].sort()) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = !hiddenTypes.has(type);
+    input.addEventListener("change", () => {
+      if (input.checked) hiddenTypes.delete(type); else hiddenTypes.add(type);
+      refilter();
+    });
+    const name = document.createElement("span");
+    name.textContent = typeName(type);
+    name.title = type;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = counts.get(type);
+    label.append(input, name, count);
+    box.append(label);
+  }
 }
 
 function placeNear(node, data) {
@@ -165,6 +259,7 @@ function upsert(data, newLinks) {
     nodes.set(data.id, node);
     placeNear(Object.assign(node, data), {links: newLinks});
     alpha = Math.max(alpha, 0.3);
+    buildTypes();
   }
   Object.assign(node, data);
   for (const [id, link] of links) {
@@ -203,6 +298,8 @@ async function loadGraph() {
     document.getElementById("reads").textContent = data.signal_reads ? "" : "(off: [activity] signal_reads)";
     alpha = old.size ? Math.max(alpha, 0.3) : 1;
     updateCounts();
+    buildTypes();
+    refilter();
   } finally {
     loading = false;
   }
@@ -224,29 +321,255 @@ function handle(event) {
     if (event.seq <= seq) return;
     const node = upsert(event.node, event.links);
     flash(node, event.kind);
-    record(event.kind, node.label, event.actor);
+    record(event.kind, node.label, event.actor, node.id);
     updateCounts();
+    if (selected && (selected.id === node.id || selectedSource() === node.id)) showSelection();
   } else if (event.kind === "read") {
     const known = event.ids.map(id => nodes.get(id)).filter(Boolean);
     known.forEach(node => flash(node, "read"));
     if (known.length) {
-      record("read", known.length === 1 ? known[0].label : `${known.length} entities`, null);
+      record("read", known.length === 1 ? known[0].label : `${known.length} entities`, null,
+        known.length === 1 ? known[0].id : null);
     }
   } else if (event.kind === "error") {
     setStatus(`error: ${event.message}`, false);
   }
 }
 
-function record(kind, label, actor) {
+function record(kind, label, actor, id) {
   const item = document.createElement("li");
   item.className = "event";
   const dot = kind === "created" ? `<circle class="dot created" cx="7" cy="7" r="2"/>` : "";
   item.innerHTML = `<svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring ${kind}" cx="7" cy="7" r="5"/>${dot}</svg><div class="body"><div class="what"></div><div class="when"></div></div>`;
   item.querySelector(".what").textContent = `${kind}: ${label}`;
   item.querySelector(".when").textContent = new Date().toLocaleTimeString() + (actor ? ` · ${actor}` : "");
+  if (id) {
+    item.classList.add("clickable");
+    item.addEventListener("click", () => select({kind: "node", id}));
+  }
   eventList.prepend(item);
   while (eventList.children.length > MAX_EVENTS) eventList.lastChild.remove();
 }
+
+// ---- details ---------------------------------------------------------
+
+const detail = document.getElementById("detail");
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function when(ts) {
+  const date = new Date(ts);
+  return isNaN(date) ? ts : date.toLocaleString();
+}
+
+function url(path, id) {
+  return `${path}?id=${encodeURIComponent(id)}&t=${encodeURIComponent(token)}`;
+}
+
+function size(bytes) {
+  if (bytes === null || bytes === undefined) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KiB";
+  return (bytes / 1048576).toFixed(1) + " MiB";
+}
+
+function show(value) {
+  if (value === null || value === undefined) return "–";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function selectedSource() {
+  if (!selected || selected.kind !== "link") return null;
+  const link = links.get(selected.id);
+  return link ? link.source : null;
+}
+
+function select(target) {
+  selected = target;
+  showSelection();
+}
+
+function nodeLink(id, label) {
+  const button = el("button", "link", label);
+  button.type = "button";
+  button.addEventListener("click", () => select({kind: "node", id}));
+  return button;
+}
+
+function qualifiers(values) {
+  const keys = Object.keys(values || {});
+  return keys.length ? keys.map(k => `${k}: ${show(values[k])}`).join(", ") : "";
+}
+
+function closeButton() {
+  const button = el("button", "close", "×");
+  button.type = "button";
+  button.setAttribute("aria-label", "Close details");
+  button.addEventListener("click", () => select(null));
+  return button;
+}
+
+function actorText(actor) {
+  if (!actor) return "unknown";
+  const parts = [];
+  for (const name of ["agent", "principal"]) {
+    const facet = actor[name];
+    if (facet) parts.push(`${name} ${facet.name || ""}${facet.assurance === "asserted" ? " (asserted)" : ""}`.trim());
+  }
+  return parts.length ? parts.join(" · ") : actor.label;
+}
+
+function historySection(history) {
+  const box = el("div");
+  box.append(el("h4", null, "History and agents"));
+  const list = el("ul");
+  for (const item of history) {
+    const row = el("li");
+    row.append(el("div", null, `rev ${item.rev} · ${item.status} · ${when(item.ts)}`));
+    row.append(el("div", "meta", actorText(item.actor)));
+    const how = [item.actor && item.actor.session ? `session ${item.actor.session.name || ""}` : null,
+      item.actor ? item.actor.client : null, item.command].filter(Boolean).join(" · ");
+    if (how) row.append(el("div", "small", how));
+    if (item.reason) row.append(el("div", "small", `reason: ${item.reason}`));
+    list.append(row);
+  }
+  box.append(list);
+  return box;
+}
+
+function edgeList(title, items, outgoing) {
+  const box = el("div");
+  box.append(el("h4", null, `${title} (${items.length})`));
+  if (!items.length) { box.append(el("div", "small", "none")); return box; }
+  const list = el("ul");
+  for (const item of items) {
+    const row = el("li");
+    const rel = el("span", "secondary", outgoing ? `${item.rel} → ` : `← ${item.rel} · `);
+    row.append(rel, nodeLink(item.other.id, item.other.label));
+    const extra = qualifiers(item.qualifiers);
+    if (extra) row.append(el("div", "small", extra));
+    list.append(row);
+  }
+  box.append(list);
+  return box;
+}
+
+function fileSection(d) {
+  const box = el("div");
+  box.append(el("h4", null, "File"));
+  const info = d.file;
+  box.append(el("div", "meta", [info.media_type, size(info.size)].filter(Boolean).join(" · ")));
+  if (!info.stored) { box.append(el("div", "small", "The stored copy is missing.")); return box; }
+  const actions = el("div", "actions");
+  if (info.inline) {
+    const preview = el("button", null, "Preview");
+    preview.type = "button";
+    preview.addEventListener("click", () => openPreview(d));
+    actions.append(preview);
+  }
+  const open = el("a", "button", info.inline ? "Open in tab" : "Download");
+  open.href = url("/blob", d.id);
+  open.target = "_blank";
+  open.rel = "noopener";
+  actions.append(open);
+  box.append(actions);
+  return box;
+}
+
+function renderNode(d) {
+  detail.replaceChildren(closeButton(), el("h3", null, d.label));
+  detail.append(el("div", "meta", [d.type, d.alias, d.status === "active" ? null : d.status, `rev ${d.rev}`].filter(Boolean).join(" · ")));
+  detail.append(el("div", "small", `${d.id}`));
+  if (d.file) detail.append(fileSection(d));
+  detail.append(el("h4", null, "Attributes"));
+  const keys = Object.keys(d.attrs);
+  if (!keys.length) detail.append(el("div", "small", "none"));
+  else {
+    const list = el("dl");
+    for (const key of keys) list.append(el("dt", null, key), el("dd", null, show(d.attrs[key])));
+    detail.append(list);
+  }
+  const valid = [d.valid_from ? `from ${d.valid_from}` : null, d.valid_to ? `to ${d.valid_to}` : null].filter(Boolean);
+  if (valid.length) detail.append(el("div", "small", `valid ${valid.join(" ")}`));
+  detail.append(edgeList("Outgoing edges", d.outgoing, true), edgeList("Incoming edges", d.incoming, false), historySection(d.history));
+}
+
+function renderLink(link, source) {
+  const a = nodes.get(link.source), b = nodes.get(link.target);
+  detail.replaceChildren(closeButton(), el("h3", null, link.rel));
+  detail.append(el("div", "meta", "edge"));
+  const list = el("dl");
+  const from = nodeLink(link.source, a ? a.label : link.source);
+  const to = nodeLink(link.target, b ? b.label : link.target);
+  const fromDd = el("dd"), toDd = el("dd");
+  fromDd.append(from); toDd.append(to);
+  list.append(el("dt", null, "from"), fromDd, el("dt", null, "to"), toDd);
+  const values = link.qualifiers || {};
+  for (const key of Object.keys(values)) list.append(el("dt", null, key), el("dd", null, show(values[key])));
+  detail.append(list, el("div", "small", link.id));
+  if (source) {
+    detail.append(el("h4", null, "Written by (history of the source entity)"));
+    detail.append(historySection(source.history).lastChild);
+  }
+}
+
+async function fetchEntity(id) {
+  const response = await fetch(url("/entity", id), {cache: "no-store"});
+  if (!response.ok) throw new Error("HTTP " + response.status);
+  return response.json();
+}
+
+function closePreview() {
+  document.getElementById("preview").style.display = "none";
+  document.getElementById("preview_body").replaceChildren();
+}
+
+function openPreview(d) {
+  const body = document.getElementById("preview_body");
+  const media = d.file.media_type || "";
+  const node = media.startsWith("image/") ? document.createElement("img") : document.createElement("iframe");
+  node.src = url("/blob", d.id);
+  if (node.tagName === "IMG") node.alt = d.label;
+  else node.title = d.label;
+  body.replaceChildren(node);
+  document.getElementById("preview_name").textContent = d.label;
+  document.getElementById("preview").style.display = "flex";
+}
+
+async function showSelection() {
+  const target = selected;
+  closePreview();
+  if (!target) { detail.hidden = true; return; }
+  detail.hidden = false;
+  try {
+    if (target.kind === "node") {
+      const d = await fetchEntity(target.id);
+      if (selected === target) renderNode(d);
+    } else {
+      const link = links.get(target.id);
+      if (!link) { select(null); return; }
+      const source = await fetchEntity(link.source).catch(() => null);
+      if (selected === target) renderLink(link, source);
+    }
+  } catch (error) {
+    if (selected === target) {
+      detail.replaceChildren(closeButton(), el("div", "muted", `cannot load the details: ${error.message}`));
+    }
+  }
+}
+
+document.getElementById("preview_close").addEventListener("click", closePreview);
+addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  if (document.getElementById("preview").style.display === "flex") closePreview();
+  else if (selected) select(null);
+});
 
 function setStatus(text, live) {
   statusLine.textContent = text;
@@ -358,6 +681,19 @@ function draw(now) {
     ctx.lineTo(bx, by);
   }
   ctx.stroke();
+  for (const link of [hoverLink, selected && selected.kind === "link" ? links.get(selected.id) : null]) {
+    if (!link) continue;
+    const a = nodes.get(link.source), b = nodes.get(link.target);
+    if (!a || !b || !visible(a) || !visible(b)) continue;
+    const [ax, ay] = toScreen(a), [bx, by] = toScreen(b);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = colors["text-secondary"];
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 1;
   const labelled = [];
   let count = 0;
   for (const node of nodes.values()) if (visible(node)) count++;
@@ -365,7 +701,9 @@ function draw(now) {
   for (const node of nodes.values()) {
     if (!visible(node)) continue;
     const [x, y] = toScreen(node);
+    const dim = query && !matches(node);
     if (node.flash) drawFlash(x, y, node, now);
+    ctx.globalAlpha = dim ? 0.15 : 1;
     ctx.beginPath();
     ctx.arc(x, y, RADIUS, 0, 2 * Math.PI);
     if (node.status === "active") {
@@ -378,7 +716,16 @@ function draw(now) {
       ctx.strokeStyle = colors["node-inactive"];
       ctx.stroke();
     }
-    if (showAllLabels || node === hover || node.flash) labelled.push([x, y, node]);
+    ctx.globalAlpha = 1;
+    if (selected && selected.kind === "node" && selected.id === node.id) {
+      ctx.beginPath();
+      ctx.arc(x, y, RADIUS + 4, 0, 2 * Math.PI);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = colors["text-primary"];
+      ctx.stroke();
+    }
+    const lit = query ? !dim : showAllLabels;
+    if (lit || node === hover || node.flash || (selected && selected.id === node.id)) labelled.push([x, y, node]);
   }
   ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
   ctx.textBaseline = "middle";
@@ -431,15 +778,35 @@ function nodeAt(sx, sy) {
   return best;
 }
 
-function showTooltip(node, sx, sy) {
-  if (!node) { tooltip.style.display = "none"; return; }
+function linkAt(sx, sy) {
+  let best = null, bestD = 6;
+  for (const link of links.values()) {
+    const a = nodes.get(link.source), b = nodes.get(link.target);
+    if (!a || !b || !visible(a) || !visible(b)) continue;
+    const [ax, ay] = toScreen(a), [bx, by] = toScreen(b);
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((sx - ax) * dx + (sy - ay) * dy) / len2)) : 0;
+    const d = Math.hypot(sx - (ax + t * dx), sy - (ay + t * dy));
+    if (d < bestD) { best = link; bestD = d; }
+  }
+  return best;
+}
+
+function showTooltip(node, sx, sy, link) {
+  if (!node && !link) { tooltip.style.display = "none"; return; }
   tooltip.replaceChildren();
   const title = document.createElement("div");
   title.className = "title";
-  title.textContent = node.label;
   const meta = document.createElement("div");
   meta.className = "meta";
-  meta.textContent = [node.type, node.alias, node.status === "active" ? null : node.status].filter(Boolean).join(" · ");
+  if (node) {
+    title.textContent = node.label;
+    meta.textContent = [node.type, node.alias, node.status === "active" ? null : node.status].filter(Boolean).join(" · ");
+  } else {
+    const a = nodes.get(link.source), b = nodes.get(link.target);
+    title.textContent = link.rel;
+    meta.textContent = `${a ? a.label : "?"} → ${b ? b.label : "?"}`;
+  }
   tooltip.append(title, meta);
   tooltip.style.display = "block";
   const left = Math.min(sx + 14, canvas.clientWidth - tooltip.offsetWidth - 8);
@@ -450,13 +817,14 @@ function showTooltip(node, sx, sy) {
 let drag = null;
 canvas.addEventListener("pointerdown", event => {
   const node = nodeAt(event.offsetX, event.offsetY);
-  drag = {node, x: event.offsetX, y: event.offsetY, vx: view.x, vy: view.y};
+  drag = {node, x: event.offsetX, y: event.offsetY, vx: view.x, vy: view.y, moved: false};
   if (!node) autoFit = false;
   if (node) { node.fixed = true; alpha = Math.max(alpha, 0.1); }
   canvas.setPointerCapture(event.pointerId);
   canvas.classList.add("dragging");
 });
 canvas.addEventListener("pointermove", event => {
+  if (drag && Math.hypot(event.offsetX - drag.x, event.offsetY - drag.y) > 4) drag.moved = true;
   if (drag && drag.node) {
     [drag.node.x, drag.node.y] = toWorld(event.offsetX, event.offsetY);
     alpha = Math.max(alpha, 0.1);
@@ -465,16 +833,23 @@ canvas.addEventListener("pointermove", event => {
     view.y = drag.vy + event.offsetY - drag.y;
   }
   hover = nodeAt(event.offsetX, event.offsetY);
-  showTooltip(hover, event.offsetX, event.offsetY);
+  hoverLink = hover ? null : linkAt(event.offsetX, event.offsetY);
+  showTooltip(hover, event.offsetX, event.offsetY, hoverLink);
 });
-function endDrag() {
+function endDrag(event) {
   if (drag && drag.node) drag.node.fixed = false;
+  if (drag && !drag.moved && event.type === "pointerup") {
+    const link = drag.node ? null : linkAt(event.offsetX, event.offsetY);
+    if (drag.node) select({kind: "node", id: drag.node.id});
+    else if (link) select({kind: "link", id: link.id});
+    else if (selected) select(null);
+  }
   drag = null;
   canvas.classList.remove("dragging");
 }
 canvas.addEventListener("pointerup", endDrag);
 canvas.addEventListener("pointercancel", endDrag);
-canvas.addEventListener("pointerleave", () => { hover = null; showTooltip(null); });
+canvas.addEventListener("pointerleave", () => { hover = null; hoverLink = null; showTooltip(null); });
 canvas.addEventListener("wheel", event => {
   event.preventDefault();
   autoFit = false;
@@ -486,7 +861,17 @@ canvas.addEventListener("wheel", event => {
   view.y = event.offsetY - canvas.clientHeight / 2 - wy * k;
 }, {passive: false});
 canvas.addEventListener("dblclick", () => { autoFit = true; fit(); });
-showInactive.addEventListener("change", () => { alpha = Math.max(alpha, 0.3); });
+showInactive.addEventListener("change", refilter);
+onlyMatches.addEventListener("change", refilter);
+document.getElementById("search").addEventListener("input", event => {
+  query = event.target.value.trim().toLowerCase();
+  refilter();
+});
+document.getElementById("search").addEventListener("keydown", event => {
+  if (event.key !== "Enter" || !query) return;
+  const first = [...nodes.values()].find(n => visible(n) && matches(n));
+  if (first) select({kind: "node", id: first.id});
+});
 addEventListener("resize", resize);
 
 resize();

@@ -5,11 +5,13 @@ that carry the token (``?t=``) and a ``Host`` of ``127.0.0.1:<port>`` or
 ``localhost:<port>`` (DNS rebinding). No CORS headers; every response is
 ``no-store`` with a strict content security policy and no referrer.
 
-Routes: ``/`` the page, ``/graph`` the whole graph as JSON, ``/events``
-Server-Sent Events. One feed thread polls the store and the activity
-socket and hands each event to a bounded queue per client: a slow client
-loses events, the feed never waits. A failing poll becomes an ``error``
-event and the feed goes on.
+Routes: ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
+one entity in full (attributes, edges, history with the writing agents),
+``/blob?id=`` the stored file of a file entity (PDFs and images inline,
+anything else as a download), ``/events`` Server-Sent Events. One feed
+thread polls the store and the activity socket and hands each event to a
+bounded queue per client: a slow client loses events, the feed never waits.
+A failing poll becomes an ``error`` event and the feed goes on.
 """
 
 from __future__ import annotations
@@ -27,7 +29,14 @@ from urllib.parse import parse_qs, urlsplit
 from graph_cli.catalog.activity import ActivityListener
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli_admin.services_admin.view import ViewFeed, ViewSource, graph_json, read_event
+from graph_cli_admin.services_admin.view import (
+    ViewFeed,
+    ViewSource,
+    entity_json,
+    graph_json,
+    open_blob,
+    read_event,
+)
 
 HOST: Final = "127.0.0.1"
 POLL_S: Final = 0.5
@@ -40,9 +49,15 @@ SECURITY_HEADERS: Final = (
     (
         "Content-Security-Policy",
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "connect-src 'self'; img-src 'self'; frame-src 'self'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     ),
 )
+# A stored file is shown inside the page only: it runs no script and loads nothing.
+BLOB_POLICY: Final = (
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'self'"
+)
+NOT_FOUND_CODES: Final = frozenset({"entity.not_found"})
 
 Event = dict[str, JsonValue]
 
@@ -164,18 +179,50 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             if not self._allowed(url.query):
                 self._send(403, b"forbidden\n", "text/plain; charset=utf-8")
                 return
+            entity = parse_qs(url.query).get("id", [""])[0]
             routes: dict[str, Callable[[], None]] = {
                 "/": lambda: self._send(200, server.page, "text/html; charset=utf-8"),
                 "/graph": lambda: self._send(
                     200, json.dumps(server.graph()).encode(), "application/json"
                 ),
+                "/entity": lambda: self._send(
+                    200, json.dumps(entity_json(server.source, entity)).encode(), "application/json"
+                ),
+                "/blob": lambda: self._blob(entity),
                 "/events": self._events,
             }
             route = routes.get(url.path)
             if route is None:
                 self._send(404, b"not found\n", "text/plain; charset=utf-8")
-            else:
+                return
+            try:
                 route()
+            except GraphCliError as exc:
+                status = (
+                    404 if exc.code in NOT_FOUND_CODES else 403 if "denied" in exc.code else 400
+                )
+                body = json.dumps({"code": exc.code, "message": exc.message}).encode()
+                self._send(status, body, "application/json")
+
+        def _blob(self, entity: str) -> None:
+            blob = open_blob(server.source, entity)
+            self.send_response(200)
+            self.send_header("Content-Type", blob.media_type)
+            self.send_header("Content-Length", str(blob.size))
+            disposition = "inline" if blob.inline else "attachment"
+            name = blob.file_name.replace('"', "").replace("\\", "")
+            name = "".join(c if c.isprintable() and c.isascii() else "_" for c in name)
+            self.send_header("Content-Disposition", f'{disposition}; filename="{name}"')
+            for header, value in SECURITY_HEADERS:
+                if header != "Content-Security-Policy":
+                    self.send_header(header, value)
+            self.send_header("Content-Security-Policy", BLOB_POLICY)
+            self.end_headers()
+            try:
+                for chunk in blob.chunks:
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
 
         def do_POST(self) -> None:
             self._send(405, b"method not allowed\n", "text/plain; charset=utf-8")
