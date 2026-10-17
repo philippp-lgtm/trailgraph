@@ -5,7 +5,9 @@ The runtime reads only this form. Every documented key is always present;
 ``max`` = unbounded, ``default`` = none, ``description``, ``renamed_from``,
 ``display_prefix``, ``role`` = no label role). A document without ``role``
 (written before label roles) reads as ``null``. ``artifact_hash`` is the C.2
-hash of the JSON document.
+hash of the JSON document. An expression node kind this program does not
+know (a model released for a newer ``graph``) is refused with
+``format.unsupported_version``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from graph_cli.kernel.json_access import (
     req_str,
     str_list,
 )
+from graph_cli.ontology_layer.expr_ast import unknown_nodes
 from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA, LABEL_ROLES
 
 AttributeKind = Literal["base", "datatype", "enum", "lifecycle"]
@@ -416,6 +419,19 @@ def _bound(data: JsonObject, path: str) -> Bound:
     return Bound(req_int(data, "min", path), opt_int(data, "max", path))
 
 
+def _expr(data: JsonObject, owner: str) -> JsonValue:
+    expr = req(data, "expr")
+    unknown = unknown_nodes(expr)
+    if unknown:
+        raise GraphCliError(
+            "format.unsupported_version",
+            f"{owner} uses the expression node {unknown[0]!r}, which this graph program does "
+            "not know; the ontology was released for a newer graph, update graph",
+            details={"node": unknown[0], "owner": owner},
+        )
+    return expr
+
+
 def model_from_json(data: JsonObject) -> CompiledModel:
     """Typed view of a compiled document. Shape errors raise ``JsonShapeError``."""
     schema = req_str(data, "schema")
@@ -451,7 +467,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
         for item in req_list(v, "transitions", f"{k}."):
             t = as_object(item, f"{k}.transitions[]")
             guards = tuple(
-                GuardDef(req_str(g, "id"), req_str(g, "summary"), req(g, "expr"))
+                GuardDef(req_str(g, "id"), req_str(g, "summary"), _expr(g, req_str(g, "id")))
                 for g in (as_object(x, f"{k}.guards[]") for x in req_list(t, "guards"))
             )
             transitions.append(
@@ -523,7 +539,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
             severity=req_str(r, "severity"),
             when=req_str(r, "when"),
             target=req_str(r, "target"),
-            expr=req(r, "expr"),
+            expr=_expr(r, req_str(r, "id")),
             doc=TermDoc.from_json(r, "rules[]."),
         )
         for r in (as_object(item, "rules[]") for item in req_list(data, "rules"))

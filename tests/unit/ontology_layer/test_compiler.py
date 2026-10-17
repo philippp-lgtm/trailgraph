@@ -48,9 +48,9 @@ def test_compiled_golden(name: str) -> None:
     assert_golden(GOLDENS / "compiled" / f"{name}_{version}.json", data)
 
 
-@pytest.mark.parametrize("name", TOY_ONTOLOGIES)
-def test_typed_view_round_trip(name: str) -> None:
-    model = compiled_model(name)
+@pytest.mark.parametrize(("name", "version"), ALL_VERSIONS)
+def test_typed_view_round_trip(name: str, version: str) -> None:
+    model = compiled_model(name, version)
     assert model_from_json(model.to_json()) == model
 
 
@@ -64,6 +64,24 @@ def test_load_compiled_checks_the_pin(name: str) -> None:
         with pytest.raises(GraphCliError) as info:
             load_compiled(bad, expected_hash=expected_hash)
         assert info.value.code == "ontology.pin_mismatch"
+
+
+@pytest.mark.parametrize("where", ["rule", "guard"])
+def test_unknown_expression_node_is_an_unsupported_version(where: str) -> None:
+    # A model released for a newer graph: a stale program refuses it clearly at load.
+    document = compiled_model("inventory").to_json()
+    newer = {"ge": [{"avg": {"rel": "inv:part_of", "attr": "weight"}}, {"const": 1}]}
+    if where == "rule":
+        document["rules"][0]["expr"] = {"not": newer}  # type: ignore[index]
+    else:
+        lifecycle = document["lifecycles"]["inv:ItemLifecycle"]  # type: ignore[index,call-overload]
+        guarded = next(t for t in lifecycle["transitions"] if t["guards"])
+        guarded["guards"][0]["expr"] = newer
+    with pytest.raises(GraphCliError) as info:
+        load_compiled(pretty_bytes(document), expected_hash=hash_value(document))
+    assert info.value.code == "format.unsupported_version"
+    assert info.value.details["node"] == "avg"
+    assert "update graph" in info.value.message
 
 
 def test_claim_is_opt_in() -> None:

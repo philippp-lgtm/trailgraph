@@ -7,13 +7,8 @@ from support.fixtures import compiled_model
 from support.snapshots import DictSnapshot, edge, revision
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.ontology_layer.evaluate import (
-    aggregate_relations,
-    evaluate,
-    exact_sum,
-    explain,
-    unknown_nodes,
-)
+from graph_cli.ontology_layer.evaluate import evaluate, exact_sum, explain
+from graph_cli.ontology_layer.expr_ast import aggregate_relations, unknown_nodes
 from graph_cli.ontology_layer.model import CompiledModel
 
 NAS = compiled_model("notes_and_sources")
