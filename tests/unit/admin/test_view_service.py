@@ -50,7 +50,8 @@ def test_the_whole_graph_with_labels_and_links(svc: ServiceEnv) -> None:
             for a, role in source.model.label_attributes(revision.type)
             if role == "label" and revision.attrs.get(a)
         ]
-        expected = labels[0] if labels else revision.alias or str(revision.id)[-8:]
+        fallback = f"{revision.type.rpartition(':')[2]} {str(revision.id)[-8:]}"
+        expected = labels[0] if labels else revision.alias or fallback
         assert node["label"] == expected
 
 

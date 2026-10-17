@@ -12,7 +12,8 @@
   event; ids the page does not know are the page's to ignore.
 
 A node's label is the value of the first ``label`` role attribute, else the
-alias, else the last 8 hex digits of the id; a hidden label is never shown.
+alias, else the type's local name and the last 8 hex digits of the id; a
+hidden label is never shown.
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ def label_of(model: CompiledModel, revision: Revision) -> str:
         value = revision.attrs.get(attr)
         if role == "label" and isinstance(value, str) and value:
             return value
-    return revision.alias or str(revision.id)[-8:]
+    return revision.alias or f"{revision.type.rpartition(':')[2]} {str(revision.id)[-8:]}"
 
 
 def node_json(model: CompiledModel, revision: Revision) -> dict[str, JsonValue]:

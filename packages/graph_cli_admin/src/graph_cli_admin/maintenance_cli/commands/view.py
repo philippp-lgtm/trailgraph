@@ -88,6 +88,8 @@ def view_command(
     try:
         server.start()
         click.echo(f"Graph view of {source.entry.name}: {server.url}", err=True)
+        if ctx.config.signal_reads and listener is None:
+            click.echo("Reads are not shown: the activity socket cannot be bound.", err=True)
         click.echo("Press Ctrl+C to stop.", err=True)
         if not no_open:
             webbrowser.open(server.url)

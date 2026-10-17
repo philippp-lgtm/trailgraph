@@ -1,5 +1,497 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>graph view</title></head>
-<body><p>graph view</p></body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graph view</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --surface-2: #f2f1ee;
+  --border: #dedcd6;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --node: #52514e;
+  --node-inactive: #b5b3ad;
+  --link: #cfcdc6;
+  --created: #008300;
+  --updated: #2a78d6;
+  --read: #eda100;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --border: #3a3936;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --node: #c3c2b7;
+    --node-inactive: #5c5b56;
+    --link: #44433f;
+    --created: #008300;
+    --updated: #3987e5;
+    --read: #c98500;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  display: flex;
+  overflow: hidden;
+}
+#stage { position: relative; flex: 1; min-width: 0; }
+canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+canvas.dragging { cursor: grabbing; }
+#tooltip {
+  position: absolute; pointer-events: none; display: none;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; max-width: 320px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+#tooltip .title { font-weight: 600; word-break: break-word; }
+#tooltip .meta { color: var(--text-secondary); }
+aside {
+  width: 300px; flex: none; border-left: 1px solid var(--border);
+  background: var(--surface-2); display: flex; flex-direction: column; min-height: 0;
+}
+aside section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 15px; margin: 0 0 2px; word-break: break-word; }
+.muted { color: var(--text-muted); }
+.secondary { color: var(--text-secondary); }
+.legend { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.legend li, .event { display: flex; align-items: center; gap: 8px; }
+.mark { width: 14px; height: 14px; flex: none; }
+.ring { fill: none; stroke-width: 2; }
+.ring.read { stroke: var(--read); stroke-dasharray: 3 2; }
+.ring.updated { stroke: var(--updated); }
+.ring.created { stroke: var(--created); }
+.dot.created { fill: var(--created); }
+  .hint { margin-top: 6px; font-size: 12px; }
+label.toggle { display: flex; gap: 6px; align-items: center; margin-top: 8px; color: var(--text-secondary); }
+#status { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+#status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+#status.live::before { background: var(--created); }
+#events { flex: 1; overflow-y: auto; padding: 8px 14px 14px; margin: 0; list-style: none; }
+#events li { padding: 5px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+#events .body { min-width: 0; }
+#events .what { word-break: break-word; }
+#events .when { color: var(--text-muted); font-size: 12px; }
+h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12px 14px 0; text-transform: uppercase; letter-spacing: 0.04em; }
+</style>
+</head>
+<body class="viz-root">
+<div id="stage">
+  <canvas id="canvas" aria-label="Graph: entities as dots, edges as lines"></canvas>
+  <div id="tooltip" role="tooltip"></div>
+</div>
+<aside>
+  <section>
+    <h1 id="title">graph view</h1>
+    <div id="counts" class="muted"></div>
+    <div id="status">connecting</div>
+  </section>
+  <section>
+    <ul class="legend">
+      <li><svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring created" cx="7" cy="7" r="5"/><circle class="dot created" cx="7" cy="7" r="2"/></svg>created</li>
+      <li><svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring updated" cx="7" cy="7" r="5"/></svg>updated</li>
+      <li><svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring read" cx="7" cy="7" r="5"/></svg>read <span id="reads" class="muted"></span></li>
+    </ul>
+    <label class="toggle"><input id="inactive" type="checkbox" checked> show superseded and retracted</label>
+    <div class="muted hint">Drag to pan, wheel to zoom, double-click to fit.</div>
+  </section>
+  <h2>Activity</h2>
+  <ul id="events" aria-live="polite"></ul>
+</aside>
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("t") || "";
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const tooltip = document.getElementById("tooltip");
+const statusLine = document.getElementById("status");
+const eventList = document.getElementById("events");
+const showInactive = document.getElementById("inactive");
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const FLASH_MS = 1500;
+const MAX_EVENTS = 30;
+const RADIUS = 5;
+
+let nodes = new Map();   // id -> {id, label, type, alias, status, x, y, vx, vy, flash, fixed}
+let links = new Map();   // edge id -> {id, source, target, rel}
+let seq = -1;            // the seq of the loaded graph; events at or below it are in it already
+let pending = [];        // events that arrive while the graph loads
+let loading = false;
+let alpha = 1;           // layout temperature
+let view = {x: 0, y: 0, k: 1};
+let hover = null;
+let colors = {};
+let autoFit = true;      // fit the graph into view until the user pans or zooms
+const LABEL_ALL = 80;    // up to this many visible nodes every label shows
+
+function readColors() {
+  const style = getComputedStyle(document.body);
+  for (const name of ["node", "node-inactive", "link", "created", "updated", "read", "text-primary", "text-secondary", "surface-1"]) {
+    colors[name] = style.getPropertyValue("--" + name).trim();
+  }
+}
+readColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", readColors);
+
+// ---- data ------------------------------------------------------------
+
+function visible(node) {
+  return showInactive.checked || node.status === "active";
+}
+
+function placeNear(node, data) {
+  const neighbour = data.links.map(l => nodes.get(l.target)).find(Boolean);
+  const angle = Math.random() * 2 * Math.PI;
+  const base = neighbour || {x: 0, y: 0};
+  node.x = base.x + Math.cos(angle) * 30;
+  node.y = base.y + Math.sin(angle) * 30;
+}
+
+function upsert(data, newLinks) {
+  let node = nodes.get(data.id);
+  if (!node) {
+    node = {vx: 0, vy: 0, flash: null, fixed: false};
+    nodes.set(data.id, node);
+    placeNear(Object.assign(node, data), {links: newLinks});
+    alpha = Math.max(alpha, 0.3);
+  }
+  Object.assign(node, data);
+  for (const [id, link] of links) {
+    if (link.source === data.id) links.delete(id);
+  }
+  for (const link of newLinks) links.set(link.id, link);
+  return node;
+}
+
+function flash(node, kind) {
+  node.flash = {kind, t0: performance.now()};
+}
+
+async function loadGraph() {
+  loading = true;
+  try {
+    const response = await fetch("/graph?t=" + encodeURIComponent(token), {cache: "no-store"});
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const data = await response.json();
+    const old = nodes;
+    nodes = new Map();
+    links = new Map();
+    for (const item of data.nodes) {
+      const node = Object.assign({vx: 0, vy: 0, flash: null, fixed: false}, old.get(item.id) || {}, item);
+      if (node.x === undefined) {
+        const angle = Math.random() * 2 * Math.PI, radius = 40 + Math.random() * 20 * Math.sqrt(data.nodes.length);
+        node.x = Math.cos(angle) * radius;
+        node.y = Math.sin(angle) * radius;
+      }
+      nodes.set(item.id, node);
+    }
+    for (const link of data.links) links.set(link.id, link);
+    seq = data.seq;
+    document.title = data.graph.name + " · graph view";
+    document.getElementById("title").textContent = data.graph.name;
+    document.getElementById("reads").textContent = data.signal_reads ? "" : "(off: [activity] signal_reads)";
+    alpha = old.size ? Math.max(alpha, 0.3) : 1;
+    updateCounts();
+  } finally {
+    loading = false;
+  }
+  const queued = pending;
+  pending = [];
+  queued.forEach(handle);
+}
+
+function updateCounts() {
+  let active = 0;
+  for (const node of nodes.values()) if (node.status === "active") active++;
+  document.getElementById("counts").textContent =
+    `${active} active · ${nodes.size - active} inactive · ${links.size} edges`;
+}
+
+function handle(event) {
+  if (loading) { pending.push(event); return; }
+  if (event.kind === "created" || event.kind === "updated") {
+    if (event.seq <= seq) return;
+    const node = upsert(event.node, event.links);
+    flash(node, event.kind);
+    record(event.kind, node.label, event.actor);
+    updateCounts();
+  } else if (event.kind === "read") {
+    const known = event.ids.map(id => nodes.get(id)).filter(Boolean);
+    known.forEach(node => flash(node, "read"));
+    if (known.length) {
+      record("read", known.length === 1 ? known[0].label : `${known.length} entities`, null);
+    }
+  } else if (event.kind === "error") {
+    setStatus(`error: ${event.message}`, false);
+  }
+}
+
+function record(kind, label, actor) {
+  const item = document.createElement("li");
+  item.className = "event";
+  const dot = kind === "created" ? `<circle class="dot created" cx="7" cy="7" r="2"/>` : "";
+  item.innerHTML = `<svg class="mark" viewBox="0 0 14 14" aria-hidden="true"><circle class="ring ${kind}" cx="7" cy="7" r="5"/>${dot}</svg><div class="body"><div class="what"></div><div class="when"></div></div>`;
+  item.querySelector(".what").textContent = `${kind}: ${label}`;
+  item.querySelector(".when").textContent = new Date().toLocaleTimeString() + (actor ? ` · ${actor}` : "");
+  eventList.prepend(item);
+  while (eventList.children.length > MAX_EVENTS) eventList.lastChild.remove();
+}
+
+function setStatus(text, live) {
+  statusLine.textContent = text;
+  statusLine.classList.toggle("live", live);
+}
+
+function connect() {
+  const source = new EventSource("/events?t=" + encodeURIComponent(token));
+  source.onopen = () => {
+    setStatus("live", true);
+    loadGraph().catch(error => setStatus(`cannot load the graph: ${error.message}`, false));
+  };
+  source.onmessage = message => handle(JSON.parse(message.data));
+  source.onerror = () => setStatus("reconnecting", false);
+}
+
+// ---- layout ----------------------------------------------------------
+
+function tick() {
+  if (alpha < 0.005) return;
+  const list = [...nodes.values()].filter(visible);
+  const n = list.length;
+  for (let i = 0; i < n; i++) {
+    const a = list[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = list[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 > 90000) continue;
+      if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+      const force = (-900 * alpha) / d2;
+      a.vx += dx * force; a.vy += dy * force;
+      b.vx -= dx * force; b.vy -= dy * force;
+    }
+  }
+  for (const link of links.values()) {
+    const a = nodes.get(link.source), b = nodes.get(link.target);
+    if (!a || !b || !visible(a) || !visible(b)) continue;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const force = ((d - 50) / d) * 0.08 * alpha;
+    a.vx += dx * force; a.vy += dy * force;
+    b.vx -= dx * force; b.vy -= dy * force;
+  }
+  for (const node of list) {
+    node.vx -= node.x * 0.004 * alpha;
+    node.vy -= node.y * 0.004 * alpha;
+    if (node.fixed) { node.vx = node.vy = 0; continue; }
+    node.vx *= 0.6; node.vy *= 0.6;
+    node.x += node.vx; node.y += node.vy;
+  }
+  alpha *= 0.985;
+}
+
+// ---- drawing ---------------------------------------------------------
+
+function resize() {
+  const ratio = devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * ratio;
+  canvas.height = canvas.clientHeight * ratio;
+}
+
+function toScreen(node) {
+  return [canvas.clientWidth / 2 + view.x + node.x * view.k, canvas.clientHeight / 2 + view.y + node.y * view.k];
+}
+
+function toWorld(sx, sy) {
+  return [(sx - canvas.clientWidth / 2 - view.x) / view.k, (sy - canvas.clientHeight / 2 - view.y) / view.k];
+}
+
+function drawFlash(x, y, node, now) {
+  const t = (now - node.flash.t0) / FLASH_MS;
+  if (t >= 1) { node.flash = null; return; }
+  const color = colors[node.flash.kind];
+  const grow = reducedMotion ? 0 : t * 10;
+  ctx.save();
+  ctx.globalAlpha = 1 - t;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash(node.flash.kind === "read" ? [4, 3] : []);
+  ctx.beginPath();
+  ctx.arc(x, y, RADIUS + 5 + grow, 0, 2 * Math.PI);
+  ctx.stroke();
+  if (node.flash.kind === "created") {
+    ctx.beginPath();
+    ctx.arc(x, y, RADIUS + 10 + grow * 1.6, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.35 * (1 - t);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, RADIUS + 4, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw(now) {
+  const ratio = devicePixelRatio || 1;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = colors.link;
+  ctx.beginPath();
+  for (const link of links.values()) {
+    const a = nodes.get(link.source), b = nodes.get(link.target);
+    if (!a || !b || !visible(a) || !visible(b)) continue;
+    const [ax, ay] = toScreen(a), [bx, by] = toScreen(b);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  const labelled = [];
+  let count = 0;
+  for (const node of nodes.values()) if (visible(node)) count++;
+  const showAllLabels = view.k >= 1.4 || count <= LABEL_ALL;
+  for (const node of nodes.values()) {
+    if (!visible(node)) continue;
+    const [x, y] = toScreen(node);
+    if (node.flash) drawFlash(x, y, node, now);
+    ctx.beginPath();
+    ctx.arc(x, y, RADIUS, 0, 2 * Math.PI);
+    if (node.status === "active") {
+      ctx.fillStyle = colors.node;
+      ctx.fill();
+    } else {
+      ctx.fillStyle = colors["surface-1"];
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = colors["node-inactive"];
+      ctx.stroke();
+    }
+    if (showAllLabels || node === hover || node.flash) labelled.push([x, y, node]);
+  }
+  ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  ctx.textBaseline = "middle";
+  for (const [x, y, node] of labelled) {
+    const text = node.label.length > 40 ? node.label.slice(0, 39) + "…" : node.label;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = colors["surface-1"];
+    ctx.strokeText(text, x + RADIUS + 4, y);
+    ctx.fillStyle = node.status === "active" ? colors["text-primary"] : colors["text-secondary"];
+    ctx.fillText(text, x + RADIUS + 4, y);
+  }
+}
+
+function fit() {
+  const list = [...nodes.values()].filter(visible);
+  if (!list.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const node of list) {
+    x0 = Math.min(x0, node.x); x1 = Math.max(x1, node.x);
+    y0 = Math.min(y0, node.y); y1 = Math.max(y1, node.y);
+  }
+  const pad = 60, labelRoom = 120;
+  const k = Math.min(
+    (canvas.clientWidth - 2 * pad - labelRoom) / Math.max(x1 - x0, 1),
+    (canvas.clientHeight - 2 * pad) / Math.max(y1 - y0, 1),
+    2,
+  );
+  view.k = Math.max(0.1, k);
+  view.x = -((x0 + x1) / 2) * view.k - labelRoom / 2;
+  view.y = -((y0 + y1) / 2) * view.k;
+}
+
+function frame(now) {
+  tick();
+  if (autoFit && alpha >= 0.005) fit();
+  draw(now);
+  requestAnimationFrame(frame);
+}
+
+// ---- interaction -----------------------------------------------------
+
+function nodeAt(sx, sy) {
+  let best = null, bestD = 12 * 12;
+  for (const node of nodes.values()) {
+    if (!visible(node)) continue;
+    const [x, y] = toScreen(node);
+    const d = (x - sx) ** 2 + (y - sy) ** 2;
+    if (d < bestD) { best = node; bestD = d; }
+  }
+  return best;
+}
+
+function showTooltip(node, sx, sy) {
+  if (!node) { tooltip.style.display = "none"; return; }
+  tooltip.replaceChildren();
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = node.label;
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = [node.type, node.alias, node.status === "active" ? null : node.status].filter(Boolean).join(" · ");
+  tooltip.append(title, meta);
+  tooltip.style.display = "block";
+  const left = Math.min(sx + 14, canvas.clientWidth - tooltip.offsetWidth - 8);
+  tooltip.style.left = Math.max(8, left) + "px";
+  tooltip.style.top = Math.max(8, sy + 14) + "px";
+}
+
+let drag = null;
+canvas.addEventListener("pointerdown", event => {
+  const node = nodeAt(event.offsetX, event.offsetY);
+  drag = {node, x: event.offsetX, y: event.offsetY, vx: view.x, vy: view.y};
+  if (!node) autoFit = false;
+  if (node) { node.fixed = true; alpha = Math.max(alpha, 0.1); }
+  canvas.setPointerCapture(event.pointerId);
+  canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointermove", event => {
+  if (drag && drag.node) {
+    [drag.node.x, drag.node.y] = toWorld(event.offsetX, event.offsetY);
+    alpha = Math.max(alpha, 0.1);
+  } else if (drag) {
+    view.x = drag.vx + event.offsetX - drag.x;
+    view.y = drag.vy + event.offsetY - drag.y;
+  }
+  hover = nodeAt(event.offsetX, event.offsetY);
+  showTooltip(hover, event.offsetX, event.offsetY);
+});
+function endDrag() {
+  if (drag && drag.node) drag.node.fixed = false;
+  drag = null;
+  canvas.classList.remove("dragging");
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("pointerleave", () => { hover = null; showTooltip(null); });
+canvas.addEventListener("wheel", event => {
+  event.preventDefault();
+  autoFit = false;
+  const factor = Math.exp(-event.deltaY * 0.0015);
+  const k = Math.min(8, Math.max(0.1, view.k * factor));
+  const [wx, wy] = toWorld(event.offsetX, event.offsetY);
+  view.k = k;
+  view.x = event.offsetX - canvas.clientWidth / 2 - wx * k;
+  view.y = event.offsetY - canvas.clientHeight / 2 - wy * k;
+}, {passive: false});
+canvas.addEventListener("dblclick", () => { autoFit = true; fit(); });
+showInactive.addEventListener("change", () => { alpha = Math.max(alpha, 0.3); });
+addEventListener("resize", resize);
+
+resize();
+connect();
+requestAnimationFrame(frame);
+</script>
+</body>
 </html>
