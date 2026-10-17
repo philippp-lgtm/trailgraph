@@ -7,7 +7,13 @@ from support.fixtures import compiled_model
 from support.snapshots import DictSnapshot, edge, revision
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.ontology_layer.evaluate import evaluate
+from graph_cli.ontology_layer.evaluate import (
+    aggregate_relations,
+    evaluate,
+    exact_sum,
+    explain,
+    unknown_nodes,
+)
 from graph_cli.ontology_layer.model import CompiledModel
 
 NAS = compiled_model("notes_and_sources")
@@ -109,6 +115,148 @@ def test_count_out_and_in_with_where() -> None:
     assert count(dangling, {"rel": "nas:cites", "direction": "out", "where": active}, 0)
 
 
+PART_SUM = {"rel": "inv:part_of", "direction": "in", "attr": "weight"}
+
+
+def assembly(*weights: Any, **kw: Any) -> tuple[Any, DictSnapshot]:
+    """An item with one part per weight (``None``: the part has no weight)."""
+    item = revision("item", "inv:Item", kw.pop("attrs", {"name": "x"}))
+    parts = [
+        revision(
+            f"p{i}",
+            "inv:Item",
+            {"name": f"p{i}"} if w is None else {"name": f"p{i}", "weight": w},
+            [edge("inv:part_of", "item")],
+        )
+        for i, w in enumerate(weights)
+    ]
+    return item, DictSnapshot(item, *parts, *kw.pop("extra", ()))
+
+
+def total(*weights: Any) -> Any:
+    item, snap = assembly(*weights)
+    found: Any = explain({"exists": {"sum": PART_SUM}}, item, snap, INV)
+    return found[0]["value"]
+
+
+@pytest.mark.parametrize(
+    ("weights", "expected"),
+    [
+        ((), 0),
+        ((1, 2), 3),
+        ((-5, 2), -3),
+        (("1.5", "2.25"), "3.75"),
+        (("1.50", 2), "3.50"),
+        (("-0.5", "0.5"), "0.0"),
+        (("0.000000001", "0.000000002"), "0.000000003"),
+        (
+            ("123456789012345678901234567890.123456789", "0.000000001"),
+            "123456789012345678901234567890.123456790",
+        ),
+        ((2**53 - 1, 2**53 - 1), str(2 * (2**53 - 1))),  # beyond C.1: reported as a string
+        ((1, None), None),
+        ((1, True), None),
+        (("1e5",), None),
+    ],
+)
+def test_sum_is_exact(weights: tuple[Any, ...], expected: Any) -> None:
+    assert total(*weights) == expected
+
+
+def test_exact_sum_keeps_large_integers() -> None:
+    assert exact_sum([2**53 - 1, 2**53 - 1]) == 2 * (2**53 - 1)
+    assert exact_sum([]) == 0
+
+
+def test_sum_compares_numerically_and_exactly() -> None:
+    def holds_sum(op: str, rhs: Any, *weights: Any, attrs: Any = None) -> bool:
+        item, snap = assembly(*weights, attrs=attrs or {"name": "x"})
+        return evaluate({op: [{"sum": PART_SUM}, rhs]}, item, snap, INV)
+
+    assert holds_sum("eq", c(3), "1.5", "1.50")
+    assert holds_sum("le", c(3), 1, 2)
+    assert not holds_sum("lt", c(3), 1, 2)
+    assert holds_sum("eq", c(0))
+    assert holds_sum("le", a("quantity"), "1.5", 2, attrs={"quantity": 4})
+    assert not holds_sum("le", a("quantity"), "2.5", 2, attrs={"quantity": 4})
+    assert holds_sum("eq", a("limit"), "0.1", "0.2", attrs={"limit": "0.30"})
+    assert not holds_sum("le", a("limit"), 1, attrs={})  # absent right side
+    big = 2 * (2**53 - 1)
+    assert holds_sum("eq", c(str(big)), 2**53 - 1, 2**53 - 1)
+    assert not holds_sum("eq", c(str(big - 1)), 2**53 - 1, 2**53 - 1)
+
+
+def test_absent_sum() -> None:
+    item, snap = assembly(1, None)
+    absent = {"sum": PART_SUM}
+    assert not evaluate({"exists": absent}, item, snap, INV)
+    assert not evaluate({"ge": [absent, c(0)]}, item, snap, INV)
+    assert not evaluate({"ne": [absent, c(0)]}, item, snap, INV)
+    assert evaluate({"exists": absent}, *assembly(1, 2), INV)
+    dangling = revision("d", "inv:Item", {"name": "d"}, [edge("inv:part_of", "missing")])
+    out = {"sum": {**PART_SUM, "direction": "out"}}
+    assert not evaluate({"exists": out}, dangling, DictSnapshot(dangling), INV)
+
+
+def test_sum_where_and_directions() -> None:
+    retired = revision(
+        "r",
+        "inv:Item",
+        {"name": "r", "weight": "9"},
+        [edge("inv:part_of", "item")],
+        status="retracted",
+    )
+    item, snap = assembly("1.5", "2", extra=[retired])
+    active = {**PART_SUM, "where": {"record_status": ["active"]}}
+    assert explain({"exists": {"sum": active}}, item, snap, INV) == [
+        {"operand": {"sum": active}, "value": "3.5"}
+    ]
+    assert explain({"exists": {"sum": PART_SUM}}, item, snap, INV) == [
+        {"operand": {"sum": PART_SUM}, "value": "12.5"}
+    ]
+    typed = {**PART_SUM, "where": {"type": ["inv:Location"]}}
+    assert evaluate({"eq": [{"sum": typed}, c(0)]}, item, snap, INV)
+    up = {"rel": "inv:part_of", "direction": "out", "attr": "quantity"}
+    parent = revision("item", "inv:Item", {"name": "x", "quantity": 7})
+    assert evaluate({"eq": [{"sum": up}, c(7)]}, retired, DictSnapshot(parent, retired), INV)
+
+
+def test_explain() -> None:
+    item, snap = assembly(1, 2, attrs={"name": "x", "quantity": 2})
+    parts = {"count": {"rel": "inv:part_of", "direction": "in"}}
+    expr = {
+        "implies": [
+            {"ge": [parts, c(1)]},
+            {"and": [{"le": [{"sum": PART_SUM}, a("quantity")]}, {"exists": {"sum": PART_SUM}}]},
+        ]
+    }
+    assert explain(expr, item, snap, INV) == [
+        {"operand": parts, "value": 2},
+        {"operand": c(1), "value": 1},
+        {"operand": {"sum": PART_SUM}, "value": 3},
+        {"operand": a("quantity"), "value": 2},
+    ]
+    assert explain({"le": [{"sum": PART_SUM}, a("limit")]}, item, snap, INV) == [
+        {"operand": {"sum": PART_SUM}, "value": 3},
+        {"operand": a("limit"), "value": None},
+    ]
+    assert explain({"eq": [a("quantity"), c(1)]}, item, snap, INV) is None
+
+
+def test_ast_walkers() -> None:
+    expr = {
+        "implies": [
+            {"ge": [{"count": {"rel": "inv:part_of", "direction": "in"}}, c(1)]},
+            {"not": {"le": [{"sum": {**PART_SUM, "direction": "out"}}, {"avg": {}}]}},
+        ]
+    }
+    assert unknown_nodes(expr) == ["avg"]
+    assert unknown_nodes({"xor": [{"eq": [a("x"), c(1)]}]}) == ["xor"]
+    assert unknown_nodes(rule(INV, "inv.serial_single_unit")) == []
+    assert aggregate_relations(expr) == {("inv:part_of", "in"), ("inv:part_of", "out")}
+    assert aggregate_relations(rule(INV, "inv.serial_single_unit")) == frozenset()
+
+
 def guard(model: CompiledModel, lifecycle: str, to: str) -> Any:
     for transition in model.lifecycles[lifecycle].transitions:
         if transition.to_state == to and transition.guards:
@@ -183,6 +331,9 @@ def test_notes_guards_and_rules() -> None:
         {"eq": [{"self": "rev"}, c(1)]},
         {"in": [a("name"), c("x")]},
         {"eq": [{"count": {"rel": "inv:part_of", "direction": "up"}}, c(0)]},
+        {"eq": [{"sum": {"rel": "inv:part_of", "direction": "in"}}, c(0)]},
+        {"eq": [{"sum": {"rel": "inv:part_of", "attr": "w", "where": []}}, c(0)]},
+        {"eq": [{"avg": {"rel": "inv:part_of", "attr": "w"}}, c(0)]},
         [],
     ],
 )
