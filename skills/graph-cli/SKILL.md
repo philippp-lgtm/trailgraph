@@ -66,6 +66,26 @@ against it and audited. The CLI is on `PATH`.
   with a single document.
 - `graph whoami --json` shows who you act as and what you may do.
 
+## Files
+
+Graphs whose ontology imports the `files` module store files: scans,
+documents, saved web pages.
+
+- When facts come from a file, store the file first:
+  `graph file add <file> --json`. Known content is not stored twice; the
+  result then names the file that holds it.
+- Link every entity you take from the file to it, with the page:
+  `graph link <id> files:from_file <id> --qualifier-json page=<value> --json`
+  (`last_page` for a range, `--qualifier locator=<value>` for a place that
+  is not a page).
+- Read a stored file at the path from `graph file path <id> --json`. Never
+  edit, move or delete anything there.
+- `graph` does not read files; you do. Do not guess what you cannot read:
+  leave the field out and tell the user.
+- `graph file check --json` compares stored files with where they came
+  from. On `changed`, store the new version with `graph file add` and
+  replace the old file: `graph supersede <id> <id> --reason <value>`.
+
 ## Output envelope
 
 Every `--json` call prints one JSON object on stdout.

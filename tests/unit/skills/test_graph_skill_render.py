@@ -169,3 +169,11 @@ def test_renderer_refuses_other_documents() -> None:
     del documents["type"]["inv:Item"]
     with pytest.raises(ValueError, match="do not match"):
         render_graph_skill(template, documents, graph)
+
+
+def test_a_model_with_stored_files_names_the_file_workflow() -> None:
+    with_files = render(compiled_model("notes_and_sources", "1.1.0"))[SKILL_FILE].decode()
+    assert "`graph file add <file> --graph example_graph --json`" in with_files
+    assert "`files:from_file`" in with_files
+    without = render(compiled_model("notes_and_sources"))[SKILL_FILE].decode()
+    assert "graph file add" not in without

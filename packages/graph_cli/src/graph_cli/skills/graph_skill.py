@@ -14,7 +14,8 @@ the same render installs the same files.
 
 Blocks (each one optional):
 
-- ``start``: how to tell the graph is reachable, read the ``graph-cli`` skill first.
+- ``start``: how to tell the graph is reachable, read the ``graph-cli`` skill first;
+  for a model with ``files:File``, one line on the file workflow.
 - ``types``: the entity types (types with an alias prefix; without any, every
   concrete type) with their supertypes, fields, enum values inline (F11), and
   states.
@@ -62,6 +63,7 @@ VALUE_SHAPES: Final[Mapping[str, str]] = {
     "blob": "`sha256:<hex>` of a stored file",
     "local_path": '`{"root": <name>, "path": <relative path>}`',
 }
+FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -256,6 +258,16 @@ def _start(doc: _Model) -> list[str]:
         "",
         "Read the `graph-cli` skill first: it explains the commands, the output envelope and"
         " safe writes. This skill says what the graph holds.",
+        *(
+            [
+                "",
+                f"The graph stores files: `graph file add <file> --graph {doc.name} --json`"
+                " stores one, and entities point to it with `files:from_file` and the page;"
+                " the `graph-cli` skill section Files says how.",
+            ]
+            if FILE_TYPE in doc.types
+            else []
+        ),
     ]
 
 
