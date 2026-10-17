@@ -23,6 +23,14 @@ def _render_force(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} graph skill render {graph} {source} --out {out} --force"
 
 
+def _view_any_port(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Let the system pick a free port."""
+    graph = details.get("graph")
+    if not isinstance(graph, str):
+        return None
+    return f"{program} view --graph {shlex.quote(graph)} --port 0"
+
+
 ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.model_invalid": None,
     "admin.version_bump_insufficient": None,
@@ -32,6 +40,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.integrity_errors": None,
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.skill_render_exists": _render_force,
+    "admin.view_port_unavailable": _view_any_port,
 }
 
 

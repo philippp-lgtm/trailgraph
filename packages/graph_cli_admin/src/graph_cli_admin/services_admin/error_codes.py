@@ -26,6 +26,10 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
+    ErrorSpec(
+        "admin.view_port_unavailable", _C.UNAVAILABLE, True, "The view port cannot be bound."
+    ),
+    ErrorSpec("admin.view_reads_unavailable", _C.WARNING, False, "The view cannot show reads."),
 )
 
 

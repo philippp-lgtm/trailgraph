@@ -18,6 +18,7 @@ from graph_cli_admin.maintenance_cli.commands.files import files_group
 from graph_cli_admin.maintenance_cli.commands.graph import graph_group
 from graph_cli_admin.maintenance_cli.commands.init import init_command
 from graph_cli_admin.maintenance_cli.commands.ontology import ontology_group
+from graph_cli_admin.maintenance_cli.commands.view import view_command
 from graph_cli_admin.services_admin import error_codes
 
 
@@ -32,6 +33,7 @@ cli.add_command(graph_group)
 cli.add_command(ontology_group)
 cli.add_command(audit_group)
 cli.add_command(files_group)
+cli.add_command(view_command)
 
 
 def main() -> None:
