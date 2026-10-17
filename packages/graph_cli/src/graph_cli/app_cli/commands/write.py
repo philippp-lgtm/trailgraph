@@ -87,7 +87,7 @@ def _name(text: str, argument: str) -> str:
     return text
 
 
-def _texts(values: Sequence[str], argument: str) -> dict[str, str]:
+def parse_texts(values: Sequence[str], argument: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for value in values:
         name, text = split_assignment(value, argument)
@@ -97,7 +97,7 @@ def _texts(values: Sequence[str], argument: str) -> dict[str, str]:
     return result
 
 
-def _json_values(values: Sequence[str], argument: str) -> dict[str, JsonValue]:
+def parse_json_values(values: Sequence[str], argument: str) -> dict[str, JsonValue]:
     result: dict[str, JsonValue] = {}
     for value in values:
         name, text = split_assignment(value, argument)
@@ -110,7 +110,7 @@ def _json_values(values: Sequence[str], argument: str) -> dict[str, JsonValue]:
     return result
 
 
-def _merge(texts: dict[str, str], values: dict[str, JsonValue], argument: str) -> None:
+def merge_values(texts: dict[str, str], values: dict[str, JsonValue], argument: str) -> None:
     for name in texts:
         if name in values:
             raise usage(argument, f"{name!r} is given with --set and {argument}", name)
@@ -125,11 +125,15 @@ def _time(text: str | None, argument: str) -> str | None:
         raise usage(argument, exc.message, text) from None
 
 
-def _changeset(op: Op, reason: str | None, idempotency_key: str | None) -> ChangeSet:
+def check_reason_and_key(reason: str | None, idempotency_key: str | None) -> None:
     if reason is not None and (not reason.strip() or len(reason) > MAX_REASON):
         raise usage("--reason", f"expected 1 to {MAX_REASON} characters")
     if idempotency_key is not None and not IDEMPOTENCY_KEY_RE.match(idempotency_key):
         raise usage("--idempotency-key", "expected [A-Za-z0-9._:-]{1,128}", idempotency_key)
+
+
+def _changeset(op: Op, reason: str | None, idempotency_key: str | None) -> ChangeSet:
+    check_reason_and_key(reason, idempotency_key)
     return ChangeSet(ops=(op,), reason=reason, idempotency_key=idempotency_key)
 
 
@@ -184,8 +188,8 @@ def create(
     reason: str | None,
     idempotency_key: str | None,
 ) -> Result:
-    texts, values = _texts(set, "--set"), _json_values(set_json, "--set-json")
-    _merge(texts, values, "--set-json")
+    texts, values = parse_texts(set, "--set"), parse_json_values(set_json, "--set-json")
+    merge_values(texts, values, "--set-json")
     edges = []
     for value in edge:
         rel, target = split_assignment(value, "--edge")
@@ -230,8 +234,8 @@ def update(
     reason: str | None,
     idempotency_key: str | None,
 ) -> Result:
-    texts, values = _texts(set, "--set"), _json_values(set_json, "--set-json")
-    _merge(texts, values, "--set-json")
+    texts, values = parse_texts(set, "--set"), parse_json_values(set_json, "--set-json")
+    merge_values(texts, values, "--set-json")
     names = [_name(name, "--unset") for name in unset]
     for name in names:
         if name in texts or name in values:
@@ -272,9 +276,9 @@ def link(
     reason: str | None,
     idempotency_key: str | None,
 ) -> Result:
-    texts = _texts(qualifier, "--qualifier")
-    values = _json_values(qualifier_json, "--qualifier-json")
-    _merge(texts, values, "--qualifier-json")
+    texts = parse_texts(qualifier, "--qualifier")
+    values = parse_json_values(qualifier_json, "--qualifier-json")
+    merge_values(texts, values, "--qualifier-json")
     if target_rev is not None and target_rev < 1:
         raise usage("--target-rev", "expected 1 or more", target_rev)
     spec = EdgeSpec(_term(rel, "rel"), _ref(target, "target"), {**texts, **values}, target_rev)

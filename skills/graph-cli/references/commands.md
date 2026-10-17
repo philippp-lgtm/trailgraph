@@ -166,6 +166,87 @@ Usage: `graph describe types [OPTIONS]`
 | `graph describe types` | All types with summaries. |
 | `graph describe types --graph <graph> --json` | Types of one graph. |
 
+## graph file add
+
+Store a file as a files:File entity; known content is not stored twice.
+
+Kind: write. Surface: act. Action: `write.create`. Exit codes: 0, 1, 2, 3, 4, 5, 6.
+
+Usage: `graph file add PATH [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `path` | file | yes | no | The file to store. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--type` | term | no | no | files:File or a subclass of it. |
+| `--title` | string | no | no | Name for people; the file name without extension. |
+| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype. |
+| `--set-json` | json_assignment | no | yes | attr=<json>, a typed value. |
+| `--media-type` | string | no | no | Media type instead of the detected one. |
+| `--source-url` | string | no | no | Address the file was downloaded from. |
+| `--retrieved-at` | string | no | no | Date of the download, YYYY-MM-DD. |
+| `--no-origin` | flag | no | no | Do not record where the file came from. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--dry-run` | flag | no | no | Validate and show the result without writing. |
+| `--reason` | string | no | no | Why this change is made (required for supersede, retract). |
+| `--idempotency-key` | string | no | no | Key that makes a retry safe. |
+
+| Example | Summary |
+|---|---|
+| `graph file add <file>` | Store a file. |
+| `graph file add <file> --type <type> --title <value> --json` | Store it as a subclass with a title. |
+
+## graph file check
+
+Compare the origins of stored files with their content: same, changed, missing.
+
+Kind: read. Surface: retrieve. Action: `read.get`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph file check [REFS...] [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `refs` | entity_ref | no | yes | Files to check; all active files with an origin when omitted. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--limit` | integer | no | no | Page size, at most 500. |
+| `--offset` | integer | no | no | Skip this many files. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph file check` | Check every file with an origin. |
+| `graph file check <id> --json` | Check one file. |
+
+## graph file path
+
+Show the local path of a stored file (read only), or of its origin.
+
+Kind: read. Surface: retrieve. Action: `read.get`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph file path REF [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `ref` | entity_ref | yes | no | A files:File entity: full id, alias or trailing hex of the id. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--origin` | flag | no | no | The origin on this machine instead of the stored copy. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph file path <id>` | Where to read the stored file. |
+| `graph file path <id> --origin --json` | Where it came from. |
+
 ## graph find
 
 Find entities by type, field filters and relations; paged.

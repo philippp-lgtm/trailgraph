@@ -191,6 +191,7 @@ class AppServices:
             files=FileService(
                 catalog=catalog,
                 writer=writer,
+                reader=reader,
                 origins=FileRoots.from_config(config.file_roots, self.env),
                 max_bytes=config.max_file_bytes,
             ),

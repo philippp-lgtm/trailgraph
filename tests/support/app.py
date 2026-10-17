@@ -33,8 +33,9 @@ def create_graph(
     *,
     title: str | None = None,
     language: str | None = None,
+    version: str | None = None,
 ) -> str:
-    version = compiled_model(ontology).bundle_version
+    version = version or compiled_model(ontology).bundle_version
     extra = ["--title", title] if title is not None else []
     extra += ["--language", language] if language is not None else []
     outcome = admin(

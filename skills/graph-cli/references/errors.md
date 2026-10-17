@@ -39,6 +39,12 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `conflict.version_mismatch` | conflict | 4 |
 | `entity.ambiguous_ref` | refused | 1 |
 | `entity.not_found` | not_found | 1 |
+| `file.module_missing` | refused | 1 |
+| `file.no_local_path` | refused | 1 |
+| `file.origin_missing` | not_found | 1 |
+| `file.root_unknown` | not_found | 1 |
+| `file.too_large` | refused | 1 |
+| `file.unreadable` | usage | 2 |
 | `format.unsupported_version` | unavailable | 5 |
 | `graph.archived` | refused | 1 |
 | `graph.not_found` | not_found | 1 |

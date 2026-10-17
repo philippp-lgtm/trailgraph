@@ -558,6 +558,312 @@
     },
     {
       "path": [
+        "file",
+        "add"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "write.create",
+      "summary": "Store a file as a files:File entity; known content is not stored twice.",
+      "args": [
+        {
+          "name": "path",
+          "type": "file",
+          "required": true,
+          "repeatable": false,
+          "summary": "The file to store."
+        }
+      ],
+      "options": [
+        {
+          "name": "--type",
+          "type": "term",
+          "required": false,
+          "repeatable": false,
+          "summary": "files:File or a subclass of it."
+        },
+        {
+          "name": "--title",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Name for people; the file name without extension."
+        },
+        {
+          "name": "--set",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value, coerced by the attribute's datatype."
+        },
+        {
+          "name": "--set-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=<json>, a typed value."
+        },
+        {
+          "name": "--media-type",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Media type instead of the detected one."
+        },
+        {
+          "name": "--source-url",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Address the file was downloaded from."
+        },
+        {
+          "name": "--retrieved-at",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Date of the download, YYYY-MM-DD."
+        },
+        {
+          "name": "--no-origin",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Do not record where the file came from."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Validate and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (required for supersede, retract)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph file add <file>",
+          "summary": "Store a file."
+        },
+        {
+          "command": "graph file add <file> --type <type> --title <value> --json",
+          "summary": "Store it as a subclass with a title."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.reason_required",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "file.module_missing",
+        "file.too_large",
+        "file.unreadable",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "file",
+        "check"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.get",
+      "summary": "Compare the origins of stored files with their content: same, changed, missing.",
+      "args": [
+        {
+          "name": "refs",
+          "type": "entity_ref",
+          "required": false,
+          "repeatable": true,
+          "summary": "Files to check; all active files with an origin when omitted."
+        }
+      ],
+      "options": [
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many files.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph file check",
+          "summary": "Check every file with an origin."
+        },
+        {
+          "command": "graph file check <id> --json",
+          "summary": "Check one file."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "file.module_missing",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      }
+    },
+    {
+      "path": [
+        "file",
+        "path"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.get",
+      "summary": "Show the local path of a stored file (read only), or of its origin.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "A files:File entity: full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--origin",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "The origin on this machine instead of the stored copy."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph file path <id>",
+          "summary": "Where to read the stored file."
+        },
+        {
+          "command": "graph file path <id> --origin --json",
+          "summary": "Where it came from."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.corrupt",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "file.module_missing",
+        "file.no_local_path",
+        "file.origin_missing",
+        "file.root_unknown",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "find"
       ],
       "kind": "read",
@@ -2057,6 +2363,36 @@
       "code": "entity.not_found",
       "category": "not_found",
       "exit": 1
+    },
+    {
+      "code": "file.module_missing",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "file.no_local_path",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "file.origin_missing",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "file.root_unknown",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "file.too_large",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "file.unreadable",
+      "category": "usage",
+      "exit": 2
     },
     {
       "code": "format.unsupported_version",

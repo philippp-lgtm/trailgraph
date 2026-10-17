@@ -18,6 +18,10 @@ them. ``FileService.add``:
 6. One ``create`` goes through ``WriteService.apply`` with the staged blob,
    which is published at W.11b. The staged copy is discarded afterwards in
    every case.
+
+Reads (``path``, ``check``) are ``read.get`` on the graph and then on
+``graph:<id>/type:<curie>`` of the file, so a policy can deny file content
+per type. They write nothing; ``check`` hashes the origin files.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import BinaryIO, Final, Protocol
@@ -36,13 +40,15 @@ from graph_cli.kernel.changeset import ChangeSet, CreateOp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import TermRef
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
-from graph_cli.kernel.ports.storage import GraphStoreRead, StagedBlob
+from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, GraphStoreRead, StagedBlob
 from graph_cli.kernel.query_ast import Cmp, Query
 from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.values import check_facets
 from graph_cli.services import media_types
 from graph_cli.services.models import ModelCache
+from graph_cli.services.read import GraphRead, Page, ReadService
+from graph_cli.services.refs import resolve_ref
 from graph_cli.services.write import WriteRequest, WriteResult, WriteService
 
 FILE_TYPE: Final = "files:File"
@@ -105,10 +111,11 @@ class FileAddResult:
     existing: bool
     write: WriteResult | None  # None when the file was already present
     warnings: tuple[WarningRecord, ...] = ()
+    read_seq: int | None = None  # the state that showed the file present
 
     @property
     def seq(self) -> int | None:
-        return None if self.write is None else self.write.seq
+        return self.read_seq if self.write is None else self.write.seq
 
     def to_json(self) -> dict[str, JsonValue]:
         write: dict[str, JsonValue] = (
@@ -200,17 +207,22 @@ def find_by_content(model: CompiledModel, read: GraphStoreRead, digest: str) -> 
     return items[0] if items else None
 
 
+CHECK_STATUSES: Final = ("same", "changed", "missing", "root_unknown", "no_origin")
+
+
 class FileService:
     def __init__(
         self,
         *,
         catalog: Catalog,
         writer: WriteService,
+        reader: ReadService | None = None,
         origins: Origins | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
     ) -> None:
         self._catalog = catalog
         self._writer = writer
+        self._reader = reader
         self._origins: Origins = origins if origins is not None else NoOrigins()
         self.max_bytes = max_bytes
         self._models = ModelCache(catalog)
@@ -233,6 +245,174 @@ class FileService:
                 return self._add(request, entry, model, read, type_ref, source, staged)
             finally:
                 staged.discard()
+
+    # ---- reads ---------------------------------------------------------
+
+    def path(
+        self,
+        view: GraphRead,
+        ref: str,
+        *,
+        origin: bool,
+        actor: ActorContext,
+        request: RequestMeta,
+    ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """The stored copy's path (read only), or with ``origin`` the origin on this machine."""
+        revision, warnings = self._file(view, ref, actor, request)
+        read = self._catalog.store_for(view.entry.id)[0]
+        digest = str(revision.attrs.get("content"))
+        stored = read.blob(digest)
+        if stored is None:
+            raise GraphCliError(
+                "backend.corrupt",
+                f"the stored copy of {ref} is missing; run graph-admin files verify",
+                details={"id": str(revision.id), "blob": digest},
+            )
+        where = self._origin(revision)
+        if origin:
+            if where is None:
+                raise GraphCliError(
+                    "file.origin_missing",
+                    f"{ref} has no recorded origin",
+                    details={"id": str(revision.id)},
+                )
+            resolved = self._origins.resolve(where)  # file.root_unknown
+            if not resolved.is_file():
+                raise GraphCliError(
+                    "file.origin_missing",
+                    f"the origin of {ref} is not there: {resolved}",
+                    details={"id": str(revision.id), "path": str(resolved)},
+                )
+            path = str(resolved)
+        else:
+            if CAPABILITY_BLOB_LOCAL_PATH not in read.capabilities():
+                raise GraphCliError(
+                    "file.no_local_path",
+                    "this backend keeps stored files without a local path",
+                    details={"id": str(revision.id)},
+                )
+            local = read.blob_local_path(digest)
+            assert local is not None  # the blob exists and the capability is there
+            path = str(local)
+        data: dict[str, JsonValue] = {
+            "id": str(revision.id),
+            "alias": revision.alias,
+            "type": revision.type,
+            "hash": digest,
+            "size": stored.size,
+            "media_type": revision.attrs.get("media_type"),
+            "path": path,
+            "origin": self._origin_json(where),
+        }
+        return data, warnings
+
+    def check(
+        self,
+        view: GraphRead,
+        refs: Sequence[str],
+        *,
+        limit: int,
+        offset: int,
+        actor: ActorContext,
+        request: RequestMeta,
+    ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
+        """Compare origins with the stored content; without ``refs`` every active file
+        with an origin, paged like ``find``."""
+        warnings: list[WarningRecord] = []
+        if refs:
+            revisions = []
+            for ref in refs:
+                revision, found = self._file(view, ref, actor, request)
+                warnings += found
+                revisions.append(revision)
+            page = Page(len(revisions), len(revisions), max(limit, len(revisions)), 0)
+        else:
+            types = file_types(view.model)
+            for type_ref in types:
+                self._authorize_type(view, type_ref, actor, request)
+            query = Query(
+                types=tuple(TermRef(t) for t in types),
+                where=Cmp("origin", "exists"),
+                record_status=_ACTIVE,
+                limit=limit,
+                offset=offset,
+            )
+            result = view.snapshot.query(query)
+            revisions = list(result.items)
+            page = Page(result.total, len(revisions), limit, offset)
+        items: list[JsonValue] = []
+        counts = dict.fromkeys(CHECK_STATUSES, 0)
+        for revision in revisions:
+            status, where = self._status(revision)
+            counts[status] += 1
+            items.append(
+                {
+                    "id": str(revision.id),
+                    "alias": revision.alias,
+                    "status": status,
+                    "origin": where,
+                }
+            )
+        counts_json: dict[str, JsonValue] = dict(counts)
+        return {"items": items, "counts": counts_json}, page, warnings
+
+    def _file(
+        self, view: GraphRead, ref: str, actor: ActorContext, request: RequestMeta
+    ) -> tuple[Revision, list[WarningRecord]]:
+        """A ``files:File`` family entity, authorized for ``read.get`` on its type."""
+        types = file_types(view.model)
+        entity, found = resolve_ref(ref, view.snapshot)
+        revision = view.snapshot.get(entity)
+        if revision is None:
+            raise GraphCliError(
+                "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
+            )
+        if revision.type not in types:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"{ref} is a {revision.type}, not a stored file ({FILE_TYPE})",
+                details={"argument": "ref", "value": ref, "actual": revision.type},
+            )
+        self._authorize_type(view, revision.type, actor, request)
+        return revision, list(found)
+
+    def _authorize_type(
+        self, view: GraphRead, type_ref: str, actor: ActorContext, request: RequestMeta
+    ) -> None:
+        if self._reader is None:
+            raise GraphCliError("internal.error", "the file service has no reader")
+        resource = f"graph:{view.entry.id}/type:{type_ref}"
+        self._reader.authorize(actor, "read.get", resource, request, view.entry)
+
+    def _origin(self, revision: Revision) -> Mapping[str, JsonValue] | None:
+        value = revision.attrs.get("origin")
+        return value if isinstance(value, Mapping) else None
+
+    def _origin_json(self, where: Mapping[str, JsonValue] | None) -> JsonValue:
+        """``{root, path, resolved}``; ``resolved`` is null when the root is not set here."""
+        if where is None:
+            return None
+        try:
+            resolved: JsonValue = str(self._origins.resolve(where))
+        except GraphCliError as exc:
+            if exc.code != "file.root_unknown":
+                raise
+            resolved = None
+        return {"root": where.get("root"), "path": where.get("path"), "resolved": resolved}
+
+    def _status(self, revision: Revision) -> tuple[str, JsonValue]:
+        where = self._origin(revision)
+        origin = self._origin_json(where)
+        if where is None:
+            return "no_origin", origin
+        assert isinstance(origin, Mapping)
+        resolved = origin.get("resolved")
+        if not isinstance(resolved, str):
+            return "root_unknown", origin
+        digest = _hash_file(Path(resolved))
+        if digest is None:
+            return "missing", origin
+        return ("same" if digest == revision.attrs.get("content") else "changed"), origin
 
     # ---- steps ---------------------------------------------------------
 
@@ -293,7 +473,7 @@ class FileService:
         media_type = request.media_type or media_types.detect(source.head, file_name)
         known = find_by_content(model, read, staged.hash)
         if known is not None:
-            return self._existing(entry, known, staged)
+            return self._existing(entry, read, known, staged)
         warnings: list[WarningRecord] = []
         origin = None
         if not request.no_origin:
@@ -334,7 +514,7 @@ class FileService:
         except GraphCliError as exc:
             winner = _lost_race(exc) and find_by_content(model, read, staged.hash)
             if winner:
-                return self._existing(entry, winner, staged)
+                return self._existing(entry, read, winner, staged)
             raise
         (created,) = result.entities
         entity: dict[str, JsonValue] = {
@@ -349,7 +529,9 @@ class FileService:
             entry, entity, file, False, replace(result, warnings=()), tuple(warnings)
         )
 
-    def _existing(self, entry: GraphEntry, known: Revision, staged: StagedBlob) -> FileAddResult:
+    def _existing(
+        self, entry: GraphEntry, read: GraphStoreRead, known: Revision, staged: StagedBlob
+    ) -> FileAddResult:
         entity: dict[str, JsonValue] = {
             "id": str(known.id),
             "alias": known.alias,
@@ -362,7 +544,21 @@ class FileService:
             {"id": str(known.id)},
         )
         file = _file_json(staged.hash, staged.size, known.attrs)
-        return FileAddResult(entry, entity, file, True, None, (warning,))
+        return FileAddResult(entry, entity, file, True, None, (warning,), read.head().seq)
+
+
+def _hash_file(path: Path) -> str | None:
+    """The sha256 of a regular file, ``None`` when it is not there or cannot be read."""
+    hasher = hashlib.sha256()
+    try:
+        if not path.is_file():
+            return None
+        with open(path, "rb") as handle:
+            while chunk := handle.read(CHUNK_BYTES):
+                hasher.update(chunk)
+    except OSError:
+        return None
+    return "sha256:" + hasher.hexdigest()
 
 
 def _file_json(digest: str, size: int, attrs: Mapping[str, JsonValue]) -> dict[str, JsonValue]:

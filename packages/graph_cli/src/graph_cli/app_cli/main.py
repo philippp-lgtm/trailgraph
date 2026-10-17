@@ -36,6 +36,7 @@ def program() -> click.Group:
         all_specs(),
         group_help={
             "describe": "Describe the commands, or the ontology of a graph.",
+            "file": "Store files in a graph and find them again.",
             "skills": "Write, install and check the agent skills of this program and its graphs.",
         },
         global_options=GLOBAL_OPTIONS,
