@@ -132,11 +132,12 @@ harness. Malformed values are dropped with a warning and never block. Only
 
 | Module | Content |
 | --- | --- |
-| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default, file roots, file size limit |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default, file roots, file size limit, read signal |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
+| `catalog.activity` | the read signal for `graph-admin view`: Unix datagrams to the viewer sockets in the state directory, fire and forget |
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services |
 | `catalog.identity` | identity providers and the actor (see above) |
@@ -147,7 +148,7 @@ Locations (XDG; macOS uses the same paths):
 | --- | --- |
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
 | Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
-| State (operational log) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+| State (operational log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
 
 Unknown config or manifest keys are warnings; an unknown `format_version`
 or an invalid value stops the command.
@@ -280,6 +281,7 @@ them.
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
 | `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
+| `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--no-open`); no JSON mode |
 
 Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version
@@ -290,6 +292,32 @@ interrupted operation as info and anchors only graphs without errors.
 `cli_kit` (envelope, error rendering, hints) is shared with the application
 CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
 and `graph_cli_admin.services_admin` holds the procedures.
+
+### Live view
+
+`graph-admin view --graph <graph>` prints an address on stderr and opens
+it: the whole graph as dots and lines, with labels, and a list of recent
+activity. Entities light up briefly when something touches them: green
+when created (also by `graph file add`), blue when changed, yellow when
+read. Writes show up by themselves, from any process, once committed.
+Reads show up only when `config.toml` has
+
+```toml
+[activity]
+signal_reads = true
+```
+
+Then `graph get`, `find`, `lookup`, `neighbors`, `file path` and
+`file check` send the ids they return to every running view, as Unix
+datagrams to sockets in the state directory. Nothing is stored, a read
+never fails or waits because of it, and without a running view nothing
+is sent. The signal carries ids only, no labels, values or query text.
+
+The server listens on `127.0.0.1` only and answers only requests that
+carry the random token in the printed address, so keep the address to
+yourself. The page shows labels, types, aliases and record status, no
+other values. A Unix socket path is limited to about 100 bytes; with a
+very long state directory the view starts without reads and says so.
 
 ## Files
 
