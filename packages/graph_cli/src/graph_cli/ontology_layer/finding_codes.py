@@ -76,6 +76,7 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _model("semantic", "role_not_applicable", "A label role is set on a non-string attribute."),
     _model("semantic", "label_not_single", "A main label attribute is declared many."),
     _model("semantic", "duplicate_label", "A class has more than one main label attribute."),
+    _model("semantic", "base_not_applicable", "A qualifier uses a base type for attributes only."),
     # lifecycle
     _model("lifecycle", "no_initial_state", "A lifecycle has no initial state."),
     _model("lifecycle", "unreachable_state", "A state cannot be reached from an initial state."),

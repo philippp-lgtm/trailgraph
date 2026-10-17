@@ -6,6 +6,8 @@ revisions. Fidelity is deliberately partial: lifecycles become plain enums
 the no-float rule for ``json`` values are not expressed. The validator stays
 the authority; the export is a convenience for external tools.
 
+A ``blob`` or ``local_path`` value carries ``x-graph_cli-base``: the
+schema states the shape, not every rule (the stored blob, the path segments).
 A label role is the annotation ``x-graph_cli-role`` on the property (draft
 2020-12 collects unknown keywords as annotations; ``$comment`` is not one).
 Validators in a strict mode, such as Ajv's, need the keyword registered.
@@ -15,12 +17,14 @@ from __future__ import annotations
 
 from typing import Final
 
-from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonValue
+from graph_cli.kernel.canonical import HASH_RE, MAX_SAFE_INT, JsonValue
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE
+from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
 
 DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
 ROLE_KEYWORD: Final = "x-graph_cli-role"
+BASE_KEYWORD: Final = "x-graph_cli-base"  # bases JSON Schema cannot fully express
 
 _UUID: Final = {
     "type": "string",
@@ -46,6 +50,17 @@ _BASE: Final[dict[str, dict[str, JsonValue]]] = {
         "properties": {"graph": _UUID, "entity": _UUID},
         "required": ["entity", "graph"],
         "additionalProperties": False,
+    },
+    "blob": {"type": "string", "pattern": HASH_RE.pattern, BASE_KEYWORD: "blob"},
+    "local_path": {
+        "type": "object",
+        "properties": {
+            "root": {"type": "string", "pattern": FILE_ROOT_RE.pattern},
+            "path": {"type": "string", "minLength": 1},
+        },
+        "required": ["path", "root"],
+        "additionalProperties": False,
+        BASE_KEYWORD: "local_path",
     },
 }
 _FACET_KEYWORDS: Final = {

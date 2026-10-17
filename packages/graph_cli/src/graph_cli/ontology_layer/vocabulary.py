@@ -29,10 +29,15 @@ BASE_TYPES: Final = frozenset(
         "iri",
         "json",
         "external_ref",
+        "blob",
+        "local_path",
     }
 )
 # Base types whose values are not scalars: unique and facets do not apply.
-NON_SCALAR_BASES: Final = frozenset({"json", "external_ref"})
+NON_SCALAR_BASES: Final = frozenset({"json", "external_ref", "local_path"})
+# Base types for attributes only, never for qualifiers (a stored file is referenced
+# by an entity, not by an edge).
+ATTRIBUTE_ONLY_BASES: Final = frozenset({"blob", "local_path"})
 
 FACETS_BY_BASE: Final[dict[str, frozenset[str]]] = {
     "string": frozenset({"min_length", "max_length", "pattern", "single_line"}),
@@ -81,3 +86,4 @@ LOWER_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")  # relations, attri
 NAMESPACE_NS_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,31}$")  # annotation namespaces
 CURIE_RE: Final = re.compile(r"^([a-z][a-z0-9_]{0,15}):([A-Za-z][A-Za-z0-9_]{0,63})$")
 DISPLAY_PREFIX_RE: Final = re.compile(r"^[A-Z][A-Z0-9]{0,7}$")
+FILE_ROOT_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")  # root names of local_path values

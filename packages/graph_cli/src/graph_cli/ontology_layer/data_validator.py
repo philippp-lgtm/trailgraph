@@ -63,7 +63,13 @@ from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
-from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE, check_facets
+from graph_cli.ontology_layer.values import (
+    DECIMAL_RE,
+    DURATION_RE,
+    blob_problem,
+    check_facets,
+    local_path_problem,
+)
 
 PROVENANCE_RELATIONS: Final = frozenset({"core:supersedes", "core:retracts"})
 _IRI_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S+$")
@@ -108,6 +114,10 @@ def _check_scalar(base: str, value: JsonValue) -> str | None:
         return None if ok else "expected a timestamp YYYY-MM-DDTHH:MM:SS.sssZ"
     if base == "external_ref":
         return _check_external_ref(value)
+    if base == "blob":
+        return blob_problem(value)
+    if base == "local_path":
+        return local_path_problem(value)
     if base == "json":
         return None
     raise GraphCliError("internal.error", f"unknown base type {base!r}")

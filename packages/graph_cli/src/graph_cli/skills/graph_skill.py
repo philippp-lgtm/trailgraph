@@ -57,6 +57,11 @@ FIELD_COLUMNS: Final = (
     "Declared in",
     "Summary",
 )
+# Value shapes the base name alone does not tell.
+VALUE_SHAPES: Final[Mapping[str, str]] = {
+    "blob": "`sha256:<hex>` of a stored file",
+    "local_path": '`{"root": <name>, "path": <relative path>}`',
+}
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -650,6 +655,9 @@ def _limits(field: JsonObject) -> str:
     values = _strings(field.get("values"))
     if values:
         parts.append(f"one of {_codes(values)}")
+    shape = VALUE_SHAPES.get(req_str(field, "base"))
+    if shape is not None:
+        parts.append(shape)
     limits = req_obj(field, "limits")
     parts += [f"{name} {_value(limits[name])}" for name in sorted(limits)]
     return ", ".join(parts)

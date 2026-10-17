@@ -33,6 +33,7 @@ from graph_cli.ontology_layer.ir import (
 from graph_cli.ontology_layer.report import Report
 from graph_cli.ontology_layer.values import check_facets, coerce_text
 from graph_cli.ontology_layer.vocabulary import (
+    ATTRIBUTE_ONLY_BASES,
     BASE_TYPES,
     EDGE_FIELDS,
     FACETS_BY_BASE,
@@ -84,7 +85,7 @@ def attribute_default(
         datatype = found[1]
         assert isinstance(datatype, IrDatatype)
         base, facets = datatype.base, datatype.facets
-    if base in NON_SCALAR_BASES:
+    if base in NON_SCALAR_BASES | ATTRIBUTE_ONLY_BASES:
         return None, f"attributes of type {base} take no default"
     try:
         if base == "integer":
@@ -455,13 +456,22 @@ class _Validator:
                         qualifier.path,
                         f"{qualifier.name!r} is a reserved edge field",
                     )
-                if self.b.resolve_type(module_id, qualifier.type) is None:
+                resolved = self.b.resolve_type(module_id, qualifier.type)
+                if resolved is None:
                     self.unknown(
                         "model.semantic.qualifier_unknown_datatype",
                         module_id,
                         f"{qualifier.path}.type",
                         "type",
                         qualifier.type,
+                    )
+                elif (base := self._base(*resolved)) in ATTRIBUTE_ONLY_BASES:
+                    self.add(
+                        "model.semantic.base_not_applicable",
+                        module_id,
+                        f"{qualifier.path}.type",
+                        f"type {base} is for attributes only, not qualifiers",
+                        actual=qualifier.type,
                     )
 
     def inverse_labels(self) -> None:

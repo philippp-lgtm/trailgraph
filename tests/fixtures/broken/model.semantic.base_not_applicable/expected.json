@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.base_not_applicable",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "relations.next.qualifiers.content.type"
+  }
+}
