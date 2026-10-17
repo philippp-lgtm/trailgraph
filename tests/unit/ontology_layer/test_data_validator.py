@@ -569,3 +569,136 @@ def test_an_unknown_target_state_is_named() -> None:
     (finding,) = findings
     assert finding.code == "data.lifecycle.transition_not_allowed"
     assert "'lost' is not a state of" in finding.message
+
+
+# ---- neighbours of touched entities (aggregate write rules) ---------------------------
+
+ACTIVE_PARTS = {"rel": "inv:part_of", "direction": "in", "where": {"record_status": ["active"]}}
+PARTS_SUM = {"sum": {**ACTIVE_PARTS, "attr": "quantity"}}
+PARTS_COUNT = {"count": ACTIVE_PARTS}
+
+
+def with_rules(*rules: tuple[str, str, Any]) -> CompiledModel:
+    """INV with ``inv.serial_single_unit`` plus write rules ``(id, severity, expr)`` on items."""
+    serial = next(r for r in INV.rules if r.id == "inv.serial_single_unit")
+    extra = tuple(replace(serial, id=i, severity=sev, expr=expr) for i, sev, expr in rules)
+    return replace(INV, rules=(serial, *extra))
+
+
+SUM_MODEL = with_rules(
+    (
+        "inv.parts_add_up",
+        "warning",
+        {
+            "implies": [
+                {"ge": [PARTS_COUNT, {"const": 1}]},
+                {"eq": [PARTS_SUM, {"attr": "quantity"}]},
+            ]
+        },
+    ),
+    ("inv.few_parts", "error", {"le": [PARTS_COUNT, {"const": 2}]}),
+)
+
+
+def stored(name: str, quantity: int, *edges: Any, **kw: Any) -> Any:
+    return revision(
+        name,
+        "inv:Item",
+        {"name": name, "quantity": quantity, **kw.pop("attrs", {})},
+        [edge("inv:located_in", "room", name=f"{name}-room"), *edges],
+        **kw,
+    )
+
+
+BOX = stored("box", 3, attrs={"serial_number": "SN-0100"})  # violates the serial rule already
+BIN = stored("bin", 5)
+PART_A = stored("a", 1, edge("inv:part_of", "box", name="a-box"))
+PART_B = stored("b", 2, edge("inv:part_of", "box", name="b-box"))
+TREE = DictSnapshot(ROOM, BOX, BIN, PART_A, PART_B)
+BOX_ID, BIN_ID, A_ID, B_ID = (str(r.id) for r in (BOX, BIN, PART_A, PART_B))
+
+
+def rule_hits(*ops: dict[str, Any], model: CompiledModel = SUM_MODEL, base: Any = TREE) -> Any:
+    _, findings = judge(model, *ops, base=base)
+    return sorted((f.rule_id, f.target["id"], f.severity.value) for f in findings if f.rule_id)
+
+
+def part(quantity: int, parent: str = BOX_ID) -> dict[str, Any]:
+    return item(
+        quantity=quantity,
+        edges=[{"rel": "inv:located_in", "target": R}, {"rel": "inv:part_of", "target": parent}],
+    )
+
+
+def test_a_consistent_tree_has_no_rule_findings() -> None:
+    assert rule_hits({"op": "update", "id": A_ID, "set": {"name": "A"}}) == []
+
+
+def test_creating_a_child_rechecks_its_parent() -> None:
+    assert rule_hits(part(1)) == [
+        ("inv.few_parts", BOX_ID, "error"),  # an error on a neighbour blocks the write
+        ("inv.parts_add_up", BOX_ID, "warning"),
+    ]
+    assert rule_hits(part(2, BIN_ID)) == [("inv.parts_add_up", BIN_ID, "warning")]
+    assert rule_hits(part(5, BIN_ID)) == []
+
+
+def test_changes_of_children_recheck_old_and_new_parents() -> None:
+    update = {"op": "update", "id": A_ID, "set": {"quantity": 2}}
+    assert rule_hits(update) == [("inv.parts_add_up", BOX_ID, "warning")]
+    unlink = {"op": "unlink", "id": B_ID, "rel": "inv:part_of", "target": BOX_ID}
+    assert rule_hits(unlink) == [("inv.parts_add_up", BOX_ID, "warning")]
+    assert rule_hits({"op": "retract", "id": B_ID}) == [("inv.parts_add_up", BOX_ID, "warning")]
+    link = {"op": "link", "id": B_ID, "rel": "inv:part_of", "target": BIN_ID}
+    assert rule_hits(unlink, link) == sorted(
+        [("inv.parts_add_up", BIN_ID, "warning"), ("inv.parts_add_up", BOX_ID, "warning")]
+    )
+    fixed = {"op": "update", "id": BIN_ID, "set": {"quantity": 2}}
+    assert rule_hits(unlink, link, fixed) == [("inv.parts_add_up", BOX_ID, "warning")]
+
+
+def test_out_aggregates_recheck_the_sources() -> None:
+    parent_sum = {"sum": {"rel": "inv:part_of", "direction": "out", "attr": "quantity"}}
+    model = with_rules(("inv.small_parent", "warning", {"le": [parent_sum, {"const": 10}]}))
+    update = {"op": "update", "id": BOX_ID, "set": {"quantity": 11}}
+    assert rule_hits(update, model=model) == sorted(
+        [
+            ("inv.serial_single_unit", BOX_ID, "error"),  # the touched box itself
+            ("inv.small_parent", A_ID, "warning"),
+            ("inv.small_parent", B_ID, "warning"),
+        ]
+    )
+
+
+def test_touched_entities_are_checked_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from graph_cli.ontology_layer import data_validator
+
+    calls: list[tuple[str, str]] = []
+    original = data_validator.evaluate
+
+    def counting(expr: Any, entity: Any, snapshot: Any, model: Any) -> bool:
+        calls.append((str(entity.id), next(r.id for r in model.rules if r.expr is expr)))
+        return original(expr, entity, snapshot, model)
+
+    monkeypatch.setattr(data_validator, "evaluate", counting)
+    update = {"op": "update", "id": BOX_ID, "set": {"quantity": 4}}
+    assert rule_hits(part(1), update) == [
+        ("inv.few_parts", BOX_ID, "error"),
+        ("inv.serial_single_unit", BOX_ID, "error"),  # the box is touched now
+    ]
+    box_calls = [rule for entity, rule in calls if entity == BOX_ID]
+    assert sorted(box_calls) == ["inv.few_parts", "inv.parts_add_up", "inv.serial_single_unit"]
+
+
+def test_rules_without_aggregates_never_run_on_neighbours() -> None:
+    # The box violates the serial rule in the base state; touching a part does not report it.
+    assert rule_hits({"op": "update", "id": A_ID, "set": {"name": "A"}}) == []
+
+
+def test_inactive_and_unknown_type_neighbours_are_skipped() -> None:
+    old_box = stored("box", 3, status="superseded")
+    base = DictSnapshot(ROOM, old_box, PART_A, PART_B)
+    assert rule_hits(part(1), base=base) == []
+    ghost = revision("ghost", "inv:Gone", {"name": "g"})
+    base = DictSnapshot(ROOM, ghost)
+    assert rule_hits(part(1, str(ghost.id)), base=base) == []

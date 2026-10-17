@@ -18,6 +18,12 @@ from here.
   the post-state of touched active entities; lifecycle, mutability and
   unlink judgements from the recorded op effects. ``target_not_active`` is
   reported only for edges added by the request.
+- **Neighbours** (write path): a write rule with an aggregate (``count``,
+  ``sum``) also runs on the untouched active neighbours of touched
+  entities: an entity at the other end of an edge of a touched entity, in
+  the pre- or post-state, whose aggregate counts over that edge (one hop).
+  An edge ``a -rel-> b`` makes ``b`` a neighbour for ``(rel, in)`` and ``a``
+  for ``(rel, out)``.
 - **Batch** (``check_graph``): every current revision under one model;
   structural, referential and semantic checks on all, every rule and
   ``cardinality_in`` on active entities only, ``target_not_active`` only
@@ -41,6 +47,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from functools import cached_property
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue, canonical_bytes
@@ -54,6 +61,7 @@ from graph_cli.kernel.query_ast import Cmp, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.ontology_layer.evaluate import evaluate, explain
+from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE, check_facets
 
@@ -465,9 +473,22 @@ class _Checker:
                     actual=[str(e) for e in path],
                 )
 
-    def rules(self, revision: Revision, whens: frozenset[str]) -> None:
+    @cached_property
+    def aggregates(self) -> dict[str, frozenset[tuple[str, str]]]:
+        """Rule id -> ``(rel, direction)`` of its aggregates."""
+        return {rule.id: aggregate_relations(rule.expr) for rule in self.model.rules}
+
+    def rules(
+        self,
+        revision: Revision,
+        whens: frozenset[str],
+        links: frozenset[tuple[str, str]] | None = None,
+    ) -> None:
+        """Rules on ``revision``; with ``links`` only those aggregating over one of them."""
         for rule in self.model.rules:
             if rule.when not in whens or not self.model.is_a(revision.type, rule.target):
+                continue
+            if links is not None and self.aggregates[rule.id].isdisjoint(links):
                 continue
             if not evaluate(rule.expr, revision, self.snapshot, self.model):
                 self.add(
@@ -512,6 +533,7 @@ def validate_write(
     for revision in active:
         checker.unique_values(revision, checkable[revision.id][1])
         checker.rules(revision, frozenset({"write"}))
+    _neighbours(checker, before, after, touched)
     checker.cycles(rev for rev, _ in checkable.values())
     for effect in effects:
         if effect.entity in checkable:
@@ -523,6 +545,39 @@ def validate_write(
                 _judge_effect(checker, before, effect, revision, cls)
     _aliases(checker, before, after, effects, alias_allocations)
     return sort_findings(checker.findings)
+
+
+def _neighbours(
+    checker: _Checker, before: Snapshot, after: Snapshot, touched: Sequence[EntityId]
+) -> None:
+    """Aggregate write rules on untouched active neighbours of touched entities."""
+    wanted = {
+        rel
+        for rule in checker.model.rules
+        if rule.when == "write"
+        for rel, _ in checker.aggregates[rule.id]
+    }
+    if not wanted:
+        return
+    links: dict[EntityId, set[tuple[str, str]]] = {}
+    for entity in touched:
+        for snapshot in (before, after):
+            revision = snapshot.get(entity)
+            for edge in () if revision is None else revision.edges:
+                if edge.rel in wanted:
+                    links.setdefault(edge.target, set()).add((edge.rel, "in"))
+            for rel in sorted(wanted):
+                for source, _ in snapshot.incoming(entity, TermRef(rel)):
+                    links.setdefault(source, set()).add((rel, "out"))
+    done = set(touched)
+    for entity in sorted(links):
+        revision = after.get(entity)
+        if entity in done or revision is None or revision.record_status != "active":
+            continue
+        cls = checker.model.classes.get(revision.type)
+        if cls is None or cls.abstract:
+            continue
+        checker.rules(revision, frozenset({"write"}), frozenset(links[entity]))
 
 
 def _immutables(checker: _Checker, previous: Revision, revision: Revision, cls: ClassDef) -> None:
