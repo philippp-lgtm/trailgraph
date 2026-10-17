@@ -156,8 +156,8 @@ only caller of `WriteSession.commit`.
 | `kernel.changeset` | change set DTOs, strict parsing (`changeset.malformed` with `details.path`), limits (1000 ops, 8 MiB), the canonical form and its hash, JSON/JSONL input readers |
 | `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
-| `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity) and `check_graph` (every entity, batch rules included) |
-| `ontology_layer.evaluate` | guards and rules of the compiled expression AST |
+| `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |
+| `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch` |
 
 A write runs in this order: check the graph state and the pinned ontology
