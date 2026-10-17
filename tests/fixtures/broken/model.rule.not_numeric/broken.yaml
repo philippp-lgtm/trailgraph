@@ -1,0 +1,40 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true
+      size:
+        summary: Size in units.
+        type: integer
+  Part:
+    summary: A part of a thing.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true
+
+relations:
+  part_of:
+    summary: The thing this part belongs to.
+    domain: Part
+    range: Thing
+
+rules:
+  - id: parts_within_size
+    summary: The parts of a thing fit its size.
+    severity: warning
+    when: write
+    scope: Thing
+    then:
+      - {sum: {rel: part_of, direction: in, attr: label}, maximum_value: {attr: size}}

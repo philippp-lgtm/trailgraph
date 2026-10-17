@@ -92,6 +92,16 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     # rule
     _model("rule", "unknown_scope", "A rule scope names an unknown class."),
     _model("rule", "unknown_attribute", "A rule names an attribute its scope lacks."),
+    _model(
+        "rule",
+        "aggregate_unknown_attribute",
+        "A summed attribute is not declared on every class at the other end.",
+    ),
+    _model(
+        "rule",
+        "not_numeric",
+        "A summed or compared attribute is not a single integer or decimal value.",
+    ),
     # data: write path (validate_write) and batch (check_graph)
     _data("structural", "unknown_type", "The type does not exist."),
     _data("structural", "abstract_type", "The type is abstract."),

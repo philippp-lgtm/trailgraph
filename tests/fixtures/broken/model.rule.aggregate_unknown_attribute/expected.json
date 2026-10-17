@@ -1,0 +1,8 @@
+{
+  "code": "model.rule.aggregate_unknown_attribute",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "rules.parts_within_size.then[0].sum.attr"
+  }
+}

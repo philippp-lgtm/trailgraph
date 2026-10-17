@@ -14,8 +14,22 @@ from collections.abc import Iterable, Mapping
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.findings import Finding, sort_findings
 from graph_cli.ontology_layer.bundle import IrBundle, TermKind
-from graph_cli.ontology_layer.expressions import AttrCond, Cond, CountCond, iter_conditions
-from graph_cli.ontology_layer.ir import IrAttribute, IrClass, IrDatatype, IrEnum, IrLifecycle
+from graph_cli.ontology_layer.expressions import (
+    AttrCond,
+    AttrRef,
+    Cond,
+    CountCond,
+    SumCond,
+    iter_conditions,
+)
+from graph_cli.ontology_layer.ir import (
+    IrAttribute,
+    IrClass,
+    IrDatatype,
+    IrEnum,
+    IrLifecycle,
+    IrRelation,
+)
 from graph_cli.ontology_layer.report import Report
 from graph_cli.ontology_layer.values import check_facets, coerce_text
 from graph_cli.ontology_layer.vocabulary import (
@@ -550,38 +564,136 @@ class _Validator:
     def conditions(
         self, module_id: str, conds: tuple[Cond, ...], scopes: list[str], *, guard: bool
     ) -> None:
+        """Names in conditions resolve; summed and compared attributes are numeric.
+
+        An attribute compared with ``{attr}`` must, like the attribute it is
+        compared with, be one integer or decimal. Guards report unknown
+        attributes with their own code and share the other codes with rules.
+        """
         code = (
             "model.lifecycle.guard_unknown_attribute" if guard else "model.rule.unknown_attribute"
         )
         for cond in iter_conditions(conds):
+            compares_attr = any(isinstance(value, AttrRef) for _, value in cond.ops)
             if isinstance(cond, AttrCond):
                 for scope in scopes:
-                    if cond.attr not in self.b.effective_attributes(scope):
-                        self.add(
-                            code,
-                            module_id,
-                            f"{cond.path}.attr",
-                            f"{scope} has no attribute {cond.attr!r}",
-                            actual=cond.attr,
-                        )
-            elif isinstance(cond, CountCond):
-                if self.b.resolve(module_id, cond.rel, "relation") is None:
-                    self.unknown(
-                        "model.referential.unknown_relation",
-                        module_id,
-                        f"{cond.path}.count.rel",
-                        "relation",
-                        cond.rel,
+                    self.scope_attribute(
+                        code, module_id, scope, cond.attr, f"{cond.path}.attr", compares_attr
                     )
-                for ref in cond.types:
-                    if self.b.resolve(module_id, ref, "class") is None:
-                        self.unknown(
-                            "model.referential.unknown_term",
-                            module_id,
-                            f"{cond.path}.count.where.type",
-                            "class",
-                            ref,
-                        )
+            else:
+                self.aggregate(module_id, cond)
+            for op, value in cond.ops:
+                if isinstance(value, AttrRef):
+                    for scope in scopes:
+                        path = f"{cond.path}.{op}.attr"
+                        self.scope_attribute(code, module_id, scope, value.attr, path, True)
+
+    def scope_attribute(
+        self, code: str, module_id: str, scope: str, name: str, path: str, numeric: bool
+    ) -> None:
+        found = self.b.effective_attributes(scope).get(name)
+        if found is None:
+            self.add(code, module_id, path, f"{scope} has no attribute {name!r}", actual=name)
+        elif numeric and self.numeric(found[1], found[2]) is False:
+            self.add(
+                "model.rule.not_numeric",
+                module_id,
+                path,
+                f"{name!r} of {scope} is not a single integer or decimal value",
+                actual=name,
+            )
+
+    def numeric(self, module_id: str, attribute: IrAttribute) -> bool | None:
+        """One integer or decimal value; ``None`` when the type does not resolve (reported)."""
+        if attribute.lifecycle is not None or attribute.many:
+            return False
+        resolved = (
+            None if attribute.type is None else self.b.resolve_type(module_id, attribute.type)
+        )
+        if resolved is None:
+            return None
+        return resolved[0] != "enum" and self._base(*resolved) in ("integer", "decimal")
+
+    def aggregate(self, module_id: str, cond: CountCond | SumCond) -> None:
+        kind = "count" if isinstance(cond, CountCond) else "sum"
+        rel = self.b.resolve(module_id, cond.rel, "relation")
+        if rel is None:
+            self.unknown(
+                "model.referential.unknown_relation",
+                module_id,
+                f"{cond.path}.{kind}.rel",
+                "relation",
+                cond.rel,
+            )
+        types = []
+        for ref in cond.types:
+            curie = self.b.resolve(module_id, ref, "class")
+            if curie is None:
+                self.unknown(
+                    "model.referential.unknown_term",
+                    module_id,
+                    f"{cond.path}.{kind}.where.type",
+                    "class",
+                    ref,
+                )
+            types.append(curie)
+        if isinstance(cond, SumCond) and rel is not None and None not in types:
+            ends = self.end_classes(rel, cond.direction, {t for t in types if t is not None})
+            if ends is not None:
+                self.summed(module_id, cond, rel, ends)
+
+    def end_classes(self, rel: str, direction: str, types: set[str]) -> list[str] | None:
+        """Concrete classes the other end of ``rel`` can have, narrowed to ``types``.
+
+        ``None`` when the relation's range or domain does not resolve (reported).
+        """
+        found = self.b.term(rel, "relation")
+        if found is None:
+            return None
+        owner, relation = found
+        assert isinstance(relation, IrRelation)
+        bases = set()
+        for ref in relation.range if direction == "out" else relation.domain:
+            curie = self.b.resolve(owner, ref, "class")
+            if curie is None:
+                return None
+            bases.add(curie)
+        result = []
+        for _, curie, cls in self.b.classes():
+            lineage = {curie, *self.b.ancestors(curie)}
+            if cls.abstract or (bases and lineage.isdisjoint(bases)):
+                continue
+            if not types or not lineage.isdisjoint(types):
+                result.append(curie)
+        return result
+
+    def summed(self, module_id: str, cond: SumCond, rel: str, ends: list[str]) -> None:
+        path = f"{cond.path}.sum.attr"
+        missing, other = [], []
+        for curie in ends:
+            found = self.b.effective_attributes(curie).get(cond.attr)
+            if found is None:
+                missing.append(curie)
+            elif self.numeric(found[1], found[2]) is False:
+                other.append(curie)
+        if missing:
+            self.add(
+                "model.rule.aggregate_unknown_attribute",
+                module_id,
+                path,
+                f"{', '.join(missing)} at the other end of {rel} "
+                f"{'has' if len(missing) == 1 else 'have'} no attribute {cond.attr!r}; "
+                "declare it on every class there or narrow with where.type",
+                actual=cond.attr,
+            )
+        if other:
+            self.add(
+                "model.rule.not_numeric",
+                module_id,
+                path,
+                f"{cond.attr!r} of {other[0]} is not a single integer or decimal value",
+                actual=cond.attr,
+            )
 
     def rules(self, module_id: str) -> None:
         for rule in self.b.modules[module_id].rules:
