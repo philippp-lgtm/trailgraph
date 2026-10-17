@@ -24,6 +24,8 @@ from here.
   for active sources. Lifecycle values must name a state
   (``enum_value_unknown``); on the write path the lifecycle checks judge
   them instead.
+- **Rule findings** of a rule with an aggregate (``count``, ``sum``) carry
+  ``actual = [{operand, value}]`` (``evaluate.explain``); others carry none.
 - **Uniqueness** holds among ``active`` entities of the class family where
   the attribute is declared (``declared_in`` and its subclasses); an alias
   set explicitly must not be bound already (B1.8).
@@ -51,7 +53,7 @@ from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
-from graph_cli.ontology_layer.evaluate import evaluate
+from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE, check_facets
 
@@ -474,6 +476,7 @@ class _Checker:
                     None,
                     rule.doc.summary,
                     severity=Severity(rule.severity),
+                    actual=explain(rule.expr, revision, self.snapshot, self.model),
                     rule_id=rule.id,
                 )
 

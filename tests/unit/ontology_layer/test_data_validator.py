@@ -330,6 +330,49 @@ def test_findings_are_sorted_and_carry_rule_ids() -> None:
     assert by_code["data.rule.violated"].target["id"] == str(working.locals["x"])
 
 
+def test_rule_findings_with_aggregates_carry_their_values() -> None:
+    _, findings = judge(NAS, note(kind="summary", status="published"), base=NAS_BASE)
+    (finding,) = [f for f in findings if f.code == "data.rule.violated"]
+    assert finding.rule_id == "nas.summary_cites_source"
+    assert finding.expected is None
+    assert finding.actual == [
+        {"operand": {"count": {"rel": "nas:cites", "direction": "out"}}, "value": 0},
+        {"operand": {"const": 1}, "value": 1},
+    ]
+    (orphan,) = [f for f in check_graph(NAS, DictSnapshot(TOPIC)) if f.rule_id]
+    assert orphan.actual == [
+        {"operand": {"count": {"rel": "nas:about", "direction": "in"}}, "value": 0},
+        {"operand": {"const": 1}, "value": 1},
+        {"operand": {"count": {"rel": "nas:broader", "direction": "in"}}, "value": 0},
+    ]
+
+
+def test_sum_rule_findings_carry_the_sum_and_the_bound() -> None:
+    parts = {"sum": {"rel": "inv:part_of", "direction": "in", "attr": "quantity"}}
+    serial = next(r for r in INV.rules if r.id == "inv.serial_single_unit")
+    model = replace(
+        INV, rules=(replace(serial, id="inv.parts", expr={"le": [parts, {"attr": "quantity"}]}),)
+    )
+    box = revision("box", "inv:Item", {"name": "Box", "quantity": 2})
+    pieces = [
+        revision(f"p{n}", "inv:Item", {"name": "P", "quantity": n}, [edge("inv:part_of", "box")])
+        for n in (1, 2)
+    ]
+    (finding,) = [f for f in check_graph(model, DictSnapshot(box, *pieces)) if f.rule_id]
+    assert finding.target["id"] == str(box.id)
+    assert finding.actual == [
+        {"operand": parts, "value": 3},
+        {"operand": {"attr": "quantity"}, "value": 2},
+    ]
+
+
+def test_rule_findings_without_aggregates_are_unchanged() -> None:
+    _, findings = judge(INV, item(serial_number="SN-0002", quantity=2), base=INV_BASE)
+    (finding,) = findings
+    assert (finding.code, finding.rule_id) == ("data.rule.violated", "inv.serial_single_unit")
+    assert finding.expected is None and finding.actual is None
+
+
 def test_explicit_alias_must_be_unbound() -> None:
     base = DictSnapshot(ROOM, replace(DESK, alias="ITEM-0001"))
     _, findings = judge(INV, {"op": "set_alias", "id": R, "alias": "ITEM-0001"}, base=base)
