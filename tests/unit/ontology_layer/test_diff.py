@@ -4,7 +4,13 @@ from dataclasses import replace
 from itertools import pairwise
 
 import pytest
-from support.fixtures import ONTOLOGIES, assert_golden, compiled_model, ontology_versions
+from support.fixtures import (
+    ONTOLOGIES,
+    TOY_ONTOLOGIES,
+    assert_golden,
+    compiled_model,
+    ontology_versions,
+)
 
 from graph_cli.kernel.canonical import pretty_bytes
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
@@ -16,13 +22,21 @@ SERIES = ontology_versions("inventory")
 PAIRS = list(pairwise(SERIES))
 
 
-def test_version_series_golden() -> None:
+@pytest.mark.parametrize("name", TOY_ONTOLOGIES)
+def test_version_series_golden(name: str) -> None:
     reports = [
-        classify(compiled_model("inventory", a), compiled_model("inventory", b)).to_json()
-        for a, b in PAIRS
+        classify(compiled_model(name, a), compiled_model(name, b)).to_json()
+        for a, b in pairwise(ontology_versions(name))
     ]
-    document = {"schema": "graph_cli.fixture_diffs/1", "ontology": "inventory", "diffs": reports}
-    assert_golden(ONTOLOGIES / "inventory" / "expected_diffs.json", pretty_bytes(document))
+    document = {"schema": "graph_cli.fixture_diffs/1", "ontology": name, "diffs": reports}
+    assert_golden(ONTOLOGIES / name / "expected_diffs.json", pretty_bytes(document))
+
+
+def test_importing_files_is_minor() -> None:
+    report = classify(
+        compiled_model("notes_and_sources", "1.0.0"), compiled_model("notes_and_sources", "1.1.0")
+    )
+    assert report.level == "minor"
 
 
 @pytest.mark.parametrize(

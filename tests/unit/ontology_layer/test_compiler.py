@@ -27,7 +27,7 @@ def test_positive_control_has_zero_findings(name: str, version: str) -> None:
     assert outcome.model is not None
 
 
-@pytest.mark.parametrize("module", ["core", "provenance"])
+@pytest.mark.parametrize("module", ["core", "provenance", "files"])
 def test_builtin_modules_compile_cleanly(module: str) -> None:
     outcome = compile_bundle(module, LayeredSource())
     assert outcome.findings == ()
@@ -41,9 +41,14 @@ def test_artifact_hash_is_stable(name: str, version: str) -> None:
     assert canonical_bytes(first.to_json()) == canonical_bytes(second.to_json())
 
 
-@pytest.mark.parametrize("name", TOY_ONTOLOGIES)
-def test_compiled_golden(name: str) -> None:
-    version = ontology_versions(name)[0]
+@pytest.mark.parametrize(
+    ("name", "version"),
+    [
+        *((name, ontology_versions(name)[0]) for name in TOY_ONTOLOGIES),
+        ("notes_and_sources", "1.1.0"),
+    ],
+)
+def test_compiled_golden(name: str, version: str) -> None:
     data = pretty_bytes(compiled_model(name, version).to_json())
     assert_golden(GOLDENS / "compiled" / f"{name}_{version}.json", data)
 

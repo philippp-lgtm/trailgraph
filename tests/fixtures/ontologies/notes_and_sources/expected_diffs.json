@@ -1,0 +1,56 @@
+{
+  "diffs": [
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files:File"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.nas:Scan"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:Line"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:MediaType"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:PageNumber"
+        },
+        {
+          "detail": {},
+          "kind": "add_import",
+          "level": "minor",
+          "path": "modules.files"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.files:from_file"
+        }
+      ],
+      "from": "1.0.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.1.0"
+    }
+  ],
+  "ontology": "notes_and_sources",
+  "schema": "graph_cli.fixture_diffs/1"
+}

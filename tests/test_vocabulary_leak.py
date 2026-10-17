@@ -5,7 +5,9 @@ names (classes, datatypes, enums, lifecycles) and every compound snake_case
 name (relations, attributes, enum values, states with an underscore). Plain
 English single words (``about``, ``name``, ``draft``) are excluded to avoid
 false positives. Python sources are scanned as identifiers and non-docstring
-string constants; other source files as text.
+string constants; other source files as text. Names the standard modules
+define (``core``, ``provenance``, ``files``) are package data and generic; they
+are not denied even when a fixture uses them too.
 """
 
 import ast
@@ -14,7 +16,24 @@ import re
 from harness import REPO_ROOT
 from support.fixtures import TOY_ONTOLOGIES, compiled_model, ontology_versions
 
+from graph_cli.ontology_layer.bundle import LayeredSource
+from graph_cli.ontology_layer.compiler import compile_bundle
+
+BUILTIN_MODULES = ("core", "provenance", "files")
 SRC_ROOTS = [REPO_ROOT / "packages" / name / "src" for name in ("graph_cli", "graph_cli_admin")]
+
+
+def builtin_names() -> set[str]:
+    """Names the standard modules define: package data and generic, never fixture vocabulary."""
+    names: set[str] = set()
+    for module_id in BUILTIN_MODULES:
+        model = compile_bundle(module_id, LayeredSource()).model
+        assert model is not None
+        for curie in model.term_curies():
+            names.add(curie.partition(":")[2])
+            if curie in model.classes:
+                names.update(model.classes[curie].attributes)
+    return names
 
 
 def deny_list() -> tuple[set[str], set[str]]:
@@ -30,13 +49,17 @@ def deny_list() -> tuple[set[str], set[str]]:
             names = {curie.partition(":")[2] for curie in own}
             for curie in own:
                 if curie in model.classes:
-                    names.update(model.classes[curie].attributes)
+                    names.update(
+                        attr
+                        for attr, definition in model.classes[curie].attributes.items()
+                        if definition.declared_in in own
+                    )
                 if curie in model.enums:
                     names.update(model.enums[curie].value_names())
                 if curie in model.lifecycles:
                     names.update(model.lifecycles[curie].state_names())
             words.update(n for n in names if n[0].isupper() or "_" in n)
-    return words, prefixes
+    return words - builtin_names(), prefixes
 
 
 def _python_tokens(tree: ast.Module) -> list[str]:
@@ -92,6 +115,7 @@ def test_deny_list_is_meaningful() -> None:
     assert {"Item", "WebPage", "located_in", "in_stock", "serial_number"} <= words
     assert prefixes == {"nas", "inv"}
     assert "about" not in words  # plain single words are excluded
+    assert "retrieved_at" not in words  # also a term of the standard module files
 
 
 def test_no_fixture_vocabulary_in_sources() -> None:
