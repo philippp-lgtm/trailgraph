@@ -31,6 +31,8 @@ notes = "~/synced/notes"
 archive_2 = "/srv/archive"
 [files]
 max_bytes = 2048
+[activity]
+signal_reads = true
 """
 
 
@@ -57,12 +59,14 @@ def test_every_key() -> None:
         output="json",
         file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
         max_file_bytes=2048,
+        signal_reads=True,
     )
 
 
 def test_file_defaults() -> None:
     config, _ = parse_config(b"format_version = 1\n", path=PATH)
     assert (config.file_roots, config.max_file_bytes) == ({}, 100 * 1024 * 1024)
+    assert config.signal_reads is False
 
 
 def test_integer_timeout() -> None:
@@ -81,6 +85,8 @@ def test_unknown_keys_warn() -> None:
     ]
     _, warnings = parse_config(b"format_version = 1\n[files]\nkeep = 1\n", path=PATH)
     assert [w.details["key"] for w in warnings] == ["files.keep"]
+    _, warnings = parse_config(b"format_version = 1\n[activity]\nwrites = true\n", path=PATH)
+    assert [w.details["key"] for w in warnings] == ["activity.writes"]
 
 
 def test_unknown_major() -> None:
@@ -114,6 +120,7 @@ def test_unknown_major() -> None:
         ("format_version = 1\n[files]\nmax_bytes = 0\n", "files.max_bytes"),
         ("format_version = 1\n[files]\nmax_bytes = 1073741825\n", "files.max_bytes"),
         ('format_version = 1\n[files]\nmax_bytes = "1M"\n', "files.max_bytes"),
+        ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
     ],
 )
 def test_defects_are_config_invalid(body: str, key: str) -> None:

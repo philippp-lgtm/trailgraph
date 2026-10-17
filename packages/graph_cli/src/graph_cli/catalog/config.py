@@ -37,6 +37,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
             "output",
             "roots",
             "files",
+            "activity",
         }
     ),
     "device": frozenset({"id", "name"}),
@@ -47,6 +48,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "audit": frozenset({"record_data_root"}),
     "output": frozenset({"default"}),
     "files": frozenset({"max_bytes"}),
+    "activity": frozenset({"signal_reads"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
@@ -67,6 +69,7 @@ class Config:
     output: OutputMode = "text"
     file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
+    signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -139,6 +142,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     max_bytes = get("files.max_bytes", int, "an integer")
     if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
         raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
+    signal_reads = get("activity.signal_reads", bool, "a boolean")
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -156,6 +160,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         output=output or defaults.output,
         file_roots=file_roots,
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
+        signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
     )
     return config, tuple(warnings)
 
