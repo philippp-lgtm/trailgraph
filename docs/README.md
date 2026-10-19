@@ -276,7 +276,7 @@ them.
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
-| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change) |
 | `audit verify` | check every chain, tx log, revision file and manifest pin; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |

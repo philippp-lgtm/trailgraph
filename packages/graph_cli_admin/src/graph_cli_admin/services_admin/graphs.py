@@ -9,6 +9,7 @@ the anchor, and publishes the graph with one rename.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from graph_cli.audit import events
@@ -117,6 +118,18 @@ def alias_prefixes(compiled: Compiled) -> dict[TermRef, str]:
         for curie, cls in sorted(compiled.model.classes.items())
         if cls.display_prefix is not None and not cls.abstract
     }
+
+
+def merged_alias_prefixes(current: Mapping[TermRef, str], compiled: Compiled) -> dict[TermRef, str]:
+    """The manifest's prefixes plus the seeds of classes a release adds. An existing
+    prefix never changes; a seed that another class already uses is skipped."""
+    merged = dict(current)
+    used = set(current.values())
+    for curie, prefix in alias_prefixes(compiled).items():
+        if curie not in merged and prefix not in used:
+            merged[curie] = prefix
+            used.add(prefix)
+    return merged
 
 
 def describe(manifest: ManifestData) -> dict[str, JsonValue]:

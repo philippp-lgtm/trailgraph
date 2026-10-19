@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
+from support.app import ENV, app
 from support.fixtures import ONTOLOGIES, compiled_model
 
 from graph_cli.audit.verify import verify_stream
@@ -83,6 +84,23 @@ def test_rerunning_a_pinned_release_changes_nothing(run_cli: CliRunner, root: Pa
     assert outcome.code == 0
     assert (outcome.data["released"], outcome.data["pinned"]) == (False, False)
     assert FileAuditLog(root).head(INSTALLATION_STREAM) == before
+
+
+def test_a_release_seeds_the_alias_prefixes_of_added_classes(
+    run_cli: CliRunner, root: Path
+) -> None:
+    """Classes new in a release get their display prefix; existing prefixes stay."""
+    create(run_cli)
+    before = admin(run_cli, "graph", "show", "example_graph").data["alias_prefixes"]
+    outcome = release(run_cli, INVENTORY / "1.1.0")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["alias_prefixes_added"] == {"inv:Supplier": "SUP"}
+    after = admin(run_cli, "graph", "show", "example_graph").data["alias_prefixes"]
+    assert after == {**before, "inv:Supplier": "SUP"}
+    supplier = {"op": "create", "type": "inv:Supplier", "attrs": {"name": "Example supplier"}}
+    write_documents(root, "example_graph", [{"ops": [supplier]}])
+    found = app(run_cli, "find", "--type", "inv:Supplier", env=ENV)
+    assert [item["alias"] for item in found.data["items"]] == ["SUP-0001"]
 
 
 def test_release_exists(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:

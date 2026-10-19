@@ -619,7 +619,7 @@ def test_a_release_makes_the_copy_stale_and_install_refreshes_it(
         ("graph-example-graph", "replace"),
     ]
     skill = project / ".claude" / "skills" / "graph-example-graph"
-    assert "`inv:Supplier` (`SUP-0001`)" not in (skill / "SKILL.md").read_text()  # no prefix
+    assert "`inv:Supplier` (`SUP-0001`)" in (skill / "SKILL.md").read_text()  # seeded prefix
     assert "`refurbished`" in (skill / "SKILL.md").read_text()  # the new enum value
     assert marker_of(skill)["source"]["model"] == {"bundle": "inventory", "version": "1.1.0"}
     assert statuses(check(run_cli, project)) == {

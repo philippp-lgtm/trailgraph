@@ -7,7 +7,8 @@ installation event anchoring the intent:
 1. ``maint.ontology_release`` installs ``ontology/<version>/`` (skipped if
    that version is installed with the same artifact hash);
 2. ``maint.ontology_pin`` switches the manifest pin from the current to the
-   new release.
+   new release and seeds the alias prefixes of classes the release adds
+   (existing prefixes never change).
 
 Refused before any event: archived graph (``graph.archived``), the version
 installed with other content (``admin.release_exists``), a bump smaller
@@ -36,6 +37,7 @@ from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli_admin.services_admin.context import AdminContext
+from graph_cli_admin.services_admin.graphs import merged_alias_prefixes
 from graph_cli_admin.services_admin.ontology import (
     COMPILED_FILE,
     PinnedModel,
@@ -137,7 +139,13 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
             data["released"] = True
         change = events.pin_change(current, target)
         receipt = ctx.intent(session, entry, pin_decisions, meta, change)
-        pinned = replace(manifest, entry=replace(entry, pin=target))
+        prefixes = merged_alias_prefixes(entry.alias_prefixes, compiled)
+        data["alias_prefixes_added"] = {
+            str(curie): prefix
+            for curie, prefix in prefixes.items()
+            if curie not in entry.alias_prefixes
+        }
+        pinned = replace(manifest, entry=replace(entry, pin=target, alias_prefixes=prefixes))
         session.replace_manifest(pinned, receipt)
         ctx.anchor(entry, pin_decisions, meta, receipt)
         data["pinned"] = True
