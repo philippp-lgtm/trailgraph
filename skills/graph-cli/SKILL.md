@@ -64,7 +64,21 @@ against it and audited. The CLI is on `PATH`.
   `graph apply <file> --dry-run --json`, then apply it. Its idempotency key
   is `idempotency_key` in the document, or `--idempotency-key` for a file
   with a single document.
-- `graph whoami --json` shows who you act as and what you may do.
+
+## Access
+
+- `graph whoami --json` shows who you act as and, in
+  `data.permissions.graphs`, what you may do per graph: the `level`
+  (`read` or `write`), the types you may only read and the obligations
+  (`require_reason`, `max_batch`). Check it before you write.
+- A graph you may not use does not exist for you: `graph graphs` does not
+  list it, and selecting it gives `graph.not_found`.
+- On `access.denied`, stop and tell the user what was refused
+  (`error.details`). Access is set by the maintainer of the installation.
+  Never edit the project's pointer file, a policy or the data directory to
+  get around it, and never retry under another identity.
+- The warning `access.project_unknown` means the project has no access of
+  its own yet and gets the access for no project. Tell the user.
 
 ## Files
 

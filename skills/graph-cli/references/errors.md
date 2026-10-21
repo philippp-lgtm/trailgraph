@@ -12,7 +12,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `not_found` | 1 | The graph, entity or term does not exist. Check the reference; `error.details` may list close matches. |
 | `refused` | 1 | The request cannot be carried out as given (an ambiguous reference, a change set too large or with broken local references, a graph that is archived, read-only or outside the project). Change the request; do not repeat it. |
 | `usage` | 2 | The command line is wrong or incomplete (for example no graph selected). Check the command in `references/commands.md` or `graph describe commands --json`. |
-| `denied` | 3 | You are not permitted (or the batch exceeds your limit). Stop and tell the user; do not retry under another identity. If a reason is required, retry with `--reason`. |
+| `denied` | 3 | You are not permitted (or the batch exceeds your limit). Stop and tell the user; do not retry under another identity and do not work around it. `graph whoami --json` shows what you may do. If a reason is required, retry with `--reason`. |
 | `conflict` | 4 | Someone else changed the data or the key was used for another request. Read the entity again, then decide whether to retry. |
 | `unavailable` | 5 | Storage, the audit log, a lock or the installation is not usable. If `error.retryable` is true, retry later with the same `--idempotency-key`; otherwise tell the user, a maintainer has to look at it. |
 | `internal` | 6 | A bug in the CLI. Report the full envelope to the user. |

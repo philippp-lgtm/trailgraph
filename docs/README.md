@@ -51,7 +51,9 @@ Dependencies point down only. Enforced by import-linter
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
-two storage backends are independent of each other.
+two storage backends are independent of each other. Authored YAML (ontologies,
+policies) is parsed only by `ontology_layer` and `access_control`, through
+the kernel's strict loader `kernel.yaml_strict`.
 
 ## Storage
 
@@ -67,8 +69,9 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
+| `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 FileStore in short (POSIX only, local filesystems only):
 
@@ -91,7 +94,7 @@ FileStore in short (POSIX only, local filesystems only):
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
-  under their hash before). A failure before the rename leaves only the
+  under their hash before), an installed policy. A failure before the rename leaves only the
   staging state, which readers ignore.
 
 ## Audit, authorization and identity
@@ -115,9 +118,9 @@ ids, types, hashes and reason text, never attribute values.
 
 `graph_cli.access_control.authorize()` is the one decision point. It is pure
 and answers for one (action, resource) pair: the app entrypoint never gets a
-`maint.*` action, then the first matching allow rule of the policy, else
-deny, then the obligations (`require_reason`, `max_batch`). Version 1 reads
-no policy files; `BuiltinPolicySource` serves the built-in policy.
+`maint.*` action, then the first matching deny rule of any policy layer
+wins, then the first matching allow rule, else deny, then the obligations
+of every layer (`require_reason`, `max_batch`). See "Access control".
 
 `graph_cli.catalog.identity` builds the one `ActorContext` per invocation.
 The OS user is the verified principal. Agent and session are asserted, from
@@ -125,6 +128,86 @@ the `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
 `GRAPH_CLI_PARENT_SESSION_ID` variables first, then from the coding agent
 harness. Malformed values are dropped with a warning and never block. Only
 `catalog` and the admin wiring may read the process environment.
+
+## Access control
+
+Two policy layers decide what `graph` may do; maintenance stays the
+entrypoint question it was (the app never gets `maint.*`).
+
+- The **installation policy** grants, per principal, a level on graphs and
+  narrows it per project: `scopes` names graphs per project (the pointer's
+  `project`), the required `no_project` scope covers invocations without a
+  project and with a project it does not know (warning
+  `access.project_unknown`). Levels are `none` (the graph is invisible),
+  `read` and `write` (read plus writes and extension actions).
+- A **graph policy** narrows inside one graph for everyone: types that are
+  read-only, obligations (`require_reason`, `max_batch`) and deny rules.
+- Deny rules may name the agent type, agent, session, device or project;
+  grants only the verified principal. An explicit deny wins, the default
+  is deny.
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: owner_name}, graphs: "*", level: write}
+scopes:
+  example_project: {example_graph: write, other_graph: read}
+no_project: {"*": read}
+deny:
+  - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
+```
+
+```yaml
+schema: graph_cli.policy/1
+id: graph
+types:
+  "files:File": read
+obligations:
+  - {action: ["write.*"], max_batch: 200}
+```
+
+Authored policies live in the maintainer workspace. `graph-admin policy
+check` compiles them (`access_control.compiler`): levels become actions,
+graph names become ids, and every problem is reported at once
+(`policy.invalid`). `policy apply` installs the compiled document; without
+an installed installation policy the built-in policy applies (every graph
+readable and writable). A graph the caller may not see is `graph.not_found`,
+exactly like one that does not exist, and the refusal is audited; on a
+visible graph a refusal is `access.denied` with the rule. A broken installed
+policy stops every `graph` call (`policy.invalid`); `graph-admin` warns and
+decides without it, so the policy can be replaced.
+
+| Module | Content |
+| --- | --- |
+| `access_control.authorize` | `authorize()`: ceiling, deny rules, allow rules, obligations |
+| `access_control.documents` | the compiled `graph_cli.policy/1` grammar, checked with a path per problem |
+| `access_control.compiler` | authored YAML to compiled documents |
+| `access_control.policy` | the built-in policy, `policy_set` (the layers of one decision and their hash) |
+| `access_control.effective` | level per graph, write obligations, scope and the unknown-project warning, for `whoami` and `policy explain` |
+
+Every decision records the policy hash. `audit verify` walks the policy
+events of each stream against the installed files and reports
+`integrity.audit.policy_mismatch` for a file edited, placed or deleted by
+hand, also after a later apply.
+
+Known limits: every agent runs as the same OS user, and only the program
+(`graph` or `graph-admin`) is a verified difference between callers. The
+project, agent and session are asserted, so locally access control is a
+guardrail plus detection, not prevention: it stops well-behaved agents and
+mistakes (the wrong project, the wrong graph, a write where only reading
+was meant) and makes every deviation visible in the audit, but an agent
+with a shell can edit the files. Prevention needs a separate OS user for
+the data (a local service) or a server; both would reuse the same policies.
+A coding agent's own permissions narrow the normal path further, for
+example in a project's Claude Code settings:
+
+```json
+{"permissions": {"deny": ["Bash(graph-admin:*)", "Edit(.graph_cli.toml)", "Write(.graph_cli.toml)"]}}
+```
+
+plus `Edit`/`Write` denies for the data root. Such settings are not
+installed by `graph`.
 
 ## Catalog and configuration
 
@@ -138,7 +221,8 @@ harness. Malformed values are dropped with a warning and never block. Only
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: Unix datagrams to the viewer sockets in the state directory, fire and forget |
-| `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection |
+| `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
+| `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command; the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services |
 | `catalog.identity` | identity providers and the actor (see above) |
 
@@ -195,8 +279,8 @@ document.
 
 | Command | What it does |
 | --- | --- |
-| `whoami` | the acting identity (principal, agent, session, project) and what the policy allows |
-| `graphs` | the graphs this project may use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
+| `whoami` | the acting identity (principal, agent, session, project) and what the policy allows: the project scope and, per graph, the level, read-only types and write obligations |
+| `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them |
@@ -215,9 +299,10 @@ document.
 
 Graph selection: `--graph`, then `GRAPH_CLI_GRAPH`, then the `default` of
 the nearest `.graph_cli.toml` up from the working directory. The pointer
-file lists the graphs a project may use (`graphs`), optionally a `default`
+file lists the graphs a project wants (`graphs`), optionally a `default`
 and a `project` name for the actor; it cannot move the data root. There is
-no implicit default graph.
+no implicit default graph. The installation policy decides what a project
+may see; the pointer only narrows that (see "Access control").
 
 The global options `--json` and `--graph` may stand before or after the
 command (`graph --graph <graph> find ...` equals `graph find ... --graph
@@ -277,10 +362,15 @@ them.
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change) |
-| `audit verify` | check every chain, tx log, revision file and manifest pin; exit 1 on error findings |
+| `audit verify` | check every chain, tx log, revision file, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
 | `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
+| `policy check FILE [--graph G]` | compile an authored policy and report every problem; installs nothing |
+| `policy show [--graph G]` | the installed compiled policy and its hash (the built-in one when none is installed) |
+| `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
+| `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change`; refuses one that would lock you out |
+| `policy explain --graph G [--project P] [--action A] [--type T] [--file F]` | what an app caller from a project (or from none) would get, and by which rule; records nothing |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--no-open`); no JSON mode |
 
 Every change is audited: an intent in the graph's stream, the effect, then
