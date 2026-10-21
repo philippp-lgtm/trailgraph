@@ -36,6 +36,7 @@ RELEASE_ACTION: Final = "maint.ontology_release"
 PIN_ACTION: Final = "maint.ontology_pin"
 CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
+POLICY_ACTION: Final = "maint.policy_change"
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
@@ -274,6 +275,8 @@ def _routing_problems(
             problems.append("change is not an object")
     if graph_id is not None and status == "ok":
         problems.extend(_maint_change_problems(_actions(event), change))
+    elif status == "ok" and isinstance(change, Mapping) and POLICY_ACTION in _actions(event):
+        problems.extend(_maint_change_problems([POLICY_ACTION], change))  # installation policy
     anchors = event.get("anchors")
     if anchors is not None:
         if stream != INSTALLATION:
@@ -409,6 +412,15 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             and _is_hash(skill["to"])
         ):
             problems.append("a skill change needs change.skill{from: hash or null, to: hash}")
+    if POLICY_ACTION in actions and "policy" in entries:
+        policy = entries["policy"]
+        if not (
+            isinstance(policy, Mapping)
+            and set(policy) == {"from", "to"}
+            and (policy["from"] is None or _is_hash(policy["from"]))
+            and _is_hash(policy["to"])
+        ):
+            problems.append("a policy change needs change.policy{from: hash or null, to: hash}")
     return problems
 
 

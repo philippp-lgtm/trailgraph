@@ -15,8 +15,9 @@ does not cascade into findings for every later line:
 
 ``cross_check`` matches write intents with the tx log (B5.6, B5.12),
 ``check_maintenance`` judges maintenance intents by their effects and walks
-the pin events against the manifest, and ``check_anchors`` matches
-installation anchors with graph streams (B5.11).
+the pin and graph policy events against the manifest and the installed
+policy, ``check_policy`` walks the installation policy events (B5.15), and
+``check_anchors`` matches installation anchors with graph streams (B5.11).
 ``verify_graph`` and ``verify_installation`` compose them for
 ``graph-admin audit verify``. The caller passes the txs only when storage
 verified the tx log clean, so a damaged log does not cascade into
@@ -34,8 +35,10 @@ from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
     MAINT_EFFECT_ACTIONS,
     PIN_ACTION,
+    POLICY_ACTION,
     RELEASE_ACTION,
     event_problems,
+    graph_of_stream,
     is_write_intent,
     unknown_actions,
 )
@@ -44,6 +47,7 @@ from graph_cli.kernel.canonical import (
     CanonicalError,
     JsonValue,
     hash_document,
+    hash_value,
     jsonl_line,
     parse_json,
 )
@@ -54,6 +58,27 @@ from graph_cli.kernel.records import OntologyPin, TxRecord
 
 
 @dataclass(frozen=True, slots=True)
+class InstalledPolicy:
+    """An installed policy file as found: the C.2 hash of its document, ``None`` when there
+    is no file, ``"unreadable"`` when it is not a JSON object (B5.15)."""
+
+    observed: str | None
+
+    @classmethod
+    def of(cls, data: bytes | None) -> InstalledPolicy:
+        if data is None:
+            return cls(None)
+        try:
+            document = parse_json(data)
+        except CanonicalError:
+            return cls(UNREADABLE)
+        return cls(hash_value(document) if isinstance(document, Mapping) else UNREADABLE)
+
+
+UNREADABLE = "unreadable"
+
+
+@dataclass(frozen=True, slots=True)
 class MaintEffects:
     """The maintenance effects found on disk, for judging maintenance intents (B5.6).
 
@@ -61,12 +86,14 @@ class MaintEffects:
     ``integrity.storage.pin_mismatch``); the pin walk is then skipped.
     ``anchored`` are the graph-stream seqs named by companion anchors
     (``effect_anchors``): a companion is appended only after its effect, so
-    an anchored intent is committed (W.e).
+    an anchored intent is committed (W.e). ``policy`` is the graph's installed
+    policy; ``None`` skips the policy walk.
     """
 
     manifest_pin: OntologyPin | None
     releases: Mapping[str, str]  # installed version -> artifact hash of its compiled.json
     anchored: frozenset[int] = frozenset()
+    policy: InstalledPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +275,34 @@ def check_maintenance(
             )
     if effects.manifest_pin is not None:
         findings += _pin_walk(stream, ok, effects)
+    if effects.policy is not None:
+        findings += _policy_walk(stream, ok, effects.policy, effects.anchored)
     return findings
+
+
+def check_policy(
+    events: Iterable[Mapping[str, JsonValue]], installed: InstalledPolicy
+) -> list[Finding]:
+    """The installation policy against the installation stream's policy events (B5.15).
+
+    An intent is proven committed by its confirmation: the next policy event
+    without ``change`` and without ``graph``, appended after the rename (the
+    installation counterpart of a W.e companion). Without it, a deleted first
+    policy would look like an interrupted apply.
+    """
+    ok = [e for e in events if _ok(e)]
+    confirmed: set[int] = set()
+    pending: int | None = None
+    for event in ok:
+        if event.get("actions") != [POLICY_ACTION] or "graph" in event:
+            continue
+        seq = event.get("seq")
+        if isinstance(event.get("change"), Mapping):
+            pending = seq if isinstance(seq, int) else None
+        elif pending is not None:
+            confirmed.add(pending)
+            pending = None
+    return _policy_walk(INSTALLATION_STREAM, ok, installed, frozenset(confirmed))
 
 
 def _ok(event: Mapping[str, JsonValue]) -> bool:
@@ -276,58 +330,108 @@ def _pin_walk(
     stream: AuditStream, events: Sequence[Mapping[str, JsonValue]], effects: MaintEffects
 ) -> list[Finding]:
     assert effects.manifest_pin is not None
-    state: JsonValue = None
+    genesis: JsonValue = None
     for event in events:
         if event.get("seq") == 1 and event.get("actions") == ["maint.graph_create"]:
             graph = event.get("graph")
-            state = graph.get("ontology") if isinstance(graph, Mapping) else None
+            genesis = graph.get("ontology") if isinstance(graph, Mapping) else None
+    return _walk(
+        stream,
+        _effects(events, PIN_ACTION, "pin"),
+        start=genesis,
+        strict_start=False,  # an unknown genesis pin accepts the first observed one
+        final=effects.manifest_pin.to_json(),
+        final_target={"stream": stream, "path": "manifest.toml"},
+        anchored=effects.anchored,
+        code=codes.PIN_MISMATCH,
+        interrupted="pin intent without its manifest switch (an interrupted pin)",
+        changed="the manifest pin changed outside the recorded pin events",
+    )
+
+
+def _policy_walk(
+    stream: AuditStream,
+    events: Sequence[Mapping[str, JsonValue]],
+    installed: InstalledPolicy,
+    anchored: frozenset[int],
+) -> list[Finding]:
+    """From "no policy" (``None``) through the policy intents of ``stream`` to the file."""
+    graph_id = graph_of_stream(stream)
+    path = "policy/installation.json" if graph_id is None else f"graphs/{graph_id}/policy.json"
+    return _walk(
+        stream,
+        _effects(events, POLICY_ACTION, "policy"),
+        start=None,
+        strict_start=True,
+        final=installed.observed,
+        final_target={"stream": stream, "path": path},
+        anchored=anchored,
+        code=codes.POLICY_MISMATCH,
+        interrupted="policy intent without its installed policy (an interrupted apply)",
+        changed="the installed policy changed outside the recorded policy events",
+    )
+
+
+def _walk(
+    stream: AuditStream,
+    intents: Sequence[tuple[Mapping[str, JsonValue], Mapping[str, JsonValue]]],
+    *,
+    start: JsonValue,
+    strict_start: bool,
+    final: JsonValue,
+    final_target: Mapping[str, JsonValue],
+    anchored: frozenset[int],
+    code: str,
+    interrupted: str,
+    changed: str,
+) -> list[Finding]:
+    """Walk ``{from, to}`` intents from ``start`` to the ``final`` state on disk.
+
+    An intent is committed if the next observed state (the next intent's
+    ``from``, at the end ``final``) equals its ``to``; it is an interrupted op
+    if that state is still its ``from`` and no anchor proves the effect;
+    anything else means the state changed outside maintenance (``code``),
+    after which nothing more is judged: no cascades.
+    """
+    state = start
     orphans: list[Finding] = []
     pending: tuple[Mapping[str, JsonValue], JsonValue, JsonValue] | None = None
 
     def mismatch(
         target: Mapping[str, JsonValue], expected: JsonValue, actual: JsonValue
     ) -> list[Finding]:
-        return [
-            _finding(
-                codes.PIN_MISMATCH,
-                target,
-                "the manifest pin changed outside the recorded pin events",
-                expected=expected,
-                actual=actual,
-            )
-        ]
+        return [_finding(code, target, changed, expected=expected, actual=actual)]
 
     def settle(observed: JsonValue) -> bool:
-        """Judge ``pending`` by the pin observed after it; False on a mismatch."""
+        """Judge ``pending`` by the state observed after it; False on a mismatch."""
         nonlocal state
         if pending is None:
-            return state is None or observed == state
+            return (state is None and not strict_start) or observed == state
         event, old, new = pending
         if observed == new:
             state = new
             return True
-        if observed == old and event.get("seq") not in effects.anchored:
+        if observed == old and event.get("seq") not in anchored:
             orphans.append(
                 _finding(
                     codes.INTENT_WITHOUT_EFFECT,
                     {"stream": stream, "seq": event.get("seq")},
-                    "pin intent without its manifest switch (an interrupted pin)",
+                    interrupted,
                 )
             )
             state = old
             return True
         return False
 
-    for event, pin in _effects(events, PIN_ACTION, "pin"):
-        old, new = pin.get("from"), pin.get("to")
+    for event, change in intents:
+        old, new = change.get("from"), change.get("to")
         if not settle(old):
             expected = pending[2] if pending is not None else state
             return mismatch({"stream": stream, "seq": event.get("seq")}, expected, old)
         pending = (event, old, new)
-    manifest = effects.manifest_pin.to_json()
-    if not settle(manifest):
+    if not settle(final):
         expected = pending[2] if pending is not None else state
-        return mismatch({"stream": stream, "path": "manifest.toml"}, expected, manifest)
+        return mismatch(final_target, expected, final)
     return orphans
 
 

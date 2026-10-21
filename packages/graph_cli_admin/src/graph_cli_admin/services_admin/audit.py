@@ -4,10 +4,12 @@
 manifest pin) with the audit verifier (chains, shapes, tx <-> intent,
 maintenance effects, pin events, anchors). Order, without cascades:
 
-1. the installation stream, for its findings and its anchors;
+1. the installation stream, for its findings and its anchors, and the
+   installed installation policy against its policy events (B5.15);
 2. each graph under its maintenance lock: storage findings, then the graph
    stream with the txs (only if the tx log is clean) and the maintenance
-   effects (the manifest pin only if storage found it intact);
+   effects (the manifest pin only if storage found it intact, the graph's
+   installed policy);
 3. the anchors against the graph streams.
 
 Then a ``maint.audit_verify`` event anchors the heads of the graphs without
@@ -25,9 +27,11 @@ from dataclasses import dataclass
 
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
+    InstalledPolicy,
     MaintEffects,
     StreamReport,
     check_anchors,
+    check_policy,
     effect_anchors,
     verify_graph,
     verify_stream,
@@ -40,6 +44,7 @@ from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
 from graph_cli.kernel.ports.storage import GraphStoreRead
 from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
+from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli_admin.services_admin.context import AdminContext
 
 
@@ -70,6 +75,8 @@ def verify(ctx: AdminContext) -> Verification:
     )
     anchored = effect_anchors(installation.events)
     findings: list[Finding] = list(installation.findings)
+    installed = read_policy_file(installation_policy_path(ctx.roots.data_root))
+    findings += check_policy(installation.events, InstalledPolicy.of(installed))
     reports: dict[str, StreamReport] = {}
     graphs: list[JsonValue] = []
     clean: list[StreamReport] = []
@@ -127,6 +134,7 @@ def _verify_graph(
             manifest_pin=session.manifest().entry.pin if pin_intact else None,
             releases=session.release_hashes(),
             anchored=anchored or frozenset(),
+            policy=InstalledPolicy.of(session.read_policy()),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

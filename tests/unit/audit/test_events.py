@@ -439,3 +439,42 @@ def test_hash_covers_every_key(world: World) -> None:
                 continue
             changed = {**event, key: "changed"}
             assert hash_document(changed) != event["hash"], key
+
+
+def test_policy_changes_route_by_layer(world: World) -> None:
+    """B5.15: the installation policy in the installation stream, a graph policy W.e."""
+    digest = world.graph.pin.artifact_hash
+    base = dict(
+        actor=maint_actor(), request=REQUEST, env=ENV, change=events.policy_change(None, digest)
+    )
+    installation = events.maintenance(
+        decisions=[allow("maint.policy_change", "installation")],
+        ts=world.clock.now(),
+        event_id=world.event_id(),
+        **base,  # type: ignore[arg-type]
+    )
+    assert installation.stream == INSTALLATION_STREAM
+    assert installation.body["change"] == {"policy": {"from": None, "to": digest}}
+    graph_event = events.maintenance(
+        decisions=[allow("maint.policy_change", f"graph:{world.graph_id}")],
+        ts=world.clock.now(),
+        event_id=world.event_id(),
+        graph=world.graph,
+        **base,  # type: ignore[arg-type]
+    )
+    assert graph_event.stream == graph_stream(str(world.graph_id))
+    for bad in ({"policy": {"from": None}}, {"policy": {"from": "x", "to": digest}}):
+        for graph in (None, world.graph):
+            resource = "installation" if graph is None else f"graph:{world.graph_id}"
+            with pytest.raises(GraphCliError) as caught:
+                events.maintenance(
+                    actor=maint_actor(),
+                    decisions=[allow("maint.policy_change", resource)],
+                    request=REQUEST,
+                    ts=world.clock.now(),
+                    event_id=world.event_id(),
+                    env=ENV,
+                    graph=graph,
+                    change=bad,
+                )
+            assert "change.policy" in caught.value.message

@@ -76,6 +76,9 @@ INSTALLATION_MAINT: Final = frozenset(
         "maint.audit_anchor",
     )
 )
+# B5.15: a policy change is installation-scoped for the installation policy and
+# graph-scoped (W.e) for a graph's own policy.
+_EITHER_SCOPE: Final = frozenset({Action("maint.policy_change")})
 # B5.10: reads leave no chained event.
 _NO_EVENT: Final = frozenset({Action("maint.audit_read")})
 
@@ -208,13 +211,16 @@ def maintenance(
     Graph-scoped actions go to ``graph``'s stream; the caller then appends an
     installation event for the same action carrying the anchor of the graph
     event (``anchors``). Installation-scoped actions may carry anchors directly.
+    ``maint.policy_change`` is graph-scoped when ``graph`` is given (a graph's own
+    policy), else installation-scoped.
     """
     actions = _actions(decisions)
     if not actions or not all(a.startswith("maint.") for a in actions):
         raise _internal("maintenance events carry maint.* actions only")
     if actions & _NO_EVENT:
         raise _internal("maint.audit_read is a read and leaves no chained event (B5.10)")
-    if actions <= INSTALLATION_MAINT or anchors:
+    graph_policy = graph is not None and actions <= _EITHER_SCOPE
+    if (actions <= INSTALLATION_MAINT and not graph_policy) or anchors:
         stream = INSTALLATION_STREAM
     elif graph is None:
         raise _internal("a graph-scoped maintenance event needs its graph")
@@ -293,6 +299,12 @@ def skill_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
     """``change`` of a ``maint.graph_configure`` intent that publishes the graph skill
     (D15 Q2): the tree hash before (``None`` for the first publish) and after."""
     return {"skill": {"from": old_hash, "to": new_hash}}
+
+
+def policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.policy_change`` intent (B5.15): the compiled policy's hash
+    before (``None`` when none was installed) and after."""
+    return {"policy": {"from": old_hash, "to": new_hash}}
 
 
 def anchor(receipt: Anchorable) -> dict[str, JsonValue]:

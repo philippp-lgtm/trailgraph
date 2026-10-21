@@ -34,6 +34,7 @@ INTENT_WITHOUT_EFFECT: Final = "integrity.audit.intent_without_effect"
 TX_WITHOUT_INTENT: Final = "integrity.audit.tx_without_intent"
 ANCHOR_MISMATCH: Final = "integrity.audit.anchor_mismatch"
 PIN_MISMATCH: Final = "integrity.audit.pin_mismatch"
+POLICY_MISMATCH: Final = "integrity.audit.policy_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -66,5 +67,10 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     ),
     _integrity(
         "pin_mismatch", Severity.ERROR, "The manifest pin differs from the recorded pin events."
+    ),
+    _integrity(
+        "policy_mismatch",
+        Severity.ERROR,
+        "An installed policy differs from the recorded policy events.",
     ),
 )
