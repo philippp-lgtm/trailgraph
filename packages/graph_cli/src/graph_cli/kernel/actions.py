@@ -60,6 +60,12 @@ RESERVED_ACTIONS: Final = frozenset(
 )
 ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 
+# B6.11 access levels: a closed ladder per graph, expanded to action globs.
+ACCESS_LEVELS: Final = ("none", "read", "write")
+_LEVEL_READS: Final = tuple(
+    Action(f"read.{verb}") for verb in ("list", "get", "find", "traverse", "history", "describe")
+)
+
 EXT_ACTION_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.[a-z][a-z0-9_]*$")
 _SCHEMA_ADMIN: Final = frozenset({"maint.migrate", "maint.bundle"})
 
@@ -98,3 +104,25 @@ def capability_class(action: str) -> str:
     if area == "ext":
         return f"extension:{rest.partition('.')[0]}"
     raise GraphCliError("internal.error", f"unknown action {action!r}")
+
+
+def level_actions(level: str) -> tuple[str, ...]:
+    """The action globs ``level`` grants on a graph (B6.11)."""
+    if level == "none":
+        return ()
+    if level == "read":
+        return _LEVEL_READS
+    if level == "write":
+        return (*_LEVEL_READS, "write.*", "ext.*")
+    raise GraphCliError("internal.error", f"unknown access level {level!r}")
+
+
+def actions_above(level: str) -> tuple[str, ...]:
+    """The action globs a scope at ``level`` takes away (B6.11)."""
+    if level == "none":
+        return ("read.*", "write.*", "ext.*")
+    if level == "read":
+        return ("write.*", "ext.*")
+    if level == "write":
+        return ()
+    raise GraphCliError("internal.error", f"unknown access level {level!r}")

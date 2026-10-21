@@ -145,7 +145,6 @@ def test_bugs_are_internal_errors(action: str, resource: str) -> None:
 @pytest.mark.parametrize(
     "rule",
     [
-        {"id": "d", "effect": "deny", "action": ["*"], "resource": "*"},
         {
             "id": "a",
             "effect": "allow",
@@ -156,8 +155,8 @@ def test_bugs_are_internal_errors(action: str, resource: str) -> None:
         {"id": "u", "effect": "allow", "action": ["*"], "resource": "*", "when": "always"},
     ],
 )
-def test_policies_beyond_the_v1_subset_are_refused(rule: dict[str, JsonValue]) -> None:
-    """Deny rules, asserted-facet matchers (B6.7) and unknown keys are P2."""
+def test_documents_outside_the_grammar_are_refused(rule: dict[str, JsonValue]) -> None:
+    """Asserted-facet allow rules (B6.7) and unknown keys; deny rules are P2 (test_layers)."""
     with pytest.raises(GraphCliError) as info:
         authorize(MAINT, "read.get", GRAPH, CTX, _policy(rule))
     assert info.value.code == "internal.error"

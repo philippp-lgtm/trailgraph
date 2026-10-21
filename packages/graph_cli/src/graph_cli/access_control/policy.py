@@ -1,8 +1,9 @@
-"""The built-in policy and its source (contracts B6.8).
+"""The built-in policy, policy sets and the built-in source (contracts B6.8, B6.14).
 
-v1 reads no policy files: ``BuiltinPolicySource`` serves one constant
-document, and its hash (C.2 over the document) is recorded in every
-decision. ``<data_root>/policy/`` is reserved for authored policies (P2).
+The built-in document applies wherever no installation policy is installed;
+its hash (C.2 over the document) is recorded in every decision.
+``policy_set`` layers an installation document and, optionally, a graph's
+own document into the ``PolicySet`` that ``authorize()`` evaluates.
 """
 
 from __future__ import annotations
@@ -10,11 +11,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
+from graph_cli.access_control.documents import POLICY_SCHEMA
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.policy import PolicySet, PolicySource
-
-POLICY_SCHEMA: Final = "graph_cli.policy/1"
 
 BUILTIN_POLICY: Final[Mapping[str, JsonValue]] = {
     "schema": POLICY_SCHEMA,
@@ -47,6 +47,17 @@ BUILTIN_POLICY: Final[Mapping[str, JsonValue]] = {
 
 BUILTIN_POLICY_HASH: Final = hash_value(BUILTIN_POLICY)
 BUILTIN_POLICY_SET: Final = PolicySet(BUILTIN_POLICY_HASH, (BUILTIN_POLICY,))
+
+
+def policy_set(
+    installation: Mapping[str, JsonValue], graph: Mapping[str, JsonValue] | None = None
+) -> PolicySet:
+    """The layers for one decision. The hash is the installation document's, or C.2
+    over both hashes when the graph has its own policy (B6.14)."""
+    if graph is None:
+        return PolicySet(hash_value(installation), (installation,))
+    digest = hash_value({"installation": hash_value(installation), "graph": hash_value(graph)})
+    return PolicySet(digest, (installation, graph))
 
 
 class BuiltinPolicySource:
