@@ -32,6 +32,12 @@ def _graphs(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} graph list" if program == ADMIN_PROGRAM else f"{program} graphs"
 
 
+def _whoami(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """What the caller may do, per graph (B2.10); access is changed by the maintainer, never
+    by the caller (B6.15)."""
+    return None if program == ADMIN_PROGRAM else f"{program} whoami"
+
+
 def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe types"
 
@@ -117,7 +123,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,
     "conflict.idempotency_key_reuse": None,
-    "access.denied": None,
+    "access.denied": _whoami,
     "access.ceiling": None,
     "access.reason_required": None,
     "access.batch_too_large": None,

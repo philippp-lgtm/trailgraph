@@ -38,6 +38,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.graph_name_taken": _graph_list,
     "admin.migration_required": None,
     "admin.integrity_errors": None,
+    "admin.policy_lockout": None,  # details.rule names the rule that locks out
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.skill_render_exists": _render_force,
     "admin.view_port_unavailable": _view_any_port,

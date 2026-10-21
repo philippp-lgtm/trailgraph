@@ -25,7 +25,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),
+    ErrorSpec(
+        "admin.policy_lockout", _C.REFUSED, False, "The policy would lock out its maintainer."
+    ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
+    ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
+    ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),
     ErrorSpec(
         "admin.view_port_unavailable", _C.UNAVAILABLE, True, "The view port cannot be bound."
     ),

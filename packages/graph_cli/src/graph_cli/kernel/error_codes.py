@@ -96,6 +96,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),
     ErrorSpec("root.overridden", _C.WARNING, False, "The data root was overridden."),
+    ErrorSpec(
+        "access.project_unknown", _C.WARNING, False, "The policy has no scope for this project."
+    ),
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),
