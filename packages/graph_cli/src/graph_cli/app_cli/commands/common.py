@@ -24,4 +24,4 @@ def services(state: CommandState) -> AppServices:
 
 
 def context(state: CommandState) -> AppContext:
-    return services(state).context(state.warnings)
+    return services(state).context(state.warnings, state.command)

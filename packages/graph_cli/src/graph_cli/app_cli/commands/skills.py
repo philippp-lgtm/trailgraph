@@ -140,7 +140,7 @@ def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) ->
         )
     skills = [app_skill()]
     if graphs:
-        ctx = services(state).context(state.warnings)
+        ctx = services(state).context(state.warnings, state.command)
         skills += named_graph_skills(ctx, graphs, state.warnings)
     details: dict[str, JsonValue] = {"out": str(target), "graphs": list(graphs)}
     steps = emit_skills(target, skills, force=force, details=details)
@@ -233,7 +233,7 @@ def wanted_skills(
     }
     if not graphs and not refresh:
         return wanted, unavailable
-    ctx = services(state).context(state.warnings)
+    ctx = services(state).context(state.warnings, state.command)
     pointer = pointer_of(state, ctx, target)
     entries: dict[str, GraphEntry] = {}
     for ref in graphs:

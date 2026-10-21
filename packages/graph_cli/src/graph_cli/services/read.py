@@ -2,7 +2,10 @@
 B6.12, B8.8, B8.12, B8.13, B9.7).
 
 Every read authorizes its action before touching storage; a denial is
-appended to the installation stream and raised. Reads write nothing else.
+appended to the installation stream and raised. A graph is visible iff
+``read.list`` on it is allowed; a denial on a graph the actor cannot see is
+raised as ``graph.not_found``, exactly like a graph that does not exist
+(B6.15), and still audited. Reads write nothing else.
 A read takes one lock-free snapshot and answers everything from it, so the
 envelope's ``graph.seq`` names the state that was read. A pinned artifact
 that does not match its hash is read with ``ontology.pin_mismatch_read``,
@@ -18,9 +21,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from graph_cli.access_control.authorize import authorize
-from graph_cli.access_control.policy import BUILTIN_POLICY
+from graph_cli.access_control.effective import (
+    graph_level,
+    scope_of,
+    type_limits,
+    write_obligations,
+)
 from graph_cli.audit import events
-from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS, Action
+from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
@@ -29,7 +37,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TermRef
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.audit import AuditSink
-from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot
+from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Query
@@ -43,7 +51,9 @@ from graph_cli.services.refs import resolve_ref
 
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
-_NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: any graph resource
+_NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
+_VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
+ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,8 +165,39 @@ class ReadService:
         decision = authorize(actor, action, resource, ctx, policy)
         if decision.effect == "allow":
             return decision
+        hidden = graph is not None and not self.visible(actor, graph)
+        error = (
+            graph_not_found(str(graph.id))
+            if graph is not None and hidden
+            else denial_error(decision)
+        )
+        raise self._record_denial(actor, decision, request, graph, error)
+
+    def visible(self, actor: ActorContext, entry: GraphEntry) -> bool:
+        """B6.15: the actor may see the graph (``read.list`` on ``graph:<id>``)."""
+        policy = self._policy.current(entry.id)
+        return authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy).effect == (
+            "allow"
+        )
+
+    def refuse_hidden(
+        self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta
+    ) -> GraphCliError:
+        """A selected graph the actor cannot see: the ``read.list`` denial is audited, the
+        caller gets ``graph.not_found`` for ``ref`` (Q4: no existence leak)."""
+        policy = self._policy.current(entry.id)
+        decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
+        return self._record_denial(actor, decision, request, entry, graph_not_found(ref))
+
+    def _record_denial(
+        self,
+        actor: ActorContext,
+        decision: Decision,
+        request: RequestMeta,
+        graph: GraphEntry | None,
+        error: GraphCliError,
+    ) -> GraphCliError:
         assert decision.code is not None
-        message = f"{action} on {resource} is not permitted"
         event = events.refusal(
             status="denied",
             code=decision.code,
@@ -174,8 +215,10 @@ class ReadService:
             warning = WarningRecord(
                 "audit.refusal_not_recorded", "the denial could not be audited", {"cause": exc.code}
             )
-            raise GraphCliError(decision.code, message, warnings=(warning,)) from exc
-        raise GraphCliError(decision.code, message)
+            return GraphCliError(
+                error.code, error.message, details=error.details, warnings=(warning,)
+            )
+        return error
 
     # ---- reads ---------------------------------------------------------
 
@@ -212,10 +255,14 @@ class ReadService:
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None
     ) -> tuple[list[JsonValue], int, tuple[WarningRecord, ...]]:
-        """B6.12: graphs the actor may list, narrowed by the pointer allowlist."""
-        self.authorize(actor, "read.list", "installation", request)
-        entries = self._catalog.list_graphs(skip_unreadable=True)
-        shown = [e for e in entries if allowed is None or e.name in allowed or str(e.id) in allowed]
+        """B6.12: the graphs the actor may see, narrowed by the pointer allowlist.
+
+        Listing filters and records nothing; ``hidden_count`` counts the visible
+        graphs the pointer hides, never the ones the policy hides."""
+        visible = [
+            e for e in self._catalog.list_graphs(skip_unreadable=True) if self.visible(actor, e)
+        ]
+        shown = [e for e in visible if allowed is None or e.name in allowed or str(e.id) in allowed]
         items: list[JsonValue] = []
         for entry in shown:
             item = graph_json(entry, None)
@@ -223,7 +270,7 @@ class ReadService:
             item["title"] = entry.title
             item["language"] = entry.language
             items.append(item)
-        return items, len(entries) - len(shown), self._catalog.warnings
+        return items, len(visible) - len(shown), self._catalog.warnings
 
     def get(self, view: GraphRead, ref: str) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         entity, ref_warnings = resolve_ref(ref, view.snapshot)
@@ -345,33 +392,79 @@ class ReadService:
         self.activity.reads(view.entry.id, [start, *(neighbor for neighbor, _, _ in found)])
         return {"start": str(start), "items": items}, list(warnings)
 
-    def whoami(self, actor: ActorContext) -> dict[str, JsonValue]:
-        """B2.10: the actor and what the built-in policy lets it do."""
+    def whoami(
+        self, actor: ActorContext, *, allowed: Sequence[str] | None = None
+    ) -> dict[str, JsonValue]:
+        """B2.10: the actor and what the policy lets it do, overall and per graph.
+
+        ``allowed`` and ``obligations`` answer for a graph the policy names nowhere;
+        ``graphs`` lists the graphs ``graph graphs`` lists (``allowed`` is the pointer
+        allowlist), with their level, type limits and write obligations. Works without a
+        data root: there are no graphs then."""
         policy = self._policy.current(None)
         ctx = AuthzContext(op_count=1, has_reason=False, dry_run=False)
-        allowed: list[JsonValue] = []
+        actions: list[JsonValue] = []
         obligations: dict[str, JsonValue] = {}
         for action in sorted((READ_ACTIONS | WRITE_ACTIONS) - RESERVED_ACTIONS):
-            resource = "installation" if action in _INSTALLATION_READS else _NO_GRAPH
-            decision = authorize(actor, action, resource, ctx, policy)
+            decision = authorize(actor, action, _NO_GRAPH, ctx, policy)
             if decision.effect == "allow":
-                allowed.append(action)
+                actions.append(action)
             elif decision.code == "access.reason_required":
-                allowed.append(action)
+                actions.append(action)
                 obligations[action] = {"require_reason": True}
+        graphs: list[JsonValue] = []
+        for entry in self._listed():
+            if allowed is not None and entry.name not in allowed and str(entry.id) not in allowed:
+                continue
+            if not self.visible(actor, entry):
+                continue
+            layered = self._policy.current(entry.id)
+            graphs.append(
+                {
+                    "graph": entry.name,
+                    "level": graph_level(actor, entry.id, layered),
+                    "types": type_limits(layered),
+                    "obligations": write_obligations(actor, entry.id, layered),
+                }
+            )
         return {
             "actor": actor.to_json(),
             "permissions": {
-                "policy": str(BUILTIN_POLICY.get("id")),
+                "policy": str(policy.documents[0].get("id")),
                 "policy_hash": policy.hash,
-                "allowed": allowed,
+                "scope": scope_of(actor, policy),
+                "allowed": actions,
                 "obligations": obligations,
+                "graphs": graphs,
             },
         }
 
-
-_INSTALLATION_READS = frozenset({Action("read.list"), Action("read.describe")})
+    def _listed(self) -> Sequence[GraphEntry]:
+        """Every readable graph; none without a data root (``whoami`` still answers)."""
+        try:
+            return self._catalog.list_graphs(skip_unreadable=True)
+        except GraphCliError as exc:
+            if exc.code != "backend.unavailable":
+                raise
+            return ()
 
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:
     return [str(source) for source, _ in snapshot.incoming(entity, TermRef(rel))]
+
+
+def denial_error(decision: Decision) -> GraphCliError:
+    """The error for a denial on a visible graph or the installation (B6.15)."""
+    assert decision.code is not None
+    message = f"{decision.action} on {decision.resource} is not permitted"
+    if decision.code == "access.denied":
+        message += f"; {ACCESS_DENIED_HINT}"
+    return GraphCliError(
+        decision.code,
+        message,
+        details={
+            "action": decision.action,
+            "resource": decision.resource,
+            "rule": decision.rule_id,
+        },
+    )

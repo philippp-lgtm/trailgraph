@@ -4,7 +4,9 @@ The app's only reader of the process environment and the working
 directory. It resolves config and roots with the code graph-admin uses (no
 ``--data-root``; ``GRAPH_CLI_ROOT`` warns), finds the project pointer,
 builds the actor (entrypoint ``app``, never from env or flags), and wires
-clock, ids, catalog, audit log, policy and the services. Everything is
+clock, ids, catalog, audit log, the installed policy and the services.
+Graph selection asks the policy first (B6.15); a project the policy has no
+scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
 renders as an error envelope; nothing is created on disk (B12.4).
 """
@@ -19,6 +21,7 @@ from pathlib import Path
 from typing import Final
 
 from graph_cli import __version__
+from graph_cli.access_control.effective import project_warning
 from graph_cli.catalog.activity import SocketActivity, activity_dir
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
@@ -34,7 +37,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.kernel.records import EnvInfo
+from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.services.files import FileService
 from graph_cli.services.read import ReadService
 from graph_cli.services.write import WriteConfig, WriteService
@@ -80,14 +83,38 @@ class AppContext:
     writer: WriteService
     files: FileService
     graph_env: str | None
+    command: str = ""  # the running command, for audited selection refusals
 
     def select(self, flag: str | None) -> GraphEntry:
         """B12.5: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer default."""
-        return select_graph(self.catalog, flag=flag, env_value=self.graph_env, pointer=self.pointer)
+        return select_graph(
+            self.catalog,
+            flag=flag,
+            env_value=self.graph_env,
+            pointer=self.pointer,
+            visibility=_Visibility(self),
+        )
 
     def select_for(self, ref: str, pointer: PointerFile | None) -> GraphEntry:
-        """A named graph as a project with ``pointer`` would see it (D15 Q3)."""
-        return select_graph(self.catalog, flag=ref, env_value=None, pointer=pointer)
+        """A named graph as a project with ``pointer`` would see it (D15 Q3); the policy
+        judges the invoking actor."""
+        return select_graph(
+            self.catalog, flag=ref, env_value=None, pointer=pointer, visibility=_Visibility(self)
+        )
+
+
+@dataclass(frozen=True)
+class _Visibility:
+    """The policy's view for graph selection (``catalog.pointer.Visibility``)."""
+
+    context: AppContext
+
+    def visible(self, entry: GraphEntry) -> bool:
+        return self.context.reader.visible(self.context.actor, entry)
+
+    def refuse(self, entry: GraphEntry, ref: str) -> GraphCliError:
+        request = RequestMeta.of(self.context.command, {"graph": ref})
+        return self.context.reader.refuse_hidden(self.context.actor, entry, ref, request)
 
 
 @dataclass
@@ -141,13 +168,13 @@ class AppServices:
         """The project pointer as seen from ``directory`` (B12.6 walk-up)."""
         return find_pointer(directory)
 
-    def context(self, warnings: list[WarningRecord]) -> AppContext:
+    def context(self, warnings: list[WarningRecord], command: str | None = None) -> AppContext:
         if self._context is None:
-            self._context, self._warnings = self._build()
+            self._context, self._warnings = self._build(command or "")
         warnings += self._warnings
         return self._context
 
-    def _build(self) -> tuple[AppContext, tuple[WarningRecord, ...]]:
+    def _build(self, command: str) -> tuple[AppContext, tuple[WarningRecord, ...]]:
         config, config_warnings = load_config(config_path(self.env))
         roots, root_warnings = resolve_roots(
             self.env, config=config, cwd=self.cwd, data_root_flag=None, allow_flag=False
@@ -208,6 +235,14 @@ class AppServices:
                 activity=activity,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None,
+            command=command,
         )
-        warnings = (*config_warnings, *root_warnings, *pointer_warnings, *actor_warnings)
+        unknown = project_warning(actor, policy.current(None))  # fails closed on a bad policy
+        warnings = (
+            *config_warnings,
+            *root_warnings,
+            *pointer_warnings,
+            *actor_warnings,
+            *((unknown,) if unknown is not None else ()),
+        )
         return context, warnings

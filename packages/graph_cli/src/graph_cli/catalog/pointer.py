@@ -8,8 +8,10 @@ key is ``config.forbidden_key``.
 
 Selection: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer ``default`` >
 ``graph.not_selected`` with the visible graphs as candidates. There is no
-implicit single-graph default. With a pointer, the selected graph must be
-allowlisted (``graph.not_in_project``).
+implicit single-graph default. The policy decides visibility first: a graph
+the actor cannot see is ``graph.not_found``, whatever the pointer says
+(B6.15). With a pointer, a visible selected graph must be allowlisted
+(``graph.not_in_project``); the pointer narrows, the policy grants.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
@@ -28,6 +30,16 @@ POINTER_FORMAT: Final = 1
 GRAPH_ENV: Final = "GRAPH_CLI_GRAPH"
 _KEYS: Final = frozenset({"format_version", "project", "graphs", "default"})
 _FORBIDDEN: Final = frozenset({"data_root", "root"})
+
+
+class Visibility(Protocol):
+    """What the policy lets the actor see (B6.15)."""
+
+    def visible(self, entry: GraphEntry) -> bool: ...
+
+    def refuse(self, entry: GraphEntry, ref: str) -> GraphCliError:
+        """Record the refused selection; the error to raise."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,16 +133,22 @@ def select_graph(
     flag: str | None,
     env_value: str | None,
     pointer: PointerFile | None,
+    visibility: Visibility | None = None,
 ) -> GraphEntry:
     choice = flag or env_value or (pointer.default if pointer is not None else None)
     if not choice:
-        shown, hidden = visible_graphs(catalog.list_graphs(), pointer)
+        entries = catalog.list_graphs()
+        if visibility is not None:
+            entries = [e for e in entries if visibility.visible(e)]
+        shown, hidden = visible_graphs(entries, pointer)
         raise GraphCliError(
             "graph.not_selected",
             "no graph selected; select one by name or id",
             details={"candidates": [e.name for e in shown], "hidden_count": hidden},
         )
     entry = catalog.resolve(choice)
+    if visibility is not None and not visibility.visible(entry):
+        raise visibility.refuse(entry, choice)
     if pointer is not None and not pointer.allows(entry):
         raise GraphCliError(
             "graph.not_in_project",

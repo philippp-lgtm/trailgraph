@@ -34,7 +34,8 @@ GRAPH_ERRORS: Final = (
 
 def whoami(state: CommandState) -> Result:
     ctx = context(state)  # builds nothing on disk; works without a data root
-    return Result(data=ctx.reader.whoami(ctx.actor))
+    allowed = ctx.pointer.graphs if ctx.pointer is not None else None
+    return Result(data=ctx.reader.whoami(ctx.actor, allowed=allowed))
 
 
 def graphs(state: CommandState) -> Result:

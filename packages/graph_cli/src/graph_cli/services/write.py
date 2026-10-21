@@ -7,7 +7,8 @@ graph_cli (B3.1). Steps:
   ``kernel.changeset``); W.2 graph state ``active``; W.3 the pinned model;
   W.4 references on a lock-free snapshot; W.5 one decision per
   (action, ``graph:<id>/type:<curie>``) pair; a denial is appended to the
-  installation stream (not in dry-run) and raised.
+  installation stream (not in dry-run) and raised, as ``graph.not_found``
+  when the actor cannot see the graph (B6.15).
 - W.6 the graph lock; the manifest is re-read (state and pin re-checked, a
   changed pin reloads the model) and references are resolved again on the
   locked snapshot. W.7 idempotency (same key and hash replays the original
@@ -80,7 +81,7 @@ from graph_cli.kernel.ids import (
 )
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.audit import AuditSink
-from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
+from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import (
     GraphStoreRead,
@@ -94,6 +95,7 @@ from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
 from graph_cli.ontology_layer.data_validator import blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.models import ModelCache
+from graph_cli.services.read import denial_error
 from graph_cli.services.refs import NO_BINDINGS, Resolution, resolve_refs
 from graph_cli.temporal_knowledge.normalize import normalize
 from graph_cli.temporal_knowledge.working import WorkingState
@@ -340,14 +342,12 @@ class WriteService:
             return decisions
         first = denied[0]
         assert first.code is not None
-        message = f"{first.action} on {first.resource} is not permitted"
-        details: dict[str, JsonValue] = {
-            "action": first.action,
-            "resource": first.resource,
-            "rule": first.rule_id,
-        }
+        visible = authorize(request.actor, "read.list", f"graph:{entry.id}", ctx, policy)
+        error = (
+            denial_error(first) if visible.effect == "allow" else graph_not_found(request.graph)
+        )  # B6.15: a graph the actor cannot see does not exist for it
         if request.dry_run:  # B3.10: a dry-run denial is not audited
-            raise GraphCliError(first.code, message, details=details)
+            raise error
         event = events.refusal(
             status="denied",
             code=first.code,
@@ -365,9 +365,9 @@ class WriteService:
             self._audit.append_installation(event)
         except GraphCliError as exc:
             raise GraphCliError(
-                first.code, message, details=details, warnings=(_not_recorded(exc),)
+                error.code, error.message, details=error.details, warnings=(_not_recorded(exc),)
             ) from exc
-        raise GraphCliError(first.code, message, details=details)
+        raise error
 
     # ---- W.6-W.16 ------------------------------------------------------
 

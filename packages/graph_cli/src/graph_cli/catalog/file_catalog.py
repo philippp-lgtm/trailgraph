@@ -17,7 +17,13 @@ from typing import TYPE_CHECKING
 
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, format_id, parse_id
-from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, ManifestData, SkillSlot
+from graph_cli.kernel.ports.catalog import (
+    Catalog,
+    GraphEntry,
+    ManifestData,
+    SkillSlot,
+    graph_not_found,
+)
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
@@ -126,7 +132,7 @@ class FileCatalog:
             for entry in self.list_graphs(include_archived=True):
                 if entry.name == ref:
                     return entry
-        raise GraphCliError("graph.not_found", f"no graph {ref!r}", details={"ref": ref})
+        raise graph_not_found(ref)
 
     def read_release_file(self, graph: GraphId, version: str, name: str) -> bytes:
         return read_release_file(self._layout(graph), version, name)

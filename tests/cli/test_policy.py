@@ -195,3 +195,125 @@ def test_explain(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     assert unknown.warning_codes == ["access.project_unknown"]
     installed = admin(run_cli, "policy", "explain", "--graph", "example_graph")
     assert (installed.data["scope"], installed.data["level"]) == (None, "write")  # built-in
+
+
+# ---- the app under an installed policy (B6.15, B2.10, Q3-Q5) -----------------------
+
+POINTER = 'format_version = 1\nproject = "{project}"\ngraphs = ["example_graph", "other_graph"]\n'
+LOCATION = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")
+
+
+@pytest.fixture
+def scoped(run_cli: CliRunner, root: Path, tmp_path: Path) -> dict[str, str]:
+    """Two graphs and the toy installation policy applied; graph name -> id."""
+    ids = {name: create_graph(run_cli, name) for name in ("example_graph", "other_graph")}
+    assert apply(run_cli, write_policy(tmp_path / "work", "i.yaml", INSTALLATION)).code == 0
+    return ids
+
+
+def project_dir(tmp_path: Path, project: str) -> Path:
+    directory = tmp_path / project
+    directory.mkdir()
+    (directory / ".graph_cli.toml").write_text(POINTER.format(project=project))
+    return directory
+
+
+def denials(root: Path) -> list[dict[str, Any]]:
+    return [e for e in events(root, INSTALLATION_STREAM) if e["result"]["status"] == "denied"]
+
+
+def test_from_a_project_with_a_scope(
+    run_cli: CliRunner, root: Path, tmp_path: Path, scoped: dict[str, str]
+) -> None:
+    here = project_dir(tmp_path, "example_project")
+    listed = app(run_cli, "graphs", cwd=here)
+    assert [g["name"] for g in listed.data["items"]] == ["example_graph", "other_graph"]
+    who = app(run_cli, "whoami", cwd=here).data["permissions"]
+    assert who["policy"] == "installation" and who["scope"] == "example_project"
+    assert [(g["graph"], g["level"]) for g in who["graphs"]] == [
+        ("example_graph", "write"),
+        ("other_graph", "read"),
+    ]
+    written = app(run_cli, *LOCATION, "--graph", "example_graph", cwd=here)
+    assert written.code == 0, written.envelope
+    refused = app(run_cli, *LOCATION, "--graph", "other_graph", cwd=here)
+    assert (refused.code, refused.error["code"]) == (3, "access.denied")
+    assert refused.error["details"]["rule"] == "scope.example_project.other_graph"
+    assert refused.error["hint"] == "graph whoami"
+    assert "graph-admin" not in refused.error["message"]
+    assert denials(root)[-1]["actor"]["project"]["id"] == "example_project"
+
+
+def test_an_invisible_graph_does_not_exist_for_the_caller(
+    run_cli: CliRunner, root: Path, tmp_path: Path, scoped: dict[str, str]
+) -> None:
+    here = project_dir(tmp_path, "another_project")  # sees other_graph only
+    listed = app(run_cli, "graphs", cwd=here)
+    assert [g["name"] for g in listed.data["items"]] == ["other_graph"]
+    assert listed.data["hidden_count"] == 0  # policy-hidden graphs are never counted
+    hidden = app(run_cli, "find", "--graph", "example_graph", cwd=here)
+    missing = app(run_cli, "find", "--graph", "no_such_graph", cwd=here)
+    assert (hidden.code, hidden.error["code"]) == (1, "graph.not_found")
+    assert hidden.error["message"] == missing.error["message"].replace(
+        "no_such_graph", "example_graph"
+    )
+    assert hidden.error["details"] == {"ref": "example_graph"}
+    by_id = app(run_cli, "find", "--graph", scoped["example_graph"], cwd=here)
+    assert by_id.error["code"] == "graph.not_found"
+    recorded = denials(root)[-1]
+    assert recorded["authz"]["decisions"][0]["action"] == "read.list"
+    assert recorded["graph"]["name"] == "example_graph"  # the maintainer sees what happened
+    unselected = app(run_cli, "find", cwd=here)
+    assert unselected.error["details"]["candidates"] == ["other_graph"]
+
+
+@pytest.mark.parametrize("project", [None, "unknown_project"], ids=["no_pointer", "unknown"])
+def test_without_a_scope_the_no_project_scope_applies(
+    run_cli: CliRunner, root: Path, tmp_path: Path, scoped: dict[str, str], project: str | None
+) -> None:
+    here = project_dir(tmp_path, project) if project is not None else tmp_path
+    listed = app(run_cli, "graphs", cwd=here)
+    assert [g["name"] for g in listed.data["items"]] == ["example_graph", "other_graph"]
+    expected = ["access.project_unknown"] if project is not None else []
+    assert listed.warning_codes == expected
+    assert app(run_cli, "find", "--graph", "example_graph", cwd=here).code == 0
+    refused = app(run_cli, *LOCATION, "--graph", "example_graph", cwd=here)
+    assert refused.error["details"]["rule"] == "no_project.default"
+    who = app(run_cli, "whoami", cwd=here).data["permissions"]
+    assert who["scope"] == "no_project"
+    assert {g["level"] for g in who["graphs"]} == {"read"}
+
+
+def test_graph_policy_limits_writes_per_type(
+    run_cli: CliRunner, root: Path, tmp_path: Path, scoped: dict[str, str]
+) -> None:
+    applied = apply(
+        run_cli, write_policy(tmp_path / "work", "g.yaml", GRAPH), "--graph", "example_graph"
+    )
+    assert applied.code == 0
+    here = project_dir(tmp_path, "example_project")
+    refused = app(run_cli, *LOCATION, "--graph", "example_graph", cwd=here)
+    assert refused.error["details"]["rule"] == "type.inv:Location"
+    assert (
+        app(run_cli, "find", "--graph", "example_graph", "--type", "inv:Location", cwd=here).code
+        == 0
+    )
+    graphs = app(run_cli, "whoami", cwd=here).data["permissions"]["graphs"]
+    first = graphs[0]
+    assert first["graph"] == "example_graph"
+    assert first["types"] == {"inv:Location": "read"}
+    assert first["obligations"]["write.create"] == {"max_batch": 50}
+    explorer = {"GRAPH_CLI_AGENT_ID": "agent-1", "GRAPH_CLI_AGENT_TYPE": "explore"}
+    blocked = app(
+        run_cli,
+        "create",
+        "inv:Category",
+        "--set",
+        "name=Tools",
+        "--graph",
+        "example_graph",
+        cwd=here,
+        env=explorer,
+    )
+    assert blocked.error["details"]["rule"] == "deny.no_explore_writes"
+    assert admin(run_cli, "audit", "verify").code == 0

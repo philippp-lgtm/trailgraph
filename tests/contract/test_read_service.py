@@ -11,6 +11,7 @@ from support.roles import Roles, load_roles
 from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.query_ast import Query
@@ -106,7 +107,7 @@ def test_neighbors(svc: ServiceEnv, roles: Roles) -> None:
     assert isinstance(items, list) and items
     assert all(i["direction"] == "out" for i in items)  # type: ignore[index]
     deep, _ = reader.neighbors(view, str(source.id), depth=3)
-    assert len(deep["items"]) >= len(items)  # type: ignore[arg-type]
+    assert len(deep["items"]) >= len(items)
 
 
 def test_as_of_is_refused() -> None:
@@ -137,21 +138,46 @@ def test_reads_write_nothing(svc: ServiceEnv, roles: Roles, tmp_path: Path) -> N
     assert (tree_hash(tmp_path), len(svc.installation_events())) == before
 
 
-def test_denied_read_is_audited(svc: ServiceEnv) -> None:
-    deny_all = PolicySet(
-        "sha256:" + "1" * 64,
-        ({"schema": "graph_cli.policy/1", "id": "none", "rules": [], "obligations": []},),
-    )
+def _policy(*rules: dict[str, JsonValue]) -> object:
+    document: dict[str, JsonValue] = {
+        "schema": "graph_cli.policy/1",
+        "id": "test",
+        "rules": list(rules),
+        "obligations": [],
+    }
+    policy = PolicySet("sha256:" + "1" * 64, (document,))
 
     class Policy:
         def current(self, graph: object) -> PolicySet:
-            return deny_all
+            return policy
 
+    return Policy()
+
+
+def test_denied_read_is_audited(svc: ServiceEnv) -> None:
+    """B6.15: a visible graph gives access.denied with the rule."""
+    list_only = _policy(
+        {"id": "list", "effect": "allow", "action": ["read.list"], "resource": "graph:*"}
+    )
     with pytest.raises(GraphCliError) as info:
-        open_view(svc, svc.make_reader(Policy()))
+        open_view(svc, svc.make_reader(list_only))
     assert info.value.code == "access.denied"
+    assert info.value.details["rule"] == "default.deny"
+    assert "do not work around it" in info.value.message
     denial = svc.installation_events()[-1]
     assert denial["result"] == {"status": "denied", "code": "access.denied"}
+
+
+def test_denied_read_on_an_invisible_graph_is_not_found(svc: ServiceEnv) -> None:
+    """Q4: an invisible graph reads like a missing one; the denial is still audited."""
+    with pytest.raises(GraphCliError) as info:
+        open_view(svc, svc.make_reader(_policy()))
+    assert info.value.code == "graph.not_found"
+    assert svc.name not in info.value.message
+    denial = svc.installation_events()[-1]
+    assert denial["result"] == {"status": "denied", "code": "access.denied"}
+    reader = svc.make_reader(_policy())
+    assert reader.graphs(svc.actor, REQUEST, allowed=None)[:2] == ([], 0)  # never counted
 
 
 def test_graphs_and_whoami(svc: ServiceEnv) -> None:

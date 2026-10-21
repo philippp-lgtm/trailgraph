@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Final, Literal, Protocol
 
 from graph_cli.kernel.canonical import JsonValue, hash_bytes, hash_value
-from graph_cli.kernel.errors import WarningRecord
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, TermRef
 from graph_cli.kernel.records import OntologyPin
 
@@ -77,6 +77,12 @@ class SkillSlot:
     def source_json(self) -> dict[str, JsonValue]:
         """The slot's ``source.json`` document."""
         return {"schema": SKILL_SOURCE_SCHEMA, **self.summary()}
+
+
+def graph_not_found(ref: str) -> GraphCliError:
+    """The one ``graph.not_found``: a graph the caller may not see reads exactly like one
+    that does not exist (B6.15)."""
+    return GraphCliError("graph.not_found", f"no graph {ref!r}", details={"ref": ref})
 
 
 class Catalog(Protocol):
