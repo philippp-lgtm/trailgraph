@@ -179,8 +179,9 @@ source_modules = [
 ]
 forbidden_modules = ["click"]
 
-# Authored YAML (schema IR, later policy) is parsed only by the ontology layer
-# and access_control; runtime documents are canonical JSON (contracts C.7, D4).
+# Authored YAML (schema IR, policy) is parsed only by the ontology layer and
+# access_control, through the kernel's strict loader; runtime documents are
+# canonical JSON (contracts C.7, D4).
 [[tool.importlinter.contracts]]
 name = "Only the ontology layer and access control parse YAML"
 type = "forbidden"
@@ -197,3 +198,4 @@ source_modules = [
     "graph_cli.app_cli",
 ]
 forbidden_modules = ["yaml"]
+ignore_imports = ["graph_cli.kernel.yaml_strict -> yaml"]

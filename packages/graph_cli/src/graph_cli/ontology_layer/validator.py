@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.findings import Finding, sort_findings
+from graph_cli.kernel.yaml_strict import YamlScalar
 from graph_cli.ontology_layer.bundle import IrBundle, TermKind
 from graph_cli.ontology_layer.expressions import (
     AttrCond,
@@ -40,7 +41,6 @@ from graph_cli.ontology_layer.vocabulary import (
     NON_SCALAR_BASES,
     SYSTEM_FIELDS,
 )
-from graph_cli.ontology_layer.yaml_strict import YamlScalar
 
 
 def validate_model(bundle: IrBundle) -> list[Finding]:

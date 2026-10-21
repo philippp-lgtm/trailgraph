@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.yaml_strict import YamlError, YamlNode, YamlScalar, load_strict
 from graph_cli.ontology_layer.expressions import Cond, parse_conditions
 from graph_cli.ontology_layer.reader import Reader, join
 from graph_cli.ontology_layer.report import Report
@@ -35,7 +36,6 @@ from graph_cli.ontology_layer.vocabulary import (
     SEVERITIES,
     TYPE_NAME_RE,
 )
-from graph_cli.ontology_layer.yaml_strict import YamlError, YamlNode, YamlScalar, load_strict
 
 _DOC: Final = ("summary", "description", "deprecated", "annotations")
 _TOP_KEYS: Final = (

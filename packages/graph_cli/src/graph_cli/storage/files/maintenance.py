@@ -9,8 +9,10 @@ Maintenance effects are published by one rename each, which is their commit
 point: ``graphs/.tmp-<id>`` -> ``graphs/<id>`` (graph create, under the
 registry lock ``<root>/.lock``), ``ontology/.tmp-<version>`` ->
 ``ontology/<version>``, ``manifest.toml.tmp`` -> ``manifest.toml`` and
-``skill/source.json.tmp`` -> ``skill/source.json`` (under the graph lock,
-after the intent event). A failure before the rename
+``skill/source.json.tmp`` -> ``skill/source.json``, ``policy.json.tmp`` ->
+``policy.json`` (under the graph lock, after the intent event) and
+``policy/installation.json.tmp`` -> ``policy/installation.json`` (under the
+registry lock, after the installation event). A failure before the rename
 leaves the staging state behind, as a kill -9 would; readers ignore
 ``.tmp-*`` entries.
 """
@@ -36,7 +38,12 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EntityId, GraphId, format_id, parse_id
 from graph_cli.kernel.json_access import JsonShapeError
-from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, graph_stream
+from graph_cli.kernel.ports.audit import (
+    INSTALLATION_STREAM,
+    AuditEventDraft,
+    AuditReceipt,
+    graph_stream,
+)
 from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot, skill_hash
 from graph_cli.kernel.ports.storage import (
     CommitResult,
@@ -73,6 +80,11 @@ from graph_cli.storage.files.layout import (
 )
 from graph_cli.storage.files.locking import acquire
 from graph_cli.storage.files.manifest import format_manifest
+from graph_cli.storage.files.policy_files import (
+    installation_policy_path,
+    read_policy_file,
+    write_policy_file,
+)
 from graph_cli.storage.files.recovery import recover
 from graph_cli.storage.files.releases import (
     COMPILED_FILE,
@@ -181,6 +193,7 @@ class FileRegistrySession:
     def __init__(self, maintenance: FileStoreMaintenance) -> None:
         self._maintenance = maintenance
         self.open = True
+        self._used: set[object] = set()
 
     def _check_open(self) -> None:
         if not self.open:
@@ -193,6 +206,31 @@ class FileRegistrySession:
         for graph_id in maintenance.graph_ids():
             found.append(read_manifest(GraphLayout(maintenance.graphs_dir / str(graph_id)))[0])
         return found
+
+    def read_installation_policy(self) -> bytes | None:
+        """The installed installation policy as stored, read under the registry lock."""
+        self._check_open()
+        return read_policy_file(installation_policy_path(self._maintenance.data_root))
+
+    def replace_installation_policy(
+        self, document: Mapping[str, JsonValue], receipt: AuditReceipt
+    ) -> None:
+        """Install the installation policy; ``receipt`` is its installation event (B5.15)."""
+        self._check_open()
+        if receipt.stream != INSTALLATION_STREAM or receipt.event_id in self._used:
+            raise GraphCliError(
+                "internal.error",
+                "a policy change needs its own installation event",
+                details={"rule": "receipt_stream"},
+            )
+        self._used.add(receipt.event_id)
+        maintenance = self._maintenance
+        write_policy_file(
+            installation_policy_path(maintenance.data_root),
+            document,
+            maintenance.syncer,
+            maintenance.faults,
+        )
 
     def create_graph(
         self,
@@ -376,6 +414,17 @@ class FileMaintenanceSession:
                     shutil.rmtree(tree.parent / name)
         except OSError as exc:
             raise _unavailable("cannot publish the skill", exc) from exc
+
+    def read_policy(self) -> bytes | None:
+        """The graph's installed policy as stored (B6.14)."""
+        self._check_open()
+        return read_policy_file(self._store.layout.policy)
+
+    def replace_policy(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Install the graph's policy; ``receipt`` is this session's intent (W.e, B5.15)."""
+        self._writer().claim_receipt(receipt)
+        store = self._store
+        write_policy_file(store.layout.policy, document, store.syncer, store.faults)
 
     # ---- maintenance ---------------------------------------------------
 

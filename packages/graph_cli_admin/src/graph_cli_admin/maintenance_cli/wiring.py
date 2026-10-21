@@ -4,8 +4,9 @@ The only admin module that reads the process environment. It resolves
 config and roots with the same catalog code as the app, adds graph-admin's
 ``--data-root`` and builds the ``AdminContext`` for the services: actor
 (entrypoint ``maint``), clock, ids, catalog, audit log, maintenance port,
-policy and the op log. Everything is built lazily per command, so a broken
-config renders as an error envelope.
+policy (the installed files, falling back past an invalid one) and the op
+log. Everything is built lazily per command, so a broken config renders as
+an error envelope.
 """
 
 from __future__ import annotations
@@ -15,11 +16,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from graph_cli.access_control.policy import BuiltinPolicySource
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
+from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import config_path, resolve_roots
 from graph_cli.cli_kit.runner import Invocation
 from graph_cli.kernel.actor import ClientInfo, Entrypoint
@@ -75,7 +76,20 @@ class Services:
         )
         warnings += [*config_warnings, *root_warnings, *actor_warnings]
         oplog = OpLogFile(roots.state_root, clock)
+
+        def fallback(error: GraphCliError) -> None:
+            """An invalid installed policy must not stop the maintainer replacing it (B6.14)."""
+            warnings.append(
+                WarningRecord(
+                    "admin.policy_fallback",
+                    f"{error.message}; deciding without it until it is replaced",
+                    {"file": error.details.get("file")},
+                )
+            )
+
         settings = StorageSettings(config.lock_timeout_s, config.durability)
+        policy = FilePolicySource(roots.data_root, fallback=fallback)
+        policy.installation()  # a broken installation policy warns on every command
         return AdminContext(
             roots=roots,
             config=config,
@@ -92,7 +106,7 @@ class Services:
             maintenance=FileStoreMaintenance(
                 roots.data_root, durability=config.durability, oplog=oplog
             ),
-            policy=BuiltinPolicySource(),
+            policy=policy,
             env=EnvInfo(
                 str(roots.data_root) if config.record_data_root else None, roots.root_source
             ),

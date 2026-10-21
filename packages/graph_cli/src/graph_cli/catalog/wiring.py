@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Final
 
 from graph_cli import __version__
-from graph_cli.access_control.policy import BuiltinPolicySource
 from graph_cli.catalog.activity import SocketActivity, activity_dir
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
@@ -27,6 +26,7 @@ from graph_cli.catalog.file_roots import FileRoots
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, select_graph
+from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import Roots, config_path, resolve_roots
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.clock import SystemClock
@@ -168,7 +168,7 @@ class AppServices:
             lock_timeout_s=config.lock_timeout_s,
             oplog=oplog,
         )
-        policy = BuiltinPolicySource()
+        policy = FilePolicySource(roots.data_root)  # fails closed on an invalid file
         env = EnvInfo(str(roots.data_root) if config.record_data_root else None, roots.root_source)
         writer = WriteService(
             catalog=catalog,

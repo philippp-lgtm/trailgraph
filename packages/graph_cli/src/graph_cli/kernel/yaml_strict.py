@@ -1,4 +1,6 @@
-"""Strict YAML loading for authored files (contracts C.7).
+"""Strict YAML loading for authored files (contracts C.7): ontologies and policies.
+
+The kernel's only YAML import; the ontology layer and access control use it.
 
 Builds a small node tree from the PyYAML event stream instead of letting
 PyYAML construct Python objects:

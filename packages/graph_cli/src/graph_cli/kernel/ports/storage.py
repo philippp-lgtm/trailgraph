@@ -195,6 +195,14 @@ class MaintenanceSession(WriteSession, Protocol):
         """Publish the graph skill atomically, replacing the previous one (D15 Q2)."""
         ...
 
+    def read_policy(self) -> bytes | None:
+        """The graph's installed policy file as stored; ``None`` without one (B6.14)."""
+        ...
+
+    def replace_policy(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Install the graph's compiled policy atomically (W.e, B5.15)."""
+        ...
+
     def recover(self) -> RecoveryReport: ...
 
     def verify(self) -> Sequence[Finding]:
@@ -231,6 +239,16 @@ class RegistrySession(Protocol):
 
     def manifests(self) -> Sequence[ManifestData]:
         """Every graph's manifest, archived ones included."""
+        ...
+
+    def read_installation_policy(self) -> bytes | None:
+        """The installed installation policy as stored; ``None`` without one (B6.14)."""
+        ...
+
+    def replace_installation_policy(
+        self, document: Mapping[str, JsonValue], receipt: AuditReceipt
+    ) -> None:
+        """Install the compiled installation policy atomically after its event (B5.15)."""
         ...
 
     def create_graph(

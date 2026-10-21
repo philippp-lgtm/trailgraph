@@ -2,7 +2,7 @@
 
 import pytest
 
-from graph_cli.ontology_layer.yaml_strict import (
+from graph_cli.kernel.yaml_strict import (
     YamlError,
     YamlMap,
     YamlScalar,

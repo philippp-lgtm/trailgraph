@@ -55,6 +55,11 @@ class GraphLayout:
         return self.ontology / version
 
     @property
+    def policy(self) -> Path:
+        """The graph's own installed policy (B6.14)."""
+        return self.root / "policy.json"
+
+    @property
     def skill(self) -> Path:
         """The published graph skill (D15 Q2): ``source.json`` and ``files/<hash hex>/``."""
         return self.root / "skill"

@@ -29,9 +29,9 @@ from typing import Final
 
 from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonValue
 from graph_cli.kernel.records import RECORD_STATUSES
+from graph_cli.kernel.yaml_strict import YamlMap, YamlNode, YamlScalar
 from graph_cli.ontology_layer.reader import Reader, join
 from graph_cli.ontology_layer.vocabulary import LOWER_NAME_RE
-from graph_cli.ontology_layer.yaml_strict import YamlMap, YamlNode, YamlScalar
 
 ATTR_OPS: Final = (
     "value_presence",

@@ -11,8 +11,8 @@ import re
 from collections.abc import Iterable
 
 from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonValue
+from graph_cli.kernel.yaml_strict import YamlMap, YamlNode, YamlScalar, YamlSeq
 from graph_cli.ontology_layer.report import Report
-from graph_cli.ontology_layer.yaml_strict import YamlMap, YamlNode, YamlScalar, YamlSeq
 
 
 class Reader:

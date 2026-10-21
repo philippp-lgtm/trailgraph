@@ -159,6 +159,19 @@ def document_problems(document: Mapping[str, JsonValue]) -> list[Problem]:
     return problems
 
 
+def check_document(
+    document: Mapping[str, JsonValue], *, layer: str, graph: str | None = None
+) -> list[Problem]:
+    """``document_problems`` plus where the document was found: its layer and, for a graph
+    layer, the graph whose directory holds it (a copied file is refused)."""
+    problems = document_problems(document)
+    if layer_of(document) != layer:
+        problems.append(Problem("layer", f"a {layer} policy file holds another layer"))
+    if graph is not None and document.get("graph") != graph:
+        problems.append(Problem("graph", "the policy belongs to another graph"))
+    return problems
+
+
 def _types_problems(types: JsonValue, add: _Add) -> None:
     if not isinstance(types, Mapping):
         add("types", "must map types to read or write")
