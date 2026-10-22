@@ -1,15 +1,19 @@
-"""The documentation holds together: links resolve and the index lists every document.
+"""The documentation holds together: links resolve, the index lists every document and
+the command overview of `graph` names exactly the commands it has.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md
 and docs/). Links inside code blocks are ignored. Anchors follow GitHub's
-heading slugs. Each check has a positive control, so a broken scanner
-cannot pass silently.
+heading slugs. The command overview is compared with the inventory golden,
+which `tests/cli/test_app_meta.py` keeps equal to `graph describe commands`.
+Each check has a positive control, so a broken scanner cannot pass silently.
 """
 
+import json
 import re
 from pathlib import Path
 
 from harness import REPO_ROOT
+from support.fixtures import GOLDENS
 
 DOCS_DIR = REPO_ROOT / "docs"
 INDEX = DOCS_DIR / "README.md"
@@ -17,6 +21,9 @@ INDEX = DOCS_DIR / "README.md"
 CODE_BLOCK = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+CELL_SEPARATOR = re.compile(r"(?<!\\)\|")
+CODE_SPAN = re.compile(r"`([^`]+)`")
+COMMAND_WORD = re.compile(r"[a-z][a-z_-]*")
 
 
 def _documents() -> list[Path]:
@@ -49,6 +56,30 @@ def _broken_links(path: Path, text: str) -> list[str]:
     return broken
 
 
+def _section(text: str, heading: str) -> str:
+    _, found, rest = text.partition(f"\n## {heading}\n")
+    assert found, f"no section {heading!r}"
+    return rest.split("\n## ", 1)[0]
+
+
+def _overview_commands(section: str) -> list[tuple[str, ...]]:
+    """The command paths named in the first column of the table: the leading words of each
+    code span, up to the first placeholder or option."""
+    commands: list[tuple[str, ...]] = []
+    for line in section.splitlines():
+        if not line.startswith("| `"):
+            continue
+        first_cell = CELL_SEPARATOR.split(line)[1]
+        for span in CODE_SPAN.findall(first_cell):
+            words: list[str] = []
+            for token in span.split():
+                if not COMMAND_WORD.fullmatch(token):
+                    break
+                words.append(token)
+            commands.append(tuple(words))
+    return commands
+
+
 def test_documents_exist() -> None:
     assert INDEX in _documents()
     assert all(path.is_file() for path in _documents())
@@ -72,6 +103,13 @@ def test_index_lists_every_document() -> None:
     assert missing == []
 
 
+def test_command_overview_names_every_command() -> None:
+    inventory = json.loads((GOLDENS / "app" / "inventory.json").read_text())
+    expected = sorted(tuple(command["path"]) for command in inventory["commands"])
+    section = _section((DOCS_DIR / "cli_graph.md").read_text(), "Commands")
+    assert sorted(_overview_commands(section)) == expected
+
+
 def test_positive_controls() -> None:
     page = DOCS_DIR / "README.md"
     text = "[a](missing.md#x) [b](cli_graph.md#no-such-heading) [c](#nowhere)\n"
@@ -80,3 +118,16 @@ def test_positive_controls() -> None:
     assert _broken_links(page, fenced) == []
     assert _slug("`graph`: the application CLI") == "graph-the-application-cli"
     assert _slug("The `graph-cli` skill") == "the-graph-cli-skill"
+    table = (
+        "| Command | What it does |\n| --- | --- |\n"
+        "| `get REF`, `describe type T` | one `find` |\n"
+        "| `skills install --scope user\\|project` | a \\| b |\n"
+        "| `file check [REF...]` | c |\n"
+    )
+    assert _overview_commands(table) == [
+        ("get",),
+        ("describe", "type"),
+        ("skills", "install"),
+        ("file", "check"),
+    ]
+    assert _section("# T\n\n## A\nx\n## B\ny\n", "A") == "x"

@@ -24,7 +24,7 @@ conflict, 5 unavailable, 6 internal error).
 | `whoami` | the acting identity (principal, agent, session, project) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types and write obligations |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
-| `describe types`, `type T`, `fields T`, `relations`, `lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language |
+| `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision |
 | `history REF` | one entity's revisions, newest first: time, command, reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint |

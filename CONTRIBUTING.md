@@ -57,7 +57,7 @@ Update the documentation in the same change as the code:
 
 | Change | Update |
 | --- | --- |
-| a `graph` command or option | regenerate the skill; `docs/cli_graph.md` if the overview or a cross-command rule changes |
+| a `graph` command or option | regenerate the skill; `docs/cli_graph.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
 | a `graph-admin` command or option | `docs/cli_graph_admin.md` (hand-written) |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
@@ -66,7 +66,8 @@ Update the documentation in the same change as the code:
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
-resolves and that `docs/README.md` lists every document.
+resolves, that `docs/README.md` lists every document and that the command
+overview in `docs/cli_graph.md` names exactly the commands of `graph`.
 
 ## Generated files
 
@@ -99,7 +100,7 @@ skill names no graph type.
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
 | skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve, the docs index lists every document |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve, the docs index lists every document, the `graph` command overview matches the inventory |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
 by default and take a few seconds. Storage tests build transactions with a
