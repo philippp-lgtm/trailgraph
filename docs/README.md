@@ -106,7 +106,7 @@ pure: storage appends and chains the events, audit never touches files.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 The verifier reads raw lines (`AuditSink.read_lines`) and reports damage as
@@ -195,7 +195,19 @@ decides without it, so the policy can be replaced.
 Every decision records the policy hash. `audit verify` walks the policy
 events of each stream against the installed files and reports
 `integrity.audit.policy_mismatch` for a file edited, placed or deleted by
-hand, also after a later apply.
+hand, also after a later apply. An installation policy apply also appends
+a mirror of the change to every graph stream (under every graph's lock,
+anchored by the confirmation), so each graph stream records which policy
+was in effect. `verify` checks every graph-stream decision against it:
+a write made without the installed policy (a policy moved away and back,
+another data root that links the streams) is
+`integrity.audit.policy_hash_mismatch`, and a cut installation history
+contradicts the mirrors. A writer reads the policies again under its lock
+and decides again if one changed, so a concurrent apply is no finding.
+graph-admin decisions under its fallback are a warning
+(`policy_fallback`); decisions before a graph's first mirror (policies
+applied before mirrors existed) are checked loosely (info). Applying the
+installed policy again records the mirrors such a graph lacks.
 
 Known limits: every agent runs as the same OS user, and only the program
 (`graph` or `graph-admin`) is a verified difference between callers. The
@@ -205,10 +217,10 @@ mistakes (the wrong project, the wrong graph, a write where only reading
 was meant), but an agent with a shell can edit the files. The project
 selects a scope rather than only narrowing one: a pointer that names a
 project gets that project's scope. Detection covers policy files edited,
-placed or deleted by hand; `audit verify` does not yet check the policy
-hash of each decision, so running `graph` against a data root without the
-installed policy (`GRAPH_CLI_ROOT`, a policy moved away and back) goes
-unnoticed. Prevention needs a separate OS user for
+placed or deleted by hand and decisions made under another policy, but
+not a consistent rewrite of every stream (all tails, all hashes); that
+needs a head kept outside the data root. Reads are not audited, so a read
+under another policy leaves no trace. Prevention needs a separate OS user for
 the data (a local service) or a server; both would reuse the same policies.
 A coding agent's own permissions narrow the normal path further, for
 example in a project's Claude Code settings:
@@ -233,7 +245,7 @@ installed by `graph`.
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: Unix datagrams to the viewer sockets in the state directory, fire and forget |
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
-| `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command; the built-in policy without one; fails closed on an invalid file |
+| `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services |
 | `catalog.identity` | identity providers and the actor (see above) |
 
@@ -380,7 +392,7 @@ them.
 | `policy check FILE [--graph G]` | compile an authored policy and report every problem; installs nothing |
 | `policy show [--graph G]` | the installed compiled policy and its hash (the built-in one when none is installed) |
 | `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
-| `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change`; refuses one that would lock you out |
+| `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change` (the installation policy also mirrored into every graph stream); refuses one that would lock you out; the installed policy again records missing mirrors |
 | `policy explain --graph G [--project P] [--action A] [--type T] [--file F]` | what an app caller from a project (or from none) would get, and by which rule; records nothing |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--no-open`); no JSON mode |
 
