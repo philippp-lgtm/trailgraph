@@ -1,0 +1,88 @@
+# Contributing
+
+Setup is in the [README](README.md#install). The design of the code base
+(layers, import contracts, packages) is in
+[`docs/architecture.md`](docs/architecture.md).
+
+## Development
+
+```sh
+uv sync                     # create .venv with both distributions + dev tools
+uv run pytest               # all tests (includes import contracts and wheel checks)
+uv run pytest -m "not slow" # skip distribution builds, crash and process tests
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run lint-imports
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files and the generated skill after an intended change
+```
+
+Run the CLIs from the checkout:
+
+```sh
+uv run graph --help
+uv run graph-admin --help
+```
+
+## Generated files
+
+`skills/graph-cli/` is generated from the app inventory and never edited by
+hand (see [`docs/skills.md`](docs/skills.md#the-graph-cli-skill)).
+Regenerate after a change to a command declaration, then review the diff:
+
+```sh
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/skills
+```
+
+The tests fail on a stale skill (the committed files must equal a fresh
+render of the live inventory), check every generated table against the
+inventory and the envelope keys against the renderer (docs-vs-code), and
+reject leaks: fixture vocabulary, maintenance commands, actions or codes,
+placeholders outside `<graph> <type> <id> <attr> <value> <relation>
+<state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
+skill names no graph type.
+
+## Tests
+
+| Kind | Where | What |
+| --- | --- | --- |
+| unit | `tests/unit/` | modules in isolation |
+| contract | `tests/contract/` | the storage ports and the write service on every backend and both toy ontologies; the seeds |
+| golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts |
+| crash | `tests/crash/` | `kill -9` of a child process at every named fault point, for storage commits and for the write service with a retry; interrupted maintenance operations |
+| concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
+| tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
+| CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure |
+| architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
+
+Crash and concurrency tests spawn processes and are marked `slow`; they run
+by default and take a few seconds. Storage tests build transactions with a
+test-only builder (`tests/support/txbuilder.py`) driven by the compiled toy
+ontologies. Storage tests use minimal audit bodies
+(`tests/support/drafts.py`); tests that verify audit streams use real events
+(`tests/support/audit_events.py`). Write service tests run on both backends
+through `tests/support/services.py` (an in-memory catalog, a builder with
+test clock and seeded ids, and a factory for valid creates of any class).
+
+### Test harness
+
+CLIs are tested as subprocesses (`tests/conftest.py`: `run_cli`). Every run
+gets a throwaway `HOME` and XDG directories and no `GRAPH_CLI_*` variables, so
+tests never touch real user config, data or state.
+
+### Fixtures
+
+`tests/fixtures/` holds two unrelated toy ontologies (`notes_and_sources`,
+`inventory` with a version series), one broken ontology per `model.*` finding
+code, one broken change set per `data.*` finding code, seed change sets for
+both ontologies (`tests/fixtures/seeds/`, applied through the write
+service), role mappings for role-based contract tests
+(`tests/support/roles.py`) and graph skills for the `inventory` test graph
+(`tests/fixtures/skills/`: a static one, a template with curated text, and
+`blocks/` with every block once, rendered for both toy ontologies into
+`tests/goldens/skills/`).
+Core tests never name a fixture type; a leak test keeps fixture vocabulary out
+of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
+`SeededIdProvider`) live in `tests/support/`. Golden files live in
+`tests/goldens/` and next to the fixtures they describe.

@@ -1,0 +1,92 @@
+# Access control
+
+Two policy layers decide what `graph` may do; maintenance stays the
+entrypoint question it was (the app never gets `maint.*`). What this
+protects against, and what it does not, is in the
+[security model](security_model.md).
+
+## Identity
+
+Every invocation has one actor (`graph_cli.catalog.identity`). The OS user
+is the verified principal. Agent and session are asserted, from the
+`GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
+`GRAPH_CLI_PARENT_SESSION_ID` variables first, then from the coding agent
+harness. The agent is the exception: a subagent inherits the variables of
+the session that started it, so the harness's own agent (id and type, e.g.
+a read-only exploring subagent) comes first. Malformed values are dropped
+with a warning and never block. The project comes from the
+[pointer file](configuration.md#project-pointer). `graph whoami` shows the
+actor and what the policy allows it.
+
+## Policy layers
+
+- The **installation policy** grants, per principal, a level on graphs and
+  narrows it per project: `scopes` names graphs per project (the pointer's
+  `project`), the required `no_project` scope covers invocations without a
+  project and with a project it does not know (warning
+  `access.project_unknown`). Levels are `none` (the graph is invisible),
+  `read` and `write` (read plus writes and extension actions).
+- A **graph policy** narrows inside one graph for everyone: types that are
+  read-only, obligations (`require_reason`, `max_batch`) and deny rules.
+  Types are checked for writes only, so type limits, deny rules on types and
+  obligations name write actions. A type limit matches the exact type, so it
+  must name concrete types (or `prefix:*`); an abstract type or one with
+  subclasses is refused.
+- Deny rules may name the agent type, agent, session, device or project;
+  grants only the verified principal. An explicit deny wins, the default
+  is deny.
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: owner_name}, graphs: "*", level: write}
+scopes:
+  example_project: {example_graph: write, other_graph: read}
+no_project: {"*": read}
+deny:
+  - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
+```
+
+```yaml
+schema: graph_cli.policy/1
+id: graph
+types:
+  "files:File": read
+obligations:
+  - {action: ["write.*"], max_batch: 200}
+```
+
+## Decisions
+
+`graph_cli.access_control.authorize()` is the one decision point. It is pure
+and answers for one (action, resource) pair: the app entrypoint never gets a
+`maint.*` action, then the first matching deny rule of any policy layer
+wins, then the first matching allow rule, else deny, then the obligations
+of every layer (`require_reason`, `max_batch`).
+
+A graph the caller may not see is `graph.not_found`, exactly like one that
+does not exist, and the refusal is audited; on a visible graph a refusal is
+`access.denied` with the rule. A broken installed policy stops every
+`graph` call (`policy.invalid`); `graph-admin` warns and decides without
+it, so the policy can be replaced.
+
+## Authoring and installing policies
+
+Authored policies live in the maintainer workspace. `graph-admin policy
+check` compiles them (`access_control.compiler`): levels become actions,
+graph names become ids, and every problem is reported at once
+(`policy.invalid`). `policy apply` installs the compiled document; without
+an installed installation policy the built-in policy applies (every graph
+readable and writable). `policy show`, `policy diff` and `policy explain`
+inspect the installed and authored policies (see
+[`graph-admin`](cli_graph_admin.md)).
+
+## Policy integrity
+
+Every decision records the policy hash, and `graph-admin audit verify`
+reports a policy file edited, placed or deleted by hand and a write made
+under another policy than the installed one. A writer reads the policies
+again under its lock and decides again if one changed, so a concurrent
+apply is no finding. How the policy history is recorded and checked:
+[Audit: policy verification](audit.md#policy-verification).

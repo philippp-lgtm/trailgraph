@@ -46,7 +46,7 @@ known-first-party = ["graph_cli", "graph_cli_admin"]
 strict = true
 packages = ["graph_cli", "graph_cli_admin"]
 
-# Dependencies point down only. See the layer table in docs/README.md.
+# Dependencies point down only. See the layer table in docs/architecture.md.
 [tool.importlinter]
 root_packages = ["graph_cli", "graph_cli_admin"]
 include_external_packages = true
