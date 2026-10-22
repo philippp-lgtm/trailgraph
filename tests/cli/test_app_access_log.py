@@ -113,6 +113,22 @@ def test_every_line_says_where_the_time_went(
         assert sum(phases.values()) <= timing["total"] <= sum(phases.values()) + len(phases)
 
 
+def test_a_cypher_query_logs_its_phases_not_its_text(
+    run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
+) -> None:
+    enable(isolated_env)
+    create_location(run_cli)
+    text = f"MATCH (l:Location) WHERE l.name = '{MARKER}' RETURN l.code"
+    assert app(run_cli, "query", text, env=ENV).code == 0
+    *_, line = lines(isolated_env)
+    assert line["command"] == "query"
+    assert {"parse", "resolve", "execute", "authorize", "model", "snapshot"} <= (
+        line["timing_us"]["phases"].keys()
+    )
+    assert "query" not in line["timing_us"]["phases"]
+    assert MARKER not in log_path(isolated_env).read_text()
+
+
 def test_reads_leave_the_data_root_unchanged(
     run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
 ) -> None:

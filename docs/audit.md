@@ -62,7 +62,9 @@ claimed, so the phases add up to `total`:
 | `snapshot` | opening the graph's current state |
 | `authorize` | policy decisions (and loading the policy) |
 | `query` | a read answering from the state: `get`, `history`, `find`, `lookup`, `neighbors` |
-| `resolve` | a write resolving its references |
+| `parse` | `query` reading the Cypher text |
+| `resolve` | a write resolving its references; `query` resolving names, fields and parameters against the model |
+| `execute` | `query` matching patterns and computing the rows |
 | `stage` | `file add` hashing and staging the file |
 | `lock` | a write waiting for and taking the graph lock, including the recovery of an interrupted write |
 | `normalize` | applying the ops to a working copy |

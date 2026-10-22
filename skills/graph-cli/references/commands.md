@@ -434,6 +434,40 @@ Usage: `graph neighbors REF [OPTIONS]`
 | `graph neighbors <id>` | Direct neighbors. |
 | `graph neighbors <id> --rel <relation> --direction out --depth 2 --json` | Two hops along one relation. |
 
+## graph query
+
+Answer a read-only Cypher query: several hops, OR/NOT across relations, counts.
+
+Kind: read. Surface: retrieve. Action: `read.query`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph query [TEXT] [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `text` | string | no | no | The query, or - to read it from stdin. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--file` | file | no | no | Read the query from this file. |
+| `--param` | assignment | no | yes | name=value binds $name; the value is JSON when it parses, else text. |
+| `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
+| `--explain` | flag | no | no | Show the resolved query; run nothing. |
+| `--limit` | integer | no | no | Rows per page, at most 500. |
+| `--offset` | integer | no | no | Skip this many rows. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph query 'MATCH (n:<type>)-[:<relation>]->(m) RETURN n, m.<attr>' --json` | Entities with the entities they point to. |
+| `graph query 'MATCH (n:<type>) WHERE NOT (n)-[:<relation>]->() RETURN n' --json` | Entities without an outgoing edge of one relation. |
+| `graph query 'MATCH (n:<type>)-[:<relation>]->(m) RETURN m.<attr>, count(n) AS sources ORDER BY sources DESC' --json` | Counts per target. |
+| `graph query --file <file> --param id=<id> --json` | A query from a file with a parameter. |
+
 ## graph retract
 
 Withdraw an entity; needs --reason.

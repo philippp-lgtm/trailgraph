@@ -30,6 +30,7 @@ conflict, 5 unavailable, 6 internal error).
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint |
 | `lookup TEXT` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); ranked candidates, paged |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`) |
+| `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin) |
@@ -89,3 +90,75 @@ matches, main before alternative before hidden labels, then shorter names;
 a hidden-label match does not echo its value. Labels are not identifiers:
 references stay ids, aliases and `@local` names. Types without label roles
 are `term.no_labels`.
+
+## Cypher queries
+
+`graph query` answers a read-only subset of Cypher over one snapshot of the
+graph, with the same access rules and the same data as `find`. Use it when
+a question needs several hops, OR or NOT across relations, or counts;
+`find`, `neighbors` and `lookup` stay the simple path for one type, one hop
+or a name. Writes are refused (`query.unsupported`, hint `apply`).
+
+How the graph looks to Cypher:
+
+| Cypher | graph_cli |
+| --- | --- |
+| node | the current revision of an entity; only `active` entities unless `--include-inactive` |
+| label | the entity's type and every supertype, so `(:T)` includes subtypes, as `find --type` |
+| node property | an attribute or a system field (`id`, `alias`, `type`, `rev`, `record_status`, `created_at`, ...) |
+| relationship | an edge in its stored direction; its type is the relation, its properties are the qualifiers and `edge_id` |
+
+A label or relationship type is the local name when exactly one CURIE has
+it (`(:Type)`), else the CURIE in backticks (``(:`ex:Type`)``), which always
+works; an ambiguous local name is `query.ambiguous_term` with the
+candidates. Unknown labels, relationship types and fields are
+`term.unknown` with did-you-mean, as for `find`.
+
+The subset: `MATCH` (several patterns and clauses), `OPTIONAL MATCH`,
+`WHERE`, `WITH` (with `WHERE`), `UNWIND`, `RETURN` (`AS`, `DISTINCT`, `*`),
+`ORDER BY`, `SKIP`, `LIMIT`; node and relationship patterns with labels
+(`:A|B`, `:A:B`), property maps, both directions, type alternatives and
+bounded variable length up to five hops (`*1..3`); pattern predicates
+(`WHERE NOT (n)-[:r]->()`), label predicates (`n:A`), `CASE`, list and map
+literals, `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
+`CONTAINS`, `IS [NOT] NULL`; the functions `count` (`count(*)`, `DISTINCT`),
+`collect`, `min`, `max`, `sum`, `avg`, `labels`, `type`, `size`, `coalesce`,
+`toLower`, `toUpper` and `trim`. Everything else (write clauses, `CALL`,
+`UNION`, named paths, unbounded `*`, `shortestPath`, comprehensions, map
+projections, subqueries, `id()`) is `query.unsupported` with the construct
+and, where one exists, the alternative.
+
+Semantics follow openCypher: three-valued null logic, a missing property is
+null, comparisons across types are null, a relationship is used once per
+`MATCH`. Where graph_cli differs:
+
+- Numbers with a fraction are exact decimals, and so are decimal
+  attributes; JSON output shows them as strings, as `get` shows decimal
+  attributes. There is no NaN: a division by zero is `query.invalid_value`.
+- `labels(n)` returns the type and its supertypes as CURIEs, `type(r)` the
+  relation CURIE; `n.id` is the entity id (`id()` is refused).
+- Inactive entities are hidden at both ends of every pattern, so an edge
+  to a superseded entity does not match (`find --rel` and `neighbors`
+  follow it).
+- Rows without `ORDER BY` come in a fixed order (by id), so results are
+  reproducible.
+- `WHERE` after `WITH DISTINCT` sees only the columns, like `ORDER BY`.
+- `NOT n.attr = 1` is null on a missing attribute and drops the row; `find`'s
+  negation keeps it.
+
+Output: `data.columns` in `RETURN` order and `data.items`, one object per
+row keyed by column; a node is shown as `get` shows an entity, a
+relationship as the edge with its `source`. `--limit` and `--offset` page
+the rows after the query's own `SKIP`/`LIMIT` (`page.total` is exact, with
+a next-page hint). Text output is a table with entities as `alias type`.
+`--explain` returns `data.plan` (the resolved clauses as Cypher with CURIEs,
+the variables each binds with their possible types, the columns, the
+parameters used and the fields with their base types) and runs nothing.
+
+Work is bounded: more than 100 000 candidate nodes, edges or rows end the
+query with `query.too_large`, naming the clause; add labels, a property map
+or a `LIMIT`. Errors carry `line` and `column`: `query.syntax` (exit 2, with
+what was found and expected), `query.unbound_variable` and
+`query.parameter_missing` (exit 2), `query.unsupported`,
+`query.ambiguous_term`, `query.too_large` and `query.invalid_value` (exit
+1).

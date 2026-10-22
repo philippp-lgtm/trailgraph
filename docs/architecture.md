@@ -61,7 +61,8 @@ and `parser` (hand-written recursive descent) produce the syntax tree of
 parameters, scopes) and `render` writes a tree back as Cypher text.
 `execute` matches the patterns over the `Snapshot` port and runs the
 clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
-`values` hold the expressions and openCypher's comparisons and null logic.
+`values` hold the expressions and openCypher's comparisons and null logic;
+`services.read` parses before opening the graph, then resolves and runs.
 `temporal_knowledge.history` names what changed between two revisions for
 `history`.
 

@@ -184,7 +184,7 @@ class TestDocsVsCode:
                 for match in re.finditer(r"(?<![-\w<])graph((?: [^\s`]+)*)", span):
                     words: list[str] = []
                     for token in match.group(1).split():
-                        if token[0] in "-<[" or token[0].isupper() or "=" in token:
+                        if token[0] in "-<['\"" or token[0].isupper() or "=" in token:
                             break
                         words.append(token)
                     assert any(p[: len(words)] == tuple(words) for p in paths), (name, span)

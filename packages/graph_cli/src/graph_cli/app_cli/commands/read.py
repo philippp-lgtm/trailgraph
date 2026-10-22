@@ -1,12 +1,16 @@
-"""``graph get``, ``graph history``, ``graph find``, ``graph lookup`` and ``graph neighbors``.
+"""``graph get``, ``graph history``, ``graph find``, ``graph lookup``, ``graph neighbors``
+and ``graph query``.
 
-Contracts §4.3, B8.8, B8.12, B8.15, B9.7.
+Contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13 (Cypher).
 """
 
 from __future__ import annotations
 
+import json
 import shlex
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Final
 
 from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context
@@ -15,7 +19,9 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.query.cypher.values import Value, parameter_value
 from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
 from graph_cli.query.plan import (
     DEFAULT_LIMIT,
@@ -23,8 +29,9 @@ from graph_cli.query.plan import (
     FindSpec,
     check_paging,
     parse_rel_flag,
+    split_assignment,
 )
-from graph_cli.services.read import GraphRead, refuse_as_of
+from graph_cli.services.read import GraphRead, QuerySpec, refuse_as_of
 
 REF_ERRORS: Final = (
     *GRAPH_ERRORS,
@@ -32,6 +39,19 @@ REF_ERRORS: Final = (
     "entity.ambiguous_ref",
     "temporal.as_of_unsupported",
 )
+QUERY_ERRORS: Final = (
+    *GRAPH_ERRORS,
+    "temporal.as_of_unsupported",
+    "term.unknown",
+    "query.syntax",
+    "query.unsupported",
+    "query.ambiguous_term",
+    "query.unbound_variable",
+    "query.parameter_missing",
+    "query.too_large",
+    "query.invalid_value",
+)
+STDIN: Final = "-"
 
 
 def _open(
@@ -253,6 +273,117 @@ def neighbors(
     return Result(data=data, graph=view.envelope_graph())
 
 
+def _query_text(text: str | None, file: str | None) -> str:
+    """The query from the argument, ``-`` (stdin) or ``--file`` (F10: no heredoc needed)."""
+    if (text is None) == (file is None):
+        raise _usage("text", "give the query as an argument, - for stdin, or --file <path>")
+    if text is not None and text != STDIN:
+        return text
+    argument = "--file" if file is not None else "text"
+    try:
+        data = sys.stdin.buffer.read() if STDIN in (text, file) else Path(str(file)).read_bytes()
+    except OSError as exc:
+        raise _usage(argument, f"cannot read {file}: {exc.strerror}", file) from None
+    except ValueError:  # e.g. a NUL in the path
+        raise _usage(argument, "not a valid path", file) from None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise _usage(argument, "the query is not UTF-8 text") from None
+
+
+def _parameters(texts: tuple[str, ...]) -> dict[str, Value]:
+    found: dict[str, Value] = {}
+    for text in texts:
+        name, value = split_assignment(text, "--param")
+        if name in found:
+            raise _usage("--param", f"{name!r} is given twice", text)
+        found[name] = parameter_value(value)
+    return found
+
+
+def _usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliError:
+    return GraphCliError(
+        "usage.invalid_argument",
+        f"{argument}: {message}",
+        details={"argument": argument, "actual": actual},
+    )
+
+
+def _cell(value: JsonValue) -> str:
+    """A table cell: an entity as ``alias type`` (or id), an edge as its relation."""
+    if isinstance(value, Mapping) and "content_hash" in value and "type" in value:
+        return f"{value.get('alias') or value.get('id')} {value.get('type')}"
+    if isinstance(value, Mapping) and "edge_id" in value and "rel" in value:
+        return str(value["rel"])
+    if value is None:
+        return "-"
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def _table(columns: list[str], items: list[JsonValue]) -> str:
+    rows = [[_cell(item[c]) for c in columns] for item in items if isinstance(item, Mapping)]
+    widths = [max([len(c), *(len(row[i]) for row in rows)]) for i, c in enumerate(columns)]
+    lines = [columns, *rows]
+    return "".join(
+        "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=True)).rstrip()
+        + "\n"
+        for line in lines
+    )
+
+
+def query(
+    state: CommandState,
+    text: str | None,
+    file: str | None,
+    param: tuple[str, ...],
+    include_inactive: bool,
+    explain: bool,
+    limit: int,
+    offset: int,
+    graph: str | None,
+    as_of: str | None,
+) -> Result:
+    refuse_as_of(as_of)
+    check_paging(limit, offset)
+    source = _query_text(text, file)
+    parameters = _parameters(param)
+    reader = context(state).reader
+    parsed = reader.parse_query(source)
+    args: dict[str, JsonValue] = {
+        "text": source,
+        "param": list(param),
+        "include_inactive": include_inactive,
+        "explain": explain,
+        "limit": limit,
+        "offset": offset,
+    }
+    view = _open(state, graph, "read.query", "query", args)
+    spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
+    data, page = reader.query(view, parsed, spec)
+    if page is None:
+        return Result(data=data, graph=view.envelope_graph())
+    page_json = page.to_json()
+    positional = () if text is None else (text,)
+    options = (("--file", () if file is None else (file,)), ("--param", param))
+    switches = ("--include-inactive",) if include_inactive else ()
+
+    def line(next_offset: int) -> str:
+        return _command_line(
+            "query", positional, view.entry.name, options, switches, limit, next_offset
+        )
+
+    columns, items = data["columns"], data["items"]
+    assert isinstance(columns, list) and isinstance(items, list)
+    return Result(
+        data=data,
+        graph=view.envelope_graph(),
+        page=page_json,
+        hints=_next_page(page_json, line),
+        text=_table([str(c) for c in columns], items),
+    )
+
+
 Hint = dict[str, JsonValue]
 
 REF: Final = ParamSpec(
@@ -431,5 +562,63 @@ SPECS: Final = (
         errors=(*REF_ERRORS, "term.unknown"),
         handler=neighbors,
         limits={"depth": 3},
+    ),
+    CommandSpec(
+        path=("query",),
+        kind="read",
+        surface="retrieve",
+        action="read.query",
+        summary="Answer a read-only Cypher query: several hops, OR/NOT across relations, counts.",
+        description=(
+            "Labels are types (subtypes included), written as the local name when it is "
+            "unique or as the CURIE in backticks; relationship types are relations. Only "
+            "active entities are nodes unless --include-inactive. Writes are refused: "
+            "use apply. --explain shows the resolved query without running it."
+        ),
+        params=(
+            ParamSpec(
+                "text",
+                "string",
+                f"The query, or {STDIN} to read it from stdin.",
+                positional=True,
+            ),
+            ParamSpec("--file", "file", "Read the query from this file."),
+            ParamSpec(
+                "--param",
+                "assignment",
+                "name=value binds $name; the value is JSON when it parses, else text.",
+                repeatable=True,
+            ),
+            ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
+            ParamSpec("--explain", "flag", "Show the resolved query; run nothing."),
+            ParamSpec(
+                "--limit", "integer", f"Rows per page, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many rows.", default=0),
+            GRAPH,
+            AS_OF,
+        ),
+        examples=(
+            Example(
+                "graph query 'MATCH (n:<type>)-[:<relation>]->(m) RETURN n, m.<attr>' --json",
+                "Entities with the entities they point to.",
+            ),
+            Example(
+                "graph query 'MATCH (n:<type>) WHERE NOT (n)-[:<relation>]->() RETURN n' --json",
+                "Entities without an outgoing edge of one relation.",
+            ),
+            Example(
+                "graph query 'MATCH (n:<type>)-[:<relation>]->(m) "
+                "RETURN m.<attr>, count(n) AS sources ORDER BY sources DESC' --json",
+                "Counts per target.",
+            ),
+            Example(
+                "graph query --file <file> --param id=<id> --json",
+                "A query from a file with a parameter.",
+            ),
+        ),
+        errors=QUERY_ERRORS,
+        handler=query,
+        limits={"limit": MAX_LIMIT},
     ),
 )

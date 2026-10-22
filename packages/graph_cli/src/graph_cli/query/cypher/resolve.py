@@ -69,6 +69,7 @@ from graph_cli.query.cypher.errors import (
     unknown_term,
     unsupported,
 )
+from graph_cli.query.cypher.values import Value, plain_json
 
 AGGREGATES: Final = frozenset({"count", "collect", "min", "max", "sum", "avg"})
 # name -> (fewest, most arguments; None = any number)
@@ -132,7 +133,7 @@ class FieldUse:
 class ResolvedQuery:
     query: Query
     columns: tuple[str, ...]
-    parameters: Mapping[str, JsonValue]  # the ones the query uses
+    parameters: Mapping[str, Value]  # the ones the query uses
     introduced: tuple[Mapping[str, VarInfo], ...]  # per clause, the variables it binds
     fields: tuple[FieldUse, ...]
 
@@ -148,7 +149,7 @@ class ResolvedQuery:
                 for clause, introduced in zip(self.query.clauses, self.introduced, strict=True)
             ],
             "columns": list(self.columns),
-            "parameters": dict(self.parameters),
+            "parameters": {k: plain_json(v) for k, v in self.parameters.items()},
             "fields": [f.to_json() for f in self.fields],
         }
 
@@ -172,10 +173,10 @@ class _Scope:
 
 
 class _Resolver:
-    def __init__(self, model: CompiledModel, parameters: Mapping[str, JsonValue]) -> None:
+    def __init__(self, model: CompiledModel, parameters: Mapping[str, Value]) -> None:
         self.model = model
         self.given = parameters
-        self.used: dict[str, JsonValue] = {}
+        self.used: dict[str, Value] = {}
         self.fields: dict[tuple[str | None, str], FieldUse] = {}
         self.class_names = _local_index(model.classes)
         self.relation_names = _local_index(model.relations)
@@ -519,7 +520,7 @@ class _Resolver:
 
     # Expressions
 
-    def parameter(self, p: Parameter) -> JsonValue:
+    def parameter(self, p: Parameter) -> Value:
         if p.name not in self.given:
             raise parameter_missing(p.pos, p.name)
         self.used[p.name] = self.given[p.name]
@@ -799,6 +800,6 @@ def _to_columns(e: Expr, columns: list[tuple[Expr, str]]) -> Expr:
 
 
 def resolve(
-    query: Query, model: CompiledModel, parameters: Mapping[str, JsonValue] | None = None
+    query: Query, model: CompiledModel, parameters: Mapping[str, Value] | None = None
 ) -> ResolvedQuery:
     return _Resolver(model, parameters or {}).query(query)

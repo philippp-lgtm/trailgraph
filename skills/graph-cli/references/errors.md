@@ -55,6 +55,13 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `internal.error` | internal | 6 |
 | `ontology.artifact_missing` | unavailable | 5 |
 | `ontology.pin_mismatch` | unavailable | 5 |
+| `query.ambiguous_term` | refused | 1 |
+| `query.invalid_value` | invalid | 1 |
+| `query.parameter_missing` | usage | 2 |
+| `query.syntax` | usage | 2 |
+| `query.too_large` | refused | 1 |
+| `query.unbound_variable` | usage | 2 |
+| `query.unsupported` | refused | 1 |
 | `skills.check_failed` | invalid | 1 |
 | `skills.modified` | refused | 1 |
 | `skills.not_owned` | refused | 1 |

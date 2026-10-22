@@ -85,6 +85,16 @@ own session; who wrote a revision is shown by `graph-admin` (the
 [live view](live_view.md) and the audit). Retracting keeps earlier values
 readable; hiding history is not a way to remove data.
 
+## Queries
+
+`graph query` (Cypher) has its own action, `read.query`, in the `read`
+level. It shows nothing `find` and `neighbors` could not show, but in one
+call; a deny rule on `read.query` withholds that expressive path from, for
+example, an agent type, while `find`, `neighbors` and `lookup` keep working
+(`whoami` names the action in `withheld`). Levels expand when a policy is
+compiled, so a policy installed before `read.query` existed grants it only
+after `policy apply` runs again with the same source.
+
 ## Authoring and installing policies
 
 Authored policies live in the maintainer workspace. `graph-admin policy

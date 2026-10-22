@@ -1,5 +1,5 @@
-"""Read services: graphs, get, history, find, lookup, neighbors, whoami (contracts §4.3,
-B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7).
+"""Read services: graphs, get, history, find, lookup, neighbors, query, whoami (contracts
+§4.3, B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7, B13).
 
 Every read authorizes its action before touching storage; a denial is
 appended to the installation stream and raised. A graph is visible iff
@@ -11,19 +11,21 @@ envelope's ``graph.seq`` names the state that was read. A pinned artifact
 that does not match its hash is read with ``ontology.pin_mismatch_read``,
 an archived graph with ``graph.archived_read``. ``as_of`` is reserved: v1
 refuses it with ``temporal.as_of_unsupported``. A successful ``get``,
-``history``, ``find``, ``lookup`` or ``neighbors`` hands the ids it returns
-to the activity sink (a transient signal for ``graph-admin view``, no log).
+``history``, ``find``, ``lookup``, ``neighbors`` or ``query`` hands the ids it
+returns to the activity sink (a transient signal for ``graph-admin view``,
+no log).
 ``history`` shows of a tx's actor only whether it is the caller's own
 session: who wrote a revision is audit content (B8.15).
 The command's timings get the phases ``authorize``, ``audit`` (a denial),
-``model``, ``snapshot`` and ``query`` (answering from the snapshot).
+``model``, ``snapshot`` and ``query`` (answering from the snapshot); a
+Cypher ``query`` has ``parse``, ``resolve`` and ``execute`` instead.
 """
 
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Concatenate
 
 from graph_cli.access_control.authorize import authorize
@@ -51,8 +53,13 @@ from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.cypher.ast import Query as CypherQuery
+from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
+from graph_cli.query.cypher.parser import parse
+from graph_cli.query.cypher.resolve import resolve
+from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
-from graph_cli.query.plan import FindSpec, plan_find, plan_neighbors
+from graph_cli.query.plan import DEFAULT_LIMIT, FindSpec, plan_find, plan_neighbors
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
@@ -126,6 +133,54 @@ def entity_json(revision: Revision) -> dict[str, JsonValue]:
         "ontology_version": revision.ontology_version,
         "content_hash": revision.content_hash,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class QuerySpec:
+    """How to answer a parsed Cypher query: its parameters, the paging of its rows."""
+
+    parameters: Mapping[str, Value] = field(default_factory=dict)
+    include_inactive: bool = False
+    explain: bool = False
+    limit: int = DEFAULT_LIMIT
+    offset: int = 0
+    budget: int = DEFAULT_BUDGET
+
+
+def value_json(value: Value) -> JsonValue:
+    """A query value as reads show it: an entity as ``get`` does, an edge with its source."""
+    if isinstance(value, Node):
+        return entity_json(value.revision)
+    if isinstance(value, Rel):
+        return {**value.edge.to_json(), "source": str(value.source)}
+    if isinstance(value, list):
+        return [value_json(v) for v in value]
+    if isinstance(value, dict):
+        return {k: value_json(v) for k, v in value.items()}
+    return plain_json(value)
+
+
+def entities_in(rows: Sequence[Sequence[Value]]) -> list[EntityId]:
+    """The entities rows show (nodes, and both ends of relationships), first seen first."""
+    found: dict[EntityId, None] = {}
+
+    def walk(value: Value) -> None:
+        if isinstance(value, Node):
+            found.setdefault(value.id)
+        elif isinstance(value, Rel):
+            found.setdefault(value.source)
+            found.setdefault(value.target)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+
+    for row in rows:
+        for value in row:
+            walk(value)
+    return list(found)
 
 
 def refuse_as_of(as_of: str | None) -> None:
@@ -475,6 +530,37 @@ class ReadService:
         ]
         self.activity.reads(view.entry.id, [start, *(neighbor for neighbor, _, _ in found)])
         return {"start": str(start), "items": items}, list(warnings)
+
+    def parse_query(self, text: str) -> CypherQuery:
+        """The syntax tree of a Cypher query; needs no graph, so it runs before ``open``."""
+        with self.timings.phase("parse"):
+            return parse(text)
+
+    def query(
+        self, view: GraphRead, query: CypherQuery, spec: QuerySpec
+    ) -> tuple[dict[str, JsonValue], Page | None]:
+        """A parsed query resolved against the graph's model and, unless ``explain``,
+        run over its snapshot; the rows are paged like ``find``."""
+        with self.timings.phase("resolve"):
+            resolved = resolve(query, view.model, spec.parameters)
+        if spec.explain:
+            return {"plan": resolved.explain()}, None
+        with self.timings.phase("execute"):
+            result = execute(
+                resolved,
+                view.model,
+                view.snapshot,
+                include_inactive=spec.include_inactive,
+                budget=spec.budget,
+            )
+        shown = result.rows[spec.offset : spec.offset + spec.limit]
+        items: list[JsonValue] = [
+            {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
+            for row in shown
+        ]
+        self.activity.reads(view.entry.id, entities_in(shown))
+        data: dict[str, JsonValue] = {"columns": list(result.columns), "items": items}
+        return data, Page(len(result.rows), len(shown), spec.limit, spec.offset)
 
     def whoami(
         self, actor: ActorContext, *, allowed: Sequence[str] | None = None

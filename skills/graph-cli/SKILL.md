@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:f854e3e9def878fb882cd6d11eeede634d3e90bf24ba35bb7d37d24701c90acb"
+  inventory_hash: "sha256:af44c925bf5f3ad7a5271ca100c6987352e564a34b748e513624a723caae60f4"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -138,6 +138,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph link` | write | Add an edge from one entity to another. |
 | `graph lookup` | read | Find entities by name: main, alternative and hidden labels; ranked candidates. |
 | `graph neighbors` | read | Show the entities connected to one entity, up to three hops. |
+| `graph query` | read | Answer a read-only Cypher query: several hops, OR/NOT across relations, counts. |
 | `graph retract` | write | Withdraw an entity; needs --reason. |
 | `graph skills check` | meta | Check that installed agent skills equal what this program installs now. |
 | `graph skills emit` | meta | Write the agent skills of this program and named graphs into a directory. |

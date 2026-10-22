@@ -16,7 +16,6 @@ from collections.abc import Callable, Mapping
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from typing import Final
 
-from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.ast import (
@@ -62,11 +61,11 @@ class Evaluator:
     def __init__(
         self,
         model: CompiledModel,
-        parameters: Mapping[str, JsonValue],
+        parameters: Mapping[str, Value],
         exists: Callable[[PatternPart, Row], bool | None],
     ) -> None:
         self.model = model
-        self.parameters = {k: from_json(v) for k, v in parameters.items()}
+        self.parameters = dict(parameters)
         self.exists = exists
 
     def condition(self, e: Expr, row: Row) -> bool:

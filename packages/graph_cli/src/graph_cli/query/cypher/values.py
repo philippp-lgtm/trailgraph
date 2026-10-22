@@ -19,6 +19,7 @@ the stored JSON.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -70,6 +71,32 @@ def from_json(value: JsonValue, decimal: bool = False) -> Value:
         return {k: from_json(v) for k, v in value.items()}
     if isinstance(value, Sequence):
         return [from_json(item, decimal) for item in value]
+    return value
+
+
+def parameter_value(text: str) -> Value:
+    """A ``--param`` value: JSON when it parses (a number with a fraction as a decimal),
+    else the text itself."""
+
+    def no_constant(name: str) -> Value:
+        raise ValueError(name)
+
+    try:
+        loaded: Value = json.loads(text, parse_float=Decimal, parse_constant=no_constant)
+    except ValueError:
+        return text
+    return loaded
+
+
+def plain_json(value: Value) -> JsonValue:
+    """A value without nodes or relationships as JSON: decimals as strings."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, list):
+        return [plain_json(v) for v in value]
+    if isinstance(value, dict):
+        return {k: plain_json(v) for k, v in value.items()}
+    assert not isinstance(value, Node | Rel), value
     return value
 
 
