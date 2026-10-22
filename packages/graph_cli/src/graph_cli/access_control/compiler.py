@@ -273,7 +273,7 @@ def _scope_rules(
             rules.append(rule)
     above = actions_above(levels.get(ALL, "none"))
     if above:
-        rule = _deny(f"{prefix}.default", above, ["graph:*"], principal)
+        rule = _deny(f"{prefix}.{ALL}", above, ["graph:*"], principal)
         conditions = list(unless)
         if named:
             conditions.append({"resource": sorted(_graph_glob(ctx.graphs[n]) for n in named)})

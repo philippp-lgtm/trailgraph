@@ -293,7 +293,7 @@ def test_without_a_scope_the_no_project_scope_applies(
     assert listed.warning_codes == expected
     assert app(run_cli, "find", "--graph", "example_graph", cwd=here).code == 0
     refused = app(run_cli, *LOCATION, "--graph", "example_graph", cwd=here)
-    assert refused.error["details"]["rule"] == "no_project.default"
+    assert refused.error["details"]["rule"] == "no_project.*"
     who = app(run_cli, "whoami", cwd=here).data["permissions"]
     assert who["scope"] == "no_project"
     assert {g["level"] for g in who["graphs"]} == {"read"}

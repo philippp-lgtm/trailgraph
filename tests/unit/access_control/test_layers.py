@@ -93,14 +93,14 @@ SCOPED = installation(
         principal={"project": ["example_project"]},
     ),
     deny(
-        "scope.example_project.default",
+        "scope.example_project.*",
         ["read.*", "write.*", "ext.*"],
         ["graph:*"],
         principal={"project": ["example_project"]},
         unless=[{"resource": [f"graph:{G1}*", f"graph:{G2}*"]}],
     ),
     deny(
-        "no_project.default",
+        "no_project.*",
         ["write.*", "ext.*"],
         ["graph:*"],
         unless=[{"principal": {"project": ["example_project"]}}],
@@ -157,7 +157,7 @@ def test_project_scopes_intersect_with_grants() -> None:
         "scope.example_project.second"
     )
     third = "graph:0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8c"
-    assert decide(IN_PROJECT, "read.list", third, SCOPED)[1] == "scope.example_project.default"
+    assert decide(IN_PROJECT, "read.list", third, SCOPED)[1] == "scope.example_project.*"
 
 
 @pytest.mark.parametrize("who", [APP, OTHER_PROJECT], ids=["no_project", "unknown_project"])
@@ -165,7 +165,7 @@ def test_no_project_scope_covers_absent_and_unknown_projects(who: ActorContext) 
     assert decide(who, "read.find", f"graph:{G2}", SCOPED)[0] == "allow"
     assert decide(who, "write.create", f"graph:{G1}/type:inv:Item", SCOPED) == (
         "deny",
-        "no_project.default",
+        "no_project.*",
         "access.denied",
     )
 

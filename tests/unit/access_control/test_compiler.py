@@ -235,6 +235,15 @@ def test_a_type_limit_names_concrete_types() -> None:
         assert path in [p["path"] for p in problems if isinstance(p, dict)], problems
 
 
+def test_a_graph_named_default_gets_its_own_rule() -> None:
+    graphs = {**GRAPHS, "default": GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8d"))}
+    source = INSTALLATION.replace(b"{other_graph: write}", b"{default: read}")
+    compiled = compile_policy(source, file="p.yaml", graphs=graphs)
+    ids = [r["id"] for r in compiled.document["rules"] if isinstance(r, dict)]
+    assert "scope.another_project.default" in ids
+    assert "scope.another_project.*" in ids
+
+
 def test_every_problem_is_reported_at_once() -> None:
     broken = INSTALLATION.replace(b"level: write", b"level: admin").replace(
         b'no_project: {"*": read}\n', b""
