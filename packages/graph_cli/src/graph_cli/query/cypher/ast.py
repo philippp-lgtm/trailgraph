@@ -9,6 +9,7 @@ equality so tests compare trees by structure.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Final, Literal
 
 
@@ -26,7 +27,9 @@ NO_POS: Final = Pos(0, 0, 0)
 
 # Expressions
 
-LiteralValue = None | bool | int | float | str
+# Number literals with a fraction or exponent are exact decimals, as graph_cli
+# stores decimal attributes; JSON output shows them as strings.
+LiteralValue = None | bool | int | Decimal | str
 BinaryOp = Literal[
     "or",
     "xor",

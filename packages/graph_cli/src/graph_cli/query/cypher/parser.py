@@ -11,6 +11,7 @@ not parse is ``query.syntax`` with line, column and the expected tokens.
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Final, TypeVar
 
 from graph_cli.kernel.errors import GraphCliError
@@ -614,7 +615,7 @@ class _Parser:
             return Const(int(token.text), token.pos)
         if token.kind == "float":
             self.advance()
-            return Const(float(token.text), token.pos)
+            return Const(Decimal(token.text), token.pos)
         if token.kind == "string":
             self.advance()
             return Const(token.text, token.pos)

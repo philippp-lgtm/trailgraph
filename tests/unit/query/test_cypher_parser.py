@@ -2,6 +2,7 @@
 
 import random
 import re
+from decimal import Decimal
 
 import pytest
 
@@ -215,7 +216,7 @@ def test_chains() -> None:
     ("text", "expected"),
     [
         ("1", C(1)),
-        ("1.5", C(1.5)),
+        ("1.5", C(Decimal("1.5"))),
         ("'x'", C("x")),
         ("true", C(True)),
         ("FALSE", C(False)),

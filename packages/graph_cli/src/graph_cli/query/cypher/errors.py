@@ -8,7 +8,8 @@ hint of kind ``write`` points to ``apply``).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import difflib
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 from graph_cli.kernel.canonical import JsonValue
@@ -31,8 +32,17 @@ def syntax_error(
     )
 
 
+def did_you_mean(name: str, choices: Iterable[str]) -> list[JsonValue]:
+    return list(difflib.get_close_matches(name, sorted(set(choices)), n=5))
+
+
 def unsupported(
-    pos: Pos, kind: UnsupportedKind, construct: str, alternative: str | None = None
+    pos: Pos,
+    kind: UnsupportedKind,
+    construct: str,
+    alternative: str | None = None,
+    *,
+    suggestions: Iterable[str] = (),
 ) -> GraphCliError:
     message = f"line {pos.line}, column {pos.column}: not supported: {construct}"
     if alternative is not None:
@@ -45,5 +55,46 @@ def unsupported(
             "kind": kind,
             "construct": construct,
             "alternative": alternative,
+            **({"did_you_mean": list(suggestions)} if suggestions else {}),
         },
+    )
+
+
+def unknown_term(pos: Pos, kind: str, name: str, choices: Iterable[str]) -> GraphCliError:
+    """``term.unknown`` as ``find`` raises it, plus the position."""
+    return GraphCliError(
+        "term.unknown",
+        f"line {pos.line}, column {pos.column}: unknown {kind} {name!r}",
+        details={
+            "kind": kind,
+            "term": name,
+            "did_you_mean": did_you_mean(name, choices),
+            **_where(pos),
+        },
+    )
+
+
+def ambiguous_term(pos: Pos, kind: str, name: str, candidates: Sequence[str]) -> GraphCliError:
+    listed = ", ".join(candidates)
+    return GraphCliError(
+        "query.ambiguous_term",
+        f"line {pos.line}, column {pos.column}: {kind} {name!r} matches {listed}; "
+        f"write one of them in backticks, e.g. `{candidates[0]}`",
+        details={"kind": kind, "term": name, "candidates": list(candidates), **_where(pos)},
+    )
+
+
+def unbound_variable(pos: Pos, name: str, message: str | None = None) -> GraphCliError:
+    return GraphCliError(
+        "query.unbound_variable",
+        f"line {pos.line}, column {pos.column}: {message or f'variable {name!r} is not defined'}",
+        details={"name": name, **_where(pos)},
+    )
+
+
+def parameter_missing(pos: Pos, name: str) -> GraphCliError:
+    return GraphCliError(
+        "query.parameter_missing",
+        f"line {pos.line}, column {pos.column}: parameter ${name} has no value",
+        details={"name": name, **_where(pos)},
     )

@@ -57,8 +57,10 @@ and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`; `services.read` and `services.describe` answer
 them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
-`ast`. `temporal_knowledge.history` names what changed between two
-revisions for `history`.
+`ast`, `resolve` checks it against the model (names to CURIEs, fields,
+parameters, scopes) and `render` writes a tree back as Cypher text.
+`temporal_knowledge.history` names what changed between two revisions for
+`history`.
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
