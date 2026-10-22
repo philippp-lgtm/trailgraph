@@ -40,6 +40,10 @@ POSITIVE_CONTROLS = {
         "graph_cli/audit/__init__.py",
         "import graph_cli.query\n",
     ),
+    "Cypher queries import only the kernel and the ontology layer": (
+        "graph_cli/query/cypher/__init__.py",
+        "import graph_cli.query.plan\n",
+    ),
 }
 # Allowed by the same contracts: admin may use the maintenance port.
 ALLOWED_IMPORTS = {

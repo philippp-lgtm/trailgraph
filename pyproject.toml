@@ -100,6 +100,28 @@ forbidden_modules = [
     "graph_cli.app_cli",
 ]
 
+# The Cypher subset runs over the Snapshot port with the model only: the flag
+# planners stay an independent implementation (the equivalence tests compare
+# both), and nothing above the query layer leaks in.
+[[tool.importlinter.contracts]]
+name = "Cypher queries import only the kernel and the ontology layer"
+type = "forbidden"
+source_modules = ["graph_cli.query.cypher"]
+forbidden_modules = [
+    "graph_cli.query.plan",
+    "graph_cli.query.lookup",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.skills",
+    "graph_cli.app_cli",
+]
+
 # Skill generators read only the public inventory and model description (B11),
 # never the declarations or services behind them.
 [[tool.importlinter.contracts]]

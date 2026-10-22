@@ -36,7 +36,9 @@ Dependencies point down only. Enforced by import-linter
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
 `graph_cli_admin`. Within `graph_cli_admin`, `maintenance_cli` sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
-and storage adapters, `audit` and `access_control` import only `kernel`. The storage maintenance port
+and storage adapters, `audit` and `access_control` import only `kernel`.
+`query.cypher` imports only `kernel` and `ontology_layer`, not the flag
+planners next to it. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. Authored YAML (ontologies,
 policies) is parsed only by `ontology_layer` and `access_control`, through
@@ -53,8 +55,10 @@ Commands of `graph` are declared as data in `graph_cli.app_cli.commands`
 the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`; `services.read` and `services.describe` answer
-them. `temporal_knowledge.history` names what changed between two revisions
-for `history`.
+them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
+and `parser` (hand-written recursive descent) produce the syntax tree of
+`ast`. `temporal_knowledge.history` names what changed between two
+revisions for `history`.
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
