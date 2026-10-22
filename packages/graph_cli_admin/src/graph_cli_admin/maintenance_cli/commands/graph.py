@@ -1,4 +1,4 @@
-"""``graph-admin graph create|list|show`` and ``graph-admin graph skill publish|render``."""
+"""``graph-admin graph create|list|show|check`` and ``graph-admin graph skill publish|render``."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from graph_cli.cli_kit.runner import CommandState, json_option, leaf
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
 from graph_cli_admin.services_admin import graphs, skill
+from graph_cli_admin.services_admin.check import check
 
 
 @click.group("graph")
@@ -102,6 +103,46 @@ def show(state: CommandState, ref: str, data_root: Path | None) -> Result:
     seq = data["seq"]
     return Result(
         data=data, graph=graphs.envelope_graph(entry, seq if isinstance(seq, int) else None)
+    )
+
+
+@graph_group.command("check")
+@click.argument("ref")
+@click.option(
+    "--ontology",
+    "source",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Check against this authored ontology instead of the pinned release.",
+)
+@click.option("--module", help="Main module id, if the --ontology directory holds several.")
+@data_root_option
+@json_option
+@leaf
+def check_command(
+    state: CommandState,
+    ref: str,
+    source: Path | None,
+    module: str | None,
+    data_root: Path | None,
+) -> Result:
+    """Check every entity of graph REF (name or id) against its ontology.
+
+    Runs all data checks, including rules with when: batch and the in
+    cardinality of relations, which no write checks. Exits 1
+    (admin.data_errors) on an error finding; warnings are listed only.
+    With --ontology, checks the data under an authored version before it
+    is released.
+
+    \b
+    Examples:
+      graph-admin graph check example_graph
+      graph-admin graph check example_graph --ontology ./onto --json
+    """
+    outcome = check(admin_context(state, data_root), graph_ref=ref, source=source, module=module)
+    return Result(
+        data=outcome.data,
+        graph=graphs.envelope_graph(outcome.entry, outcome.seq),
+        warnings=outcome.warnings,
     )
 
 

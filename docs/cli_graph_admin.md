@@ -10,6 +10,7 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `init` | create the data root and, if missing, `config.toml` with a device id |
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
 | `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
+| `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality); exit 1 (`admin.data_errors`) on error findings, warnings are listed; `--ontology DIR` checks against an authored version before it is released |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
@@ -30,7 +31,8 @@ Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version
 at least as much as the changes require; a new major version on a graph
 with data is released only if the data has no error findings under the new
-version (`check_graph`), otherwise the refusal lists them. Verification reports an
+version (`check_graph`, the check `graph check --ontology` runs without
+releasing), otherwise the refusal lists them. Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 
 Related guides: [Access control](access_control.md) (policies),
