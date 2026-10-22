@@ -10,7 +10,7 @@ from support.snapshots import DictSnapshot, edge, revision
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.query.cypher.ast import Pos
 from graph_cli.query.cypher.evaluate import Evaluator
-from graph_cli.query.cypher.execute import match_rows
+from graph_cli.query.cypher.execute import execute
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import resolve
 from graph_cli.query.cypher.values import Node, Rel, equals, group_key, order_key
@@ -180,11 +180,10 @@ def test_decimal_attributes_compare_as_numbers() -> None:
         revision("light", "inv:Item", {"label": "light", "weight": "2.5"}),
         revision("heavy", "inv:Item", {"label": "heavy", "weight": "10"}),
     )
-    resolved = resolve(parse("MATCH (i:Item) WHERE i.weight > 3 RETURN 1"), INV, {})
-    (row,) = match_rows(resolved, INV, snapshot)
-    assert isinstance(row["i"], Node) and row["i"].revision.attrs["label"] == "heavy"
-    resolved = resolve(parse("MATCH (i:Item) WHERE i.weight = 2.50 RETURN 1"), INV, {})
-    assert len(match_rows(resolved, INV, snapshot)) == 1
+    resolved = resolve(parse("MATCH (i:Item) WHERE i.weight > 3 RETURN i.label"), INV, {})
+    assert execute(resolved, INV, snapshot).rows == (("heavy",),)
+    resolved = resolve(parse("MATCH (i:Item) WHERE i.weight = 2.50 RETURN i.weight"), INV, {})
+    assert execute(resolved, INV, snapshot).rows == ((Decimal("2.5"),),)
 
 
 def test_relationship_fields() -> None:

@@ -605,7 +605,9 @@ class _Resolver:
             raise syntax_error(call.pos, f"DISTINCT works only in aggregates, not {name}()")
         if is_aggregate and not aggregates:
             raise _misplaced_aggregate(call.pos, f"{name}()")
-        args = tuple(self.expr(a, scope, aggregates=False) for a in call.args)
+        # Aggregates nest in plain functions (size(collect(x))), not in aggregates.
+        inner = aggregates and not is_aggregate
+        args = tuple(self.expr(a, scope, aggregates=inner) for a in call.args)
         return replace(call, args=args)
 
 
@@ -683,8 +685,15 @@ def is_aggregate(e: Expr) -> bool:
     return isinstance(e, CountStar) or (isinstance(e, FunctionCall) and e.name in AGGREGATES)
 
 
+def aggregates_in(e: Expr) -> list[Expr]:
+    """The aggregate calls in ``e`` (never nested, resolve refuses that)."""
+    if is_aggregate(e):
+        return [e]
+    return [found for child in _children(e) for found in aggregates_in(child)]
+
+
 def _has_aggregate(e: Expr) -> bool:
-    return is_aggregate(e) or any(_has_aggregate(c) for c in _children(e))
+    return bool(aggregates_in(e))
 
 
 def _variables_outside_aggregates(e: Expr) -> Iterator[Variable]:

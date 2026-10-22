@@ -59,7 +59,8 @@ them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
 `ast`, `resolve` checks it against the model (names to CURIEs, fields,
 parameters, scopes) and `render` writes a tree back as Cypher text.
-`execute` matches the patterns over the `Snapshot` port, `evaluate` and
+`execute` matches the patterns over the `Snapshot` port and runs the
+clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 `values` hold the expressions and openCypher's comparisons and null logic.
 `temporal_knowledge.history` names what changed between two revisions for
 `history`.

@@ -259,6 +259,7 @@ def test_unknown_functions_list_the_subset() -> None:
     [
         ("MATCH (n) WHERE count(n) > 1 RETURN n", "aggregate count() is allowed only"),
         ("MATCH (n) RETURN count(count(n))", "aggregate count() is allowed only"),
+        ("MATCH (n) RETURN size(count(collect(n)))", "aggregate collect() is allowed only"),
         ("MATCH (n {title: count(*)}) RETURN n", "aggregate count(*) is allowed only"),
         ("UNWIND collect(1) AS x RETURN x", "aggregate collect() is allowed only"),
         ("MATCH (n) RETURN count(n, n)", "count() takes 1 argument, got 2"),

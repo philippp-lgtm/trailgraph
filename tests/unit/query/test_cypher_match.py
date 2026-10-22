@@ -7,7 +7,7 @@ from support.fixtures import compiled_model
 from support.snapshots import DictSnapshot, edge, eid, revision
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.query.cypher.execute import match_rows
+from graph_cli.query.cypher.execute import execute
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import resolve
 from graph_cli.query.cypher.values import Node, Rel
@@ -79,9 +79,9 @@ def shown(value: Any) -> Any:
 def rows(
     text: str, *, include_inactive: bool = False, budget: int = 100_000, **params: Any
 ) -> list[dict[str, Any]]:
-    resolved = resolve(parse(f"{text} RETURN 1"), NAS, params)
-    found = match_rows(resolved, NAS, GRAPH, include_inactive=include_inactive, budget=budget)
-    return [{k: shown(v) for k, v in row.items()} for row in found]
+    resolved = resolve(parse(f"{text} RETURN *"), NAS, params)
+    result = execute(resolved, NAS, GRAPH, include_inactive=include_inactive, budget=budget)
+    return [{k: shown(v) for k, v in zip(result.columns, row, strict=True)} for row in result.rows]
 
 
 def column(text: str, name: str, **kwargs: Any) -> list[Any]:
@@ -260,9 +260,9 @@ def test_pattern_predicates() -> None:
 
 def test_budget_ends_runaway_matches() -> None:
     with pytest.raises(GraphCliError) as caught:
-        rows("MATCH (a), (b), (c)", budget=200)
+        rows("MATCH (a), (b), (c)", budget=250)
     error = caught.value
     assert error.code == "query.too_large"
-    assert error.details == {"clause": "MATCH", "budget": 200, "line": 1, "column": 1}
+    assert error.details == {"clause": "MATCH", "budget": 250, "line": 1, "column": 1}
     assert "add labels" in error.message
-    assert len(rows("MATCH (a), (b)", budget=200)) == 64
+    assert len(rows("MATCH (a), (b)", budget=250)) == 64
