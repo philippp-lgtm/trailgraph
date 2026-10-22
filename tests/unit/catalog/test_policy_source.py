@@ -70,6 +70,10 @@ def test_files_are_read_once_per_invocation(tmp_path: Path) -> None:
     first = source.current(None)
     path.unlink()
     assert source.current(None) == first
+    install(tmp_path, LAYER, graph=GRAPH)
+    source.refresh()  # a writer under its lock reads them again
+    assert source.current(None) == BUILTIN_POLICY_SET
+    assert source.current(GRAPH) == policy_set(BUILTIN_POLICY, LAYER)
 
 
 @pytest.mark.parametrize(

@@ -70,6 +70,10 @@ class FilePolicySource:
         installation = self.installation()
         return policy_set(installation, self.graph(graph) if graph is not None else None)
 
+    def refresh(self) -> None:
+        self._installation = None
+        self._graphs.clear()
+
     def _load(
         self, path: Path, shown: str, layer: str, graph: str | None
     ) -> Mapping[str, JsonValue] | None:

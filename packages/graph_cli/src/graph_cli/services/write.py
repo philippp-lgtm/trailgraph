@@ -381,7 +381,10 @@ class WriteService:
             head = session.head()
             resolution = self._resolve(request, base)
             decisions = prepared.decisions
-            if resolution.pairs != prepared.resolution.pairs:
+            self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
+            if resolution.pairs != prepared.resolution.pairs or _stale(
+                decisions, self._policy.current(entry.id).hash
+            ):
                 decisions = self._authorize(request, entry, resolution)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
@@ -797,3 +800,7 @@ def _replay(tx: TxRecord, entry: GraphEntry, warnings: Sequence[WarningRecord]) 
         warnings=tuple(warnings),
         bindings=locals_map,
     )
+
+
+def _stale(decisions: Sequence[Decision], policy_hash: str) -> bool:
+    return any(d.policy_hash != policy_hash for d in decisions)

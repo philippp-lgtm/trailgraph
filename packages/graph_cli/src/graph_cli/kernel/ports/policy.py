@@ -17,4 +17,11 @@ class PolicySet:
 
 
 class PolicySource(Protocol):
-    def current(self, graph: GraphId | None) -> PolicySet: ...
+    def current(self, graph: GraphId | None) -> PolicySet:
+        """The policy set for decisions on ``graph``, read once per invocation."""
+        ...
+
+    def refresh(self) -> None:
+        """Read the policies again on the next ``current``: a writer calls it under its
+        lock, so the decision it records is made under the policy in effect (B6.14)."""
+        ...

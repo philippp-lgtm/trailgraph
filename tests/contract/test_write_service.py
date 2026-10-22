@@ -12,6 +12,7 @@ from support.roles import Roles, lifecycle_path, load_roles
 from support.services import ServiceEnv
 from support.trees import tree_hash
 
+from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
 from graph_cli.kernel.canonical import canonical_bytes
 from graph_cli.kernel.changeset import ChangeSet, UpdateOp
 from graph_cli.kernel.errors import GraphCliError
@@ -57,6 +58,30 @@ def test_create_commits_one_tx_after_its_intent(svc: ServiceEnv, roles: Roles) -
     assert canonical_bytes(intent["actor"]) == canonical_bytes(tx.actor.to_json())  # B2.9
     assert [r.id for r in tx.revisions] == [e.id for e in result.entities]
     assert not [f for f in svc.verify().findings if f.severity.value == "error"]
+
+
+class SwitchingPolicy:
+    """One policy until the writer reads it again under its lock, then another: a policy
+    applied between the decision and the lock."""
+
+    before = policy_set(BUILTIN_POLICY)
+    after = policy_set({**BUILTIN_POLICY, "id": "applied_meanwhile"})
+
+    def __init__(self) -> None:
+        self.refreshed = False
+
+    def current(self, graph: object) -> Any:
+        return self.after if self.refreshed else self.before
+
+    def refresh(self) -> None:
+        self.refreshed = True
+
+
+def test_the_policy_in_effect_under_the_lock_decides(svc: ServiceEnv, roles: Roles) -> None:
+    svc.service = svc.make_service(policy=SwitchingPolicy())
+    svc.create(roles.term("lifecycle_type"))
+    intent = svc.graph_events()[-1]
+    assert intent["authz"]["policy_hash"] == SwitchingPolicy.after.hash  # type: ignore[index]
 
 
 def test_last_op_invalid_changes_nothing(svc: ServiceEnv, roles: Roles) -> None:

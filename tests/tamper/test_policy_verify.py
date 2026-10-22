@@ -57,6 +57,15 @@ def test_applied_policies_verify_clean(run_cli: CliRunner, root: Path, tmp_path:
     assert codes(run_cli) == []
 
 
+def test_mirrors_decide_with_the_graph_layer(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A graph with its own policy records the mirror under both layers."""
+    apply(run_cli, write_policy(tmp_path, "g.yaml", GRAPH), "--graph", "example_graph")
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    assert codes(run_cli) == []
+
+
 def test_hand_edited_installation_policy(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
     widen(root / "policy" / "installation.json")

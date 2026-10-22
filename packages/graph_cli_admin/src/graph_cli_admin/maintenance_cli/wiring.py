@@ -78,14 +78,15 @@ class Services:
         oplog = OpLogFile(roots.state_root, clock)
 
         def fallback(error: GraphCliError) -> None:
-            """An invalid installed policy must not stop the maintainer replacing it (B6.14)."""
-            warnings.append(
-                WarningRecord(
-                    "admin.policy_fallback",
-                    f"{error.message}; deciding without it until it is replaced",
-                    {"file": error.details.get("file")},
-                )
+            """An invalid installed policy must not stop the maintainer replacing it (B6.14);
+            one warning per file, also when the policy is read again under a lock."""
+            warning = WarningRecord(
+                "admin.policy_fallback",
+                f"{error.message}; deciding without it until it is replaced",
+                {"file": error.details.get("file")},
             )
+            if warning not in warnings:
+                warnings.append(warning)
 
         settings = StorageSettings(config.lock_timeout_s, config.durability)
         policy = FilePolicySource(roots.data_root, fallback=fallback)

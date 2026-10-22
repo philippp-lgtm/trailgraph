@@ -88,7 +88,20 @@ class AdminContext:
         *,
         reason: str | None = None,
     ) -> AuditReceipt:
-        """The graph-stream intent of a maintenance effect (W.e), durable on return."""
+        """The graph-stream intent of a maintenance effect (W.e), durable on return.
+
+        The decisions are made again when the graph's policy set differs from theirs:
+        under the session's lock the policy in effect decides (B6.14), with the graph's
+        own layer, as ``audit verify`` expects for a graph-stream event.
+        """
+        self.policy.refresh()
+        if any(d.policy_hash != self.policy.current(entry.id).hash for d in decisions):
+            decisions = self.authorize(
+                [(d.action, d.resource) for d in decisions],
+                request=meta,
+                graph=entry.id,
+                reason=reason,
+            )
         event = events.maintenance(
             actor=self.actor,
             decisions=decisions,

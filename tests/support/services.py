@@ -232,11 +232,11 @@ class ServiceEnv:
         self.entry = self.catalog.resolve(self.name)
         self.service = self.make_service()
 
-    def make_service(self, **config: Any) -> WriteService:
+    def make_service(self, policy: Any = None, **config: Any) -> WriteService:
         return WriteService(
             catalog=self.catalog,
             audit=self.audit,
-            policy=BuiltinPolicySource(),
+            policy=policy or BuiltinPolicySource(),
             clock=self.clock,
             ids=self.ids,
             env=ENV,

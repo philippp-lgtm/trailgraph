@@ -66,6 +66,9 @@ class BuiltinPolicySource:
     def current(self, graph: GraphId | None) -> PolicySet:
         return BUILTIN_POLICY_SET
 
+    def refresh(self) -> None:
+        pass
+
 
 if TYPE_CHECKING:
 
