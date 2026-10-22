@@ -12,6 +12,9 @@ A stamp after the frontmatter names the graph, the ontology release and the
 template hash, never the program version or a time, so a new program with
 the same render installs the same files.
 
+The summary of a deprecated term starts with "Deprecated." unless the
+author already wrote it that way.
+
 Blocks (each one optional):
 
 - ``start``: how to tell the graph is reachable, read the ``graph-cli`` skill first;
@@ -215,6 +218,14 @@ def _plain(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
+def _summary(term: JsonObject) -> str:
+    """The summary of a term, marked when the term is deprecated."""
+    text = _plain(opt_str(term, "summary"))
+    if term.get("deprecated") is True and not text.lower().startswith("deprecated"):
+        return f"Deprecated. {text}"
+    return text
+
+
 def _row(cells: Sequence[str]) -> list[str]:
     """Table cells: one line each, pipes escaped (also inside code spans, GFM)."""
     return [_plain(cell).replace("|", "\\|") for cell in cells]
@@ -279,7 +290,7 @@ def _types(doc: _Model) -> list[str]:
         name = _code(curie) + (f" ({_code(format_alias(alias, 1))})" if alias else "")
         fields = [_field(f) for f in _ordered_fields(body) if f.get("kind") != "lifecycle"]
         ancestors = _strings(body.get("ancestors"))  # relations of a supertype apply too
-        what = _plain(opt_str(body, "summary"))
+        what = _summary(body)
         what += f" Is a {_codes(ancestors, ' and ')}." if ancestors else ""
         rows.append(
             [
@@ -365,7 +376,7 @@ def _relations(doc: _Model) -> list[str]:
                 f"{_ends(relation, 'domain')} -> {_ends(relation, 'range')}",
                 _cardinality(req_obj(relation, "cardinality")),
                 _relation_notes(relation),
-                _plain(opt_str(relation, "summary")),
+                _summary(relation),
             ]
         )
     if not rows:
@@ -430,7 +441,7 @@ def _constraints(doc: _Model) -> list[str]:
         when = req_str(rule, "when")
         lines.append(
             f"- Rule {_code(rule_id)} on {_codes(on)} ({req_str(rule, 'severity')},"
-            f" {WHEN.get(when, f'when {when}')}): {_plain(opt_str(rule, 'summary'))}"
+            f" {WHEN.get(when, f'when {when}')}): {_summary(rule)}"
         )
     return lines or ["No transition guards, write-once fields or rules."]
 
@@ -520,7 +531,7 @@ def _model_file(doc: _Model, stamp: str) -> str:
                     _code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
                     "yes" if body.get("abstract") is True else "no",
                     _code(str(body["extends"])) if body.get("extends") else "",
-                    _plain(opt_str(body, "summary")),
+                    _summary(body),
                 ]
                 for curie, body in doc.types.items()
             ],
@@ -539,7 +550,7 @@ def _model_file(doc: _Model, stamp: str) -> str:
                     _ends(relation, "range"),
                     _cardinality(req_obj(relation, "cardinality")),
                     _relation_notes(relation),
-                    _plain(opt_str(relation, "summary")),
+                    _summary(relation),
                 ]
                 for curie, relation in sorted(doc.relations.items())
             ],
@@ -552,7 +563,7 @@ def _model_file(doc: _Model, stamp: str) -> str:
 
 
 def _type_section(curie: str, body: JsonObject) -> list[str]:
-    lines = [f"## `{curie}`", "", _plain(opt_str(body, "summary")) or "No summary."]
+    lines = [f"## `{curie}`", "", _summary(body) or "No summary."]
     description = opt_str(body, "description")
     if description:
         lines += ["", description.strip()]
@@ -582,7 +593,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                     req_str(f, "mutability"),
                     _limits(f),
                     _code(req_str(f, "declared_in")),
-                    _plain(opt_str(f, "summary")),
+                    _summary(f),
                 ]
                 for f in fields
             ],
@@ -606,7 +617,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                         req_str(r, "cardinality"),
                         _code(str(r["inverse_label"])) if r.get("inverse_label") else "",
                         _codes(_strings(r.get("qualifiers"))),
-                        _plain(opt_str(r, "summary")),
+                        _summary(r),
                     ]
                     for r in out
                 ],
@@ -626,7 +637,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                         _ends(r, "from"),
                         req_str(r, "cardinality"),
                         _code(str(r["inverse_label"])) if r.get("inverse_label") else "",
-                        _plain(opt_str(r, "summary")),
+                        _summary(r),
                     ]
                     for r in into
                 ],
@@ -645,7 +656,7 @@ def _type_section(curie: str, body: JsonObject) -> list[str]:
                         _code(req_str(r, "id")),
                         req_str(r, "severity"),
                         req_str(r, "when"),
-                        _plain(opt_str(r, "summary")),
+                        _summary(r),
                     ]
                     for r in rules
                 ],
@@ -678,7 +689,7 @@ def _limits(field: JsonObject) -> str:
 def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
     lines = [
         f"Lifecycle {_code(_attr(lifecycle))} ({_code(req_str(lifecycle, 'lifecycle'))}):"
-        f" {_plain(opt_str(lifecycle, 'summary'))}",
+        f" {_summary(lifecycle)}",
         "",
     ]
     initial = set(_strings(lifecycle.get("initial")))

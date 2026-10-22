@@ -13,6 +13,7 @@
     "alias_prefix": "ITEM",
     "ancestors": [],
     "curie": "inv:Item",
+    "deprecated": false,
     "description": null,
     "extends": null,
     "fields": [
@@ -20,6 +21,7 @@
         "base": "date",
         "declared_in": "inv:Item",
         "default": null,
+        "deprecated": false,
         "kind": "base",
         "limits": {},
         "many": false,
@@ -36,6 +38,7 @@
         "base": "string",
         "declared_in": "inv:Item",
         "default": null,
+        "deprecated": false,
         "kind": "enum",
         "limits": {},
         "many": false,
@@ -57,6 +60,7 @@
         "base": "string",
         "declared_in": "inv:Item",
         "default": null,
+        "deprecated": false,
         "kind": "base",
         "limits": {},
         "many": false,
@@ -73,6 +77,7 @@
         "base": "integer",
         "declared_in": "inv:Item",
         "default": 1,
+        "deprecated": false,
         "kind": "datatype",
         "limits": {
           "min": 0
@@ -91,6 +96,7 @@
         "base": "string",
         "declared_in": "inv:Item",
         "default": null,
+        "deprecated": false,
         "kind": "datatype",
         "limits": {
           "pattern": "^[A-Z0-9-]{4,32}$"
@@ -109,6 +115,7 @@
         "base": "string",
         "declared_in": "inv:Item",
         "default": null,
+        "deprecated": false,
         "kind": "lifecycle",
         "limits": {},
         "many": false,
@@ -125,6 +132,7 @@
     "lifecycles": [
       {
         "attr": "status",
+        "deprecated": false,
         "initial": [
           "ordered"
         ],
@@ -209,6 +217,7 @@
       {
         "cardinality": "0..n",
         "curie": "inv:part_of",
+        "deprecated": false,
         "from": [
           "inv:Item"
         ],
@@ -220,6 +229,7 @@
       {
         "cardinality": "0..n",
         "curie": "inv:in_category",
+        "deprecated": false,
         "inverse_label": "has_item",
         "qualifiers": [],
         "range": [
@@ -230,6 +240,7 @@
       {
         "cardinality": "1..1",
         "curie": "inv:located_in",
+        "deprecated": false,
         "inverse_label": "holds",
         "qualifiers": [],
         "range": [
@@ -240,6 +251,7 @@
       {
         "cardinality": "0..1",
         "curie": "inv:part_of",
+        "deprecated": false,
         "inverse_label": "has_part",
         "qualifiers": [],
         "range": [
@@ -250,6 +262,7 @@
     ],
     "rules": [
       {
+        "deprecated": false,
         "id": "inv.serial_single_unit",
         "severity": "error",
         "summary": "Serialized items have quantity 1.",

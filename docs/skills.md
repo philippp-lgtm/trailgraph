@@ -53,7 +53,8 @@ imported ones included, with all fields, lifecycles, relations and rules),
 so a template may not contain a file of that name. A stamp after the
 frontmatter names the graph, the ontology release and the template hash;
 the program version and the time are not in it, so a new program with the
-same render stays `fresh`. Blocks use only the model and the manifest,
+same render stays `fresh`. The summary of a deprecated term starts with
+"Deprecated." in every block. Blocks use only the model and the manifest,
 never graph data (no counts, no records). Curated examples may name real
 aliases.
 

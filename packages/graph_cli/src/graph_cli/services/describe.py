@@ -1,7 +1,8 @@
 """Model description ``graph_cli.model/1`` of a graph's compiled ontology (contracts B11.5).
 
 Projections for agents: types, one type with its fields, lifecycles and
-relations in both directions, relations, fields, lifecycles. Deterministic
+relations in both directions, relations, fields, lifecycles. Every term
+with a summary also carries its ``deprecated`` flag. Deterministic
 (sorted), no timestamps; unknown terms are ``term.unknown`` with
 ``did_you_mean``. Functions of a graph entry and its compiled model, so
 the app (a read view) and graph-admin (the pinned model) describe a graph
@@ -59,6 +60,7 @@ def _fields(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
             "values": list(model.enums[a.type].value_names()) if a.kind == "enum" else None,
             "declared_in": a.declared_in,
             "summary": a.doc.summary,
+            "deprecated": a.doc.deprecated,
         }
         fields.append(field)
     return fields
@@ -80,6 +82,7 @@ def _lifecycle(curie: str, lifecycle: LifecycleDef, attr: str | None) -> dict[st
             for t in lifecycle.transitions
         ],
         "summary": lifecycle.doc.summary,
+        "deprecated": lifecycle.doc.deprecated,
     }
 
 
@@ -93,7 +96,13 @@ def _lifecycles(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
 
 def describe_types(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
     types: list[JsonValue] = [
-        {"curie": c, "abstract": d.abstract, "extends": d.extends, "summary": d.doc.summary}
+        {
+            "curie": c,
+            "abstract": d.abstract,
+            "extends": d.extends,
+            "summary": d.doc.summary,
+            "deprecated": d.doc.deprecated,
+        }
         for c, d in sorted(model.classes.items())
     ]
     return _envelope(entry, model, types=types)
@@ -113,6 +122,7 @@ def describe_type(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[s
                     "inverse_label": r.inverse_label,
                     "qualifiers": sorted(r.qualifiers),
                     "summary": r.doc.summary,
+                    "deprecated": r.doc.deprecated,
                 }
             )
         if model.is_a_any(curie, r.range) and r.range:
@@ -123,6 +133,7 @@ def describe_type(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[s
                     "cardinality": _bound(r.into),
                     "inverse_label": r.inverse_label,
                     "summary": r.doc.summary,
+                    "deprecated": r.doc.deprecated,
                 }
             )
     body: dict[str, JsonValue] = {
@@ -134,12 +145,19 @@ def describe_type(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[s
         "alias_prefix": entry.alias_prefixes.get(curie),  # type: ignore[call-overload]
         "summary": cls.doc.summary,
         "description": cls.doc.description,
+        "deprecated": cls.doc.deprecated,
         "fields": _fields(model, cls),
         "lifecycles": _lifecycles(model, cls),
         "relations_out": out,
         "relations_in": into,
         "rules": [
-            {"id": r.id, "severity": r.severity, "when": r.when, "summary": r.doc.summary}
+            {
+                "id": r.id,
+                "severity": r.severity,
+                "when": r.when,
+                "summary": r.doc.summary,
+                "deprecated": r.doc.deprecated,
+            }
             for r in model.rules
             if model.is_a(curie, r.target)
         ],
@@ -158,6 +176,7 @@ def describe_relations(entry: GraphEntry, model: CompiledModel) -> dict[str, Jso
             "inverse_label": r.inverse_label,
             "qualifiers": sorted(r.qualifiers),
             "summary": r.doc.summary,
+            "deprecated": r.doc.deprecated,
         }
         for name, r in sorted(model.relations.items())
     ]

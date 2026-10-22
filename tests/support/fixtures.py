@@ -1,6 +1,7 @@
 """Access to the tracked fixture ontologies and golden files."""
 
 import os
+from dataclasses import replace
 from pathlib import Path
 
 from harness import REPO_ROOT
@@ -42,3 +43,34 @@ def assert_golden(path: Path, data: bytes) -> None:
         path.write_bytes(data)
     assert path.exists(), f"missing golden {path}; run with GRAPH_CLI_UPDATE_GOLDENS=1"
     assert data == path.read_bytes(), f"{path} differs; review and regenerate if intended"
+
+
+def deprecated_model() -> CompiledModel:
+    """The inventory model with the class Item, its field name, the relation located_in
+    and the rule serial_single_unit deprecated."""
+    model = compiled_model("inventory")
+    item = model.classes["inv:Item"]
+    name = item.attributes["name"]
+    item = replace(
+        item,
+        doc=replace(item.doc, deprecated=True),
+        attributes={
+            **item.attributes,
+            "name": replace(name, doc=replace(name.doc, deprecated=True)),
+        },
+    )
+    located_in = model.relations["inv:located_in"]
+    return replace(
+        model,
+        classes={**model.classes, "inv:Item": item},
+        relations={
+            **model.relations,
+            "inv:located_in": replace(located_in, doc=replace(located_in.doc, deprecated=True)),
+        },
+        rules=tuple(
+            replace(r, doc=replace(r.doc, deprecated=True))
+            if r.id == "inv.serial_single_unit"
+            else r
+            for r in model.rules
+        ),
+    )

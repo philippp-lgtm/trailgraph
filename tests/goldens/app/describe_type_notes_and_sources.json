@@ -13,6 +13,7 @@
     "alias_prefix": "NOTE",
     "ancestors": [],
     "curie": "nas:Note",
+    "deprecated": false,
     "description": null,
     "extends": null,
     "fields": [
@@ -20,6 +21,7 @@
         "base": "text",
         "declared_in": "nas:Note",
         "default": null,
+        "deprecated": false,
         "kind": "base",
         "limits": {},
         "many": false,
@@ -36,6 +38,7 @@
         "base": "string",
         "declared_in": "nas:Note",
         "default": null,
+        "deprecated": false,
         "kind": "enum",
         "limits": {},
         "many": false,
@@ -56,6 +59,7 @@
         "base": "string",
         "declared_in": "nas:Note",
         "default": null,
+        "deprecated": false,
         "kind": "lifecycle",
         "limits": {},
         "many": false,
@@ -72,6 +76,7 @@
         "base": "string",
         "declared_in": "nas:Note",
         "default": null,
+        "deprecated": false,
         "kind": "base",
         "limits": {},
         "many": false,
@@ -88,6 +93,7 @@
     "lifecycles": [
       {
         "attr": "status",
+        "deprecated": false,
         "initial": [
           "draft"
         ],
@@ -144,6 +150,7 @@
       {
         "cardinality": "1..n",
         "curie": "nas:about",
+        "deprecated": false,
         "inverse_label": "has_note",
         "qualifiers": [],
         "range": [
@@ -154,6 +161,7 @@
       {
         "cardinality": "0..n",
         "curie": "nas:asserts",
+        "deprecated": false,
         "inverse_label": "asserted_in",
         "qualifiers": [],
         "range": [
@@ -164,6 +172,7 @@
       {
         "cardinality": "0..n",
         "curie": "nas:cites",
+        "deprecated": false,
         "inverse_label": "cited_by",
         "qualifiers": [
           "locator"
@@ -176,6 +185,7 @@
     ],
     "rules": [
       {
+        "deprecated": false,
         "id": "nas.summary_cites_source",
         "severity": "error",
         "summary": "A published summary note cites at least one source.",

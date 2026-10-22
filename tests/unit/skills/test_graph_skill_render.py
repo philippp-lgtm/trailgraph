@@ -9,7 +9,14 @@ import re
 from typing import Any
 
 import pytest
-from support.fixtures import FIXTURES, GOLDENS, TOY_ONTOLOGIES, assert_golden, compiled_model
+from support.fixtures import (
+    FIXTURES,
+    GOLDENS,
+    TOY_ONTOLOGIES,
+    assert_golden,
+    compiled_model,
+    deprecated_model,
+)
 from support.skills import GRAPH_SKILL_NAME, graph_entry, render_inputs
 
 from graph_cli.kernel.ids import format_alias
@@ -75,6 +82,16 @@ def test_a_new_release_changes_the_render() -> None:
     assert render(compiled_model("inventory", "1.0.0")) != render(
         compiled_model("inventory", "1.1.0")
     )
+
+
+def test_deprecated_terms_are_marked() -> None:
+    files = render(deprecated_model())
+    skill, reference = files[SKILL_FILE].decode(), files[MODEL_FILE].decode()
+    item = compiled_model("inventory").classes["inv:Item"].doc.summary
+    assert f"Deprecated. {item}" in skill and f"Deprecated. {item}" in reference
+    assert reference.count("Deprecated. ") == 7  # Item twice, its field, located_in 3x, the rule
+    plain = render(compiled_model("inventory"))[MODEL_FILE].decode()
+    assert "Deprecated" not in plain
 
 
 # ---- independent completeness check -----------------------------------------------------
