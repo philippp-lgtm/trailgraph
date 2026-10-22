@@ -37,6 +37,7 @@ from graph_cli.access_control.documents import (
     Problem,
     document_problems,
     is_action_glob,
+    is_write_glob,
 )
 from graph_cli.kernel.actions import ACCESS_LEVELS, actions_above, level_actions
 from graph_cli.kernel.actor import is_valid_asserted_value
@@ -79,6 +80,7 @@ class _Context:
     graphs: Mapping[str, GraphId]  # name -> id
     graph: GraphId | None
     known_types: frozenset[str] | None
+    extended_types: frozenset[str] = frozenset()
     problems: list[Problem] = field(default_factory=list)
     unknown_types: set[str] = field(default_factory=set)
 
@@ -106,11 +108,14 @@ def compile_policy(
     graphs: Mapping[str, GraphId],
     graph: GraphId | None = None,
     known_types: frozenset[str] | None = None,
+    extended_types: frozenset[str] = frozenset(),
 ) -> Compiled:
     """Compile one authored document. ``graphs`` maps every graph name to its id,
-    ``graph`` is the graph a graph policy is compiled for, ``known_types`` the concrete
-    type CURIEs of that graph's pinned model (``None``: not checked)."""
-    ctx = _Context(graphs, graph, known_types)
+    ``graph`` is the graph a graph policy is compiled for, ``known_types`` the type
+    CURIEs of that graph's pinned model (``None``: not checked), ``extended_types``
+    those that are abstract or have subclasses: a limit matches the exact type only,
+    so naming one of them would miss its subclasses' entities."""
+    ctx = _Context(graphs, graph, known_types, extended_types)
     try:
         root = load_strict(data)
     except YamlError as exc:
@@ -337,6 +342,9 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
                     principal[key] = sorted(set(values))
         if graph is not None:
             types = _texts(entry["type"], f"{path}.type", ctx) if "type" in entry else None
+            if types is not None and actions is not None and not all(map(is_write_glob, actions)):
+                ctx.add(f"{path}.action", "a deny rule on types applies to writes only")
+                actions = None
             resources = (
                 [_graph_glob(graph)]
                 if types is None
@@ -365,6 +373,9 @@ def _obligations(node: YamlNode | None, ctx: _Context) -> list[JsonValue]:
             continue
         _unknown_keys(item, frozenset({"action", "require_reason", "max_batch"}), path, ctx)
         actions = _actions(entry.get("action"), f"{path}.action", ctx)
+        if actions is not None and not all(map(is_write_glob, actions)):
+            ctx.add(f"{path}.action", "obligations apply to writes only")
+            actions = None
         obligation: dict[str, JsonValue] = {"action": list(actions or ())}
         if "require_reason" in entry:
             flag = _scalar(entry["require_reason"])
@@ -437,6 +448,9 @@ def _graph_resources(
 def _type_glob(name: str, path: str, ctx: _Context) -> bool:
     if not TYPE_GLOB_RE.match(name):
         ctx.add(path, f"{name!r} is not a type CURIE or prefix:*")
+        return False
+    if name in ctx.extended_types:
+        ctx.add(path, f"{name} is abstract or has subclasses; name the concrete types")
         return False
     known = ctx.known_types
     if known is not None:

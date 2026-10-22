@@ -142,6 +142,10 @@ entrypoint question it was (the app never gets `maint.*`).
   `read` and `write` (read plus writes and extension actions).
 - A **graph policy** narrows inside one graph for everyone: types that are
   read-only, obligations (`require_reason`, `max_batch`) and deny rules.
+  Types are checked for writes only, so type limits, deny rules on types and
+  obligations name write actions. A type limit matches the exact type, so it
+  must name concrete types (or `prefix:*`); an abstract type or one with
+  subclasses is refused.
 - Deny rules may name the agent type, agent, session, device or project;
   grants only the verified principal. An explicit deny wins, the default
   is deny.
@@ -196,8 +200,13 @@ Known limits: every agent runs as the same OS user, and only the program
 project, agent and session are asserted, so locally access control is a
 guardrail plus detection, not prevention: it stops well-behaved agents and
 mistakes (the wrong project, the wrong graph, a write where only reading
-was meant) and makes every deviation visible in the audit, but an agent
-with a shell can edit the files. Prevention needs a separate OS user for
+was meant), but an agent with a shell can edit the files. The project
+selects a scope rather than only narrowing one: a pointer that names a
+project gets that project's scope. Detection covers policy files edited,
+placed or deleted by hand; `audit verify` does not yet check the policy
+hash of each decision, so running `graph` against a data root without the
+installed policy (`GRAPH_CLI_ROOT`, a policy moved away and back) goes
+unnoticed. Prevention needs a separate OS user for
 the data (a local service) or a server; both would reuse the same policies.
 A coding agent's own permissions narrow the normal path further, for
 example in a project's Claude Code settings:

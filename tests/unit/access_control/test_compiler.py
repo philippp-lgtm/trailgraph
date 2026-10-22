@@ -191,6 +191,14 @@ def test_layer_of_source() -> None:
         (GRAPH_POLICY.replace(b'"files:File": read', b'"files:File": none'), "types.files:File"),
         (GRAPH_POLICY.replace(b"max_batch: 200", b"max_batch: 0"), "obligations[1].max_batch"),
         (GRAPH_POLICY.replace(b'type: ["inv:*"]', b'graph: "*"'), "deny[0].graph"),
+        # types and obligations are checked for writes only: anything else would not hold
+        (GRAPH_POLICY.replace(b"action: [write.retract]", b'action: ["read.*"]'), "deny[0].action"),
+        (GRAPH_POLICY.replace(b"action: [write.retract]", b'action: ["*"]'), "deny[0].action"),
+        (GRAPH_POLICY.replace(b'action: ["write.*"]', b'action: ["*"]'), "obligations[1].action"),
+        (
+            INSTALLATION + b'obligations:\n  - {action: ["read.get"], require_reason: true}\n',
+            "obligations[0].action",
+        ),
         (b"[1, 2]", ""),
         (b"schema: graph_cli.policy/1\nid: installation\nid: graph\n", ""),
     ],
@@ -205,6 +213,26 @@ def test_invalid_policies_list_their_problems(source: bytes, path: str) -> None:
     problems = info.value.details["problems"]
     assert isinstance(problems, list)
     assert path in [p["path"] for p in problems if isinstance(p, dict)], problems
+
+
+def test_a_type_limit_names_concrete_types() -> None:
+    """A limit matches the exact type, so a superclass would miss its subclasses."""
+    for source, path in (
+        (GRAPH_POLICY.replace(b'"files:File": read', b'"inv:Thing": read'), "types.inv:Thing"),
+        (GRAPH_POLICY.replace(b'type: ["inv:*"]', b'type: ["inv:Thing"]'), "deny[0].type"),
+    ):
+        with pytest.raises(GraphCliError) as info:
+            compile_policy(
+                source,
+                file="graph.yaml",
+                graphs=GRAPHS,
+                graph=EXAMPLE,
+                known_types=frozenset({"inv:Thing", "inv:Item"}),
+                extended_types=frozenset({"inv:Thing"}),
+            )
+        problems = info.value.details["problems"]
+        assert isinstance(problems, list)
+        assert path in [p["path"] for p in problems if isinstance(p, dict)], problems
 
 
 def test_every_problem_is_reported_at_once() -> None:

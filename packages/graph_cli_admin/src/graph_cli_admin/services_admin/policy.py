@@ -263,13 +263,20 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None) -> _Source:
         )
     graphs = {e.name: e.id for e in ctx.catalog.list_graphs(include_archived=True)}
     entry = ctx.catalog.resolve(graph_ref) if graph_ref is not None else None
-    known = frozenset(pinned_model(ctx.catalog, entry).classes) if entry is not None else None
+    classes = pinned_model(ctx.catalog, entry).classes if entry is not None else None
     compiled = compile_policy(
         data,
         file=str(file),
         graphs=graphs,
         graph=entry.id if entry is not None else None,
-        known_types=known,
+        known_types=frozenset(classes) if classes is not None else None,
+        extended_types=frozenset(
+            name
+            for name, cls in (classes or {}).items()
+            if cls.abstract or any(name in other.ancestors for other in classes.values())
+        )
+        if classes is not None
+        else frozenset(),
     )
     warnings = tuple(
         WarningRecord(

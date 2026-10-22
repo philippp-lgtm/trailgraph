@@ -282,6 +282,11 @@ def test_ceiling_comes_before_deny_rules() -> None:
             installation(obligations=[{"action": ["write.*"], "max_batch": 0}]),
             "obligations[0].max_batch",
         ),
+        (
+            installation(obligations=[{"action": ["*"], "require_reason": True}]),
+            "obligations[0].action",
+        ),
+        (graph_layer(G1, deny("d", ["read.*"], f"graph:{G1}/type:files:File")), "rules[0].action"),
         (installation(projects=["not a name"]), "projects"),
         (installation(when="always"), "when"),
     ],

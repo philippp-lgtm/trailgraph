@@ -77,6 +77,12 @@ def is_action_glob(pattern: str) -> bool:
     )
 
 
+def is_write_glob(pattern: str) -> bool:
+    """``write.*`` or one write action: all that type resources and obligations apply to
+    (reads and extensions are checked per graph, never per type)."""
+    return pattern == "write.*" or (pattern.startswith("write.") and is_known_action(pattern))
+
+
 def is_resource_glob(pattern: str) -> bool:
     return _RESOURCE_GLOB_RE.match(pattern) is not None
 
@@ -223,9 +229,20 @@ def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
             for pattern in actions:
                 if not isinstance(pattern, str) or not is_action_glob(pattern):
                     add(f"{path}.action", f"unknown action {pattern!r}")
+            if _names_types(rule.get("resource")) and not all(
+                isinstance(p, str) and is_write_glob(p) for p in actions
+            ):
+                add(f"{path}.action", "a rule on types applies to writes only; name write actions")
         _resource_problems(rule.get("resource"), f"{path}.resource", add)
         if "unless" in rule:
             _unless_problems(rule["unless"], effect, f"{path}.unless", add)
+
+
+def _names_types(resource: JsonValue) -> bool:
+    patterns = [resource] if isinstance(resource, str) else resource
+    return isinstance(patterns, list) and any(
+        isinstance(p, str) and "/type:" in p for p in patterns
+    )
 
 
 def _principal_problems(principal: JsonValue, keys: tuple[str, ...], path: str, add: _Add) -> None:
@@ -293,6 +310,8 @@ def _obligations_problems(value: JsonValue, add: _Add) -> None:
             for pattern in actions:
                 if not isinstance(pattern, str) or not is_action_glob(pattern):
                     add(f"{path}.action", f"unknown action {pattern!r}")
+                elif not is_write_glob(pattern):
+                    add(f"{path}.action", f"obligations apply to writes only, not {pattern!r}")
         if not isinstance(entry.get("require_reason", False), bool):
             add(f"{path}.require_reason", "must be true or false")
         batch = entry.get("max_batch")

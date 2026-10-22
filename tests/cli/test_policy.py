@@ -123,6 +123,21 @@ def test_unknown_types_warn(run_cli: CliRunner, root: Path, tmp_path: Path) -> N
     assert checked.warning_codes == ["admin.policy_unknown_type"]
 
 
+def test_a_type_limit_on_a_superclass_is_refused(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``nas:Source`` is abstract with subclasses; a limit on it would hold for none of them."""
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    work = tmp_path / "work"
+    source = write_policy(work, "source.yaml", GRAPH.replace("inv:Location", "nas:Source"))
+    refused = admin(run_cli, "policy", "check", str(source), "--graph", "example_graph")
+    assert (refused.code, refused.error["code"]) == (5, "policy.invalid")
+    assert [p["path"] for p in refused.error["details"]["problems"]] == ["types.nas:Source"]
+    page = write_policy(work, "page.yaml", GRAPH.replace("inv:Location", "nas:WebPage"))
+    checked = admin(run_cli, "policy", "check", str(page), "--graph", "example_graph")
+    assert (checked.code, checked.warning_codes) == (0, []), checked.envelope
+
+
 def test_invalid_policy_lists_every_problem(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     create_graph(run_cli, "example_graph")
     broken = INSTALLATION.replace('no_project: {"*": read}\n', "")
