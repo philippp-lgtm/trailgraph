@@ -306,3 +306,45 @@ def test_label_attributes_are_ordered_by_role_then_name() -> None:
     )
     assert model.label_attributes("ex:Base") == (("name", "label"),)
     assert compiled_model("notes_and_sources").label_attributes("nas:Book") == (("title", "label"),)
+
+
+_PREFIXES = """\
+format: graph_cli.ir/1
+module:
+  id: example_module
+  prefix: ex
+  version: 1.0.0
+  summary: Display prefixes.
+
+classes:
+  Base:
+    summary: Common base.
+    abstract: true
+    display_prefix: THG
+  Thing:
+    summary: Something that is tracked.
+    is_a: Base
+    display_prefix: THG
+  Other:
+    summary: Something else that is tracked.
+    display_prefix: OTH
+"""
+
+
+def _prefix_findings(text: str) -> list[tuple[str, str, object]]:
+    outcome = compile_bundle(
+        "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
+    )
+    return [(f.code, f.target["path"], f.expected) for f in outcome.findings]
+
+
+def test_an_abstract_class_shares_its_prefix_freely() -> None:
+    # An abstract class has no entities, so its prefix allocates nothing.
+    assert _prefix_findings(_PREFIXES) == []
+
+
+def test_two_concrete_classes_with_one_prefix_are_reported_at_the_later_one() -> None:
+    text = _PREFIXES.replace("display_prefix: OTH", "display_prefix: THG")
+    assert _prefix_findings(text) == [
+        ("model.semantic.duplicate_display_prefix", "classes.Other.display_prefix", "ex:Thing")
+    ]

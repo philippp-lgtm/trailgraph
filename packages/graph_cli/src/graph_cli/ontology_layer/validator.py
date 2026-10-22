@@ -139,6 +139,7 @@ class _Validator:
             self.mappings(module_id)
         self.inheritance()
         self.inverse_labels()
+        self.display_prefixes()
 
     # ---- structural ----------------------------------------------------------------------
 
@@ -425,6 +426,24 @@ class _Validator:
                 parent_module, parent_cls = found
                 assert isinstance(parent_cls, IrClass)
                 current = (parent_module, parent_cls)
+
+    def display_prefixes(self) -> None:
+        """Concrete classes need distinct prefixes: aliases are counted per prefix."""
+        owners: dict[str, str] = {}
+        for module_id, curie, cls in self.b.classes():
+            prefix = cls.display_prefix
+            if prefix is None or cls.abstract:
+                continue
+            if prefix in owners:
+                self.add(
+                    "model.semantic.duplicate_display_prefix",
+                    module_id,
+                    f"{cls.path}.display_prefix",
+                    f"display prefix {prefix!r} is already used by {owners[prefix]}",
+                    expected=owners[prefix],
+                    actual=prefix,
+                )
+            owners.setdefault(prefix, curie)
 
     # ---- relations -----------------------------------------------------------------------
 
