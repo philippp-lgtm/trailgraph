@@ -19,8 +19,16 @@ installation stream.
 at it. Each damaged line gives at most one chain finding, so one deleted or
 edited line does not flood the report. A write intent without a committed
 transaction is the benign trace of an interrupted write (info); a
-transaction without its intent is an error. Events carry ids, types, hashes
-and reason text, never attribute values.
+transaction without its intent is an error. Events carry ids, types, hashes,
+sizes and reason text, never attribute values.
+
+A write intent records how much the write stored: `change.changeset_size`
+is the byte length of the canonical changeset (the form `changeset_hash`
+covers), and every file the write stored is listed as `{hash, size}`.
+Verification compares the changeset size with the transaction log, like
+the ids and the hash; intents written before the size was recorded carry
+none and are matched without it. Reads are not audited, so the size of
+what a read returns is not recorded.
 
 ## Policy verification
 

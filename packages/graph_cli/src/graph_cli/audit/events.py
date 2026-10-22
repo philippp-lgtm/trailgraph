@@ -26,7 +26,7 @@ from graph_cli.audit.schema import (
 from graph_cli.kernel.actions import Action, require_known_action
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthorizedTx, Decision
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonValue, canonical_bytes
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, sort_findings
@@ -93,7 +93,9 @@ def write_intent(
 ) -> AuditEventDraft:
     """The intent appended before ``tx`` commits (W.12). ``before`` maps every updated
     entity (``rev > 1``) to the content hash of its previous revision; ``blobs`` are the
-    files the request stored (W.11b), named by hash and size only (B5.8)."""
+    files the request stored (W.11b), named by hash and size only (B5.8).
+    ``changeset_size`` is the byte length of the canonical changeset, the form
+    ``changeset_hash`` covers."""
     if graph.id != tx.graph_id:
         raise _internal("the graph entry is not the tx's graph")
     entities: list[JsonValue] = []
@@ -128,12 +130,18 @@ def write_intent(
         "tx_id": str(tx.tx_id),
         "tx_seq": tx.seq,
         "changeset_hash": tx.changeset_hash,
+        "changeset_size": changeset_size(tx.changeset),
         "entities": entities,
     }
     if blobs:
         change["blobs"] = blob_list(blobs)
     body["change"] = change
     return _checked(body)
+
+
+def changeset_size(changeset: Mapping[str, JsonValue]) -> int:
+    """Bytes of the canonical changeset (C.2 form): what the request wrote, without files."""
+    return len(canonical_bytes(dict(changeset)))
 
 
 def blobs_removed(blobs: Sequence[BlobInfo], staging: int) -> dict[str, JsonValue]:

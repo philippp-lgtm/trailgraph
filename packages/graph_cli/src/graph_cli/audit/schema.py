@@ -318,13 +318,15 @@ def _is_anchor(anchor: JsonValue) -> bool:
 
 def _change_problems(change: JsonValue) -> list[str]:
     shape = (
-        "change is not {tx_id, tx_seq, changeset_hash, entities[{id, rev, after, before?}],"
-        " blobs?[{hash, size}]}"
+        "change is not {tx_id, tx_seq, changeset_hash, changeset_size?,"
+        " entities[{id, rev, after, before?}], blobs?[{hash, size}]}"
     )
     keys = {"tx_id", "tx_seq", "changeset_hash", "entities"}
-    if not isinstance(change, Mapping) or set(change) - {"blobs"} != keys:
+    if not isinstance(change, Mapping) or set(change) - {"blobs", "changeset_size"} != keys:
         return [shape]
     if "blobs" in change and not is_blob_list(change["blobs"]):
+        return [shape]
+    if "changeset_size" in change and not _is_size(change["changeset_size"]):
         return [shape]
     tx_seq, entities = change["tx_seq"], change["entities"]
     if not (
@@ -359,13 +361,15 @@ def is_blob_list(value: JsonValue) -> bool:
     for item in value:
         if not (isinstance(item, Mapping) and set(item) == {"hash", "size"}):
             return False
-        size = item["size"]
-        if not (_is_hash(item["hash"]) and isinstance(size, int) and not isinstance(size, bool)):
-            return False
-        if size < 0:
+        if not (_is_hash(item["hash"]) and _is_size(item["size"])):
             return False
         hashes.append(item["hash"])
     return hashes == sorted(set(hashes))
+
+
+def _is_size(value: JsonValue) -> bool:
+    """A byte count: a non-negative integer."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:

@@ -100,6 +100,30 @@ def test_intent_that_does_not_match_its_tx() -> None:
     assert finding.actual == {"changeset_hash": graph.txs[1].changeset_hash, "tx_seq": 2}
 
 
+def test_an_intent_with_another_changeset_size_does_not_match() -> None:
+    graph = Graph()
+    graph.random(1)
+    events = graph.events()
+    change = as_object(events[0]["change"], "change")
+    size = change["changeset_size"]
+    assert size == builders.changeset_size(graph.txs[0].changeset)
+    events[0] = {**events[0], "change": {**change, "changeset_size": 1}}
+    (finding,) = cross_check(graph.graph_id, events, graph.txs)
+    assert finding.code == codes.TX_WITHOUT_INTENT
+    assert (finding.expected, finding.actual) == ({"changeset_size": size}, {"changeset_size": 1})
+
+
+def test_an_intent_without_a_changeset_size_still_matches() -> None:
+    """Intents recorded before the size was added carry no changeset_size."""
+    graph = Graph()
+    graph.random(1)
+    events = graph.events()
+    change = dict(as_object(events[0]["change"], "change"))
+    del change["changeset_size"]
+    events[0] = {**events[0], "change": change}
+    assert cross_check(graph.graph_id, events, graph.txs) == []
+
+
 def test_a_denied_or_malformed_event_is_no_intent() -> None:
     graph = Graph()
     graph.random(1)

@@ -13,7 +13,8 @@ does not cascade into findings for every later line:
 - ``hash_mismatch`` (content edited) is independent of the chain position;
   so are ``unknown_schema``, ``event_malformed`` and ``unknown_action``.
 
-``cross_check`` matches write intents with the tx log (B5.6, B5.12),
+``cross_check`` matches write intents with the tx log (ids, changeset hash
+and, when recorded, changeset size; B5.6, B5.12),
 ``check_maintenance`` judges maintenance intents by their effects and walks
 the pin and graph policy events against the manifest and the installed
 policy, ``check_policy`` walks the installation policy events (B5.15),
@@ -33,6 +34,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from graph_cli.audit import finding_codes as codes
+from graph_cli.audit.events import changeset_size
 from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
     MAINT_EFFECT_ACTIONS,
@@ -219,12 +221,14 @@ def cross_check(
         change = event.get("change")
         if not isinstance(change, Mapping):
             change = {}  # a malformed intent: event_malformed already, and no match here
-        recorded = {k: change.get(k) for k in ("tx_id", "tx_seq", "changeset_hash")}
         expected: dict[str, JsonValue] = {
             "tx_id": str(tx.tx_id),
             "tx_seq": tx.seq,
             "changeset_hash": tx.changeset_hash,
         }
+        if "changeset_size" in change:  # intents before the size was recorded lack it
+            expected["changeset_size"] = changeset_size(tx.changeset)
+        recorded = {k: change.get(k) for k in expected}
         if recorded != expected:
             differing = sorted(k for k in expected if recorded[k] != expected[k])
             findings.append(

@@ -93,6 +93,7 @@ def test_write_intent_summarizes_the_change(world: World) -> None:
         "tx_id": str(first.tx_id),
         "tx_seq": 1,
         "changeset_hash": first.changeset_hash,
+        "changeset_size": len(canonical_bytes(dict(first.changeset))),
         "entities": [{"id": str(rev1.id), "rev": 1, "after": rev1.content_hash}],
     }
     change = as_object(updated["change"], "change")
@@ -141,6 +142,24 @@ def test_malformed_blob_lists_are_refused(world: World, blobs: object) -> None:
     body = dict(intent(first).body)
     body["change"] = {**as_object(body["change"], "change"), "blobs": blobs}  # type: ignore[dict-item]
     assert any("blobs?" in p for p in event_problems(body, sealed=False))
+
+
+@pytest.mark.parametrize("size", [-1, True, "147", None])
+def test_a_malformed_changeset_size_is_refused(world: World, size: object) -> None:
+    first, _, _ = world.create_and_update()
+    body = dict(intent(first).body)
+    body["change"] = {**as_object(body["change"], "change"), "changeset_size": size}  # type: ignore[dict-item]
+    assert any("changeset_size?" in p for p in event_problems(body, sealed=False))
+
+
+def test_an_intent_without_a_changeset_size_keeps_its_shape(world: World) -> None:
+    """Intents recorded before the size was added stay well-formed."""
+    first, _, _ = world.create_and_update()
+    body = dict(intent(first).body)
+    change = dict(as_object(body["change"], "change"))
+    del change["changeset_size"]
+    body["change"] = change
+    assert event_problems(body, sealed=False) == []
 
 
 def test_updates_need_their_before_hash(world: World) -> None:
