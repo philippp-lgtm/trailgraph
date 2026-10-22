@@ -17,6 +17,8 @@ def test_severities_follow_the_contract() -> None:
     severity = {spec.code: spec.default_severity for spec in finding_codes.FINDING_CODES}
     assert severity.pop(finding_codes.UNKNOWN_ACTION) is Severity.WARNING
     assert severity.pop(finding_codes.INTENT_WITHOUT_EFFECT) is Severity.INFO
+    assert severity.pop(finding_codes.POLICY_FALLBACK) is Severity.WARNING
+    assert severity.pop(finding_codes.POLICY_HASH_UNCHECKED) is Severity.INFO
     assert set(severity.values()) == {Severity.ERROR}
 
 

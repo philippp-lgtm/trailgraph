@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Final
 
+from graph_cli.access_control.policy import BUILTIN_POLICY_HASH
 from graph_cli.audit import events
 from graph_cli.audit.verify import StreamReport, verify_graph
 from graph_cli.kernel.actions import Action
@@ -26,7 +27,7 @@ from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
 from graph_cli.storage.common.chain import GENESIS, ChainLink, link_of, seal
 from support.txbuilder import actor
 
-POLICY_HASH: Final = hash_value({"policy": "test"})
+POLICY_HASH: Final = BUILTIN_POLICY_HASH  # decided as without an installed policy
 ENV: Final = EnvInfo(data_root="<data root>", root_source="default")
 REQUEST: Final = RequestMeta("test", hash_value({"args": []}))
 _OP_ACTIONS: Final = {

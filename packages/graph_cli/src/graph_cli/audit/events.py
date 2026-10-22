@@ -307,6 +307,12 @@ def policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
     return {"policy": {"from": old_hash, "to": new_hash}}
 
 
+def installation_policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
+    """``change`` of the mirror of an installation policy change in a graph stream (B5.15):
+    from then on, that graph's decisions are made under ``new_hash``."""
+    return {"installation_policy": {"from": old_hash, "to": new_hash}}
+
+
 def anchor(receipt: Anchorable) -> dict[str, JsonValue]:
     """``{graph_id, seq, hash}`` of an appended graph-stream event (B5.11)."""
     graph_id = receipt.stream.removeprefix("graph:")

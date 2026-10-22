@@ -25,6 +25,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
+from graph_cli.access_control.policy import BUILTIN_POLICY_HASH
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     UNREADABLE,
@@ -33,7 +34,10 @@ from graph_cli.audit.verify import (
     StreamReport,
     check_anchors,
     check_policy,
+    check_policy_hashes,
     effect_anchors,
+    graph_creations,
+    installation_changes,
     verify_graph,
     verify_stream,
 )
@@ -78,6 +82,8 @@ def verify(ctx: AdminContext) -> Verification:
     findings: list[Finding] = list(installation.findings)
     installed = _installed(lambda: read_policy_file(installation_policy_path(ctx.roots.data_root)))
     findings += check_policy(installation.events, installed)
+    changes = installation_changes(installation.events, installed)
+    created = graph_creations(installation.events)
     reports: dict[str, StreamReport] = {}
     graphs: list[JsonValue] = []
     clean: list[StreamReport] = []
@@ -89,6 +95,15 @@ def verify(ctx: AdminContext) -> Verification:
         graphs.append({"id": str(graph_id), "clean": ok, "seq": report.head[0]})
         if ok and report.head[0] > 0:
             clean.append(report)
+    for stream_graph, report in reports.items():
+        findings += check_policy_hashes(
+            stream_graph,
+            report.events,
+            changes,
+            created=created.get(stream_graph),
+            anchored=anchored.get(stream_graph, frozenset()),
+            builtin_hash=BUILTIN_POLICY_HASH,
+        )
     anchor_findings = check_anchors(installation.events, {g: r.events for g, r in reports.items()})
     findings += anchor_findings
     ordered = tuple(sort_findings(findings))

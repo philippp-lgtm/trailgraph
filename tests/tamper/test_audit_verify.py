@@ -202,7 +202,13 @@ SCENARIOS: dict[str, Callable[[Scene], None]] = {
 
 # Codes whose scenario needs manifests and releases (tests/tamper/test_maint_verify.py) or
 # installed policies (tests/tamper/test_policy_verify.py).
-MAINT_SCENARIO_CODES = {finding_codes.PIN_MISMATCH, finding_codes.POLICY_MISMATCH}
+MAINT_SCENARIO_CODES = {
+    finding_codes.PIN_MISMATCH,
+    finding_codes.POLICY_MISMATCH,
+    finding_codes.POLICY_HASH_MISMATCH,
+    finding_codes.POLICY_FALLBACK,
+    finding_codes.POLICY_HASH_UNCHECKED,
+}
 
 
 def test_every_audit_code_has_one_scenario() -> None:

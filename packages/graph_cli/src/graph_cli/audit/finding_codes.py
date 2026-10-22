@@ -35,6 +35,9 @@ TX_WITHOUT_INTENT: Final = "integrity.audit.tx_without_intent"
 ANCHOR_MISMATCH: Final = "integrity.audit.anchor_mismatch"
 PIN_MISMATCH: Final = "integrity.audit.pin_mismatch"
 POLICY_MISMATCH: Final = "integrity.audit.policy_mismatch"
+POLICY_HASH_MISMATCH: Final = "integrity.audit.policy_hash_mismatch"
+POLICY_FALLBACK: Final = "integrity.audit.policy_fallback"
+POLICY_HASH_UNCHECKED: Final = "integrity.audit.policy_hash_unchecked"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -72,5 +75,20 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "policy_mismatch",
         Severity.ERROR,
         "An installed policy differs from the recorded policy events.",
+    ),
+    _integrity(
+        "policy_hash_mismatch",
+        Severity.ERROR,
+        "A decision was made under a policy that was not in effect.",
+    ),
+    _integrity(
+        "policy_fallback",
+        Severity.WARNING,
+        "A maintenance decision was made without an installed policy layer.",
+    ),
+    _integrity(
+        "policy_hash_unchecked",
+        Severity.INFO,
+        "Decisions before the first mirrored installation policy change are checked loosely.",
     ),
 )

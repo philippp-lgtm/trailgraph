@@ -6,7 +6,9 @@ and edited by hand afterwards, as a same-user agent could.
 """
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from harness import CliRunner
@@ -15,7 +17,11 @@ from support.app import app, create_graph
 from support.policies import GRAPH, INSTALLATION, write_policy
 
 from graph_cli.audit import finding_codes as audit_codes
-from graph_cli.kernel.canonical import pretty_bytes
+from graph_cli.kernel.canonical import hash_document, jsonl_line, pretty_bytes
+from graph_cli.storage.files.layout import segment_name
+
+LOCATION = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")
+POINTER = 'format_version = 1\nproject = "example_project"\ngraphs = ["example_graph"]\n'
 
 
 @pytest.fixture
@@ -65,8 +71,12 @@ def test_a_later_apply_does_not_hide_a_hand_edit(
     apply(run_cli, write_policy(tmp_path, "i2.yaml", INSTALLATION.replace("read}", "none}")))
     outcome = admin(run_cli, "audit", "verify")
     findings = outcome.error["details"]["findings"]
-    assert [f["code"] for f in findings] == [audit_codes.POLICY_MISMATCH]
-    assert "seq" in findings[0]["target"]  # the apply whose ``from`` does not continue
+    mismatches = [f for f in findings if f["code"] == audit_codes.POLICY_MISMATCH]
+    assert len(mismatches) == 1
+    assert "seq" in mismatches[0]["target"]  # the apply whose ``from`` does not continue
+    # The second apply decided under the hand-edited file: its mirror in each graph stream.
+    hashes = [f for f in findings if f["code"] == audit_codes.POLICY_HASH_MISMATCH]
+    assert len(hashes) == 2 and len(findings) == 3
 
 
 def test_hand_placed_and_deleted_policies(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
@@ -122,3 +132,93 @@ def test_interrupted_apply_is_an_intent_without_effect(
     assert codes(run_cli) == [audit_codes.INTENT_WITHOUT_EFFECT]
     path.write_bytes(b"[]\n")  # a file that is no policy at all
     assert codes(run_cli) == [audit_codes.POLICY_MISMATCH]
+
+
+def rewrite(
+    path: Path, keep: Callable[[dict[str, Any]], bool], change: Callable[[dict[str, Any]], None]
+) -> None:
+    """Drop and edit events, then renumber and rechain: a consistent rewrite of history."""
+    out: list[dict[str, Any]] = []
+    for line in path.read_bytes().splitlines():
+        document = json.loads(line)
+        if not keep(document):
+            continue
+        change(document)
+        document["seq"] = len(out) + 1
+        if out:
+            document["prev_hash"] = out[-1]["hash"]
+        body = {k: v for k, v in document.items() if k != "hash"}
+        out.append({**body, "hash": hash_document(body)})
+    path.write_bytes(b"".join(jsonl_line(d) for d in out))
+
+
+def is_mirror(document: dict[str, Any]) -> bool:
+    return "installation_policy" in (document.get("change") or {})
+
+
+def test_a_write_without_the_installed_policy(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """Finding 1: the policy moved away for one write (or another data root without it)."""
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    policy = root / "policy" / "installation.json"
+    aside = tmp_path / "aside.json"
+    policy.rename(aside)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    written = app(run_cli, *LOCATION, "--graph", "example_graph", cwd=elsewhere)
+    assert written.code == 0, written.envelope  # the built-in policy allowed it
+    aside.rename(policy)
+    assert codes(run_cli) == [audit_codes.POLICY_HASH_MISMATCH]
+
+
+def test_a_cut_installation_history(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    """Finding 2: the apply cut from the installation stream and the policy deleted."""
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    installation = root / "audit" / segment_name("events-", 1)
+    rewrite(installation, lambda d: d["actions"] != ["maint.policy_change"], lambda d: None)
+    (root / "policy" / "installation.json").unlink()
+    found = codes(run_cli)
+    assert found and set(found) == {audit_codes.POLICY_MISMATCH}  # each graph's mirror
+
+
+def test_graph_admin_without_the_installed_policy(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    policy = root / "policy" / "installation.json"
+    intact = policy.read_bytes()
+    policy.write_bytes(b"[]\n")
+    apply(run_cli, write_policy(tmp_path, "g.yaml", GRAPH), "--graph", "example_graph")
+    policy.write_bytes(intact)  # repaired; the graph policy was decided without it
+    assert codes(run_cli) == [audit_codes.POLICY_FALLBACK]
+
+
+def test_a_change_applied_before_mirrors(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    """An installation that applied its policy before mirror events existed."""
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    project = tmp_path / "example_project"
+    project.mkdir()
+    (project / ".graph_cli.toml").write_text(POINTER)
+    assert app(run_cli, *LOCATION, "--graph", "example_graph", cwd=project).code == 0
+    for stream in (root / "graphs").glob("*/audit/events-*.jsonl"):
+        rewrite(stream, lambda d: not is_mirror(d), lambda d: None)
+        (stream.parent.parent / "data" / "head.json").unlink(missing_ok=True)  # a checkpoint
+    rewrite(root / "audit" / segment_name("events-", 1), lambda d: True, strip_anchors)
+    assert codes(run_cli) == [audit_codes.POLICY_HASH_UNCHECKED]
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))  # records the mirrors
+    # The old range stays loose; each mirror itself was decided in it, so both graphs have one.
+    assert codes(run_cli) == [audit_codes.POLICY_HASH_UNCHECKED] * 2
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    policy = root / "policy" / "installation.json"
+    policy.rename(tmp_path / "aside.json")
+    second = (*LOCATION[:-1], "code=S2")
+    assert app(run_cli, *second, "--graph", "example_graph", cwd=elsewhere).code == 0
+    (tmp_path / "aside.json").rename(policy)
+    assert audit_codes.POLICY_HASH_MISMATCH in codes(run_cli)  # strict after the mirrors
+
+
+def strip_anchors(document: dict[str, Any]) -> None:
+    if document["actions"] == ["maint.policy_change"] and "graph" not in document:
+        document.pop("anchors", None)

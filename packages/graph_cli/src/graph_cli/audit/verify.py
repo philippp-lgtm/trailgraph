@@ -16,8 +16,10 @@ does not cascade into findings for every later line:
 ``cross_check`` matches write intents with the tx log (B5.6, B5.12),
 ``check_maintenance`` judges maintenance intents by their effects and walks
 the pin and graph policy events against the manifest and the installed
-policy, ``check_policy`` walks the installation policy events (B5.15), and
-``check_anchors`` matches installation anchors with graph streams (B5.11).
+policy, ``check_policy`` walks the installation policy events (B5.15),
+``check_policy_hashes`` checks every graph-stream decision against the
+policy in effect, and ``check_anchors`` matches installation anchors with
+graph streams (B5.11).
 ``verify_graph`` and ``verify_installation`` compose them for
 ``graph-admin audit verify``. The caller passes the txs only when storage
 verified the tx log clean, so a damaged log does not cascade into
@@ -303,6 +305,201 @@ def check_policy(
             confirmed.add(pending)
             pending = None
     return _policy_walk(INSTALLATION_STREAM, ok, installed, frozenset(confirmed))
+
+
+@dataclass(frozen=True, slots=True)
+class InstallationChange:
+    """One installation policy intent of the installation stream (B5.15).
+
+    ``mirrored`` are the graphs its confirmation anchors (their mirror events);
+    empty for a change applied before mirrors existed, ``None`` when it has no
+    confirmation (an apply interrupted before it, committed or not).
+    """
+
+    seq: int
+    old: str | None
+    new: str
+    committed: bool
+    mirrored: frozenset[str] | None
+
+    def expects_mirror(self, graph_id: str) -> bool:
+        return self.committed and (self.mirrored is None or graph_id in self.mirrored)
+
+    def unmirrored(self, graph_id: str) -> bool:
+        return self.committed and self.mirrored is not None and graph_id not in self.mirrored
+
+
+def installation_changes(
+    events: Iterable[Mapping[str, JsonValue]], installed: InstalledPolicy
+) -> list[InstallationChange]:
+    """The installation policy history. An intent is committed when confirmed, or when it is
+    the last one and the installed file is its result (an apply interrupted after the
+    rename)."""
+    found: list[InstallationChange] = []
+    pending: InstallationChange | None = None
+    for event in (e for e in events if _ok(e)):
+        if event.get("actions") != [POLICY_ACTION] or "graph" in event:
+            continue
+        change, seq = event.get("change"), event.get("seq")
+        policy = change.get("policy") if isinstance(change, Mapping) else None
+        if isinstance(policy, Mapping) and isinstance(seq, int):
+            if pending is not None:
+                found.append(pending)
+            old, new = policy.get("from"), policy.get("to")
+            if isinstance(new, str) and (old is None or isinstance(old, str)):
+                pending = InstallationChange(seq, old, new, False, None)
+        elif pending is not None:
+            anchors = event.get("anchors")
+            graphs = frozenset(
+                str(a.get("graph_id"))
+                for a in (anchors if isinstance(anchors, list) else [])
+                if isinstance(a, Mapping)
+            )
+            found.append(dataclasses.replace(pending, committed=True, mirrored=graphs))
+            pending = None
+    if pending is not None:
+        found.append(dataclasses.replace(pending, committed=installed.observed == pending.new))
+    return found
+
+
+def graph_creations(installation_events: Iterable[Mapping[str, JsonValue]]) -> dict[str, int]:
+    """Per graph id, the installation-stream seq of its ``maint.graph_create`` event."""
+    found: dict[str, int] = {}
+    for event in installation_events:
+        anchors, seq = event.get("anchors"), event.get("seq")
+        if event.get("actions") != ["maint.graph_create"] or not isinstance(anchors, list):
+            continue
+        for anchor in anchors:
+            if isinstance(anchor, Mapping) and isinstance(seq, int):
+                found.setdefault(str(anchor.get("graph_id")), seq)
+    return found
+
+
+def policy_set_hash(installation: str, graph: str | None) -> str:
+    """The hash a decision records for these layers (B6.14)."""
+    return (
+        installation
+        if graph is None
+        else hash_value({"installation": installation, "graph": graph})
+    )
+
+
+def check_policy_hashes(
+    graph_id: str,
+    events: Sequence[Mapping[str, JsonValue]],
+    changes: Sequence[InstallationChange],
+    *,
+    created: int | None,
+    anchored: frozenset[int],
+    builtin_hash: str,
+) -> list[Finding]:
+    """Every decision of one graph stream against the policy in effect (B5.15, B6.14).
+
+    The installation layer in effect starts as the one committed before the
+    graph was created and follows the stream's mirror events, which the
+    installation stream's history must contain in order; the graph layer
+    follows the stream's committed graph policy intents. A graph-admin
+    decision without an installed layer (its fallback) is a warning. Before
+    the first mirror of a graph that saw changes applied without mirrors,
+    any policy of that time is accepted (info).
+    """
+    stream = graph_stream(graph_id)
+    after = [c for c in changes if created is None or c.seq > created]
+    before = [c for c in changes if c.committed and created is not None and c.seq < created]
+    installation = before[-1].new if before else builtin_hash
+    legacy = [c.new for c in after if c.unmirrored(graph_id)]
+    loose = {installation, *legacy} if legacy else None
+    queue = [c for c in after if c.expects_mirror(graph_id) or not c.committed]
+    layer: str | None = None
+    findings: list[Finding] = []
+    unchecked = 0
+    for event in events:
+        target: dict[str, JsonValue] = {"stream": stream, "seq": event.get("seq")}
+        authz = event.get("authz")
+        actual = authz.get("policy_hash") if isinstance(authz, Mapping) else None
+        expected = policy_set_hash(installation, layer)
+        if isinstance(actual, str) and actual != expected:
+            fallback = {policy_set_hash(builtin_hash, layer), installation, builtin_hash}
+            if loose is not None and actual in {policy_set_hash(h, layer) for h in loose}:
+                unchecked += 1
+            elif _entrypoint(event) == "maint" and actual in fallback:
+                findings.append(
+                    _finding(
+                        codes.POLICY_FALLBACK,
+                        target,
+                        "graph-admin decided without an installed policy layer",
+                        expected=expected,
+                        actual=actual,
+                    )
+                )
+            else:
+                findings.append(
+                    _finding(
+                        codes.POLICY_HASH_MISMATCH,
+                        target,
+                        "the decision was made under a policy that was not in effect",
+                        expected=expected,
+                        actual=actual,
+                    )
+                )
+        mirror = _policy_change_of(event, "installation_policy")
+        if mirror is not None:
+            while queue and not queue[0].committed and (queue[0].old, queue[0].new) != mirror:
+                queue.pop(0)  # an interrupted apply that did not reach this graph
+            if not queue or (queue[0].old, queue[0].new) != mirror:
+                findings.append(
+                    _finding(
+                        codes.POLICY_MISMATCH,
+                        target,
+                        "a mirrored installation policy change the installation stream lacks",
+                        actual=list(mirror),
+                    )
+                )
+                return findings  # the history is cut: judging further would cascade
+            change = queue.pop(0)
+            if change.committed:
+                installation, loose = change.new, None
+        graph_change = _policy_change_of(event, "policy")
+        if graph_change is not None and event.get("seq") in anchored:
+            layer = graph_change[1]
+    for change in queue:
+        if change.committed:
+            findings.append(
+                _finding(
+                    codes.POLICY_MISMATCH,
+                    {"stream": INSTALLATION_STREAM, "seq": change.seq},
+                    f"graph stream {graph_id} lacks the mirror of this installation policy change",
+                )
+            )
+    if unchecked:
+        findings.append(
+            _finding(
+                codes.POLICY_HASH_UNCHECKED,
+                {"stream": stream},
+                f"{unchecked} decisions before the first mirrored installation policy change "
+                "match a policy of that time",
+            )
+        )
+    return findings
+
+
+def _policy_change_of(event: Mapping[str, JsonValue], key: str) -> tuple[str | None, str] | None:
+    if event.get("actions") != [POLICY_ACTION] or not _ok(event):
+        return None
+    change = event.get("change")
+    policy = change.get(key) if isinstance(change, Mapping) else None
+    if not isinstance(policy, Mapping):
+        return None
+    old, new = policy.get("from"), policy.get("to")
+    if not isinstance(new, str) or not (old is None or isinstance(old, str)):
+        return None
+    return old, new
+
+
+def _entrypoint(event: Mapping[str, JsonValue]) -> JsonValue:
+    actor = event.get("actor")
+    client = actor.get("client") if isinstance(actor, Mapping) else None
+    return client.get("entrypoint") if isinstance(client, Mapping) else None
 
 
 def _ok(event: Mapping[str, JsonValue]) -> bool:

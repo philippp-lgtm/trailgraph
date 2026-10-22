@@ -412,15 +412,18 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             and _is_hash(skill["to"])
         ):
             problems.append("a skill change needs change.skill{from: hash or null, to: hash}")
-    if POLICY_ACTION in actions and "policy" in entries:
-        policy = entries["policy"]
-        if not (
-            isinstance(policy, Mapping)
-            and set(policy) == {"from", "to"}
-            and (policy["from"] is None or _is_hash(policy["from"]))
-            and _is_hash(policy["to"])
-        ):
-            problems.append("a policy change needs change.policy{from: hash or null, to: hash}")
+    for key in ("policy", "installation_policy"):
+        if POLICY_ACTION in actions and key in entries:
+            policy = entries[key]
+            if not (
+                isinstance(policy, Mapping)
+                and set(policy) == {"from", "to"}
+                and (policy["from"] is None or _is_hash(policy["from"]))
+                and _is_hash(policy["to"])
+            ):
+                problems.append(
+                    f"a policy change needs change.{key}{{from: hash or null, to: hash}}"
+                )
     return problems
 
 

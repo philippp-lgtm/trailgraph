@@ -23,8 +23,9 @@ from no project, would get: with the installed policy or with a file.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -35,7 +36,12 @@ from graph_cli.access_control.documents import GRAPH_LAYER, INSTALLATION_LAYER, 
 from graph_cli.access_control.effective import graph_level, project_warning, scope_of
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
 from graph_cli.audit import events
-from graph_cli.audit.verify import InstalledPolicy
+from graph_cli.audit.verify import (
+    InstalledPolicy,
+    graph_creations,
+    installation_changes,
+    verify_stream,
+)
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.kernel.actions import WRITE_ACTIONS, is_known_action, level_actions
 from graph_cli.kernel.actor import (
@@ -50,8 +56,9 @@ from graph_cli.kernel.actor import (
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ports.audit import AuditEventDraft
+from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli_admin.services_admin.context import AdminContext
@@ -168,14 +175,8 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
         with ctx.maintenance.registry(timeout_s=ctx.lock_timeout_s) as registry:
             old = _hash_of(registry.read_installation_policy())
             data["from"] = old
-            if old != compiled.hash:
-                change = events.policy_change(old, compiled.hash)
-                receipt = ctx.audit.append_installation(
-                    _event(ctx, decisions, meta, change, reason)
-                )
-                registry.replace_installation_policy(compiled.document, receipt)
-                # The confirmation proves the switch to audit verify (B5.15).
-                ctx.audit.append_installation(_event(ctx, decisions, meta, None, reason))
+            if old != compiled.hash or _unmirrored(ctx, old):
+                _apply_installation(ctx, registry, compiled, old, decisions, meta, reason)
                 data["applied"] = True
         return Outcome(data, source.warnings)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
@@ -317,12 +318,66 @@ def _hash_of(data: bytes | None) -> str | None:
     return observed if observed is not None and observed.startswith("sha256:") else None
 
 
+def _apply_installation(
+    ctx: AdminContext,
+    registry: RegistrySession,
+    compiled: Compiled,
+    old: str | None,
+    decisions: tuple[Decision, ...],
+    meta: RequestMeta,
+    reason: str,
+) -> None:
+    """Intent, one mirror per graph stream, rename, confirmation (B5.15).
+
+    Every graph's writer lock is held from its mirror until the confirmation,
+    so no write lands between a graph's mirror and the switch; a write that
+    decided before re-checks the policy under its lock (B6.14). A crash
+    before the rename leaves an interrupted intent whose mirrors are void.
+    """
+    change = events.policy_change(old, compiled.hash)
+    receipt = ctx.audit.append_installation(_event(ctx, decisions, meta, change, reason))
+    mirror = events.installation_policy_change(old, compiled.hash)
+    with contextlib.ExitStack() as stack:
+        mirrors = []
+        for graph_id in sorted(ctx.maintenance.graph_ids(), key=str):  # one lock order
+            session = stack.enter_context(
+                ctx.maintenance.maintenance_session(graph_id, timeout_s=ctx.lock_timeout_s)
+            )
+            entry = session.manifest().entry
+            mirrors.append(ctx.intent(session, entry, decisions, meta, mirror, reason=reason))
+        registry.replace_installation_policy(compiled.document, receipt)
+        # The confirmation proves the switch and anchors the mirrors (B5.15).
+        ctx.audit.append_installation(_event(ctx, decisions, meta, None, reason, anchors=mirrors))
+
+
+def _unmirrored(ctx: AdminContext, installed: str | None) -> bool:
+    """A graph that existed at the last installation policy change has no mirror of it
+    (applied before mirrors existed, or a confirmation lost): applying the same policy
+    again records the mirrors."""
+    if installed is None:
+        return False
+    stream = verify_stream(ctx.audit.read_lines(INSTALLATION_STREAM), stream=INSTALLATION_STREAM)
+    changes = installation_changes(stream.events, InstalledPolicy(installed))
+    last = next((c for c in reversed(changes) if c.committed), None)
+    if last is None:
+        return False
+    created = graph_creations(stream.events)
+    return any(
+        created.get(str(g), 0) < last.seq
+        and last.mirrored is not None
+        and str(g) not in last.mirrored
+        for g in ctx.maintenance.graph_ids()
+    )
+
+
 def _event(
     ctx: AdminContext,
     decisions: tuple[Decision, ...],
     meta: RequestMeta,
     change: Mapping[str, JsonValue] | None,
     reason: str,
+    *,
+    anchors: Sequence[AuditReceipt] = (),
 ) -> AuditEventDraft:
     return events.maintenance(
         actor=ctx.actor,
@@ -333,6 +388,7 @@ def _event(
         env=ctx.env,
         change=change,
         reason=reason,
+        anchors=anchors,
     )
 
 
