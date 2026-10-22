@@ -9,9 +9,11 @@ from graph_cli.kernel.canonical import (
     CanonicalError,
     canonical_bytes,
     check_text,
+    hash_canonical_document,
     hash_document,
     hash_value,
     jsonl_line,
+    parse_canonical,
     parse_json,
     pretty_bytes,
 )
@@ -98,3 +100,70 @@ def test_check_text() -> None:
     for bad in ("\x00", "\udc00"):
         with pytest.raises(CanonicalError):
             check_text(bad)
+
+
+def _reference_parse_canonical(data: bytes) -> object:
+    value = parse_json(data)
+    if canonical_bytes(value) != data:
+        raise CanonicalError("value is not in JCS form")
+    return value
+
+
+_ASTRAL_KEYS = {"\U0001f600": 1, "\ufb01": 2}  # JCS: emoji first (UTF-16), code points: emoji last
+_CANONICAL_INPUTS = [
+    canonical_bytes({"a": [1, True, None], "b": {"c": -3, "d": 'x"\\\n\u0001é\u2028'}}),
+    canonical_bytes({"note": "smile \U0001f600", "n": 9007199254740991}),
+    canonical_bytes(_ASTRAL_KEYS),
+    canonical_bytes({"hash": "sha256:" + "a" * 64, "nested": {"hash": "x"}}),
+    canonical_bytes({"text": "a backslash before u0000: \\u0000"}),
+    b"[]",
+    b'"plain"',
+]
+_REFUSED_INPUTS = [
+    b'{"a": 1}',
+    b'{"b":1,"a":2}',
+    b'{"a":"\\u00e9"}',
+    b'{"a":-0}',
+    b'{"a":1.0}',
+    b'{"a":1e2}',
+    b'{"a":NaN}',
+    b'{"a":1,"a":1}',
+    b"[9007199254740992]",
+    b'"\\u0000"',
+    b'"\\ud800"',
+    b'"\xff"',
+    json.dumps(_ASTRAL_KEYS, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(),
+    b"{",
+    b"",
+]
+
+
+@pytest.mark.parametrize("data", _CANONICAL_INPUTS + _REFUSED_INPUTS)
+def test_parse_canonical_agrees_with_the_reference(data: bytes) -> None:
+    try:
+        expected = _reference_parse_canonical(data)
+    except CanonicalError:
+        assert data in _REFUSED_INPUTS
+        with pytest.raises(CanonicalError):
+            parse_canonical(data)
+        return
+    assert data in _CANONICAL_INPUTS
+    assert parse_canonical(data) == expected
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"hash": "sha256:" + "1" * 64},
+        {"hash": "sha256:" + "1" * 64, "seq": 1},
+        {"a": 1, "hash": "sha256:" + "1" * 64, "seq": 1},
+        {"a": 1, "hash": "sha256:" + "1" * 64},
+        {"a": {"hash": "sha256:" + "1" * 64}, "hash": "sha256:" + "1" * 64},  # falls back
+        {"a": {"hash": "other"}, "hash": "sha256:" + "1" * 64},
+        {"a": 'the text "hash":"sha256:x"', "hash": "sha256:x"},
+        {"a": 1},
+    ],
+)
+def test_hash_canonical_document_matches_hash_document(document: dict[str, object]) -> None:
+    data = canonical_bytes(document)  # type: ignore[arg-type]
+    assert hash_canonical_document(data, document) == hash_document(document)  # type: ignore[arg-type]

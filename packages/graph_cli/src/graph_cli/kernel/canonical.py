@@ -109,6 +109,28 @@ def hash_document(document: JsonObject, *, hash_key: str = "hash") -> str:
     return hash_value({k: v for k, v in document.items() if k != hash_key})
 
 
+def hash_canonical_document(data: bytes, document: JsonObject, *, hash_key: str = "hash") -> str:
+    """``hash_document(document)`` where ``data`` are its JCS bytes (``parse_canonical``).
+
+    Hashes ``data`` with the member ``hash_key`` cut out instead of encoding
+    the document again. Every quote inside a JSON string is escaped, so the
+    member's bytes found exactly once are the top-level member; otherwise
+    this falls back to ``hash_document``.
+    """
+    if hash_key not in document:
+        return hash_bytes(data)
+    member = canonical_bytes({hash_key: document[hash_key]})[1:-1]
+    start = data.find(member)
+    if start < 0 or data.find(member, start + 1) >= 0:
+        return hash_document(document, hash_key=hash_key)
+    end = start + len(member)
+    if data[start - 1 : start] == b",":
+        start -= 1
+    elif data[end : end + 1] == b",":
+        end += 1
+    return hash_bytes(data[:start] + data[end:])
+
+
 def jsonl_line(document: JsonObject) -> bytes:
     """One JSONL line (C.3): the JCS bytes of the full document plus ``\\n``."""
     return canonical_bytes(document) + b"\n"
@@ -168,4 +190,49 @@ def parse_json(data: bytes | str, *, floats: Callable[[str], str] | None = None)
     except json.JSONDecodeError as exc:
         raise CanonicalError(f"invalid JSON: {exc}") from exc
     canonical_bytes(value)  # range, surrogate and NUL checks
+    return value
+
+
+def _safe_int(text: str) -> int:
+    value = int(text)
+    if not -MAX_SAFE_INT <= value <= MAX_SAFE_INT:
+        raise CanonicalError(f"integer out of range: {value}")
+    return value
+
+
+# Input where the C encoder may disagree with JCS: a 4-byte UTF-8 sequence
+# (a key outside the BMP sorts by code point there, by UTF-16 code unit in
+# JCS) and an escaped NUL (written by the encoder, refused by C.5).
+_REFERENCE_ONLY: Final = re.compile(rb"[\xf0-\xf4]|\\u0000")
+
+
+def parse_canonical(data: bytes) -> JsonValue:
+    """Parse ``data`` that must be the JCS bytes (C.3) of its value.
+
+    Accepts and refuses exactly what ``parse_json`` followed by the check
+    ``canonical_bytes(value) == data`` would, without the slow encoder:
+    after the strict parse (no floats, safe integers, unique keys) and
+    without the bytes of ``_REFERENCE_ONLY``, ``json.dumps`` with sorted
+    keys writes the JCS bytes. Anything else takes that reference path.
+    """
+    if _REFERENCE_ONLY.search(data) is None:
+        try:
+            value: JsonValue = json.loads(
+                data.decode("utf-8"),
+                parse_float=_reject_float,
+                parse_constant=_reject_constant,
+                parse_int=_safe_int,
+                object_pairs_hook=_unique_object,
+            )
+            encoded = json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ).encode("utf-8")
+        except ValueError:  # decode, parse and lone surrogate errors: the reference names them
+            pass
+        else:
+            if encoded == data:
+                return value
+    value = parse_json(data)
+    if canonical_bytes(value) != data:
+        raise CanonicalError("value is not in JCS form")
     return value

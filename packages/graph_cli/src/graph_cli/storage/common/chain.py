@@ -26,10 +26,10 @@ from graph_cli.kernel.canonical import (
     CanonicalError,
     JsonObject,
     JsonValue,
-    canonical_bytes,
+    hash_canonical_document,
     hash_document,
     jsonl_line,
-    parse_json,
+    parse_canonical,
 )
 
 CHAIN_KEYS: Final = ("seq", "prev_hash", "hash")
@@ -79,19 +79,17 @@ def verify_line(line: bytes, prev: ChainLink) -> JsonObject:
         raise ChainError("torn", "line has no terminating newline")
     body = line[:-1]
     try:
-        document = parse_json(body)
+        document = parse_canonical(body)
     except CanonicalError as exc:
         raise ChainError("invalid", f"not canonical JSON: {exc}") from None
     if not isinstance(document, Mapping):
         raise ChainError("invalid", "line is not a JSON object")
-    if canonical_bytes(document) != body:
-        raise ChainError("invalid", "line is not in JCS form")
     seq, prev_hash, digest = (document.get(key) for key in CHAIN_KEYS)
     if isinstance(seq, bool) or not isinstance(seq, int):
         raise ChainError("invalid", "seq is missing or not an integer")
     if not isinstance(prev_hash, str) or not isinstance(digest, str):
         raise ChainError("invalid", "prev_hash or hash is missing")
-    if hash_document(document) != digest:
+    if hash_canonical_document(body, document) != digest:
         raise ChainError("invalid", "hash does not match the document")
     if seq != prev.seq + 1:
         raise ChainError("broken", f"seq {seq} does not follow {prev.seq}")

@@ -25,6 +25,12 @@ POSIX only, local filesystems only.
   `head.json` checkpoint are derived and can be rebuilt from the log.
 - One exclusive `flock` lock per graph serializes writers; readers take no
   lock and see a consistent snapshot (the last complete log line).
+- Scans (`find`, `lookup`, `neighbors`, aliases, incoming edges) verify
+  every log line (canonical form, hash, chain) and replay the log into a
+  view that lives as long as the process. Each `graph` command is a new
+  process, so its `query` time grows with the size of the log. The
+  canonical-form check runs on the C JSON encoder where it agrees with
+  JCS and on the reference encoder otherwise; both accept the same lines.
 - A write appends the audit intent, then the transaction (the commit
   point), then materializes revision files and the checkpoint. Each step is
   synced (`F_FULLFSYNC` on macOS with `durability="full"`).

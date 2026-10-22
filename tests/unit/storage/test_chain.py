@@ -1,5 +1,6 @@
 """Chained JSONL codec (contracts C.2, C.3, B4.5, B4.11, B5.3)."""
 
+import hashlib
 import json
 
 import pytest
@@ -63,6 +64,15 @@ def test_non_canonical_line_is_invalid() -> None:
     pretty = json.dumps(document).encode() + b"\n"  # insertion order, spaces
     with pytest.raises(ChainError) as info:
         verify_line(pretty, GENESIS)
+    assert info.value.kind == "invalid"
+
+
+def test_a_hash_over_non_canonical_bytes_does_not_make_the_line_valid() -> None:
+    body = b'{"b":1,"a":2,"prev_hash":"' + GENESIS_HASH.encode() + b'","seq":1}'
+    digest = "sha256:" + hashlib.sha256(body).hexdigest()
+    line = body[:-1] + b',"hash":"' + digest.encode() + b'"}\n'
+    with pytest.raises(ChainError) as info:
+        verify_line(line, GENESIS)
     assert info.value.kind == "invalid"
 
 
