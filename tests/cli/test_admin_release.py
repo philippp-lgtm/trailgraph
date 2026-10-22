@@ -103,6 +103,48 @@ def test_a_release_seeds_the_alias_prefixes_of_added_classes(
     assert [item["alias"] for item in found.data["items"]] == ["SUP-0001"]
 
 
+def supplier_as_vendor(tmp_path: Path, *, renamed: bool) -> Path:
+    """Version 2.0.0 of 1.1.0 with the class Supplier now called Vendor (same prefix)."""
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    text = text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    marker = "\n    renamed_from: Supplier" if renamed else ""
+    text = text.replace("  Supplier:\n", f"  Vendor:{marker}\n", 1)
+    text = text.replace("range: Supplier", "range: Vendor", 1)
+    target = tmp_path / ("renamed" if renamed else "replaced")
+    target.mkdir()
+    (target / "inventory.yaml").write_text(text)
+    return target
+
+
+def test_a_renamed_class_keeps_its_alias_prefix(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A class renamed with renamed_from takes over the prefix of its old name."""
+    create(run_cli, "1.1.0")
+    outcome = release(run_cli, supplier_as_vendor(tmp_path, renamed=True))
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == []
+    assert outcome.data["alias_prefixes_added"] == {"inv:Vendor": "SUP"}
+    vendor = {"op": "create", "type": "inv:Vendor", "attrs": {"name": "Example vendor"}}
+    write_documents(root, "example_graph", [{"ops": [vendor]}])
+    found = app(run_cli, "find", "--type", "inv:Vendor", env=ENV)
+    assert [item["alias"] for item in found.data["items"]] == ["SUP-0001"]
+
+
+def test_alias_prefix_taken_is_a_warning(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    """A new class whose prefix another class holds gets no aliases, and the release says so."""
+    create(run_cli, "1.1.0")
+    outcome = release(run_cli, supplier_as_vendor(tmp_path, renamed=False))
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == ["admin.alias_prefix_taken"]
+    assert outcome.envelope["warnings"][0]["details"] == {
+        "type": "inv:Vendor",
+        "prefix": "SUP",
+        "used_by": "inv:Supplier",
+    }
+    assert outcome.data["alias_prefixes_added"] == {}
+
+
 def test_release_exists(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     create(run_cli)
     other = variant(tmp_path, "1.0.0", "1.0.0", summary="Changed.")

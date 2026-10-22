@@ -14,7 +14,7 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
-| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change) |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`) |
 | `audit verify` | check every chain, tx log, revision file, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |

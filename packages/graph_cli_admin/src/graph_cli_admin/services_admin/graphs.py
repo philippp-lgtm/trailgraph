@@ -120,16 +120,34 @@ def alias_prefixes(compiled: Compiled) -> dict[TermRef, str]:
     }
 
 
-def merged_alias_prefixes(current: Mapping[TermRef, str], compiled: Compiled) -> dict[TermRef, str]:
-    """The manifest's prefixes plus the seeds of classes a release adds. An existing
-    prefix never changes; a seed that another class already uses is skipped."""
+def merged_alias_prefixes(
+    current: Mapping[TermRef, str], compiled: Compiled
+) -> tuple[dict[TermRef, str], dict[TermRef, str]]:
+    """The manifest's prefixes plus those of classes a release adds, and the seeds left
+    out. An existing prefix never changes: a class renamed with ``renamed_from`` keeps
+    the prefix of its old name (its aliases count on), and a seed that another class
+    already uses is left out (the class gets no aliases)."""
     merged = dict(current)
     used = set(current.values())
-    for curie, prefix in alias_prefixes(compiled).items():
-        if curie not in merged and prefix not in used:
-            merged[curie] = prefix
-            used.add(prefix)
-    return merged
+    skipped: dict[TermRef, str] = {}
+    for name, cls in sorted(compiled.model.classes.items()):
+        curie = TermRef(name)
+        if cls.abstract or curie in merged:
+            continue
+        if cls.renamed_from is not None:
+            old = TermRef(f"{name.partition(':')[0]}:{cls.renamed_from}")
+            if old in current:
+                merged[curie] = current[old]
+                continue
+        prefix = cls.display_prefix
+        if prefix is None:
+            continue
+        if prefix in used:
+            skipped[curie] = prefix
+            continue
+        merged[curie] = prefix
+        used.add(prefix)
+    return merged, skipped
 
 
 def describe(manifest: ManifestData) -> dict[str, JsonValue]:

@@ -8,7 +8,9 @@ installation event anchoring the intent:
    that version is installed with the same artifact hash);
 2. ``maint.ontology_pin`` switches the manifest pin from the current to the
    new release and seeds the alias prefixes of classes the release adds
-   (existing prefixes never change).
+   (existing prefixes never change; a renamed class keeps the prefix of its
+   old name; a seed another class already uses is left out with the warning
+   ``admin.alias_prefix_taken``).
 
 Refused before any event: archived graph (``graph.archived``), the version
 installed with other content (``admin.release_exists``), a bump smaller
@@ -139,12 +141,21 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
             data["released"] = True
         change = events.pin_change(current, target)
         receipt = ctx.intent(session, entry, pin_decisions, meta, change)
-        prefixes = merged_alias_prefixes(entry.alias_prefixes, compiled)
+        prefixes, skipped = merged_alias_prefixes(entry.alias_prefixes, compiled)
         data["alias_prefixes_added"] = {
             str(curie): prefix
             for curie, prefix in prefixes.items()
             if curie not in entry.alias_prefixes
         }
+        owners = {prefix: curie for curie, prefix in entry.alias_prefixes.items()}
+        warnings += tuple(
+            WarningRecord(
+                "admin.alias_prefix_taken",
+                f"{curie} gets no aliases: prefix {prefix} is used by {owners[prefix]}",
+                {"type": str(curie), "prefix": prefix, "used_by": str(owners[prefix])},
+            )
+            for curie, prefix in skipped.items()
+        )
         pinned = replace(manifest, entry=replace(entry, pin=target, alias_prefixes=prefixes))
         session.replace_manifest(pinned, receipt)
         ctx.anchor(entry, pin_decisions, meta, receipt)
