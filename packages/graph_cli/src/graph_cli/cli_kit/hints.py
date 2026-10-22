@@ -142,6 +142,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "query.unbound_variable": None,
     "query.parameter_missing": _param,
     "query.too_large": None,
+    "query.invalid_value": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,

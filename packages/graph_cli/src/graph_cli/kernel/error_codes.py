@@ -69,6 +69,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("query.unbound_variable", _C.USAGE, False, "The query uses an undefined variable."),
     ErrorSpec("query.parameter_missing", _C.USAGE, False, "A query parameter has no value."),
     ErrorSpec("query.too_large", _C.REFUSED, False, "The query produces too many rows."),
+    ErrorSpec(
+        "query.invalid_value",
+        _C.INVALID,
+        False,
+        "A query value has the wrong type or cannot be computed.",
+    ),
     ErrorSpec("temporal.as_of_unsupported", _C.REFUSED, False, "Time travel is not supported."),
     ErrorSpec("conflict.version_mismatch", _C.CONFLICT, True, "The entity has changed."),
     ErrorSpec("conflict.seq_mismatch", _C.CONFLICT, True, "The graph changed in the meantime."),

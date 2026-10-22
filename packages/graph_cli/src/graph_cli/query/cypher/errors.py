@@ -98,3 +98,21 @@ def parameter_missing(pos: Pos, name: str) -> GraphCliError:
         f"line {pos.line}, column {pos.column}: parameter ${name} has no value",
         details={"name": name, **_where(pos)},
     )
+
+
+def invalid_value(pos: Pos, message: str) -> GraphCliError:
+    """A runtime error: wrong operand types, division by zero, integer overflow."""
+    return GraphCliError(
+        "query.invalid_value",
+        f"line {pos.line}, column {pos.column}: {message}",
+        details=_where(pos),
+    )
+
+
+def too_large(pos: Pos, clause: str, budget: int) -> GraphCliError:
+    return GraphCliError(
+        "query.too_large",
+        f"line {pos.line}, column {pos.column}: {clause} goes over the budget of {budget} rows; "
+        "add labels, a property map or a LIMIT",
+        details={"clause": clause, "budget": budget, **_where(pos)},
+    )
