@@ -62,6 +62,16 @@ def _history(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} history {entity}" if isinstance(entity, str) else None
 
 
+def _apply(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Queries only read; writes go through the change set route (B3.9)."""
+    return f"{program} apply -" if details.get("kind") == "write" else None
+
+
+def _param(details: Mapping[str, JsonValue], program: str) -> str | None:
+    name = details.get("name")
+    return f"{program} query --param {name}=<value>" if isinstance(name, str) else None
+
+
 def _mkdir(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A missing configuration directory of the skill target (D15)."""
     path = details.get("path")
@@ -126,6 +136,12 @@ _BASE: Final[dict[str, Hint | None]] = {
     "changeset.local_ref_duplicate": None,
     "changeset.too_large": None,
     "write.invalid": None,
+    "query.syntax": None,
+    "query.unsupported": _apply,
+    "query.ambiguous_term": _types,
+    "query.unbound_variable": None,
+    "query.parameter_missing": _param,
+    "query.too_large": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,

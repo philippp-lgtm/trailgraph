@@ -18,7 +18,17 @@ TAXONOMY_SCHEMA: Final = "graph_cli.actions/1"
 
 READ_ACTIONS: Final = frozenset(
     Action(f"read.{verb}")
-    for verb in ("list", "get", "find", "traverse", "history", "describe", "audit_own", "native")
+    for verb in (
+        "list",
+        "get",
+        "find",
+        "traverse",
+        "history",
+        "describe",
+        "query",
+        "audit_own",
+        "native",
+    )
 )
 WRITE_ACTIONS: Final = frozenset(
     Action(f"write.{verb}")
@@ -63,7 +73,8 @@ ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 # B6.11 access levels: a closed ladder per graph, expanded to action globs.
 ACCESS_LEVELS: Final = ("none", "read", "write")
 _LEVEL_READS: Final = tuple(
-    Action(f"read.{verb}") for verb in ("list", "get", "find", "traverse", "history", "describe")
+    Action(f"read.{verb}")
+    for verb in ("list", "get", "find", "traverse", "history", "describe", "query")
 )
 
 EXT_ACTION_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.[a-z][a-z0-9_]*$")

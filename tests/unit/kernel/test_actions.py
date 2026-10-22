@@ -11,14 +11,15 @@ from graph_cli.kernel.actions import (
     capability_class,
     extension_state_action,
     is_known_action,
+    level_actions,
     require_known_action,
 )
 from graph_cli.kernel.errors import GraphCliError
 
 
 def test_taxonomy_sizes_and_disjointness() -> None:
-    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (8, 8, 15)
-    assert len(ACTIONS) == 31
+    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (9, 8, 15)
+    assert len(ACTIONS) == 32
     assert RESERVED_ACTIONS <= ACTIONS
 
 
@@ -52,3 +53,10 @@ def test_extension_state_action() -> None:
     assert extension_state_action("probe") == "ext.probe.state"
     with pytest.raises(GraphCliError):
         extension_state_action("Probe")
+
+
+def test_query_is_part_of_the_read_level() -> None:
+    """``graph query`` reads with its own action, so a deny rule can withhold it alone."""
+    assert "read.query" in level_actions("read")
+    assert "read.query" not in RESERVED_ACTIONS
+    assert "read.native" not in level_actions("read")
