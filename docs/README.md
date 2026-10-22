@@ -126,7 +126,9 @@ of every layer (`require_reason`, `max_batch`). See "Access control".
 The OS user is the verified principal. Agent and session are asserted, from
 the `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
 `GRAPH_CLI_PARENT_SESSION_ID` variables first, then from the coding agent
-harness. Malformed values are dropped with a warning and never block. Only
+harness. The agent is the exception: a subagent inherits the variables of
+the session that started it, so the harness's own agent (id and type, e.g.
+a read-only exploring subagent) comes first. Malformed values are dropped with a warning and never block. Only
 `catalog` and the admin wiring may read the process environment.
 
 ## Access control

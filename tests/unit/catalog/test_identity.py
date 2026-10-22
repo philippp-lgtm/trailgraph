@@ -59,10 +59,12 @@ def test_harness_variables() -> None:
     assert fallback.session.id == "older-name"
 
 
-# (env, expected agent id, expected session id)
+# (env, expected agent id, expected session id); the harness's agent is a subagent of
+# the session whose generic variables it inherited, so it comes first.
 PRECEDENCE = [
-    ({**HARNESS, **GENERIC}, "agent-7f3a", "sess-41c2"),
-    ({**HARNESS, "GRAPH_CLI_AGENT_ID": "agent-7f3a"}, "agent-7f3a", "harness-session"),
+    ({**HARNESS, **GENERIC}, "harness-agent", "sess-41c2"),
+    ({**HARNESS, "GRAPH_CLI_AGENT_ID": "agent-7f3a"}, "harness-agent", "harness-session"),
+    ({"CLAUDE_CODE_SESSION_ID": "harness-session", **GENERIC}, "agent-7f3a", "sess-41c2"),
     ({**HARNESS, "GRAPH_CLI_SESSION_ID": "sess-41c2"}, "harness-agent", "sess-41c2"),
     ({**HARNESS, "GRAPH_CLI_AGENT_ID": ""}, "harness-agent", "harness-session"),
     ({"GRAPH_CLI_AGENT_TYPE": "general"}, None, None),
@@ -88,7 +90,7 @@ def test_a_facet_comes_whole_from_one_provider() -> None:
 )
 def test_malformed_value_makes_the_facet_absent_without_fallback(variable: str) -> None:
     secret = "has spaces/and-$ecret"
-    env = {**HARNESS, **GENERIC, variable: secret}
+    env = {"CLAUDE_CODE_SESSION_ID": "harness-session", **GENERIC, variable: secret}
     actor, warnings = resolve_actor(inputs(env), client=APP)
     assert actor.agent == ABSENT
     assert actor.session.id == "sess-41c2"
@@ -96,6 +98,22 @@ def test_malformed_value_makes_the_facet_absent_without_fallback(variable: str) 
     assert warning.code == "actor.facet_malformed"
     assert warning.details == {"facet": "agent", "source": variable}
     assert secret.encode() not in canonical_bytes(warning.to_json())
+
+
+def test_a_subagent_is_named_by_the_harness() -> None:
+    """Generic variables set once for a session reach its subagents too."""
+    main, _ = resolve_actor(inputs({**GENERIC, "CLAUDE_CODE_SESSION_ID": "s"}), client=APP)
+    assert (main.agent.id, main.agent.type) == ("agent-7f3a", "general")
+    sub, _ = resolve_actor(inputs({**GENERIC, **HARNESS}), client=APP)
+    assert (sub.agent.id, sub.agent.type, sub.agent.source) == (
+        "harness-agent",
+        "explore",
+        "claude_code",
+    )
+    malformed = {**GENERIC, **HARNESS, "CLAUDE_AGENT_TYPE": "has spaces"}
+    actor, warnings = resolve_actor(inputs(malformed), client=APP)
+    assert actor.agent == ABSENT  # no fallback to the inherited generic agent (B2.4)
+    assert [w.details for w in warnings] == [{"facet": "agent", "source": "CLAUDE_AGENT_TYPE"}]
 
 
 def test_disabling_the_harness_provider() -> None:

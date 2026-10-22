@@ -2,8 +2,10 @@
 
 ``resolve_actor`` is pure; ``os.system_inputs`` is the only reader of the
 process. Asserted facets follow the provider precedence ``generic_env``,
-then ``claude_code`` (B2.6). A facet comes whole from the first provider
-that supplies it; a malformed value makes it absent with warning
+then ``claude_code`` (B2.6), except the agent: the harness names each
+subagent, while the generic variables are inherited from the session that
+started it, so the harness's agent comes first. A facet comes whole from
+the first provider that supplies it; a malformed value makes it absent with warning
 ``actor.facet_malformed`` and does not fall back to the next provider
 (B2.4). The warning names the variable, never the value. The entrypoint is
 a constant of the binary (B2.7).
@@ -35,6 +37,10 @@ PROVIDERS: Final[Mapping[str, Provider]] = {
     claude_code.NAME: claude_code.facets,
 }
 DEFAULT_PROVIDERS: Final = tuple(PROVIDERS)
+# Per facet, where it differs from the order above.
+_FACET_PRECEDENCE: Final[Mapping[str, tuple[str, ...]]] = {
+    "agent": (claude_code.NAME, generic_env.NAME),
+}
 
 system_inputs = os_provider.system_inputs
 
@@ -53,10 +59,11 @@ def resolve_actor(
     if unknown:
         raise GraphCliError("config.invalid", f"unknown identity providers: {', '.join(unknown)}")
     warnings: list[WarningRecord] = []
-    answers = [PROVIDERS[name](inputs.env) for name in PROVIDERS if name in providers]
+    answers = {name: PROVIDERS[name](inputs.env) for name in PROVIDERS if name in providers}
     asserted: dict[str, Facet] = {}
     for name in ("agent", "session"):
-        supplied = next((a[name] for a in answers if a[name] is not None), None)
+        order = [answers[p] for p in _FACET_PRECEDENCE.get(name, PROVIDERS) if p in answers]
+        supplied = next((a[name] for a in order if a[name] is not None), None)
         asserted[name] = _facet(name, supplied, warnings)
     return (
         ActorContext(
