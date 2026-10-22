@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:9b5677460cdbbcd45d2866b6305f821c95a44d5183ce241ef726dbf060af35cb"
+  inventory_hash: "sha256:f854e3e9def878fb882cd6d11eeede634d3e90bf24ba35bb7d37d24701c90acb"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -43,7 +43,10 @@ against it and audited. The CLI is on `PATH`.
    names are not unique. Use the returned id only when exactly one
    candidate matches exactly (`match.kind` is `exact`). With several
    candidates, or only prefix matches, do not answer about one of them
-   first: list them and ask which one is meant, then answer.
+   first: list them and ask which one is meant, then answer. When asked
+   when or why something changed, `graph history <id> --json` lists its
+   revisions with the reason and the names of what changed;
+   `graph get <id> --rev <value> --json` shows an earlier revision.
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
@@ -69,7 +72,8 @@ against it and audited. The CLI is on `PATH`.
 
 - `graph whoami --json` shows who you act as and, in
   `data.permissions.graphs`, what you may do per graph: the `level`
-  (`read` or `write`), the types you may only read and the obligations
+  (`read` or `write`), the actions a rule withholds from you anyway
+  (`withheld`), the types you may only read and the obligations
   (`require_reason`, `max_batch`). Check it before you write.
 - A graph you may not use does not exist for you: `graph graphs` does not
   list it, and selecting it gives `graph.not_found`.
@@ -130,6 +134,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph find` | read | Find entities by type, field filters and relations; paged. |
 | `graph get` | read | Show one entity by id, alias or id suffix. |
 | `graph graphs` | read | List the graphs this project may use. |
+| `graph history` | read | List how one entity changed, newest first: when, by which command and why. |
 | `graph link` | write | Add an edge from one entity to another. |
 | `graph lookup` | read | Find entities by name: main, alternative and hidden labels; ranked candidates. |
 | `graph neighbors` | read | Show the entities connected to one entity, up to three hops. |

@@ -53,7 +53,8 @@ Commands of `graph` are declared as data in `graph_cli.app_cli.commands`
 the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`; `services.read` and `services.describe` answer
-them.
+them. `temporal_knowledge.history` names what changed between two revisions
+for `history`.
 
 `cli_kit` (envelope, error rendering, hints) is shared with the maintenance
 CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
@@ -88,7 +89,7 @@ Locations and keys: [Configuration](configuration.md).
 | `access_control.documents` | the compiled `graph_cli.policy/1` grammar, checked with a path per problem |
 | `access_control.compiler` | authored YAML to compiled documents |
 | `access_control.policy` | the built-in policy, `policy_set` (the layers of one decision and their hash) |
-| `access_control.effective` | level per graph, write obligations, scope and the unknown-project warning, for `whoami` and `policy explain` |
+| `access_control.effective` | level per graph, the actions withheld below it, write obligations, scope and the unknown-project warning, for `whoami` and `policy explain` |
 
 ## Write pipeline
 

@@ -1,5 +1,5 @@
-"""Read services: graphs, get, find, lookup, neighbors, whoami (contracts §4.3, B2.10, B6.3,
-B6.12, B8.8, B8.12, B8.13, B9.7).
+"""Read services: graphs, get, history, find, lookup, neighbors, whoami (contracts §4.3,
+B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7).
 
 Every read authorizes its action before touching storage; a denial is
 appended to the installation stream and raised. A graph is visible iff
@@ -11,8 +11,10 @@ envelope's ``graph.seq`` names the state that was read. A pinned artifact
 that does not match its hash is read with ``ontology.pin_mismatch_read``,
 an archived graph with ``graph.archived_read``. ``as_of`` is reserved: v1
 refuses it with ``temporal.as_of_unsupported``. A successful ``get``,
-``find``, ``lookup`` or ``neighbors`` hands the ids it returns to the
-activity sink (a transient signal for ``graph-admin view``, no log).
+``history``, ``find``, ``lookup`` or ``neighbors`` hands the ids it returns
+to the activity sink (a transient signal for ``graph-admin view``, no log).
+``history`` shows of a tx's actor only whether it is the caller's own
+session: who wrote a revision is audit content (B8.15).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from graph_cli.access_control.effective import (
     graph_level,
     scope_of,
     type_limits,
+    withheld_actions,
     write_obligations,
 )
 from graph_cli.audit import events
@@ -48,6 +51,7 @@ from graph_cli.query.plan import FindSpec, plan_find, plan_neighbors
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
+from graph_cli.temporal_knowledge.history import changed_names
 
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
@@ -272,17 +276,28 @@ class ReadService:
             items.append(item)
         return items, len(visible) - len(shown), self._catalog.warnings
 
-    def get(self, view: GraphRead, ref: str) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+    def get(
+        self, view: GraphRead, ref: str, *, rev: int | None = None
+    ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """The current revision, or revision ``rev``; the status warnings and
+        ``superseded_by``/``retracted_by`` always describe the current state."""
         entity, ref_warnings = resolve_ref(ref, view.snapshot)
-        revision = view.snapshot.get(entity)
-        if revision is None:
+        current = view.snapshot.get(entity)
+        if current is None:
             raise GraphCliError(
                 "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
+            )
+        revision = current if rev is None else view.snapshot.get_revision(entity, rev)
+        if revision is None:
+            raise GraphCliError(
+                "entity.revision_not_found",
+                f"{ref} has no revision {rev}",
+                details={"ref": ref, "id": str(entity), "rev": rev, "current_rev": current.rev},
             )
         warnings = list(ref_warnings)
         superseded_by = _sources(view.snapshot, entity, SUPERSEDES)
         retracted_by = _sources(view.snapshot, entity, RETRACTS)
-        if revision.record_status == "superseded":
+        if current.record_status == "superseded":
             warnings.append(
                 WarningRecord(
                     "entity.superseded",
@@ -290,17 +305,58 @@ class ReadService:
                     {"id": str(entity), "superseded_by": list(superseded_by)},
                 )
             )
-        elif revision.record_status == "retracted":
+        elif current.record_status == "retracted":
             warnings.append(
                 WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
             )
         data: dict[str, JsonValue] = {
             "entity": entity_json(revision),
+            "current_rev": current.rev,
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
         }
         self.activity.reads(view.entry.id, [entity])
         return data, warnings
+
+    def history(
+        self, view: GraphRead, actor: ActorContext, ref: str, *, limit: int, offset: int
+    ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
+        """One entity's revisions, newest first: when, by which command, why, and the
+        names of what changed against the revision before (B8.15)."""
+        entity, warnings = resolve_ref(ref, view.snapshot)
+        metas = list(view.snapshot.history(entity))
+        if not metas:
+            raise GraphCliError(
+                "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
+            )
+        shown = metas[::-1][offset : offset + limit]
+        session = actor.session.id
+        items: list[JsonValue] = []
+        for meta in shown:
+            tx = view.snapshot.tx(meta.tx_seq)
+            before = view.snapshot.get_revision(entity, meta.rev - 1) if meta.rev > 1 else None
+            after = view.snapshot.get_revision(entity, meta.rev)
+            items.append(
+                {
+                    "rev": meta.rev,
+                    "tx_seq": meta.tx_seq,
+                    "recorded_at": format_timestamp(meta.recorded_at),
+                    "record_status": meta.record_status,
+                    "command": tx.request.command if tx else None,
+                    "reason": tx.reason if tx else None,
+                    "own_session": tx is not None
+                    and session is not None
+                    and tx.actor.session.id == session,
+                    "changed": changed_names(before, after) if before and after else None,
+                }
+            )
+        data: dict[str, JsonValue] = {
+            "id": str(entity),
+            "current_rev": metas[-1].rev,
+            "items": items,
+        }
+        self.activity.reads(view.entry.id, [entity])
+        return data, Page(len(metas), len(shown), limit, offset), list(warnings)
 
     def find(
         self,
@@ -423,6 +479,7 @@ class ReadService:
                 {
                     "graph": entry.name,
                     "level": graph_level(actor, entry.id, layered),
+                    "withheld": withheld_actions(actor, entry.id, layered),
                     "types": type_limits(layered),
                     "obligations": write_obligations(actor, entry.id, layered),
                 }

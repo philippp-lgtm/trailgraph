@@ -56,6 +56,12 @@ def _get(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} get {entity}" if isinstance(entity, str) else None
 
 
+def _history(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """The revisions that exist (B8.15)."""
+    entity = details.get("id")
+    return f"{program} history {entity}" if isinstance(entity, str) else None
+
+
 def _mkdir(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A missing configuration directory of the skill target (D15)."""
     path = details.get("path")
@@ -112,6 +118,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "graph.readonly": None,
     "entity.not_found": None,
     "entity.ambiguous_ref": None,
+    "entity.revision_not_found": _history,
     "term.unknown": _types,
     "term.no_labels": _labels,
     "changeset.malformed": None,

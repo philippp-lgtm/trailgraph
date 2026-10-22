@@ -1,6 +1,6 @@
-"""``graph get``, ``graph find``, ``graph lookup`` and ``graph neighbors``.
+"""``graph get``, ``graph history``, ``graph find``, ``graph lookup`` and ``graph neighbors``.
 
-Contracts §4.3, B8.8, B8.12, B9.7.
+Contracts §4.3, B8.8, B8.12, B8.15, B9.7.
 """
 
 from __future__ import annotations
@@ -17,7 +17,13 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
-from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT, FindSpec, parse_rel_flag
+from graph_cli.query.plan import (
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    FindSpec,
+    check_paging,
+    parse_rel_flag,
+)
 from graph_cli.services.read import GraphRead, refuse_as_of
 
 REF_ERRORS: Final = (
@@ -69,12 +75,42 @@ def _next_page(page: dict[str, JsonValue], line: Callable[[int], str]) -> tuple[
     return ({"text": "More results available", "command": line(next_offset)},)
 
 
-def get(state: CommandState, ref: str, graph: str | None, as_of: str | None) -> Result:
+def get(
+    state: CommandState, ref: str, rev: int | None, graph: str | None, as_of: str | None
+) -> Result:
     refuse_as_of(as_of)
-    view = _open(state, graph, "read.get", "get", {"ref": ref})
-    data, warnings = context(state).reader.get(view, ref)
+    args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
+    view = _open(state, graph, "read.get", "get", args)
+    ctx = context(state)
+    if rev is not None:
+        # An earlier revision is history: read.get and read.history (B8.15).
+        request = RequestMeta.of("get", {"graph": view.entry.name, **args})
+        ctx.reader.authorize(
+            ctx.actor, "read.history", f"graph:{view.entry.id}", request, view.entry
+        )
+    data, warnings = ctx.reader.get(view, ref, rev=rev)
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
+
+
+def history(
+    state: CommandState, ref: str, limit: int, offset: int, graph: str | None, as_of: str | None
+) -> Result:
+    refuse_as_of(as_of)
+    check_paging(limit, offset)
+    view = _open(
+        state, graph, "read.history", "history", {"ref": ref, "limit": limit, "offset": offset}
+    )
+    ctx = context(state)
+    data, page, warnings = ctx.reader.history(view, ctx.actor, ref, limit=limit, offset=offset)
+    state.warnings += warnings
+    page_json = page.to_json()
+
+    def line(next_offset: int) -> str:
+        return _command_line("history", (ref,), view.entry.name, (), (), limit, next_offset)
+
+    hints = _next_page(page_json, line)
+    return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
 def find(
@@ -230,13 +266,50 @@ SPECS: Final = (
         surface="retrieve",
         action="read.get",
         summary="Show one entity by id, alias or id suffix.",
-        params=(REF, GRAPH, AS_OF),
+        description=(
+            "With --rev, the entity as it was at that revision; that also needs the "
+            "permission to read history."
+        ),
+        params=(
+            REF,
+            ParamSpec("--rev", "integer", "Show this earlier revision instead of the current one."),
+            GRAPH,
+            AS_OF,
+        ),
         examples=(
             Example("graph get <id>", "Show one entity."),
             Example("graph get <id> --graph <graph> --json", "The entity as JSON."),
+            Example("graph get <id> --rev 2 --json", "The entity as it was at revision 2."),
+        ),
+        errors=(*REF_ERRORS, "entity.revision_not_found"),
+        handler=get,
+    ),
+    CommandSpec(
+        path=("history",),
+        kind="read",
+        surface="trace",
+        action="read.history",
+        summary="List how one entity changed, newest first: when, by which command and why.",
+        description=(
+            "Each revision names the fields and relations that changed, not their values; "
+            "read a revision with get --rev. own_session tells whether your session wrote it."
+        ),
+        params=(
+            REF,
+            ParamSpec(
+                "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many revisions.", default=0),
+            GRAPH,
+            AS_OF,
+        ),
+        examples=(
+            Example("graph history <id> --json", "The revisions of one entity."),
+            Example("graph history <id> --limit 5 --json", "The five most recent revisions."),
         ),
         errors=REF_ERRORS,
-        handler=get,
+        handler=history,
+        limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
         path=("find",),

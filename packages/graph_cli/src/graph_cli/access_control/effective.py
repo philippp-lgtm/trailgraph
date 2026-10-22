@@ -1,9 +1,10 @@
 """What a policy lets an actor do, summarized (contracts B2.10, B6.11, B6.13).
 
 Pure helpers over ``authorize()`` for ``graph whoami`` and ``graph-admin
-policy explain``: the access level per graph, the obligations of the allowed
-writes, the project scope that applies and the warning for a project the
-installation policy has no scope for. Nothing here decides on its own; every
+policy explain``: the access level per graph, the actions a deny rule
+withholds below it, the obligations of the allowed writes, the project scope
+that applies and the warning for a project the installation policy has no
+scope for. Nothing here decides on its own; every
 answer is a set of ``authorize()`` calls.
 """
 
@@ -40,6 +41,24 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
             break
         reached = level
     return reached
+
+
+def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> list[str]:
+    """The ladder actions denied on ``graph:<id>`` in a class (read, write) of which at
+    least one action is allowed: what deny rules take away from a granted level, which
+    ``graph_level`` alone cannot show (a denied ``read.history`` leaves the level at
+    ``none`` while the graph stays readable)."""
+    resource = f"graph:{graph}"
+    ladder = [a for a in level_actions("write") if not a.endswith("*")] + sorted(WRITE_ACTIONS)
+    withheld: list[str] = []
+    for area in ("read.", "write."):
+        actions = [a for a in ladder if a.startswith(area)]
+        denied = [
+            a for a in actions if authorize(actor, a, resource, _PROBE, policy).effect != "allow"
+        ]
+        if len(denied) < len(actions):
+            withheld += denied
+    return sorted(withheld)
 
 
 def write_obligations(

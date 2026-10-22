@@ -33,7 +33,12 @@ from typing import Final
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.compiler import Compiled, compile_policy, layer_of_source
 from graph_cli.access_control.documents import GRAPH_LAYER, INSTALLATION_LAYER, RESOURCE_RE, rules
-from graph_cli.access_control.effective import graph_level, project_warning, scope_of
+from graph_cli.access_control.effective import (
+    graph_level,
+    project_warning,
+    scope_of,
+    withheld_actions,
+)
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
@@ -238,6 +243,7 @@ def explain(
         "scope": scope_of(caller, policy),
         "policy_hash": policy.hash,
         "level": graph_level(caller, entry.id, policy),
+        "withheld": withheld_actions(caller, entry.id, policy),
         "resource": resource,
         "decisions": [_decision_json(d) for d in decisions],
     }

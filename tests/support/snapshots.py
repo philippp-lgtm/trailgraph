@@ -19,6 +19,7 @@ from graph_cli.kernel.records import (
     RecordStatus,
     Revision,
     RevisionMeta,
+    TxRecord,
     content_hash,
     content_projection,
     revision_meta,
@@ -116,6 +117,9 @@ class DictSnapshot:
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]:
         current = self._current.get(entity)
         return [] if current is None else [revision_meta(current)]
+
+    def tx(self, seq: int) -> TxRecord | None:
+        return None
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None

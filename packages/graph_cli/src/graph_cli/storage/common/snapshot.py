@@ -8,7 +8,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.query_eval import run_neighbors, run_query
-from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta
+from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta, TxRecord
 from graph_cli.storage.common.view import ViewAt
 
 
@@ -38,6 +38,9 @@ class ViewSnapshot:
 
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]:
         return self._view.history(entity)
+
+    def tx(self, seq: int) -> TxRecord | None:
+        return self._view.tx(seq) if 1 <= seq <= self.seq else None
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None

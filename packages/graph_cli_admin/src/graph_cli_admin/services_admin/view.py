@@ -203,8 +203,7 @@ def entity_json(source: ViewSource, text: str) -> dict[str, JsonValue]:
     ]
     history: list[JsonValue] = []
     for meta in reversed(list(snapshot.history(entity))):
-        txs = source.read.changes_since(meta.tx_seq - 1, limit=1)
-        tx = txs[0] if txs and txs[0].seq == meta.tx_seq else None
+        tx = snapshot.tx(meta.tx_seq)
         history.append(
             {
                 "rev": meta.rev,

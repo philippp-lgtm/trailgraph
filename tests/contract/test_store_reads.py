@@ -68,6 +68,18 @@ def test_updates_build_history(env: StoreEnv) -> None:
     assert snapshot.get_revision(entity, 2).rev == 2  # type: ignore[union-attr]
 
 
+def test_snapshot_tx_is_bounded_by_its_seq(env: StoreEnv) -> None:
+    """B8.15: a snapshot answers for its own txs only, also with a tail after the checkpoint."""
+    first, _ = env.write(lambda d: d.create())
+    second, _ = env.write(lambda d: d.create())
+    snapshot = env.store.snapshot(at_seq=1)
+    found = snapshot.tx(1)
+    assert found is not None and (found.seq, found.tx_id) == (1, first.tx_id)
+    assert [snapshot.tx(seq) for seq in (0, 2, -1)] == [None, None, None]
+    later = env.store.snapshot().tx(2)
+    assert later is not None and later.tx_id == second.tx_id
+
+
 def test_snapshot_isolation(env: StoreEnv) -> None:
     created: list[EntityId] = []
     env.write(lambda d: created.append(d.create()))

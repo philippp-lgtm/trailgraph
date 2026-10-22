@@ -90,7 +90,10 @@ against it and audited. The CLI is on `PATH`.
    names are not unique. Use the returned id only when exactly one
    candidate matches exactly (`match.kind` is `exact`). With several
    candidates, or only prefix matches, do not answer about one of them
-   first: list them and ask which one is meant, then answer.
+   first: list them and ask which one is meant, then answer. When asked
+   when or why something changed, `graph history <id> --json` lists its
+   revisions with the reason and the names of what changed;
+   `graph get <id> --rev <value> --json` shows an earlier revision.
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
@@ -116,7 +119,8 @@ against it and audited. The CLI is on `PATH`.
 
 - `graph whoami --json` shows who you act as and, in
   `data.permissions.graphs`, what you may do per graph: the `level`
-  (`read` or `write`), the types you may only read and the obligations
+  (`read` or `write`), the actions a rule withholds from you anyway
+  (`withheld`), the types you may only read and the obligations
   (`require_reason`, `max_batch`). Check it before you write.
 - A graph you may not use does not exist for you: `graph graphs` does not
   list it, and selecting it gives `graph.not_found`.

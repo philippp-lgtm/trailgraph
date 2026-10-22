@@ -210,9 +210,47 @@ def test_explain(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     assert unknown.warning_codes == ["access.project_unknown"]
     installed = admin(run_cli, "policy", "explain", "--graph", "example_graph")
     assert (installed.data["scope"], installed.data["level"]) == (None, "write")  # built-in
+    assert installed.data["withheld"] == []
 
 
 # ---- the app under an installed policy (B6.15, B2.10, Q3-Q5) -----------------------
+
+NO_EXPLORE_HISTORY = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {graphs: "*", level: write}
+no_project: {"*": write}
+deny:
+  - {id: no_explore_history, agent_type: [explore], action: ["read.history"]}
+"""
+
+
+def test_a_deny_rule_withholds_history(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    """B8.15: history is part of read; a deny rule on read.history takes only it away."""
+    create_graph(run_cli, "example_graph")
+    assert apply(run_cli, write_policy(tmp_path / "work", "i.yaml", NO_EXPLORE_HISTORY)).code == 0
+    made = app(run_cli, *LOCATION, "--graph", "example_graph")
+    assert made.code == 0, made.envelope
+    entity = made.data["entities"][0]["id"]
+    owner = app(run_cli, "history", entity, "--graph", "example_graph")
+    assert owner.code == 0, owner.envelope
+    explore = {
+        "GRAPH_CLI_AGENT_ID": "agent-1",
+        "GRAPH_CLI_AGENT_TYPE": "explore",
+        "GRAPH_CLI_GRAPH": "example_graph",
+    }
+    for args in (("history", entity), ("get", entity, "--rev", "1")):
+        refused = app(run_cli, *args, env=explore)
+        assert (refused.code, refused.error["code"]) == (3, "access.denied"), args
+        assert refused.error["details"]["action"] == "read.history"
+        assert refused.error["details"]["rule"] == "deny.no_explore_history"
+    assert app(run_cli, "get", entity, env=explore).code == 0  # current state stays readable
+    who = app(run_cli, "whoami", env=explore).data["permissions"]["graphs"]
+    assert [(g["level"], g["withheld"]) for g in who] == [("none", ["read.history"])]
+    recorded = [d["authz"]["decisions"][0]["action"] for d in denials(root)[-2:]]
+    assert recorded == ["read.history", "read.history"]
+
 
 POINTER = 'format_version = 1\nproject = "{project}"\ngraphs = ["example_graph", "other_graph"]\n'
 LOCATION = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")

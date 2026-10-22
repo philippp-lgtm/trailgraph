@@ -1006,6 +1006,13 @@
       ],
       "options": [
         {
+          "name": "--rev",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show this earlier revision instead of the current one."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -1028,6 +1035,10 @@
         {
           "command": "graph get <id> --graph <graph> --json",
           "summary": "The entity as JSON."
+        },
+        {
+          "command": "graph get <id> --rev 2 --json",
+          "summary": "The entity as it was at revision 2."
         }
       ],
       "errors": [
@@ -1037,6 +1048,7 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
+        "entity.revision_not_found",
         "graph.not_found",
         "graph.not_in_project",
         "graph.not_selected",
@@ -1091,6 +1103,92 @@
         6
       ],
       "limits": {}
+    },
+    {
+      "path": [
+        "history"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": "read.history",
+      "summary": "List how one entity changed, newest first: when, by which command and why.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many revisions.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read an earlier state (tx:<seq>); reserved."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph history <id> --json",
+          "summary": "The revisions of one entity."
+        },
+        {
+          "command": "graph history <id> --limit 5 --json",
+          "summary": "The five most recent revisions."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      }
     },
     {
       "path": [
@@ -2263,6 +2361,7 @@
     "read.describe",
     "read.find",
     "read.get",
+    "read.history",
     "read.list",
     "read.traverse",
     "write.create",
@@ -2361,6 +2460,11 @@
     },
     {
       "code": "entity.not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "entity.revision_not_found",
       "category": "not_found",
       "exit": 1
     },

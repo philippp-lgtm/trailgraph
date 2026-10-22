@@ -1,8 +1,9 @@
-"""S: graph get, find, lookup and neighbors on seeded graphs of both fixtures (plan A4;
-contracts §4.3, B8.8, B8.12, B9.7, B13.7)."""
+"""S: graph get, history, find, lookup and neighbors on seeded graphs of both fixtures
+(plan A4; contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13.7)."""
 
 import shlex
 from pathlib import Path
+from typing import Any
 
 import pytest
 from harness import CliRunner
@@ -61,6 +62,52 @@ def test_superseded_read_warns(run_cli: CliRunner, root: Path) -> None:
     outcome = app(run_cli, "get", old["id"], env=ENV)
     assert outcome.warning_codes == ["entity.superseded"]
     assert outcome.data["superseded_by"]
+
+
+def retracted_now(run_cli: CliRunner, roles: Roles) -> dict[str, Any]:
+    """An active entity retracted by this test: one revision more, with a reason."""
+    found = app(run_cli, "find", "--type", roles.term("retractable_type"), "--limit", "1", env=ENV)
+    entity = found.data["items"][0]
+    retracted = app(run_cli, "retract", entity["id"], "--reason", "test", env=ENV)
+    assert retracted.code == 0, retracted.envelope
+    return {**entity, "rev": entity["rev"] + 1}
+
+
+def test_history_and_an_earlier_revision(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    entity = retracted_now(run_cli, roles)
+    rev = entity["rev"]
+    history = app(run_cli, "history", entity["id"], env=ENV)
+    assert history.code == 0, history.envelope
+    items = history.data["items"]
+    assert [i["rev"] for i in items] == list(range(rev, 0, -1))
+    assert history.data["current_rev"] == rev
+    assert (items[0]["command"], items[0]["reason"]) == ("retract", "test")
+    assert items[0]["changed"]["record"] == ["record_status"]
+    assert items[-1]["changed"] is None
+    earlier = app(run_cli, "get", entity["id"], "--rev", str(rev - 1), env=ENV)
+    assert earlier.code == 0, earlier.envelope
+    assert (earlier.data["entity"]["rev"], earlier.data["current_rev"]) == (rev - 1, rev)
+    assert earlier.data["entity"]["record_status"] == "active"
+    assert earlier.warning_codes == ["entity.retracted"]
+    missing = app(run_cli, "get", entity["id"], "--rev", "99", env=ENV)
+    assert (missing.code, missing.error["code"]) == (1, "entity.revision_not_found")
+    assert missing.error["hint"] == f"graph history {entity['id']}"
+    text = run_cli("graph", "history", entity["id"], env=ENV)
+    assert text.returncode == 0 and text.stderr == ""
+
+
+def test_history_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    entity = retracted_now(run_cli, roles)
+    first = app(run_cli, "history", entity["id"], "--limit", "1", env=ENV)
+    assert first.envelope["page"]["truncated"] is True
+    command = first.envelope["hints"][0]["command"]
+    assert command == f"graph history {entity['id']} --graph example_graph --limit 1 --offset 1"
+    second = app(run_cli, *shlex.split(command)[1:])
+    assert [i["rev"] for i in second.data["items"]] == [entity["rev"] - 1]
+    refused = app(run_cli, "history", entity["id"], "--limit", "0", env=ENV)
+    assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument")
+    as_of = app(run_cli, "history", entity["id"], "--as-of", "tx:1", env=ENV)
+    assert as_of.error["code"] == "temporal.as_of_unsupported"
 
 
 def test_find_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: Roles) -> None:

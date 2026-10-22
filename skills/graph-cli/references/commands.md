@@ -292,6 +292,7 @@ Usage: `graph get REF [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--rev` | integer | no | no | Show this earlier revision instead of the current one. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
 
@@ -299,6 +300,7 @@ Usage: `graph get REF [OPTIONS]`
 |---|---|
 | `graph get <id>` | Show one entity. |
 | `graph get <id> --graph <graph> --json` | The entity as JSON. |
+| `graph get <id> --rev 2 --json` | The entity as it was at revision 2. |
 
 ## graph graphs
 
@@ -312,6 +314,34 @@ Usage: `graph graphs`
 |---|---|
 | `graph graphs` | List the visible graphs. |
 | `graph graphs --json` | The graphs as JSON with titles and languages, and the hidden count. |
+
+## graph history
+
+List how one entity changed, newest first: when, by which command and why.
+
+Kind: read. Surface: trace. Action: `read.history`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph history REF [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `ref` | entity_ref | yes | no | Full id, alias or trailing hex of the id. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--limit` | integer | no | no | Page size, at most 500. |
+| `--offset` | integer | no | no | Skip this many revisions. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph history <id> --json` | The revisions of one entity. |
+| `graph history <id> --limit 5 --json` | The five most recent revisions. |
 
 ## graph link
 

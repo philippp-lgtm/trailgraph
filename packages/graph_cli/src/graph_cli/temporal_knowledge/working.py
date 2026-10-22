@@ -25,6 +25,7 @@ from graph_cli.kernel.records import (
     EdgeRecord,
     Revision,
     RevisionMeta,
+    TxRecord,
     revision_meta,
 )
 
@@ -87,6 +88,9 @@ class WorkingState:
         metas = list(self.base.history(entity))
         found = self.revisions.get(entity)
         return [*metas, revision_meta(found)] if found is not None else metas
+
+    def tx(self, seq: int) -> TxRecord | None:
+        return self.base.tx(seq)
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None

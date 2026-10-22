@@ -71,6 +71,10 @@ class Snapshot(Protocol):
 
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]: ...
 
+    def tx(self, seq: int) -> TxRecord | None:
+        """The committed tx with this seq; ``None`` outside ``1..self.seq``."""
+        ...
+
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
     ) -> Sequence[tuple[EntityId, EdgeRecord]]: ...

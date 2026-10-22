@@ -406,6 +406,9 @@ class FileSnapshot:
             metas[revision.rev] = revision_meta(revision)
         return [metas[rev] for rev in sorted(metas)]
 
+    def tx(self, seq: int) -> TxRecord | None:
+        return self._scan_view().tx(seq) if 1 <= seq <= self._seq else None
+
     # scans: replay view at S
 
     def incoming(

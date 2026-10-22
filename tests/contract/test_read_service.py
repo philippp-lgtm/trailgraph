@@ -1,8 +1,9 @@
 """Read services and describe on both backends x both fixtures over the seeds (plan A4, A5).
 
-Contracts §4.3, B2.10, B6.3, B7.6, B8.8, B8.12, B8.13, B9.7, B11.5.
+Contracts §4.3, B2.10, B6.3, B7.6, B8.8, B8.12, B8.13, B8.15, B9.7, B11.5.
 """
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from support.roles import Roles, load_roles
 from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
+from graph_cli.kernel.actor import ActorContext, Assurance, Facet
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
@@ -75,6 +77,102 @@ def test_superseded_and_retracted_reads_warn_without_redirect(svc: ServiceEnv) -
     data, warnings = reader.get(view, str(gone.id))
     assert [w.code for w in warnings] == ["entity.retracted"]
     assert data["entity"]["id"] == str(gone.id)  # type: ignore[index]
+
+
+def in_session(actor: ActorContext, session: str) -> ActorContext:
+    return replace(actor, session=Facet(Assurance.ASSERTED, id=session))
+
+
+def updated_twice(svc: ServiceEnv, roles: Roles) -> tuple[str, str]:
+    """A fresh entity at rev 3: rev 2 by session ``s-1`` with a reason, rev 3 without a
+    session; returns its id and the updated attribute."""
+    cls = roles.term("lifecycle_type")
+    result = svc.create(cls)
+    entity = str(next(e.id for e in result.entities if e.local == "x"))
+    attrs = svc.factory.attrs(cls)
+    attr = next(n for n in attrs if isinstance(attrs[n], str))
+    update = {"op": "update", "id": entity, "set": {attr: "second"}}
+    svc.apply(update, reason="fix", actor=in_session(svc.actor, "s-1"))
+    svc.apply({**update, "set": {attr: "third"}})
+    return entity, attr
+
+
+def test_history_lists_revisions_newest_first(svc: ServiceEnv, roles: Roles) -> None:
+    entity, attr = updated_twice(svc, roles)
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    actor = in_session(svc.actor, "s-1")
+    data, page, warnings = reader.history(view, actor, entity, limit=10, offset=0)
+    items = data["items"]
+    assert isinstance(items, list) and warnings == []
+    assert (data["id"], data["current_rev"]) == (entity, 3)
+    assert [i["rev"] for i in items] == [3, 2, 1]  # type: ignore[index]
+    assert [i["own_session"] for i in items] == [False, True, False]  # type: ignore[index]
+    assert [i["reason"] for i in items] == [None, "fix", None]  # type: ignore[index]
+    assert all(i["command"] == "apply" for i in items)  # type: ignore[index]
+    head = svc.head_seq()
+    assert [i["tx_seq"] for i in items] == [head, head - 1, head - 2]  # type: ignore[index]
+    assert items[2]["changed"] is None  # type: ignore[index]
+    assert items[0]["changed"]["attrs"] == [attr]  # type: ignore[index]
+    assert page.total == 3 and page.shown == 3
+    assert set(items[0]) == {  # type: ignore[arg-type]
+        "rev",
+        "tx_seq",
+        "recorded_at",
+        "record_status",
+        "command",
+        "reason",
+        "own_session",
+        "changed",
+    }  # no actor facet beyond own_session (B8.15)
+    second, page, _ = reader.history(view, actor, entity, limit=1, offset=1)
+    assert [i["rev"] for i in second["items"]] == [2]  # type: ignore[index, union-attr]
+    assert page.to_json()["next_offset"] == 2
+    with pytest.raises(GraphCliError) as info:
+        reader.history(view, actor, "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", limit=10, offset=0)
+    assert info.value.code == "entity.not_found"
+
+
+def test_history_without_a_session_is_never_own(svc: ServiceEnv, roles: Roles) -> None:
+    entity, _ = updated_twice(svc, roles)
+    reader = svc.make_reader()
+    data, _, _ = reader.history(open_view(svc, reader), svc.actor, entity, limit=10, offset=0)
+    assert not any(i["own_session"] for i in data["items"])  # type: ignore[index, union-attr]
+
+
+def test_history_of_inactive_entities_is_complete(svc: ServiceEnv) -> None:
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    for status in ("superseded", "retracted"):
+        old = by_status(svc, status)
+        data, _, _ = reader.history(view, svc.actor, str(old.id), limit=10, offset=0)
+        revs = [i["rev"] for i in data["items"]]  # type: ignore[index, union-attr]
+        assert revs == list(range(old.rev, 0, -1))
+        assert data["items"][0]["record_status"] == status  # type: ignore[index]
+
+
+def test_get_an_earlier_revision(svc: ServiceEnv, roles: Roles) -> None:
+    entity, attr = updated_twice(svc, roles)
+    reader = svc.make_reader()
+    view = open_view(svc, reader)
+    data, _ = reader.get(view, entity, rev=2)
+    assert data["entity"]["rev"] == 2 and data["current_rev"] == 3  # type: ignore[index]
+    assert data["entity"]["attrs"][attr] == "second"  # type: ignore[index]
+    current, _ = reader.get(view, entity)
+    assert current["entity"]["rev"] == current["current_rev"] == 3  # type: ignore[index]
+    for rev in (0, 4):
+        with pytest.raises(GraphCliError) as info:
+            reader.get(view, entity, rev=rev)
+        assert info.value.code == "entity.revision_not_found"
+        assert info.value.details == {"ref": entity, "id": entity, "rev": rev, "current_rev": 3}
+
+
+def test_get_an_earlier_revision_warns_about_the_current_state(svc: ServiceEnv) -> None:
+    old = by_status(svc, "superseded")
+    reader = svc.make_reader()
+    data, warnings = reader.get(open_view(svc, reader), str(old.id), rev=1)
+    assert data["entity"]["rev"] == 1 and data["superseded_by"]  # type: ignore[index]
+    assert [w.code for w in warnings] == ["entity.superseded"]
 
 
 def test_find_pages_and_filters(svc: ServiceEnv, roles: Roles) -> None:
@@ -195,6 +293,36 @@ def test_graphs_and_whoami(svc: ServiceEnv) -> None:
         "write.supersede": {"require_reason": True},
     }
     assert who["actor"]["client"]["entrypoint"] == "app"  # type: ignore[index]
+    assert permissions["graphs"] == [  # type: ignore[comparison-overlap]
+        {
+            "graph": svc.name,
+            "level": "write",
+            "withheld": [],
+            "types": {},
+            "obligations": {
+                "write.retract": {"require_reason": True},
+                "write.supersede": {"require_reason": True},
+            },
+        }
+    ]
+
+
+def test_whoami_names_what_a_deny_rule_withholds(svc: ServiceEnv) -> None:
+    """Q1 (a): a denied read.history leaves no full level, the graph stays readable."""
+    no_history = _policy(
+        {"id": "no_history", "effect": "deny", "action": ["read.history"], "resource": "graph:*"},
+        {"id": "read", "effect": "allow", "action": ["read.*"], "resource": "graph:*"},
+    )
+    reader = svc.make_reader(no_history)
+    graphs = reader.whoami(svc.actor)["permissions"]["graphs"]  # type: ignore[index]
+    assert [(g["level"], g["withheld"]) for g in graphs] == [  # type: ignore[index, union-attr]
+        ("none", ["read.history"])
+    ]
+    read_only = _policy(
+        {"id": "read", "effect": "allow", "action": ["read.*"], "resource": "graph:*"}
+    )
+    graphs = svc.make_reader(read_only).whoami(svc.actor)["permissions"]["graphs"]  # type: ignore[index]
+    assert [(g["level"], g["withheld"]) for g in graphs] == [("read", [])]  # type: ignore[index, union-attr]
 
 
 def test_describe_projections(svc: ServiceEnv, roles: Roles) -> None:
@@ -311,6 +439,7 @@ def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None
     graph = str(view.entry.id)
     entity = next(r for r in svc.all_revisions() if r.record_status == "active")
     reader.get(view, str(entity.id))
+    reader.history(view, svc.actor, str(entity.id), limit=10, offset=0)
     data, _, _ = reader.find(view, FindSpec(types=(roles.term("lifecycle_type"),), limit=3))
     found = [item["id"] for item in data["items"]]  # type: ignore[index, union-attr]
     labels = [
@@ -328,6 +457,7 @@ def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None
     near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
     neighbours = [item["entity"]["id"] for item in near["items"]]  # type: ignore[index, union-attr]
     assert activity.signals == [
+        (graph, [str(entity.id)]),
         (graph, [str(entity.id)]),
         (graph, found),
         *((graph, ids) for ids in shown),

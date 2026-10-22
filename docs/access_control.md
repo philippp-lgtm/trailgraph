@@ -71,6 +71,20 @@ does not exist, and the refusal is audited; on a visible graph a refusal is
 `graph` call (`policy.invalid`); `graph-admin` warns and decides without
 it, so the policy can be replaced.
 
+## History
+
+Earlier revisions are part of reading: the `read` level includes
+`read.history`, so whoever reads a graph reads the history of all its
+entities (`graph history`, `graph get --rev`). Read access is per graph,
+not per entity. A deny rule on `read.history` withholds the history and
+leaves the current state readable; `whoami` then reports a lower level
+and names the action in `withheld`. Like every read, history is decided
+under the policy installed now, not the one in effect when a revision was
+written. `history` shows of the writer only whether it was the caller's
+own session; who wrote a revision is shown by `graph-admin` (the
+[live view](live_view.md) and the audit). Retracting keeps earlier values
+readable; hiding history is not a way to remove data.
+
 ## Authoring and installing policies
 
 Authored policies live in the maintainer workspace. `graph-admin policy

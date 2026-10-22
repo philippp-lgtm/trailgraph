@@ -55,6 +55,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("graph.readonly", _C.REFUSED, False, "The graph is read-only."),
     ErrorSpec("entity.not_found", _C.NOT_FOUND, False, "The entity does not exist."),
     ErrorSpec("entity.ambiguous_ref", _C.REFUSED, False, "The reference matches several entities."),
+    ErrorSpec("entity.revision_not_found", _C.NOT_FOUND, False, "The entity has no such revision."),
     ErrorSpec("term.unknown", _C.NOT_FOUND, False, "Unknown type, relation or attribute name."),
     ErrorSpec("term.no_labels", _C.REFUSED, False, "The requested types have no label roles."),
     ErrorSpec("changeset.malformed", _C.USAGE, False, "The change set document is malformed."),
