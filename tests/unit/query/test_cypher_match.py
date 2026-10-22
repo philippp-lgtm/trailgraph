@@ -220,6 +220,19 @@ def test_variable_length_paths() -> None:
     assert column("MATCH (t:Topic {label: 'graphs'})-[:broader*2]->(x)", "x") == ["data"]
 
 
+def test_an_empty_length_interval_matches_nothing() -> None:
+    assert rows("MATCH (t:Topic {label: 'graphs'})-[:broader*2..1]->(x)") == []
+
+
+def test_values_are_matched_as_nodes() -> None:
+    found = column(
+        "MATCH (n:Note {title: 'Alpha'}) WITH collect(n) AS ns UNWIND ns AS m "
+        "MATCH (m)-[:about]->(t)",
+        "t",
+    )
+    assert found == ["graphs"]
+
+
 def test_variable_length_lists_follow_the_pattern_order() -> None:
     (row, *_) = rows("MATCH (x {label: 'data'})<-[r:broader*2]-(t:Topic {label: 'graphs'})")
     assert row["r"] == ["storage-nas:broader->data", "graphs-nas:broader->storage"]

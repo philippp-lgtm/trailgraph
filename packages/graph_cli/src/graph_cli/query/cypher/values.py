@@ -8,8 +8,9 @@ the stored JSON.
 
 - ``equals`` is ``=``: null when either side is null (or a list or map
   holds a null where the other side does not differ), false across types.
-- ``compare`` orders numbers, strings and booleans; null for anything else,
-  including two values of different types.
+- ``compare`` orders numbers, strings, booleans and lists (element by
+  element, then by length); null for anything else, including two values of
+  different types.
 - ``order_key`` is the total order of ``ORDER BY``, ``min`` and ``max``:
   maps, nodes, relationships, lists, strings, booleans, numbers, then null.
 - ``group_key`` makes ``DISTINCT`` and grouping keys hashable; null equals
@@ -133,6 +134,12 @@ def compare(left: Value, right: Value) -> int | None:
         return (left > right) - (left < right)
     if isinstance(left, bool) and isinstance(right, bool):
         return (left > right) - (left < right)
+    if isinstance(left, list) and isinstance(right, list):
+        for a_item, b_item in zip(left, right, strict=False):
+            order = compare(a_item, b_item)
+            if order != 0:
+                return order  # null when the first differing pair is not comparable
+        return (len(left) > len(right)) - (len(left) < len(right))
     return None
 
 

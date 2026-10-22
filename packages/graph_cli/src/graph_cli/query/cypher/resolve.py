@@ -95,7 +95,10 @@ SYSTEM_BASES: Final = {
 }
 EDGE_ID: Final = "edge_id"
 
-VarKind = Literal["node", "rel", "rels", "value"]
+# value: anything, maybe a node or relationship; list: a list that may hold
+# them; plain: neither (literals, parameters, properties, computed values).
+VarKind = Literal["node", "rel", "rels", "value", "list", "plain"]
+_ENTITY_KINDS: Final = frozenset({"node", "rel", "value"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +226,7 @@ class _Resolver:
     # Fields
 
     def check_field(self, variable: str | None, info: VarInfo, name: str, pos: Pos) -> None:
-        if info.kind == "value":
+        if info.kind in ("value", "list", "plain"):
             return
         if info.kind == "rels":
             raise syntax_error(
@@ -309,6 +312,7 @@ class _Resolver:
         )
 
     def match(self, clause: Match, scope: _Scope) -> Match:
+        self.clause_rels: set[str] = set()
         outer = scope.copy()
         patterns = tuple(self.pattern(p, scope, outer, introduce=True) for p in clause.patterns)
         where = None if clause.where is None else self.expr(clause.where, scope)
@@ -322,26 +326,33 @@ class _Resolver:
                 f"variable {clause.variable!r} is already defined",
                 found=clause.variable,
             )
-        scope.variables[clause.variable] = VarInfo("value")
+        listed = _kind_of(value, scope)
+        element: VarKind = "plain" if listed == "plain" else "value"
+        scope.variables[clause.variable] = VarInfo(element)
         return replace(clause, expr=value)
 
     def with_(self, clause: With, scope: _Scope) -> tuple[With, _Scope]:
-        projection, inner, _ = self.projection(clause.projection, scope, "WITH", clause.pos)
-        where = None if clause.where is None else self.expr(clause.where, inner)
+        projection, inner, visible = self.projection(clause.projection, scope, "WITH", clause.pos)
+        where = None if clause.where is None else self.expr(clause.where, visible)
         return replace(clause, projection=projection, where=where), inner
 
     def return_(self, clause: Return, scope: _Scope) -> tuple[Return, tuple[str, ...]]:
-        projection, _, columns = self.projection(clause.projection, scope, "RETURN", clause.pos)
-        return replace(clause, projection=projection), columns
+        projection, inner, _ = self.projection(clause.projection, scope, "RETURN", clause.pos)
+        return replace(clause, projection=projection), tuple(inner.variables)
 
     def projection(
         self, projection: Projection, scope: _Scope, keyword: str, pos: Pos
-    ) -> tuple[Projection, _Scope, tuple[str, ...]]:
+    ) -> tuple[Projection, _Scope, _Scope]:
+        """The resolved projection, the scope after it and the scope its ORDER BY and
+        WHERE see: the earlier variables too, unless it aggregates or is DISTINCT."""
         if projection.star and not scope.variables:
             raise syntax_error(pos, f"{keyword} * needs at least one variable in scope", found="*")
         star_names = sorted(scope.variables) if projection.star else []
-        items = tuple(self.item(item, scope) for item in projection.items)
-        columns = (*star_names, *(item.name for item in items))
+        items = tuple(
+            replace(item, expr=self.expr(item.expr, scope, aggregates=True))
+            for item in projection.items
+        )
+        self.check_grouping(items)
         seen = set(star_names)
         for item in items:
             if item.name in seen:
@@ -353,48 +364,49 @@ class _Resolver:
             inner.variables[item.name] = (
                 scope.variables[item.expr.name]
                 if isinstance(item.expr, Variable)
-                else VarInfo("value")
+                else VarInfo(_kind_of(item.expr, scope))
             )
-        order_scope = (
+        visible = (
             inner
             if aggregating or projection.distinct
             else _Scope({**scope.variables, **inner.variables})
         )
-        order = tuple(self.sort_item(s, projection.items, order_scope) for s in projection.order)
-        return (
-            replace(
-                projection,
-                items=items,
-                order=order,
-                skip=self.count(projection.skip, "SKIP"),
-                limit=self.count(projection.limit, "LIMIT"),
-            ),
-            inner,
-            columns,
+        order = tuple(self.sort_item(s, projection.items, visible) for s in projection.order)
+        resolved = replace(
+            projection,
+            items=items,
+            order=order,
+            skip=self.count(projection.skip, "SKIP"),
+            limit=self.count(projection.limit, "LIMIT"),
         )
+        return resolved, inner, visible
 
-    def item(self, item: ProjectionItem, scope: _Scope) -> ProjectionItem:
-        resolved = self.expr(item.expr, scope, aggregates=True)
-        if _has_aggregate(resolved):
-            loose = list(_variables_outside_aggregates(resolved))
+    def check_grouping(self, items: tuple[ProjectionItem, ...]) -> None:
+        """Outside its aggregates an item may use only grouping keys (other items)."""
+        keys = [item.expr for item in items if not _has_aggregate(item.expr)]
+        for item in items:
+            if not _has_aggregate(item.expr):
+                continue
+            loose = list(_uncovered(item.expr, keys))
             if loose:
                 raise unsupported(
                     item.pos,
                     "expression",
-                    f"a value next to an aggregate in one expression ({item.text})",
-                    f"project {loose[0].name} as its own column",
+                    f"a value next to an aggregate that is not a grouping key ({item.text})",
+                    f"project {render.expr(loose[0])} as its own column",
                 )
-        return replace(item, expr=resolved)
 
     def sort_item(
         self, item: SortItem, items: tuple[ProjectionItem, ...], scope: _Scope
     ) -> SortItem:
-        """A key that repeats a projected expression (as written) sorts by that column."""
-        for projected in items:
-            if item.expr == projected.expr or item.expr == Variable(projected.name):
-                return replace(item, expr=Variable(projected.name, item.expr.pos))
-        resolved = self.expr(item.expr, scope)
-        return replace(item, expr=resolved)
+        """Parts that repeat a projected expression (as written) or name a column sort
+        by that column; the rest is resolved in ``scope``."""
+        columns = [(projected.expr, projected.name) for projected in items]
+        columns += [(Variable(projected.name), projected.name) for projected in items]
+        if item.expr not in [c for c, _ in columns] and _has_aggregate(item.expr):
+            # next to an aggregate only simple keys stand for their column
+            columns = [(c, n) for c, n in columns if is_aggregate(c) or _simple(c)]
+        return replace(item, expr=self.expr(_to_columns(item.expr, columns), scope))
 
     def count(self, value: Expr | None, keyword: str) -> Expr | None:
         if value is None:
@@ -456,6 +468,9 @@ class _Resolver:
                 "pattern",
                 f"reusing the variable-length relationship variable {variable!r}",
             )
+        if known.kind == "value":  # from WITH or UNWIND: checked when matched
+            scope.variables[variable] = info
+            return info
         if known.kind != info.kind:
             raise syntax_error(
                 pos,
@@ -477,6 +492,15 @@ class _Resolver:
 
     def rel(self, r: RelPattern, scope: _Scope, outer: _Scope, introduce: bool) -> RelPattern:
         types = tuple(self.term("relation", t, r.pos) for t in r.types)
+        if introduce and r.variable is not None:
+            if r.variable in self.clause_rels:
+                raise syntax_error(
+                    r.pos,
+                    f"relationship {r.variable!r} appears twice in one MATCH; "
+                    "a relationship matches at most once per MATCH",
+                    found=r.variable,
+                )
+            self.clause_rels.add(r.variable)
         kind: VarKind = "rel" if r.length is None else "rels"
         info = self.bind(r.variable, VarInfo(kind, types or None), scope, r.pos, introduce)
         checked = VarInfo("rel", info.types)
@@ -612,11 +636,37 @@ class _Resolver:
 
 
 _KIND_WORDS: Final = {
+    "list": "list",
+    "plain": "value",
     "node": "node",
     "rel": "relationship",
     "rels": "list of relationships",
     "value": "value",
 }
+
+
+def _kind_of(e: Expr, scope: _Scope) -> VarKind:
+    """What a projected or unwound value can be, as far as the text tells."""
+    match e:
+        case Variable(name):
+            return scope.variables[name].kind
+        case Property(Variable(name)) if scope.variables[name].kind in ("node", "rel"):
+            return "plain"  # stored properties are JSON
+        case Property():
+            return "value"  # a key of a map may hold anything
+        case FunctionCall("collect", (arg,)):
+            return "list" if _kind_of(arg, scope) in _ENTITY_KINDS else "plain"
+        case FunctionCall("coalesce" | "min" | "max", args):
+            return "value" if any(_kind_of(a, scope) != "plain" for a in args) else "plain"
+        case Case(_, whens, default):
+            branches = [then for _, then in whens] + ([default] if default is not None else [])
+            return "value" if any(_kind_of(b, scope) != "plain" for b in branches) else "plain"
+        case ListExpr(items):
+            return "list" if any(_kind_of(i, scope) != "plain" for i in items) else "plain"
+        case Binary("+", left, right):
+            sides = (_kind_of(left, scope), _kind_of(right, scope))
+            return "list" if any(k != "plain" for k in sides) else "plain"
+    return "plain"
 
 
 def _narrow(known: tuple[str, ...] | None, more: tuple[str, ...] | None) -> tuple[str, ...] | None:
@@ -696,14 +746,56 @@ def _has_aggregate(e: Expr) -> bool:
     return bool(aggregates_in(e))
 
 
-def _variables_outside_aggregates(e: Expr) -> Iterator[Variable]:
-    if is_aggregate(e):
+def _simple(e: Expr) -> bool:
+    """A grouping key usable next to an aggregate: a variable or one of its properties."""
+    return isinstance(e, Variable) or (isinstance(e, Property) and isinstance(e.subject, Variable))
+
+
+def _uncovered(e: Expr, keys: list[Expr]) -> Iterator[Expr]:
+    """Variables of ``e`` outside aggregates and outside the simple grouping keys ``keys``."""
+    if is_aggregate(e) or (_simple(e) and e in keys):
         return
     if isinstance(e, Variable):
         yield e
         return
     for child in _children(e):
-        yield from _variables_outside_aggregates(child)
+        yield from _uncovered(child, keys)
+
+
+def _to_columns(e: Expr, columns: list[tuple[Expr, str]]) -> Expr:
+    """``e`` with every part equal to a projected expression replaced by its column."""
+    for projected, name in columns:
+        if e == projected:
+            return Variable(name, e.pos)
+
+    def go(child: Expr) -> Expr:
+        return _to_columns(child, columns)
+
+    match e:
+        case Property(subject):
+            return replace(e, subject=go(subject))
+        case ListExpr(items):
+            return replace(e, items=tuple(go(i) for i in items))
+        case MapExpr(entries):
+            return replace(e, entries=tuple((k, go(v)) for k, v in entries))
+        case Unary(_, operand):
+            return replace(e, operand=go(operand))
+        case IsNull(operand):
+            return replace(e, operand=go(operand))
+        case Binary(_, left, right):
+            return replace(e, left=go(left), right=go(right))
+        case FunctionCall(_, args):
+            return replace(e, args=tuple(go(a) for a in args))
+        case Case(subject, whens, default):
+            return replace(
+                e,
+                subject=None if subject is None else go(subject),
+                whens=tuple((go(w), go(t)) for w, t in whens),
+                default=None if default is None else go(default),
+            )
+        case HasLabels(subject):
+            return replace(e, subject=go(subject))
+    return e
 
 
 def resolve(

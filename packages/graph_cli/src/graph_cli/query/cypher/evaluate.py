@@ -184,17 +184,16 @@ class Evaluator:
     # Operators
 
     def logic(self, op: str, e: Binary, row: Row, aggregates: Mapping[int, Value] | None) -> Value:
+        # Both sides always: a non-boolean is an error even when the other decides.
         left = _boolean(self.evaluate(e.left, row, aggregates), e.left.pos)
-        if op == "and" and left is False:
-            return False
-        if op == "or" and left is True:
-            return True
         right = _boolean(self.evaluate(e.right, row, aggregates), e.right.pos)
-        if op == "and":
-            return False if right is False else None if None in (left, right) else True
-        if op == "or":
-            return True if right is True else None if None in (left, right) else False
-        return None if None in (left, right) else left != right
+        if op == "and" and False in (left, right):
+            return False
+        if op == "or" and True in (left, right):
+            return True
+        if None in (left, right):
+            return None
+        return True if op == "and" else False if op == "or" else left != right
 
     def unary(self, op: str, value: Value, pos: Pos) -> Value:
         if value is None:

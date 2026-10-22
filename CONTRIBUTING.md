@@ -129,7 +129,10 @@ service), role mappings for role-based contract tests
 (`tests/support/roles.py`) and graph skills for the `inventory` test graph
 (`tests/fixtures/skills/`: a static one, a template with curated text, and
 `blocks/` with every block once, rendered for both toy ontologies into
-`tests/goldens/skills/`).
+`tests/goldens/skills/`) and a vendored subset of the openCypher TCK for
+the Cypher queries (`tests/fixtures/opencypher_tck/`, Apache-2.0; its README
+names the source commit and how to update it; runner in
+`tests/support/tck.py`).
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in

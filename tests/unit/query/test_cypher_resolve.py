@@ -199,7 +199,12 @@ def test_order_by_repeating_a_projected_expression_uses_the_column() -> None:
     ("text", "message"),
     [
         ("MATCH (n)-[n]->() RETURN n", "variable 'n' is a node, used here as a relationship"),
+        ("MATCH ()-[r]->(n) WITH n MATCH (n)-[n]->() RETURN 1", "'n' is a node, used here"),
         ("UNWIND [1] AS x MATCH (x) RETURN x", "variable 'x' is a value, used here as a node"),
+        ("MATCH (n) WITH [n] AS l MATCH (l) RETURN l", "variable 'l' is a list, used here as a"),
+        ("MATCH (n) WITH n.rev AS r MATCH ()-[r]->() RETURN r", "variable 'r' is a value"),
+        ("MATCH (a)-[r]->(b)-[r]->(c) RETURN 1", "relationship 'r' appears twice in one MATCH"),
+        ("MATCH (a)-[r]->(b), (c)-[r]->(d) RETURN 1", "relationship 'r' appears twice"),
         ("MATCH (n) UNWIND [1] AS n RETURN n", "variable 'n' is already defined"),
         ("MATCH ()-[r]->() WHERE r:Note RETURN r", "'r' is not a node"),
         ("MATCH (n) RETURN n, n", "column 'n' appears twice"),
@@ -273,11 +278,32 @@ def test_misused_functions(text: str, message: str) -> None:
     assert message in error.message
 
 
-def test_aggregates_mixed_with_values_are_refused() -> None:
+def test_values_next_to_aggregates_must_be_grouping_keys() -> None:
     error = failure("MATCH (n) RETURN n.title, count(*) + n.rev")
     assert error.code == "query.unsupported"
     assert error.details["alternative"] == "project n as its own column"
     run("MATCH (n) RETURN n.title, count(*) + 1, collect(n.title)")
+    run("MATCH (n) RETURN n.rev, n.rev + count(*)")
+    run("MATCH (n) WITH n.rev AS r, n RETURN r, r * count(n)")
+
+
+def test_order_by_may_combine_columns_and_constants() -> None:
+    order = run(
+        "MATCH (n) RETURN n.rev AS r, count(*) AS c ORDER BY $k + count(*) - n.rev, r", k=1
+    ).query.returns.projection.order
+    assert render.expr(order[0].expr) == "(($k + c) - r)"
+    error = failure("MATCH (n) RETURN n.rev AS r, count(*) AS c ORDER BY n.title")
+    assert error.code == "query.unbound_variable"
+
+
+def test_values_from_with_and_unwind_may_be_matched_as_nodes() -> None:
+    run("MATCH (n:Note) WITH collect(n) AS ns UNWIND ns AS m MATCH (m)-[:cites]->(b) RETURN b")
+
+
+def test_with_where_sees_earlier_variables_unless_it_aggregates() -> None:
+    run("MATCH (n:Note) WITH n.title AS t WHERE n.kind = 'idea' RETURN t")
+    error = failure("MATCH (n:Note) WITH count(n) AS c WHERE n.kind = 'idea' RETURN c")
+    assert error.code == "query.unbound_variable"
 
 
 # SKIP and LIMIT
@@ -328,7 +354,7 @@ def test_explain_shape() -> None:
             {
                 "clause": "WITH",
                 "text": "WITH n, count(s) AS k",
-                "variables": {"k": {"kind": "value", "types": None}},
+                "variables": {"k": {"kind": "plain", "types": None}},
             },
             {
                 "clause": "RETURN",

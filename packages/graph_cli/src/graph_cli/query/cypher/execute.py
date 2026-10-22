@@ -375,9 +375,18 @@ class Executor:
         return result
 
     def project(
-        self, projection: Projection, rows: Sequence[Row], pos: Pos, name: str
+        self,
+        projection: Projection,
+        rows: Sequence[Row],
+        pos: Pos,
+        name: str,
+        where: Expr | None = None,
     ) -> list[Row]:
-        """``WITH`` or ``RETURN``: the projected rows, distinct, sorted and paged."""
+        """``WITH`` or ``RETURN``: the projected rows, distinct, sorted, paged and filtered.
+
+        ``ORDER BY`` and ``WHERE`` see the earlier variables too, unless the
+        projection aggregates or is ``DISTINCT``.
+        """
         self.at(pos, name)
         aggregating = any(aggregates_in(item.expr) for item in projection.items)
         shaped: list[tuple[dict[str, Value], Row]]
@@ -395,17 +404,23 @@ class Executor:
                     seen.add(key)
                     unique.append((out, env))
             shaped = unique
+        own = aggregating or projection.distinct
+
+        def visible(pair: tuple[dict[str, Value], Row]) -> Row:
+            return pair[0] if own else {**pair[1], **pair[0]}
+
         for item in reversed(projection.order):
-            own = aggregating or projection.distinct
             shaped.sort(
-                key=lambda pair: order_key(
-                    self.evaluator.evaluate(item.expr, pair[0] if own else {**pair[1], **pair[0]})
-                ),
+                key=lambda pair: order_key(self.evaluator.evaluate(item.expr, visible(pair))),
                 reverse=item.descending,
             )
         start = _count(projection.skip)
         stop = None if projection.limit is None else start + _count(projection.limit)
-        return [out for out, _ in shaped[start:stop]]
+        return [
+            out
+            for out, env in shaped[start:stop]
+            if where is None or self.evaluator.condition(where, visible((out, env)))
+        ]
 
     def shape(
         self,
@@ -529,9 +544,7 @@ def execute(
         elif isinstance(clause, Unwind):
             rows = executor.unwind(clause, rows)
         elif isinstance(clause, With):
-            rows = executor.project(clause.projection, rows, clause.pos, "WITH")
-            if clause.where is not None:
-                rows = [row for row in rows if executor.evaluator.condition(clause.where, row)]
+            rows = executor.project(clause.projection, rows, clause.pos, "WITH", clause.where)
         else:
             rows = executor.project(clause.projection, rows, clause.pos, "RETURN")
     columns = resolved.columns

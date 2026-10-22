@@ -192,6 +192,7 @@ def test_node_patterns(text: str, expected: NodePattern) -> None:
         ("-[*1..3]->", RelPattern(direction="out", length=(1, 3))),
         ("-[*..5]->", RelPattern(direction="out", length=(1, 5))),
         ("-[*0..2]->", RelPattern(direction="out", length=(0, 2))),
+        ("-[*3..1]->", RelPattern(direction="out", length=(3, 1))),
         (
             "-[r:cites*1..2 {role: 'x'}]->",
             RelPattern("r", ("cites",), "out", MapExpr((("role", C("x")),)), (1, 2)),
@@ -418,7 +419,6 @@ def test_write_refusal_points_at_the_clause() -> None:
         ("RETURN 1 != 2", 10, "!", ["an operator"]),
         ("RETURN {a: 1, a: 2}", 15, "a", []),
         ("MATCH (n) WITH n.a RETURN 1", 16, "n.a", ["AS"]),
-        ("MATCH (a)-[*3..1]->(b) RETURN a", 12, "*3..1", []),
         ("MATCH (a)-[:]->(b) RETURN a", 13, "]", ["a relationship type"]),
         ("RETURN n.", 10, "end of query", ["a property key"]),
         ("RETURN 1 STARTS 'x'", 17, "a string", ["WITH"]),

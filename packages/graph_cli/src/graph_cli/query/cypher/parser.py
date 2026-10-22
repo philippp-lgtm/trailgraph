@@ -462,13 +462,7 @@ class _Parser:
                 f"variable length up to {high}",
                 f"the upper bound is at most {MAX_HOPS}",
             )
-        if low > high:
-            raise syntax_error(
-                star.pos,
-                f"variable length *{low}..{high} has its lower bound above the upper bound",
-                found=f"*{low}..{high}",
-            )
-        return low, high
+        return low, high  # low > high matches nothing, as in openCypher
 
     def integer(self) -> int:
         return int(self.advance().text)

@@ -161,6 +161,22 @@ def test_with_where_runs_after_skip_and_limit() -> None:
     assert rows == [("Cable",)]
 
 
+def test_with_where_sees_the_variables_before_the_projection() -> None:
+    assert table("MATCH (i:Item) WITH i.label AS l WHERE i.quantity > 2 RETURN l ORDER BY l") == [
+        ("Cable",),
+        ("Pen",),
+    ]
+
+
+def test_grouping_keys_next_to_aggregates_and_in_order_by() -> None:
+    rows = table(
+        "MATCH (i:Item)-[:located_in]->(l) "
+        "RETURN l.name AS place, count(*) AS n, size(l.name) + count(*) AS score "
+        "ORDER BY -1 * count(*), place"
+    )
+    assert rows == [("Shelf", 2, 7), ("Box", 1, 4)]
+
+
 def test_with_star_and_new_columns() -> None:
     assert table(
         "MATCH (i:Item {label: 'Pen'}) WITH *, i.quantity * 2 AS double RETURN i.label, double"
