@@ -112,3 +112,13 @@ def test_fallback_leaves_the_invalid_layer_out(tmp_path: Path) -> None:
         f"graphs/{GRAPH}/policy.json",
     ]
     assert json.loads(pretty_bytes(dict(BUILTIN_POLICY))) == BUILTIN_POLICY
+
+
+def test_an_unreadable_file_is_invalid(tmp_path: Path) -> None:
+    (tmp_path / "policy").write_bytes(b"")  # not "nothing installed"
+    with pytest.raises(GraphCliError) as info:
+        FilePolicySource(tmp_path).current(None)
+    assert info.value.code == "policy.invalid"
+    seen: list[GraphCliError] = []
+    assert FilePolicySource(tmp_path, fallback=seen.append).current(None) == BUILTIN_POLICY_SET
+    assert [e.details["file"] for e in seen] == ["policy/installation.json"]

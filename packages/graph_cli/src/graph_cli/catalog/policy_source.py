@@ -73,7 +73,11 @@ class FilePolicySource:
     def _load(
         self, path: Path, shown: str, layer: str, graph: str | None
     ) -> Mapping[str, JsonValue] | None:
-        data = read_policy_file(path)
+        try:
+            data = read_policy_file(path)
+        except GraphCliError as exc:  # unreadable is invalid, never "no policy" (B6.14)
+            self._refuse(shown, [Problem("", exc.message)])
+            return None
         if data is None:
             return None
         try:

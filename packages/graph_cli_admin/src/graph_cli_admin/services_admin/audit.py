@@ -22,11 +22,12 @@ command fail with ``admin.integrity_errors``.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
+    UNREADABLE,
     InstalledPolicy,
     MaintEffects,
     StreamReport,
@@ -75,8 +76,8 @@ def verify(ctx: AdminContext) -> Verification:
     )
     anchored = effect_anchors(installation.events)
     findings: list[Finding] = list(installation.findings)
-    installed = read_policy_file(installation_policy_path(ctx.roots.data_root))
-    findings += check_policy(installation.events, InstalledPolicy.of(installed))
+    installed = _installed(lambda: read_policy_file(installation_policy_path(ctx.roots.data_root)))
+    findings += check_policy(installation.events, installed)
     reports: dict[str, StreamReport] = {}
     graphs: list[JsonValue] = []
     clean: list[StreamReport] = []
@@ -123,6 +124,16 @@ def verify(ctx: AdminContext) -> Verification:
     return Verification(data, ordered, warnings)
 
 
+def _installed(read: Callable[[], bytes | None]) -> InstalledPolicy:
+    """An installed policy as found; one that cannot be read is a finding, not a crash."""
+    try:
+        return InstalledPolicy.of(read())
+    except GraphCliError as exc:
+        if exc.code != "backend.unavailable":
+            raise
+        return InstalledPolicy(UNREADABLE)
+
+
 def _verify_graph(
     ctx: AdminContext, graph_id: GraphId, anchored: frozenset[int] | None
 ) -> tuple[list[Finding], StreamReport]:
@@ -134,7 +145,7 @@ def _verify_graph(
             manifest_pin=session.manifest().entry.pin if pin_intact else None,
             releases=session.release_hashes(),
             anchored=anchored or frozenset(),
-            policy=InstalledPolicy.of(session.read_policy()),
+            policy=_installed(session.read_policy),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

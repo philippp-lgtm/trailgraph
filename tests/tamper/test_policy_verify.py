@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from harness import CliRunner
 from support.admin import admin, init
-from support.app import create_graph
+from support.app import app, create_graph
 from support.policies import GRAPH, INSTALLATION, write_policy
 
 from graph_cli.audit import finding_codes as audit_codes
@@ -89,6 +89,20 @@ def test_hand_placed_and_deleted_policies(run_cli: CliRunner, root: Path, tmp_pa
     placed.unlink()
     apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
     (root / "policy" / "installation.json").unlink()
+    assert codes(run_cli) == [audit_codes.POLICY_MISMATCH]
+
+
+def test_a_file_in_place_of_the_policy_directory(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """Moving the policy out of the way must not fall back to the built-in policy."""
+    apply(run_cli, write_policy(tmp_path, "i.yaml", INSTALLATION))
+    directory = root / "policy"
+    (directory / "installation.json").unlink()
+    directory.rmdir()
+    directory.write_bytes(b"")
+    refused = app(run_cli, "find", "--graph", "example_graph")
+    assert (refused.code, refused.error["code"]) == (5, "policy.invalid")
     assert codes(run_cli) == [audit_codes.POLICY_MISMATCH]
 
 

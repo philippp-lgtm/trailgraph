@@ -29,10 +29,15 @@ def installation_policy_path(data_root: Path) -> Path:
 
 
 def read_policy_file(path: Path) -> bytes | None:
-    """The file's bytes, ``None`` when no policy is installed there."""
+    """The file's bytes, ``None`` when no policy is installed there.
+
+    Only a missing file means "no policy"; anything else in the way (a file
+    where the directory belongs) is an error, so a broken layout fails closed
+    instead of falling back to the built-in policy.
+    """
     try:
         return path.read_bytes()
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError:
         return None
     except OSError as exc:
         raise GraphCliError(

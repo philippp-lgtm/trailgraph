@@ -14,6 +14,7 @@ from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditReceipt, graph_stream
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.maintenance import FileMaintenanceSession
+from graph_cli.storage.files.policy_files import read_policy_file
 
 DOCUMENT: dict[str, JsonValue] = {"schema": "graph_cli.policy/1", "id": "installation", "rules": []}
 
@@ -89,3 +90,11 @@ def test_interrupted_apply_keeps_the_old_policy(inst: Installation) -> None:
         inst.faults.armed.clear()
         registry.replace_installation_policy(newer, installation_event(inst))
         assert registry.read_installation_policy() == pretty_bytes(newer)
+
+
+def test_only_a_missing_file_is_no_policy(tmp_path: Path) -> None:
+    assert read_policy_file(tmp_path / "policy" / "installation.json") is None
+    (tmp_path / "policy").write_bytes(b"")  # a file where the directory belongs
+    with pytest.raises(GraphCliError) as caught:
+        read_policy_file(tmp_path / "policy" / "installation.json")
+    assert caught.value.code == "backend.unavailable"
