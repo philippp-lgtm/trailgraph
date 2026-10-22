@@ -45,7 +45,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "paths": frozenset({"data_root"}),
     "identity": frozenset({"providers"}),
     "storage": frozenset({"lock_timeout_s", "durability"}),
-    "audit": frozenset({"record_data_root"}),
+    "audit": frozenset({"record_data_root", "access_log"}),
     "output": frozenset({"default"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
@@ -66,6 +66,7 @@ class Config:
     lock_timeout_s: float = 10.0
     durability: Durability = "full"
     record_data_root: bool = True
+    access_log: bool = False  # [audit]: log every graph command to <state_root>/logs/access.jsonl
     output: OutputMode = "text"
     file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
@@ -139,6 +140,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     if output not in (None, "text", "json"):
         raise _invalid(path, "output.default", "must be 'text' or 'json'")
     record = get("audit.record_data_root", bool, "a boolean")
+    access_log = get("audit.access_log", bool, "a boolean")
     max_bytes = get("files.max_bytes", int, "an integer")
     if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
         raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
@@ -157,6 +159,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         lock_timeout_s=float(timeout) if timeout is not None else defaults.lock_timeout_s,
         durability=durability or defaults.durability,
         record_data_root=record if record is not None else defaults.record_data_root,
+        access_log=access_log if access_log is not None else defaults.access_log,
         output=output or defaults.output,
         file_roots=file_roots,
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,

@@ -52,9 +52,10 @@ machine.
 
 Audit events name stored files by hash and size only: never a file name,
 an origin path or content. Reading a file is not audited (reads never
-are). File bytes, names and origins are instance data like any attribute
-value: they live in the graph's `blobs/` and transaction log. How they are
-stored on disk: [Storage](storage.md).
+are; the opt-in [access log](audit.md#access-log) counts only bytes).
+File bytes, names and origins are instance data like any attribute value:
+they live in the graph's `blobs/` and transaction log. How they are stored
+on disk: [Storage](storage.md).
 
 ## Backups
 

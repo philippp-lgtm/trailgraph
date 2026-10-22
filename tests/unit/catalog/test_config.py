@@ -24,6 +24,7 @@ lock_timeout_s = 2.5
 durability = "fsync"
 [audit]
 record_data_root = false
+access_log = true
 [output]
 default = "json"
 [roots]
@@ -56,6 +57,7 @@ def test_every_key() -> None:
         lock_timeout_s=2.5,
         durability="fsync",
         record_data_root=False,
+        access_log=True,
         output="json",
         file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
         max_file_bytes=2048,
@@ -67,6 +69,7 @@ def test_file_defaults() -> None:
     config, _ = parse_config(b"format_version = 1\n", path=PATH)
     assert (config.file_roots, config.max_file_bytes) == ({}, 100 * 1024 * 1024)
     assert config.signal_reads is False
+    assert config.access_log is False
 
 
 def test_integer_timeout() -> None:
@@ -121,6 +124,7 @@ def test_unknown_major() -> None:
         ("format_version = 1\n[files]\nmax_bytes = 1073741825\n", "files.max_bytes"),
         ('format_version = 1\n[files]\nmax_bytes = "1M"\n', "files.max_bytes"),
         ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
+        ('format_version = 1\n[audit]\naccess_log = "yes"\n', "audit.access_log"),
     ],
 )
 def test_defects_are_config_invalid(body: str, key: str) -> None:

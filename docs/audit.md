@@ -27,8 +27,33 @@ is the byte length of the canonical changeset (the form `changeset_hash`
 covers), and every file the write stored is listed as `{hash, size}`.
 Verification compares the changeset size with the transaction log, like
 the ids and the hash; intents written before the size was recorded carry
-none and are matched without it. Reads are not audited, so the size of
-what a read returns is not recorded.
+none and are matched without it. Reads are not audited; the size of
+what a read returns is in the [access log](#access-log), when it is on.
+
+## Access log
+
+`[audit] access_log = true` in `config.toml` (off by default) makes
+`graph` append one line per command to
+`$XDG_STATE_HOME/graph_cli/logs/access.jsonl` (format
+`graph_cli.access/1`, canonical JSON, file mode 0600). Every command that
+opened the installation is recorded, reads and writes alike, also when it
+fails:
+
+| Key | Content |
+| --- | --- |
+| `ts` | when the command finished |
+| `command` | the command, e.g. `get`, `find`, `create` |
+| `actor` | the actor, as in audit events |
+| `graph` | `{id, name, seq}` of the graph state the command used, or `null` |
+| `result` | `{status: ok}` or `{status: error, code}` |
+| `output` | `{format: json\|text, bytes}`: the bytes the caller received on stdout |
+
+Like audit events it never holds a value, an argument, an entity id, a
+reason or a message: it records how much a command returned, not what.
+It is not chained, so it is a record of use, not evidence: whoever can
+write the state directory can edit it. Writing it is best effort; a
+failure never fails the command. It is not rotated; rotate or delete it
+from outside. `graph-admin` does not write it (its changes are audited).
 
 ## Policy verification
 

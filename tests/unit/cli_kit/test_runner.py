@@ -9,7 +9,14 @@ from support.fixtures import GOLDENS, assert_golden
 
 from graph_cli.cli_kit.envelope import Result, render_text
 from graph_cli.cli_kit.hints import hint_for, known_hint_codes
-from graph_cli.cli_kit.runner import CommandState, Invocation, json_option, leaf, run
+from graph_cli.cli_kit.runner import (
+    CommandState,
+    Completed,
+    Invocation,
+    json_option,
+    leaf,
+    run,
+)
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity
@@ -83,6 +90,26 @@ def invoke(*argv: str, debug: bool = False, json_default: bool = False) -> tuple
     out, err = io.StringIO(), io.StringIO()
     code = run(prog, argv, Invocation("prog", json_default, debug), out=out, err=err)
     return code, out.getvalue(), err.getvalue()
+
+
+def completed(*argv: str) -> tuple[str, list[Completed]]:
+    out, done = io.StringIO(), []
+    run(prog, argv, Invocation("prog"), out=out, err=io.StringIO(), after=done.append)
+    return out.getvalue(), done
+
+
+@pytest.mark.parametrize(
+    ("argv", "code"), [(("thing", "show", "é", "--json"), 0), (("thing", "fail"), 1)]
+)
+def test_after_learns_what_stdout_received(argv: tuple[str, ...], code: int) -> None:
+    out, (done,) = completed(*argv)
+    assert done.stdout_bytes == len(out.encode())  # bytes, not characters
+    assert (done.exit_code, done.json_mode) == (code, "--json" in argv)
+    assert done.document["command"] == " ".join(argv[:2])
+
+
+def test_after_is_not_called_without_an_envelope(capsys: pytest.CaptureFixture[str]) -> None:
+    assert completed("--help")[1] == []
 
 
 def test_success_envelope_golden() -> None:

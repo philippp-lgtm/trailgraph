@@ -10,7 +10,7 @@ XDG; macOS uses the same paths.
 | --- | --- |
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
 | Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
-| State (operational log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+| State (operational log, access log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
 
 Keep the data root on a local file system (see [Storage](storage.md)).
 
@@ -18,9 +18,12 @@ Keep the data root on a local file system (see [Storage](storage.md)).
 
 `graph-admin init` creates it with a device id. It holds the device id and
 name, runtime mode, data root, identity providers, lock timeout, durability,
-audit redaction, output default, file roots, file size limit and the read
-signal. The sections described elsewhere:
+audit redaction and the access log, output default, file roots, file size
+limit and the read signal. The sections described elsewhere:
 
+- `[audit]`: `record_data_root` (default `true`) puts the data root path
+  into audit events; `access_log` (default `false`) turns on the
+  [access log](audit.md#access-log)
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
 - `[activity]`: [Live view](live_view.md)
 

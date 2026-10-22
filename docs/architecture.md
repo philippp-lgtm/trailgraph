@@ -56,8 +56,8 @@ matches and ranks `lookup`; `services.read` and `services.describe` answer
 them. `temporal_knowledge.history` names what changed between two revisions
 for `history`.
 
-`cli_kit` (envelope, error rendering, hints) is shared with the maintenance
-CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
+`cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
+wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
 and `graph_cli_admin.services_admin` holds the procedures.
 
 ## Catalog
@@ -66,15 +66,16 @@ and `graph_cli_admin.services_admin` holds the procedures.
 
 | Module | Content |
 | --- | --- |
-| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, output default, file roots, file size limit, read signal |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, read signal |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
+| `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: Unix datagrams to the viewer sockets in the state directory, fire and forget |
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
 | `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
-| `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services |
+| `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |
 | `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)) |
 
 `catalog.identity` builds the one `ActorContext` per invocation. Only

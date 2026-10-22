@@ -46,12 +46,16 @@ def program() -> click.Group:
 def main() -> None:
     env = wiring.process_env()
     json_mode, debug = wiring.output_mode(env)
+    services = wiring.AppServices(env, Path.cwd(), wiring.process_executable())
     code = run(
         program(),
         sys.argv[1:],
         Invocation(wiring.PROGRAM, json_mode, debug),
-        services=wiring.AppServices(env, Path.cwd(), wiring.process_executable()),
+        services=services,
         out=sys.stdout,
         err=sys.stderr,
+        after=lambda done: services.record_access(
+            done.document, json_mode=done.json_mode, stdout_bytes=done.stdout_bytes
+        ),
     )
     sys.exit(code)

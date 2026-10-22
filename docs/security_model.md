@@ -16,7 +16,9 @@ decisions made under another policy (see
 [Audit: policy verification](audit.md#policy-verification)), but not a
 consistent rewrite of every stream (all tails, all hashes); that needs a
 head kept outside the data root. Reads are not audited, so a read under
-another policy leaves no trace.
+another policy leaves no trace in the audit; the opt-in
+[access log](audit.md#access-log) records reads, but it is not chained
+and can be edited.
 
 ## Prevention
 

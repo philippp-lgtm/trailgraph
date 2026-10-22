@@ -8,7 +8,9 @@ clock, ids, catalog, audit log, the installed policy and the services.
 Graph selection asks the policy first (B6.15); a project the policy has no
 scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
-renders as an error envelope; nothing is created on disk (B12.4).
+renders as an error envelope; nothing is created in the data root (B12.4).
+With ``[audit] access_log``, a command that built the context is recorded
+in the access log after its envelope is written (``record_access``).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from typing import Final
 
 from graph_cli import __version__
 from graph_cli.access_control.effective import project_warning
+from graph_cli.catalog.access_log import AccessLogFile, access_record
 from graph_cli.catalog.activity import SocketActivity, activity_dir
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
@@ -32,6 +35,7 @@ from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, sele
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import Roots, config_path, resolve_roots
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
@@ -173,6 +177,24 @@ class AppServices:
             self._context, self._warnings = self._build(command or "")
         warnings += self._warnings
         return self._context
+
+    def record_access(
+        self, document: Mapping[str, JsonValue], *, json_mode: bool, stdout_bytes: int
+    ) -> None:
+        """The access log line of a finished command and its envelope. Commands that
+        never opened the installation (``describe commands``, a broken config) are not
+        recorded: without the context there is no actor and no config to ask."""
+        context = self._context
+        if context is None or not context.config.access_log:
+            return
+        record = access_record(
+            ts=SystemClock().now(),
+            actor=context.actor,
+            document=document,
+            json_mode=json_mode,
+            stdout_bytes=stdout_bytes,
+        )
+        AccessLogFile(context.roots.state_root).append(record)
 
     def _build(self, command: str) -> tuple[AppContext, tuple[WarningRecord, ...]]:
         config, config_warnings = load_config(config_path(self.env))

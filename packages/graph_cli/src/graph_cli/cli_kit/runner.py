@@ -6,14 +6,16 @@ a click usage error (``usage.*``, exit 2) and any other exception
 reads no environment: the composition root passes JSON mode and debug in
 an ``Invocation``. ``--json`` is honoured anywhere in argv, so even a usage
 error renders as an envelope. Global options given before the subcommand
-reach the command as if given after it (``leaf``).
+reach the command as if given after it (``leaf``). After the envelope is
+written, an optional ``after`` callback learns what was delivered
+(``Completed``), for the access log.
 """
 
 from __future__ import annotations
 
 import functools
 import traceback
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import IO, Any, Final
 
@@ -21,6 +23,7 @@ import click
 
 from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 
 JSON_FLAG: Final = "--json"
@@ -43,6 +46,16 @@ class CommandState:
     result: Result | None = None
     warnings: list[WarningRecord] = field(default_factory=list)
     global_values: dict[str, Any] = field(default_factory=dict)  # option name -> value
+
+
+@dataclass(frozen=True, slots=True)
+class Completed:
+    """A command whose envelope was written: the envelope and the bytes on stdout."""
+
+    document: Mapping[str, JsonValue]
+    json_mode: bool
+    stdout_bytes: int
+    exit_code: int
 
 
 json_option = click.option(
@@ -74,6 +87,7 @@ def run(
     services: Any = None,
     out: IO[str],
     err: IO[str],
+    after: Callable[[Completed], None] | None = None,
 ) -> int:
     state = CommandState(invocation, services)
     json_mode = invocation.json_default or JSON_FLAG in argv
@@ -109,12 +123,16 @@ def run(
         warnings=[*state.warnings, *(error.warnings if error is not None else ())],
     )
     if json_mode:
-        out.write(render_json(document))
+        stdout = render_json(document)
+        out.write(stdout)
     else:
         stdout, stderr = render_text(document, text=state.result.text if state.result else None)
         out.write(stdout)
         err.write(stderr)
-    return exit_code_for(error.category) if error is not None else EXIT_OK
+    exit_code = exit_code_for(error.category) if error is not None else EXIT_OK
+    if after is not None:
+        after(Completed(document, json_mode, len(stdout.encode()), exit_code))
+    return exit_code
 
 
 def _take_global_values(ctx: click.Context, state: CommandState, kwargs: dict[str, Any]) -> None:
