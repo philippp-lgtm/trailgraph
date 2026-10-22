@@ -47,6 +47,34 @@ fails:
 | `graph` | `{id, name, seq}` of the graph state the command used, or `null` |
 | `result` | `{status: ok}` or `{status: error, code}` |
 | `output` | `{format: json\|text, bytes}`: the bytes the caller received on stdout |
+| `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
+
+`phases` names only the phases the command went through. Each phase counts
+its own time (a phase inside another is taken out of the outer one), a
+phase entered more than once adds up, and `other` is the time no phase
+claimed, so the phases add up to `total`:
+
+| Phase | Time spent |
+| --- | --- |
+| `startup` | loading the program's modules and building its commands (the interpreter's own start before that is not measured) |
+| `context` | reading the config, roots, project pointer and actor |
+| `model` | reading and checking the graph's compiled ontology |
+| `snapshot` | opening the graph's current state |
+| `authorize` | policy decisions (and loading the policy) |
+| `query` | a read answering from the state: `get`, `history`, `find`, `lookup`, `neighbors` |
+| `resolve` | a write resolving its references |
+| `stage` | `file add` hashing and staging the file |
+| `lock` | a write waiting for and taking the graph lock, including the recovery of an interrupted write |
+| `normalize` | applying the ops to a working copy |
+| `validate` | checking the result against the ontology |
+| `audit` | appending the write intent or a refusal to an audit stream |
+| `commit` | writing the transaction |
+| `render` | building and writing the envelope |
+| `other` | everything else |
+
+A slow `lock` points at a concurrent writer, a slow `startup` or `context`
+at the installation rather than the graph. The line itself is written
+after `total` is taken.
 
 Like audit events it never holds a value, an argument, an entity id, a
 reason or a message: it records how much a command returned, not what.

@@ -1,5 +1,6 @@
 """S: the opt-in access log of `graph` (contracts B5.10, B12.4, B12.7): one line per command
-that opened the installation, with the bytes the caller received and never a value."""
+that opened the installation, with the bytes the caller received, the time per phase and
+never a value."""
 
 import json
 import stat
@@ -87,6 +88,29 @@ def test_every_command_records_what_the_caller_received(
     log = log_path(isolated_env)
     assert MARKER not in log.read_text()  # no values, no reason text (B5.8)
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+def test_every_line_says_where_the_time_went(
+    run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
+) -> None:
+    enable(isolated_env)
+    entity = create_location(run_cli)
+    assert app(run_cli, "find", "--type", "inv:Location", env=ENV).code == 0
+    assert app(run_cli, "get", entity["id"], env=ENV).code == 0
+    create, find, get = (line["timing_us"] for line in lines(isolated_env))
+
+    write_phases = {"authorize", "audit", "commit", "lock", "normalize", "validate"}
+    assert write_phases <= create["phases"].keys()
+    assert "query" not in create["phases"]
+    for read in (find, get):
+        assert {"authorize", "model", "snapshot", "query"} <= read["phases"].keys()
+        assert not write_phases - {"authorize"} & read["phases"].keys()
+    for timing in (create, find, get):
+        phases = timing["phases"]
+        assert {"startup", "context", "render", "other"} <= phases.keys()
+        assert all(isinstance(us, int) and us >= 0 for us in phases.values())
+        assert phases["startup"] > 0
+        assert sum(phases.values()) <= timing["total"] <= sum(phases.values()) + len(phases)
 
 
 def test_reads_leave_the_data_root_unchanged(

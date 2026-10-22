@@ -15,12 +15,16 @@ refuses it with ``temporal.as_of_unsupported``. A successful ``get``,
 to the activity sink (a transient signal for ``graph-admin view``, no log).
 ``history`` shows of a tx's actor only whether it is the caller's own
 session: who wrote a revision is audit content (B8.15).
+The command's timings get the phases ``authorize``, ``audit`` (a denial),
+``model``, ``snapshot`` and ``query`` (answering from the snapshot).
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import functools
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Concatenate
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.effective import (
@@ -45,6 +49,7 @@ from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
+from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
 from graph_cli.query.plan import FindSpec, plan_find, plan_neighbors
@@ -132,6 +137,19 @@ def refuse_as_of(as_of: str | None) -> None:
         )
 
 
+def _query[**P, R](
+    method: Callable[Concatenate[ReadService, P], R],
+) -> Callable[Concatenate[ReadService, P], R]:
+    """A read answered from an open snapshot: the ``query`` phase."""
+
+    @functools.wraps(method)
+    def timed(self: ReadService, /, *args: P.args, **kwargs: P.kwargs) -> R:
+        with self.timings.phase("query"):
+            return method(self, *args, **kwargs)
+
+    return timed
+
+
 class ReadService:
     def __init__(
         self,
@@ -143,6 +161,7 @@ class ReadService:
         ids: IdProvider,
         env: EnvInfo,
         activity: ActivitySink = NULL_ACTIVITY,
+        timings: Timings | None = None,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
@@ -151,7 +170,8 @@ class ReadService:
         self._clock = clock
         self._ids = ids
         self._env = env
-        self._models = ModelCache(catalog)
+        self.timings = timings if timings is not None else Timings()
+        self._models = ModelCache(catalog, self.timings)
 
     # ---- authorization -------------------------------------------------
 
@@ -164,9 +184,10 @@ class ReadService:
         graph: GraphEntry | None = None,
     ) -> Decision:
         """B6.3: one decision before storage is touched; a denial is audited and raised."""
-        policy = self._policy.current(None if graph is None else graph.id)
-        ctx = AuthzContext(op_count=0, has_reason=False, dry_run=False)
-        decision = authorize(actor, action, resource, ctx, policy)
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(None if graph is None else graph.id)
+            ctx = AuthzContext(op_count=0, has_reason=False, dry_run=False)
+            decision = authorize(actor, action, resource, ctx, policy)
         if decision.effect == "allow":
             return decision
         hidden = graph is not None and not self.visible(actor, graph)
@@ -179,10 +200,10 @@ class ReadService:
 
     def visible(self, actor: ActorContext, entry: GraphEntry) -> bool:
         """B6.15: the actor may see the graph (``read.list`` on ``graph:<id>``)."""
-        policy = self._policy.current(entry.id)
-        return authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy).effect == (
-            "allow"
-        )
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
+        return decision.effect == "allow"
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta
@@ -214,7 +235,8 @@ class ReadService:
             graph=graph,
         )
         try:
-            self._audit.append_installation(event)
+            with self.timings.phase("audit"):
+                self._audit.append_installation(event)
         except GraphCliError as exc:
             warning = WarningRecord(
                 "audit.refusal_not_recorded", "the denial could not be audited", {"cause": exc.code}
@@ -236,7 +258,8 @@ class ReadService:
                 WarningRecord("graph.archived_read", f"graph {entry.name} is archived", {}),
             )
         read, _ = self._catalog.store_for(entry.id)
-        snapshot = read.snapshot()
+        with self.timings.phase("snapshot"):
+            snapshot = read.snapshot()
         return GraphRead(entry, model, snapshot, (*warnings, *snapshot.warnings))
 
     def skill(
@@ -276,6 +299,7 @@ class ReadService:
             items.append(item)
         return items, len(visible) - len(shown), self._catalog.warnings
 
+    @_query
     def get(
         self, view: GraphRead, ref: str, *, rev: int | None = None
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
@@ -318,6 +342,7 @@ class ReadService:
         self.activity.reads(view.entry.id, [entity])
         return data, warnings
 
+    @_query
     def history(
         self, view: GraphRead, actor: ActorContext, ref: str, *, limit: int, offset: int
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
@@ -358,6 +383,7 @@ class ReadService:
         self.activity.reads(view.entry.id, [entity])
         return data, Page(len(metas), len(shown), limit, offset), list(warnings)
 
+    @_query
     def find(
         self,
         view: GraphRead,
@@ -397,6 +423,7 @@ class ReadService:
         self.activity.reads(view.entry.id, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
+    @_query
     def lookup(self, view: GraphRead, spec: LookupSpec) -> tuple[dict[str, JsonValue], Page]:
         """Entities whose labels match, best first; one item per entity, its best match."""
         plan = plan_lookup(view.model, spec)
@@ -421,6 +448,7 @@ class ReadService:
         self.activity.reads(view.entry.id, [revision.id for _, revision, _ in shown])
         return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
 
+    @_query
     def neighbors(
         self,
         view: GraphRead,

@@ -3,8 +3,9 @@
 Opt-in with ``[audit] access_log``. One line per ``graph`` command that
 opened the installation, reads and writes alike: when, who, which command
 on which graph state, the outcome, and how many bytes the caller received
-on stdout. Never a value, an argument, an entity id or a message (B5.8):
-the size of a read is recorded, not what was read.
+on stdout, and how long it took, per phase. Never a value, an argument,
+an entity id or a message (B5.8): the size of a read is recorded, not what
+was read.
 
 Not chained and not audited: anyone who can write the state dir can edit
 it, so it is a usage record, not evidence (the audit streams are). Best
@@ -35,6 +36,7 @@ def access_record(
     document: Mapping[str, JsonValue],
     json_mode: bool,
     stdout_bytes: int,
+    timing: Mapping[str, JsonValue],
 ) -> dict[str, JsonValue]:
     """One line of the access log, from the envelope the command wrote (B9.2)."""
     graph = document.get("graph")
@@ -52,6 +54,7 @@ def access_record(
         ),
         "result": result,
         "output": {"format": "json" if json_mode else "text", "bytes": stdout_bytes},
+        "timing_us": dict(timing),
     }
 
 

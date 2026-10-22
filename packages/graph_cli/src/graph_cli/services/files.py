@@ -8,7 +8,8 @@ them. ``FileService.add``:
    ``files`` module is ``file.module_missing``.
 3. The bytes are streamed once: hashed, counted against ``max_bytes`` and
    staged before the graph lock (a dry-run hashes in memory and stages
-   nothing); the media type comes from the first bytes and the name.
+   nothing), the ``stage`` phase of the command's timings; the media type
+   comes from the first bytes and the name.
 4. Known content returns the active file that holds it, with warning
    ``file.already_present`` and without a tx. A concurrent add of the same
    content loses on ``unique_violation`` and returns the winner the same way.
@@ -229,7 +230,8 @@ class FileService:
         self._origins: Origins = origins if origins is not None else NoOrigins()
         self.max_bytes = max_bytes
         self._activity = activity
-        self._models = ModelCache(catalog)
+        self._timings = writer.timings  # one command, one set of timings
+        self._models = ModelCache(catalog, self._timings)
 
     def add(self, request: FileAddRequest) -> FileAddResult:
         handle = self._open(request.path)
@@ -241,10 +243,11 @@ class FileService:
             read, write = self._catalog.store_for(entry.id)
             source = _Input(handle, request.path)
             staged: StagedBlob
-            if request.dry_run:
-                staged = self._hash(source)
-            else:
-                staged = write.stage_blob(source.chunks(), max_bytes=self.max_bytes)
+            with self._timings.phase("stage"):
+                if request.dry_run:
+                    staged = self._hash(source)
+                else:
+                    staged = write.stage_blob(source.chunks(), max_bytes=self.max_bytes)
             try:
                 return self._add(request, entry, model, read, type_ref, source, staged)
             finally:

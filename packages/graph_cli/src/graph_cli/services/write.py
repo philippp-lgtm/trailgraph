@@ -33,6 +33,11 @@ placeholder ids that never leave the service: created entities report no
 id and no alias, finding targets name them by ``local``. Its blobs are
 hashed only, never staged on disk; they count as present. A refused real
 write names its creates the same way: their minted ids are never committed.
+
+The command's timings get the phases ``model``, ``snapshot``, ``resolve``,
+``authorize``, ``lock`` (waiting for and taking the graph lock, with the
+recovery of an interrupted write), ``normalize``, ``validate``, ``audit``
+(the intent or a refusal) and ``commit``.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ from __future__ import annotations
 import itertools
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set
+from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Final
@@ -92,6 +98,7 @@ from graph_cli.kernel.ports.storage import (
     WriteSession,
 )
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
+from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.data_validator import blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.models import ModelCache
@@ -250,6 +257,7 @@ class WriteService:
         ids: IdProvider,
         env: EnvInfo,
         config: WriteConfig | None = None,
+        timings: Timings | None = None,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
@@ -258,7 +266,8 @@ class WriteService:
         self._ids = ids
         self._env = env
         self.config = config or WriteConfig()
-        self._models = ModelCache(catalog)
+        self.timings = timings if timings is not None else Timings()
+        self._models = ModelCache(catalog, self.timings)
 
     # ---- public --------------------------------------------------------
 
@@ -314,29 +323,33 @@ class WriteService:
         _check_state(entry)
         model = self._models.load(entry)
         read, write = self._catalog.store_for(entry.id)
-        snapshot = snapshot if snapshot is not None else read.snapshot()
+        if snapshot is None:
+            with self.timings.phase("snapshot"):
+                snapshot = read.snapshot()
         resolution = self._resolve(request, snapshot)
         decisions = self._authorize(request, entry, resolution)
         return _Prepared(entry, model, read, write, snapshot, resolution, decisions)
 
     def _resolve(self, request: WriteRequest, snapshot: Snapshot) -> Resolution:
-        return resolve_refs(
-            request.changeset,
-            snapshot,
-            bindings=request.bindings,
-            allow_abbrev=request.allow_abbrev,
-        )
+        with self.timings.phase("resolve"):
+            return resolve_refs(
+                request.changeset,
+                snapshot,
+                bindings=request.bindings,
+                allow_abbrev=request.allow_abbrev,
+            )
 
     def _authorize(
         self, request: WriteRequest, entry: GraphEntry, resolution: Resolution
     ) -> tuple[Decision, ...]:
         cs = request.changeset
-        policy = self._policy.current(entry.id)
-        ctx = AuthzContext(
-            op_count=len(cs.ops), has_reason=cs.reason is not None, dry_run=request.dry_run
-        )
-        pairs = sorted({(a, f"graph:{entry.id}/type:{t}") for a, t in resolution.pairs})
-        decisions = tuple(authorize(request.actor, a, r, ctx, policy) for a, r in pairs)
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            ctx = AuthzContext(
+                op_count=len(cs.ops), has_reason=cs.reason is not None, dry_run=request.dry_run
+            )
+            pairs = sorted({(a, f"graph:{entry.id}/type:{t}") for a, t in resolution.pairs})
+            decisions = tuple(authorize(request.actor, a, r, ctx, policy) for a, r in pairs)
         denied = [d for d in decisions if d.effect == "deny"]
         if not denied:
             return decisions
@@ -362,7 +375,8 @@ class WriteService:
             target={"types": sorted({t for _, t in resolution.pairs})},
         )
         try:
-            self._audit.append_installation(event)
+            with self.timings.phase("audit"):
+                self._audit.append_installation(event)
         except GraphCliError as exc:
             raise GraphCliError(
                 error.code, error.message, details=error.details, warnings=(_not_recorded(exc),)
@@ -373,12 +387,17 @@ class WriteService:
 
     def _apply(self, request: WriteRequest) -> WriteResult:
         prepared = self._prepare(request, None)
-        with prepared.write.session(timeout_s=self.config.lock_timeout_s) as session:
+        with ExitStack() as stack:
+            with self.timings.phase("lock"):
+                session = stack.enter_context(
+                    prepared.write.session(timeout_s=self.config.lock_timeout_s)
+                )
             entry = self._catalog.resolve(str(prepared.entry.id))  # W.6: re-read the manifest
             _check_state(entry)
             model = prepared.model if entry.pin == prepared.entry.pin else self._models.load(entry)
-            base = session.snapshot()
-            head = session.head()
+            with self.timings.phase("snapshot"):
+                base = session.snapshot()
+                head = session.head()
             resolution = self._resolve(request, base)
             decisions = prepared.decisions
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
@@ -408,21 +427,23 @@ class WriteService:
                 raise refusal(conflict, types=resolution.pairs)
             recorded_at = _recorded_at(self._clock, head)  # W.9
             tx_id, event_id = TxId(self._ids.new_id()), EventId(self._ids.new_id())
-            working = normalize(  # W.10
-                cs.ops,
-                base,
-                model,
-                refs=resolution.refs,
-                new_id=self._ids.new_id,
-                recorded_at=recorded_at,
-                tx_id=tx_id,
-                tx_seq=head.seq + 1,
-                pin_version=entry.pin.version,
-                alias_counters=session.alias_counters(),
-                alias_prefixes=entry.alias_prefixes,
-            )
-            stored = _blob_check(request, prepared.read)
-            findings = _validate(model, base, working, stored)  # W.11
+            with self.timings.phase("normalize"):
+                working = normalize(  # W.10
+                    cs.ops,
+                    base,
+                    model,
+                    refs=resolution.refs,
+                    new_id=self._ids.new_id,
+                    recorded_at=recorded_at,
+                    tx_id=tx_id,
+                    tx_seq=head.seq + 1,
+                    pin_version=entry.pin.version,
+                    alias_counters=session.alias_counters(),
+                    alias_prefixes=entry.alias_prefixes,
+                )
+            with self.timings.phase("validate"):
+                stored = _blob_check(request, prepared.read)
+                findings = _validate(model, base, working, stored)  # W.11
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
                 findings = [_scrub(f, working, working.created) for f in findings]
@@ -460,8 +481,10 @@ class WriteService:
             intent = events.write_intent(
                 tx, graph=entry, env=self._env, before=before, blobs=published
             )
-            receipt = session.append_audit(intent)  # W.12
-            committed = session.commit(tx, receipt)  # W.13
+            with self.timings.phase("audit"):
+                receipt = session.append_audit(intent)  # W.12
+            with self.timings.phase("commit"):
+                committed = session.commit(tx, receipt)  # W.13
         return _result(
             entry,
             working,
@@ -487,25 +510,26 @@ class WriteService:
         conflict = _conflict(cs, snapshot, snapshot.seq + offset, resolution.refs)
         if conflict is not None:
             raise conflict
-        working = normalize(
-            cs.ops,
-            snapshot,
-            prepared.model,
-            refs=resolution.refs,
-            new_id=placeholders,
-            recorded_at=self._clock.now(),
-            tx_id=TxId(placeholders()),
-            tx_seq=snapshot.seq + offset + 1,
-            pin_version=prepared.entry.pin.version,
-            alias_counters={},
-            alias_prefixes=prepared.entry.alias_prefixes,
-            allocate_aliases=False,
-        )
+        with self.timings.phase("normalize"):
+            working = normalize(
+                cs.ops,
+                snapshot,
+                prepared.model,
+                refs=resolution.refs,
+                new_id=placeholders,
+                recorded_at=self._clock.now(),
+                tx_id=TxId(placeholders()),
+                tx_seq=snapshot.seq + offset + 1,
+                pin_version=prepared.entry.pin.version,
+                alias_counters={},
+                alias_prefixes=prepared.entry.alias_prefixes,
+                allocate_aliases=False,
+            )
         hidden = placeholders.issued
-        stored = _blob_check(request, prepared.read)
-        findings = [
-            _scrub(f, working, hidden) for f in _validate(prepared.model, snapshot, working, stored)
-        ]
+        with self.timings.phase("validate"):
+            stored = _blob_check(request, prepared.read)
+            findings = _validate(prepared.model, snapshot, working, stored)
+        findings = [_scrub(f, working, hidden) for f in findings]
         if any(f.severity is Severity.ERROR for f in findings):
             raise _invalid(findings)
         result = _result(
@@ -553,7 +577,8 @@ class WriteService:
             target=target,
         )
         try:
-            session.append_audit(event)
+            with self.timings.phase("audit"):
+                session.append_audit(event)
         except GraphCliError as exc:
             return GraphCliError(
                 error.code, error.message, details=error.details, warnings=(_not_recorded(exc),)

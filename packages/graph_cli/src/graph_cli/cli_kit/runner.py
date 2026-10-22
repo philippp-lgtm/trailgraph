@@ -8,7 +8,8 @@ an ``Invocation``. ``--json`` is honoured anywhere in argv, so even a usage
 error renders as an envelope. Global options given before the subcommand
 reach the command as if given after it (``leaf``). After the envelope is
 written, an optional ``after`` callback learns what was delivered
-(``Completed``), for the access log.
+(``Completed``), for the access log; rendering and writing the envelope is
+the ``render`` phase of the given ``Timings``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_tex
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.timing import Timings
 
 JSON_FLAG: Final = "--json"
 
@@ -88,6 +90,7 @@ def run(
     out: IO[str],
     err: IO[str],
     after: Callable[[Completed], None] | None = None,
+    timings: Timings | None = None,
 ) -> int:
     state = CommandState(invocation, services)
     json_mode = invocation.json_default or JSON_FLAG in argv
@@ -115,20 +118,21 @@ def run(
         if invocation.debug:
             err.write(traceback.format_exc())
         error = GraphCliError("internal.error", f"unexpected {type(exc).__name__}")
-    document = envelope(
-        state.command,
-        program=invocation.program,
-        result=state.result,
-        error=error,
-        warnings=[*state.warnings, *(error.warnings if error is not None else ())],
-    )
-    if json_mode:
-        stdout = render_json(document)
-        out.write(stdout)
-    else:
-        stdout, stderr = render_text(document, text=state.result.text if state.result else None)
-        out.write(stdout)
-        err.write(stderr)
+    with (timings or Timings()).phase("render"):
+        document = envelope(
+            state.command,
+            program=invocation.program,
+            result=state.result,
+            error=error,
+            warnings=[*state.warnings, *(error.warnings if error is not None else ())],
+        )
+        if json_mode:
+            stdout = render_json(document)
+            out.write(stdout)
+        else:
+            stdout, stderr = render_text(document, text=state.result.text if state.result else None)
+            out.write(stdout)
+            err.write(stderr)
     exit_code = exit_code_for(error.category) if error is not None else EXIT_OK
     if after is not None:
         after(Completed(document, json_mode, len(stdout.encode()), exit_code))

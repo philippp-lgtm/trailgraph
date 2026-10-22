@@ -10,7 +10,9 @@ scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
 renders as an error envelope; nothing is created in the data root (B12.4).
 With ``[audit] access_log``, a command that built the context is recorded
-in the access log after its envelope is written (``record_access``).
+in the access log after its envelope is written (``record_access``), with
+the command's ``Timings``: building the context is the ``context`` phase,
+the services add theirs.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo, RequestMeta
+from graph_cli.kernel.timing import Timings
 from graph_cli.services.files import FileService
 from graph_cli.services.read import ReadService
 from graph_cli.services.write import WriteConfig, WriteService
@@ -128,6 +131,7 @@ class AppServices:
     env: Mapping[str, str]
     cwd: Path
     executable: str | None = None  # the running program's own path (sys.argv[0]), F6
+    timings: Timings = field(default_factory=Timings)
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
 
@@ -174,7 +178,8 @@ class AppServices:
 
     def context(self, warnings: list[WarningRecord], command: str | None = None) -> AppContext:
         if self._context is None:
-            self._context, self._warnings = self._build(command or "")
+            with self.timings.phase("context"):
+                self._context, self._warnings = self._build(command or "")
         warnings += self._warnings
         return self._context
 
@@ -193,6 +198,7 @@ class AppServices:
             document=document,
             json_mode=json_mode,
             stdout_bytes=stdout_bytes,
+            timing=self.timings.to_json(),
         )
         AccessLogFile(context.roots.state_root).append(record)
 
@@ -227,6 +233,7 @@ class AppServices:
             ids=ids,
             env=env,
             config=WriteConfig(lock_timeout_s=config.lock_timeout_s),
+            timings=self.timings,
         )
         activity: ActivitySink = (
             SocketActivity(activity_dir(roots.state_root)) if config.signal_reads else NULL_ACTIVITY
@@ -239,6 +246,7 @@ class AppServices:
             ids=ids,
             env=env,
             activity=activity,
+            timings=self.timings,
         )
         context = AppContext(
             roots=roots,

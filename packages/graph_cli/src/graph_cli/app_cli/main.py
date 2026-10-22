@@ -2,7 +2,9 @@
 
 The click program is generated from the command declarations
 (``app_cli.commands``) and run by ``cli_kit.runner.run``, which renders every
-outcome as the B9 envelope (text or ``--json``) with its exit code.
+outcome as the B9 envelope (text or ``--json``) with its exit code. The
+command's timings start at the first import of ``graph_cli``; everything up
+to running the command (imports, the click tree) is the ``startup`` phase.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from graph_cli.app_cli.commands.common import GLOBAL_OPTIONS
 from graph_cli.catalog import wiring
 from graph_cli.cli_kit.runner import Invocation, run
 from graph_cli.cli_kit.spec import build_click
+from graph_cli.kernel.timing import Timings
 
 
 def program() -> click.Group:
@@ -44,11 +47,14 @@ def program() -> click.Group:
 
 
 def main() -> None:
+    timings = Timings.since_import()
     env = wiring.process_env()
     json_mode, debug = wiring.output_mode(env)
-    services = wiring.AppServices(env, Path.cwd(), wiring.process_executable())
+    services = wiring.AppServices(env, Path.cwd(), wiring.process_executable(), timings)
+    cli = program()
+    timings.until_now("startup")
     code = run(
-        program(),
+        cli,
         sys.argv[1:],
         Invocation(wiring.PROGRAM, json_mode, debug),
         services=services,
@@ -57,5 +63,6 @@ def main() -> None:
         after=lambda done: services.record_access(
             done.document, json_mode=done.json_mode, stdout_bytes=done.stdout_bytes
         ),
+        timings=timings,
     )
     sys.exit(code)

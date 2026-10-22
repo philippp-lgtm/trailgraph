@@ -7,6 +7,8 @@ hash: identical bytes give the identical model without parsing again. The
 cache keeps the pin hash a model was verified against: the pin covers the
 stored document, and ``CompiledModel.artifact_hash`` re-serializes with the
 current writer, which differs for artifacts written before a key was added.
+Reading and checking the artifact is the ``model`` phase of the command's
+timings.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from graph_cli.kernel.canonical import CanonicalError, hash_bytes, parse_json
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
+from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
 
 COMPILED_FILE: Final = "compiled.json"
@@ -25,20 +28,22 @@ COMPILED_FILE: Final = "compiled.json"
 class ModelCache:
     """``load`` for writes (a pin mismatch refuses); ``load_for_read`` continues with a warning."""
 
-    def __init__(self, catalog: Catalog) -> None:
+    def __init__(self, catalog: Catalog, timings: Timings | None = None) -> None:
         self._catalog = catalog
+        self._timings = timings if timings is not None else Timings()
         self._models: dict[str, tuple[str, CompiledModel]] = {}  # bytes hash -> (pin, model)
 
     def load(self, entry: GraphEntry) -> CompiledModel:
-        pin = entry.pin
-        data = self._catalog.read_release_file(entry.id, pin.version, COMPILED_FILE)
-        key = hash_bytes(data)
-        cached = self._models.get(key)
-        if cached is not None and cached[0] == pin.artifact_hash:
-            return cached[1]
-        model = load_compiled(data, expected_hash=pin.artifact_hash)
-        self._models[key] = (pin.artifact_hash, model)
-        return model
+        with self._timings.phase("model"):
+            pin = entry.pin
+            data = self._catalog.read_release_file(entry.id, pin.version, COMPILED_FILE)
+            key = hash_bytes(data)
+            cached = self._models.get(key)
+            if cached is not None and cached[0] == pin.artifact_hash:
+                return cached[1]
+            model = load_compiled(data, expected_hash=pin.artifact_hash)
+            self._models[key] = (pin.artifact_hash, model)
+            return model
 
     def load_for_read(self, entry: GraphEntry) -> tuple[CompiledModel, tuple[WarningRecord, ...]]:
         """B7.6: reads continue on a mismatching artifact with ``ontology.pin_mismatch_read``."""
