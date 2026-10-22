@@ -15,7 +15,8 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.inventory import build_inventory
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.json_access import as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead
@@ -105,6 +106,34 @@ def describe_lifecycle(state: CommandState, type: str, graph: str | None) -> Res
     return Result(
         data=describe.describe_lifecycle(view.entry, view.model, type), graph=view.envelope_graph()
     )
+
+
+def _schema_text(data: JsonObject) -> str:
+    """Pattern lines, then each label with its properties: what a query may write."""
+
+    def names(item: JsonObject) -> list[str]:
+        return [req_str(as_object(p, "property"), "name") for p in req_list(item, "properties")]
+
+    lines = ["Relationships:"]
+    for value in req_list(data, "relationships"):
+        item = as_object(value, "relationship")
+        props = names(item)
+        lines.append(
+            f"  {req_str(item, 'pattern')}" + (f"  {{{', '.join(props)}}}" if props else "")
+        )
+    lines.append("Labels:")
+    for value in req_list(data, "labels"):
+        item = as_object(value, "label")
+        lines.append(f"  (:{req_str(item, 'label')})  {', '.join(names(item)) or '-'}")
+    fields = ", ".join(str(f) for f in req_list(data, "node_fields"))
+    lines.append(f"Every node also has: {fields}; every relationship: edge_id.")
+    return "\n".join(lines) + "\n"
+
+
+def describe_schema(state: CommandState, graph: str | None) -> Result:
+    view = _view(state, graph, "describe schema")
+    data = describe.describe_schema(view.entry, view.model)
+    return Result(data=data, graph=view.envelope_graph(), text=_schema_text(data))
 
 
 def _describe(
@@ -199,6 +228,16 @@ SPECS: Final = (
         examples=(
             Example("graph describe relations", "All relations."),
             Example("graph describe relations --json", "Relations as JSON."),
+        ),
+    ),
+    _describe(
+        "schema",
+        "Show the model as graph query sees it: labels, relationship patterns, properties.",
+        describe_schema,
+        with_type=False,
+        examples=(
+            Example("graph describe schema", "Patterns and labels to write a query with."),
+            Example("graph describe schema --json", "The schema as graph_cli.model/1."),
         ),
     ),
     _describe(

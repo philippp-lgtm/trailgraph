@@ -31,6 +31,15 @@ Relations:
 | `nas:broader` | `nas:Topic` -> `nas:Topic` | out 0..n | acyclic, transitive, inverse `narrower` | The target topic is more general than the source topic. |
 | `nas:cites` | `nas:Note` -> `nas:Source` | out 0..n | qualifiers `locator`, inverse `cited_by` | The note uses information from the source. |
 
+As patterns for `graph query`:
+
+```
+(:Note)-[:about]->(:Topic)
+(:Note)-[:asserts]->(:Claim)
+(:Topic)-[:broader]->(:Topic)
+(:Note)-[:cites]->(:Source)
+```
+
 Constraints:
 
 - `nas:Note` `status` `draft` -> `published`: A note needs a body before it is published. (guard `nas.body_not_empty`)

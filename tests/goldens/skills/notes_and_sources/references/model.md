@@ -30,6 +30,21 @@ Ontology `notes_and_sources` 1.0.0. The live source is `graph describe types --g
 | `provenance:contradicts` | `provenance:Claim` | `provenance:Claim` | out 0..n | symmetric, inverse `contradicted_by` | The claim cannot be true together with the target claim. |
 | `provenance:supported_by` | `provenance:Claim` | any | out 0..n | inverse `supports` | Evidence that supports the claim. |
 
+As patterns for `graph query`:
+
+```
+()-[:derived_from]->()
+()-[:retracts]->()
+()-[:source]->()
+()-[:supersedes]->()
+(:Note)-[:about]->(:Topic)
+(:Note)-[:asserts]->(:Claim)
+(:Topic)-[:broader]->(:Topic)
+(:Note)-[:cites]->(:Source)
+(:Claim)-[:contradicts]->(:Claim)
+(:Claim)-[:supported_by]->()
+```
+
 ## `nas:Book`
 
 A published book.

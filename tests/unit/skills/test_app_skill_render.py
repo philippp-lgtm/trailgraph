@@ -11,6 +11,7 @@ from graph_cli.kernel.canonical import hash_value
 from graph_cli.skills.app_skill import (
     COMMANDS_FILE,
     ERRORS_FILE,
+    QUERY_FILE,
     SKILL_FILE,
     render_app_skill,
 )
@@ -34,7 +35,7 @@ def _reordered(value: Any, rng: random.Random) -> Any:
 
 def test_renders_the_three_files_deterministically() -> None:
     first = render_app_skill(inventory())
-    assert sorted(first) == sorted([SKILL_FILE, COMMANDS_FILE, ERRORS_FILE])
+    assert sorted(first) == sorted([SKILL_FILE, COMMANDS_FILE, ERRORS_FILE, QUERY_FILE])
     assert render_app_skill(inventory()) == first
     assert all(text.endswith("\n") and "\r" not in text for text in first.values())
 

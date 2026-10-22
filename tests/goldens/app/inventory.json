@@ -448,6 +448,57 @@
     {
       "path": [
         "describe",
+        "schema"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Show the model as graph query sees it: labels, relationship patterns, properties.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe schema",
+          "summary": "Patterns and labels to write a query with."
+        },
+        {
+          "command": "graph describe schema --json",
+          "summary": "The schema as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "describe",
         "type"
       ],
       "kind": "read",

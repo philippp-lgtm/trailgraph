@@ -15,8 +15,10 @@ edited by hand: `graph_cli.skills.app_skill.render_app_skill` turns the app
 inventory (`graph describe commands --json`, `graph_cli.inventory/1`) into
 `SKILL.md` (workflow, habits, envelope, command overview, exit codes),
 `references/commands.md` (arguments, options, limits and examples per
-command) and `references/errors.md` (every error code and what to do per
-category). The renderer reads nothing but that document and imports only
+command), `references/errors.md` (every error code and what to do per
+category) and `references/query.md` (when and how to use `graph query`:
+names, parameters, the supported subset, examples; fixed text of the
+renderer). The renderer reads nothing but that document and imports only
 the kernel (import contract). The frontmatter `metadata` carries the
 inventory hash and program version. How to regenerate it and what the
 tests check: [`CONTRIBUTING.md`](../CONTRIBUTING.md#generated-files).
@@ -44,7 +46,7 @@ into the graph's runtime area. Its kind follows the content:
 | --- | --- |
 | `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); read the `graph-cli` skill first |
 | `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
-| `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label |
+| `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label; then the same relations as `graph query` patterns (`(:A)-[:rel]->(:B)`, from `describe schema`) |
 | `constraints` | transition guards, write-once fields, rules with severity |
 | `names` | the alias format (`ITEM-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask |
 | `model` | a pointer to `references/model.md` and `graph describe type` |

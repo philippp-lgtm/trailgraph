@@ -128,6 +128,23 @@ Usage: `graph describe relations [OPTIONS]`
 | `graph describe relations` | All relations. |
 | `graph describe relations --json` | Relations as JSON. |
 
+## graph describe schema
+
+Show the model as graph query sees it: labels, relationship patterns, properties.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe schema [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe schema` | Patterns and labels to write a query with. |
+| `graph describe schema --json` | The schema as graph_cli.model/1. |
+
 ## graph describe type
 
 Describe one type: fields, lifecycles, relations and rules.

@@ -25,6 +25,19 @@ Ontology `inventory` 1.0.0. The live source is `graph describe types --graph exa
 | `inv:part_of` | `inv:Item` | `inv:Item` | out 0..1 | acyclic, inverse `has_part` | The item is a component of a larger item. |
 | `inv:within` | `inv:Location` | `inv:Location` | out 0..1 | acyclic, inverse `contains` | The location is inside a larger location. |
 
+As patterns for `graph query`:
+
+```
+()-[:derived_from]->()
+()-[:retracts]->()
+()-[:source]->()
+()-[:supersedes]->()
+(:Item)-[:in_category]->(:Category)
+(:Item)-[:located_in]->(:Location)
+(:Item)-[:part_of]->(:Item)
+(:Location)-[:within]->(:Location)
+```
+
 ## `inv:Category`
 
 A group of similar items.

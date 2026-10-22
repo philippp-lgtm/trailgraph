@@ -2,7 +2,7 @@
 
 ``render_graph_skill`` is a pure function of the template
 (``graph_cli.skills.template``), the ``graph_cli.model/1`` documents of the
-graph (``{types, type: {curie: document}, relations}``, what ``graph
+graph (``{types, type: {curie: document}, relations, schema}``, what ``graph
 describe`` prints) and the graph block ``{id, name, title, language,
 alias_prefixes}``. Each block marker in ``SKILL.md`` becomes a generated
 block; ``references/model.md`` describes every type of the model. Only the
@@ -22,7 +22,8 @@ Blocks (each one optional):
 - ``types``: the entity types (types with an alias prefix; without any, every
   concrete type) with their supertypes, fields, enum values inline (F11), and
   states.
-- ``relations``: the relations touching those types.
+- ``relations``: the relations touching those types, and the same relations as
+  ``graph query`` patterns (``(:A)-[:rel]->(:B)``, from ``describe schema``).
 - ``constraints``: transition guards, write-once fields and rules.
 - ``names``: the live alias format (F12), what ``graph lookup`` matches per
   type (label roles) and the rule to ask when the match is not unique (F24).
@@ -134,12 +135,14 @@ class _Model:
     prefixes: Mapping[str, str]  # type CURIE -> alias prefix, types of the model only
     types: Mapping[str, JsonObject]  # CURIE -> the ``type`` body of ``describe type``
     relations: Mapping[str, JsonObject]  # CURIE -> one item of ``describe relations``
+    patterns: Mapping[str, str]  # relation CURIE -> its ``describe schema`` pattern
 
     @staticmethod
     def of(model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]) -> _Model:
         bundle = as_object(dict(model), "model")
         listing = _document(bundle, "types")
         relations = _document(bundle, "relations")
+        schema = _document(bundle, "schema")
         types: dict[str, JsonObject] = {}
         for curie, value in sorted(req_obj(bundle, "type").items()):
             body = req_obj(_document({"type": value}, "type"), "type")
@@ -168,6 +171,12 @@ class _Model:
             relations={
                 req_str(item, "curie"): item
                 for item in (as_object(r, "relations[]") for r in req_list(relations, "relations"))
+            },
+            patterns={
+                req_str(item, "relation"): req_str(item, "pattern")
+                for item in (
+                    as_object(r, "relationships[]") for r in req_list(schema, "relationships")
+                )
             },
         )
 
@@ -381,7 +390,16 @@ def _relations(doc: _Model) -> list[str]:
         )
     if not rows:
         return ["No relations."]
-    return _table(["Relation", "From -> to", "Cardinality", "Notes", "Summary"], rows)
+    table = _table(["Relation", "From -> to", "Cardinality", "Notes", "Summary"], rows)
+    return [*table, *_patterns(doc, doc.touching())]
+
+
+def _patterns(doc: _Model, curies: Sequence[str]) -> list[str]:
+    """The relations as ``graph query`` patterns, one per line."""
+    lines = [doc.patterns[curie] for curie in curies if curie in doc.patterns]
+    if not lines:
+        return []
+    return ["", "As patterns for `graph query`:", "", "```", *lines, "```"]
 
 
 def _ends(relation: JsonObject, key: str) -> str:
@@ -555,6 +573,7 @@ def _model_file(doc: _Model, stamp: str) -> str:
                 for curie, relation in sorted(doc.relations.items())
             ],
         )
+        lines += _patterns(doc, sorted(doc.relations))
     else:
         lines.append("No relations.")
     for curie, body in doc.types.items():

@@ -1,7 +1,8 @@
 """Model description ``graph_cli.model/1`` of a graph's compiled ontology (contracts B11.5).
 
 Projections for agents: types, one type with its fields, lifecycles and
-relations in both directions, relations, fields, lifecycles. Every term
+relations in both directions, relations, fields, lifecycles, and the schema
+as ``graph query`` (Cypher) sees it. Every term
 with a summary also carries its ``deprecated`` flag. Deterministic
 (sorted), no timestamps; unknown terms are ``term.unknown`` with
 ``did_you_mean``. Functions of a graph entry and its compiled model, so
@@ -17,6 +18,8 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.ontology_layer.model import Bound, ClassDef, CompiledModel, LifecycleDef
+from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
+from graph_cli.query.cypher.resolve import EDGE_ID, cypher_names
 from graph_cli.query.plan import unknown_term
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
@@ -199,12 +202,63 @@ def describe_lifecycle(entry: GraphEntry, model: CompiledModel, curie: str) -> d
     return _envelope(entry, model, type=curie, lifecycles=_lifecycles(model, model.classes[curie]))
 
 
+def _property(name: str, base: str, many: bool) -> dict[str, JsonValue]:
+    return {"name": name, "base": base, "many": many}
+
+
+def describe_schema(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
+    """The model as ``graph query`` sees it: labels with their properties, relationship
+    types with their ends, properties and one pattern each. Names are written as a query
+    needs them: the local name when it is unique, else the CURIE in backticks."""
+    label = cypher_names(model.classes)
+    rel_type = cypher_names(model.relations)
+
+    def end(curies: tuple[str, ...]) -> str:
+        return "(:" + "|".join(label[c] for c in curies) + ")" if curies else "()"
+
+    labels: list[JsonValue] = [
+        {
+            "label": label[curie],
+            "type": curie,
+            "abstract": cls.abstract,
+            "supertypes": [label[c] for c in cls.ancestors],
+            "properties": [
+                _property(name, model.value_base(a.kind, a.type), a.many)
+                for name, a in sorted(cls.attributes.items())
+            ],
+        }
+        for curie, cls in sorted(model.classes.items())
+    ]
+    relationships: list[JsonValue] = [
+        {
+            "type": rel_type[curie],
+            "relation": curie,
+            "pattern": f"{end(r.domain)}-[:{rel_type[curie]}]->{end(r.range)}",
+            "properties": [
+                _property(name, model.value_base(q.kind, q.type), q.many)
+                for name, q in sorted(r.qualifiers.items())
+            ],
+        }
+        for curie, r in sorted(model.relations.items())
+    ]
+    return _envelope(
+        entry,
+        model,
+        labels=labels,
+        relationships=relationships,
+        node_fields=sorted(SYSTEM_FIELDS),
+        relationship_fields=[EDGE_ID],
+    )
+
+
 def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
-    ``describe types``, ``describe type <T>`` for every class and ``describe relations``
-    print, as ``{types, type: {curie: document}, relations}``."""
+    ``describe types``, ``describe type <T>`` for every class, ``describe relations``
+    and ``describe schema`` print, as ``{types, type: {curie: document}, relations,
+    schema}``."""
     return {
         "types": describe_types(entry, model),
         "type": {curie: describe_type(entry, model, curie) for curie in sorted(model.classes)},
         "relations": describe_relations(entry, model),
+        "schema": describe_schema(entry, model),
     }

@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:af44c925bf5f3ad7a5271ca100c6987352e564a34b748e513624a723caae60f4"
+  inventory_hash: "sha256:89a5da8a8a72b53fb7c60c93f881618e3e8a4a966a677abfa1f4683dbc69853a"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -46,10 +46,20 @@ against it and audited. The CLI is on `PATH`.
    first: list them and ask which one is meant, then answer. When asked
    when or why something changed, `graph history <id> --json` lists its
    revisions with the reason and the names of what changed;
-   `graph get <id> --rev <value> --json` shows an earlier revision.
+   `graph get <id> --rev <value> --json` shows an earlier revision. For
+   questions over several hops, with OR or NOT across relations, or with
+   counts, use `graph query` (below).
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
+
+## Questions across relations
+
+`graph query` answers a read-only Cypher query in one call. Use it when a
+question needs several hops, OR or NOT across relations, or counts; `find`,
+`neighbors` and `lookup` stay the simple path for one type, one hop or a
+name. `graph describe schema --json` lists the patterns a query can use.
+Read [references/query.md](references/query.md) before the first query.
 
 ## Writing safely
 
@@ -126,6 +136,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe fields` | read | List the fields of one type with datatypes and limits. |
 | `graph describe lifecycle` | read | Show the lifecycles of a type, or one lifecycle by name. |
 | `graph describe relations` | read | List the relations of the selected graph's ontology. |
+| `graph describe schema` | read | Show the model as graph query sees it: labels, relationship patterns, properties. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
 | `graph file add` | write | Store a file as a files:File entity; known content is not stored twice. |
@@ -175,3 +186,5 @@ equals `graph find --graph <graph>`):
   limits and examples of every command.
 - [references/errors.md](references/errors.md): every error code and what to
   do per category.
+- [references/query.md](references/query.md): what `graph query` supports,
+  names, parameters and examples.

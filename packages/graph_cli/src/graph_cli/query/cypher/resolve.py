@@ -21,7 +21,7 @@ key.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Final, Literal
 
@@ -677,6 +677,17 @@ def _narrow(known: tuple[str, ...] | None, more: tuple[str, ...] | None) -> tupl
     if more is None:
         return known
     return tuple(t for t in known if t in more)
+
+
+def cypher_names(curies: Iterable[str]) -> dict[str, str]:
+    """How a query writes each term: the local name when no other term has it, else the
+    CURIE in backticks (the inverse of the name rule ``resolve`` applies)."""
+    index = _local_index(dict.fromkeys(curies))
+    return {
+        curie: local if len(index[local]) == 1 else render.name(curie)
+        for local, found in index.items()
+        for curie in found
+    }
 
 
 def _local_index(curies: Mapping[str, object]) -> dict[str, tuple[str, ...]]:

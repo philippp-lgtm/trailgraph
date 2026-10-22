@@ -206,3 +206,15 @@ def test_returned_entities_reach_a_listening_view(
             assert event.ids == (outcome.data["items"][0]["n"]["id"],)
         finally:
             listener.close()
+
+
+def test_describe_schema_feeds_queries(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    schema = app(run_cli, "describe", "schema", env=ENV)
+    assert schema.code == 0, schema.envelope
+    for item in schema.data["relationships"]:
+        text = f"MATCH {item['pattern']} RETURN count(*) AS n"
+        outcome = app(run_cli, "query", text, env=ENV)
+        assert outcome.code == 0, (text, outcome.envelope)
+    text = run_cli("graph", "describe", "schema", env=ENV)
+    assert text.returncode == 0 and text.stdout.startswith("Relationships:\n")
+    assert schema.data["relationships"][0]["pattern"] in text.stdout

@@ -30,6 +30,15 @@ Relations:
 | `inv:part_of` | `inv:Item` -> `inv:Item` | out 0..1 | acyclic, inverse `has_part` | The item is a component of a larger item. |
 | `inv:within` | `inv:Location` -> `inv:Location` | out 0..1 | acyclic, inverse `contains` | The location is inside a larger location. |
 
+As patterns for `graph query`:
+
+```
+(:Item)-[:in_category]->(:Category)
+(:Item)-[:located_in]->(:Location)
+(:Item)-[:part_of]->(:Item)
+(:Location)-[:within]->(:Location)
+```
+
 Constraints:
 
 - `inv:Item` `status` `in_stock` -> `in_use`: Damaged items cannot be used. (guard `inv.usable`)
