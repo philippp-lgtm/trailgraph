@@ -1,0 +1,58 @@
+# Review checklist
+
+Go through this before a first `graph create` and before every
+`ontology release`. Every "no" is either fixed or written down as a
+deliberate choice in the README next to the ontology.
+
+## Purpose
+
+- [ ] Every new term serves a competency question, and every question has
+      a path through the model.
+- [ ] Built-in modules and standard vocabularies were checked before
+      inventing a term; matches are recorded under `mappings`.
+
+## Terms
+
+- [ ] Each class passes the subclass test and differs from its siblings
+      in structure, not only in name.
+- [ ] Prescriptions and occurrences are separate classes.
+- [ ] Enums are small closed lists; values that need names, links or
+      growth are classes.
+- [ ] States with allowed moves are lifecycles; record state (withdrawn,
+      replaced) is left to retract and supersede.
+- [ ] No derived values are stored; no relations hide in strings; no
+      catch-all relation.
+- [ ] Every relation has `domain`, `range`, an `inverse_label` and the
+      cardinality the domain really has.
+- [ ] Facts about a link are qualifiers; links with their own life are
+      classes.
+
+## Names and descriptions
+
+- [ ] Names follow the conventions; relations read from source to target.
+- [ ] Every summary is one sentence that tells a newcomer what the term
+      is and how it differs from its neighbors.
+- [ ] Classes people name have a `label`; abbreviations and other names
+      are `alt_label`.
+- [ ] Concrete classes people refer to have their own `display_prefix`.
+- [ ] No summary or description holds values from real data.
+
+## Rules
+
+- [ ] What must always hold is `required`, cardinality or an error rule;
+      plausibility checks are warning rules.
+- [ ] Anything someone must see while working is a `write` rule.
+- [ ] Rules over `sum` guard against absent sums in `if`.
+- [ ] Every rule and guard was made to fire once on a throwaway graph.
+
+## Release
+
+- [ ] `ontology validate` reports no findings.
+- [ ] `ontology diff` levels were read one by one; the version bump
+      matches.
+- [ ] `graph-admin graph check <graph> --ontology <dir>` reports no
+      errors, and its warnings were read.
+- [ ] A major change was tried on a restored backup copy and the existing
+      data passes.
+- [ ] Deprecated terms name their replacement in the summary.
+- [ ] Backup first, `audit verify` after, graph skill and README updated.

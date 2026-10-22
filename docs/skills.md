@@ -4,7 +4,9 @@ graph_cli gives coding agents two kinds of skills (Agent Skills format:
 `SKILL.md` with `name` and `description` frontmatter, details under
 `references/`): the `graph-cli` skill for the CLI itself, and one graph
 skill per graph that says what the graph holds. `graph skills install`
-puts both into a project or the user's skill directory.
+puts both into a project or the user's skill directory. Maintainers have
+a third, [`ontology-best-practices`](#the-ontology-best-practices-skill),
+for authoring ontologies.
 
 ## The `graph-cli` skill
 
@@ -98,6 +100,26 @@ install` would (without the marker), with this checkout's program, and
 reports what publish would refuse (exit 1, the preview is written anyway);
 it changes nothing in the data root. A non-empty preview directory is
 replaced only with `--force`.
+
+## The `ontology-best-practices` skill
+
+`skills/ontology-best-practices/` is the maintainer skill for authoring
+the ontology of a graph: when a graph pays off, the workflow from
+competency questions to release, modeling choices, names and summaries,
+rules and lifecycles, change levels, and a review checklist.
+`references/ir_format.md` is the reference of the `graph_cli.ir/1` format.
+The skill is hand-written; `tests/skills/test_ontology_skill.py` compiles
+its YAML examples and checks that the format reference names every key the
+parser accepts.
+
+It is not part of `graph skills install`, because it belongs with
+`graph-admin` and the checkout. Make it available to an agent working in
+the checkout with a link (`.claude/` is not tracked):
+
+```sh
+mkdir -p .claude/skills
+ln -s ../../skills/ontology-best-practices .claude/skills/ontology-best-practices
+```
 
 ## Installing skills
 

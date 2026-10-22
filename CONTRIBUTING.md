@@ -36,6 +36,7 @@ reader looks for it:
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
 | `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md` | maintainers | operating graphs, policies, what is protected and what is not |
+| `skills/ontology-best-practices/` | maintainers authoring ontologies (agents and people) | the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow |
 | `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
 
 Rules:
@@ -61,6 +62,7 @@ Update the documentation in the same change as the code:
 | a `graph-admin` command or option | `docs/cli_graph_admin.md` (hand-written) |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
+| a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `skills/ontology-best-practices/references/` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
@@ -98,9 +100,9 @@ skill names no graph type.
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
-| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written `ontology-best-practices` skill: its YAML examples compile, the format reference names every accepted key, structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve, the docs index lists every document, the `graph` command overview matches the inventory |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the `graph` command overview matches the inventory |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
 by default and take a few seconds. Storage tests build transactions with a

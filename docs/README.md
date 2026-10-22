@@ -23,6 +23,9 @@ Start with the [project README](../README.md) (install, quickstart).
 - [Security model](security_model.md): what access control prevents, what
   it detects, what it does not
 - [Live view](live_view.md): `graph-admin view`
+- [Ontology authoring](../skills/ontology-best-practices/SKILL.md): the
+  maintainer skill with the `graph_cli.ir/1` format reference, modeling
+  guidance, versioning and the release workflow
 
 ## Internals
 

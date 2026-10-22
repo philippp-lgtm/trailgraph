@@ -1,10 +1,11 @@
 """The documentation holds together: links resolve, the index lists every document and
 the command overview of `graph` names exactly the commands it has.
 
-Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md
-and docs/). Links inside code blocks are ignored. Anchors follow GitHub's
-heading slugs. The command overview is compared with the inventory golden,
-which `tests/cli/test_app_meta.py` keeps equal to `graph describe commands`.
+Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md,
+docs/ and the hand-written `ontology-best-practices` skill). Links inside
+code blocks are ignored. Anchors follow GitHub's heading slugs. The command
+overview is compared with the inventory golden, which
+`tests/cli/test_app_meta.py` keeps equal to `graph describe commands`.
 Each check has a positive control, so a broken scanner cannot pass silently.
 """
 
@@ -16,6 +17,7 @@ from harness import REPO_ROOT
 from support.fixtures import GOLDENS
 
 DOCS_DIR = REPO_ROOT / "docs"
+ONTOLOGY_SKILL = REPO_ROOT / "skills" / "ontology-best-practices"
 INDEX = DOCS_DIR / "README.md"
 
 CODE_BLOCK = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
@@ -27,7 +29,12 @@ COMMAND_WORD = re.compile(r"[a-z][a-z_-]*")
 
 
 def _documents() -> list[Path]:
-    return [REPO_ROOT / "README.md", REPO_ROOT / "CONTRIBUTING.md", *sorted(DOCS_DIR.glob("*.md"))]
+    return [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "CONTRIBUTING.md",
+        *sorted(DOCS_DIR.glob("*.md")),
+        *sorted(ONTOLOGY_SKILL.rglob("*.md")),
+    ]
 
 
 def _prose(text: str) -> str:

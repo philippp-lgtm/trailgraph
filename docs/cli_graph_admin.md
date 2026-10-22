@@ -35,6 +35,8 @@ version (`check_graph`, the check `graph check --ontology` runs without
 releasing), otherwise the refusal lists them. Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 
-Related guides: [Access control](access_control.md) (policies),
+Related guides: [Ontology authoring](../skills/ontology-best-practices/SKILL.md)
+(the `graph_cli.ir/1` format, modeling, versioning),
+[Access control](access_control.md) (policies),
 [Skills](skills.md#graph-skills) (publishing graph skills),
 [Files](files.md#backups) (verifying stored files after a restore).
