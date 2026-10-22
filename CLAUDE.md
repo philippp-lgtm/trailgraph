@@ -9,6 +9,12 @@ All content in git-tracked files is written in English:
 - Inline comments
 - Commit messages, PR descriptions, issue text
 
+## Documentation
+
+Follow the "Documentation" section of `CONTRIBUTING.md`: which document
+holds what, one home per topic, and which documents a code change must
+update in the same change.
+
 ## User-specific information stays out of git
 
 Never put user-specific or environment-specific information into git-tracked

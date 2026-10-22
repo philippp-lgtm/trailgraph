@@ -24,6 +24,50 @@ uv run graph --help
 uv run graph-admin --help
 ```
 
+## Documentation
+
+Documentation is split by reader and purpose. Put new text where its
+reader looks for it:
+
+| Document | Reader | Holds |
+| --- | --- | --- |
+| `README.md` | newcomers | what graph_cli is, status, install, quickstart, links; nothing else |
+| `CONTRIBUTING.md` | contributors | development, tests, fixtures, generated files, these rules |
+| `docs/README.md` | everyone | the index of `docs/`, one line per document |
+| `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
+| `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md` | maintainers | operating graphs, policies, what is protected and what is not |
+| `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
+
+Rules:
+
+- **One home per topic.** Every fact is written in one document; other
+  documents link to it instead of repeating it.
+- **User documents describe behavior, not code.** Module tables and
+  package names belong in the internals documents.
+- **Generated files are the reference.** The per-command reference of
+  `graph` is the generated `skills/graph-cli/references/` (see
+  [Generated files](#generated-files)); `docs/cli_graph.md` keeps the
+  command overview and what applies across commands.
+- **New documents** get a lowercase name with `_` and a line in
+  `docs/README.md`.
+- **Examples stay generic** (see `CLAUDE.md`): placeholders such as
+  `<graph>` or `example_graph`, or the toy fixtures.
+
+Update the documentation in the same change as the code:
+
+| Change | Update |
+| --- | --- |
+| a `graph` command or option | regenerate the skill; `docs/cli_graph.md` if the overview or a cross-command rule changes |
+| a `graph-admin` command or option | `docs/cli_graph_admin.md` (hand-written) |
+| a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
+| a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
+| a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
+| an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
+| install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
+
+`uv run pytest tests/test_docs.py` checks that every link and anchor
+resolves and that `docs/README.md` lists every document.
+
 ## Generated files
 
 `skills/graph-cli/` is generated from the app inventory and never edited by
@@ -55,6 +99,7 @@ skill names no graph type.
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
 | skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve, the docs index lists every document |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
 by default and take a few seconds. Storage tests build transactions with a
