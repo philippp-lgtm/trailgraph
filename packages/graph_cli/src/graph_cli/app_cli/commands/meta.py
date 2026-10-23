@@ -16,7 +16,7 @@ from graph_cli.cli_kit.inventory import build_inventory
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
-from graph_cli.kernel.json_access import as_object, req_list, req_str
+from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead
@@ -112,7 +112,8 @@ def _schema_text(data: JsonObject) -> str:
     """Pattern lines, then each label with its properties: what a query may write."""
 
     def names(item: JsonObject) -> list[str]:
-        return [req_str(as_object(p, "property"), "name") for p in req_list(item, "properties")]
+        listed = as_list(item.get("properties", []), "properties")  # absent with --compact
+        return [req_str(as_object(p, "property"), "name") for p in listed]
 
     lines = ["Relationships:"]
     for value in req_list(data, "relationships"):
@@ -130,16 +131,22 @@ def _schema_text(data: JsonObject) -> str:
     return "\n".join(lines) + "\n"
 
 
-def describe_schema(state: CommandState, graph: str | None) -> Result:
+def describe_schema(state: CommandState, compact: bool, graph: str | None) -> Result:
     view = _view(state, graph, "describe schema")
-    data = describe.describe_schema(view.entry, view.model)
+    data = describe.describe_schema(view.entry, view.model, compact=compact)
     return Result(data=data, graph=view.envelope_graph(), text=_schema_text(data))
 
 
 def _describe(
-    name: str, summary: str, handler: object, *, with_type: bool, examples: tuple[Example, ...]
+    name: str,
+    summary: str,
+    handler: object,
+    *,
+    with_type: bool,
+    examples: tuple[Example, ...],
+    options: tuple[ParamSpec, ...] = (),
 ) -> CommandSpec:
-    params = (TYPE_ARG, GRAPH) if with_type else (GRAPH,)
+    params = (TYPE_ARG, *options, GRAPH) if with_type else (*options, GRAPH)
     errors = (*GRAPH_ERRORS, "term.unknown") if with_type else GRAPH_ERRORS
     return CommandSpec(
         path=("describe", name),
@@ -238,6 +245,10 @@ SPECS: Final = (
         examples=(
             Example("graph describe schema", "Patterns and labels to write a query with."),
             Example("graph describe schema --json", "The schema as graph_cli.model/1."),
+            Example("graph describe schema --compact --json", "Labels and patterns only."),
+        ),
+        options=(
+            ParamSpec("--compact", "flag", "Only labels and relationship patterns, no properties."),
         ),
     ),
     _describe(

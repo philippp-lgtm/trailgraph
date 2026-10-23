@@ -114,8 +114,22 @@ def _next_page(page: dict[str, JsonValue], line: Callable[[int], str]) -> tuple[
     return ({"text": "More results available", "command": line(next_offset)},)
 
 
+FIELDS: Final = ParamSpec(
+    "--fields",
+    "string",
+    "Only these fields (comma-separated): attributes, edges or system fields;"
+    " id, alias, type, rev and record_status always.",
+    repeatable=True,
+)
+
+
 def get(
-    state: CommandState, ref: str, rev: int | None, graph: str | None, as_of: str | None
+    state: CommandState,
+    ref: str,
+    rev: int | None,
+    fields: tuple[str, ...],
+    graph: str | None,
+    as_of: str | None,
 ) -> Result:
     point = _as_of(as_of)
     args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
@@ -128,7 +142,7 @@ def get(
         ctx.reader.authorize(
             ctx.actor, "read.history", f"graph:{view.entry.id}", request, view.entry
         )
-    data, warnings = ctx.reader.get(view, ref, rev=rev)
+    data, warnings = ctx.reader.get(view, ref, rev=rev, fields=fields)
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
 
@@ -161,6 +175,7 @@ def find(
     in_rel: tuple[str, ...],
     include_inactive: bool,
     sort: tuple[str, ...],
+    fields: tuple[str, ...],
     limit: int,
     offset: int,
     graph: str | None,
@@ -174,6 +189,7 @@ def find(
         "in_rel": list(in_rel),
         "include_inactive": include_inactive,
         "sort": list(sort),
+        "fields": list(fields),
         "limit": limit,
         "offset": offset,
     }
@@ -189,7 +205,7 @@ def find(
         offset=offset,
     )
     data, page, warnings = context(state).reader.find(
-        view, spec, rel_refs=rels, in_rel_refs=in_rels
+        view, spec, rel_refs=rels, in_rel_refs=in_rels, fields=fields
     )
     state.warnings += warnings
     page_json = page.to_json()
@@ -199,6 +215,7 @@ def find(
         ("--rel", rel),
         ("--in-rel", in_rel),
         ("--sort", sort),
+        ("--fields", fields),
         *_pinned(view, point),
     )
     switches = ("--include-inactive",) if include_inactive else ()
@@ -352,6 +369,7 @@ def neighbors(
     rel: tuple[str, ...],
     direction: str,
     depth: int,
+    fields: tuple[str, ...],
     graph: str | None,
     as_of: str | None,
 ) -> Result:
@@ -361,10 +379,11 @@ def neighbors(
         "rel": list(rel),
         "direction": direction,
         "depth": depth,
+        "fields": list(fields),
     }
     view = _open(state, graph, "read.traverse", "neighbors", args, point)
     data, warnings = context(state).reader.neighbors(
-        view, ref, rels=rel, direction=direction, depth=depth
+        view, ref, rels=rel, direction=direction, depth=depth, fields=fields
     )
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
@@ -505,6 +524,7 @@ SPECS: Final = (
         params=(
             REF,
             ParamSpec("--rev", "integer", "Show this earlier revision instead of the current one."),
+            FIELDS,
             GRAPH,
             AS_OF,
         ),
@@ -512,6 +532,7 @@ SPECS: Final = (
             Example("graph get <id>", "Show one entity."),
             Example("graph get <id> --graph <graph> --json", "The entity as JSON."),
             Example("graph get <id> --rev 2 --json", "The entity as it was at revision 2."),
+            Example("graph get <id> --fields <attr>,edges --json", "Only one field and the edges."),
             Example(
                 "graph get <id> --as-of tx:<seq> --json", "The entity as it was after that tx."
             ),
@@ -571,6 +592,7 @@ SPECS: Final = (
             ),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec("--sort", "string", "Field to sort by, optionally :desc.", repeatable=True),
+            FIELDS,
             ParamSpec(
                 "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
             ),
@@ -580,6 +602,10 @@ SPECS: Final = (
         ),
         examples=(
             Example("graph find --type <type> --where <attr>=<value>", "Filter by a field."),
+            Example(
+                "graph find --type <type> --fields <attr> --json",
+                "Only one field of each entity.",
+            ),
             Example(
                 "graph find --type <type> --rel <relation>=<id> --json", "Filter by a relation."
             ),
@@ -695,6 +721,7 @@ SPECS: Final = (
                 default="both",
             ),
             ParamSpec("--depth", "integer", "Hops, 1 to 3.", default=1),
+            FIELDS,
             GRAPH,
             AS_OF,
         ),

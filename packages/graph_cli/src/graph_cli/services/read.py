@@ -59,7 +59,14 @@ from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
-from graph_cli.query.plan import DEFAULT_LIMIT, FindSpec, plan_find, plan_neighbors
+from graph_cli.query.plan import (
+    ALWAYS_SHOWN,
+    DEFAULT_LIMIT,
+    FindSpec,
+    check_fields,
+    plan_find,
+    plan_neighbors,
+)
 from graph_cli.query.search import SearchSpec, plan_search
 from graph_cli.query.search import main_label as search_label
 from graph_cli.query.search import match_revision as search_match
@@ -123,8 +130,23 @@ def graph_json(entry: GraphEntry, seq: int | None) -> dict[str, JsonValue]:
     }
 
 
-def entity_json(revision: Revision) -> dict[str, JsonValue]:
-    """An entity as reads show it: every revision field, explicit nulls (C.6 envelope rule)."""
+def entity_json(revision: Revision, fields: Sequence[str] = ()) -> dict[str, JsonValue]:
+    """An entity as reads show it: every revision field, explicit nulls (C.6 envelope rule).
+
+    With ``fields`` (checked by ``query.plan.check_fields``) only the always shown
+    keys, ``attrs`` with the named attributes (null when absent) and the named
+    entity parts and system fields.
+    """
+    full = _entity_json(revision)
+    if not fields:
+        return full
+    shown: dict[str, JsonValue] = {key: full[key] for key in ALWAYS_SHOWN}
+    shown["attrs"] = {n: revision.attrs.get(n) for n in fields if n not in full}
+    shown.update({n: full[n] for n in fields if n in full and n not in ALWAYS_SHOWN})
+    return shown
+
+
+def _entity_json(revision: Revision) -> dict[str, JsonValue]:
     return {
         "id": str(revision.id),
         "alias": revision.alias,
@@ -368,10 +390,11 @@ class ReadService:
 
     @_query
     def get(
-        self, view: GraphRead, ref: str, *, rev: int | None = None
+        self, view: GraphRead, ref: str, *, rev: int | None = None, fields: Sequence[str] = ()
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """The current revision, or revision ``rev``; the status warnings and
         ``superseded_by``/``retracted_by`` always describe the current state."""
+        shown = check_fields(view.model, (), fields)
         entity, ref_warnings = resolve_ref(ref, view.snapshot)
         current = view.snapshot.get(entity)
         if current is None:
@@ -401,7 +424,7 @@ class ReadService:
                 WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
             )
         data: dict[str, JsonValue] = {
-            "entity": entity_json(revision),
+            "entity": entity_json(revision, shown),
             "current_rev": current.rev,
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
@@ -458,8 +481,10 @@ class ReadService:
         *,
         rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
         in_rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
+        fields: Sequence[str] = (),
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
         warnings: list[WarningRecord] = []
+        shown = check_fields(view.model, spec.types, fields)
 
         def resolve(
             pairs: Sequence[tuple[str, Sequence[str]]],
@@ -486,7 +511,7 @@ class ReadService:
         )
         query: Query = plan_find(view.model, spec)
         page = view.snapshot.query(query)
-        data: dict[str, JsonValue] = {"items": [entity_json(r) for r in page.items]}
+        data: dict[str, JsonValue] = {"items": [entity_json(r, shown) for r in page.items]}
         self.activity.reads(view.entry.id, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
@@ -550,7 +575,9 @@ class ReadService:
         rels: Sequence[str] = (),
         direction: str = "both",
         depth: int = 1,
+        fields: Sequence[str] = (),
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        shown = check_fields(view.model, (), fields)
         start, warnings = resolve_ref(ref, view.snapshot)
         if view.snapshot.get(start) is None:
             raise GraphCliError(
@@ -562,7 +589,7 @@ class ReadService:
             {
                 "direction": "out" if edge.target == neighbor else "in",
                 "edge": edge.to_json(),
-                "entity": entity_json(revision),
+                "entity": entity_json(revision, shown),
             }
             for neighbor, edge, revision in found
         ]

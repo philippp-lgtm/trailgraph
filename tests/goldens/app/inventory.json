@@ -457,6 +457,13 @@
       "args": [],
       "options": [
         {
+          "name": "--compact",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only labels and relationship patterns, no properties."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -472,6 +479,10 @@
         {
           "command": "graph describe schema --json",
           "summary": "The schema as graph_cli.model/1."
+        },
+        {
+          "command": "graph describe schema --compact --json",
+          "summary": "Labels and patterns only."
         }
       ],
       "errors": [
@@ -966,6 +977,13 @@
           "summary": "Field to sort by, optionally :desc."
         },
         {
+          "name": "--fields",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
+        },
+        {
           "name": "--limit",
           "type": "integer",
           "required": false,
@@ -1000,6 +1018,10 @@
         {
           "command": "graph find --type <type> --where <attr>=<value>",
           "summary": "Filter by a field."
+        },
+        {
+          "command": "graph find --type <type> --fields <attr> --json",
+          "summary": "Only one field of each entity."
         },
         {
           "command": "graph find --type <type> --rel <relation>=<id> --json",
@@ -1068,6 +1090,13 @@
           "summary": "Show this earlier revision instead of the current one."
         },
         {
+          "name": "--fields",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -1094,6 +1123,10 @@
         {
           "command": "graph get <id> --rev 2 --json",
           "summary": "The entity as it was at revision 2."
+        },
+        {
+          "command": "graph get <id> --fields <attr>,edges --json",
+          "summary": "Only one field and the edges."
         },
         {
           "command": "graph get <id> --as-of tx:<seq> --json",
@@ -1548,6 +1581,13 @@
           "repeatable": false,
           "summary": "Hops, 1 to 3.",
           "default": 1
+        },
+        {
+          "name": "--fields",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
         },
         {
           "name": "--graph",

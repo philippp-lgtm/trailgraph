@@ -129,6 +129,30 @@ def check_types(model: CompiledModel, types: Iterable[str]) -> None:
             raise unknown_term("type", name, model.classes)
 
 
+# Entity parts ``--fields`` may name besides attributes; ``ALWAYS_SHOWN`` stay anyway.
+ENTITY_PARTS: Final = ("edges",)
+ALWAYS_SHOWN: Final = ("id", "alias", "type", "rev", "record_status")
+
+
+def check_fields(
+    model: CompiledModel, types: Iterable[str], fields: Iterable[str]
+) -> tuple[str, ...]:
+    """``--fields`` values (repeatable, comma lists) as names, checked against the
+    attributes of the classes in scope (every class without types), the entity
+    parts and the system fields; an unknown name is ``term.unknown``."""
+    names = tuple(dict.fromkeys(n.strip() for text in fields for n in text.split(",")))
+    names = tuple(n for n in names if n)
+    if not names:
+        return ()
+    classes = {c for t in types for c in model.subtypes(t)} or set(model.classes)
+    known = {n for c in classes for n in model.classes[c].attributes}
+    known |= set(ENTITY_PARTS) | set(SYSTEM_FIELDS)
+    for name in names:
+        if name not in known:
+            raise unknown_term("field", name, known)
+    return names
+
+
 class _Planner:
     def __init__(self, model: CompiledModel, types: tuple[str, ...]) -> None:
         self.model = model

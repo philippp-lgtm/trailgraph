@@ -13,11 +13,19 @@ rendered from.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.ontology_layer.model import Bound, ClassDef, CompiledModel, LifecycleDef
+from graph_cli.ontology_layer.model import (
+    AttributeDef,
+    Bound,
+    ClassDef,
+    CompiledModel,
+    LifecycleDef,
+    QualifierDef,
+)
 from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
 from graph_cli.query.plan import unknown_term
 
@@ -205,10 +213,13 @@ def _property(name: str, base: str, many: bool) -> dict[str, JsonValue]:
     return {"name": name, "base": base, "many": many}
 
 
-def describe_schema(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
+def describe_schema(
+    entry: GraphEntry, model: CompiledModel, *, compact: bool = False
+) -> dict[str, JsonValue]:
     """The model as ``graph query`` sees it: labels with their properties, relationship
     types with their ends, properties and one pattern each. Names are written as a query
-    needs them: the local name when it is unique, else the CURIE in backticks."""
+    needs them: the local name when it is unique, else the CURIE in backticks.
+    ``compact`` leaves out every ``properties`` list."""
     from graph_cli.query.cypher.resolve import EDGE_ID, cypher_names  # only this needs Cypher
 
     label = cypher_names(model.classes)
@@ -217,16 +228,22 @@ def describe_schema(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVa
     def end(curies: tuple[str, ...]) -> str:
         return "(:" + "|".join(label[c] for c in curies) + ")" if curies else "()"
 
+    def properties(fields: Mapping[str, AttributeDef | QualifierDef]) -> dict[str, JsonValue]:
+        if compact:
+            return {}
+        listed: list[JsonValue] = [
+            _property(name, model.value_base(f.kind, f.type), f.many)
+            for name, f in sorted(fields.items())
+        ]
+        return {"properties": listed}
+
     labels: list[JsonValue] = [
         {
             "label": label[curie],
             "type": curie,
             "abstract": cls.abstract,
             "supertypes": [label[c] for c in cls.ancestors],
-            "properties": [
-                _property(name, model.value_base(a.kind, a.type), a.many)
-                for name, a in sorted(cls.attributes.items())
-            ],
+            **properties(cls.attributes),
         }
         for curie, cls in sorted(model.classes.items())
     ]
@@ -235,10 +252,7 @@ def describe_schema(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVa
             "type": rel_type[curie],
             "relation": curie,
             "pattern": f"{end(r.domain)}-[:{rel_type[curie]}]->{end(r.range)}",
-            "properties": [
-                _property(name, model.value_base(q.kind, q.type), q.many)
-                for name, q in sorted(r.qualifiers.items())
-            ],
+            **properties(r.qualifiers),
         }
         for curie, r in sorted(model.relations.items())
     ]

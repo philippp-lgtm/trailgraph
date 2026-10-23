@@ -747,7 +747,7 @@ def test_inactive_and_unknown_type_neighbours_are_skipped() -> None:
 OPTICS = revision("optics", "nas:Topic", {"label": "Optics", "synonyms": ["Lenses"]})
 GONE = revision("gone", "nas:Topic", {"label": "Acoustics"}, status="superseded")
 NAMES = DictSnapshot(TOPIC, OPTICS, GONE, WEB, NOTE)
-O = str(OPTICS.id)
+OP = str(OPTICS.id)
 
 
 def topic(local: str, label: str, **attrs: Any) -> dict[str, Any]:
@@ -774,7 +774,7 @@ def test_a_new_name_already_carried_by_another_entity_warns() -> None:
         ("data.semantic.possible_duplicate", "x", "attrs.synonyms", [physics])
     ]
     # Main name against an alternative one, any case; a hidden name counts too.
-    lenses = {"id": O, "alias": None, "type": "nas:Topic", "attr": "synonyms", "role": "alt_label"}
+    lenses = {"id": OP, "alias": None, "type": "nas:Topic", "attr": "synonyms", "role": "alt_label"}
     assert names(topic("x", "LENSES")) == [
         ("data.semantic.possible_duplicate", "x", "attrs.label", [lenses])
     ]
@@ -794,10 +794,10 @@ def test_only_new_names_of_active_entities_in_the_family_count() -> None:
     assert names({"op": "update", "id": T, "set": {"synonyms": ["physics"]}}) == []  # its own
     # Optics keeps "Lenses"; a name it already had is not new, even if shared later.
     shared = DictSnapshot(TOPIC, OPTICS, revision("glass", "nas:Topic", {"label": "Lenses"}))
-    found = judge(NAS, {"op": "update", "id": O, "set": {"misspellings": ["optix"]}}, base=shared)
+    found = judge(NAS, {"op": "update", "id": OP, "set": {"misspellings": ["optix"]}}, base=shared)
     assert codes(found[1]) == []
     assert codes(
-        judge(NAS, {"op": "update", "id": O, "set": {"misspellings": ["physics"]}}, base=shared)[1]
+        judge(NAS, {"op": "update", "id": OP, "set": {"misspellings": ["physics"]}}, base=shared)[1]
     ) == ["data.semantic.possible_duplicate"]
 
 

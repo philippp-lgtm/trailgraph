@@ -229,3 +229,12 @@ def test_describe_schema_feeds_queries(run_cli: CliRunner, root: Path, roles: Ro
     text = run_cli("graph", "describe", "schema", env=ENV)
     assert text.returncode == 0 and text.stdout.startswith("Relationships:\n")
     assert schema.data["relationships"][0]["pattern"] in text.stdout
+    compact = app(run_cli, "describe", "schema", "--compact", env=ENV)
+    assert compact.code == 0, compact.envelope
+    assert [i["pattern"] for i in compact.data["relationships"]] == [
+        i["pattern"] for i in schema.data["relationships"]
+    ]
+    assert all("properties" not in i for i in compact.data["labels"])
+    assert len(str(compact.data)) < len(str(schema.data))
+    text = run_cli("graph", "describe", "schema", "--compact", env=ENV)
+    assert text.returncode == 0 and text.stdout.startswith("Relationships:\n")

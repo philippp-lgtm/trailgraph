@@ -138,12 +138,14 @@ Usage: `graph describe schema [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--compact` | flag | no | no | Only labels and relationship patterns, no properties. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
 |---|---|
 | `graph describe schema` | Patterns and labels to write a query with. |
 | `graph describe schema --json` | The schema as graph_cli.model/1. |
+| `graph describe schema --compact --json` | Labels and patterns only. |
 
 ## graph describe type
 
@@ -280,6 +282,7 @@ Usage: `graph find [OPTIONS]`
 | `--in-rel` | string | no | yes | Incoming relation, optionally =<id>[,<id>...]. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--sort` | string | no | yes | Field to sort by, optionally :desc. |
+| `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
@@ -292,6 +295,7 @@ Usage: `graph find [OPTIONS]`
 | Example | Summary |
 |---|---|
 | `graph find --type <type> --where <attr>=<value>` | Filter by a field. |
+| `graph find --type <type> --fields <attr> --json` | Only one field of each entity. |
 | `graph find --type <type> --rel <relation>=<id> --json` | Filter by a relation. |
 | `graph find --type <type> --rel <relation>=<id>,<id> --json` | An edge to any of the listed entities. |
 | `graph find --type <type> --as-of tx:<seq> --json` | The entities of a type as they were after that tx. |
@@ -311,6 +315,7 @@ Usage: `graph get REF [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--rev` | integer | no | no | Show this earlier revision instead of the current one. |
+| `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -319,6 +324,7 @@ Usage: `graph get REF [OPTIONS]`
 | `graph get <id>` | Show one entity. |
 | `graph get <id> --graph <graph> --json` | The entity as JSON. |
 | `graph get <id> --rev 2 --json` | The entity as it was at revision 2. |
+| `graph get <id> --fields <attr>,edges --json` | Only one field and the edges. |
 | `graph get <id> --as-of tx:<seq> --json` | The entity as it was after that tx. |
 
 ## graph graphs
@@ -441,6 +447,7 @@ Usage: `graph neighbors REF [OPTIONS]`
 | `--rel` | term | no | yes | Only these relations. |
 | `--direction` | choice | no | no | Edge direction. One of `out`, `in`, `both`. Default: `both`. |
 | `--depth` | integer | no | no | Hops, 1 to 3. Default: `1`. |
+| `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 

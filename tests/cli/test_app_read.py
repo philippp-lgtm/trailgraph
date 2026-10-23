@@ -171,6 +171,38 @@ def test_find_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: R
     assert related.envelope["page"]["total"] == page["total"]
 
 
+def test_fields_keep_only_what_is_named(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    cls = roles.term("lifecycle_type")
+    enum_attr = roles.term("enum_attribute").rpartition(".")[2]
+    full = app(run_cli, "find", "--type", cls, "--limit", "1", env=ENV).data["items"][0]
+    always = {k: full[k] for k in ("id", "alias", "type", "rev", "record_status")}
+    found = app(
+        run_cli, "find", "--type", cls, "--fields", f"{enum_attr},edges", "--limit", "1", env=ENV
+    )
+    assert found.code == 0, found.envelope
+    assert found.data["items"][0] == {
+        **always,
+        "attrs": {enum_attr: full["attrs"].get(enum_attr)},
+        "edges": full["edges"],
+    }
+    (hint,) = found.envelope["hints"]
+    assert f"--fields {enum_attr},edges" in hint["command"]
+    got = app(run_cli, "get", full["id"], "--fields", "tx_seq", "--fields", enum_attr, env=ENV)
+    entity = got.data["entity"]
+    assert entity == {
+        **always,
+        "attrs": {enum_attr: full["attrs"].get(enum_attr)},
+        "tx_seq": full["tx_seq"],
+    }
+    assert got.data["current_rev"] == full["rev"]
+    near = app(run_cli, "neighbors", full["id"], "--fields", "edges", env=ENV)
+    assert near.code == 0 and near.data["items"]
+    assert all(set(i["entity"]) == {*always, "attrs", "edges"} for i in near.data["items"])
+    unknown = app(run_cli, "find", "--type", cls, "--fields", "no_such_field", env=ENV)
+    assert (unknown.code, unknown.error["code"]) == (1, "term.unknown")
+    assert unknown.error["details"]["kind"] == "field"
+
+
 def test_find_rel_matches_any_listed_target(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     cls, rel = roles.term("lifecycle_type"), roles.term("required_relation")
     items = app(run_cli, "find", "--type", cls, "--limit", "500", env=ENV).data["items"]
