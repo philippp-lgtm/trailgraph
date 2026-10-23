@@ -118,6 +118,17 @@ references stay ids, aliases and `@local` names. Types without label roles
 are `term.no_labels`. When nothing starts with the text, the hint is a
 `search`.
 
+A write that gives an active entity a name (a value of a label-role field)
+that another active entity of the same type family already carries, as
+main, alternative or hidden name and compared like `lookup` does, gets the
+warning finding `data.semantic.possible_duplicate`, in the dry run too.
+The family is the type that declares the field and its subtypes; other
+types may share a name. `actual` lists up to five candidates (`id`,
+`alias`, `type`, `attr`, `role`). The warning never refuses the write:
+reuse the candidate, or give the new entity a name that tells them apart.
+Only names the entity did not carry before count, and a value that a
+`unique` field already refuses is not reported twice.
+
 ## Search
 
 `graph search TEXT` answers "is there anything about this": it reads every

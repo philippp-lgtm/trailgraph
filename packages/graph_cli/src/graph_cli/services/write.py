@@ -719,11 +719,17 @@ def _scrub(finding: Finding, working: WorkingState, hidden: Set[UUID]) -> Findin
     target = dict(finding.target)
     if str(target.get("id")) in labels:
         del target["id"]
-    actual = finding.actual
-    if isinstance(actual, list):
-        actual = [clean(a) if isinstance(a, str) else a for a in actual]
-    elif isinstance(actual, str):
-        actual = clean(actual)
+
+    def scrub(value: JsonValue) -> JsonValue:
+        if isinstance(value, str):
+            return clean(value)
+        if isinstance(value, list):
+            return [scrub(v) for v in value]
+        if isinstance(value, Mapping):
+            return {k: scrub(v) for k, v in value.items()}
+        return value
+
+    actual = scrub(finding.actual)
     return replace(finding, target=target, message=clean(finding.message), actual=actual)
 
 

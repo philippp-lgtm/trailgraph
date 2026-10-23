@@ -35,6 +35,14 @@ from here.
 - **Uniqueness** holds among ``active`` entities of the class family where
   the attribute is declared (``declared_in`` and its subclasses); an alias
   set explicitly must not be bound already (B1.8).
+- **Names** (``possible_duplicate``, a warning): a label-role value an
+  active entity gains in a write (all of a create's; on an update those no
+  earlier revision had) that another active entity of the family where the
+  attribute is declared (as for uniqueness) also carries in a label-role
+  attribute, compared by ``normalize_label``. Main and alternative names
+  count alike; other types may share a name. A pair ``unique`` already
+  refuses (same attribute, same value) is not reported again. Batch reports
+  each shared name once, at the entity with the lowest id.
 - **Immutable** is write-once: set while absent, never changed or removed.
 - **Blobs** (write path): a new or changed ``blob`` value names a stored file
   or one the request stages (``blob_missing``); batch checks the shape only,
@@ -60,9 +68,10 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EdgeId, EntityId, TermRef, parse_id
 from graph_cli.kernel.ports.storage import Snapshot
-from graph_cli.kernel.query_ast import Cmp, Query
+from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
+from graph_cli.kernel.text import normalize_label
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
@@ -78,6 +87,30 @@ PROVENANCE_RELATIONS: Final = frozenset({"core:supersedes", "core:retracts"})
 _IRI_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S+$")
 _ALL: Final = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 _ACTIVE: Final = frozenset({"active"})
+_MAX_CANDIDATES: Final = 5
+
+
+@dataclass(frozen=True, slots=True)
+class _Name:
+    """One label-role value of an entity, with its match key."""
+
+    revision: Revision
+    attr: str
+    role: str
+    value: str
+    key: str
+
+
+def _names(model: CompiledModel, revision: Revision | None) -> list[_Name]:
+    if revision is None or revision.type not in model.classes:
+        return []
+    found = []
+    for attr, role in model.label_attributes(revision.type):
+        value = revision.attrs.get(attr)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str):
+                found.append(_Name(revision, attr, role, item, normalize_label(item)))
+    return found
 
 
 def _close(word: str, choices: Iterable[str]) -> list[JsonValue] | None:
@@ -422,6 +455,71 @@ class _Checker:
 
     # ---- semantics -----------------------------------------------------
 
+    @cached_property
+    def name_index(self) -> dict[str, list[_Name]]:
+        """Every label-role value of the active entities, by match key."""
+        labelled = {c: self.model.label_attributes(c) for c in self.model.classes}
+        types = sorted(c for c, found in labelled.items() if found)
+        attrs = sorted({a for found in labelled.values() for a, _ in found})
+        index: dict[str, list[_Name]] = {}
+        if not types:
+            return index
+        query = Query(
+            types=tuple(TermRef(t) for t in types),
+            where=Or(tuple(Cmp(a, "exists", True) for a in attrs)),
+            record_status=_ACTIVE,
+            limit=sys.maxsize,
+        )
+        for revision in self.snapshot.query(query).items:
+            for name in _names(self.model, revision):
+                index.setdefault(name.key, []).append(name)
+        return index
+
+    def same_names(self, name: _Name, cls: ClassDef) -> list[_Name]:
+        """Other active entities of the attribute's family carrying the name, one each."""
+        attribute = cls.attributes[name.attr]
+        family = set(self.model.subtypes(attribute.declared_in))
+        seen: dict[EntityId, _Name] = {}
+        for other in self.name_index.get(name.key, ()):
+            entity = other.revision.id
+            if entity == name.revision.id or entity in seen or other.revision.type not in family:
+                continue
+            if attribute.unique and other.attr == name.attr and other.value == name.value:
+                continue  # unique_violation reports it
+            seen[entity] = other
+        return sorted(seen.values(), key=lambda n: (n.revision.alias or "", str(n.revision.id)))
+
+    def duplicate_name(self, name: _Name, others: Sequence[_Name]) -> None:
+        first = others[0].revision
+        self.add(
+            "data.semantic.possible_duplicate",
+            name.revision,
+            f"attrs.{name.attr}",
+            f"{name.value!r} is also a name of {first.alias or first.id}"
+            f" ({first.type}, {others[0].attr})",
+            severity=Severity.WARNING,
+            actual=[
+                {
+                    "id": str(o.revision.id),
+                    "alias": o.revision.alias,
+                    "type": o.revision.type,
+                    "attr": o.attr,
+                    "role": o.role,
+                }
+                for o in others[:_MAX_CANDIDATES]
+            ],
+        )
+
+    def new_names(self, revision: Revision, cls: ClassDef, previous: Revision | None) -> None:
+        """Write path: names the entity did not carry before."""
+        known = {n.key for n in _names(self.model, previous)}
+        for name in _names(self.model, revision):
+            if name.key in known:
+                continue
+            others = self.same_names(name, cls)
+            if others:
+                self.duplicate_name(name, others)
+
     def unique_values(self, revision: Revision, cls: ClassDef) -> None:
         for name, attribute in cls.attributes.items():
             value = revision.attrs.get(name)
@@ -594,6 +692,7 @@ def validate_write(
     active = [rev for rev, _ in checkable.values() if rev.record_status == "active"]
     for revision in active:
         checker.unique_values(revision, checkable[revision.id][1])
+        checker.new_names(revision, checkable[revision.id][1], before.get(revision.id))
         checker.rules(revision, frozenset({"write"}))
     _neighbours(checker, before, after, touched)
     checker.cycles(rev for rev, _ in checkable.values())
@@ -828,6 +927,10 @@ def check_graph(model: CompiledModel, snapshot: Snapshot) -> list[Finding]:
                     _unique_key(model, attribute.kind, attribute.type, value),
                 )
                 groups.setdefault(key, []).append(revision)
+        for label in _names(model, revision):
+            others = checker.same_names(label, cls)
+            if others and str(revision.id) < min(str(o.revision.id) for o in others):
+                checker.duplicate_name(label, others)
         checker.rules(revision, frozenset({"write", "batch"}))
         checker.incoming_cardinality(revision)
     for (_, name, _), members in groups.items():

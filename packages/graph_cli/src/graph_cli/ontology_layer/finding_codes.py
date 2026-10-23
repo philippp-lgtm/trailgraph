@@ -125,6 +125,12 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _data("referential", "blob_missing", "A file hash names no stored file."),
     _data("referential", "cardinality_in", "Too few or too many incoming edges.", when="batch"),
     _data("semantic", "unique_violation", "A unique value or an alias is already used."),
+    _data(
+        "semantic",
+        "possible_duplicate",
+        "Another entity of the family already carries this name.",
+        _W,
+    ),
     _data("semantic", "cycle", "An acyclic relation forms a cycle."),
     _data("rule", "violated", "A rule does not hold."),
     _data("lifecycle", "invalid_initial_state", "The state is not an initial state."),

@@ -1,0 +1,11 @@
+{
+  "code": "data.semantic.possible_duplicate",
+  "ontology": "notes_and_sources",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "lenses",
+    "path": "attrs.synonyms",
+    "type": "nas:Topic"
+  }
+}

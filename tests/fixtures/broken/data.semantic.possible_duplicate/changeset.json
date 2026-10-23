@@ -1,0 +1,15 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "label": "Lenses",
+        "synonyms": [
+          "optics"
+        ]
+      },
+      "local": "lenses",
+      "op": "create",
+      "type": "nas:Topic"
+    }
+  ]
+}

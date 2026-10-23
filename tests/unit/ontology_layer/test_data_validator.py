@@ -740,3 +740,79 @@ def test_inactive_and_unknown_type_neighbours_are_skipped() -> None:
     ghost = revision("ghost", "inv:Gone", {"name": "g"})
     base = DictSnapshot(ROOM, ghost)
     assert rule_hits(part(1, str(ghost.id)), base=base) == []
+
+
+# ---- possible duplicates (F47) ----------------------------------------------
+
+OPTICS = revision("optics", "nas:Topic", {"label": "Optics", "synonyms": ["Lenses"]})
+GONE = revision("gone", "nas:Topic", {"label": "Acoustics"}, status="superseded")
+NAMES = DictSnapshot(TOPIC, OPTICS, GONE, WEB, NOTE)
+O = str(OPTICS.id)
+
+
+def topic(local: str, label: str, **attrs: Any) -> dict[str, Any]:
+    return {"op": "create", "type": "nas:Topic", "local": local, "attrs": {"label": label, **attrs}}
+
+
+def names(*ops: dict[str, Any]) -> list[tuple[str, str | None, str, Any]]:
+    """``(code, local or id, path, actual)`` of every finding."""
+    found = judge(NAS, *ops, base=NAMES)[1]
+    return [
+        (
+            f.code,
+            str(f.target.get("local") or f.target.get("id")),
+            str(f.target.get("path")),
+            f.actual,
+        )
+        for f in found
+    ]
+
+
+def test_a_new_name_already_carried_by_another_entity_warns() -> None:
+    physics = {"id": T, "alias": None, "type": "nas:Topic", "attr": "label", "role": "label"}
+    assert names(topic("x", "Mechanics", synonyms=["physics"])) == [
+        ("data.semantic.possible_duplicate", "x", "attrs.synonyms", [physics])
+    ]
+    # Main name against an alternative one, any case; a hidden name counts too.
+    lenses = {"id": O, "alias": None, "type": "nas:Topic", "attr": "synonyms", "role": "alt_label"}
+    assert names(topic("x", "LENSES")) == [
+        ("data.semantic.possible_duplicate", "x", "attrs.label", [lenses])
+    ]
+    assert names(topic("x", "Mirrors", misspellings=["lenses"]))[0][2] == "attrs.misspellings"
+    (finding,) = judge(NAS, topic("x", "Mechanics", synonyms=["physics"]), base=NAMES)[1]
+    assert finding.severity.value == "warning"
+    assert finding.message == f"'physics' is also a name of {T} (nas:Topic, label)"
+
+
+def test_unique_refusal_is_not_repeated_as_a_duplicate() -> None:
+    assert [code for code, *_ in names(topic("x", "Physics"))] == ["data.semantic.unique_violation"]
+
+
+def test_only_new_names_of_active_entities_in_the_family_count() -> None:
+    assert names(topic("x", "Acoustics")) == []  # the other one is superseded
+    assert names(topic("x", "N")) == []  # a note title: another family
+    assert names({"op": "update", "id": T, "set": {"synonyms": ["physics"]}}) == []  # its own
+    # Optics keeps "Lenses"; a name it already had is not new, even if shared later.
+    shared = DictSnapshot(TOPIC, OPTICS, revision("glass", "nas:Topic", {"label": "Lenses"}))
+    found = judge(NAS, {"op": "update", "id": O, "set": {"misspellings": ["optix"]}}, base=shared)
+    assert codes(found[1]) == []
+    assert codes(
+        judge(NAS, {"op": "update", "id": O, "set": {"misspellings": ["physics"]}}, base=shared)[1]
+    ) == ["data.semantic.possible_duplicate"]
+
+
+def test_two_new_entities_with_one_name_report_each_other() -> None:
+    found = names(topic("a", "Thermodynamics"), topic("b", "thermodynamics"))
+    assert [(code, who) for code, who, *_ in found] == [
+        ("data.semantic.possible_duplicate", "a"),
+        ("data.semantic.possible_duplicate", "b"),
+    ]
+
+
+def test_check_graph_reports_a_shared_name_once() -> None:
+    twin = revision("twin", "nas:Topic", {"label": "Natural philosophy", "synonyms": ["physics"]})
+    found = [f for f in check_graph(NAS, DictSnapshot(TOPIC, twin)) if "duplicate" in f.code]
+    (finding,) = found
+    first, second = sorted((TOPIC, twin), key=lambda r: str(r.id))
+    assert finding.target["id"] == str(first.id)
+    assert [c["id"] for c in finding.actual] == [str(second.id)]  # type: ignore[union-attr]
