@@ -58,9 +58,11 @@ CATEGORY_GUIDANCE: Final[Mapping[str, str]] = {
     " read-only or outside the project). Change the request; do not repeat it.",
     "usage": "The command line is wrong or incomplete (for example no graph selected)."
     " Check the command in `references/commands.md` or `graph describe commands --json`.",
-    "denied": "You are not permitted (or the batch exceeds your limit). Stop and tell the"
-    " user; do not retry under another identity and do not work around it. `graph whoami"
-    " --json` shows what you may do. If a reason is required, retry with `--reason`.",
+    "denied": "You are not permitted. Stop and tell the user; do not retry under another"
+    " identity and do not work around it. `graph whoami --json` shows what you may do. If a"
+    " reason is required, retry with `--reason`. If the batch is too large, split it into"
+    " documents of at most `max_batch` operations and tell the user that it is no longer"
+    " one transaction.",
     "conflict": "Someone else changed the data or the key was used for another request."
     " Read the entity again, then decide whether to retry.",
     "unavailable": "Storage, the audit log, a lock or the installation is not usable. If"
@@ -153,7 +155,9 @@ Read [references/query.md](references/query.md) before the first query.
   Never edit the project's pointer file, a policy or the data directory to
   get around it, and never retry under another identity.
 - The warning `access.project_unknown` means the project has no access of
-  its own yet and gets the access for no project. Tell the user.
+  its own yet and gets the access for no project. Go on within what
+  `graph whoami` shows, and tell the user once that the maintainer can give
+  the project its own access. Never change the project name to get more.
 
 ## Files
 
@@ -437,7 +441,9 @@ An edge in `edges` of a `create` has {edge_keys}.
 - At most {max_ops} operations and {max_mib} MiB per document, else
   `changeset.too_large`.
 - A policy may set a lower `max_batch` per document, else
-  `access.batch_too_large`.
+  `access.batch_too_large`. Then split the work into documents of at most
+  `max_batch` operations (JSONL, in order) and tell the user that it is no
+  longer one transaction.
 
 ## Example
 

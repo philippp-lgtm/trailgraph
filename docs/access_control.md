@@ -28,6 +28,9 @@ actor and what the policy allows it.
   `read` and `write` (read plus writes and extension actions).
 - A **graph policy** narrows inside one graph for everyone: types that are
   read-only, obligations (`require_reason`, `max_batch`) and deny rules.
+  `max_batch` bounds the operations of one change set, that is one
+  transaction, not the total: a larger batch is split into several
+  documents, each committed on its own.
   Types are checked for writes only, so type limits, deny rules on types and
   obligations name write actions. A type limit matches the exact type, so it
   must name concrete types (or `prefix:*`); an abstract type or one with

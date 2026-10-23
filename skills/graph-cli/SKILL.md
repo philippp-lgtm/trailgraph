@@ -94,7 +94,9 @@ Read [references/query.md](references/query.md) before the first query.
   Never edit the project's pointer file, a policy or the data directory to
   get around it, and never retry under another identity.
 - The warning `access.project_unknown` means the project has no access of
-  its own yet and gets the access for no project. Tell the user.
+  its own yet and gets the access for no project. Go on within what
+  `graph whoami` shows, and tell the user once that the maintainer can give
+  the project its own access. Never change the project name to get more.
 
 ## Files
 

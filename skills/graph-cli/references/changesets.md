@@ -75,7 +75,9 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
 - At most 1000 operations and 8 MiB per document, else
   `changeset.too_large`.
 - A policy may set a lower `max_batch` per document, else
-  `access.batch_too_large`.
+  `access.batch_too_large`. Then split the work into documents of at most
+  `max_batch` operations (JSONL, in order) and tell the user that it is no
+  longer one transaction.
 
 ## Example
 
