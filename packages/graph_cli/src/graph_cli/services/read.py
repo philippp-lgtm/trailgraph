@@ -9,8 +9,10 @@ raised as ``graph.not_found``, exactly like a graph that does not exist
 A read takes one lock-free snapshot and answers everything from it, so the
 envelope's ``graph.seq`` names the state that was read. A pinned artifact
 that does not match its hash is read with ``ontology.pin_mismatch_read``,
-an archived graph with ``graph.archived_read``. ``as_of`` is reserved: v1
-refuses it with ``temporal.as_of_unsupported``. A successful ``get``,
+an archived graph with ``graph.archived_read``. ``as_of`` reads the snapshot
+at the seq it names (B8.8): it needs ``read.history`` besides the read's own
+action, a backend with ``snapshot_at_seq``, and every answer carries
+``temporal.as_of_read``; the model stays the current pin. A successful ``get``,
 ``history``, ``find``, ``lookup``, ``neighbors`` or ``query`` hands the ids it
 returns to the activity sink (a transient signal for ``graph-admin view``,
 no log).
@@ -48,8 +50,8 @@ from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
-from graph_cli.kernel.ports.storage import Snapshot
-from graph_cli.kernel.query_ast import Query
+from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
+from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
@@ -63,6 +65,7 @@ from graph_cli.query.plan import DEFAULT_LIMIT, FindSpec, plan_find, plan_neighb
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
+from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
 
 SUPERSEDES = "core:supersedes"
@@ -183,15 +186,6 @@ def entities_in(rows: Sequence[Sequence[Value]]) -> list[EntityId]:
     return list(found)
 
 
-def refuse_as_of(as_of: str | None) -> None:
-    if as_of is not None:
-        raise GraphCliError(
-            "temporal.as_of_unsupported",
-            "reading as of an earlier state is not supported yet",
-            details={"as_of": as_of},
-        )
-
-
 def _query[**P, R](
     method: Callable[Concatenate[ReadService, P], R],
 ) -> Callable[Concatenate[ReadService, P], R]:
@@ -304,9 +298,19 @@ class ReadService:
     # ---- reads ---------------------------------------------------------
 
     def open(
-        self, actor: ActorContext, entry: GraphEntry, action: str, request: RequestMeta
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        action: str,
+        request: RequestMeta,
+        *,
+        as_of: AsOf | None = None,
     ) -> GraphRead:
+        """The graph's model and one snapshot: the head, or the state ``as_of`` names;
+        an earlier state is history, so it also needs ``read.history``."""
         self.authorize(actor, action, f"graph:{entry.id}", request, entry)
+        if as_of is not None and action != "read.history":
+            self.authorize(actor, "read.history", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
         if entry.state == "archived":
             warnings += (
@@ -315,6 +319,9 @@ class ReadService:
         read, _ = self._catalog.store_for(entry.id)
         with self.timings.phase("snapshot"):
             snapshot = read.snapshot()
+            if as_of is not None:
+                snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
+                warnings += (warning,)
         return GraphRead(entry, model, snapshot, (*warnings, *snapshot.warnings))
 
     def skill(
@@ -618,6 +625,34 @@ class ReadService:
             if exc.code != "backend.unavailable":
                 raise
             return ()
+
+
+def _snapshot_as_of(
+    read: GraphStoreRead, head: Snapshot, entry: GraphEntry, as_of: AsOf
+) -> tuple[Snapshot, WarningRecord]:
+    """The snapshot at the seq ``as_of`` names, and the warning that says so (B8.8)."""
+    if CAPABILITY_SNAPSHOT_AT_SEQ not in read.capabilities():
+        raise GraphCliError(
+            "temporal.as_of_unsupported",
+            "the storage backend of this graph cannot read an earlier state",
+            details={"as_of": as_of_text(as_of)},
+        )
+    seq = seq_at(head, as_of)
+    snapshot = head if seq == head.seq else read.snapshot(at_seq=seq)
+    tx = snapshot.tx(seq)
+    version = tx.ontology.version if tx is not None else None
+    message = f"read as of tx:{seq}; the graph is at tx:{head.seq}"
+    if version is not None and version != entry.pin.version:
+        message += (
+            f"; that state was written under ontology {version}, names follow {entry.pin.version}"
+        )
+    details: dict[str, JsonValue] = {
+        "as_of": as_of_text(as_of),
+        "seq": seq,
+        "head_seq": head.seq,
+        "ontology_version": version,
+    }
+    return snapshot, WarningRecord("temporal.as_of_read", message, details)
 
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:

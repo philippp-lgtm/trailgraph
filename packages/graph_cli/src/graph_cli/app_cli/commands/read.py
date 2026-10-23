@@ -20,6 +20,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.query_ast import AsOf
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.cypher.values import Value, parameter_value
 from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
@@ -31,7 +32,8 @@ from graph_cli.query.plan import (
     parse_rel_flag,
     split_assignment,
 )
-from graph_cli.services.read import GraphRead, QuerySpec, refuse_as_of
+from graph_cli.services.read import GraphRead, QuerySpec
+from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
 
 REF_ERRORS: Final = (
     *GRAPH_ERRORS,
@@ -55,15 +57,31 @@ STDIN: Final = "-"
 
 
 def _open(
-    state: CommandState, graph: str | None, action: str, command: str, args: dict[str, JsonValue]
+    state: CommandState,
+    graph: str | None,
+    action: str,
+    command: str,
+    args: dict[str, JsonValue],
+    as_of: AsOf | None,
 ) -> GraphRead:
     ctx = context(state)
     entry = ctx.select(graph)
-    view = ctx.reader.open(
-        ctx.actor, entry, action, RequestMeta.of(command, {"graph": entry.name, **args})
-    )
+    if as_of is not None:
+        args = {**args, "as_of": as_of_text(as_of)}
+    request = RequestMeta.of(command, {"graph": entry.name, **args})
+    view = ctx.reader.open(ctx.actor, entry, action, request, as_of=as_of)
     state.warnings += view.warnings
     return view
+
+
+def _as_of(text: str | None) -> AsOf | None:
+    """``--as-of`` parsed before the graph is opened (B8.8)."""
+    return None if text is None else parse_as_of(text)
+
+
+def _pinned(view: GraphRead, as_of: AsOf | None) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """``--as-of tx:<seq>`` for a next-page command: the same state, also after a timestamp."""
+    return () if as_of is None else (("--as-of", (f"tx:{view.snapshot.seq}",)),)
 
 
 def _command_line(
@@ -98,12 +116,13 @@ def _next_page(page: dict[str, JsonValue], line: Callable[[int], str]) -> tuple[
 def get(
     state: CommandState, ref: str, rev: int | None, graph: str | None, as_of: str | None
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
-    view = _open(state, graph, "read.get", "get", args)
+    view = _open(state, graph, "read.get", "get", args, point)
     ctx = context(state)
-    if rev is not None:
-        # An earlier revision is history: read.get and read.history (B8.15).
+    if rev is not None and point is None:
+        # An earlier revision is history: read.get and read.history (B8.15); with
+        # --as-of, opening the view authorized both.
         request = RequestMeta.of("get", {"graph": view.entry.name, **args})
         ctx.reader.authorize(
             ctx.actor, "read.history", f"graph:{view.entry.id}", request, view.entry
@@ -116,18 +135,18 @@ def get(
 def history(
     state: CommandState, ref: str, limit: int, offset: int, graph: str | None, as_of: str | None
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     check_paging(limit, offset)
-    view = _open(
-        state, graph, "read.history", "history", {"ref": ref, "limit": limit, "offset": offset}
-    )
+    args: dict[str, JsonValue] = {"ref": ref, "limit": limit, "offset": offset}
+    view = _open(state, graph, "read.history", "history", args, point)
     ctx = context(state)
     data, page, warnings = ctx.reader.history(view, ctx.actor, ref, limit=limit, offset=offset)
     state.warnings += warnings
     page_json = page.to_json()
 
     def line(next_offset: int) -> str:
-        return _command_line("history", (ref,), view.entry.name, (), (), limit, next_offset)
+        options = _pinned(view, point)
+        return _command_line("history", (ref,), view.entry.name, options, (), limit, next_offset)
 
     hints = _next_page(page_json, line)
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
@@ -146,7 +165,7 @@ def find(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     args: dict[str, JsonValue] = {
         "type": list(type),
         "where": list(where),
@@ -159,7 +178,7 @@ def find(
     }
     rels = [parse_rel_flag(text, "--rel") for text in rel]
     in_rels = [parse_rel_flag(text, "--in-rel") for text in in_rel]
-    view = _open(state, graph, "read.find", "find", args)
+    view = _open(state, graph, "read.find", "find", args, point)
     spec = FindSpec(
         types=type,
         where=where,
@@ -179,6 +198,7 @@ def find(
         ("--rel", rel),
         ("--in-rel", in_rel),
         ("--sort", sort),
+        *_pinned(view, point),
     )
     switches = ("--include-inactive",) if include_inactive else ()
 
@@ -201,7 +221,7 @@ def lookup(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     args: dict[str, JsonValue] = {
         "text": text,
         "type": list(type),
@@ -211,7 +231,7 @@ def lookup(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.find", "lookup", args)
+    view = _open(state, graph, "read.find", "lookup", args, point)
     spec = LookupSpec(
         text=text,
         types=type,
@@ -233,7 +253,11 @@ def lookup(
     )
 
     def line(match_kind: str, next_offset: int | None = None) -> str:
-        options = (("--type", type), ("--match", (match_kind,) if match_kind != "exact" else ()))
+        options = (
+            ("--type", type),
+            ("--match", (match_kind,) if match_kind != "exact" else ()),
+            *_pinned(view, point),
+        )
         return _command_line(
             "lookup", (text,), view.entry.name, options, switches, limit, next_offset
         )
@@ -258,14 +282,14 @@ def neighbors(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     args: dict[str, JsonValue] = {
         "ref": ref,
         "rel": list(rel),
         "direction": direction,
         "depth": depth,
     }
-    view = _open(state, graph, "read.traverse", "neighbors", args)
+    view = _open(state, graph, "read.traverse", "neighbors", args, point)
     data, warnings = context(state).reader.neighbors(
         view, ref, rels=rel, direction=direction, depth=depth
     )
@@ -344,7 +368,7 @@ def query(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    refuse_as_of(as_of)
+    point = _as_of(as_of)
     check_paging(limit, offset)
     source = _query_text(text, file)
     parameters = _parameters(param)
@@ -358,14 +382,18 @@ def query(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.query", "query", args)
+    view = _open(state, graph, "read.query", "query", args, point)
     spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
     data, page = reader.query(view, parsed, spec)
     if page is None:
         return Result(data=data, graph=view.envelope_graph())
     page_json = page.to_json()
     positional = () if text is None else (text,)
-    options = (("--file", () if file is None else (file,)), ("--param", param))
+    options = (
+        ("--file", () if file is None else (file,)),
+        ("--param", param),
+        *_pinned(view, point),
+    )
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
@@ -411,6 +439,9 @@ SPECS: Final = (
             Example("graph get <id>", "Show one entity."),
             Example("graph get <id> --graph <graph> --json", "The entity as JSON."),
             Example("graph get <id> --rev 2 --json", "The entity as it was at revision 2."),
+            Example(
+                "graph get <id> --as-of tx:<seq> --json", "The entity as it was after that tx."
+            ),
         ),
         errors=(*REF_ERRORS, "entity.revision_not_found"),
         handler=get,
@@ -482,6 +513,10 @@ SPECS: Final = (
             Example(
                 "graph find --type <type> --rel <relation>=<id>,<id> --json",
                 "An edge to any of the listed entities.",
+            ),
+            Example(
+                "graph find --type <type> --as-of tx:<seq> --json",
+                "The entities of a type as they were after that tx.",
             ),
         ),
         errors=(*REF_ERRORS, "term.unknown"),

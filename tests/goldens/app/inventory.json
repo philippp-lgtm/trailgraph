@@ -993,7 +993,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [
@@ -1008,6 +1008,10 @@
         {
           "command": "graph find --type <type> --rel <relation>=<id>,<id> --json",
           "summary": "An edge to any of the listed entities."
+        },
+        {
+          "command": "graph find --type <type> --as-of tx:<seq> --json",
+          "summary": "The entities of a type as they were after that tx."
         }
       ],
       "errors": [
@@ -1075,7 +1079,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [
@@ -1090,6 +1094,10 @@
         {
           "command": "graph get <id> --rev 2 --json",
           "summary": "The entity as it was at revision 2."
+        },
+        {
+          "command": "graph get <id> --as-of tx:<seq> --json",
+          "summary": "The entity as it was after that tx."
         }
       ],
       "errors": [
@@ -1201,7 +1209,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [
@@ -1455,7 +1463,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [
@@ -1553,7 +1561,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [
@@ -1668,7 +1676,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Read an earlier state (tx:<seq>); reserved."
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
         }
       ],
       "examples": [

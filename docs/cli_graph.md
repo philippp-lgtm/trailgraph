@@ -72,7 +72,29 @@ failure; `data.results` reports each processed document and the exit code is
 that of the failure. Its idempotency key is `idempotency_key` in each
 document; `apply --idempotency-key` sets it for input with a single document
 and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
-nothing, audit files included. `--as-of` is reserved and refused.
+nothing, audit files included.
+
+## Earlier states
+
+The reads `get`, `history`, `find`, `lookup`, `neighbors` and `query` take
+`--as-of` and then answer from the graph as it was: `tx:<seq>` reads the
+state after that transaction (`tx:0` is the empty graph; the `tx_seq` of
+an entity or of a `history` item names one), an RFC 3339 time with an
+offset (`2030-01-01T12:00:00Z`, `+02:00`) reads the state after the last
+transaction recorded at or before it. Everything comes from that state:
+references (an alias as it was bound then), `current_rev`, `superseded_by`
+and the status warnings of `get`, the revisions `history` lists, and the
+entities and edges the other reads match. An entity created later is
+`entity.not_found`. Names are resolved with the graph's current ontology.
+
+The envelope's `graph.seq` is the seq that was read, and every such answer
+carries the warning `temporal.as_of_read` with `{as_of, seq, head_seq,
+ontology_version}` (the version the state was written under). A
+next-page command repeats `--as-of tx:<seq>`, also after a time, so it
+reads the same state. A seq after the last transaction or a time without
+an offset is `usage.invalid_argument`. An earlier state is history, so
+`--as-of` also needs `read.history` (see
+[Access control: History](access_control.md#history)).
 
 Every write is a change set that commits completely or not at all;
 validation findings, refusals and dry runs are described in

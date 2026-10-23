@@ -1,9 +1,10 @@
 """Read services and describe on both backends x both fixtures over the seeds (plan A4, A5).
 
-Contracts §4.3, B2.10, B6.3, B7.6, B8.8, B8.12, B8.13, B8.15, B9.7, B11.5.
+Contracts §4.3, B2.10, B6.3, B7.6, B8.8, T.4, B8.12, B8.13, B8.15, B9.7, B11.5.
 """
 
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from support.trees import tree_hash
 
 from graph_cli.kernel.actor import ActorContext, Assurance, Facet
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.query_ast import Query
@@ -21,7 +23,8 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.lookup import LookupSpec
 from graph_cli.query.plan import FindSpec
 from graph_cli.services import describe
-from graph_cli.services.read import GraphRead, ReadService, refuse_as_of
+from graph_cli.services.read import GraphRead, QuerySpec, ReadService
+from graph_cli.temporal_knowledge.as_of import parse_as_of
 
 REQUEST = RequestMeta("get", "sha256:" + "0" * 64)
 ALL = frozenset({"active", "superseded", "retracted"})
@@ -208,11 +211,105 @@ def test_neighbors(svc: ServiceEnv, roles: Roles) -> None:
     assert len(deep["items"]) >= len(items)
 
 
-def test_as_of_is_refused() -> None:
+def open_as_of(svc: ServiceEnv, text: str, reader: ReadService | None = None) -> GraphRead:
+    reader = reader or svc.make_reader()
+    entry = svc.catalog.resolve(svc.name)
+    return reader.open(svc.actor, entry, "read.find", REQUEST, as_of=parse_as_of(text))
+
+
+def test_as_of_reads_the_state_after_that_tx(svc: ServiceEnv, roles: Roles) -> None:
+    """B8.8: every read answers from the snapshot at the seq --as-of names."""
+    before = svc.head_seq()
+    entity, attr = updated_twice(svc, roles)
+    reader = svc.make_reader()
+    view = open_as_of(svc, f"tx:{before + 2}", reader)
+    assert view.envelope_graph()["seq"] == before + 2
+    (warning,) = [w for w in view.warnings if w.code == "temporal.as_of_read"]
+    assert warning.details == {
+        "as_of": f"tx:{before + 2}",
+        "seq": before + 2,
+        "head_seq": before + 3,
+        "ontology_version": svc.entry.pin.version,
+    }
+    data, _ = reader.get(view, entity)
+    assert data["entity"]["rev"] == data["current_rev"] == 2  # type: ignore[index]
+    assert data["entity"]["attrs"][attr] == "second"  # type: ignore[index]
     with pytest.raises(GraphCliError) as info:
-        refuse_as_of("tx:3")
+        reader.get(view, entity, rev=3)
+    assert info.value.code == "entity.revision_not_found"
+    assert info.value.details["current_rev"] == 2
+    history, page, _ = reader.history(view, svc.actor, entity, limit=10, offset=0)
+    assert [i["rev"] for i in history["items"]] == [2, 1]  # type: ignore[index, union-attr]
+    assert page.total == 2
+    seed = open_as_of(svc, f"tx:{before}", reader)
+    with pytest.raises(GraphCliError) as info:
+        reader.get(seed, entity)
+    assert info.value.code == "entity.not_found"  # created after that tx
+    cls = roles.term("lifecycle_type")
+    _, now, _ = reader.find(open_view(svc, reader), FindSpec(types=(cls,), limit=500))
+    _, then, _ = reader.find(seed, FindSpec(types=(cls,), limit=500))
+    assert now.total == then.total + 1
+
+
+def test_as_of_the_empty_graph(svc: ServiceEnv, roles: Roles) -> None:
+    reader = svc.make_reader()
+    view = open_as_of(svc, "tx:0", reader)
+    assert view.envelope_graph()["seq"] == 0
+    warning = next(w for w in view.warnings if w.code == "temporal.as_of_read")
+    assert warning.details["ontology_version"] is None
+    assert reader.find(view, FindSpec(include_inactive=True))[1].total == 0
+    parsed = reader.parse_query("MATCH (n) RETURN count(n) AS n")
+    data, _ = reader.query(view, parsed, QuerySpec(include_inactive=True))
+    assert data["items"] == [{"n": 0}]
+    entity = svc.all_revisions()[0]
+    with pytest.raises(GraphCliError) as info:
+        reader.neighbors(view, str(entity.id))
+    assert info.value.code == "entity.not_found"
+
+
+def test_as_of_a_timestamp_reads_the_last_tx_at_or_before_it(svc: ServiceEnv) -> None:
+    """T.4: recorded_at never decreases, so a timestamp names one seq."""
+    txs = svc.txs()
+    middle = txs[len(txs) // 2]
+    at = format_timestamp(middle.recorded_at)
+    assert open_as_of(svc, at).snapshot.seq == middle.seq
+    just_before = format_timestamp(middle.recorded_at - timedelta(milliseconds=1))
+    assert open_as_of(svc, just_before).snapshot.seq < middle.seq
+    assert open_as_of(svc, "2000-01-01T00:00:00Z").snapshot.seq == 0
+    assert open_as_of(svc, "2999-01-01T00:00:00+02:00").snapshot.seq == svc.head_seq()
+
+
+def test_as_of_beyond_the_head_is_a_usage_error(svc: ServiceEnv) -> None:
+    with pytest.raises(GraphCliError) as info:
+        open_as_of(svc, f"tx:{svc.head_seq() + 1}")
+    assert info.value.code == "usage.invalid_argument"
+    assert info.value.details["head_seq"] == svc.head_seq()
+
+
+def test_as_of_needs_read_history(svc: ServiceEnv) -> None:
+    """An earlier state is history: a deny on read.history refuses it, audited."""
+    no_history = _policy(
+        {"id": "no_history", "effect": "deny", "action": ["read.history"], "resource": "graph:*"},
+        {"id": "read", "effect": "allow", "action": ["read.*"], "resource": "graph:*"},
+    )
+    reader = svc.make_reader(no_history)
+    open_view(svc, reader)  # the current state stays readable
+    with pytest.raises(GraphCliError) as info:
+        open_as_of(svc, "tx:1", reader)
+    assert info.value.code == "access.denied"
+    assert info.value.details["action"] == "read.history"
+    denial = svc.installation_events()[-1]
+    assert denial["result"] == {"status": "denied", "code": "access.denied"}
+
+
+def test_as_of_needs_a_backend_that_reads_earlier_states(
+    svc: ServiceEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(type(svc.store), "capabilities", lambda self: frozenset())
+    with pytest.raises(GraphCliError) as info:
+        open_as_of(svc, "tx:1")
     assert info.value.code == "temporal.as_of_unsupported"
-    refuse_as_of(None)
+    assert info.value.details == {"as_of": "tx:1"}
 
 
 def test_pin_mismatch_and_archived_read_with_warnings(svc: ServiceEnv) -> None:

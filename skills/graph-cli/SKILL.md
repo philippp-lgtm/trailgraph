@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:89a5da8a8a72b53fb7c60c93f881618e3e8a4a966a677abfa1f4683dbc69853a"
+  inventory_hash: "sha256:7a6b3a6d35fc4607c4e9573963ed4c2cf7e51bae3ccab2861e8c28a20c31e5d8"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -46,7 +46,10 @@ against it and audited. The CLI is on `PATH`.
    first: list them and ask which one is meant, then answer. When asked
    when or why something changed, `graph history <id> --json` lists its
    revisions with the reason and the names of what changed;
-   `graph get <id> --rev <value> --json` shows an earlier revision. For
+   `graph get <id> --rev <value> --json` shows an earlier revision. To
+   read the whole graph as it was, add `--as-of tx:<seq>` (a `tx_seq` from
+   the history) to any read; the answer warns that it is not the current
+   state. For
    questions over several hops, with OR or NOT across relations, or with
    counts, use `graph query` (below).
 4. Preview every write with `--dry-run --json` and check the findings.

@@ -184,6 +184,7 @@ def test_reads_help_dry_runs_and_usage_errors_change_nothing(
         ("get", entity),
         ("find", "--type", cls),
         ("neighbors", entity),
+        ("find", "--type", cls, "--as-of", "tx:1"),
         (*create_args(op, {}), "--dry-run"),
     ):
         result = run_cli("graph", *args, env=ENV)
@@ -194,7 +195,7 @@ def test_reads_help_dry_runs_and_usage_errors_change_nothing(
         ("create",),
         ("update", entity, "--unset", "no_such_attribute", "--dry-run"),
         ("find", "--limit", "100000"),
-        ("get", entity, "--as-of", "tx:1"),
+        ("get", entity, "--as-of", "yesterday"),
         ("apply", "-"),
         ("no_such_command",),
     ):

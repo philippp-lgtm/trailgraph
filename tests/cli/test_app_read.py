@@ -106,8 +106,50 @@ def test_history_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles
     assert [i["rev"] for i in second.data["items"]] == [entity["rev"] - 1]
     refused = app(run_cli, "history", entity["id"], "--limit", "0", env=ENV)
     assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument")
-    as_of = app(run_cli, "history", entity["id"], "--as-of", "tx:1", env=ENV)
-    assert as_of.error["code"] == "temporal.as_of_unsupported"
+
+
+def test_reads_as_of_an_earlier_tx(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    """B8.8: the state before the retract; next pages stay on it."""
+    entity = retracted_now(run_cli, roles)
+    head = app(run_cli, "get", entity["id"], env=ENV).envelope["graph"]["seq"]
+    before = f"tx:{head - 1}"
+    got = app(run_cli, "get", entity["id"], "--as-of", before, env=ENV)
+    assert got.code == 0, got.envelope
+    assert got.envelope["graph"]["seq"] == head - 1
+    assert got.data["entity"]["record_status"] == "active"
+    assert got.data["current_rev"] == entity["rev"] - 1
+    assert got.warning_codes == ["temporal.as_of_read"]
+    (warning,) = got.envelope["warnings"]
+    assert (warning["details"]["seq"], warning["details"]["head_seq"]) == (head - 1, head)
+    pinned = app(run_cli, "get", entity["id"], "--rev", "1", "--as-of", before, env=ENV)
+    assert pinned.code == 0 and pinned.data["entity"]["rev"] == 1
+    history = app(run_cli, "history", entity["id"], "--as-of", before, "--limit", "1", env=ENV)
+    assert [i["rev"] for i in history.data["items"]] == [entity["rev"] - 1]
+    if history.envelope["page"]["truncated"]:
+        command = history.envelope["hints"][0]["command"]
+        assert command.endswith(f"--as-of {before} --limit 1 --offset 1")
+    neighbors = app(run_cli, "neighbors", entity["id"], "--as-of", before, env=ENV)
+    assert neighbors.code == 0 and neighbors.warning_codes == ["temporal.as_of_read"]
+    cls = roles.term("retractable_type")
+    now = app(run_cli, "find", "--type", cls, "--limit", "500", env=ENV)
+    then = app(run_cli, "find", "--type", cls, "--limit", "500", "--as-of", before, env=ENV)
+    assert then.envelope["page"]["total"] == now.envelope["page"]["total"] + 1
+
+
+def test_as_of_a_timestamp_pins_the_next_page_to_its_tx(
+    run_cli: CliRunner, root: Path, roles: Roles
+) -> None:
+    cls = roles.term("lifecycle_type")
+    future = "2999-01-01T00:00:00Z"
+    first = app(run_cli, "find", "--type", cls, "--limit", "2", "--as-of", future, env=ENV)
+    assert first.code == 0, first.envelope
+    seq = first.envelope["graph"]["seq"]
+    (hint,) = first.envelope["hints"]
+    assert hint["command"].endswith(f"--as-of tx:{seq} --limit 2 --offset 2")
+    nxt = app(run_cli, *shlex.split(hint["command"])[1:])
+    assert nxt.code == 0 and nxt.envelope["graph"]["seq"] == seq
+    empty = app(run_cli, "find", "--as-of", "2000-01-01T00:00:00+01:00", env=ENV)
+    assert empty.envelope["graph"]["seq"] == 0 and empty.data["items"] == []
 
 
 def test_find_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: Roles) -> None:
@@ -159,8 +201,10 @@ def test_find_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     assert (bad.code, bad.error["code"]) == (2, "usage.invalid_argument")
     too_many = app(run_cli, "find", "--limit", "501", env=ENV)
     assert too_many.code == 2
-    as_of = app(run_cli, "find", "--as-of", "tx:3", env=ENV)
-    assert (as_of.code, as_of.error["code"]) == (1, "temporal.as_of_unsupported")
+    for as_of in ("yesterday", "2030-01-01", "tx:x", "tx:1000000"):
+        refused = app(run_cli, "find", "--as-of", as_of, env=ENV)
+        assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument"), as_of
+        assert refused.error["details"]["argument"] == "--as-of"
 
 
 def test_neighbors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
@@ -248,6 +292,10 @@ def test_lookup_without_exact_match_suggests_prefix(
         "--include-inactive"
     )
     assert app(run_cli, *shlex.split(hint["command"])[1:]).data["items"]
+    before = app(run_cli, "lookup", partial, "--include-inactive", "--as-of", "tx:0", env=ENV)
+    (hint,) = before.envelope["hints"]
+    assert hint["command"].endswith("--match prefix --as-of tx:0 --include-inactive")
+    assert app(run_cli, *shlex.split(hint["command"])[1:]).data["items"] == []
 
 
 def test_lookup_errors(run_cli: CliRunner, root: Path) -> None:
@@ -264,8 +312,6 @@ def test_lookup_errors(run_cli: CliRunner, root: Path) -> None:
     assert (refused.code, refused.error["code"]) == (1, "term.no_labels")
     assert refused.error["hint"] == f"graph describe type {bare}"
     assert refused.error["details"] == {"types": [bare]}
-    as_of = app(run_cli, "lookup", "x", "--as-of", "tx:3", env=ENV)
-    assert (as_of.code, as_of.error["code"]) == (1, "temporal.as_of_unsupported")
     blank = app(run_cli, "lookup", "  ", env=ENV)
     assert blank.code == 2
     bad_match = app(run_cli, "lookup", "x", "--match", "contains", env=ENV)

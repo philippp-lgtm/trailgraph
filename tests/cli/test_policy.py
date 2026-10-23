@@ -240,7 +240,12 @@ def test_a_deny_rule_withholds_history(run_cli: CliRunner, root: Path, tmp_path:
         "GRAPH_CLI_AGENT_TYPE": "explore",
         "GRAPH_CLI_GRAPH": "example_graph",
     }
-    for args in (("history", entity), ("get", entity, "--rev", "1")):
+    for args in (
+        ("history", entity),
+        ("get", entity, "--rev", "1"),
+        ("find", "--as-of", "tx:1"),
+        ("get", entity, "--as-of", "tx:1"),
+    ):
         refused = app(run_cli, *args, env=explore)
         assert (refused.code, refused.error["code"]) == (3, "access.denied"), args
         assert refused.error["details"]["action"] == "read.history"
@@ -248,8 +253,8 @@ def test_a_deny_rule_withholds_history(run_cli: CliRunner, root: Path, tmp_path:
     assert app(run_cli, "get", entity, env=explore).code == 0  # current state stays readable
     who = app(run_cli, "whoami", env=explore).data["permissions"]["graphs"]
     assert [(g["level"], g["withheld"]) for g in who] == [("none", ["read.history"])]
-    recorded = [d["authz"]["decisions"][0]["action"] for d in denials(root)[-2:]]
-    assert recorded == ["read.history", "read.history"]
+    recorded = [d["authz"]["decisions"][0]["action"] for d in denials(root)[-4:]]
+    assert recorded == ["read.history"] * 4
 
 
 POINTER = 'format_version = 1\nproject = "{project}"\ngraphs = ["example_graph", "other_graph"]\n'

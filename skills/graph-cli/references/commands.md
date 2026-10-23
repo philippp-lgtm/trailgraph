@@ -283,7 +283,7 @@ Usage: `graph find [OPTIONS]`
 | `--limit` | integer | no | no | Page size, at most 500. |
 | `--offset` | integer | no | no | Skip this many results. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Limit | Value |
 |---|---|
@@ -294,6 +294,7 @@ Usage: `graph find [OPTIONS]`
 | `graph find --type <type> --where <attr>=<value>` | Filter by a field. |
 | `graph find --type <type> --rel <relation>=<id> --json` | Filter by a relation. |
 | `graph find --type <type> --rel <relation>=<id>,<id> --json` | An edge to any of the listed entities. |
+| `graph find --type <type> --as-of tx:<seq> --json` | The entities of a type as they were after that tx. |
 
 ## graph get
 
@@ -311,13 +312,14 @@ Usage: `graph get REF [OPTIONS]`
 |---|---|---|---|---|
 | `--rev` | integer | no | no | Show this earlier revision instead of the current one. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Example | Summary |
 |---|---|
 | `graph get <id>` | Show one entity. |
 | `graph get <id> --graph <graph> --json` | The entity as JSON. |
 | `graph get <id> --rev 2 --json` | The entity as it was at revision 2. |
+| `graph get <id> --as-of tx:<seq> --json` | The entity as it was after that tx. |
 
 ## graph graphs
 
@@ -349,7 +351,7 @@ Usage: `graph history REF [OPTIONS]`
 | `--limit` | integer | no | no | Page size, at most 500. |
 | `--offset` | integer | no | no | Skip this many revisions. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Limit | Value |
 |---|---|
@@ -411,7 +413,7 @@ Usage: `graph lookup TEXT [OPTIONS]`
 | `--limit` | integer | no | no | Page size, at most 500. |
 | `--offset` | integer | no | no | Skip this many results. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Limit | Value |
 |---|---|
@@ -440,7 +442,7 @@ Usage: `graph neighbors REF [OPTIONS]`
 | `--direction` | choice | no | no | Edge direction. |
 | `--depth` | integer | no | no | Hops, 1 to 3. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Limit | Value |
 |---|---|
@@ -472,7 +474,7 @@ Usage: `graph query [TEXT] [OPTIONS]`
 | `--limit` | integer | no | no | Rows per page, at most 500. |
 | `--offset` | integer | no | no | Skip this many rows. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
-| `--as-of` | string | no | no | Read an earlier state (tx:<seq>); reserved. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Limit | Value |
 |---|---|

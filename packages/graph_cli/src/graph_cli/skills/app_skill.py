@@ -94,7 +94,10 @@ against it and audited. The CLI is on `PATH`.
    first: list them and ask which one is meant, then answer. When asked
    when or why something changed, `graph history <id> --json` lists its
    revisions with the reason and the names of what changed;
-   `graph get <id> --rev <value> --json` shows an earlier revision. For
+   `graph get <id> --rev <value> --json` shows an earlier revision. To
+   read the whole graph as it was, add `--as-of tx:<seq>` (a `tx_seq` from
+   the history) to any read; the answer warns that it is not the current
+   state. For
    questions over several hops, with OR or NOT across relations, or with
    counts, use `graph query` (below).
 4. Preview every write with `--dry-run --json` and check the findings.

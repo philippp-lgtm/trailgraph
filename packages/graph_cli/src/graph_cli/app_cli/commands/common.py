@@ -12,7 +12,11 @@ PROGRAM: Final = "graph"
 GRAPH: Final = ParamSpec(
     "--graph", "graph_ref", "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
 )
-AS_OF: Final = ParamSpec("--as-of", "string", "Read an earlier state (tx:<seq>); reserved.")
+AS_OF: Final = ParamSpec(
+    "--as-of",
+    "string",
+    "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access.",
+)
 JSON_OPTION: Final = ParamSpec("--json", "flag", "Write one JSON envelope to stdout.")
 GLOBAL_OPTIONS: Final = (JSON_OPTION, GRAPH)  # also accepted before the subcommand
 

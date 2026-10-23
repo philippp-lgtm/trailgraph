@@ -75,7 +75,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A query value has the wrong type or cannot be computed.",
     ),
-    ErrorSpec("temporal.as_of_unsupported", _C.REFUSED, False, "Time travel is not supported."),
+    ErrorSpec(
+        "temporal.as_of_unsupported",
+        _C.REFUSED,
+        False,
+        "The storage backend cannot read an earlier state.",
+    ),
     ErrorSpec("conflict.version_mismatch", _C.CONFLICT, True, "The entity has changed."),
     ErrorSpec("conflict.seq_mismatch", _C.CONFLICT, True, "The graph changed in the meantime."),
     ErrorSpec("conflict.idempotency_key_reuse", _C.CONFLICT, False, "Key reused, content differs."),
@@ -123,6 +128,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("audit.refusal_not_recorded", _C.WARNING, False, "A refusal was not audited."),
     ErrorSpec("ontology.pin_mismatch_read", _C.WARNING, False, "Read with a mismatching artifact."),
     ErrorSpec("graph.archived_read", _C.WARNING, False, "The graph is archived."),
+    ErrorSpec("temporal.as_of_read", _C.WARNING, False, "An earlier state was read."),
     ErrorSpec(
         "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
     ),

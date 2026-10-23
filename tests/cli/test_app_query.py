@@ -131,6 +131,17 @@ def test_inactive_entities_only_on_request(run_cli: CliRunner, root: Path) -> No
     assert shown.data["items"][0]["n"] >= 1
 
 
+def test_as_of_an_earlier_tx(run_cli: CliRunner, root: Path) -> None:
+    text = "MATCH (n) RETURN count(n) AS n"
+    empty = app(run_cli, "query", text, "--include-inactive", "--as-of", "tx:0", env=ENV)
+    assert empty.code == 0, empty.envelope
+    assert (empty.data["items"], empty.warning_codes) == ([{"n": 0}], ["temporal.as_of_read"])
+    now = app(run_cli, "query", text, "--include-inactive", env=ENV)
+    head = now.envelope["graph"]["seq"]
+    same = app(run_cli, "query", text, "--include-inactive", "--as-of", f"tx:{head}", env=ENV)
+    assert same.data["items"] == now.data["items"] and same.envelope["graph"]["seq"] == head
+
+
 def test_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     syntax = app(run_cli, "query", "MATCH (n RETURN n", env=ENV)
     assert (syntax.code, syntax.error["code"]) == (2, "query.syntax")
@@ -144,8 +155,8 @@ def test_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     assert (unbound.code, unbound.error["code"]) == (2, "query.unbound_variable")
     value = app(run_cli, "query", "RETURN 1 / 0", env=ENV)
     assert (value.code, value.error["code"]) == (1, "query.invalid_value")
-    as_of = app(run_cli, "query", "RETURN 1", "--as-of", "tx:3", env=ENV)
-    assert (as_of.code, as_of.error["code"]) == (1, "temporal.as_of_unsupported")
+    as_of = app(run_cli, "query", "RETURN 1", "--as-of", "tx:", env=ENV)
+    assert (as_of.code, as_of.error["code"]) == (2, "usage.invalid_argument")
     nothing = app(run_cli, "query", env=ENV)
     assert (nothing.code, nothing.error["code"]) == (2, "usage.invalid_argument")
 
