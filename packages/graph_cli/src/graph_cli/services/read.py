@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Concatenate
 
 from graph_cli.access_control.authorize import authorize
@@ -58,7 +58,14 @@ from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
-from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
+from graph_cli.query.lookup import (
+    LookupPlan,
+    LookupSpec,
+    main_label,
+    match_revision,
+    plan_lookup,
+    rank_key,
+)
 from graph_cli.query.plan import (
     ALWAYS_SHOWN,
     DEFAULT_LIMIT,
@@ -106,16 +113,18 @@ class Page:
     shown: int
     limit: int
     offset: int
+    more: bool | None = None  # set when limit and offset apply per group (lookup values)
 
     def to_json(self) -> dict[str, JsonValue]:
-        truncated = self.offset + self.shown < self.total
+        truncated = self.offset + self.shown < self.total if self.more is None else self.more
+        next_offset = self.offset + (self.shown if self.more is None else self.limit)
         return {
             "total": self.total,
             "shown": self.shown,
             "limit": self.limit,
             "offset": self.offset,
             "truncated": truncated,
-            "next_offset": self.offset + self.shown if truncated else None,
+            "next_offset": next_offset if truncated else None,
         }
 
 
@@ -516,29 +525,52 @@ class ReadService:
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
     @_query
-    def lookup(self, view: GraphRead, spec: LookupSpec) -> tuple[dict[str, JsonValue], Page]:
-        """Entities whose labels match, best first; one item per entity, its best match."""
-        plan = plan_lookup(view.model, spec)
-        found = []
-        for revision in view.snapshot.query(plan.query).items:
-            match = match_revision(plan, revision)
-            if match is not None:
-                found.append((rank_key(plan, revision, match), revision, match))
-        found.sort(key=lambda row: row[0])
-        shown = found[plan.offset : plan.offset + plan.limit]
-        items: list[JsonValue] = [
-            {
-                "id": str(revision.id),
-                "alias": revision.alias,
-                "type": revision.type,
-                "record_status": revision.record_status,
-                "label": main_label(plan, revision),
-                "match": match.to_json(),
-            }
-            for _, revision, match in shown
-        ]
-        self.activity.reads(view.entry.id, [revision.id for _, revision, _ in shown])
-        return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
+    def lookup(
+        self, view: GraphRead, spec: LookupSpec, texts: Sequence[str] = ()
+    ) -> tuple[dict[str, JsonValue], Page]:
+        """Entities whose labels match, best first; one item per entity and text, its best match.
+
+        ``texts`` (default: ``spec.text`` alone) are looked up one after the other with the
+        options of ``spec``; texts with the same normalized key are looked up once. Limit and
+        offset apply per text; ``data.texts`` counts the candidates and exact matches of each.
+        """
+        plans: dict[str, tuple[str, LookupPlan]] = {}
+        for text in texts or (spec.text,):
+            plan = plan_lookup(view.model, replace(spec, text=text))
+            plans.setdefault(plan.key, (text, plan))
+        revisions = view.snapshot.query(next(iter(plans.values()))[1].query).items
+        items: list[JsonValue] = []
+        counts: list[JsonValue] = []
+        shown_ids: list[EntityId] = []
+        total = more = 0
+        for text, plan in plans.values():
+            found = []
+            for revision in revisions:
+                match = match_revision(plan, revision)
+                if match is not None:
+                    found.append((rank_key(plan, revision, match), revision, match))
+            found.sort(key=lambda row: row[0])
+            shown = found[plan.offset : plan.offset + plan.limit]
+            items += [
+                {
+                    "text": text,
+                    "id": str(revision.id),
+                    "alias": revision.alias,
+                    "type": revision.type,
+                    "record_status": revision.record_status,
+                    "label": main_label(plan, revision),
+                    "match": match.to_json(),
+                }
+                for _, revision, match in shown
+            ]
+            exact = sum(1 for _, _, match in found if match.kind == "exact")
+            counts.append({"text": text, "total": len(found), "exact": exact})
+            shown_ids += [revision.id for _, revision, _ in shown]
+            total += len(found)
+            more += plan.offset + len(shown) < len(found)
+        self.activity.reads(view.entry.id, shown_ids)
+        page = Page(total, len(items), spec.limit, spec.offset, more=bool(more))
+        return {"items": items, "texts": counts}, page
 
     @_query
     def search(self, view: GraphRead, spec: SearchSpec) -> tuple[dict[str, JsonValue], Page]:

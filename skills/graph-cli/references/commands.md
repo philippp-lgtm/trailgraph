@@ -404,11 +404,11 @@ Find entities by name: main, alternative and hidden labels; ranked candidates.
 
 Kind: read. Surface: retrieve. Action: `read.find`. Exit codes: 0, 1, 2, 3, 5, 6.
 
-Usage: `graph lookup TEXT [OPTIONS]`
+Usage: `graph lookup TEXT... [OPTIONS]`
 
 | Argument | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `text` | string | yes | no | The name to look for. |
+| `text` | string | yes | yes | The names to look for, one per argument. |
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
@@ -428,6 +428,7 @@ Usage: `graph lookup TEXT [OPTIONS]`
 | Example | Summary |
 |---|---|
 | `graph lookup <value>` | Entities named exactly so, any type. |
+| `graph lookup <value> '<value> <value>' --json` | Several names in one call, one per argument. |
 | `graph lookup <value> --type <type> --match prefix --json` | Names of one type that start with the text. |
 
 ## graph neighbors

@@ -111,8 +111,9 @@ against it and audited. The CLI is on `PATH`.
    paged: follow `page.next_offset` or the hint until `page.truncated` is
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that
-   start with it), since names are not unique. Use the returned id only
-   when exactly one candidate matches exactly (`match.kind` is `exact`);
+   start with it), since names are not unique; give several names as
+   separate arguments, quoted if they hold spaces. Use a returned id only
+   when its name has exactly one exact match (`data.texts[].exact` is 1);
    otherwise list the candidates and ask which one is meant, then answer.
 4. `graph search <value> --json` searches names and every text field,
    forgiving case, accents, typos and parts of words. Its results are
@@ -533,8 +534,11 @@ OUTPUT_SECTIONS: Final = (
     ),
     (
         "Lookup",
-        "`graph lookup` lists candidates in `data.items`, best match first.",
+        "`graph lookup` lists candidates in `data.items`, per given name best match"
+        " first; `data.texts[]` has `text`, `total` and `exact` (the count of exact"
+        " matches) per name, also for a name without match.",
         (
+            ("text", "The given name this candidate matches."),
             ("id", "The id."),
             ("alias", "The alias."),
             ("type", "The type."),

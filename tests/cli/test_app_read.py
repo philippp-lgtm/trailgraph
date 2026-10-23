@@ -287,8 +287,11 @@ def test_lookup_finds_candidates(run_cli: CliRunner, root: Path, roles: Roles) -
         "kind": "exact",
         "value": value,
     }
-    assert set(item) == {"id", "alias", "type", "record_status", "label", "match"}
+    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match"}
+    assert item["text"] == value.upper()
     assert outcome.envelope["page"]["total"] == len(outcome.data["items"])
+    total = len(outcome.data["items"])
+    assert outcome.data["texts"] == [{"text": value.upper(), "total": total, "exact": total}]
     hidden_id, hidden = a_label(run_cli, roles, "hidden_label_attribute")
     found = app(run_cli, "lookup", hidden, "--type", str(roles.get("label_type")), env=ENV)
     (item,) = found.data["items"]
@@ -328,6 +331,43 @@ def test_lookup_without_exact_match_suggests_prefix(
     (hint,) = before.envelope["hints"]
     assert hint["command"].endswith("--match prefix --as-of tx:0 --include-inactive")
     assert app(run_cli, *shlex.split(hint["command"])[1:]).data["items"] == []
+
+
+def test_lookup_takes_several_names_one_per_argument(
+    run_cli: CliRunner, root: Path, roles: Roles
+) -> None:
+    entity, value = a_label(run_cli, roles)
+    spaced = "zz no such name"
+    outcome = app(run_cli, "lookup", value, spaced, value.upper(), "zzqq", env=ENV)
+    assert outcome.code == 0, outcome.envelope
+    texts = outcome.data["texts"]
+    assert [t["text"] for t in texts] == [value, spaced, "zzqq"]  # same key looked up once
+    assert texts[0]["exact"] >= 1 and texts[1:] == [
+        {"text": spaced, "total": 0, "exact": 0},
+        {"text": "zzqq", "total": 0, "exact": 0},
+    ]
+    assert {i["text"] for i in outcome.data["items"]} == {value}
+    assert entity in [i["id"] for i in outcome.data["items"]]
+    (hint,) = outcome.envelope["hints"]
+    assert hint["command"] == (
+        f"graph lookup {shlex.quote(spaced)} zzqq --graph example_graph --match prefix"
+    )
+    prefix = app(run_cli, *shlex.split(hint["command"])[1:])
+    assert [h["command"] for h in prefix.envelope["hints"]] == [
+        f"graph search {shlex.quote(spaced)} --graph example_graph",
+        "graph search zzqq --graph example_graph",
+    ]
+    initial = value[0]
+    every = app(run_cli, "lookup", initial, "zzqq", "--match", "prefix", env=ENV)
+    paged = app(run_cli, "lookup", initial, "zzqq", "--match", "prefix", "--limit", "1", env=ENV)
+    assert paged.envelope["page"]["truncated"] is (every.data["texts"][0]["total"] > 1)
+    if paged.envelope["page"]["truncated"]:
+        nxt = paged.envelope["hints"][0]["command"]
+        assert nxt.endswith("--limit 1 --offset 1") and " zzqq " in nxt
+        second = app(run_cli, *shlex.split(nxt)[1:])
+        assert second.data["items"] == every.data["items"][1:2]
+    many = app(run_cli, "lookup", *[f"n{i}" for i in range(51)], env=ENV)
+    assert many.code == 2
 
 
 def test_lookup_errors(run_cli: CliRunner, root: Path) -> None:

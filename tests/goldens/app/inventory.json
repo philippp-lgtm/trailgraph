@@ -1434,8 +1434,8 @@
           "name": "text",
           "type": "string",
           "required": true,
-          "repeatable": false,
-          "summary": "The name to look for."
+          "repeatable": true,
+          "summary": "The names to look for, one per argument."
         }
       ],
       "options": [
@@ -1507,6 +1507,10 @@
         {
           "command": "graph lookup <value>",
           "summary": "Entities named exactly so, any type."
+        },
+        {
+          "command": "graph lookup <value> '<value> <value>' --json",
+          "summary": "Several names in one call, one per argument."
         },
         {
           "command": "graph lookup <value> --type <type> --match prefix --json",

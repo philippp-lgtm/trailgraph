@@ -31,7 +31,7 @@ conflict, 5 unavailable, 6 internal error).
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)) |
 | `history REF` | one entity's revisions, newest first: time, command, reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` as for `get` |
-| `lookup TEXT` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); ranked candidates, paged |
+| `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
@@ -146,6 +146,17 @@ a hidden-label match does not echo its value. Labels are not identifiers:
 references stay ids, aliases and `@local` names. Types without label roles
 are `term.no_labels`. When nothing starts with the text, the hint is a
 `search`.
+
+`lookup` takes up to 50 names, one per argument: a name with spaces is
+quoted as one shell argument (`graph lookup 'Example name' EX`); `graph`
+splits nothing itself, since names hold spaces and commas. Names with the
+same normalized form are looked up once. Every item carries the `text` it
+matched, items are in the order of the names and then ranked, and
+`data.texts[]` gives `{text, total, exact}` per name, also for one without
+a match. `--limit` and `--offset` apply per name; `page.total` and
+`page.shown` are sums, and the next-page command repeats every name. Names
+without an exact match get one `--match prefix` hint; with `--match prefix`,
+names without a match get a `search` hint each (at most five).
 
 A write that gives an active entity a name (a value of a label-role field)
 that another active entity of the same type family already carries, as

@@ -68,10 +68,11 @@ they are null.
 
 ## Lookup
 
-`graph lookup` lists candidates in `data.items`, best match first.
+`graph lookup` lists candidates in `data.items`, per given name best match first; `data.texts[]` has `text`, `total` and `exact` (the count of exact matches) per name, also for a name without match.
 
 | Field | Meaning |
 |---|---|
+| `text` | The given name this candidate matches. |
 | `id` | The id. |
 | `alias` | The alias. |
 | `type` | The type. |

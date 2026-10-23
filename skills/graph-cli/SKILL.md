@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:330fcbd7788649291425377e020487d5bd12f9c17464b6d4a636febcba6fb7ef"
+  inventory_hash: "sha256:377cdb3b94cf21011580422ca0b47e18845b48901ccb9bbd973361b039357d91"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -47,8 +47,9 @@ against it and audited. The CLI is on `PATH`.
    paged: follow `page.next_offset` or the hint until `page.truncated` is
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that
-   start with it), since names are not unique. Use the returned id only
-   when exactly one candidate matches exactly (`match.kind` is `exact`);
+   start with it), since names are not unique; give several names as
+   separate arguments, quoted if they hold spaces. Use a returned id only
+   when its name has exactly one exact match (`data.texts[].exact` is 1);
    otherwise list the candidates and ask which one is meant, then answer.
 4. `graph search <value> --json` searches names and every text field,
    forgiving case, accents, typos and parts of words. Its results are

@@ -227,9 +227,13 @@ def find(
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
+MAX_LOOKUP_TEXTS: Final = 50
+MAX_SEARCH_HINTS: Final = 5
+
+
 def lookup(
     state: CommandState,
-    text: str,
+    text: tuple[str, ...],
     type: tuple[str, ...],
     match: str,
     ignore_accents: bool,
@@ -239,9 +243,15 @@ def lookup(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
+    if len(text) > MAX_LOOKUP_TEXTS:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"text: at most {MAX_LOOKUP_TEXTS} values, got {len(text)}",
+            details={"argument": "text", "actual": len(text)},
+        )
     point = _as_of(as_of)
     args: dict[str, JsonValue] = {
-        "text": text,
+        "text": list(text),
         "type": list(type),
         "match": match,
         "ignore_accents": ignore_accents,
@@ -251,7 +261,7 @@ def lookup(
     }
     view = _open(state, graph, "read.find", "lookup", args, point)
     spec = LookupSpec(
-        text=text,
+        text=text[0],
         types=type,
         match=match,
         ignore_accents=ignore_accents,
@@ -259,7 +269,7 @@ def lookup(
         limit=limit,
         offset=offset,
     )
-    data, page = context(state).reader.lookup(view, spec)
+    data, page = context(state).reader.lookup(view, spec, text)
     page_json = page.to_json()
     switches = tuple(
         flag
@@ -270,38 +280,45 @@ def lookup(
         if on
     )
 
-    def line(match_kind: str, next_offset: int | None = None) -> str:
+    def line(texts: tuple[str, ...], match_kind: str, next_offset: int | None = None) -> str:
         options = (
             ("--type", type),
             ("--match", (match_kind,) if match_kind != "exact" else ()),
             *_pinned(view, point),
         )
         return _command_line(
-            "lookup", (text,), view.entry.name, options, switches, limit, next_offset
+            "lookup", texts, view.entry.name, options, switches, limit, next_offset
         )
 
-    hints = _next_page(page_json, lambda next_offset: line(match, next_offset))
-    if not page.total and match == "exact":
-        hints = (
+    counts = data["texts"]
+    assert isinstance(counts, list)
+    missing = tuple(str(c["text"]) for c in counts if isinstance(c, Mapping) and not c["total"])
+    hints = _next_page(page_json, lambda next_offset: line(text, match, next_offset))
+    if missing and match == "exact":
+        hints += (
             {
-                "text": "No exact match; try names that start with the text",
-                "command": line("prefix"),
+                "text": "No exact match; try names that start with the text"
+                if len(counts) == 1
+                else f"No exact match for {len(missing)} of {len(counts)}; try names that "
+                "start with them",
+                "command": line(missing, "prefix"),
             },
         )
-    elif not page.total:
+    elif missing:
         options = (("--type", type), *_pinned(view, point))
-        hints = (
+        hints += tuple(
             {
                 "text": "No name starts with the text; search names and text fields",
                 "command": _command_line(
                     "search",
-                    (text,),
+                    (value,),
                     view.entry.name,
                     options,
                     ("--include-inactive",) if include_inactive else (),  # no accent switch
                     DEFAULT_LIMIT,
                 ),
-            },
+            }
+            for value in missing[:MAX_SEARCH_HINTS]
         )
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
@@ -634,11 +651,21 @@ SPECS: Final = (
         action="read.find",
         summary="Find entities by name: main, alternative and hidden labels; ranked candidates.",
         description=(
-            "Matches case- and Unicode-insensitively. Labels are not identifiers: use the "
-            "returned id for get, writes and change sets."
+            "Matches case- and Unicode-insensitively. Several names are looked up at once, "
+            f"at most {MAX_LOOKUP_TEXTS}; each argument is one name, so quote a name with "
+            "spaces. Limit and offset apply per name; data.texts counts the candidates and "
+            "exact matches of each. Labels are not identifiers: use the returned id for get, "
+            "writes and change sets."
         ),
         params=(
-            ParamSpec("text", "string", "The name to look for.", required=True, positional=True),
+            ParamSpec(
+                "text",
+                "string",
+                "The names to look for, one per argument.",
+                required=True,
+                positional=True,
+                repeatable=True,
+            ),
             ParamSpec(
                 "--type",
                 "term",
@@ -667,6 +694,10 @@ SPECS: Final = (
         ),
         examples=(
             Example("graph lookup <value>", "Entities named exactly so, any type."),
+            Example(
+                "graph lookup <value> '<value> <value>' --json",
+                "Several names in one call, one per argument.",
+            ),
             Example(
                 "graph lookup <value> --type <type> --match prefix --json",
                 "Names of one type that start with the text.",
