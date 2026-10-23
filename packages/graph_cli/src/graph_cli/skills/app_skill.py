@@ -118,7 +118,7 @@ against it and audited. The CLI is on `PATH`.
    forgiving case, accents, typos and parts of words. Its results are
    suggestions: read one with `graph get` before you use it.
 5. Before a create, search for the name and its short forms; if the same
-   thing exists, add the new name to it with `graph update` instead. Put
+   thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
 6. Preview every write with `--dry-run --json` and check the findings. On
@@ -147,9 +147,12 @@ tx:<seq>` on any read show earlier states; read
   use it up. Repeating the same command with the same key never writes
   twice: it returns the first result (`idempotent_replay` is true).
   Without a key, check `graph history <id> --json` before a retry.
-- Pass `--expect` with the `rev` you read so that a concurrent change is a
-  conflict instead of a lost update. `graph get` shows it as
-  `data.entity.rev`; a write returns the new one in `data.entities[].rev`.
+- `graph update --add <attr>=<value>` (or `--remove`) changes a list field
+  without reading it first; `--set` replaces the whole list.
+- When a write depends on what you read, pass `--expect` with that `rev`
+  so that a concurrent change is a conflict instead of a lost update.
+  `graph get` shows it as `data.entity.rev`; a write returns the new one
+  in `data.entities[].rev`.
 - Give `--reason` when the change needs one: always for `supersede` and
   `retract`, for other writes when `graph whoami` lists `require_reason`.
 - Fix a wrong value with `graph update`; the history keeps the old one.
@@ -215,19 +218,13 @@ equals `graph find --graph <graph>`):
 
 ## References
 
-- [references/commands.md](references/commands.md): arguments, options,
-  limits and examples of every command.
-- [references/errors.md](references/errors.md): every error code and what to
-  do per category.
-- [references/query.md](references/query.md): what `graph query` supports,
-  names, parameters and examples.
-- [references/changesets.md](references/changesets.md): the documents
-  `graph apply` takes: keys, operations, limits and an example.
+- [references/commands.md](references/commands.md): every command's options.
+- [references/errors.md](references/errors.md): error codes, what to do.
+- [references/query.md](references/query.md): what `graph query` supports.
+- [references/changesets.md](references/changesets.md): `graph apply` input.
 - [references/output.md](references/output.md): the fields of the answers.
-- [references/files.md](references/files.md): storing, linking and reading
-  files.
-- [references/history.md](references/history.md): earlier revisions and
-  states.
+- [references/files.md](references/files.md): storing and reading files.
+- [references/history.md](references/history.md): earlier states.
 """
 
 # (part, supported constructs); rendered as a table into references/query.md.
@@ -370,7 +367,7 @@ CHANGESET_DOCUMENT_GUIDANCE: Final[Mapping[str, str]] = {
 }
 CHANGESET_OP_GUIDANCE: Final[Mapping[str, str]] = {
     "create": "Create one entity, like `graph create`. `local` names it for later ops.",
-    "update": "Set or unset attributes, like `graph update`.",
+    "update": "Set, unset, add to or remove from attributes, like `graph update`.",
     "link": "Add an edge from `id` to `target`, like `graph link`.",
     "unlink": "Remove an edge by `edge_id`, or by `rel` and `target`.",
     "transition": "Move the lifecycle of `id` to the state `to`.",
@@ -435,6 +432,10 @@ An edge in `edges` of a `create` has {edge_keys}.
   take text converted by the attribute's datatype, as `--set` does. Name
   an attribute in only one of the two. A JSON number with a fraction is
   refused: write a decimal as a string or use the text form.
+- `add`, `add_text`, `remove` and `remove_text` take `{{"<attr>": [...]}}`
+  for a list field: `add` appends each value not yet there, `remove` drops
+  it; no read and no `expect_rev` needed. An attribute appears in only one
+  of the update keys.
 - `qualifiers` are typed JSON values on the edge itself (a page is a
   number); which ones a relation takes: `graph describe relations --json`.
   `target_rev` pins the revision of the target the edge refers to.

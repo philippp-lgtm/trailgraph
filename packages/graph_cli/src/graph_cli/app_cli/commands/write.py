@@ -109,6 +109,28 @@ def parse_json_values(values: Sequence[str], argument: str) -> dict[str, JsonVal
     return result
 
 
+def parse_text_lists(values: Sequence[str], argument: str) -> dict[str, tuple[str, ...]]:
+    """``attr=value`` repeated: the values of each attribute, in the given order."""
+    result: dict[str, tuple[str, ...]] = {}
+    for value in values:
+        name, text = split_assignment(value, argument)
+        result[_name(name, argument)] = (*result.get(name, ()), text)
+    return result
+
+
+def parse_json_lists(values: Sequence[str], argument: str) -> dict[str, tuple[JsonValue, ...]]:
+    """``attr=<json>`` repeated: one value per flag, an array included."""
+    result: dict[str, tuple[JsonValue, ...]] = {}
+    for value in values:
+        name, text = split_assignment(value, argument)
+        try:
+            item = load_document(text)
+        except GraphCliError as exc:
+            raise usage(argument, f"{name!r} is not valid JSON: {exc.message}", text) from None
+        result[_name(name, argument)] = (*result.get(name, ()), item)
+    return result
+
+
 def merge_values(texts: dict[str, str], values: dict[str, JsonValue], argument: str) -> None:
     for name in texts:
         if name in values:
@@ -229,6 +251,10 @@ def update(
     set: tuple[str, ...],
     set_json: tuple[str, ...],
     unset: tuple[str, ...],
+    add: tuple[str, ...],
+    add_json: tuple[str, ...],
+    remove: tuple[str, ...],
+    remove_json: tuple[str, ...],
     expect: int | None,
     graph: str | None,
     dry_run: bool,
@@ -241,14 +267,45 @@ def update(
     for name in names:
         if name in texts or name in values:
             raise usage("--unset", f"{name!r} is both set and unset", name)
-    if not (texts or values or names):
-        raise GraphCliError("usage.missing_argument", "update needs --set, --set-json or --unset")
-    op = UpdateOp(_ref(ref, "ref"), values, texts, tuple(dict.fromkeys(names)), expect)
+    add_texts, add_values = parse_text_lists(add, "--add"), parse_json_lists(add_json, "--add-json")
+    remove_texts = parse_text_lists(remove, "--remove")
+    remove_values = parse_json_lists(remove_json, "--remove-json")
+    seen: dict[str, str] = {name: "--set" for name in texts} | {n: "--set-json" for n in values}
+    seen |= {name: "--unset" for name in names}
+    for argument, given in (
+        ("--add", add_texts),
+        ("--add-json", add_values),
+        ("--remove", remove_texts),
+        ("--remove-json", remove_values),
+    ):
+        for name in given:
+            if name in seen:
+                raise usage(argument, f"{name!r} is given with {seen[name]} and {argument}", name)
+            seen[name] = argument
+    if not seen:
+        raise GraphCliError(
+            "usage.missing_argument", "update needs --set, --set-json, --unset, --add or --remove"
+        )
+    op = UpdateOp(
+        _ref(ref, "ref"),
+        values,
+        texts,
+        tuple(dict.fromkeys(names)),
+        expect,
+        add=add_values,
+        add_text=add_texts,
+        remove=remove_values,
+        remove_text=remove_texts,
+    )
     args: dict[str, JsonValue] = {
         "ref": ref,
         "set": list(set),
         "set_json": list(set_json),
         "unset": list(unset),
+        "add": list(add),
+        "add_json": list(add_json),
+        "remove": list(remove),
+        "remove_json": list(remove_json),
         "expect": expect,
     }
     return _apply(
@@ -495,16 +552,41 @@ CREATE: Final = _spec(
 UPDATE: Final = _spec(
     "update",
     "write.update",
-    "Set or unset attributes of one entity.",
+    "Set, unset, add to or remove from attributes of one entity.",
     (
         REF,
         SET,
         SET_JSON,
         ParamSpec("--unset", "string", "Attribute to remove.", repeatable=True),
+        ParamSpec(
+            "--add",
+            "assignment",
+            "attr=value appended to a list attribute unless present; coerced by datatype.",
+            repeatable=True,
+        ),
+        ParamSpec(
+            "--add-json", "json_assignment", "attr=<json>, one typed value to add.", repeatable=True
+        ),
+        ParamSpec(
+            "--remove",
+            "assignment",
+            "attr=value dropped from a list attribute; coerced by datatype.",
+            repeatable=True,
+        ),
+        ParamSpec(
+            "--remove-json",
+            "json_assignment",
+            "attr=<json>, one typed value to remove.",
+            repeatable=True,
+        ),
         EXPECT,
     ),
     (
         Example("graph update <id> --set <attr>=<value>", "Change one attribute."),
+        Example(
+            "graph update <id> --add <attr>=<value> --dry-run --json",
+            "Add one value to a list, no read needed.",
+        ),
         Example(
             "graph update <id> --unset <attr> --expect 3 --json", "Remove one, guarded by revision."
         ),

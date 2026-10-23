@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:6027e0b71ea76a63dfe6813799617652cfd630cd7e1f7c13a82bcab15ed9d877"
+  inventory_hash: "sha256:330fcbd7788649291425377e020487d5bd12f9c17464b6d4a636febcba6fb7ef"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -54,7 +54,7 @@ against it and audited. The CLI is on `PATH`.
    forgiving case, accents, typos and parts of words. Its results are
    suggestions: read one with `graph get` before you use it.
 5. Before a create, search for the name and its short forms; if the same
-   thing exists, add the new name to it with `graph update` instead. Put
+   thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
 6. Preview every write with `--dry-run --json` and check the findings. On
@@ -83,9 +83,12 @@ tx:<seq>` on any read show earlier states; read
   use it up. Repeating the same command with the same key never writes
   twice: it returns the first result (`idempotent_replay` is true).
   Without a key, check `graph history <id> --json` before a retry.
-- Pass `--expect` with the `rev` you read so that a concurrent change is a
-  conflict instead of a lost update. `graph get` shows it as
-  `data.entity.rev`; a write returns the new one in `data.entities[].rev`.
+- `graph update --add <attr>=<value>` (or `--remove`) changes a list field
+  without reading it first; `--set` replaces the whole list.
+- When a write depends on what you read, pass `--expect` with that `rev`
+  so that a concurrent change is a conflict instead of a lost update.
+  `graph get` shows it as `data.entity.rev`; a write returns the new one
+  in `data.entities[].rev`.
 - Give `--reason` when the change needs one: always for `supersede` and
   `retract`, for other writes when `graph whoami` lists `require_reason`.
 - Fix a wrong value with `graph update`; the history keeps the old one.
@@ -167,7 +170,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph supersede` | write | Replace entities by another one; needs --reason. |
 | `graph transition` | write | Move an entity's lifecycle to another state. |
 | `graph unlink` | write | Remove an edge by relation and target, or by edge id. |
-| `graph update` | write | Set or unset attributes of one entity. |
+| `graph update` | write | Set, unset, add to or remove from attributes of one entity. |
 | `graph whoami` | meta | Show who is acting: the identity facets and what the policy allows. |
 
 Global options, before or after the command (`graph --graph <graph> find`
@@ -185,16 +188,10 @@ equals `graph find --graph <graph>`):
 
 ## References
 
-- [references/commands.md](references/commands.md): arguments, options,
-  limits and examples of every command.
-- [references/errors.md](references/errors.md): every error code and what to
-  do per category.
-- [references/query.md](references/query.md): what `graph query` supports,
-  names, parameters and examples.
-- [references/changesets.md](references/changesets.md): the documents
-  `graph apply` takes: keys, operations, limits and an example.
+- [references/commands.md](references/commands.md): every command's options.
+- [references/errors.md](references/errors.md): error codes, what to do.
+- [references/query.md](references/query.md): what `graph query` supports.
+- [references/changesets.md](references/changesets.md): `graph apply` input.
 - [references/output.md](references/output.md): the fields of the answers.
-- [references/files.md](references/files.md): storing, linking and reading
-  files.
-- [references/history.md](references/history.md): earlier revisions and
-  states.
+- [references/files.md](references/files.md): storing and reading files.
+- [references/history.md](references/history.md): earlier states.

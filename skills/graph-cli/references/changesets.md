@@ -33,7 +33,7 @@ a single change the single-operation commands are simpler.
 | Op | Required | Optional | What it does |
 |---|---|---|---|
 | `create` | `op`, `type` | `local`, `attrs`, `attrs_text`, `edges`, `valid_from`, `valid_to` | Create one entity, like `graph create`. `local` names it for later ops. |
-| `update` | `op`, `id` | `set`, `set_text`, `unset`, `expect_rev` | Set or unset attributes, like `graph update`. |
+| `update` | `op`, `id` | `set`, `set_text`, `unset`, `add`, `add_text`, `remove`, `remove_text`, `expect_rev` | Set, unset, add to or remove from attributes, like `graph update`. |
 | `link` | `op`, `id`, `rel`, `target` | `qualifiers`, `target_rev`, `expect_rev` | Add an edge from `id` to `target`, like `graph link`. |
 | `unlink` | `op`, `id` | `edge_id`, `rel`, `target`, `expect_rev` | Remove an edge by `edge_id`, or by `rel` and `target`. |
 | `transition` | `op`, `id`, `to` | `attr`, `expect_rev` | Move the lifecycle of `id` to the state `to`. |
@@ -52,6 +52,10 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
   take text converted by the attribute's datatype, as `--set` does. Name
   an attribute in only one of the two. A JSON number with a fraction is
   refused: write a decimal as a string or use the text form.
+- `add`, `add_text`, `remove` and `remove_text` take `{"<attr>": [...]}`
+  for a list field: `add` appends each value not yet there, `remove` drops
+  it; no read and no `expect_rev` needed. An attribute appears in only one
+  of the update keys.
 - `qualifiers` are typed JSON values on the edge itself (a page is a
   number); which ones a relation takes: `graph describe relations --json`.
   `target_rev` pins the revision of the target the edge refers to.

@@ -176,6 +176,16 @@ def test_hash_ignores_key_order_and_explicit_defaults() -> None:
         (doc({"op": "update", "id": ID, "set": {"a": 1}, "unset": ["a"]}), "ops[0].unset[0]"),
         (doc({"op": "update", "id": ID, "unset": ["a", "a"]}), "ops[0].unset[1]"),
         (doc({"op": "update", "id": ID, "set": {"a": 1}, "expect_rev": 0}), "ops[0].expect_rev"),
+        (doc({"op": "update", "id": ID, "add": {"a": []}}), "ops[0].add.a"),
+        (doc({"op": "update", "id": ID, "add": {"a": "x"}}), "ops[0].add.a"),
+        (doc({"op": "update", "id": ID, "add_text": {"a": [1]}}), "ops[0].add_text.a[0]"),
+        (doc({"op": "update", "id": ID, "remove": {"A": [1]}}), "ops[0].remove.A"),
+        (doc({"op": "update", "id": ID, "set": {"a": [1]}, "add": {"a": [2]}}), "ops[0].add.a"),
+        (doc({"op": "update", "id": ID, "unset": ["a"], "remove": {"a": [2]}}), "ops[0].remove.a"),
+        (
+            doc({"op": "update", "id": ID, "add": {"a": [1]}, "remove_text": {"a": ["1"]}}),
+            "ops[0].remove_text.a",
+        ),
         (doc({"op": "link", "id": ID, "rel": "ex:r"}), "ops[0].target"),
         (doc({"op": "unlink", "id": ID}), "ops[0]"),
         (doc({"op": "unlink", "id": ID, "rel": "ex:r"}), "ops[0]"),
@@ -307,3 +317,28 @@ def test_changeset_without_optional_parts() -> None:
     cs = parse_changeset(doc(create()))
     assert cs == ChangeSet(ops=(CreateOp(TermRef("ex:Thing")),))
     assert changeset_to_json(cs) == {"schema": CHANGESET_SCHEMA, "ops": [create()]}
+
+
+def test_update_list_changes_round_trip() -> None:
+    document = doc(
+        {
+            "op": "update",
+            "id": ID,
+            "add": {"tags": ["a", 2]},
+            "add_text": {"days": ["2026-10-01"]},
+            "remove": {"refs": [{"k": 1}]},
+            "remove_text": {"names": ["x"]},
+        }
+    )
+    cs = parse_changeset(document)
+    (op,) = cs.ops
+    assert isinstance(op, UpdateOp)
+    assert op.add == {"tags": ("a", 2)} and op.remove_text == {"names": ("x",)}
+    assert op.list_names() == ("days", "names", "refs", "tags")
+    assert changeset_to_json(cs)["ops"] == [{**document["ops"][0], "id": ID}]
+    assert parse_changeset(changeset_to_json(cs)) == cs
+
+
+def test_an_update_with_only_list_changes_is_valid() -> None:
+    (op,) = parse_changeset(doc({"op": "update", "id": ID, "remove": {"a": [1]}})).ops
+    assert isinstance(op, UpdateOp) and op.remove == {"a": (1,)}

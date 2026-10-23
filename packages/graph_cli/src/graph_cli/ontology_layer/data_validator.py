@@ -842,6 +842,13 @@ def _judge_effect(
                     f"attrs.{name}",
                     f"{name!r} changes only through a transition",
                 )
+            elif attribute is not None and name in effect.lists and not attribute.many:
+                checker.add(
+                    "data.structural.cardinality_many",
+                    revision,
+                    f"attrs.{name}",
+                    f"add and remove need a list attribute (many: true); {name!r} holds one value",
+                )
     elif effect.op == "transition":
         _judge_transition(checker, effect, revision, cls)
     elif effect.op == "unlink":

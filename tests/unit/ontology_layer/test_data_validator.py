@@ -202,6 +202,18 @@ def test_valid_writes_on_both_fixtures_have_no_findings() -> None:
             [{"op": "update", "id": D, "unset": ["colour"]}],
             ["data.structural.unknown_attribute"],
         ),
+        (
+            [{"op": "update", "id": D, "add": {"colour": ["red"]}}],
+            ["data.structural.unknown_attribute"],
+        ),
+        (
+            [{"op": "update", "id": D, "add_text": {"name": ["Desk 2"]}}],
+            ["data.structural.cardinality_many"],
+        ),
+        (
+            [{"op": "update", "id": D, "remove": {"serial_number": ["SN-0001"]}}],
+            ["data.structural.cardinality_many"],
+        ),
     ],
 )
 def test_inventory_layers(ops: list[dict[str, Any]], expected: list[str]) -> None:

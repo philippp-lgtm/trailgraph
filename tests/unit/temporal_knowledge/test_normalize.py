@@ -143,6 +143,51 @@ def test_many_attribute_text_becomes_a_list() -> None:
     assert ws.revisions[DESK.id].attrs["name"] == ["x"]
 
 
+def _topic(**attrs: Any) -> Any:
+    return revision("topic", "nas:Topic", {"label": "Cost accounting", **attrs}, alias="TOPIC-0001")
+
+
+def run_topic(topic: Any, *ops: dict[str, Any]) -> WorkingState:
+    return run(*ops, base=DictSnapshot(topic), model=NAS, refs={"TOPIC-0001": topic.id})
+
+
+def test_add_appends_missing_values_in_order_and_keeps_the_stored_order() -> None:
+    topic = _topic(synonyms=["CA", "Costing"])
+    ws = run_topic(
+        topic,
+        {"op": "update", "id": "TOPIC-0001", "add": {"synonyms": ["COA", "CA", "COA", "X"]}},
+    )
+    assert ws.revisions[topic.id].attrs["synonyms"] == ["CA", "Costing", "COA", "X"]
+    assert ws.effects[0].names == ("synonyms",) and ws.effects[0].lists == ("synonyms",)
+    assert not ws.findings
+
+
+def test_add_to_an_absent_list_and_remove_everything_unsets_it() -> None:
+    topic = _topic()
+    ws = run_topic(
+        topic,
+        {"op": "update", "id": "TOPIC-0001", "add_text": {"misspellings": ["Costign"]}},
+        {"op": "update", "id": "TOPIC-0001", "add": {"synonyms": ["COA"]}},
+        {"op": "update", "id": "TOPIC-0001", "remove_text": {"misspellings": ["Costign", "y"]}},
+    )
+    assert ws.revisions[topic.id].attrs == {"label": "Cost accounting", "synonyms": ["COA"]}
+
+
+def test_remove_drops_every_equal_value_and_ignores_absent_ones() -> None:
+    topic = _topic(synonyms=["a", "b", "a", "c"])
+    ws = run_topic(
+        topic, {"op": "update", "id": "TOPIC-0001", "remove": {"synonyms": ["a", "zzz"]}}
+    )
+    assert ws.revisions[topic.id].attrs["synonyms"] == ["b", "c"]
+
+
+def test_add_on_a_single_value_attribute_changes_nothing() -> None:
+    topic = _topic()
+    ws = run_topic(topic, {"op": "update", "id": "TOPIC-0001", "add": {"label": ["Other"]}})
+    assert ws.revisions[topic.id].attrs["label"] == "Cost accounting"
+    assert ws.effects[0].lists == ("label",)
+
+
 def test_update_makes_the_next_revision() -> None:
     ws = run(
         {"op": "update", "id": "ITEM-0001", "set": {"condition": "worn"}, "unset": ["quantity"]},

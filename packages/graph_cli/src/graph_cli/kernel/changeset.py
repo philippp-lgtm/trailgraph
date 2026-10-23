@@ -54,6 +54,8 @@ IDEMPOTENCY_KEY_RE: Final = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SCHEMA_RE: Final = re.compile(r"^graph_cli\.changeset/[0-9]+$")
 
 EMPTY_TEXT: Final[Mapping[str, str]] = MappingProxyType({})
+NO_VALUES: Final[Mapping[str, tuple[JsonValue, ...]]] = MappingProxyType({})
+NO_TEXTS: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType({})
 
 # (required, optional) keys of the document, an edge and each op; the parser and
 # skill 1's change set reference read them, so the two cannot drift.
@@ -66,7 +68,10 @@ OP_KEYS: Final[Mapping[str, Keys]] = MappingProxyType(
             ("op", "type"),
             ("local", "attrs", "attrs_text", "edges", "valid_from", "valid_to"),
         ),
-        "update": (("op", "id"), ("set", "set_text", "unset", "expect_rev")),
+        "update": (
+            ("op", "id"),
+            ("set", "set_text", "unset", "add", "add_text", "remove", "remove_text", "expect_rev"),
+        ),
         "link": (("op", "id", "rel", "target"), ("qualifiers", "target_rev", "expect_rev")),
         "unlink": (("op", "id"), ("edge_id", "rel", "target", "expect_rev")),
         "transition": (("op", "id", "to"), ("attr", "expect_rev")),
@@ -125,6 +130,15 @@ class UpdateOp:
     set_text: Mapping[str, str] = field(default=EMPTY_TEXT)
     unset: tuple[str, ...] = ()
     expect_rev: int | None = None
+    # list attributes (many: true): values appended if absent, or dropped
+    add: Mapping[str, tuple[JsonValue, ...]] = field(default=NO_VALUES)
+    add_text: Mapping[str, tuple[str, ...]] = field(default=NO_TEXTS)
+    remove: Mapping[str, tuple[JsonValue, ...]] = field(default=NO_VALUES)
+    remove_text: Mapping[str, tuple[str, ...]] = field(default=NO_TEXTS)
+
+    def list_names(self) -> tuple[str, ...]:
+        """The attributes of ``add``, ``add_text``, ``remove`` and ``remove_text``."""
+        return tuple(sorted({*self.add, *self.add_text, *self.remove, *self.remove_text}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +239,8 @@ class OpEffect:
     op: str
     entity: EntityId
     applied: bool = True
-    names: tuple[str, ...] = ()  # create/update: attributes given; update: set and unset
+    names: tuple[str, ...] = ()  # create/update: attributes given; update: every key
+    lists: tuple[str, ...] = ()  # update: attributes of add/remove (judged for many: true)
     attr: str | None = None  # transition
     from_state: JsonValue = None
     to_state: str | None = None
@@ -458,11 +473,32 @@ def _create(obj: Mapping[str, JsonValue], path: str) -> CreateOp:
     )
 
 
+def _arrays(value: JsonValue, path: str) -> dict[str, tuple[JsonValue, ...]]:
+    """``{attr: [value, ...]}`` of add/remove: a non-empty array per valid name."""
+    obj = _object(value, path)
+    result: dict[str, tuple[JsonValue, ...]] = {}
+    for key, items in obj.items():
+        _name(key, _join(path, key))
+        if not isinstance(items, list | tuple) or not items:
+            raise _malformed(_join(path, key), "expected a non-empty array of values")
+        result[key] = tuple(items)
+    return result
+
+
+def _text_arrays(value: JsonValue, path: str) -> dict[str, tuple[str, ...]]:
+    return {
+        key: tuple(_str(item, _join(_join(path, key), i)) for i, item in enumerate(items))
+        for key, items in _arrays(value, path).items()
+    }
+
+
+_UPDATE_PARTS: Final = ("set", "set_text", "unset", "add", "add_text", "remove", "remove_text")
+
+
 def _update(obj: Mapping[str, JsonValue], path: str) -> UpdateOp:
     _keys(obj, path, OP_KEYS["update"])
     values = _values(obj.get("set", {}), _join(path, "set"))
     texts = _texts(obj.get("set_text", {}), _join(path, "set_text"))
-    _disjoint(values, texts, _join(path, "set_text"), "set and set_text")
     unset_path = _join(path, "unset")
     raw_unset = obj.get("unset", [])
     if not isinstance(raw_unset, list | tuple):
@@ -475,14 +511,36 @@ def _update(obj: Mapping[str, JsonValue], path: str) -> UpdateOp:
         if name in values or name in texts:
             raise _malformed(_join(unset_path, index), "both set and unset")
         unset.append(name)
-    if not (values or texts or unset):
-        raise _malformed(path, "an update needs set, set_text or unset")
+    add = _arrays(obj.get("add", {}), _join(path, "add"))
+    add_text = _text_arrays(obj.get("add_text", {}), _join(path, "add_text"))
+    remove = _arrays(obj.get("remove", {}), _join(path, "remove"))
+    remove_text = _text_arrays(obj.get("remove_text", {}), _join(path, "remove_text"))
+    parts: dict[str, Mapping[str, object]] = {
+        "set": values,
+        "set_text": texts,
+        "unset": dict.fromkeys(unset),
+        "add": add,
+        "add_text": add_text,
+        "remove": remove,
+        "remove_text": remove_text,
+    }
+    for later_index, later in enumerate(_UPDATE_PARTS):
+        for earlier in _UPDATE_PARTS[:later_index]:
+            if later == "unset" and earlier in ("set", "set_text"):
+                continue  # reported above, with the index in unset
+            _disjoint(parts[later], parts[earlier], _join(path, later), f"{earlier} and {later}")
+    if not any(parts.values()):
+        raise _malformed(path, "an update needs set, set_text, unset, add or remove")
     return UpdateOp(
         id=_ref(obj["id"], _join(path, "id")),
         set=values,
         set_text=texts,
         unset=tuple(unset),
         expect_rev=_opt_int(obj, "expect_rev", path, minimum=1),
+        add=add,
+        add_text=add_text,
+        remove=remove,
+        remove_text=remove_text,
     )
 
 
@@ -664,6 +722,8 @@ def op_to_json(op: Op) -> dict[str, JsonValue]:
             _put(data, "set", dict(op.set))
             _put(data, "set_text", dict(op.set_text))
             _put(data, "unset", list(op.unset))
+            for key in ("add", "add_text", "remove", "remove_text"):
+                _put(data, key, {name: list(items) for name, items in getattr(op, key).items()})
             _put(data, "expect_rev", op.expect_rev)
         case LinkOp():
             data["id"] = _ref_json(op.id)

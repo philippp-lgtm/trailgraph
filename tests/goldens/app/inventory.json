@@ -2549,7 +2549,7 @@
       "kind": "write",
       "surface": "act",
       "action": "write.update",
-      "summary": "Set or unset attributes of one entity.",
+      "summary": "Set, unset, add to or remove from attributes of one entity.",
       "args": [
         {
           "name": "ref",
@@ -2580,6 +2580,34 @@
           "required": false,
           "repeatable": true,
           "summary": "Attribute to remove."
+        },
+        {
+          "name": "--add",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value appended to a list attribute unless present; coerced by datatype."
+        },
+        {
+          "name": "--add-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=<json>, one typed value to add."
+        },
+        {
+          "name": "--remove",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=value dropped from a list attribute; coerced by datatype."
+        },
+        {
+          "name": "--remove-json",
+          "type": "json_assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "attr=<json>, one typed value to remove."
         },
         {
           "name": "--expect",
@@ -2621,6 +2649,10 @@
         {
           "command": "graph update <id> --set <attr>=<value>",
           "summary": "Change one attribute."
+        },
+        {
+          "command": "graph update <id> --add <attr>=<value> --dry-run --json",
+          "summary": "Add one value to a list, no read needed."
         },
         {
           "command": "graph update <id> --unset <attr> --expect 3 --json",

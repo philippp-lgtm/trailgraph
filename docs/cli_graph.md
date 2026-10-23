@@ -35,7 +35,7 @@ conflict, 5 unavailable, 6 internal error).
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
-| `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
+| `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason` |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin) |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice (see [Files](files.md)) |
@@ -81,6 +81,19 @@ that of the failure. Its idempotency key is `idempotency_key` in each
 document; `apply --idempotency-key` sets it for input with a single document
 and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
 nothing, audit files included.
+
+`--set` on a list attribute (`many: true`) replaces the whole list.
+`update --add attr=value` and `--remove attr=value` (and `--add-json`,
+`--remove-json`; repeatable, one value per flag) change it in place, in
+change sets the update keys `add`, `add_text`, `remove` and `remove_text`
+(`{attr: [value, ...]}`): `add` appends each value not yet present (equal
+as canonical JSON, after conversion by the datatype) and keeps the stored
+order, `remove` drops every equal value, and a list left empty is unset.
+They apply to the entity as the write finds it, so they need neither a
+read before nor `--expect`. On an attribute that holds one value the write
+is refused with `data.structural.cardinality_many`. One op names an
+attribute in only one of `set`, `set_text`, `unset`, `add`, `add_text`,
+`remove`, `remove_text`.
 
 ## Earlier states
 

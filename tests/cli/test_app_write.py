@@ -165,3 +165,50 @@ def test_qualified_link_unlink_by_edge_id_and_text(
     assert text.returncode == 0 and text.stderr == "" and text.stdout.strip()
     edges = app(run_cli, "get", source, env=ENV).data["entity"]["edges"]
     assert [e for e in edges if e["rel"] == rel] == []
+
+
+def test_add_and_remove_change_a_list_without_a_read(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    curie, _, attr = str(roles.get("alt_label_attribute")).rpartition(".")
+    ids = cli_create(run_cli, factory, curie)
+    first = app(
+        run_cli, "update", ids["x"], "--add", f"{attr}=One", "--add", f"{attr}=Two", env=ENV
+    )
+    assert first.code == 0, first.envelope
+    mixed = app(
+        run_cli,
+        "update",
+        ids["x"],
+        "--add",
+        f"{attr}=Two",
+        "--add-json",
+        f'{attr}="Three"',
+        env=ENV,
+    )
+    assert (mixed.code, mixed.error["details"]["argument"]) == (2, "--add-json")
+    added = app(
+        run_cli,
+        "update",
+        ids["x"],
+        "--add-json",
+        f'{attr}="Two"',
+        "--add-json",
+        f'{attr}="Three"',
+        env=ENV,
+    )
+    assert added.code == 0, added.envelope
+    shown = app(run_cli, "get", ids["x"], "--fields", attr, env=ENV)
+    assert shown.data["entity"]["attrs"][attr] == ["One", "Two", "Three"]
+    removed = app(run_cli, "update", ids["x"], "--remove", f"{attr}=One", "--expect", "3", env=ENV)
+    assert removed.code == 0, removed.envelope
+    shown = app(run_cli, "get", ids["x"], "--fields", attr, env=ENV)
+    assert shown.data["entity"]["attrs"][attr] == ["Two", "Three"]
+    label = str(roles.get("label_attribute")).rpartition(".")[2]
+    single = app(run_cli, "update", ids["x"], "--add", f"{label}=Other", "--dry-run", env=ENV)
+    assert (single.code, single.error["code"]) == (1, "write.invalid")
+    assert codes(single.error["details"]["findings"]) == ["data.structural.cardinality_many"]
+    both = app(run_cli, "update", ids["x"], "--set", f"{attr}=x", "--remove", f"{attr}=x", env=ENV)
+    assert (both.code, both.error["details"]["argument"]) == (2, "--remove")
+    none = app(run_cli, "update", ids["x"], env=ENV)
+    assert (none.code, none.error["code"]) == (2, "usage.missing_argument")

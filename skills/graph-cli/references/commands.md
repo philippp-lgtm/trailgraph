@@ -692,7 +692,7 @@ Usage: `graph unlink REF [REL] [TARGET] [OPTIONS]`
 
 ## graph update
 
-Set or unset attributes of one entity.
+Set, unset, add to or remove from attributes of one entity.
 
 Kind: write. Surface: act. Action: `write.update`. Exit codes: 0, 1, 2, 3, 4, 5, 6.
 
@@ -707,6 +707,10 @@ Usage: `graph update REF [OPTIONS]`
 | `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype. |
 | `--set-json` | json_assignment | no | yes | attr=<json>, a typed value. |
 | `--unset` | string | no | yes | Attribute to remove. |
+| `--add` | assignment | no | yes | attr=value appended to a list attribute unless present; coerced by datatype. |
+| `--add-json` | json_assignment | no | yes | attr=<json>, one typed value to add. |
+| `--remove` | assignment | no | yes | attr=value dropped from a list attribute; coerced by datatype. |
+| `--remove-json` | json_assignment | no | yes | attr=<json>, one typed value to remove. |
 | `--expect` | integer | no | no | Refuse unless the entity is at this revision. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--dry-run` | flag | no | no | Validate and show the result without writing. |
@@ -716,6 +720,7 @@ Usage: `graph update REF [OPTIONS]`
 | Example | Summary |
 |---|---|
 | `graph update <id> --set <attr>=<value>` | Change one attribute. |
+| `graph update <id> --add <attr>=<value> --dry-run --json` | Add one value to a list, no read needed. |
 | `graph update <id> --unset <attr> --expect 3 --json` | Remove one, guarded by revision. |
 
 ## graph whoami

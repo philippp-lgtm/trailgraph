@@ -18,6 +18,11 @@ recorded ``OpEffect`` per op, so each problem is reported once.
   (``values.coerce_text``, B3.16); a value that does not coerce, or an
   unknown attribute, stays the given string; a ``many`` attribute becomes a
   one-element list.
+- **List changes** (``add``, ``remove`` and their ``_text`` forms, coerced
+  per item) apply to ``many`` attributes only: ``add`` appends each value
+  not yet present (canonical equality), ``remove`` drops every equal value,
+  a list left empty is unset. On any other attribute nothing changes and
+  the validator reports it from ``OpEffect.lists``.
 - **Aliases** (B1.8): a create of a type with a configured prefix (exact
   type) gets ``kernel.ids.format_alias`` (``<PREFIX>-<n:04d>``);
   ``set_alias`` renames, and an explicit alias above an auto prefix's
@@ -67,6 +72,7 @@ from graph_cli.kernel.ids import (
     format_alias,
 )
 from graph_cli.kernel.ports.storage import Snapshot
+from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import (
     EdgeRecord,
     RecordStatus,
@@ -213,14 +219,24 @@ class _Run:
     def coerce(self, type: str, name: str, text: str) -> JsonValue:
         cls = self.cls(type)
         attribute = None if cls is None else cls.attributes.get(name)
+        value = self.coerce_item(type, name, text)
+        return [value] if attribute is not None and attribute.many else value
+
+    def coerce_item(self, type: str, name: str, text: str) -> JsonValue:
+        """One value of the attribute from text; the text itself if it does not coerce."""
+        cls = self.cls(type)
+        attribute = None if cls is None else cls.attributes.get(name)
         if attribute is None:
             return text
-        value: JsonValue
         try:
-            value = coerce_text(self.model.value_base(attribute.kind, attribute.type), text)
+            return coerce_text(self.model.value_base(attribute.kind, attribute.type), text)
         except ValueError:
-            value = text
-        return [value] if attribute.many else value
+            return text
+
+    def is_list(self, type: str, name: str) -> bool:
+        cls = self.cls(type)
+        attribute = None if cls is None else cls.attributes.get(name)
+        return attribute is not None and attribute.many
 
     def allocate(self, entity: EntityId, alias: str) -> None:
         self.allocations[entity] = alias
@@ -281,9 +297,12 @@ class _Run:
 
     def update(self, index: int, op: UpdateOp) -> None:
         entity = self.resolve(op.id)
-        names = tuple(sorted({*op.set, *op.set_text, *op.unset}))
+        lists = op.list_names()
+        names = tuple(sorted({*op.set, *op.set_text, *op.unset, *lists}))
         if not self.active_or_report(entity, op.OP):
-            self.effects.append(OpEffect(index, op.OP, entity, applied=False, names=names))
+            self.effects.append(
+                OpEffect(index, op.OP, entity, applied=False, names=names, lists=lists)
+            )
             return
         work = self.touch(entity)
         work.attrs.update(op.set)
@@ -291,7 +310,31 @@ class _Run:
             work.attrs[name] = self.coerce(work.type, name, text)
         for name in op.unset:
             work.attrs.pop(name, None)
-        self.effects.append(OpEffect(index, op.OP, entity, names=names))
+        for name in lists:
+            if self.is_list(work.type, name):  # otherwise the validator reports it
+                self.change_list(work.attrs, work.type, name, op)
+        self.effects.append(OpEffect(index, op.OP, entity, names=names, lists=lists))
+
+    def change_list(self, attrs: dict[str, JsonValue], type: str, name: str, op: UpdateOp) -> None:
+        """Append the values not yet present, in order; drop every value removed."""
+        current = attrs.get(name)
+        items = list(current) if isinstance(current, list | tuple) else []
+        texts = op.add_text.get(name, ()) or op.remove_text.get(name, ())
+        given = [
+            *op.add.get(name, ()),
+            *op.remove.get(name, ()),
+            *(self.coerce_item(type, name, text) for text in texts),
+        ]
+        if name in op.add or name in op.add_text:
+            for value in given:
+                if not any(strict_equal(value, item) for item in items):
+                    items.append(value)
+        else:
+            items = [item for item in items if not any(strict_equal(item, v) for v in given)]
+        if items:
+            attrs[name] = items
+        else:
+            attrs.pop(name, None)
 
     def reserved(self, entity: EntityId, rel: TermRef) -> bool:
         if rel not in RESERVED_RELATIONS:
