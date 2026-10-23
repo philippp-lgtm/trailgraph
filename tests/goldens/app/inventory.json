@@ -53,6 +53,13 @@
           "summary": "Validate every document without writing."
         },
         {
+          "name": "--summary",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Per document only counts, seq and findings: entities is null, entity_count stays."
+        },
+        {
           "name": "--idempotency-key",
           "type": "string",
           "required": false,
@@ -68,6 +75,10 @@
         {
           "command": "graph apply <file> --dry-run --json",
           "summary": "Check a file without writing."
+        },
+        {
+          "command": "graph apply <file> --summary --json",
+          "summary": "Apply a large file, findings without the list."
         }
       ],
       "errors": [

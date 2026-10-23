@@ -163,8 +163,8 @@ tx:<seq>` on any read show earlier states; read
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file in the working
   directory, dry-run it with `graph apply <file> --dry-run --json`, then
-  apply it. Read [references/changesets.md](references/changesets.md)
-  before the first one.
+  apply it; `--summary` leaves out the list of entities. Read
+  [references/changesets.md](references/changesets.md) before the first.
 
 ## Access
 
@@ -411,7 +411,7 @@ a single change the single-operation commands are simpler.
    nothing. Read the findings and fix the document.
 4. `graph apply <file> --json`. `data.results` has one entry per document;
    its `result.entities` lists every entity written with its `local` name,
-   `id`, `alias` and new `rev`.
+   `id`, `alias` and new `rev` (`--summary`: only `entity_count`).
 5. Verify with `graph get <id> --json`.
 
 ## Document
@@ -606,12 +606,14 @@ OUTPUT_SECTIONS: Final = (
             ("idempotent_replay", "True when a retry returned the first result."),
             ("id", "The id when one entity was written, else null."),
             ("version", "Its new `rev` when one entity was written, else null."),
+            ("entity_count", "How many entities were written."),
             ("entities[].id", "Each entity written; null for a create on a dry run."),
             ("entities[].alias", "Its alias."),
             ("entities[].rev", "Its new revision."),
             ("entities[].type", "Its type."),
             ("entities[].ops", "The operations that touched it."),
             ("entities[].local", "Its `local` name from a change set, or null."),
+            ("entities", "Null with `graph apply --summary`."),
             ("findings", "Warnings about the written data: `severity`, `code`, `message`."),
         ),
     ),

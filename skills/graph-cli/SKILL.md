@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:377cdb3b94cf21011580422ca0b47e18845b48901ccb9bbd973361b039357d91"
+  inventory_hash: "sha256:797d8a7b12b266bbd684fb2047f28776fb76b4d285d50a30365d3c53487e6f08"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -99,8 +99,8 @@ tx:<seq>` on any read show earlier states; read
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file in the working
   directory, dry-run it with `graph apply <file> --dry-run --json`, then
-  apply it. Read [references/changesets.md](references/changesets.md)
-  before the first one.
+  apply it; `--summary` leaves out the list of entities. Read
+  [references/changesets.md](references/changesets.md) before the first.
 
 ## Access
 

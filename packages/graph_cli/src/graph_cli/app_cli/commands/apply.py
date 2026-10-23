@@ -7,7 +7,8 @@ earlier documents stay resolvable. Processing stops at the first failure:
 ``data.results[]`` reports each processed document and the failure is the
 envelope error, so the exit code is that of the first failure.
 ``--idempotency-key`` sets the key of a single document; JSONL input keeps
-one ``idempotency_key`` per document.
+one ``idempotency_key`` per document. ``--summary`` leaves out the entities
+of each result (``entities: null``) and keeps their count and the findings.
 """
 
 from __future__ import annotations
@@ -105,6 +106,7 @@ def apply(
     graph: str | None,
     dry_run: bool,
     idempotency_key: str | None,
+    summary: bool,
 ) -> Result:
     from graph_cli.services.write import WriteRequest  # loaded by apply only
 
@@ -133,7 +135,7 @@ def apply(
     results: list[JsonValue] = []
     for index, result in enumerate(batch.results):
         state.warnings += result.warnings
-        results.append({"index": index, "ok": True, "result": result.to_json()})
+        results.append({"index": index, "ok": True, "result": result.to_json(summary=summary)})
     error = None
     if batch.error is not None:
         assert batch.failed_index is not None
@@ -188,6 +190,11 @@ APPLY: Final = CommandSpec(
         GRAPH,
         ParamSpec("--dry-run", "flag", "Validate every document without writing."),
         ParamSpec(
+            "--summary",
+            "flag",
+            "Per document only counts, seq and findings: entities is null, entity_count stays.",
+        ),
+        ParamSpec(
             "--idempotency-key",
             "string",
             "Key that makes a retry safe; single document only, else idempotency_key "
@@ -197,6 +204,9 @@ APPLY: Final = CommandSpec(
     examples=(
         Example(f"graph apply {STDIN} --json", "Apply documents from stdin."),
         Example("graph apply <file> --dry-run --json", "Check a file without writing."),
+        Example(
+            "graph apply <file> --summary --json", "Apply a large file, findings without the list."
+        ),
     ),
     errors=APPLY_ERRORS,
     handler=apply,

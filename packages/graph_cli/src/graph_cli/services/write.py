@@ -163,7 +163,8 @@ class WriteResult:
     findings: tuple[Finding, ...] = ()  # warning findings (additive to B3)
     bindings: Mapping[str, EntityId] = field(default=NO_BINDINGS)  # locals bound by this tx
 
-    def to_json(self) -> dict[str, JsonValue]:
+    def to_json(self, *, summary: bool = False) -> dict[str, JsonValue]:
+        """``summary`` leaves out the per-entity list (``entities: null``), not its count."""
         single = self.entities[0] if len(self.entities) == 1 else None
         return {
             "tx_id": None if self.tx_id is None else str(self.tx_id),
@@ -173,7 +174,8 @@ class WriteResult:
             "idempotent_replay": self.idempotent_replay,
             "id": None if single is None or single.id is None else str(single.id),
             "version": None if single is None else single.rev,
-            "entities": [e.to_json() for e in self.entities],
+            "entity_count": len(self.entities),
+            "entities": None if summary else [e.to_json() for e in self.entities],
             "findings": [f.to_json() for f in self.findings],
         }
 

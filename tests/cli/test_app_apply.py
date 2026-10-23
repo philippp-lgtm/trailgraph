@@ -94,6 +94,21 @@ def test_file_argument_and_dry_run(
     assert (missing.code, missing.error["code"]) == (2, "usage.invalid_argument")
 
 
+def test_summary_keeps_counts_and_findings_without_entities(
+    run_cli: CliRunner, root: Path, ontology: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "changes.jsonl"
+    path.write_text(seed(ontology))
+    full = app(run_cli, "apply", str(path), "--dry-run", env=ENV)
+    short = app(run_cli, "apply", str(path), "--dry-run", "--summary", env=ENV)
+    assert short.code == 0, short.envelope
+    for whole, brief in zip(full.data["results"], short.data["results"], strict=True):
+        counted = whole["result"]["entity_count"]
+        assert counted == len(whole["result"]["entities"]) > 0
+        assert brief["result"] == {**whole["result"], "entities": None}
+    assert len(json.dumps(short.envelope)) < len(json.dumps(full.envelope))
+
+
 def test_stop_at_the_first_failure_with_results(
     run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
 ) -> None:

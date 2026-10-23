@@ -129,10 +129,12 @@ they are null.
 | `idempotent_replay` | True when a retry returned the first result. |
 | `id` | The id when one entity was written, else null. |
 | `version` | Its new `rev` when one entity was written, else null. |
+| `entity_count` | How many entities were written. |
 | `entities[].id` | Each entity written; null for a create on a dry run. |
 | `entities[].alias` | Its alias. |
 | `entities[].rev` | Its new revision. |
 | `entities[].type` | Its type. |
 | `entities[].ops` | The operations that touched it. |
 | `entities[].local` | Its `local` name from a change set, or null. |
+| `entities` | Null with `graph apply --summary`. |
 | `findings` | Warnings about the written data: `severity`, `code`, `message`. |

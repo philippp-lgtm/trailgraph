@@ -20,12 +20,14 @@ Usage: `graph apply FILE [OPTIONS]`
 |---|---|---|---|---|
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--dry-run` | flag | no | no | Validate every document without writing. |
+| `--summary` | flag | no | no | Per document only counts, seq and findings: entities is null, entity_count stays. |
 | `--idempotency-key` | string | no | no | Key that makes a retry safe; single document only, else idempotency_key in each document. |
 
 | Example | Summary |
 |---|---|
 | `graph apply - --json` | Apply documents from stdin. |
 | `graph apply <file> --dry-run --json` | Check a file without writing. |
+| `graph apply <file> --summary --json` | Apply a large file, findings without the list. |
 
 ## graph create
 
