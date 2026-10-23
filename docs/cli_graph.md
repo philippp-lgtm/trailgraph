@@ -19,6 +19,29 @@ JSON document with `--json` (or `GRAPH_CLI_OUTPUT=json`). Exit codes follow
 the error category (0 ok, 1 refused or invalid, 2 usage, 3 denied, 4
 conflict, 5 unavailable, 6 internal error).
 
+### Large answers go to a file
+
+Agent harnesses cut long tool output or put all of it into the agent's
+context. So a `graph` JSON envelope larger than `[output] spill_bytes`
+(16384 bytes by default; see [Configuration](configuration.md#configtoml))
+is written whole, pretty-printed for line-wise reading, to a new file, and
+stdout gets the same envelope with `data: null`, the warning
+`output.spilled {path, bytes, limit}` and, on success, a first hint to ask
+for less or to extract from the file (`jq '.data | keys' <path>`). `ok`,
+`error`, `page`, the exit code and the other hints and warnings stay as
+they were, so paging still reads from stdout.
+
+The file is `<dir>/<graph>/<command>_<UTC time>_<8 hex>.json` (without a
+graph directly in `<dir>`), mode 0600. `<dir>` is `[output] spill_dir`,
+else `/tmp/graph_cli_<uid>`: a directory per user, because a fixed name in
+the shared `/tmp` could be created by another user first. The directory
+must be the user's own and closed to group and others (`graph` creates it
+with mode 0700); otherwise, or when the file cannot be written, the answer
+is printed whole with the warning `output.spill_failed {bytes, limit,
+reason}`. Each spill removes files older than 24 hours from the same
+directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
+`spill_bytes = 0`) keeps every answer on stdout, for scripts.
+
 ## Commands
 
 | Command | What it does |

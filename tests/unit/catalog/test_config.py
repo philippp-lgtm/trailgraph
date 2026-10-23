@@ -27,6 +27,8 @@ record_data_root = false
 access_log = true
 [output]
 default = "json"
+spill_bytes = 0
+spill_dir = "~/spill"
 [roots]
 notes = "~/synced/notes"
 archive_2 = "/srv/archive"
@@ -59,6 +61,8 @@ def test_every_key() -> None:
         record_data_root=False,
         access_log=True,
         output="json",
+        spill_bytes=0,
+        spill_dir="~/spill",
         file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
         max_file_bytes=2048,
         signal_reads=True,
@@ -123,6 +127,8 @@ def test_unknown_major() -> None:
         ("format_version = 1\n[files]\nmax_bytes = 0\n", "files.max_bytes"),
         ("format_version = 1\n[files]\nmax_bytes = 1073741825\n", "files.max_bytes"),
         ('format_version = 1\n[files]\nmax_bytes = "1M"\n', "files.max_bytes"),
+        ("format_version = 1\n[output]\nspill_bytes = -1\n", "output.spill_bytes"),
+        ('format_version = 1\n[output]\nspill_dir = "spill"\n', "output.spill_dir"),
         ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
         ('format_version = 1\n[audit]\naccess_log = "yes"\n', "audit.access_log"),
     ],

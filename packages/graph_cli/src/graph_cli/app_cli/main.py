@@ -57,12 +57,15 @@ def main() -> None:
     code = run(
         cli,
         sys.argv[1:],
-        Invocation(wiring.PROGRAM, json_mode, debug),
+        Invocation(wiring.PROGRAM, json_mode, debug, wiring.OutputSpill(services)),
         services=services,
         out=sys.stdout,
         err=sys.stderr,
         after=lambda done: services.record_access(
-            done.document, json_mode=done.json_mode, stdout_bytes=done.stdout_bytes
+            done.document,
+            json_mode=done.json_mode,
+            stdout_bytes=done.stdout_bytes,
+            spilled_bytes=done.spilled_bytes,
         ),
         timings=timings,
     )

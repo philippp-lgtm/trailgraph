@@ -46,13 +46,15 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "identity": frozenset({"providers"}),
     "storage": frozenset({"lock_timeout_s", "durability"}),
     "audit": frozenset({"record_data_root", "access_log"}),
-    "output": frozenset({"default"}),
+    "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
 MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
+DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
+MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +70,8 @@ class Config:
     record_data_root: bool = True
     access_log: bool = False  # [audit]: log every graph command to <state_root>/logs/access.jsonl
     output: OutputMode = "text"
+    spill_bytes: int = DEFAULT_SPILL_BYTES  # [output]: larger JSON answers go to a file; 0 = off
+    spill_dir: str | None = None  # as written; absolute or "~/..."; None = /tmp/graph_cli_<uid>
     file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
@@ -139,6 +143,12 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     output = get("output.default", str, "a string")
     if output not in (None, "text", "json"):
         raise _invalid(path, "output.default", "must be 'text' or 'json'")
+    spill_bytes = get("output.spill_bytes", int, "an integer")
+    if spill_bytes is not None and not 0 <= spill_bytes <= MAX_SPILL_BYTES:
+        raise _invalid(path, "output.spill_bytes", f"must be between 0 and {MAX_SPILL_BYTES}")
+    spill_dir = get("output.spill_dir", str, "a string")
+    if spill_dir is not None and not spill_dir.startswith(("/", "~/")):
+        raise _invalid(path, "output.spill_dir", "must be an absolute path or start with ~/")
     record = get("audit.record_data_root", bool, "a boolean")
     access_log = get("audit.access_log", bool, "a boolean")
     max_bytes = get("files.max_bytes", int, "an integer")
@@ -161,6 +171,8 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         record_data_root=record if record is not None else defaults.record_data_root,
         access_log=access_log if access_log is not None else defaults.access_log,
         output=output or defaults.output,
+        spill_bytes=spill_bytes if spill_bytes is not None else defaults.spill_bytes,
+        spill_dir=spill_dir,
         file_roots=file_roots,
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,

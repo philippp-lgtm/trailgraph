@@ -135,6 +135,8 @@ Every `--json` call prints one JSON object on stdout.
 - Never cut an answer with `head`, a pipe or another program: ask for less.
   `--fields <attr>,<attr>` on `get`, `find` and `neighbors` keeps those
   fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
+- A large answer goes to a file: `data` is null and `output.spilled` names
+  `details.path`. Ask for less, or read only what you need from the file.
 - On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.

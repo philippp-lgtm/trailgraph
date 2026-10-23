@@ -76,8 +76,10 @@ def test_every_command_records_what_the_caller_received(
     ] * 3
     envelope = json.loads(got.stdout)
     assert json_get["graph"] == {k: envelope["graph"][k] for k in ("id", "name", "seq")}
-    assert json_get["output"] == {"format": "json", "bytes": len(got.stdout.encode())}
-    assert text_get["output"] == {"format": "text", "bytes": len(text.stdout.encode())}
+    size = len(got.stdout.encode())
+    assert json_get["output"] == {"format": "json", "bytes": size, "spilled_bytes": None}
+    size = len(text.stdout.encode())
+    assert text_get["output"] == {"format": "text", "bytes": size, "spilled_bytes": None}
     assert json_get["result"] == {"status": "ok"}
     assert failed["result"] == {"status": "error", "code": "entity.not_found"}
     assert missing.error["code"] == "entity.not_found"

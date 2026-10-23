@@ -24,6 +24,10 @@ limit and the read signal. The sections described elsewhere:
 - `[audit]`: `record_data_root` (default `true`) puts the data root path
   into audit events; `access_log` (default `false`) turns on the
   [access log](audit.md#access-log)
+- `[output]`: `default` (`text` or `json`); `spill_bytes` (default
+  16384, 0 turns it off) and `spill_dir` (absolute or `~/`, default
+  `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
+  ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
 - `[activity]`: [Live view](live_view.md)
 
@@ -55,6 +59,7 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_GRAPH` | the graph when `--graph` is not given ([Graph selection](cli_graph.md#graph-selection)) |
 | `GRAPH_CLI_ROOT` | the data root, with a warning ([Locations](#locations)) |
 | `GRAPH_CLI_OUTPUT` | `json` makes JSON output the default |
+| `GRAPH_CLI_SPILL_BYTES` | overrides `[output] spill_bytes`; `0` keeps every answer on stdout |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
 
 Only `catalog` and the admin wiring may read the process environment.

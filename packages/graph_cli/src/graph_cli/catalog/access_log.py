@@ -37,6 +37,7 @@ def access_record(
     json_mode: bool,
     stdout_bytes: int,
     timing: Mapping[str, JsonValue],
+    spilled_bytes: int | None = None,
 ) -> dict[str, JsonValue]:
     """One line of the access log, from the envelope the command wrote (B9.2)."""
     graph = document.get("graph")
@@ -53,7 +54,11 @@ def access_record(
             {k: graph.get(k) for k in ("id", "name", "seq")} if isinstance(graph, Mapping) else None
         ),
         "result": result,
-        "output": {"format": "json" if json_mode else "text", "bytes": stdout_bytes},
+        "output": {
+            "format": "json" if json_mode else "text",
+            "bytes": stdout_bytes,
+            "spilled_bytes": spilled_bytes,
+        },
         "timing_us": dict(timing),
     }
 

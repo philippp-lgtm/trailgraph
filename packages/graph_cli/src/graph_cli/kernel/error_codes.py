@@ -130,6 +130,8 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("ontology.pin_mismatch_read", _C.WARNING, False, "Read with a mismatching artifact."),
     ErrorSpec("graph.archived_read", _C.WARNING, False, "The graph is archived."),
     ErrorSpec("temporal.as_of_read", _C.WARNING, False, "An earlier state was read."),
+    ErrorSpec("output.spilled", _C.WARNING, False, "A large answer was written to a file."),
+    ErrorSpec("output.spill_failed", _C.WARNING, False, "A large answer could not go to a file."),
     ErrorSpec(
         "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
     ),

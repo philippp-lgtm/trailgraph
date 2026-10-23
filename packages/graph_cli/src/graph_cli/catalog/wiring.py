@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 PROGRAM: Final = "graph"
 CLAUDE_CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"  # relocates the user's ~/.claude (D15 step 0)
+SPILL_ENV: Final = "GRAPH_CLI_SPILL_BYTES"  # overrides [output] spill_bytes; 0 turns it off
 
 
 def process_env() -> dict[str, str]:
@@ -230,8 +231,22 @@ class AppServices:
         warnings += self._warnings
         return self._context
 
+    def spill_config(self) -> Config:
+        """The config for large answers: the command's, else read now (defaults if broken)."""
+        if self._context is not None:
+            return self._context.config
+        try:
+            return load_config(config_path(self.env))[0]
+        except GraphCliError:
+            return Config(config_path(self.env))
+
     def record_access(
-        self, document: Mapping[str, JsonValue], *, json_mode: bool, stdout_bytes: int
+        self,
+        document: Mapping[str, JsonValue],
+        *,
+        json_mode: bool,
+        stdout_bytes: int,
+        spilled_bytes: int | None = None,
     ) -> None:
         """The access log line of a finished command and its envelope. Commands that
         never opened the installation (``describe commands``, a broken config) are not
@@ -245,6 +260,7 @@ class AppServices:
             document=document,
             json_mode=json_mode,
             stdout_bytes=stdout_bytes,
+            spilled_bytes=spilled_bytes,
             timing=self.timings.to_json(),
         )
         AccessLogFile(context.roots.state_root).append(record)
@@ -314,3 +330,25 @@ class AppServices:
             *((unknown,) if unknown is not None else ()),
         )
         return context, warnings
+
+
+@dataclass(frozen=True)
+class OutputSpill:
+    """``cli_kit.spill.SpillTarget`` of the app: ``GRAPH_CLI_SPILL_BYTES``, else ``[output]
+    spill_bytes``; files under ``[output] spill_dir``, else ``/tmp/graph_cli_<uid>``. The
+    config is read only when an answer is large enough to need it."""
+
+    services: AppServices
+
+    def limit(self) -> int:
+        value = self.services.env.get(SPILL_ENV)
+        if value is not None and value.strip().isdigit():
+            return int(value)
+        return self.services.spill_config().spill_bytes
+
+    def write(self, graph: str | None, command: str | None, content: bytes) -> str:
+        from graph_cli.catalog.spill import SpillFiles, default_spill_dir  # large answers only
+
+        configured = self.services.spill_config().spill_dir
+        root = self.services.path(configured) if configured else default_spill_dir()
+        return SpillFiles(root, SystemClock().now()).write(graph, command, content)

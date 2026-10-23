@@ -46,7 +46,7 @@ fails:
 | `actor` | the actor, as in audit events |
 | `graph` | `{id, name, seq}` of the graph state the command used, or `null` |
 | `result` | `{status: ok}` or `{status: error, code}` |
-| `output` | `{format: json\|text, bytes}`: the bytes the caller received on stdout |
+| `output` | `{format: json\|text, bytes, spilled_bytes}`: the bytes the caller received on stdout, and the size of an answer that went to a file instead (null otherwise) |
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
 
 `phases` names only the phases the command went through. Each phase counts

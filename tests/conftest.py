@@ -16,7 +16,9 @@ from harness import BIN_DIR, CliRunner
 
 @pytest.fixture
 def isolated_env(tmp_path: Path) -> dict[str, str]:
-    """Environment with a throwaway home and XDG dirs and no GRAPH_CLI_* overrides."""
+    """Environment with a throwaway home and XDG dirs and no GRAPH_CLI_* overrides, except
+    that large answers stay on stdout (``GRAPH_CLI_SPILL_BYTES=0``): tests read whole
+    envelopes and never write to the shared spill directory; spill tests set their own."""
     home = tmp_path / "home"
     env = {k: v for k, v in os.environ.items() if not k.startswith("GRAPH_CLI_")}
     env.update(
@@ -25,6 +27,7 @@ def isolated_env(tmp_path: Path) -> dict[str, str]:
         XDG_DATA_HOME=str(home / ".local" / "share"),
         XDG_STATE_HOME=str(home / ".local" / "state"),
         XDG_CACHE_HOME=str(home / ".cache"),
+        GRAPH_CLI_SPILL_BYTES="0",
     )
     for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
         Path(env[key]).mkdir(parents=True)

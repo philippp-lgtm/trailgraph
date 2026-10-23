@@ -9,7 +9,8 @@ error renders as an envelope. Global options given before the subcommand
 reach the command as if given after it (``leaf``). After the envelope is
 written, an optional ``after`` callback learns what was delivered
 (``Completed``), for the access log; rendering and writing the envelope is
-the ``render`` phase of the given ``Timings``.
+the ``render`` phase of the given ``Timings``. A JSON envelope larger than
+the ``Invocation``'s spill limit goes to a file (``cli_kit.spill``).
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import click
 
 from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
+from graph_cli.cli_kit.spill import SpillTarget, spill_json
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
@@ -36,6 +38,7 @@ class Invocation:
     program: str
     json_default: bool = False  # GRAPH_CLI_OUTPUT=json or config [output] default
     debug: bool = False  # GRAPH_CLI_DEBUG=1
+    spill: SpillTarget | None = None  # large JSON answers go to a file (cli_kit.spill)
 
 
 @dataclass
@@ -58,6 +61,7 @@ class Completed:
     json_mode: bool
     stdout_bytes: int
     exit_code: int
+    spilled_bytes: int | None = None  # the answer's size when it went to a file
 
 
 json_option = click.option(
@@ -119,15 +123,23 @@ def run(
             err.write(traceback.format_exc())
         error = GraphCliError("internal.error", f"unexpected {type(exc).__name__}")
     with (timings or Timings()).phase("render"):
-        document = envelope(
+        document: Mapping[str, JsonValue] = envelope(
             state.command,
             program=invocation.program,
             result=state.result,
             error=error,
             warnings=[*state.warnings, *(error.warnings if error is not None else ())],
         )
+        spilled = None
         if json_mode:
             stdout = render_json(document)
+            if invocation.spill is not None:
+                rendered = spill_json(document, stdout, invocation.spill)
+                document, stdout, spilled = (
+                    rendered.document,
+                    rendered.stdout,
+                    rendered.spilled_bytes,
+                )
             out.write(stdout)
         else:
             stdout, stderr = render_text(document, text=state.result.text if state.result else None)
@@ -135,7 +147,7 @@ def run(
             err.write(stderr)
     exit_code = exit_code_for(error.category) if error is not None else EXIT_OK
     if after is not None:
-        after(Completed(document, json_mode, len(stdout.encode()), exit_code))
+        after(Completed(document, json_mode, len(stdout.encode()), exit_code, spilled))
     return exit_code
 
 
