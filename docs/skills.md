@@ -50,7 +50,7 @@ into the graph's runtime area. Its kind follows the content:
 
 | Block | Renders |
 | --- | --- |
-| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); read the `graph-cli` skill first |
+| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); load the `graph-cli` skill before the first command, and two of its ground rules repeated (plain `graph` calls, retried plainly when refused; `graph query` for a few fields, a count or a join) |
 | `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
 | `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label; then the same relations as `graph query` patterns (`(:A)-[:rel]->(:B)`, from `describe schema`) |
 | `constraints` | transition guards, write-once fields, rules with severity |

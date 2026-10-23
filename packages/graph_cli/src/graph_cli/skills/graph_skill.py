@@ -17,7 +17,8 @@ author already wrote it that way.
 
 Blocks (each one optional):
 
-- ``start``: how to tell the graph is reachable, read the ``graph-cli`` skill first;
+- ``start``: how to tell the graph is reachable, load the ``graph-cli`` skill before the
+  first command, and two of its ground rules (plain calls, ``query`` for a few fields);
   for a model with ``files:File``, one line on the file workflow.
 - ``types``: the entity types (types with an alias prefix; without any, every
   concrete type) with their supertypes, fields, enum values inline (F11), and
@@ -276,8 +277,16 @@ def _start(doc: _Model) -> list[str]:
         f" so they work in every directory; a project whose pointer makes {_code(doc.name)}"
         " the default may leave it out.",
         "",
-        "Read the `graph-cli` skill first: it explains the commands, the output envelope and"
-        " safe writes. This skill says what the graph holds.",
+        "Before your first `graph` command, load the `graph-cli` skill as well: it explains"
+        " the commands, the output envelope and safe writes. This skill says what the graph"
+        " holds. Two of its ground rules apply from the first call:",
+        "",
+        "- Run each call as a plain command that starts with `graph`: no `cd`, variables,"
+        " loops, pipes or heredocs, which a restricted harness refuses. If a call is"
+        " refused, run it again in that form before you give up.",
+        "- For a few fields, a count or a join, use `graph query` and `RETURN` only those"
+        " columns (`graph describe schema --json` lists the patterns) instead of filtering"
+        " JSON with another program.",
         *(
             [
                 "",

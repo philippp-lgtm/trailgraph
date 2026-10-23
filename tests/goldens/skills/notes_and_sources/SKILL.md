@@ -11,7 +11,10 @@ description: "Every generated block once, for the render goldens of the toy onto
 
 Run `graph graphs --json`. Use this skill only if an item named `example_graph` is listed (title: Example graph). Pass `--graph example_graph` to every command, as the examples here do, so they work in every directory; a project whose pointer makes `example_graph` the default may leave it out.
 
-Read the `graph-cli` skill first: it explains the commands, the output envelope and safe writes. This skill says what the graph holds.
+Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
+
+- Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
+- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --json` lists the patterns) instead of filtering JSON with another program.
 
 ## What is in it
 
