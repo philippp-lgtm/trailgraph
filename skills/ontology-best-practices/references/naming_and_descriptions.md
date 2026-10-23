@@ -85,8 +85,8 @@ the first release.
 
 Label roles do more than `lookup`: `graph search` ranks matches in them
 before other fields, and a write that gives an entity a name another
-entity of the same class family already carries gets the warning
-`data.semantic.possible_duplicate`. A class whose entities legitimately
+entity of the same class family already carries, or a near spelling of
+it, gets the warning `data.semantic.possible_duplicate`. A class whose entities legitimately
 share names (one per year, one per edition) needs a main name that tells
 them apart, or the warning fires on every new one.
 

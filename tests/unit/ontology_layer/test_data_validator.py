@@ -769,12 +769,28 @@ def names(*ops: dict[str, Any]) -> list[tuple[str, str | None, str, Any]]:
 
 
 def test_a_new_name_already_carried_by_another_entity_warns() -> None:
-    physics = {"id": T, "alias": None, "type": "nas:Topic", "attr": "label", "role": "label"}
+    physics = {
+        "id": T,
+        "alias": None,
+        "type": "nas:Topic",
+        "attr": "label",
+        "role": "label",
+        "name": "Physics",
+        "match": "same",
+    }
     assert names(topic("x", "Mechanics", synonyms=["physics"])) == [
         ("data.semantic.possible_duplicate", "x", "attrs.synonyms", [physics])
     ]
     # Main name against an alternative one, any case; a hidden name counts too.
-    lenses = {"id": OP, "alias": None, "type": "nas:Topic", "attr": "synonyms", "role": "alt_label"}
+    lenses = {
+        "id": OP,
+        "alias": None,
+        "type": "nas:Topic",
+        "attr": "synonyms",
+        "role": "alt_label",
+        "name": "Lenses",
+        "match": "same",
+    }
     assert names(topic("x", "LENSES")) == [
         ("data.semantic.possible_duplicate", "x", "attrs.label", [lenses])
     ]
@@ -782,6 +798,37 @@ def test_a_new_name_already_carried_by_another_entity_warns() -> None:
     (finding,) = judge(NAS, topic("x", "Mechanics", synonyms=["physics"]), base=NAMES)[1]
     assert finding.severity.value == "warning"
     assert finding.message == f"'physics' is also a name of {T} (nas:Topic, label)"
+
+
+def test_punctuation_accents_and_word_breaks_do_not_tell_names_apart() -> None:
+    mail = revision("mail", "nas:Topic", {"label": "E-Mail", "misspellings": ["emial"]})
+    base = DictSnapshot(mail)
+    for label in ("email", "E Mail", "É-mail!"):
+        (finding,) = judge(NAS, topic("x", label), base=base)[1]
+        assert finding.actual[0]["match"] == "same"  # type: ignore[index]
+    # A hidden name is matched but never shown.
+    (finding,) = judge(NAS, topic("x", "Emial"), base=base)[1]
+    assert finding.actual[0]["role"] == "hidden_label"  # type: ignore[index]
+    assert finding.actual[0]["name"] is None  # type: ignore[index]
+
+
+def test_a_typo_of_one_word_is_a_similar_name() -> None:
+    (finding,) = judge(NAS, topic("x", "Optcs"), base=NAMES)[1]
+    assert finding.code == "data.semantic.possible_duplicate"
+    assert finding.message == f"'Optcs' is close to a name of {OP} (nas:Topic, label)"
+    assert finding.actual[0]["match"] == "similar"  # type: ignore[index]
+    assert finding.actual[0]["name"] == "Optics"  # type: ignore[index]
+    assert [who for _, who, *_ in names(topic("x", "Mechanics", synonyms=["Lense"]))] == ["x"]
+
+
+def test_numbers_short_words_and_other_words_are_not_typos() -> None:
+    labels = ("Part 1", "Phase I", "Bank", "Debitor", "Cost accounting")
+    base = DictSnapshot(*(revision(t, "nas:Topic", {"label": t}) for t in labels))
+    for label in ("Part 2", "Phase II", "Band", "Kreditor", "Cost planning", "Part 1 b"):
+        assert judge(NAS, topic("x", label), base=base)[1] == [], label
+    # Exact names only in the batch check: a similar pair already stored stays quiet.
+    pair = DictSnapshot(OPTICS, revision("optcs", "nas:Topic", {"label": "Optcs"}))
+    assert [f for f in check_graph(NAS, pair) if "duplicate" in f.code] == []
 
 
 def test_unique_refusal_is_not_repeated_as_a_duplicate() -> None:

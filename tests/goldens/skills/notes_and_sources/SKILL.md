@@ -59,7 +59,7 @@ Constraints:
   - `nas:WebPage`: `title` (main name)
 - Names are not unique, so `lookup` returns candidates. Use the returned alias or id only when exactly one candidate matches exactly (`match.kind` is `exact`). With several candidates, or only prefix matches, do not answer about one of them first: list them with their names and ask which one is meant, then answer.
 - `graph search <value> --graph example_graph --json` searches names and every text field, forgiving case, accents, typos and parts of words. Its results are suggestions: read one with `graph get` before you use it.
-- Before you create an entity of one of these types, search for its name and its short forms. If one is the same thing, use it and add the new name to its other names field instead of creating another. When you create one, fill its other names fields with the abbreviations and synonyms people use. A dry-run finding `data.semantic.possible_duplicate` names entities that already carry the name.
+- Before you create an entity of one of these types, search for its name and its short forms. If one is the same thing, use it and add the new name to its other names field instead of creating another. When you create one, fill its other names fields with the abbreviations and synonyms people use. A dry-run finding `data.semantic.possible_duplicate` names entities that already carry the name or a near spelling of it.
 
 ## Model
 

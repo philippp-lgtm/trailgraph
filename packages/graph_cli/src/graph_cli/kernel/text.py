@@ -12,7 +12,9 @@ variants. ``fold_accents`` additionally drops combining marks (NFKD, remove
 folded, every character that is not a letter or digit a space. Its
 ``trigrams`` are padded per word as in PostgreSQL ``pg_trgm`` (two spaces
 before, one after), so a word's start and end count; ``containment`` is the
-share of a query's trigrams found in a value's.
+share of a query's trigrams found in a value's. ``edit_distance`` counts
+inserted, deleted, replaced and swapped neighbouring characters (optimal
+string alignment), stopping once it exceeds a limit.
 
 Keys are never stored in revisions: Unicode tables change between Python
 versions, and revisions are content-hashed. They belong only in disposable
@@ -53,3 +55,22 @@ def trigrams(key: str) -> frozenset[str]:
 
 def containment(query: Set[str], value: Set[str]) -> float:
     return len(query & value) / len(query) if query else 0.0
+
+
+def edit_distance(a: str, b: str, limit: int) -> int:
+    """Edits from ``a`` to ``b``, or ``limit + 1`` once there are more than ``limit``."""
+    if abs(len(a) - len(b)) > limit:
+        return limit + 1
+    before: list[int] = []
+    row = list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        previous, current = row, [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cost = a[i - 1] != b[j - 1]
+            current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                current[j] = min(current[j], before[j - 2] + 1)
+        if min(current) > limit:
+            return limit + 1
+        before, row = previous, current
+    return min(row[-1], limit + 1)

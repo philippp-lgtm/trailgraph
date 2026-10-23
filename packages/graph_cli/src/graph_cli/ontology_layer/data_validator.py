@@ -39,10 +39,17 @@ from here.
   active entity gains in a write (all of a create's; on an update those no
   earlier revision had) that another active entity of the family where the
   attribute is declared (as for uniqueness) also carries in a label-role
-  attribute, compared by ``normalize_label``. Main and alternative names
-  count alike; other types may share a name. A pair ``unique`` already
-  refuses (same attribute, same value) is not reported again. Batch reports
-  each shared name once, at the entity with the lowest id.
+  attribute. Main and alternative names count alike; other types may share
+  a name. ``same``: equal ``search_key`` without spaces, so case, accents,
+  punctuation and word breaks do not count ("E-Mail", "email"). ``similar``
+  (write path only): the same words but one, and that one a typo of the
+  other: at most one edit from 5 characters, two from 10, never a changed
+  number, so "Part 1" and "Part 2" or "Phase I" and "Phase II" stay apart.
+  Looser than ``lookup``, which resolves names: a warning should rather
+  ask once too often. A pair ``unique`` already refuses (same attribute,
+  same value) is not reported again. Batch reports each ``same`` name once,
+  at the entity with the lowest id; a ``similar`` pair already in the graph
+  is someone's decision or a ``graph search`` away.
 - **Immutable** is write-once: set while absent, never changed or removed.
 - **Blobs** (write path): a new or changed ``blob`` value names a stored file
   or one the request stages (``blob_missing``); batch checks the shape only,
@@ -71,7 +78,7 @@ from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
-from graph_cli.kernel.text import normalize_label
+from graph_cli.kernel.text import edit_distance, search_key
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
@@ -90,15 +97,22 @@ _ACTIVE: Final = frozenset({"active"})
 _MAX_CANDIDATES: Final = 5
 
 
+_DIGITS: Final = re.compile(r"\d+")
+
+
 @dataclass(frozen=True, slots=True)
 class _Name:
-    """One label-role value of an entity, with its match key."""
+    """One label-role value of an entity, with its words and match key."""
 
     revision: Revision
     attr: str
     role: str
     value: str
-    key: str
+    words: tuple[str, ...]
+
+    @property
+    def key(self) -> str:
+        return "".join(self.words)
 
 
 def _names(model: CompiledModel, revision: Revision | None) -> list[_Name]:
@@ -109,8 +123,26 @@ def _names(model: CompiledModel, revision: Revision | None) -> list[_Name]:
         value = revision.attrs.get(attr)
         for item in value if isinstance(value, list) else [value]:
             if isinstance(item, str):
-                found.append(_Name(revision, attr, role, item, normalize_label(item)))
+                words = tuple(search_key(item).split())
+                found.append(_Name(revision, attr, role, item, words))
     return found
+
+
+def _typo(a: str, b: str) -> bool:
+    """``b`` is ``a`` misspelt: no number changed, few edits for the length."""
+    if _DIGITS.findall(a) != _DIGITS.findall(b):
+        return False
+    shorter = min(len(a), len(b))
+    limit = 0 if shorter < 5 else 1 if shorter < 10 else 2
+    return 0 < edit_distance(a, b, limit) <= limit
+
+
+def _similar(a: Sequence[str], b: Sequence[str]) -> bool:
+    """The same words but one, and that one a typo."""
+    if len(a) != len(b):
+        return False
+    differ = [(x, y) for x, y in zip(a, b, strict=True) if x != y]
+    return len(differ) == 1 and _typo(*differ[0])
 
 
 def _close(word: str, choices: Iterable[str]) -> list[JsonValue] | None:
@@ -475,28 +507,44 @@ class _Checker:
                 index.setdefault(name.key, []).append(name)
         return index
 
-    def same_names(self, name: _Name, cls: ClassDef) -> list[_Name]:
-        """Other active entities of the attribute's family carrying the name, one each."""
+    def same_names(
+        self, name: _Name, cls: ClassDef, *, similar: bool = False
+    ) -> list[tuple[_Name, str]]:
+        """Other active entities of the attribute's family carrying the name (``same``)
+        or, with ``similar``, a near spelling of it; one each, ``same`` first."""
         attribute = cls.attributes[name.attr]
         family = set(self.model.subtypes(attribute.declared_in))
-        seen: dict[EntityId, _Name] = {}
-        for other in self.name_index.get(name.key, ()):
+        found = [(other, "same") for other in self.name_index.get(name.key, ())]
+        if similar:
+            found += [
+                (other, "similar")
+                for key, others in self.name_index.items()
+                if key != name.key
+                for other in others
+                if _similar(name.words, other.words)
+            ]
+        seen: dict[EntityId, tuple[_Name, str]] = {}
+        for other, match in found:
             entity = other.revision.id
             if entity == name.revision.id or entity in seen or other.revision.type not in family:
                 continue
             if attribute.unique and other.attr == name.attr and other.value == name.value:
                 continue  # unique_violation reports it
-            seen[entity] = other
-        return sorted(seen.values(), key=lambda n: (n.revision.alias or "", str(n.revision.id)))
+            seen[entity] = (other, match)
+        return sorted(
+            seen.values(),
+            key=lambda m: (m[1] != "same", m[0].revision.alias or "", str(m[0].revision.id)),
+        )
 
-    def duplicate_name(self, name: _Name, others: Sequence[_Name]) -> None:
-        first = others[0].revision
+    def duplicate_name(self, name: _Name, matches: Sequence[tuple[_Name, str]]) -> None:
+        first, match = matches[0]
+        relation = "also a name" if match == "same" else "close to a name"
         self.add(
             "data.semantic.possible_duplicate",
             name.revision,
             f"attrs.{name.attr}",
-            f"{name.value!r} is also a name of {first.alias or first.id}"
-            f" ({first.type}, {others[0].attr})",
+            f"{name.value!r} is {relation} of {first.revision.alias or first.revision.id}"
+            f" ({first.revision.type}, {first.attr})",
             severity=Severity.WARNING,
             actual=[
                 {
@@ -505,8 +553,10 @@ class _Checker:
                     "type": o.revision.type,
                     "attr": o.attr,
                     "role": o.role,
+                    "name": None if o.role == "hidden_label" else o.value,
+                    "match": m,
                 }
-                for o in others[:_MAX_CANDIDATES]
+                for o, m in matches[:_MAX_CANDIDATES]
             ],
         )
 
@@ -516,9 +566,9 @@ class _Checker:
         for name in _names(self.model, revision):
             if name.key in known:
                 continue
-            others = self.same_names(name, cls)
-            if others:
-                self.duplicate_name(name, others)
+            matches = self.same_names(name, cls, similar=True)
+            if matches:
+                self.duplicate_name(name, matches)
 
     def unique_values(self, revision: Revision, cls: ClassDef) -> None:
         for name, attribute in cls.attributes.items():
@@ -928,9 +978,9 @@ def check_graph(model: CompiledModel, snapshot: Snapshot) -> list[Finding]:
                 )
                 groups.setdefault(key, []).append(revision)
         for label in _names(model, revision):
-            others = checker.same_names(label, cls)
-            if others and str(revision.id) < min(str(o.revision.id) for o in others):
-                checker.duplicate_name(label, others)
+            matches = checker.same_names(label, cls)
+            if matches and str(revision.id) < min(str(o.revision.id) for o, _ in matches):
+                checker.duplicate_name(label, matches)
         checker.rules(revision, frozenset({"write", "batch"}))
         checker.incoming_cardinality(revision)
     for (_, name, _), members in groups.items():

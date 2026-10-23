@@ -136,14 +136,24 @@ are `term.no_labels`. When nothing starts with the text, the hint is a
 
 A write that gives an active entity a name (a value of a label-role field)
 that another active entity of the same type family already carries, as
-main, alternative or hidden name and compared like `lookup` does, gets the
-warning finding `data.semantic.possible_duplicate`, in the dry run too.
+main, alternative or hidden name, gets the warning finding
+`data.semantic.possible_duplicate`, in the dry run too. The comparison is
+looser than `lookup`'s, because a warning should rather ask once too often:
+
+- `same`: equal apart from case, accents, punctuation and word breaks
+  (`E-Mail`, `email`, `E Mail`).
+- `similar`: the same words but one, and that one a typo of the other (at
+  most one edit from 5 letters, two from 10). A changed number never
+  counts, so `Part 1` and `Part 2` stay apart, and neither does a short
+  word.
+
 The family is the type that declares the field and its subtypes; other
-types may share a name. `actual` lists up to five candidates (`id`,
-`alias`, `type`, `attr`, `role`). The warning never refuses the write:
-reuse the candidate, or give the new entity a name that tells them apart.
-Only names the entity did not carry before count, and a value that a
-`unique` field already refuses is not reported twice.
+types may share a name. `actual` lists up to five candidates, `same` ones
+first (`id`, `alias`, `type`, `attr`, `role`, `name`, `match`; `name` is
+null for a hidden label). The warning never refuses the write: reuse the
+candidate, or give the new entity a name that tells them apart. Only names
+the entity did not carry before count, and a value that a `unique` field
+already refuses is not reported twice.
 
 ## Search
 
