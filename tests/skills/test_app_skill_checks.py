@@ -141,15 +141,10 @@ class TestDocsVsCode:
             [o["name"], o["type"], o["summary"]] for o in golden_inventory()["global_options"]
         ]
 
-    def test_exit_table(self) -> None:
-        rows = dict(
-            (row[0], {c.strip("`") for c in row[1].split(", ")})
-            for row in table_with(committed_files()["SKILL.md"], "Exit")[1]
-        )
-        expected: dict[str, set[str]] = {"0": {"ok"}}
-        for entry in golden_inventory()["error_codes"]:
-            expected.setdefault(str(entry["exit"]), set()).add(entry["category"])
-        assert rows == expected
+    def test_exit_codes_point_to_the_errors_reference(self) -> None:
+        exits = sections(committed_files()["SKILL.md"])["Exit codes"]
+        assert "[references/errors.md](references/errors.md)" in exits
+        assert "`0` is success" in exits
 
     def test_command_sections(self) -> None:
         inventory = golden_inventory()

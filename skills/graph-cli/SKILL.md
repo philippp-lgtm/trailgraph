@@ -25,6 +25,9 @@ against it and audited. The CLI is on `PATH`.
 - If a skill for the selected graph exists, read it first: it names the
   graph's types, fields and relations. This skill never does.
 - Never guess a type, field, relation or state name. Ask `graph describe`.
+- Run each call as a plain command that starts with `graph`: no `cd`,
+  variables, loops, pipes or heredocs, which a restricted harness refuses.
+  If a call is refused, run it again in that form before you give up.
 - Reads never change anything. Every write is audited.
 - `graph skills` commands install agent skills such as this one. Run them
   only when the user asks; `graph skills check` only reads and is safe.
@@ -32,8 +35,8 @@ against it and audited. The CLI is on `PATH`.
 ## Workflow
 
 1. Pick a graph: `graph graphs --json` lists the graphs you may use. Select
-   one with `--graph <graph>` on every command (a project may preset a
-   default).
+   one with `--graph <graph>` on every command. A project may preset a
+   default; use it unless the user names another graph.
 2. Learn the model: `graph describe types --json`, then
    `graph describe type <type> --json`: fields with their datatype, enum
    `values` and `limits`; relations with their `qualifiers` (values on the
@@ -88,8 +91,9 @@ Read [references/query.md](references/query.md) before the first query.
   first id) replaces older ones, `graph retract` when one is withdrawn,
   `graph unlink` for a wrong edge. States change with `graph transition`.
 - Prefer the single-operation commands. `graph apply` takes change set
-  documents for batches: write the document to a file, dry-run it with
-  `graph apply <file> --dry-run --json`, then apply it. Read
+  documents for batches: write the document to a file in the working
+  directory, dry-run it with `graph apply <file> --dry-run --json`, then
+  apply it. Read
   [references/changesets.md](references/changesets.md) before the first one.
 
 ## Access
@@ -175,15 +179,8 @@ equals `graph find --graph <graph>`):
 
 ## Exit codes
 
-| Exit | Categories |
-|---|---|
-| 0 | `ok` |
-| 1 | `invalid`, `not_found`, `refused` |
-| 2 | `usage` |
-| 3 | `denied` |
-| 4 | `conflict` |
-| 5 | `unavailable` |
-| 6 | `internal` |
+`0` is success; any other exit code follows `error.category`, listed in
+[references/errors.md](references/errors.md).
 
 ## References
 

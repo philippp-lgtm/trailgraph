@@ -8,8 +8,9 @@ all. Use it for batches and for new entities that link to each other; for
 a single change the single-operation commands are simpler.
 
 1. `graph whoami --json`: `max_batch` limits the operations per document.
-2. Write the document to a file: one JSON document, or JSONL with one
-   document per line.
+2. Write the document to a file in the working directory (a harness may
+   refuse other places): one JSON document, or JSONL with one document per
+   line. Tell the user the file can be removed afterwards.
 3. `graph apply <file> --dry-run --json`: checks everything and writes
    nothing. Read the findings and fix the document.
 4. `graph apply <file> --json`. `data.results` has one entry per document;

@@ -2,7 +2,7 @@
 
 # Error codes
 
-Every failure has a `code` and a `category`; the exit code depends on the category only. `error.retryable` tells whether the same call may succeed later.
+Every failure has a `code` and a `category`; the exit code depends on the category only, and `0` is success. `error.retryable` tells whether the same call may succeed later.
 
 ## What to do
 
