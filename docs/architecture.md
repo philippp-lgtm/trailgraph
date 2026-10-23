@@ -54,7 +54,8 @@ Commands of `graph` are declared as data in `graph_cli.app_cli.commands`
 (`cli_kit.spec.CommandSpec`); the click tree and the inventory are built from
 the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
-matches and ranks `lookup`; `services.read` and `services.describe` answer
+matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
+(match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
 them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
 `ast`, `resolve` checks it against the model (names to CURIEs, fields,

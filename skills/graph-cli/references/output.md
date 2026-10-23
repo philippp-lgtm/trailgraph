@@ -8,7 +8,7 @@ they are null.
 
 ## Pages
 
-`page` of every list (`find`, `lookup`, `history`, `query`, `file check`); null for other answers.
+`page` of every list (`find`, `lookup`, `search`, `history`, `query`, `file check`); null for other answers.
 
 | Field | Meaning |
 |---|---|
@@ -81,6 +81,24 @@ they are null.
 | `match.role` | `label`, `alt_label` or `hidden_label`. |
 | `match.kind` | `exact` or `prefix`. |
 | `match.value` | The matching name; null for a hidden label. |
+
+## Search
+
+`graph search` lists suggestions in `data.items`, best match first.
+
+| Field | Meaning |
+|---|---|
+| `id` | The id; check the entity with `graph get` before you use it. |
+| `alias` | The alias. |
+| `type` | The type. |
+| `record_status` | `active`, `superseded` or `retracted`. |
+| `label` | The main name, or null. |
+| `match.attr` | The field of the best match. |
+| `match.role` | `label`, `alt_label`, `hidden_label`, or null for other fields. |
+| `match.kind` | `exact` (the whole value), `phrase` (inside it), `words` (each word in it) or `similar` (a close spelling, names and short fields only). |
+| `match.score` | 100, or how close a `similar` match is, 70 to 99. |
+| `match.excerpt` | The matching value or the part around the hit; null for a hidden label. |
+| `fields` | Every field that matched, best first. |
 
 ## History
 

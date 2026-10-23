@@ -4,7 +4,7 @@ import unicodedata
 
 import pytest
 
-from graph_cli.kernel.text import normalize_label
+from graph_cli.kernel.text import containment, normalize_label, search_key, trigrams
 
 
 @pytest.mark.parametrize(
@@ -52,3 +52,37 @@ def test_idempotent(text: str, fold: bool) -> None:
 
 def test_blank_text_normalizes_to_empty() -> None:
     assert normalize_label(" \t\n ") == ""
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("Light- and Refraction", "light and refraction"),
+        ("Café", "CAFE"),  # accents always folded
+        ("e-mail", "e mail"),
+        ("snake_case", "snake case"),
+        ("  a.b,c  ", "a b c"),
+    ],
+)
+def test_equal_search_keys(a: str, b: str) -> None:
+    assert search_key(a) == search_key(b)
+
+
+def test_search_key_keeps_letters_and_digits_of_any_script() -> None:
+    assert search_key("Straße 12") == "strasse 12"
+    assert search_key("Ελλάδα") == "ελλαδα"
+    assert search_key("-- !") == ""
+
+
+def test_trigrams_are_padded_per_word() -> None:
+    assert trigrams("ab") == {"  a", " ab", "ab "}
+    assert trigrams("ab ab") == trigrams("ab")
+    assert trigrams("") == frozenset()
+
+
+def test_containment_is_the_share_of_query_trigrams() -> None:
+    query = trigrams(search_key("Lightrefraction"))
+    assert containment(query, query) == 1.0
+    assert containment(query, trigrams(search_key("Light and refraction"))) == 14 / 16
+    assert containment(query, trigrams("optics")) == 0.0
+    assert containment(frozenset(), query) == 0.0

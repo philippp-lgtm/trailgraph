@@ -1,4 +1,4 @@
-"""Read services: graphs, get, history, find, lookup, neighbors, query, whoami (contracts
+"""Read services: graphs, get, history, find, lookup, search, neighbors, query, whoami (contracts
 §4.3, B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7, B13).
 
 Every read authorizes its action before touching storage; a denial is
@@ -13,7 +13,7 @@ an archived graph with ``graph.archived_read``. ``as_of`` reads the snapshot
 at the seq it names (B8.8): it needs ``read.history`` besides the read's own
 action, a backend with ``snapshot_at_seq``, and every answer carries
 ``temporal.as_of_read``; the model stays the current pin. A successful ``get``,
-``history``, ``find``, ``lookup``, ``neighbors`` or ``query`` hands the ids it
+``history``, ``find``, ``lookup``, ``search``, ``neighbors`` or ``query`` hands the ids it
 returns to the activity sink (a transient signal for ``graph-admin view``,
 no log).
 ``history`` shows of a tx's actor only whether it is the caller's own
@@ -60,6 +60,10 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
 from graph_cli.query.plan import DEFAULT_LIMIT, FindSpec, plan_find, plan_neighbors
+from graph_cli.query.search import SearchSpec, plan_search
+from graph_cli.query.search import main_label as search_label
+from graph_cli.query.search import match_revision as search_match
+from graph_cli.query.search import rank_key as search_rank
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
@@ -505,6 +509,32 @@ class ReadService:
                 "record_status": revision.record_status,
                 "label": main_label(plan, revision),
                 "match": match.to_json(),
+            }
+            for _, revision, match in shown
+        ]
+        self.activity.reads(view.entry.id, [revision.id for _, revision, _ in shown])
+        return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
+
+    @_query
+    def search(self, view: GraphRead, spec: SearchSpec) -> tuple[dict[str, JsonValue], Page]:
+        """Entities whose text fields match, best first; one item per entity."""
+        plan = plan_search(view.model, spec)
+        found = []
+        for revision in view.snapshot.query(plan.query).items:
+            match = search_match(plan, revision)
+            if match is not None:
+                found.append((search_rank(plan, revision, match), revision, match))
+        found.sort(key=lambda row: row[0])
+        shown = found[plan.offset : plan.offset + plan.limit]
+        items: list[JsonValue] = [
+            {
+                "id": str(revision.id),
+                "alias": revision.alias,
+                "type": revision.type,
+                "record_status": revision.record_status,
+                "label": search_label(plan, revision),
+                "match": match.to_json(plan),
+                "fields": list(match.fields),
             }
             for _, revision, match in shown
         ]

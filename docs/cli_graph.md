@@ -32,6 +32,7 @@ conflict, 5 unavailable, 6 internal error).
 | `history REF` | one entity's revisions, newest first: time, command, reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint |
 | `lookup TEXT` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); ranked candidates, paged |
+| `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`) |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed |
@@ -78,7 +79,7 @@ nothing, audit files included.
 
 ## Earlier states
 
-The reads `get`, `history`, `find`, `lookup`, `neighbors` and `query` take
+The reads `get`, `history`, `find`, `lookup`, `search`, `neighbors` and `query` take
 `--as-of` and then answer from the graph as it was: `tx:<seq>` reads the
 state after that transaction (`tx:0` is the empty graph; the `tx_seq` of
 an entity or of a `history` item names one), an RFC 3339 time with an
@@ -114,7 +115,35 @@ casefold, whitespace collapsed; never stored) and ranks exact before prefix
 matches, main before alternative before hidden labels, then shorter names;
 a hidden-label match does not echo its value. Labels are not identifiers:
 references stay ids, aliases and `@local` names. Types without label roles
-are `term.no_labels`.
+are `term.no_labels`. When nothing starts with the text, the hint is a
+`search`.
+
+## Search
+
+`graph search TEXT` answers "is there anything about this": it reads every
+field whose type is `string` or `text` (or a datatype over them), each
+value of a list, on every type or the `--type` families, and `--field`
+limits it to named fields. Enum values, lifecycle states, files and edge
+values are not searched. Text is compared on a looser key than `lookup`
+uses: case, accents and every character that is not a letter or digit are
+ignored, so "Light-Refraction" equals "light refraction". A value matches
+
+- `exact`: it equals the text;
+- `phrase`: it contains the text, also inside a longer word;
+- `words`: it contains each word of the text, in any order;
+- `similar` (names and `string` fields only, not `text`): at least 70% of
+  the text's letter triples occur in it, and at least half of each word's,
+  so a typo or a compound still matches and a missing word does not.
+
+Results are ranked by field first (names before other `string` fields
+before `text` fields, so a close name comes before a phrase in a long
+description), then by kind, then main before alternative before hidden
+name, then closeness, then the shorter value. Each item names its best match (`attr`, `role`, `kind`,
+`score` in percent, an `excerpt` of up to 160 characters, null for a
+hidden name) and every field that matched. Results are suggestions, not
+references: check one with `get` before writing to it. Abbreviations are
+found only when an entity carries them as an alternative name. Types or
+fields without text are `term.no_text_fields`.
 
 ## Cypher queries
 

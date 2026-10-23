@@ -42,8 +42,8 @@ def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe types"
 
 
-def _labels(details: Mapping[str, JsonValue], program: str) -> str | None:
-    """Where the label roles of a type show (its fields' ``role``)."""
+def _fields(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Where the fields of a type show, with their base type and ``role``."""
     types = details.get("types")
     if isinstance(types, list) and len(types) == 1 and isinstance(types[0], str):
         return f"{program} describe type {types[0]}"
@@ -130,7 +130,8 @@ _BASE: Final[dict[str, Hint | None]] = {
     "entity.ambiguous_ref": None,
     "entity.revision_not_found": _history,
     "term.unknown": _types,
-    "term.no_labels": _labels,
+    "term.no_labels": _fields,
+    "term.no_text_fields": _fields,
     "changeset.malformed": None,
     "changeset.local_ref_unresolved": None,
     "changeset.local_ref_duplicate": None,

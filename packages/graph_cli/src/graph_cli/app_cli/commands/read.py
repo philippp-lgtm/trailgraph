@@ -32,6 +32,7 @@ from graph_cli.query.plan import (
     parse_rel_flag,
     split_assignment,
 )
+from graph_cli.query.search import SearchSpec
 from graph_cli.services.read import GraphRead, QuerySpec
 from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
 
@@ -268,6 +269,78 @@ def lookup(
             {
                 "text": "No exact match; try names that start with the text",
                 "command": line("prefix"),
+            },
+        )
+    elif not page.total:
+        options = (("--type", type), *_pinned(view, point))
+        hints = (
+            {
+                "text": "No name starts with the text; search names and text fields",
+                "command": _command_line(
+                    "search",
+                    (text,),
+                    view.entry.name,
+                    options,
+                    ("--include-inactive",) if include_inactive else (),  # no accent switch
+                    DEFAULT_LIMIT,
+                ),
+            },
+        )
+    return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
+
+
+def search(
+    state: CommandState,
+    text: str,
+    type: tuple[str, ...],
+    field: tuple[str, ...],
+    include_inactive: bool,
+    limit: int,
+    offset: int,
+    graph: str | None,
+    as_of: str | None,
+) -> Result:
+    point = _as_of(as_of)
+    args: dict[str, JsonValue] = {
+        "text": text,
+        "type": list(type),
+        "field": list(field),
+        "include_inactive": include_inactive,
+        "limit": limit,
+        "offset": offset,
+    }
+    view = _open(state, graph, "read.find", "search", args, point)
+    spec = SearchSpec(
+        text=text,
+        types=type,
+        fields=field,
+        include_inactive=include_inactive,
+        limit=limit,
+        offset=offset,
+    )
+    data, page = context(state).reader.search(view, spec)
+    page_json = page.to_json()
+    options = (("--type", type), ("--field", field), *_pinned(view, point))
+    switches = ("--include-inactive",) if include_inactive else ()
+
+    def line(next_offset: int) -> str:
+        return _command_line(
+            "search", (text,), view.entry.name, options, switches, limit, next_offset
+        )
+
+    hints = _next_page(page_json, line)
+    if not page.total and (type or field):
+        hints = (
+            {
+                "text": "Nothing found; search every type and field",
+                "command": _command_line(
+                    "search",
+                    (text,),
+                    view.entry.name,
+                    _pinned(view, point),
+                    switches,
+                    DEFAULT_LIMIT,
+                ),
             },
         )
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
@@ -565,6 +638,44 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "temporal.as_of_unsupported", "term.unknown", "term.no_labels"),
         handler=lookup,
+        limits={"limit": MAX_LIMIT},
+    ),
+    CommandSpec(
+        path=("search",),
+        kind="read",
+        surface="retrieve",
+        action="read.find",
+        summary="Search names and text fields of every type; ranked suggestions, typos allowed.",
+        description=(
+            "Ignores case, accents and punctuation; finds the text inside longer words and "
+            "similar names. Results are suggestions: check one with get before you use its id."
+        ),
+        params=(
+            ParamSpec("text", "string", "The words to look for.", required=True, positional=True),
+            ParamSpec("--type", "term", "Type CURIE, subtypes included.", repeatable=True),
+            ParamSpec("--field", "string", "Only this text field.", repeatable=True),
+            ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
+            ParamSpec(
+                "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many results.", default=0),
+            GRAPH,
+            AS_OF,
+        ),
+        examples=(
+            Example("graph search <value>", "Names and text fields of any type."),
+            Example(
+                "graph search <value> --type <type> --field <attr> --json",
+                "One field of one type.",
+            ),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            "temporal.as_of_unsupported",
+            "term.unknown",
+            "term.no_text_fields",
+        ),
+        handler=search,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(

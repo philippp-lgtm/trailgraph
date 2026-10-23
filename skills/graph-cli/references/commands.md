@@ -513,6 +513,37 @@ Usage: `graph retract REF [OPTIONS]`
 | `graph retract <id> --reason <value>` | Withdraw an entity. |
 | `graph retract <id> --by <id> --reason <value> --json` | Withdraw, citing a correction. |
 
+## graph search
+
+Search names and text fields of every type; ranked suggestions, typos allowed.
+
+Kind: read. Surface: retrieve. Action: `read.find`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph search TEXT [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `text` | string | yes | no | The words to look for. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--type` | term | no | yes | Type CURIE, subtypes included. |
+| `--field` | string | no | yes | Only this text field. |
+| `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many results. Default: `0`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph search <value>` | Names and text fields of any type. |
+| `graph search <value> --type <type> --field <attr> --json` | One field of one type. |
+
 ## graph skills check
 
 Check that installed agent skills equal what this program installs now.

@@ -70,6 +70,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `skills.target_invalid` | refused | 1 |
 | `temporal.as_of_unsupported` | refused | 1 |
 | `term.no_labels` | refused | 1 |
+| `term.no_text_fields` | refused | 1 |
 | `term.unknown` | not_found | 1 |
 | `usage.invalid_argument` | usage | 2 |
 | `usage.invalid_input` | usage | 2 |

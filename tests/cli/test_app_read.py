@@ -1,4 +1,4 @@
-"""S: graph get, history, find, lookup and neighbors on seeded graphs of both fixtures
+"""S: graph get, history, find, lookup, search and neighbors on seeded graphs of both fixtures
 (plan A4; contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13.7)."""
 
 import shlex
@@ -316,6 +316,52 @@ def test_lookup_errors(run_cli: CliRunner, root: Path) -> None:
     assert blank.code == 2
     bad_match = app(run_cli, "lookup", "x", "--match", "contains", env=ENV)
     assert bad_match.code == 2
+
+
+def test_search_finds_names_inside_words_and_with_typos(
+    run_cli: CliRunner, root: Path, roles: Roles
+) -> None:
+    entity, value = a_label(run_cli, roles)
+    attr = str(roles.get("label_attribute")).rpartition(".")[2]
+    for text, kind in ((value.upper(), "exact"), (value[1:-1], "phrase")):
+        outcome = app(run_cli, "search", text, env=ENV)
+        assert outcome.code == 0, outcome.envelope
+        item = next(i for i in outcome.data["items"] if i["id"] == entity)
+        assert set(item) == {"id", "alias", "type", "record_status", "label", "match", "fields"}
+        assert item["label"] == value
+        assert item["match"] | {"excerpt": None} == {
+            "attr": attr,
+            "role": "label",
+            "kind": kind,
+            "score": 100,
+            "excerpt": None,
+        }
+        assert attr in item["fields"]
+    if len(value) >= 8:  # one dropped letter in a longer name is still similar
+        typo = value[:3] + value[4:]
+        found = app(run_cli, "search", typo, "--field", attr, env=ENV)
+        assert entity in [i["id"] for i in found.data["items"]]
+    hidden_id, hidden = a_label(run_cli, roles, "hidden_label_attribute")
+    found = app(run_cli, "search", hidden, "--type", str(roles.get("label_type")), env=ENV)
+    item = next(i for i in found.data["items"] if i["id"] == hidden_id)
+    assert item["match"]["role"] == "hidden_label" and item["match"]["excerpt"] is None
+    text = run_cli("graph", "search", value, env=ENV)
+    assert text.returncode == 0 and entity in text.stdout and text.stderr == ""
+
+
+def test_search_hints_and_errors(run_cli: CliRunner, root: Path, roles: Roles) -> None:
+    label_type = str(roles.get("label_type"))
+    nothing = app(run_cli, "search", "zzqqxxjj", "--type", label_type, env=ENV)
+    assert (nothing.code, nothing.data["items"]) == (0, [])
+    (hint,) = nothing.envelope["hints"]
+    assert hint["command"] == "graph search zzqqxxjj --graph example_graph"
+    unknown = app(run_cli, "search", "xy", "--field", "no_such_field", env=ENV)
+    assert (unknown.code, unknown.error["code"]) == (1, "term.unknown")
+    short = app(run_cli, "search", "x", env=ENV)
+    assert short.code == 2
+    lookup = app(run_cli, "lookup", "zzqqxxjj", "--match", "prefix", env=ENV)
+    (hint,) = lookup.envelope["hints"]
+    assert hint["command"] == "graph search zzqqxxjj --graph example_graph"
 
 
 def test_reads_reach_a_listening_view_only_when_enabled(

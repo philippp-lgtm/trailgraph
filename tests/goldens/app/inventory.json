@@ -1839,6 +1839,113 @@
     },
     {
       "path": [
+        "search"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.find",
+      "summary": "Search names and text fields of every type; ranked suggestions, typos allowed.",
+      "args": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The words to look for."
+        }
+      ],
+      "options": [
+        {
+          "name": "--type",
+          "type": "term",
+          "required": false,
+          "repeatable": true,
+          "summary": "Type CURIE, subtypes included."
+        },
+        {
+          "name": "--field",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this text field."
+        },
+        {
+          "name": "--include-inactive",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Include superseded and retracted entities."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many results.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph search <value>",
+          "summary": "Names and text fields of any type."
+        },
+        {
+          "command": "graph search <value> --type <type> --field <attr> --json",
+          "summary": "One field of one type."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "temporal.as_of_unsupported",
+        "term.no_text_fields",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      }
+    },
+    {
+      "path": [
         "skills",
         "check"
       ],
@@ -2803,6 +2910,11 @@
     },
     {
       "code": "term.no_labels",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "term.no_text_fields",
       "category": "refused",
       "exit": 1
     },
