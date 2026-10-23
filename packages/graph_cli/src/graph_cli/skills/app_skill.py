@@ -149,7 +149,7 @@ tx:<seq>` on any read show earlier states; read
   twice: it returns the first result (`idempotent_replay` is true).
   Without a key, check `graph history <id> --json` before a retry.
 - `graph update --add <attr>=<value>` (or `--remove`) changes a list field
-  without reading it first; `--set` replaces the whole list.
+  without a read; `--set` replaces it. No change: `entity.unchanged`.
 - When a write depends on what you read, pass `--expect` with that `rev`
   so that a concurrent change is a conflict instead of a lost update.
   `graph get` shows it as `data.entity.rev`; a write returns the new one
@@ -199,8 +199,8 @@ Every `--json` call prints one JSON object on stdout.
 - Never cut an answer with `head`, a pipe or another program: ask for less.
   `--fields <attr>,<attr>` on `get`, `find` and `neighbors` keeps those
   fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
-- A large answer goes to a file: `data` is null and `output.spilled` names
-  `details.path`. Ask for less, or read only what you need from the file.
+- A large answer goes to a file (`output.spilled`, `details.path`; `data`
+  null): ask for less, or read parts with your file tools, never `jq`.
 - On failure `error` holds {error_keys}. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.
@@ -275,6 +275,18 @@ QUERY_SUBSET: Final = (
         ),
     ),
     (
+        "Lists",
+        (
+            "any(x IN n.<attr> WHERE ...)",
+            "all(...)",
+            "none(...)",
+            "single(...)",
+            "[x IN n.<attr> WHERE ... | ...]",
+            "n.<attr>[0]",
+            "n.<attr>[1..3]",
+        ),
+    ),
+    (
         "Functions",
         (
             "count(*)",
@@ -315,6 +327,8 @@ QUERY_EXAMPLES: Final = (
     "graph query 'MATCH (n:<type>)-[:<relation>]->(m) RETURN m.<attr>, count(n) AS total "
     "ORDER BY total DESC' --json",
     "graph query 'MATCH (n:<type>) WHERE n.id = $id RETURN n' --param id=<id> --json",
+    "graph query 'MATCH (n:<type>) WHERE any(v IN n.<attr> WHERE v STARTS WITH $prefix) "
+    "RETURN n.<attr>' --param prefix=<value> --json",
 )
 
 QUERY_BODY: Final = """\
@@ -347,9 +361,13 @@ grouping. For one type with field filters, one hop or a name, `find`,
 {subset_table}
 
 A variable-length relationship (`*1..3`) needs an upper bound of at most 5.
-Anything else (`CREATE` and other writes, `CALL`, `UNION`, named paths,
-unbounded `*`, `id()`) is `query.unsupported`; `error.details` names the
-construct and an alternative. Decimal numbers come back as strings.
+A list expression's variable (`x`) is new and local to it; aggregates go
+into its list only (`[x IN collect(n.<attr>) WHERE ...]`). An index counts
+from 0, a negative one from the end; out of range is null. Anything else
+(`CREATE` and other writes, `CALL`, `UNION`, named paths, unbounded `*`,
+pattern comprehensions, `reduce`, `id()`) is `query.unsupported`;
+`error.details` names the construct and an alternative. Decimal numbers
+come back as strings.
 
 Examples:
 
@@ -438,7 +456,9 @@ An edge in `edges` of a `create` has {edge_keys}.
 - `add`, `add_text`, `remove` and `remove_text` take `{{"<attr>": [...]}}`
   for a list field: `add` appends each value not yet there, `remove` drops
   it; no read and no `expect_rev` needed. An attribute appears in only one
-  of the update keys.
+  of the update keys. An entity left as it was gets no new revision
+  (`changed: false`, warning `entity.unchanged`); a document that changes
+  nothing commits no transaction (`seq` null).
 - `qualifiers` are typed JSON values on the edge itself (a page is a
   number); which ones a relation takes: `graph describe relations --json`.
   `target_rev` pins the revision of the target the edge refers to.
@@ -601,9 +621,9 @@ OUTPUT_SECTIONS: Final = (
         " `data.results[].result`. Error findings refuse the write and come in"
         " `error.details.findings`; warning findings ride along here.",
         (
-            ("tx_id", "The transaction id; null on a dry run."),
-            ("seq", "The graph's seq after the write; null on a dry run."),
-            ("event_id", "The audit event; null on a dry run."),
+            ("tx_id", "The transaction id; null on a dry run or when nothing changed."),
+            ("seq", "The graph's seq after the write; null on a dry run or when nothing changed."),
+            ("event_id", "The audit event; null on a dry run or when nothing changed."),
             ("dry_run", "True when nothing was written."),
             ("idempotent_replay", "True when a retry returned the first result."),
             ("id", "The id when one entity was written, else null."),
@@ -611,7 +631,8 @@ OUTPUT_SECTIONS: Final = (
             ("entity_count", "How many entities were written."),
             ("entities[].id", "Each entity written; null for a create on a dry run."),
             ("entities[].alias", "Its alias."),
-            ("entities[].rev", "Its new revision."),
+            ("entities[].rev", "Its new revision; the current one when it is unchanged."),
+            ("entities[].changed", "False when the write left it as it was (no new revision)."),
             ("entities[].type", "Its type."),
             ("entities[].ops", "The operations that touched it."),
             ("entities[].local", "Its `local` name from a change set, or null."),

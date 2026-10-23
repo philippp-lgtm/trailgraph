@@ -137,6 +137,7 @@ class EntityResult:
     type: TermRef
     ops: tuple[str, ...]
     local: str | None
+    changed: bool = True  # False: same content as before, no new revision
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -146,6 +147,7 @@ class EntityResult:
             "type": self.type,
             "ops": list(self.ops),
             "local": self.local,
+            "changed": self.changed,
         }
 
 
@@ -292,12 +294,14 @@ class WriteService:
         results: list[WriteResult] = []
         base: Snapshot | None = None
         placeholders = _Placeholders()
+        commits = 0  # dry-run documents before this one that would commit a tx
         for index, request in enumerate(requests):
             current = replace(request, bindings={**request.bindings, **bindings})
             try:
                 if current.dry_run:
-                    result, working = self._dry_run(current, base, placeholders, index)
+                    result, working = self._dry_run(current, base, placeholders, commits)
                     base = working
+                    commits += 1 if working.revisions else 0
                     bindings.update(
                         {n: e for n, e in working.locals.items() if e in working.created}
                     )
@@ -451,6 +455,17 @@ class WriteService:
                 findings = [_scrub(f, working, working.created) for f in findings]
                 raise refusal(
                     _invalid(findings), types=resolution.pairs, findings=findings, working=working
+                )
+            if not working.revisions:  # nothing changes: no tx, no audit event
+                return _result(
+                    entry,
+                    working,
+                    tx_id=None,
+                    seq=None,
+                    event_id=None,
+                    dry_run=False,
+                    warnings=resolution.warnings,
+                    findings=findings,
                 )
             tx = AuthorizedTx(
                 graph_id=entry.id,
@@ -736,7 +751,7 @@ def _scrub(finding: Finding, working: WorkingState, hidden: Set[UUID]) -> Findin
 
 
 def _op_names(working: WorkingState) -> dict[EntityId, list[str]]:
-    names: dict[EntityId, list[str]] = {e: [] for e in working.revisions}
+    names: dict[EntityId, list[str]] = {e: [] for e in (*working.revisions, *working.unchanged)}
     for effect in working.effects:
         if not effect.applied:
             continue
@@ -769,7 +784,20 @@ def _result(
             local=working.local_of(entity),
         )
         for entity, revision in working.revisions.items()
+    ) + tuple(
+        EntityResult(
+            id=entity,
+            alias=revision.alias,
+            rev=revision.rev,
+            type=revision.type,
+            ops=tuple(names[entity]),
+            local=working.local_of(entity),
+            changed=False,
+        )
+        for entity, revision in working.unchanged.items()
     )
+    if working.unchanged:
+        warnings = [*warnings, _unchanged(working)]
     bound = (
         {}
         if dry_run
@@ -787,6 +815,18 @@ def _result(
         warnings=tuple(warnings),
         findings=tuple(f for f in findings if f.severity is not Severity.ERROR),
         bindings=bound,
+    )
+
+
+def _unchanged(working: WorkingState) -> WarningRecord:
+    revisions = list(working.unchanged.values())
+    names = ", ".join(r.alias or str(r.id) for r in revisions[:5])
+    more = f" and {len(revisions) - 5} more" if len(revisions) > 5 else ""
+    nothing = "" if working.revisions else "; nothing was written"
+    return WarningRecord(
+        "entity.unchanged",
+        f"already as given, no new revision: {names}{more}{nothing}",
+        {"ids": [str(r.id) for r in revisions], "count": len(revisions)},
     )
 
 

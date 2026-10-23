@@ -34,10 +34,11 @@ _ALL: Query = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 
 @dataclass(frozen=True, slots=True)
 class WorkingState:
-    """Base snapshot plus the new revision of every touched entity."""
+    """Base snapshot plus the new revision of every changed entity."""
 
     base: Snapshot
-    revisions: Mapping[EntityId, Revision]  # first-touch order
+    revisions: Mapping[EntityId, Revision]  # first-touch order, changed entities only
+    unchanged: Mapping[EntityId, Revision]  # touched, same content: the current revision
     created: frozenset[EntityId]
     locals: Mapping[str, EntityId]  # every local name bound in this request
     alias_allocations: tuple[tuple[EntityId, str], ...]

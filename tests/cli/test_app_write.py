@@ -1,6 +1,7 @@
 """S: graph create, update, link and unlink on both fixtures (plan A7; contracts B3, B3.10,
 B3.11, B3.16, B3.18). Role-based: values come from the compiled model, no type is named."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -212,3 +213,37 @@ def test_add_and_remove_change_a_list_without_a_read(
     assert (both.code, both.error["details"]["argument"]) == (2, "--remove")
     none = app(run_cli, "update", ids["x"], env=ENV)
     assert (none.code, none.error["code"]) == (2, "usage.missing_argument")
+
+
+def test_a_write_that_changes_nothing_commits_nothing(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    curie, _, attr = str(roles.get("alt_label_attribute")).rpartition(".")
+    ids = cli_create(run_cli, factory, curie)
+    assert app(run_cli, "update", ids["x"], "--add", f"{attr}=One", env=ENV).code == 0
+    head = app(run_cli, "get", ids["x"], env=ENV)
+    seq, rev = head.envelope["graph"]["seq"], head.data["entity"]["rev"]
+    for dry in (("--dry-run",), ()):
+        same = app(run_cli, "update", ids["x"], "--add", f"{attr}=One", *dry, env=ENV)
+        assert same.code == 0, same.envelope
+        assert (same.data["tx_id"], same.data["seq"], same.data["event_id"]) == (None, None, None)
+        (entity,) = same.data["entities"]
+        assert (entity["changed"], entity["rev"]) == (False, rev)
+        assert same.warning_codes == ["entity.unchanged"]
+        assert same.envelope["warnings"][0]["details"] == {"ids": [ids["x"]], "count": 1}
+    after = app(run_cli, "get", ids["x"], env=ENV)
+    assert (after.envelope["graph"]["seq"], after.data["entity"]["rev"]) == (seq, rev)
+    changed = app(run_cli, "update", ids["x"], "--add", f"{attr}=Two", env=ENV)
+    assert changed.data["entities"][0]["changed"] is True and changed.warning_codes == []
+
+    # a dry-run batch predicts seq from the documents that commit
+    def add(value: str, **more: int) -> str:
+        op = {"op": "update", "id": ids["x"], "add": {attr: [value]}}
+        return json.dumps({"ops": [op], **more})
+
+    documents = "\n".join([add("Two"), add("Three"), add("Four", expect_seq=seq + 2)]) + "\n"
+    batch = app(run_cli, "apply", "-", "--dry-run", env=ENV, input=documents)
+    assert batch.code == 0, batch.envelope
+    applied = app(run_cli, "apply", "-", env=ENV, input=documents)
+    assert applied.code == 0, applied.envelope
+    assert [r["result"]["seq"] for r in applied.data["results"]] == [None, seq + 2, seq + 3]

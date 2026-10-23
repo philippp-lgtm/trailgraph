@@ -140,7 +140,9 @@ graph lock, re-check state and pin, replay an idempotent retry, check
 `expect_seq`/`expect_rev`, normalize, validate, publish the stored files
 the request staged and the transaction names, append the audit intent,
 commit. Ops apply in order to one working copy, each touched entity gets
-one new revision, and a change set commits completely or not at all.
+one new revision unless its content ends up equal to its current revision
+(it is unchanged then), and a change set commits completely or not at all;
+one that changes nothing stops after validation, without a transaction.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
 along with the result. Refusals are audited: denials in the installation

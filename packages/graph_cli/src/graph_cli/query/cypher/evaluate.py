@@ -7,7 +7,9 @@ and integer overflow are ``query.invalid_value``.
 
 Aggregates are computed by the executor per group; ``evaluate`` reads
 their values from ``aggregates`` (keyed by the aggregate node's ``id()``).
-Pattern predicates call back into the executor through ``exists``.
+Pattern predicates call back into the executor through ``exists``. List
+expressions (quantifiers, comprehensions) evaluate their inner parts on the
+row plus their own variable; a null list makes them null.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from graph_cli.query.cypher.ast import (
     FunctionCall,
     HasLabels,
     IsNull,
+    ListComprehension,
     ListExpr,
     MapExpr,
     Parameter,
@@ -45,6 +48,9 @@ from graph_cli.query.cypher.ast import (
     PatternPredicate,
     Pos,
     Property,
+    Quantifier,
+    Slice,
+    Subscript,
     Unary,
     Variable,
 )
@@ -151,7 +157,52 @@ class Evaluator:
                 return all(any(self.model.is_a(node_type, t) for t in g) for g in groups)
             case PatternPredicate(part):
                 return self.exists(part, row)
+            case Quantifier(quantifier, variable, source, where):
+                elements = self.elements(source, row, aggregates)
+                if elements is None:
+                    return None
+                tests = [self.test(where, {**row, variable: v}) for v in elements]
+                return _quantify(quantifier, tests)
+            case ListComprehension(variable, source, where, project):
+                elements = self.elements(source, row, aggregates)
+                if elements is None:
+                    return None
+                kept: list[Value] = []
+                for element in elements:
+                    inner: dict[str, Value] = {**row, variable: element}
+                    if where is None or self.test(where, inner) is True:
+                        kept.append(element if project is None else self.evaluate(project, inner))
+                return kept
+            case Subscript(subject, index):
+                return _subscript(
+                    self.evaluate(subject, row, aggregates),
+                    self.evaluate(index, row, aggregates),
+                    e.pos,
+                )
+            case Slice(subject, start, end):
+                bounds = [
+                    None if b is None else self.evaluate(b, row, aggregates) for b in (start, end)
+                ]
+                return _slice(
+                    self.evaluate(subject, row, aggregates),
+                    (start is not None, end is not None),
+                    bounds,
+                    e.pos,
+                )
         raise AssertionError(f"unknown expression {e!r}")
+
+    def elements(
+        self, source: Expr, row: Row, aggregates: Mapping[int, Value] | None
+    ) -> list[Value] | None:
+        """The list a list expression runs over; None for null."""
+        value = self.evaluate(source, row, aggregates)
+        if value is None or isinstance(value, list):
+            return value
+        raise invalid_value(source.pos, f"IN needs a list, got a {kind(value)}")
+
+    def test(self, where: Expr, row: Row) -> bool | None:
+        """The ``WHERE`` of a list expression: true, false or null."""
+        return _boolean(self.evaluate(where, row), where.pos)
 
     # Properties
 
@@ -439,6 +490,46 @@ def _substring(text: str, bounds: list[Value], pos: Pos) -> str:
         numbers.append(bound)
     start = numbers[0]
     return text[start:] if len(numbers) == 1 else text[start : start + numbers[1]]
+
+
+def _quantify(kind: str, tests: list[bool | None]) -> bool | None:
+    """openCypher's three-valued ``all``, ``any``, ``none``, ``single``."""
+    trues = tests.count(True)
+    unknown = None in tests
+    match kind:
+        case "any":
+            return True if trues else None if unknown else False
+        case "none":
+            return False if trues else None if unknown else True
+        case "all":
+            return False if False in tests else None if unknown else True
+    if trues > 1:  # single
+        return False
+    return None if unknown else trues == 1
+
+
+def _subscript(subject: Value, index: Value, pos: Pos) -> Value:
+    """``list[i]``: counted from 0, negative from the end, out of range null."""
+    if subject is None or index is None:
+        return None
+    if not isinstance(subject, list):
+        raise invalid_value(pos, f"indexing needs a list, got a {kind(subject)}")
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise invalid_value(pos, f"a list index must be an integer, got a {kind(index)}")
+    return subject[index] if -len(subject) <= index < len(subject) else None
+
+
+def _slice(subject: Value, given: tuple[bool, bool], bounds: list[Value], pos: Pos) -> Value:
+    """``list[a..b]``: from a up to b excluded, negative from the end; a null bound is null."""
+    if subject is None or any(g and b is None for g, b in zip(given, bounds, strict=True)):
+        return None
+    if not isinstance(subject, list):
+        raise invalid_value(pos, f"slicing needs a list, got a {kind(subject)}")
+    for bound in bounds:
+        if bound is not None and (not isinstance(bound, int) or isinstance(bound, bool)):
+            raise invalid_value(pos, f"a slice bound must be an integer, got a {kind(bound)}")
+    start, end = (b if isinstance(b, int) else None for b in bounds)
+    return subject[start:end]
 
 
 def _boolean(value: Value, pos: Pos) -> bool | None:

@@ -3,7 +3,6 @@ keeps the envelope without data, a warning names the file, the file holds the wh
 
 import json
 import os
-import shlex
 import stat
 from pathlib import Path
 from typing import Any
@@ -57,7 +56,8 @@ def test_a_large_answer_goes_to_a_private_file(
     assert len(path.read_text().splitlines()) > 10  # pretty-printed for line-wise tools
     assert short.envelope["page"] == whole.envelope["page"]
     first = short.envelope["hints"][0]
-    assert first["command"] == shlex.join(["jq", ".data | keys", str(path)])
+    assert first["command"] is None and str(path) in first["text"]
+    assert "jq" not in first["text"] and "python" not in first["text"].lower()
     log = Path(isolated_env["XDG_STATE_HOME"]) / "graph_cli" / "logs" / "access.jsonl"
     output = json.loads(log.read_text().splitlines()[-1])["output"]
     assert output["spilled_bytes"] == warning["details"]["bytes"] > output["bytes"]

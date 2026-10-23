@@ -184,8 +184,42 @@ def test_remove_drops_every_equal_value_and_ignores_absent_ones() -> None:
 def test_add_on_a_single_value_attribute_changes_nothing() -> None:
     topic = _topic()
     ws = run_topic(topic, {"op": "update", "id": "TOPIC-0001", "add": {"label": ["Other"]}})
-    assert ws.revisions[topic.id].attrs["label"] == "Cost accounting"
+    assert ws.unchanged[topic.id] is topic and not ws.revisions
     assert ws.effects[0].lists == ("label",)
+
+
+def test_an_update_to_the_stored_content_makes_no_revision() -> None:
+    topic = _topic(synonyms=["CA"])
+    ws = run_topic(
+        topic,
+        {"op": "update", "id": "TOPIC-0001", "add": {"synonyms": ["CA"]}},
+        {"op": "update", "id": "TOPIC-0001", "set": {"label": "Cost accounting"}},
+        {"op": "update", "id": "TOPIC-0001", "remove": {"synonyms": ["zzz"]}},
+        {"op": "set_alias", "id": "TOPIC-0001", "alias": "TOPIC-0001"},
+    )
+    assert dict(ws.unchanged) == {topic.id: topic}
+    assert not ws.revisions and topic.id not in ws.touched
+    assert all(e.applied for e in ws.effects)
+
+
+def test_changes_that_cancel_out_leave_the_entity_unchanged() -> None:
+    topic = _topic(synonyms=["CA"])
+    ws = run_topic(
+        topic,
+        {"op": "update", "id": "TOPIC-0001", "add": {"synonyms": ["X"]}},
+        {"op": "update", "id": "TOPIC-0001", "remove": {"synonyms": ["X"]}},
+    )
+    assert topic.id in ws.unchanged and not ws.revisions
+
+
+def test_only_changed_entities_get_a_revision() -> None:
+    ws = run(
+        {"op": "update", "id": "ITEM-0001", "set": {"name": "Desk"}},
+        {"op": "update", "id": "LOC-0001", "set": {"name": "Hall"}},
+    )
+    assert list(ws.unchanged) == [DESK.id]
+    assert list(ws.revisions) == [ROOM.id]
+    assert ws.get(DESK.id) is DESK
 
 
 def test_update_makes_the_next_revision() -> None:
@@ -326,6 +360,25 @@ def test_derived_from_gets_the_post_state_revision() -> None:
     )
     revs = [e.target_rev for e in ws.revisions[ws.locals["n"]].edges]
     assert revs == [5, 1, 2]
+
+
+def test_derived_from_an_unchanged_entity_names_its_current_revision() -> None:
+    src = revision("src", "nas:Note", {"title": "S"}, rev=4)
+    ws = run(
+        {"op": "update", "id": str(src.id), "set": {"title": "S"}},
+        {
+            "op": "create",
+            "type": "nas:Note",
+            "local": "n",
+            "attrs": {"title": "N"},
+            "edges": [{"rel": "core:derived_from", "target": str(src.id)}],
+        },
+        base=DictSnapshot(src),
+        model=NAS,
+        refs={},
+    )
+    assert src.id in ws.unchanged
+    assert [e.target_rev for e in ws.revisions[ws.locals["n"]].edges] == [4]
 
 
 def test_aliases_rename_advance_and_one_allocation_per_entity() -> None:

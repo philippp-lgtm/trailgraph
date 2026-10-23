@@ -85,7 +85,7 @@ tx:<seq>` on any read show earlier states; read
   twice: it returns the first result (`idempotent_replay` is true).
   Without a key, check `graph history <id> --json` before a retry.
 - `graph update --add <attr>=<value>` (or `--remove`) changes a list field
-  without reading it first; `--set` replaces the whole list.
+  without a read; `--set` replaces it. No change: `entity.unchanged`.
 - When a write depends on what you read, pass `--expect` with that `rev`
   so that a concurrent change is a conflict instead of a lost update.
   `graph get` shows it as `data.entity.rev`; a write returns the new one
@@ -135,8 +135,8 @@ Every `--json` call prints one JSON object on stdout.
 - Never cut an answer with `head`, a pipe or another program: ask for less.
   `--fields <attr>,<attr>` on `get`, `find` and `neighbors` keeps those
   fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
-- A large answer goes to a file: `data` is null and `output.spilled` names
-  `details.path`. Ask for less, or read only what you need from the file.
+- A large answer goes to a file (`output.spilled`, `details.path`; `data`
+  null): ask for less, or read parts with your file tools, never `jq`.
 - On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.

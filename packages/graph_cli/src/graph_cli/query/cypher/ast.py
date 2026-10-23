@@ -154,6 +154,50 @@ class PatternPredicate:
     pos: Pos = field(default=NO_POS, compare=False)
 
 
+QuantifierKind = Literal["all", "any", "none", "single"]
+
+
+@dataclass(frozen=True, slots=True)
+class Quantifier:
+    """``any(x IN list WHERE pred)``; ``variable`` is local to ``where``."""
+
+    kind: QuantifierKind
+    variable: str
+    source: Expr
+    where: Expr
+    pos: Pos = field(default=NO_POS, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ListComprehension:
+    """``[x IN list WHERE pred | expr]``; ``variable`` is local to ``where`` and ``project``."""
+
+    variable: str
+    source: Expr
+    where: Expr | None = None
+    project: Expr | None = None
+    pos: Pos = field(default=NO_POS, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class Subscript:
+    """``list[index]``."""
+
+    subject: Expr
+    index: Expr
+    pos: Pos = field(default=NO_POS, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class Slice:
+    """``list[start..end]``; a bound left out is None."""
+
+    subject: Expr
+    start: Expr | None = None
+    end: Expr | None = None
+    pos: Pos = field(default=NO_POS, compare=False)
+
+
 Expr = (
     Const
     | Parameter
@@ -169,6 +213,10 @@ Expr = (
     | Case
     | HasLabels
     | PatternPredicate
+    | Quantifier
+    | ListComprehension
+    | Subscript
+    | Slice
 )
 
 

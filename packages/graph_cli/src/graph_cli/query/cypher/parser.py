@@ -3,7 +3,7 @@
 Grammar and precedence follow openCypher 9 for the supported part (plan
 ``cypher_query.md`` 3.2). Constructs outside it are recognized where Cypher
 users write them and refused with ``query.unsupported`` (write clauses,
-``CALL``, ``UNION``, named paths, unbounded variable length, list
+``CALL``, ``UNION``, named paths, unbounded variable length, pattern
 comprehensions, map projections, subqueries, ...); anything else that does
 not parse is ``query.syntax`` with line, column and the expected tokens.
 """
@@ -27,6 +27,7 @@ from graph_cli.query.cypher.ast import (
     FunctionCall,
     HasLabels,
     IsNull,
+    ListComprehension,
     ListExpr,
     MapExpr,
     Match,
@@ -38,10 +39,14 @@ from graph_cli.query.cypher.ast import (
     Projection,
     ProjectionItem,
     Property,
+    Quantifier,
+    QuantifierKind,
     Query,
     RelPattern,
     Return,
+    Slice,
     SortItem,
+    Subscript,
     Unary,
     Unwind,
     Variable,
@@ -112,7 +117,8 @@ _COMPARISONS: Final[dict[str, BinaryOp]] = {
     ">": ">",
     ">=": ">=",
 }
-_LIST_PREDICATES: Final = ("all", "any", "none", "single", "filter", "extract")
+_QUANTIFIERS: Final[tuple[QuantifierKind, ...]] = ("all", "any", "none", "single")
+_REMOVED_LIST_FUNCTIONS: Final = ("filter", "extract")  # gone since Cypher 10
 _SUBQUERIES: Final = ("EXISTS", "COUNT", "COLLECT")
 _PATH_FUNCTIONS: Final = ("shortestpath", "allshortestpaths")
 _READ_ONLY: Final = "queries are read-only; writes go through a changeset"
@@ -589,9 +595,7 @@ class _Parser:
             elif self.at_symbol(":"):
                 expr = HasLabels(expr, self.labels(), token.pos)
             elif self.at_symbol("["):
-                raise unsupported(
-                    token.pos, "expression", "list indexing and slicing", "use UNWIND or collect"
-                )
+                expr = self.subscript(expr)
             elif self.at_symbol("{") and isinstance(expr, Variable):
                 raise unsupported(
                     token.pos,
@@ -690,17 +694,16 @@ class _Parser:
             )
         if name == "reduce":
             raise unsupported(token.pos, "expression", "reduce(...)", "use UNWIND with sum()")
-        if (
-            name in _LIST_PREDICATES
-            and self.peek(2).kind in ("ident", "escaped")
-            and self.is_word(self.peek(3), "IN")
-        ):
+        in_form = self.peek(2).kind in ("ident", "escaped") and self.is_word(self.peek(3), "IN")
+        if name in _REMOVED_LIST_FUNCTIONS and in_form:
             raise unsupported(
                 token.pos,
                 "expression",
                 f"{name}(... IN ...)",
-                "use UNWIND with WHERE, or a pattern in WHERE",
+                "use a list comprehension: [x IN list WHERE ... | ...]",
             )
+        if name in _QUANTIFIERS and in_form:
+            return self.quantifier(token, _QUANTIFIERS[_QUANTIFIERS.index(name)])
         self.advance()
         self.expect_symbol("(")
         if name == "count" and self.accept_symbol("*"):
@@ -729,12 +732,41 @@ class _Parser:
         self.expect_word("END")
         return Case(subject, tuple(whens), default, start.pos)
 
-    def list_literal(self) -> ListExpr:
+    def quantifier(self, token: Token, kind: QuantifierKind) -> Quantifier:
+        self.advance()
+        self.expect_symbol("(")
+        variable = self.variable_name()
+        self.expect_word("IN")
+        source = self.expression()
+        self.expect_word("WHERE")
+        where = self.expression()
+        self.expect_symbol(")")
+        return Quantifier(kind, variable, source, where, token.pos)
+
+    def comprehension(self, start: Token) -> ListComprehension:
+        variable = self.variable_name()
+        self.expect_word("IN")
+        source = self.expression()
+        where = self.expression() if self.accept_word("WHERE") else None
+        project = self.expression() if self.accept_symbol("|") else None
+        self.expect_symbol("]")
+        return ListComprehension(variable, source, where, project, start.pos)
+
+    def subscript(self, subject: Expr) -> Expr:
+        start = self.expect_symbol("[")
+        lower = None if self.at_symbol("..") else self.expression()
+        if self.accept_symbol(".."):
+            upper = None if self.at_symbol("]") else self.expression()
+            self.expect_symbol("]")
+            return Slice(subject, lower, upper, start.pos)
+        self.expect_symbol("]")
+        assert lower is not None
+        return Subscript(subject, lower, start.pos)
+
+    def list_literal(self) -> Expr:
         start = self.expect_symbol("[")
         if self.at_variable() and self.is_word(self.peek(1), "IN"):
-            raise unsupported(
-                start.pos, "expression", "list comprehensions", "use UNWIND with WHERE"
-            )
+            return self.nested(lambda: self.comprehension(start))
         if self.at_symbol("(") and self.try_pattern() is not None:
             raise unsupported(
                 start.pos,

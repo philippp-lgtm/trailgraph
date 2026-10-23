@@ -121,6 +121,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),
+    ErrorSpec("entity.unchanged", _C.WARNING, False, "A write left entities as they were."),
     ErrorSpec(
         "storage.materialization_deferred", _C.WARNING, False, "Derived files are not updated yet."
     ),

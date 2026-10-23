@@ -23,9 +23,7 @@ REFUSED = (
     "variable length without an upper bound",
     "(a write clause)",
     "the function ",
-    "list comprehensions",
     "pattern comprehensions",
-    "list indexing and slicing",
     "the power operator ^",
     "map projections",
     "subqueries",
@@ -72,7 +70,7 @@ def test_scenario(scenario: Scenario) -> None:
 
 
 def test_the_vendored_files_are_complete() -> None:
-    assert len(list(FEATURES.rglob("*.feature"))) == 76
+    assert len(list(FEATURES.rglob("*.feature"))) == 100
     assert len(SCENARIOS) > 1000
 
 

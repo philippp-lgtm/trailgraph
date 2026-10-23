@@ -122,9 +122,9 @@ they are null.
 
 | Field | Meaning |
 |---|---|
-| `tx_id` | The transaction id; null on a dry run. |
-| `seq` | The graph's seq after the write; null on a dry run. |
-| `event_id` | The audit event; null on a dry run. |
+| `tx_id` | The transaction id; null on a dry run or when nothing changed. |
+| `seq` | The graph's seq after the write; null on a dry run or when nothing changed. |
+| `event_id` | The audit event; null on a dry run or when nothing changed. |
 | `dry_run` | True when nothing was written. |
 | `idempotent_replay` | True when a retry returned the first result. |
 | `id` | The id when one entity was written, else null. |
@@ -132,7 +132,8 @@ they are null.
 | `entity_count` | How many entities were written. |
 | `entities[].id` | Each entity written; null for a create on a dry run. |
 | `entities[].alias` | Its alias. |
-| `entities[].rev` | Its new revision. |
+| `entities[].rev` | Its new revision; the current one when it is unchanged. |
+| `entities[].changed` | False when the write left it as it was (no new revision). |
 | `entities[].type` | Its type. |
 | `entities[].ops` | The operations that touched it. |
 | `entities[].local` | Its `local` name from a change set, or null. |

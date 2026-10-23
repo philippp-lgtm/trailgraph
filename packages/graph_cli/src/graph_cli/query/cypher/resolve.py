@@ -40,6 +40,7 @@ from graph_cli.query.cypher.ast import (
     FunctionCall,
     HasLabels,
     IsNull,
+    ListComprehension,
     ListExpr,
     MapExpr,
     Match,
@@ -51,10 +52,13 @@ from graph_cli.query.cypher.ast import (
     Projection,
     ProjectionItem,
     Property,
+    Quantifier,
     Query,
     RelPattern,
     Return,
+    Slice,
     SortItem,
+    Subscript,
     Unary,
     Unwind,
     Variable,
@@ -341,9 +345,7 @@ class _Resolver:
                 f"variable {clause.variable!r} is already defined",
                 found=clause.variable,
             )
-        listed = _kind_of(value, scope)
-        element: VarKind = "plain" if listed == "plain" else "value"
-        scope.variables[clause.variable] = VarInfo(element)
+        scope.variables[clause.variable] = VarInfo(_element_kind(value, scope))
         return replace(clause, expr=value)
 
     def with_(self, clause: With, scope: _Scope) -> tuple[With, _Scope]:
@@ -616,7 +618,42 @@ class _Resolver:
             case PatternPredicate(part):
                 inner = scope.copy()
                 return replace(e, pattern=self.pattern(part, inner, scope, introduce=False))
+            case Quantifier(_, variable, source, where):
+                listed = self.expr(source, scope, aggregates=aggregates)
+                local = self.local_scope(variable, listed, scope, e.pos)
+                return replace(e, source=listed, where=self.expr(where, local))
+            case ListComprehension(variable, source, where, project):
+                listed = self.expr(source, scope, aggregates=aggregates)
+                local = self.local_scope(variable, listed, scope, e.pos)
+                return replace(
+                    e,
+                    source=listed,
+                    where=None if where is None else self.expr(where, local),
+                    project=None if project is None else self.expr(project, local),
+                )
+            case Subscript(subject, index):
+                return replace(
+                    e,
+                    subject=self.expr(subject, scope, aggregates=aggregates),
+                    index=self.expr(index, scope, aggregates=aggregates),
+                )
+            case Slice(subject, start, end):
+                return replace(
+                    e,
+                    subject=self.expr(subject, scope, aggregates=aggregates),
+                    start=None if start is None else self.expr(start, scope, aggregates=aggregates),
+                    end=None if end is None else self.expr(end, scope, aggregates=aggregates),
+                )
         raise AssertionError(f"unknown expression {e!r}")
+
+    def local_scope(self, variable: str, source: Expr, scope: _Scope, pos: Pos) -> _Scope:
+        """The scope inside a list expression: ``variable`` is an element of ``source``;
+        aggregates are not allowed there (openCypher)."""
+        if variable in scope.variables:
+            raise syntax_error(pos, f"variable {variable!r} is already defined", found=variable)
+        local = scope.copy()
+        local.variables[variable] = VarInfo(_element_kind(source, scope))
+        return local
 
     def function(self, call: FunctionCall, scope: _Scope, aggregates: bool) -> Expr:
         name = call.name
@@ -644,6 +681,12 @@ class _Resolver:
             raise syntax_error(call.pos, f"DISTINCT works only in aggregates, not {name}()")
         if is_aggregate and not aggregates:
             raise _misplaced_aggregate(call.pos, f"{name}()")
+        if name == "size" and isinstance(call.args[0], PatternPredicate):
+            raise syntax_error(
+                call.pos,
+                "size() needs a list or a string; a pattern here is a true/false test",
+                found=name,
+            )
         # Aggregates nest in plain functions (size(collect(x))), not in aggregates.
         inner = aggregates and not is_aggregate
         args = tuple(self.expr(a, scope, aggregates=inner) for a in call.args)
@@ -681,7 +724,21 @@ def _kind_of(e: Expr, scope: _Scope) -> VarKind:
         case Binary("+", left, right):
             sides = (_kind_of(left, scope), _kind_of(right, scope))
             return "list" if any(k != "plain" for k in sides) else "plain"
+        case ListComprehension(variable, source, _, project):
+            if project is None:
+                return "plain" if _kind_of(source, scope) == "plain" else "list"
+            local = _Scope({**scope.variables, variable: VarInfo(_element_kind(source, scope))})
+            return "plain" if _kind_of(project, local) == "plain" else "list"
+        case Subscript(subject):
+            return "plain" if _kind_of(subject, scope) == "plain" else "value"
+        case Slice(subject):
+            return "plain" if _kind_of(subject, scope) == "plain" else "list"
     return "plain"
+
+
+def _element_kind(source: Expr, scope: _Scope) -> VarKind:
+    """What an element of a list can be (``UNWIND``, list expressions)."""
+    return "plain" if _kind_of(source, scope) == "plain" else "value"
 
 
 def _narrow(known: tuple[str, ...] | None, more: tuple[str, ...] | None) -> tuple[str, ...] | None:
@@ -753,6 +810,18 @@ def _children(e: Expr) -> Iterator[Expr]:
                 yield default
         case HasLabels(subject):
             yield subject
+        case Quantifier(_, _, source, where):
+            yield source
+            yield where
+        case ListComprehension(_, source, where, project):
+            yield source
+            yield from (p for p in (where, project) if p is not None)
+        case Subscript(subject, index):
+            yield subject
+            yield index
+        case Slice(subject, start, end):
+            yield subject
+            yield from (b for b in (start, end) if b is not None)
         case PatternPredicate(part):
             for n in part.nodes:
                 if n.variable is not None:
@@ -793,6 +862,11 @@ def _uncovered(e: Expr, keys: list[Expr]) -> Iterator[Expr]:
     if isinstance(e, Variable):
         yield e
         return
+    if isinstance(e, Quantifier | ListComprehension):  # its variable is bound inside
+        yield from _uncovered(e.source, keys)
+        for child in list(_children(e))[1:]:
+            yield from (v for v in _uncovered(child, keys) if v != Variable(e.variable))
+        return
     for child in _children(e):
         yield from _uncovered(child, keys)
 
@@ -830,6 +904,17 @@ def _to_columns(e: Expr, columns: list[tuple[Expr, str]]) -> Expr:
             )
         case HasLabels(subject):
             return replace(e, subject=go(subject))
+        case Quantifier(_, _, source) | ListComprehension(_, source):
+            return replace(e, source=go(source))  # the inner parts see the local variable
+        case Subscript(subject, index):
+            return replace(e, subject=go(subject), index=go(index))
+        case Slice(subject, start, end):
+            return replace(
+                e,
+                subject=go(subject),
+                start=None if start is None else go(start),
+                end=None if end is None else go(end),
+            )
     return e
 
 

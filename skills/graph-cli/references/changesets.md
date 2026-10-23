@@ -55,7 +55,9 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
 - `add`, `add_text`, `remove` and `remove_text` take `{"<attr>": [...]}`
   for a list field: `add` appends each value not yet there, `remove` drops
   it; no read and no `expect_rev` needed. An attribute appears in only one
-  of the update keys.
+  of the update keys. An entity left as it was gets no new revision
+  (`changed: false`, warning `entity.unchanged`); a document that changes
+  nothing commits no transaction (`seq` null).
 - `qualifiers` are typed JSON values on the edge itself (a page is a
   number); which ones a relation takes: `graph describe relations --json`.
   `target_rev` pins the revision of the target the edge refers to.

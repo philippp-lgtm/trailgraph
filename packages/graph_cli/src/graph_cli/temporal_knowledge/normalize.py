@@ -2,10 +2,12 @@
 
 Pure and deterministic given its inputs (B8.14). Ops apply in array order;
 later ops see the effects of earlier ones; every touched entity gets exactly
-one new revision. Normalize applies, the validator judges: the only
-findings produced here are ``data.temporal.*`` (R.4); everything else is
-judged by ``ontology_layer.data_validator`` from the post-state and the
-recorded ``OpEffect`` per op, so each problem is reported once.
+one new revision, unless its content after all ops equals its current
+revision (C.9): then it is unchanged and gets none. Normalize applies, the
+validator judges: the only findings produced here are ``data.temporal.*``
+(R.4); everything else is judged by ``ontology_layer.data_validator`` from
+the post-state and the recorded ``OpEffect`` per op, so each problem is
+reported once.
 
 - **Ids.** One entity id per create, in op order, before anything else (so
   locals may be referenced before their create); then edge ids in op order:
@@ -132,6 +134,7 @@ class _Run:
     used_refs: dict[str, EntityId] = field(default_factory=dict)
     allocations: dict[EntityId, str] = field(default_factory=dict)
     added_edges: set[EdgeId] = field(default_factory=set)
+    unchanged: dict[EntityId, Revision] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     effects: list[OpEffect] = field(default_factory=list)
 
@@ -480,8 +483,15 @@ class _Run:
                 for edge in work.edges
             ]
 
+    def find_unchanged(self) -> None:
+        """Touched entities whose content equals their current revision (C.9)."""
+        for entity, work in self.work.items():
+            previous = work.previous
+            if previous is not None and content_hash(_projection(work)) == previous.content_hash:
+                self.unchanged[entity] = previous
+
     def post_rev(self, entity: EntityId) -> int | None:
-        if entity in self.work:
+        if entity in self.work and entity not in self.unchanged:
             previous = self.work[entity].previous
             return 1 if previous is None else previous.rev + 1
         revision = self.base.get(entity)
@@ -495,6 +505,18 @@ def _instant(value: str) -> datetime:
     return parse_timestamp(value)
 
 
+def _projection(work: _Work) -> dict[str, JsonValue]:
+    return content_projection(
+        type=work.type,
+        record_status=work.record_status,
+        alias=work.alias,
+        attrs=work.attrs,
+        edges=tuple(work.edges),
+        valid_from=work.valid_from,
+        valid_to=work.valid_to,
+    )
+
+
 def _revision(
     entity: EntityId,
     work: _Work,
@@ -505,15 +527,7 @@ def _revision(
     pin_version: str,
 ) -> Revision:
     edges = tuple(work.edges)
-    projection = content_projection(
-        type=work.type,
-        record_status=work.record_status,
-        alias=work.alias,
-        attrs=work.attrs,
-        edges=edges,
-        valid_from=work.valid_from,
-        valid_to=work.valid_to,
-    )
+    projection = _projection(work)
     previous = work.previous
     return Revision(
         id=entity,
@@ -593,6 +607,7 @@ def normalize(
                 run.retract(index, op)
             case SetAliasOp():
                 run.set_alias(index, op)
+    run.find_unchanged()  # before target revs: an unchanged target keeps its rev
     run.fill_target_revs()
     revisions = {
         entity: _revision(
@@ -604,6 +619,7 @@ def normalize(
             pin_version=pin_version,
         )
         for entity, work in run.work.items()
+        if entity not in run.unchanged
     }
     bound = {key[1:]: entity for key, entity in refs.items() if key.startswith("@")}
     resolution: dict[str, JsonValue] = {
@@ -613,6 +629,7 @@ def normalize(
     return WorkingState(
         base=base,
         revisions=revisions,
+        unchanged=run.unchanged,
         created=frozenset(run.created),
         locals={**bound, **run.doc_locals},
         alias_allocations=tuple(run.allocations.items()),

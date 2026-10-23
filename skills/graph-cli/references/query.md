@@ -31,12 +31,17 @@ grouping. For one type with field filters, one hop or a name, `find`,
 | Clauses | `MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `UNWIND`, `RETURN`, `ORDER BY`, `SKIP`, `LIMIT` |
 | Patterns | `(n:<type>)`, `-[:<relation>]->`, `<-[...]-`, `-[...]-`, `[:<relation>\|<relation>]`, `*1..3`, `{<attr>: <value>}` |
 | Expressions | `AND OR XOR NOT`, `= <> < <= > >=`, `IN`, `STARTS WITH`, `ENDS WITH`, `CONTAINS`, `IS NULL`, `n:<type>`, `(n)-[:<relation>]->()`, `CASE`, `+ - * / %` |
+| Lists | `any(x IN n.<attr> WHERE ...)`, `all(...)`, `none(...)`, `single(...)`, `[x IN n.<attr> WHERE ... \| ...]`, `n.<attr>[0]`, `n.<attr>[1..3]` |
 | Functions | `count(*)`, `count(DISTINCT ...)`, `collect`, `min`, `max`, `sum`, `avg`, `labels`, `type`, `keys`, `properties`, `coalesce`, `size`, `head`, `last`, `toString`, `toInteger`, `toFloat`, `toLower`, `toUpper`, `trim`, `substring`, `split`, `replace`, `abs`, `ceil`, `floor`, `round` |
 
 A variable-length relationship (`*1..3`) needs an upper bound of at most 5.
-Anything else (`CREATE` and other writes, `CALL`, `UNION`, named paths,
-unbounded `*`, `id()`) is `query.unsupported`; `error.details` names the
-construct and an alternative. Decimal numbers come back as strings.
+A list expression's variable (`x`) is new and local to it; aggregates go
+into its list only (`[x IN collect(n.<attr>) WHERE ...]`). An index counts
+from 0, a negative one from the end; out of range is null. Anything else
+(`CREATE` and other writes, `CALL`, `UNION`, named paths, unbounded `*`,
+pattern comprehensions, `reduce`, `id()`) is `query.unsupported`;
+`error.details` names the construct and an alternative. Decimal numbers
+come back as strings.
 
 Examples:
 
@@ -44,3 +49,4 @@ Examples:
 - `graph query 'MATCH (n:<type>) WHERE NOT (n)-[:<relation>]->() RETURN n' --json`
 - `graph query 'MATCH (n:<type>)-[:<relation>]->(m) RETURN m.<attr>, count(n) AS total ORDER BY total DESC' --json`
 - `graph query 'MATCH (n:<type>) WHERE n.id = $id RETURN n' --param id=<id> --json`
+- `graph query 'MATCH (n:<type>) WHERE any(v IN n.<attr> WHERE v STARTS WITH $prefix) RETURN n.<attr>' --param prefix=<value> --json`

@@ -4,7 +4,9 @@ Agent harnesses cut or fully keep long tool output, so an answer larger than
 the limit is written whole, pretty-printed for line-wise reading, to a file
 the program's ``SpillTarget`` chooses. stdout then gets the same envelope
 with ``data: null``, the warning ``output.spilled {path, bytes, limit}`` and,
-on success, a first hint to ask for less or extract from the file; ``ok``,
+on success, a first hint to ask for less or to read only the needed part of
+the file with the agent's file tools (no command: a shell program such as
+``jq`` is what restricted harnesses refuse); ``ok``,
 ``error``, ``page`` and the other warnings and hints stay, so the exit code
 and the next page still read from stdout. When the file cannot be written
 the answer is printed whole with ``output.spill_failed {bytes, limit,
@@ -14,7 +16,6 @@ reason}``: an answer is never lost. Text mode never spills.
 from __future__ import annotations
 
 import json
-import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
@@ -77,9 +78,10 @@ def spill_json(document: Mapping[str, JsonValue], stdout: str, target: SpillTarg
     if document.get("ok"):  # an error envelope carries no hints (B9.2)
         hints = [
             {
-                "text": "Ask for less (--fields, --limit, query ... RETURN), "
-                "or extract only what you need from the file",
-                "command": shlex.join(["jq", ".data | keys", path]),
+                "text": "Ask for less (--fields, --limit, query ... RETURN), or read only "
+                f"the part you need of {path} with your file read or search tool, "
+                "not with a shell program",
+                "command": None,
             },
             *hints,
         ]

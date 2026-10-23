@@ -265,3 +265,36 @@ def test_unwind_counts_against_the_budget() -> None:
         execute(resolved, INV, GRAPH, budget=10)
     assert caught.value.code == "query.too_large"
     assert caught.value.details["clause"] == "UNWIND"
+
+
+# List expressions
+
+
+def test_list_expressions_over_collected_nodes() -> None:
+    rows = table(
+        "MATCH (l:Location)<-[:located_in]-(i:Item) "
+        "WITH l, collect(i) AS items ORDER BY l.name "
+        "RETURN l.name, all(i IN items WHERE i.condition = 'good') AS good, "
+        "[i IN items WHERE i.quantity > 1 | i.label] AS many, size(items) AS n, "
+        "items[0].quantity >= 1 AS first"
+    )
+    assert rows == [("Box", False, ["Pen"], 1, True), ("Shelf", True, ["Lamp"], 2, True)]
+
+
+def test_quantifiers_are_three_valued() -> None:
+    (row,) = table(
+        "UNWIND [[1, null], [2, 3], []] AS l "
+        "WITH collect([any(x IN l WHERE x > 1), all(x IN l WHERE x > 1), "
+        "none(x IN l WHERE x > 1), single(x IN l WHERE x > 1)]) AS r RETURN r"
+    )
+    # [1, null]: 1 > 1 is false, null > 1 is null
+    one_null, both, empty = row[0]
+    assert one_null == [None, False, None, None]
+    assert both == [True, True, False, False]
+    assert empty == [False, True, True, False]
+
+
+def test_indexing_a_non_list_is_an_invalid_value() -> None:
+    with pytest.raises(GraphCliError) as caught:
+        run("MATCH (i:Item {label: 'Pen'}) RETURN i.label[0]")
+    assert caught.value.code == "query.invalid_value"

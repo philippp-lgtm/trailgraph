@@ -22,6 +22,7 @@ from graph_cli.query.cypher.ast import (
     FunctionCall,
     HasLabels,
     IsNull,
+    ListComprehension,
     ListExpr,
     MapExpr,
     Match,
@@ -31,8 +32,11 @@ from graph_cli.query.cypher.ast import (
     PatternPredicate,
     Projection,
     Property,
+    Quantifier,
     RelPattern,
     Return,
+    Slice,
+    Subscript,
     Unary,
     Unwind,
     Variable,
@@ -106,6 +110,19 @@ def expr(e: Expr) -> str:
             return f"({expr(subject)}{labels(groups)})"
         case PatternPredicate(part):
             return pattern(part)
+        case Quantifier(kind, variable, source, where):
+            return f"{kind}({name(variable)} IN {expr(source)} WHERE {expr(where)})"
+        case ListComprehension(variable, source, where, project):
+            text = f"[{name(variable)} IN {expr(source)}"
+            text += f" WHERE {expr(where)}" if where is not None else ""
+            text += f" | {expr(project)}" if project is not None else ""
+            return text + "]"
+        case Subscript(subject, index):
+            return f"{expr(subject)}[{expr(index)}]"
+        case Slice(subject, start, end):
+            low = "" if start is None else expr(start)
+            high = "" if end is None else expr(end)
+            return f"{expr(subject)}[{low}..{high}]"
     raise AssertionError(f"unknown expression {e!r}")
 
 

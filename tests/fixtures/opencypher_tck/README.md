@@ -10,7 +10,8 @@ for the tests of `graph query` (`tests/unit/query/test_cypher_tck.py`).
 - Files: `features/clauses/` (`match`, `match-where`, `return`,
   `return-orderby`, `return-skip-limit`, `unwind`, `with`, `with-orderBy`,
   `with-skip-limit`, `with-where`) and `features/expressions/`
-  (`aggregation`, `boolean`, `comparison`, `conditional`, `null`): the
+  (`aggregation`, `boolean`, `comparison`, `conditional`, `list`, `null`,
+  `quantifier`): the
   clauses and expressions the read-only subset supports.
 
 graph_cli implements a read-only subset of Cypher; it is not an openCypher

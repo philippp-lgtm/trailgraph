@@ -382,12 +382,39 @@ def test_explain_shape() -> None:
         "RETURN *, toLower(trim('A ')) AS t",
         "OPTIONAL MATCH (n:Note)-[:about]-(t:Topic) RETURN count(DISTINCT t), "
         "collect(t.label) AS labels, n.title STARTS WITH 'a' AS s",
+        "MATCH (t:Topic) WHERE any(s IN t.synonyms WHERE s STARTS WITH 'x') "
+        "RETURN [s IN t.synonyms WHERE s <> '' | toUpper(s)][0] AS first, "
+        "t.synonyms[1..] AS rest, t.synonyms[..-1] AS most",
     ],
 )
 def test_rendered_text_parses_to_the_same_query(text: str) -> None:
     rendered = text_of(run(text))
     again = text_of(resolve(parse(rendered), NAS))
     assert again == rendered
+
+
+def test_list_expression_variables_are_local() -> None:
+    assert run("MATCH (t:Topic) RETURN [s IN t.synonyms | s] AS x, t").columns == ("x", "t")
+    unbound = failure("MATCH (t:Topic) WHERE any(s IN t.synonyms WHERE s = 'a') RETURN s")
+    assert unbound.code == "query.unbound_variable"
+    taken = failure("MATCH (t:Topic) RETURN [t IN [1] | t] AS x")
+    assert taken.code == "query.syntax" and "already defined" in taken.message
+
+
+def test_list_expressions_check_fields_and_aggregates() -> None:
+    assert failure("MATCH (t:Topic) RETURN [s IN t.synonym | s]").code == "term.unknown"
+    inner = failure("MATCH (t:Topic) RETURN [s IN [1] WHERE count(*) > 0] AS x")
+    assert inner.code == "query.syntax" and "aggregate" in inner.message
+    # an aggregate in the list is fine, and the local variable is no grouping key
+    grouped = run(
+        "MATCH (t:Topic) RETURN t.label, [s IN collect(t.synonyms) WHERE size(s) > 1 | s[0]] AS x"
+    )
+    assert grouped.columns == ("t.label", "x")
+
+
+def test_size_of_a_pattern_is_refused() -> None:
+    error = failure("MATCH (n:Note) RETURN size((n)-[:cites]->())")
+    assert error.code == "query.syntax" and "true/false" in error.message
 
 
 def test_resolved_tree_keeps_its_shape() -> None:

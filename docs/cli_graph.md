@@ -27,7 +27,9 @@ context. So a `graph` JSON envelope larger than `[output] spill_bytes`
 is written whole, pretty-printed for line-wise reading, to a new file, and
 stdout gets the same envelope with `data: null`, the warning
 `output.spilled {path, bytes, limit}` and, on success, a first hint to ask
-for less or to extract from the file (`jq '.data | keys' <path>`). `ok`,
+for less or to read only the needed part of the file with the agent's file
+read or search tool. The hint names no command: a shell program such as
+`jq` is what restricted agent harnesses refuse. `ok`,
 `error`, `page`, the exit code and the other hints and warnings stay as
 they were, so paging still reads from stdout.
 
@@ -144,6 +146,17 @@ Every write is a change set that commits completely or not at all;
 validation findings, refusals and dry runs are described in
 [Architecture: write pipeline](architecture.md#write-pipeline).
 
+A write that leaves an entity as it was (its content after all ops of the
+document equals its current revision: `--add` of a value already there,
+`--set` to the current value, an `add` and a `remove` that cancel out)
+gives it no new revision. Its entry in `data.entities` has `changed:
+false` and the current `rev`, and the answer, a dry run too, carries the
+warning `entity.unchanged {ids, count}`. A document that changes no
+entity commits no transaction: `tx_id`, `seq` and `event_id` are null, no
+audit event and no idempotency key are recorded (a retry is evaluated
+again), and the exit code is 0. Expectations (`--expect`, `expect_seq`)
+and errors are checked as for any write.
+
 ## Fewer fields
 
 `get`, `find` and `neighbors` show every part of an entity by default.
@@ -259,7 +272,10 @@ The subset: `MATCH` (several patterns and clauses), `OPTIONAL MATCH`,
 (`:A|B`, `:A:B`), property maps, both directions, type alternatives and
 bounded variable length up to five hops (`*1..3`); pattern predicates
 (`WHERE NOT (n)-[:r]->()`), label predicates (`n:A`), `CASE`, list and map
-literals, `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
+literals, the list predicates `all`, `any`, `none` and `single`
+(`any(x IN n.tags WHERE x STARTS WITH 'a')`), list comprehensions
+(`[x IN list WHERE ... | ...]`), list indexing and slicing (`l[0]`, `l[-1]`,
+`l[1..3]`), `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
 `CONTAINS`, `IS [NOT] NULL`; the aggregates `count` (`count(*)`,
 `DISTINCT`), `collect`, `min`, `max`, `sum`, `avg` and the functions
 `labels`, `type`, `keys`, `properties`, `coalesce`, `size`, `head`, `last`,
@@ -267,7 +283,8 @@ literals, `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
 `substring`, `split`, `replace`, `abs`, `ceil`, `floor` and `round`. A null
 argument makes a function null (`coalesce` excepted). Everything else
 (write clauses, `CALL`, `UNION`, named paths, unbounded `*`,
-`shortestPath`, comprehensions, map projections, subqueries, `id()`) is
+`shortestPath`, pattern comprehensions, `reduce`, map projections,
+subqueries, `id()`) is
 `query.unsupported` with the construct and, where one exists, the
 alternative.
 
@@ -282,6 +299,8 @@ null, comparisons across types are null, a relationship is used once per
   `floor` and `round` return an integer for an integer, else a decimal.
   `round` rounds half away from zero (`round(-2.5)` is `-3`) and takes an
   optional number of decimal places.
+- The variable of a list predicate or comprehension must be a new name
+  (openCypher allows shadowing). Indexing and slicing take lists only.
 - `keys(n)` and `properties(n)` list the system fields that have a value,
   then the set attributes by name (a relationship: `edge_id`, then the
   qualifiers). `n.id` is the entity id (`id()` is refused).
