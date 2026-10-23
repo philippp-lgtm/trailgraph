@@ -1,5 +1,4 @@
 """Domain-agnostic knowledge graph shell: maintenance distribution."""
 
-from importlib.metadata import version
-
-__version__ = version("graph_cli_admin")
+# A constant, not importlib.metadata (see graph_cli/__init__.py).
+__version__ = "0.1.0.dev0"

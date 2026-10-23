@@ -12,6 +12,7 @@ from pathlib import Path
 import click
 
 from graph_cli.cli_kit.runner import run
+from graph_cli_admin import __version__
 from graph_cli_admin.maintenance_cli import hints, wiring
 from graph_cli_admin.maintenance_cli.commands.audit import audit_group
 from graph_cli_admin.maintenance_cli.commands.files import files_group
@@ -24,7 +25,7 @@ from graph_cli_admin.services_admin import error_codes
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(package_name="graph_cli_admin", prog_name="graph-admin")
+@click.version_option(__version__, prog_name="graph-admin")
 def cli() -> None:
     """Create, version and archive knowledge graphs and their ontologies."""
 

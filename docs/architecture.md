@@ -75,6 +75,16 @@ for the access log: started at the first import of `graph_cli`, handed by
 the composition root to `cli_kit.runner.run` and the services, which
 measure their own phases (monotonic durations only, never wall time).
 
+Every `graph` command is a new process, and its imports are most of a
+read's time, so a command imports only what it runs. The composition root
+builds the write and file services on first use, `services.read` imports
+the Cypher engine in `parse_query` and `query` only, and the command
+modules import the write, file and skill modules inside the handlers that
+use them. `tests/cli/test_app_startup.py` checks which modules the reads
+load. The versions are constants in `graph_cli/__init__.py` and
+`graph_cli_admin/__init__.py`, not looked up with `importlib.metadata`;
+`tests/test_smoke.py` keeps them equal to the `pyproject.toml` files.
+
 ## Catalog
 
 `graph_cli.catalog` locates everything; both CLIs use the same code.

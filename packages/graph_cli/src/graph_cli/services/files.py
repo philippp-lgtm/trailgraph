@@ -48,13 +48,13 @@ from graph_cli.kernel.query_ast import Cmp, Query
 from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.values import check_facets
+from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.services import media_types
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import GraphRead, Page, ReadService
 from graph_cli.services.refs import resolve_ref
 from graph_cli.services.write import WriteRequest, WriteResult, WriteService
 
-FILE_TYPE: Final = "files:File"
 MEDIA_TYPE_DATATYPE: Final = "files:MediaType"
 DEFAULT_MAX_BYTES: Final = 100 * 1024 * 1024
 CHUNK_BYTES: Final = 1024 * 1024

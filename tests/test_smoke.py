@@ -1,10 +1,13 @@
 """Both console scripts are installed, start, and report their version."""
 
+import importlib
 import subprocess
 import sys
+import tomllib
+from importlib.metadata import version
 
 import pytest
-from harness import CliRunner
+from harness import REPO_ROOT, CliRunner
 
 
 @pytest.mark.parametrize(
@@ -13,7 +16,16 @@ from harness import CliRunner
 def test_version(run_cli: CliRunner, program: str, distribution: str) -> None:
     result = run_cli(program, "--version")
     assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith(f"{program}, version ")
+    assert result.stdout == f"{program}, version {version(distribution)}\n"
+
+
+@pytest.mark.parametrize("distribution", ["graph_cli", "graph_cli_admin"])
+def test_version_constant_matches_distribution(distribution: str) -> None:
+    """``__version__`` is a constant (no metadata lookup at startup); it must follow
+    the version in the distribution's pyproject.toml."""
+    pyproject = REPO_ROOT / "packages" / distribution / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text())["project"]["version"]
+    assert importlib.import_module(distribution).__version__ == declared
 
 
 @pytest.mark.parametrize("program", ["graph", "graph-admin"])

@@ -31,8 +31,8 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
-from graph_cli.services.files import FILE_TYPE, FileAddRequest
 from graph_cli.services.read import GraphRead, graph_json
 
 FILE_ERRORS: Final = ("file.unreadable", "file.too_large", "file.module_missing")
@@ -54,6 +54,8 @@ def add(
     reason: str | None,
     idempotency_key: str | None,
 ) -> Result:
+    from graph_cli.services.files import FileAddRequest  # loaded by file add only
+
     check_reason_and_key(reason, idempotency_key)
     texts, values = parse_texts(set, "--set"), parse_json_values(set_json, "--set-json")
     merge_values(texts, values, "--set-json")

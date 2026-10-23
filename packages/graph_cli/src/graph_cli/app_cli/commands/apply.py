@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.app_cli.commands.common import GRAPH, context
 from graph_cli.app_cli.commands.write import EXPECT_ERRORS, usage
@@ -32,7 +32,9 @@ from graph_cli.kernel.changeset import (
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.read import graph_json
-from graph_cli.services.write import WriteRequest, WriteService
+
+if TYPE_CHECKING:
+    from graph_cli.services.write import WriteService
 
 STDIN: Final = "-"
 
@@ -104,6 +106,8 @@ def apply(
     dry_run: bool,
     idempotency_key: str | None,
 ) -> Result:
+    from graph_cli.services.write import WriteRequest  # loaded by apply only
+
     ctx = context(state)
     changesets = _with_key(_parse(ctx.writer, _read(file)), idempotency_key)
     entry = ctx.select(graph)

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import click
 
+from graph_cli import __version__
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.common import GLOBAL_OPTIONS
 from graph_cli.catalog import wiring
@@ -24,7 +25,7 @@ from graph_cli.kernel.timing import Timings
 
 def program() -> click.Group:
     @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-    @click.version_option(package_name="graph_cli", prog_name="graph")
+    @click.version_option(__version__, prog_name="graph")
     def cli() -> None:
         """Read and write instance data in knowledge graphs.
 

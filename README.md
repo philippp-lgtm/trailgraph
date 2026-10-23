@@ -30,12 +30,13 @@ uv sync                     # create .venv with both distributions + dev tools
 
 `graph-admin` stays in the checkout (`uv run graph-admin ...`). Install
 `graph` as a tool, with its dependencies pinned to the workspace lock
-(`uv tool install` ignores `uv.lock`):
+(`uv tool install` ignores `uv.lock`) and compiled to bytecode, so the first
+call after an install starts as fast as the others:
 
 ```sh
 uv export --frozen --package graph-cli --no-hashes --no-emit-workspace \
   --no-dev --no-header -o <file>
-uv tool install --reinstall --constraints <file> ./packages/graph_cli
+uv tool install --reinstall --compile-bytecode --constraints <file> ./packages/graph_cli
 ```
 
 ## Quickstart

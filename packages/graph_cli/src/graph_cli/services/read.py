@@ -21,6 +21,8 @@ session: who wrote a revision is audit content (B8.15).
 The command's timings get the phases ``authorize``, ``audit`` (a denial),
 ``model``, ``snapshot`` and ``query`` (answering from the snapshot); a
 Cypher ``query`` has ``parse``, ``resolve`` and ``execute`` instead.
+The Cypher engine is imported by ``parse_query`` and ``query`` only: every
+other command starts without it.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Concatenate
+from typing import TYPE_CHECKING, Concatenate
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.effective import (
@@ -55,10 +57,6 @@ from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.query.cypher.ast import Query as CypherQuery
-from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
-from graph_cli.query.cypher.parser import parse
-from graph_cli.query.cypher.resolve import resolve
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import LookupSpec, main_label, match_revision, plan_lookup, rank_key
 from graph_cli.query.plan import DEFAULT_LIMIT, FindSpec, plan_find, plan_neighbors
@@ -67,6 +65,9 @@ from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import resolve_ref
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
+
+if TYPE_CHECKING:
+    from graph_cli.query.cypher.ast import Query as CypherQuery
 
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
@@ -147,7 +148,7 @@ class QuerySpec:
     explain: bool = False
     limit: int = DEFAULT_LIMIT
     offset: int = 0
-    budget: int = DEFAULT_BUDGET
+    budget: int | None = None  # None: the engine's default (``execute.DEFAULT_BUDGET``)
 
 
 def value_json(value: Value) -> JsonValue:
@@ -540,6 +541,8 @@ class ReadService:
 
     def parse_query(self, text: str) -> CypherQuery:
         """The syntax tree of a Cypher query; needs no graph, so it runs before ``open``."""
+        from graph_cli.query.cypher.parser import parse
+
         with self.timings.phase("parse"):
             return parse(text)
 
@@ -548,6 +551,9 @@ class ReadService:
     ) -> tuple[dict[str, JsonValue], Page | None]:
         """A parsed query resolved against the graph's model and, unless ``explain``,
         run over its snapshot; the rows are paged like ``find``."""
+        from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
+        from graph_cli.query.cypher.resolve import resolve
+
         with self.timings.phase("resolve"):
             resolved = resolve(query, view.model, spec.parameters)
         if spec.explain:
@@ -558,7 +564,7 @@ class ReadService:
                 view.model,
                 view.snapshot,
                 include_inactive=spec.include_inactive,
-                budget=spec.budget,
+                budget=DEFAULT_BUDGET if spec.budget is None else spec.budget,
             )
         shown = result.rows[spec.offset : spec.offset + spec.limit]
         items: list[JsonValue] = [

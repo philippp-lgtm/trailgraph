@@ -19,7 +19,6 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.ontology_layer.model import Bound, ClassDef, CompiledModel, LifecycleDef
 from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
-from graph_cli.query.cypher.resolve import EDGE_ID, cypher_names
 from graph_cli.query.plan import unknown_term
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
@@ -210,6 +209,8 @@ def describe_schema(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVa
     """The model as ``graph query`` sees it: labels with their properties, relationship
     types with their ends, properties and one pattern each. Names are written as a query
     needs them: the local name when it is unique, else the CURIE in backticks."""
+    from graph_cli.query.cypher.resolve import EDGE_ID, cypher_names  # only this needs Cypher
+
     label = cypher_names(model.classes)
     rel_type = cypher_names(model.relations)
 

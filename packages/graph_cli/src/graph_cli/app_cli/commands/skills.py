@@ -7,12 +7,14 @@ through the read service, so the pointer allowlist applies (for
 app writes outside the runtime area only into the directory named on the
 command line. Every refusal is found before anything is written. ``check``
 compares what is installed with what this very process renders now (F6).
+The ``graph_cli.skills`` modules are imported where they are used, so no
+other command loads them.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from graph_cli import __version__
 from graph_cli.app_cli.commands.common import PROGRAM, services
@@ -25,22 +27,9 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.skills import sources
-from graph_cli.skills.install import (
-    STATUSES,
-    Installed,
-    RenderedSkill,
-    SkillTarget,
-    apply_install,
-    check,
-    emit_skills,
-    plan_install,
-    refusal,
-    require_target,
-    scan,
-)
-from graph_cli.skills.template import GENERATED
-from graph_cli.skills.tree import GRAPH_SKILL_PREFIX
+
+if TYPE_CHECKING:
+    from graph_cli.skills.install import Installed, RenderedSkill, SkillTarget
 
 GRAPHS: Final = ParamSpec(
     "--graph",
@@ -92,12 +81,17 @@ def app_inventory() -> dict[str, JsonValue]:
 
 def app_skill() -> RenderedSkill:
     """Skill 1 from the inventory of this very process (F6)."""
+    from graph_cli.skills import sources
+
     return sources.app_skill(app_inventory(), program_block())
 
 
 def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord]) -> RenderedSkill:
     """The published skill of ``entry``; ``skills.source_missing`` when there is none. A
     template (kind ``generated``) is rendered with the model of the graph's current pin."""
+    from graph_cli.skills import sources
+    from graph_cli.skills.template import GENERATED
+
     request = RequestMeta.of("skills", {"graph": entry.name})
     slot = ctx.reader.skill(ctx.actor, entry, request)
     if slot is None:
@@ -131,6 +125,8 @@ def named_graph_skills(
 
 
 def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) -> Result:
+    from graph_cli.skills.install import emit_skills
+
     target = services(state).path(out)
     if not target.is_dir():
         raise GraphCliError(
@@ -177,6 +173,8 @@ UNAVAILABLE: Final = frozenset(
 
 
 def target_of(state: CommandState, scope: str, dir: str | None) -> SkillTarget:
+    from graph_cli.skills.install import SkillTarget, require_target
+
     if scope == "user" and dir is not None:
         raise GraphCliError(
             "usage.invalid_argument",
@@ -202,6 +200,8 @@ def pointer_of(state: CommandState, ctx: AppContext, target: SkillTarget) -> Poi
 def installed_graph_ref(found: Installed) -> str | None:
     """Which graph a marked graph skill belongs to: the marker's id, else (legacy marker)
     the name ``graph-<graph>``."""
+    from graph_cli.skills.tree import GRAPH_SKILL_PREFIX
+
     if found.integrity not in ("intact", "legacy", "modified", "unexpected"):
         return None
     if found.marker is not None:
@@ -262,6 +262,8 @@ def install(
     force: bool,
     dry_run: bool,
 ) -> Result:
+    from graph_cli.skills.install import apply_install, plan_install, refusal, scan
+
     target = target_of(state, scope, dir)
     installed = scan(target)
     wanted, unavailable = wanted_skills(state, target, installed, graphs)
@@ -288,6 +290,8 @@ def install(
 
 
 def check_command(state: CommandState, scope: str, dir: str | None) -> Result:
+    from graph_cli.skills.install import STATUSES, check, scan
+
     target = target_of(state, scope, dir)
     installed = scan(target)
     wanted, unavailable = wanted_skills(state, target, installed, ())

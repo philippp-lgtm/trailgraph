@@ -9,6 +9,8 @@ Graph selection asks the policy first (B6.15); a project the policy has no
 scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
 renders as an error envelope; nothing is created in the data root (B12.4).
+The write and file services, and their modules, are built only when a
+command uses them: a read starts without them.
 With ``[audit] access_log``, a command that built the context is recorded
 in the access log after its envelope is written (``record_access``), with
 the command's ``Timings``: building the context is the ``context`` phase,
@@ -17,12 +19,13 @@ the services add theirs.
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from graph_cli import __version__
 from graph_cli.access_control.effective import project_warning
@@ -45,10 +48,12 @@ from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.kernel.timing import Timings
-from graph_cli.services.files import FileService
 from graph_cli.services.read import ReadService
-from graph_cli.services.write import WriteConfig, WriteService
 from graph_cli.storage.files.audit_log import FileAuditLog
+
+if TYPE_CHECKING:
+    from graph_cli.services.files import FileService
+    from graph_cli.services.write import WriteService
 
 PROGRAM: Final = "graph"
 CLAUDE_CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"  # relocates the user's ~/.claude (D15 step 0)
@@ -80,6 +85,20 @@ def output_mode(env: Mapping[str, str]) -> tuple[bool, bool]:
 
 
 @dataclass(frozen=True)
+class _Backend:
+    """What the write and file services are built from, on first use."""
+
+    audit: FileAuditLog
+    policy: FilePolicySource
+    clock: SystemClock
+    ids: Uuid7Provider
+    env: EnvInfo
+    activity: ActivitySink
+    origins: FileRoots
+    timings: Timings
+
+
+@dataclass(frozen=True)
 class AppContext:
     roots: Roots
     config: Config
@@ -87,10 +106,38 @@ class AppContext:
     actor: ActorContext
     catalog: FileCatalog
     reader: ReadService
-    writer: WriteService
-    files: FileService
+    backend: _Backend = field(repr=False)
     graph_env: str | None
     command: str = ""  # the running command, for audited selection refusals
+
+    @functools.cached_property
+    def writer(self) -> WriteService:
+        from graph_cli.services.write import WriteConfig, WriteService
+
+        backend = self.backend
+        return WriteService(
+            catalog=self.catalog,
+            audit=backend.audit,
+            policy=backend.policy,
+            clock=backend.clock,
+            ids=backend.ids,
+            env=backend.env,
+            config=WriteConfig(lock_timeout_s=self.config.lock_timeout_s),
+            timings=backend.timings,
+        )
+
+    @functools.cached_property
+    def files(self) -> FileService:
+        from graph_cli.services.files import FileService
+
+        return FileService(
+            catalog=self.catalog,
+            writer=self.writer,
+            reader=self.reader,
+            origins=self.backend.origins,
+            max_bytes=self.config.max_file_bytes,
+            activity=self.backend.activity,
+        )
 
     def select(self, flag: str | None) -> GraphEntry:
         """B12.5: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer default."""
@@ -225,16 +272,6 @@ class AppServices:
         )
         policy = FilePolicySource(roots.data_root)  # fails closed on an invalid file
         env = EnvInfo(str(roots.data_root) if config.record_data_root else None, roots.root_source)
-        writer = WriteService(
-            catalog=catalog,
-            audit=audit,
-            policy=policy,
-            clock=clock,
-            ids=ids,
-            env=env,
-            config=WriteConfig(lock_timeout_s=config.lock_timeout_s),
-            timings=self.timings,
-        )
         activity: ActivitySink = (
             SocketActivity(activity_dir(roots.state_root)) if config.signal_reads else NULL_ACTIVITY
         )
@@ -255,14 +292,15 @@ class AppServices:
             actor=actor,
             catalog=catalog,
             reader=reader,
-            writer=writer,
-            files=FileService(
-                catalog=catalog,
-                writer=writer,
-                reader=reader,
-                origins=FileRoots.from_config(config.file_roots, self.env),
-                max_bytes=config.max_file_bytes,
+            backend=_Backend(
+                audit=audit,
+                policy=policy,
+                clock=clock,
+                ids=ids,
+                env=env,
                 activity=activity,
+                origins=FileRoots.from_config(config.file_roots, self.env),
+                timings=self.timings,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None,
             command=command,

@@ -40,7 +40,6 @@ from graph_cli.kernel.ids import TERM_REF_RE, EdgeId, EntityRef, TermRef, parse_
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.plan import split_assignment
 from graph_cli.services.read import graph_json
-from graph_cli.services.write import WriteRequest
 
 WRITE_ERRORS: Final = (
     *GRAPH_ERRORS,
@@ -148,6 +147,8 @@ def _apply(
     idempotency_key: str | None,
     args: dict[str, JsonValue],
 ) -> Result:
+    from graph_cli.services.write import WriteRequest  # loaded by write commands only
+
     changeset = _changeset(op, reason, idempotency_key)
     ctx = context(state)
     entry = ctx.select(graph)

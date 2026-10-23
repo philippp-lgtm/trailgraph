@@ -40,11 +40,11 @@ from graph_cli.kernel.ports.storage import GraphStoreRead
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import RECORD_STATUSES, RequestMeta, Revision, TxRecord
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.services.models import ModelCache
 from graph_cli_admin.services_admin.context import AdminContext
 
 PAGE: Final = 1000  # txs per changes_since call
-FILE_TYPE: Final = "files:File"
 # Shown in the browser itself; any other media type is only offered as a download.
 INLINE_MEDIA_TYPES: Final = frozenset(
     {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}

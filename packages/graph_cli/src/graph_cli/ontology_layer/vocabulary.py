@@ -14,6 +14,7 @@ COMPILED_SCHEMA: Final = "graph_cli.compiled_ontology/1"
 DIFF_SCHEMA: Final = "graph_cli.ontology_diff/1"
 
 CORE_MODULE: Final = "core"
+FILE_TYPE: Final = "files:File"  # the stored-file class of the standard module files (B7.8)
 DEFAULT_NAMESPACE: Final = "urn:graph_cli:onto:{module}#"
 
 BASE_TYPES: Final = frozenset(
