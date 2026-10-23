@@ -73,6 +73,23 @@ Give every class people refer to by name a `label`. Add `alt_label` where
 people use abbreviations or the data uses several names. Roles work on
 `string` attributes and datatypes over `string`, not on `text`.
 
+Name the attributes by their role, the same way in every class of the
+ontology: `alt_labels` for the `alt_label` role and `hidden_labels` for
+the `hidden_label` role (many-valued, as SKOS `altLabel` and
+`hiddenLabel`). The main name keeps a domain name (`name`, `title`). One
+name per role tells agents and people at a glance where other names go;
+names chosen per class drift apart and can read like something else
+(a person's names, abbreviations only).
+Renaming a released attribute is a major change, so settle this before
+the first release.
+
+Label roles do more than `lookup`: `graph search` ranks matches in them
+before other fields, and a write that gives an entity a name another
+entity of the same class family already carries gets the warning
+`data.semantic.possible_duplicate`. A class whose entities legitimately
+share names (one per year, one per edition) needs a main name that tells
+them apart, or the warning fires on every new one.
+
 ## Aliases
 
 `display_prefix` gives new entities an alias such as `REC-0001`: short,

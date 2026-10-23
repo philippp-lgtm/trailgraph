@@ -374,7 +374,7 @@ classes:
         type: Name
         required: true
         role: label
-      other_names:
+      alt_labels:
         summary: Other names of the dish, including short names.
         type: Name
         many: true
@@ -419,7 +419,7 @@ classes:
         required: true
         unique: true
         role: label
-      synonyms:
+      alt_labels:
         summary: Other names of the ingredient, including regional ones.
         type: Name
         many: true

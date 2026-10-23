@@ -14,7 +14,7 @@ Run `graph graphs --json`. Use this skill only if an item named `example_graph` 
 Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
 
 - Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --json` lists the patterns) instead of filtering JSON with another program.
+- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
 
 ## What is in it
 
@@ -55,6 +55,7 @@ Constraints:
 
 - Aliases: `inv:Category` `CAT-0001`, `inv:Item` `ITEM-0001`, `inv:Location` `LOC-0001`. The number is zero-padded to 4 digits (`CAT-0001`, never `CAT-1`) and grows past 9999. A full id works everywhere; on the command line 8 or more trailing hex digits of it work too.
 - No type of this graph has names (label roles), so `graph lookup` finds nothing; use `graph find --graph example_graph`.
+- `graph search <value> --graph example_graph --json` searches names and every text field, forgiving case, accents, typos and parts of words. Its results are suggestions: read one with `graph get` before you use it.
 
 ## Model
 

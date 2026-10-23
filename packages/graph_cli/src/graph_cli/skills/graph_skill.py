@@ -285,7 +285,8 @@ def _start(doc: _Model) -> list[str]:
         " loops, pipes or heredocs, which a restricted harness refuses. If a call is"
         " refused, run it again in that form before you give up.",
         "- For a few fields, a count or a join, use `graph query` and `RETURN` only those"
-        " columns (`graph describe schema --json` lists the patterns) instead of filtering"
+        " columns (`graph describe schema --compact --json` lists the patterns), or"
+        " `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering"
         " JSON with another program.",
         *(
             [
@@ -498,6 +499,11 @@ def _names(doc: _Model) -> list[str]:
             "- No type of this graph has names (label roles), so `graph lookup` finds nothing;"
             f" use `graph find --graph {doc.name}`."
         )
+        lines.append(
+            f"- `graph search <value> --graph {doc.name} --json` searches names and every text"
+            " field, forgiving case, accents, typos and parts of words. Its results are"
+            " suggestions: read one with `graph get` before you use it."
+        )
         return lines
     lines.append(
         f"- `graph lookup <value> --graph {doc.name} --json` finds entities by name, ignoring"
@@ -513,6 +519,19 @@ def _names(doc: _Model) -> list[str]:
         " only when exactly one candidate matches exactly (`match.kind` is `exact`). With"
         " several candidates, or only prefix matches, do not answer about one of them first:"
         " list them with their names and ask which one is meant, then answer."
+    )
+    lines.append(
+        f"- `graph search <value> --graph {doc.name} --json` searches names and every text"
+        " field, forgiving case, accents, typos and parts of words. Its results are"
+        " suggestions: read one with `graph get` before you use it."
+    )
+    lines.append(
+        "- Before you create an entity of one of these types, search for its name and its"
+        " short forms. If one is the same thing, use it and add the new name to its"
+        f" {ROLE_NAMES['alt_label']} field instead of creating another. When you create one,"
+        f" fill its {ROLE_NAMES['alt_label']} fields with the abbreviations and synonyms people"
+        " use. A dry-run finding `data.semantic.possible_duplicate` names entities that"
+        " already carry the name."
     )
     return lines
 

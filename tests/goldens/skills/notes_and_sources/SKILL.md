@@ -14,7 +14,7 @@ Run `graph graphs --json`. Use this skill only if an item named `example_graph` 
 Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
 
 - Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --json` lists the patterns) instead of filtering JSON with another program.
+- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
 
 ## What is in it
 
@@ -58,6 +58,8 @@ Constraints:
   - `nas:Topic`: `label` (main name), `synonyms` (other names), `misspellings` (hidden names, matched but never shown)
   - `nas:WebPage`: `title` (main name)
 - Names are not unique, so `lookup` returns candidates. Use the returned alias or id only when exactly one candidate matches exactly (`match.kind` is `exact`). With several candidates, or only prefix matches, do not answer about one of them first: list them with their names and ask which one is meant, then answer.
+- `graph search <value> --graph example_graph --json` searches names and every text field, forgiving case, accents, typos and parts of words. Its results are suggestions: read one with `graph get` before you use it.
+- Before you create an entity of one of these types, search for its name and its short forms. If one is the same thing, use it and add the new name to its other names field instead of creating another. When you create one, fill its other names fields with the abbreviations and synonyms people use. A dry-run finding `data.semantic.possible_duplicate` names entities that already carry the name.
 
 ## Model
 

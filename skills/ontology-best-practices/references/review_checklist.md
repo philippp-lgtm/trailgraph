@@ -33,7 +33,12 @@ deliberate choice in the README next to the ontology.
 - [ ] Every summary is one sentence that tells a newcomer what the term
       is and how it differs from its neighbors.
 - [ ] Classes people name have a `label`; abbreviations and other names
-      are `alt_label`.
+      are `alt_label`, misspellings `hidden_label`.
+- [ ] Label-role attributes are named by role, the same in every class:
+      `alt_labels`, `hidden_labels`.
+- [ ] Entities of one class that share names in real data get a main
+      name that tells them apart (else every write warns
+      `possible_duplicate`).
 - [ ] Concrete classes people refer to have their own `display_prefix`.
 - [ ] No summary or description holds values from real data.
 

@@ -22,9 +22,10 @@ examples; fixed text of the renderer), `references/changesets.md` (the
 change set documents of `graph apply`: keys, operations, values, limits,
 an example; key tables and limits from `kernel.changeset`, prose fixed in
 the renderer), `references/output.md` (the fields of pages, hints,
-warnings, entities, `lookup` and `history` items and write results; fixed
-text, checked against real answers) and `references/files.md` (storing,
-linking and reading files; fixed text). The renderer reads nothing but
+warnings, entities, `lookup`, `search` and `history` items and write results; fixed
+text, checked against real answers), `references/files.md` (storing,
+linking and reading files; fixed text) and `references/history.md`
+(earlier revisions and states; fixed text). The renderer reads nothing but
 that document and imports only the kernel (import contract). The frontmatter `metadata` carries the
 inventory hash and program version. How to regenerate it and what the
 tests check: [`CONTRIBUTING.md`](../CONTRIBUTING.md#generated-files).
