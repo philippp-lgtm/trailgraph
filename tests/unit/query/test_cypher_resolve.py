@@ -255,7 +255,7 @@ def test_refused_functions_point_to_the_alternative(
 def test_unknown_functions_list_the_subset() -> None:
     error = failure("MATCH (n) RETURN tolowr(n.title)")
     assert error.code == "query.unsupported"
-    assert error.details["did_you_mean"] == ["tolower"]
+    assert error.details["did_you_mean"][0] == "tolower"  # type: ignore[index]
     assert "count()" in str(error.details["alternative"])
 
 

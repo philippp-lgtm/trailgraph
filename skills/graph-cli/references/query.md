@@ -28,7 +28,7 @@ grouping. For one type with field filters, one hop or a name, `find`,
 | Clauses | `MATCH`, `OPTIONAL MATCH`, `WHERE`, `WITH`, `UNWIND`, `RETURN`, `ORDER BY`, `SKIP`, `LIMIT` |
 | Patterns | `(n:<type>)`, `-[:<relation>]->`, `<-[...]-`, `-[...]-`, `[:<relation>\|<relation>]`, `*1..3`, `{<attr>: <value>}` |
 | Expressions | `AND OR XOR NOT`, `= <> < <= > >=`, `IN`, `STARTS WITH`, `ENDS WITH`, `CONTAINS`, `IS NULL`, `n:<type>`, `(n)-[:<relation>]->()`, `CASE`, `+ - * / %` |
-| Functions | `count(*)`, `count(DISTINCT ...)`, `collect`, `min`, `max`, `sum`, `avg`, `labels`, `type`, `size`, `coalesce`, `toLower`, `toUpper`, `trim` |
+| Functions | `count(*)`, `count(DISTINCT ...)`, `collect`, `min`, `max`, `sum`, `avg`, `labels`, `type`, `keys`, `properties`, `coalesce`, `size`, `head`, `last`, `toString`, `toInteger`, `toFloat`, `toLower`, `toUpper`, `trim`, `substring`, `split`, `replace`, `abs`, `ceil`, `floor`, `round` |
 
 A variable-length relationship (`*1..3`) needs an upper bound of at most 5.
 Anything else (`CREATE` and other writes, `CALL`, `UNION`, named paths,

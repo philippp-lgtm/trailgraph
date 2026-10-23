@@ -112,8 +112,9 @@ How the graph looks to Cypher:
 A label or relationship type is the local name when exactly one CURIE has
 it (`(:Type)`), else the CURIE in backticks (``(:`ex:Type`)``), which always
 works; an ambiguous local name is `query.ambiguous_term` with the
-candidates. Unknown labels, relationship types and fields are
-`term.unknown` with did-you-mean, as for `find`.
+candidates. `labels(n)` and `type(r)` return names the same way: the local
+name when it is unique, else the CURIE. Unknown labels, relationship types
+and fields are `term.unknown` with did-you-mean, as for `find`.
 
 The subset: `MATCH` (several patterns and clauses), `OPTIONAL MATCH`,
 `WHERE`, `WITH` (with `WHERE`), `UNWIND`, `RETURN` (`AS`, `DISTINCT`, `*`),
@@ -122,12 +123,16 @@ The subset: `MATCH` (several patterns and clauses), `OPTIONAL MATCH`,
 bounded variable length up to five hops (`*1..3`); pattern predicates
 (`WHERE NOT (n)-[:r]->()`), label predicates (`n:A`), `CASE`, list and map
 literals, `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
-`CONTAINS`, `IS [NOT] NULL`; the functions `count` (`count(*)`, `DISTINCT`),
-`collect`, `min`, `max`, `sum`, `avg`, `labels`, `type`, `size`, `coalesce`,
-`toLower`, `toUpper` and `trim`. Everything else (write clauses, `CALL`,
-`UNION`, named paths, unbounded `*`, `shortestPath`, comprehensions, map
-projections, subqueries, `id()`) is `query.unsupported` with the construct
-and, where one exists, the alternative.
+`CONTAINS`, `IS [NOT] NULL`; the aggregates `count` (`count(*)`,
+`DISTINCT`), `collect`, `min`, `max`, `sum`, `avg` and the functions
+`labels`, `type`, `keys`, `properties`, `coalesce`, `size`, `head`, `last`,
+`toString`, `toInteger`, `toFloat`, `toLower`, `toUpper`, `trim`,
+`substring`, `split`, `replace`, `abs`, `ceil`, `floor` and `round`. A null
+argument makes a function null (`coalesce` excepted). Everything else
+(write clauses, `CALL`, `UNION`, named paths, unbounded `*`,
+`shortestPath`, comprehensions, map projections, subqueries, `id()`) is
+`query.unsupported` with the construct and, where one exists, the
+alternative.
 
 Semantics follow openCypher: three-valued null logic, a missing property is
 null, comparisons across types are null, a relationship is used once per
@@ -136,8 +141,13 @@ null, comparisons across types are null, a relationship is used once per
 - Numbers with a fraction are exact decimals, and so are decimal
   attributes; JSON output shows them as strings, as `get` shows decimal
   attributes. There is no NaN: a division by zero is `query.invalid_value`.
-- `labels(n)` returns the type and its supertypes as CURIEs, `type(r)` the
-  relation CURIE; `n.id` is the entity id (`id()` is refused).
+- There are no floats: `toFloat` returns a decimal, and `abs`, `ceil`,
+  `floor` and `round` return an integer for an integer, else a decimal.
+  `round` rounds half away from zero (`round(-2.5)` is `-3`) and takes an
+  optional number of decimal places.
+- `keys(n)` and `properties(n)` list the system fields that have a value,
+  then the set attributes by name (a relationship: `edge_id`, then the
+  qualifiers). `n.id` is the entity id (`id()` is refused).
 - Inactive entities are hidden at both ends of every pattern, so an edge
   to a superseded entity does not match (`find --rel` and `neighbors`
   follow it).

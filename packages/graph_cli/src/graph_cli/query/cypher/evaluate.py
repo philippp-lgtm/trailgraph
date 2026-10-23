@@ -12,8 +12,19 @@ Pattern predicates call back into the executor through ``exists``.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
-from decimal import Decimal, DivisionByZero, InvalidOperation
+from decimal import (
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_HALF_UP,
+    Decimal,
+    DecimalException,
+    DivisionByZero,
+    InvalidOperation,
+    localcontext,
+)
 from typing import Final
 
 from graph_cli.kernel.clock import format_timestamp
@@ -38,7 +49,7 @@ from graph_cli.query.cypher.ast import (
     Variable,
 )
 from graph_cli.query.cypher.errors import invalid_value
-from graph_cli.query.cypher.resolve import EDGE_ID, is_aggregate
+from graph_cli.query.cypher.resolve import EDGE_ID, is_aggregate, short_names
 from graph_cli.query.cypher.values import (
     MAX_INTEGER,
     MIN_INTEGER,
@@ -55,6 +66,24 @@ from graph_cli.query.cypher.values import (
 
 Row = Mapping[str, Value]
 _ORDERING: Final = {"<": (-1,), "<=": (-1, 0), ">": (1,), ">=": (1, 0)}
+# The system fields in the order properties() and keys() list them.
+NODE_FIELDS: Final = (
+    "id",
+    "alias",
+    "type",
+    "rev",
+    "record_status",
+    "created_at",
+    "recorded_at",
+    "tx_id",
+    "tx_seq",
+    "valid_from",
+    "valid_to",
+    "content_hash",
+    "ontology_version",
+)
+_NUMBER_TEXT: Final = re.compile(r"[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?")
+_ROUNDING: Final = {"ceil": ROUND_CEILING, "floor": ROUND_FLOOR, "round": ROUND_HALF_UP}
 
 
 class Evaluator:
@@ -67,6 +96,9 @@ class Evaluator:
         self.model = model
         self.parameters = dict(parameters)
         self.exists = exists
+        # labels() and type() return names as a query writes them (local when unique)
+        self.class_names = short_names(model.classes)
+        self.relation_names = short_names(model.relations)
 
     def condition(self, e: Expr, row: Row) -> bool:
         """``WHERE``: true keeps the row, false and null drop it."""
@@ -244,30 +276,169 @@ class Evaluator:
     def function(self, name: str, args: list[Value], pos: Pos) -> Value:
         if name == "coalesce":
             return next((a for a in args if a is not None), None)
-        (value,) = args
-        if value is None:
+        if any(a is None for a in args):
             return None
-        if name == "labels":
-            if not isinstance(value, Node):
-                raise invalid_value(pos, f"labels() needs a node, got a {kind(value)}")
-            cls = self.model.classes.get(value.revision.type)
-            return [str(value.revision.type), *(cls.ancestors if cls else ())]
-        if name == "type":
-            if not isinstance(value, Rel):
-                raise invalid_value(pos, f"type() needs a relationship, got a {kind(value)}")
-            return str(value.edge.rel)
-        if name == "size":
-            if not isinstance(value, list | str):
-                raise invalid_value(pos, f"size() needs a list or a string, got a {kind(value)}")
-            return len(value)
-        if not isinstance(value, str):
-            raise invalid_value(pos, f"{name}() needs a string, got a {kind(value)}")
-        if name == "tolower":
-            return value.lower()
-        if name == "toupper":
-            return value.upper()
-        assert name == "trim", name
-        return value.strip()
+        value = args[0]
+        match name:
+            case "labels":
+                if not isinstance(value, Node):
+                    raise invalid_value(pos, f"labels() needs a node, got a {kind(value)}")
+                cls = self.model.classes.get(value.revision.type)
+                types = [str(value.revision.type), *(cls.ancestors if cls else ())]
+                names: list[Value] = [self.class_names.get(t, t) for t in types]
+                return names
+            case "type":
+                if not isinstance(value, Rel):
+                    raise invalid_value(pos, f"type() needs a relationship, got a {kind(value)}")
+                return self.relation_names.get(value.edge.rel, str(value.edge.rel))
+            case "keys":
+                return list(self.properties(value, name, pos))
+            case "properties":
+                return self.properties(value, name, pos)
+            case "size":
+                if not isinstance(value, list | str):
+                    raise invalid_value(
+                        pos, f"size() needs a list or a string, got a {kind(value)}"
+                    )
+                return len(value)
+            case "head" | "last":
+                if not isinstance(value, list):
+                    raise invalid_value(pos, f"{name}() needs a list, got a {kind(value)}")
+                return (value[0] if name == "head" else value[-1]) if value else None
+            case "tostring":
+                return _to_string(value, pos)
+            case "tointeger":
+                return _to_integer(value, pos)
+            case "tofloat":
+                return _to_decimal(value, pos)
+            case "abs" | "ceil" | "floor" | "round":
+                return _rounding(name, args, pos)
+        strings = _strings(name, args, pos)
+        match name:
+            case "tolower":
+                return strings[0].lower()
+            case "toupper":
+                return strings[0].upper()
+            case "trim":
+                return strings[0].strip()
+            case "split":
+                text, separator = strings
+                parts: list[Value] = [*(text.split(separator) if separator else text)]
+                return parts
+            case "replace":
+                text, old, new = strings
+                return text.replace(old, new)
+        assert name == "substring", name
+        return _substring(strings[0], args[1:], pos)
+
+    def properties(self, value: Value, name: str, pos: Pos) -> dict[str, Value]:
+        """``properties()``: system fields in their fixed order, then the set attributes or
+        qualifiers by name; ``keys()`` is its keys."""
+        if isinstance(value, dict):
+            return dict(sorted(value.items()))
+        if isinstance(value, Node):
+            fields = [*NODE_FIELDS, *sorted(value.revision.attrs)]
+            found = {k: self.node_field(value, k) for k in fields}
+        elif isinstance(value, Rel):
+            fields = [EDGE_ID, *sorted(value.edge.qualifiers)]
+            found = {k: self.rel_field(value, k) for k in fields}
+        else:
+            raise invalid_value(
+                pos, f"{name}() needs a node, a relationship or a map, got a {kind(value)}"
+            )
+        return {k: v for k, v in found.items() if v is not None}
+
+
+def _to_string(value: Value, pos: Pos) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str | int | Decimal):
+        return str(value)
+    raise invalid_value(
+        pos, f"tostring() needs a number, a boolean or a string, got a {kind(value)}"
+    )
+
+
+def _to_integer(value: Value, pos: Pos) -> int | None:
+    """``toInteger()``: numbers truncate toward zero, text that is no number is null."""
+    if isinstance(value, bool | int):
+        return int(value)
+    if not isinstance(value, Decimal | str):
+        raise invalid_value(
+            pos, f"tointeger() needs a number, a boolean or a string, got a {kind(value)}"
+        )
+    number = _parse_number(value) if isinstance(value, str) else value
+    if number is None:
+        return None
+    whole = number.to_integral_value(rounding=ROUND_DOWN)
+    if not MIN_INTEGER <= whole <= MAX_INTEGER:
+        raise invalid_value(pos, "integer overflow")
+    return int(whole)
+
+
+def _to_decimal(value: Value, pos: Pos) -> Decimal | None:
+    """``toFloat()``: there are no floats, so an exact decimal; text that is no number is
+    null."""
+    if isinstance(value, str):
+        return _parse_number(value)
+    number = as_number(value)
+    if number is None:
+        raise invalid_value(pos, f"tofloat() needs a number or a string, got a {kind(value)}")
+    return Decimal(number)
+
+
+def _parse_number(text: str) -> Decimal | None:
+    text = text.strip()
+    return Decimal(text) if _NUMBER_TEXT.fullmatch(text) else None
+
+
+def _rounding(name: str, args: list[Value], pos: Pos) -> Number:
+    """``abs``, ``ceil``, ``floor``, ``round`` (half away from zero, optional precision);
+    the result is an integer for an integer, else a decimal."""
+    number = as_number(args[0])
+    if number is None:
+        raise invalid_value(pos, f"{name}() needs a number, got a {kind(args[0])}")
+    if name == "abs":
+        return _checked(-number if number < 0 else number, pos)
+    precision = args[1] if len(args) > 1 else 0
+    if not isinstance(precision, int) or isinstance(precision, bool):
+        raise invalid_value(pos, f"round() needs an integer precision, got a {kind(precision)}")
+    exact = Decimal(number)
+    exponent = exact.as_tuple().exponent
+    if isinstance(exponent, int) and exponent >= -precision and precision >= 0:
+        return number  # nothing to round
+    try:
+        with localcontext() as context:
+            context.prec = max(context.prec, len(exact.as_tuple().digits) + 1)
+            rounded = exact.quantize(Decimal(1).scaleb(-precision), rounding=_ROUNDING[name])
+    except DecimalException:
+        raise invalid_value(pos, f"round() precision {precision} is out of range") from None
+    if isinstance(number, int):
+        return _checked(int(rounded), pos)
+    return rounded.quantize(Decimal(1)) if precision < 0 else rounded  # 1.2E+3 as 1200
+
+
+def _strings(name: str, args: list[Value], pos: Pos) -> list[str]:
+    """The string arguments of a string function (``substring``: the first only)."""
+    found: list[str] = []
+    for arg in args[:1] if name == "substring" else args:
+        if not isinstance(arg, str):
+            raise invalid_value(pos, f"{name}() needs a string, got a {kind(arg)}")
+        found.append(arg)
+    return found
+
+
+def _substring(text: str, bounds: list[Value], pos: Pos) -> str:
+    """``substring(text, start[, length])``, counted from 0."""
+    numbers: list[int] = []
+    for bound in bounds:
+        if not isinstance(bound, int) or isinstance(bound, bool) or bound < 0:
+            raise invalid_value(
+                pos, "substring() needs a start and a length that are integers >= 0"
+            )
+        numbers.append(bound)
+    start = numbers[0]
+    return text[start:] if len(numbers) == 1 else text[start : start + numbers[1]]
 
 
 def _boolean(value: Value, pos: Pos) -> bool | None:

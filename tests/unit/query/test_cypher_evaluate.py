@@ -1,5 +1,6 @@
 """Expressions and values of the Cypher subset (plan cypher_query.md 3.3)."""
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
@@ -8,8 +9,9 @@ from support.fixtures import compiled_model
 from support.snapshots import DictSnapshot, edge, revision
 
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
 from graph_cli.query.cypher.ast import Pos
-from graph_cli.query.cypher.evaluate import Evaluator
+from graph_cli.query.cypher.evaluate import NODE_FIELDS, Evaluator
 from graph_cli.query.cypher.execute import execute
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import resolve
@@ -134,6 +136,20 @@ def test_arithmetic(text: str, expected: Any) -> None:
         ("toLower(1)", "tolower() needs a string, got a number"),
         ("size(1)", "size() needs a list or a string"),
         ("labels('x')", "labels() needs a node, got a string"),
+        ("keys(1)", "keys() needs a node, a relationship or a map, got a number"),
+        ("head('ab')", "head() needs a list, got a string"),
+        ("toString([1])", "tostring() needs a number, a boolean or a string, got a list"),
+        ("toInteger({})", "tointeger() needs a number, a boolean or a string, got a map"),
+        ("toInteger('1e30')", "integer overflow"),
+        ("toFloat(true)", "tofloat() needs a number or a string, got a boolean"),
+        ("substring(1, 0)", "substring() needs a string, got a number"),
+        ("substring('a', -1)", "substring() needs a start and a length that are integers >= 0"),
+        ("substring('a', 0, 1.5)", "substring() needs a start and a length that are integers"),
+        ("split('a', 1)", "split() needs a string, got a number"),
+        ("abs('1')", "abs() needs a number, got a string"),
+        ("abs(-9223372036854775807 - 1)", "integer overflow"),
+        ("round(1.5, 0.5)", "round() needs an integer precision, got a number"),
+        ("round(1.5, -9999999)", "round() precision -9999999 is out of range"),
         ("type(n)", "type() needs a relationship, got a node"),
         ("'x'.title", "a string has no property 'title'"),
     ],
@@ -148,7 +164,7 @@ def test_runtime_errors(text: str, message: str) -> None:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("labels(n)", ["nas:Book", "nas:Source"]),
+        ("labels(n)", ["Book", "Source"]),
         ("size('abc')", 3),
         ("size([1, 2])", 2),
         ("size(null)", None),
@@ -200,7 +216,96 @@ def test_relationship_fields() -> None:
     assert evaluator.rel_field(rel, "locator") == "p. 1"
     assert evaluator.rel_field(rel, "edge_id") == str(source.edges[0].edge_id)
     assert evaluator.rel_field(rel, "nothing") is None
-    assert evaluator.function("type", [rel], Pos(1, 1, 0)) == "nas:cites"
+    assert evaluator.function("type", [rel], Pos(1, 1, 0)) == "cites"
+
+
+def test_labels_and_type_return_names_as_a_query_writes_them() -> None:
+    model = replace(
+        NAS,
+        classes={**NAS.classes, "provenance:Note": NAS.classes["nas:Note"]},
+        relations={**NAS.relations, "provenance:cites": NAS.relations["nas:cites"]},
+    )
+    note = revision("note", "nas:Note", {}, [edge("nas:cites", "book")])
+    evaluator = Evaluator(model, {}, lambda part, row: True)
+    pos = Pos(1, 1, 0)
+    assert evaluator.function("labels", [Node(note)], pos)[0] == "nas:Note"  # type: ignore[index]
+    assert evaluator.function("labels", [N], pos) == ["Book", "Source"]
+    assert evaluator.function("type", [Rel(note.id, note.edges[0])], pos) == "nas:cites"
+
+
+def test_properties_and_keys() -> None:
+    source = revision("note", "nas:Note", {}, [edge("nas:cites", "book", locator="p. 1")])
+    rel = Rel(source.id, source.edges[0])
+    evaluator = Evaluator(NAS, {}, lambda part, row: True)
+    pos = Pos(1, 1, 0)
+    found = evaluator.function("properties", [N], pos)
+    assert isinstance(found, dict)
+    assert list(found)[:3] == ["id", "type", "rev"]  # system fields first, no null alias
+    assert found["title"] == "T" and found["id"] == str(N.id)
+    assert evaluator.function("keys", [N], pos) == list(found)
+    assert evaluator.function("keys", [rel], pos) == ["edge_id", "locator"]
+    assert evaluator.function("properties", [{"b": 1, "a": 2}], pos) == {"a": 2, "b": 1}
+    assert evaluator.function("keys", [None], pos) is None
+
+
+def test_node_fields_are_the_system_fields() -> None:
+    assert sorted(NODE_FIELDS) == sorted(SYSTEM_FIELDS)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("toString(12)", "12"),
+        ("toString(1.50)", "1.50"),
+        ("toString(true)", "true"),
+        ("toString('x')", "x"),
+        ("toString(null)", None),
+        ("toInteger(42)", 42),
+        ("toInteger(2.9)", 2),
+        ("toInteger(-2.9)", -2),
+        ("toInteger('42')", 42),
+        ("toInteger(' 2.5 ')", 2),
+        ("toInteger('1e3')", 1000),
+        ("toInteger('x')", None),
+        ("toInteger('NaN')", None),
+        ("toInteger(true)", 1),
+        ("toFloat(3)", Decimal("3")),
+        ("toFloat('1.25')", Decimal("1.25")),
+        ("toFloat('one')", None),
+        ("head([1, 2])", 1),
+        ("last([1, 2])", 2),
+        ("head([])", None),
+        ("head(null)", None),
+        ("substring('hello', 1)", "ello"),
+        ("substring('hello', 1, 3)", "ell"),
+        ("substring('hello', 9)", ""),
+        ("substring('hello', null)", None),
+        ("split('a,b,,c', ',')", ["a", "b", "", "c"]),
+        ("split('ab', '')", ["a", "b"]),
+        ("replace('banana', 'an', 'o')", "booa"),
+        ("abs(-3)", 3),
+        ("abs(-1.5)", Decimal("1.5")),
+        ("ceil(1.2)", Decimal("2")),
+        ("floor(-1.2)", Decimal("-2")),
+        ("floor(4)", 4),
+        ("round(2.5)", Decimal("3")),
+        ("round(-2.5)", Decimal("-3")),
+        ("round(1.25, 1)", Decimal("1.3")),
+        ("round(1.5, 3)", Decimal("1.5")),
+        (
+            "round(0.12345678901234567890123456789012, 30)",
+            Decimal("0.123456789012345678901234567890"),
+        ),
+        ("round(1250, -2)", 1300),
+        ("round(1234.5, -2)", Decimal("1200")),
+        ("round(7)", 7),
+    ],
+)
+def test_conversion_string_and_number_functions(text: str, expected: Any) -> None:
+    result = value(text)
+    assert result == expected and type(result) is type(expected)
+    if isinstance(expected, Decimal):
+        assert str(result) == str(expected)
 
 
 def test_order_and_group_keys() -> None:

@@ -77,11 +77,25 @@ FUNCTIONS: Final[dict[str, tuple[int, int | None]]] = {
     **dict.fromkeys(AGGREGATES, (1, 1)),
     "labels": (1, 1),
     "type": (1, 1),
-    "size": (1, 1),
+    "keys": (1, 1),
+    "properties": (1, 1),
     "coalesce": (1, None),
+    "size": (1, 1),
+    "head": (1, 1),
+    "last": (1, 1),
+    "tostring": (1, 1),
+    "tointeger": (1, 1),
+    "tofloat": (1, 1),
     "tolower": (1, 1),
     "toupper": (1, 1),
     "trim": (1, 1),
+    "substring": (2, 3),
+    "split": (2, 2),
+    "replace": (3, 3),
+    "abs": (1, 1),
+    "ceil": (1, 1),
+    "floor": (1, 1),
+    "round": (1, 2),
 }
 _REFUSED_FUNCTIONS: Final = {
     "id": "use n.id, the stable entity id",
@@ -657,7 +671,7 @@ def _kind_of(e: Expr, scope: _Scope) -> VarKind:
             return "value"  # a key of a map may hold anything
         case FunctionCall("collect", (arg,)):
             return "list" if _kind_of(arg, scope) in _ENTITY_KINDS else "plain"
-        case FunctionCall("coalesce" | "min" | "max", args):
+        case FunctionCall("coalesce" | "min" | "max" | "head" | "last", args):
             return "value" if any(_kind_of(a, scope) != "plain" for a in args) else "plain"
         case Case(_, whens, default):
             branches = [then for _, then in whens] + ([default] if default is not None else [])
@@ -682,9 +696,18 @@ def _narrow(known: tuple[str, ...] | None, more: tuple[str, ...] | None) -> tupl
 def cypher_names(curies: Iterable[str]) -> dict[str, str]:
     """How a query writes each term: the local name when no other term has it, else the
     CURIE in backticks (the inverse of the name rule ``resolve`` applies)."""
+    return {
+        curie: name if name != curie else render.name(curie)
+        for curie, name in short_names(curies).items()
+    }
+
+
+def short_names(curies: Iterable[str]) -> dict[str, str]:
+    """Each term's name as ``labels()`` and ``type()`` return it: the local name when no
+    other term has it, else the CURIE."""
     index = _local_index(dict.fromkeys(curies))
     return {
-        curie: local if len(index[local]) == 1 else render.name(curie)
+        curie: local if len(index[local]) == 1 else curie
         for local, found in index.items()
         for curie in found
     }

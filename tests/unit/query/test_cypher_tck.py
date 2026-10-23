@@ -34,11 +34,6 @@ REFUSED = (
 
 # Scenario id prefix -> the documented difference that makes it fail.
 DIFFERENCES = {
-    "Match2: [3]": "type() returns the relation CURIE",
-    "Match2: [4]": "type() returns the relation CURIE",
-    "MatchWhere1: [7]": "type() returns the relation CURIE",
-    "MatchWhere1: [11]": "type() returns the relation CURIE",
-    "Comparison4: [1]": "labels() returns class CURIEs",
     "Comparison1: [8]": "no NaN: a decimal division by zero is an error",
     "Comparison2: [5]": "no NaN: a decimal division by zero is an error",
     "WithWhere1: [2]": "WHERE after WITH DISTINCT sees the columns only, like ORDER BY",

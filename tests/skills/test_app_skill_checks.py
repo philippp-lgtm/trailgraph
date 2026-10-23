@@ -27,7 +27,8 @@ from test_vocabulary_leak import deny_list
 
 from graph_cli.cli_kit.envelope import envelope, error_json
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.skills.app_skill import render_app_skill
+from graph_cli.query.cypher.resolve import FUNCTIONS
+from graph_cli.skills.app_skill import QUERY_SUBSET, render_app_skill
 from graph_cli_admin.maintenance_cli.main import cli as admin_cli
 
 Table = tuple[list[str], list[list[str]]]
@@ -339,3 +340,9 @@ class TestStructure:
         linked = set(re.findall(r"\]\((references/[^)]+)\)", files["SKILL.md"]))
         assert all((SKILL_DIR / link).is_file() for link in linked)
         assert linked == {n for n in files if n.startswith("references/")}
+
+
+def test_query_functions_are_the_ones_the_resolver_accepts() -> None:
+    (functions,) = [parts for name, parts in QUERY_SUBSET if name == "Functions"]
+    listed = {re.sub(r"\(.*", "", f).lower() for f in functions}
+    assert listed == set(FUNCTIONS)

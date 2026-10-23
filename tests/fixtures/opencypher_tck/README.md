@@ -19,9 +19,8 @@ implementation approved by the openCypher Implementers Group. The runner
 relationship types and property keys it uses. The test skips, with the
 reason in the report, scenarios whose setup is not a plain `CREATE` or uses
 properties named like graph_cli system fields (`id`, `type`), and scenarios
-that use a construct the subset refuses; documented differences (CURIEs
-from `labels()` and `type()`, no NaN, `WHERE` after `WITH DISTINCT`) run as
-strict xfail.
+that use a construct the subset refuses; documented differences (no NaN,
+`WHERE` after `WITH DISTINCT`) run as strict xfail.
 
 To update: replace `features/` with the same directories of a newer commit,
 update the commit above and the skip lists in the test.
