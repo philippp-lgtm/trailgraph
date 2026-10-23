@@ -4,8 +4,9 @@ Projections for agents: types, one type with its fields, lifecycles and
 relations in both directions, relations, fields, lifecycles, and the schema
 as ``graph query`` (Cypher) sees it. Every term
 with a summary also carries its ``deprecated`` flag. Deterministic
-(sorted), no timestamps; unknown terms are ``term.unknown`` with
-``did_you_mean``. Functions of a graph entry and its compiled model, so
+(sorted), no timestamps. A type or lifecycle is its CURIE or its unique
+local name, as for ``find`` (``query.plan.resolve_term``); unknown terms
+are ``term.unknown`` with ``did_you_mean``. Functions of a graph entry and its compiled model, so
 the app (a read view) and graph-admin (the pinned model) describe a graph
 the same way; ``describe_model`` bundles every document a graph skill is
 rendered from.
@@ -27,7 +28,7 @@ from graph_cli.ontology_layer.model import (
     QualifierDef,
 )
 from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
-from graph_cli.query.plan import unknown_term
+from graph_cli.query.plan import resolve_term
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
 
@@ -45,11 +46,9 @@ def _envelope(entry: GraphEntry, model: CompiledModel, **body: JsonValue) -> dic
     }
 
 
-def _class(model: CompiledModel, curie: str) -> ClassDef:
-    found = model.classes.get(curie)
-    if found is None:
-        raise unknown_term("type", curie, model.classes)
-    return found
+def _class(model: CompiledModel, name: str) -> tuple[str, ClassDef]:
+    curie = resolve_term("type", name, model.classes)
+    return curie, model.classes[curie]
 
 
 def _fields(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
@@ -118,8 +117,8 @@ def describe_types(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVal
     return _envelope(entry, model, types=types)
 
 
-def describe_type(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
-    cls = _class(model, curie)
+def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
+    curie, cls = _class(model, name)
     out: list[JsonValue] = []
     into: list[JsonValue] = []
     for name, r in sorted(model.relations.items()):
@@ -193,19 +192,18 @@ def describe_relations(entry: GraphEntry, model: CompiledModel) -> dict[str, Jso
     return _envelope(entry, model, relations=relations)
 
 
-def describe_fields(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
-    cls = _class(model, curie)
+def describe_fields(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
+    curie, cls = _class(model, name)
     return _envelope(entry, model, type=curie, fields=_fields(model, cls))
 
 
-def describe_lifecycle(entry: GraphEntry, model: CompiledModel, curie: str) -> dict[str, JsonValue]:
+def describe_lifecycle(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
     """The lifecycles of a class, or one lifecycle by its CURIE."""
+    curie = resolve_term("type or lifecycle", name, {**model.classes, **model.lifecycles})
     if curie in model.lifecycles:
         return _envelope(
             entry, model, lifecycles=[_lifecycle(curie, model.lifecycles[curie], None)]
         )
-    if curie not in model.classes:
-        raise unknown_term("type or lifecycle", curie, (*model.classes, *model.lifecycles))
     return _envelope(entry, model, type=curie, lifecycles=_lifecycles(model, model.classes[curie]))
 
 

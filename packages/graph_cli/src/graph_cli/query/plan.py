@@ -16,14 +16,17 @@ expanded), validated fields, values of the right JSON type. The flag syntax
 - ``--sort field[:desc]`` (repeatable), ``--limit`` (at most 500),
   ``--offset``, ``--include-inactive``.
 
-Unknown names are ``term.unknown`` with ``details.did_you_mean``; bad
-syntax or values are ``usage.invalid_argument``.
+A type or relation is its CURIE or, as in ``graph query``, its local name
+when exactly one CURIE has it (``resolve_term``); an ambiguous local name is
+``query.ambiguous_term`` with the candidates. Unknown names are
+``term.unknown`` with ``details.did_you_mean``; bad syntax or values are
+``usage.invalid_argument``.
 """
 
 from __future__ import annotations
 
 import difflib
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -122,11 +125,30 @@ def check_paging(limit: int, offset: int) -> None:
         raise _usage("--offset", "expected 0 or more", actual=offset)
 
 
-def check_types(model: CompiledModel, types: Iterable[str]) -> None:
-    """Every ``--type`` names a class (``term.unknown`` with did-you-mean)."""
-    for name in types:
-        if name not in model.classes:
-            raise unknown_term("type", name, model.classes)
+def resolve_term(kind: str, name: str, known: Mapping[str, object]) -> str:
+    """The CURIE ``name`` means: itself if known, else the one CURIE whose local name
+    it is (``query.ambiguous_term`` for several, ``term.unknown`` for none)."""
+    if name in known:
+        return name
+    index: dict[str, list[str]] = {}
+    for curie in sorted(known):
+        index.setdefault(curie.partition(":")[2], []).append(curie)
+    candidates = index.get(name, [])
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        listed = ", ".join(candidates)
+        raise GraphCliError(
+            "query.ambiguous_term",
+            f"{kind} {name!r} matches {listed}; give one of them",
+            details={"kind": kind, "term": name, "candidates": candidates},
+        )
+    raise unknown_term(kind, name, [*known, *index])
+
+
+def resolve_types(model: CompiledModel, types: Iterable[str]) -> tuple[str, ...]:
+    """Each ``--type`` as the CURIE of a class (``resolve_term``)."""
+    return tuple(resolve_term("type", name, model.classes) for name in types)
 
 
 # Entity parts ``--fields`` may name besides attributes; ``ALWAYS_SHOWN`` stay anyway.
@@ -144,7 +166,8 @@ def check_fields(
     names = tuple(n for n in names if n)
     if not names:
         return ()
-    classes = {c for t in types for c in model.subtypes(t)} or set(model.classes)
+    classes = {c for t in resolve_types(model, types) for c in model.subtypes(t)}
+    classes = classes or set(model.classes)
     known = {n for c in classes for n in model.classes[c].attributes}
     known |= set(ENTITY_PARTS) | set(SYSTEM_FIELDS)
     for name in names:
@@ -156,8 +179,8 @@ def check_fields(
 class _Planner:
     def __init__(self, model: CompiledModel, types: tuple[str, ...]) -> None:
         self.model = model
-        check_types(model, types)
-        self.classes = sorted({c for t in types for c in model.subtypes(t)}) or sorted(
+        self.types = resolve_types(model, types)
+        self.classes = sorted({c for t in self.types for c in model.subtypes(t)}) or sorted(
             model.classes
         )
 
@@ -219,9 +242,7 @@ class _Planner:
         return OrderKey(name, descending=direction == "desc", numeric=base == "decimal")
 
     def relation(self, name: str) -> TermRef:
-        if name not in self.model.relations:
-            raise unknown_term("relation", name, self.model.relations)
-        return TermRef(name)
+        return TermRef(resolve_term("relation", name, self.model.relations))
 
 
 def plan_find(model: CompiledModel, spec: FindSpec) -> Query:

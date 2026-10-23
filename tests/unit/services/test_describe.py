@@ -8,7 +8,13 @@ from support.skills import graph_entry
 
 from graph_cli.query.cypher.parser import parse
 from graph_cli.query.cypher.resolve import resolve
-from graph_cli.services.describe import describe_lifecycle, describe_model, describe_schema
+from graph_cli.services.describe import (
+    describe_fields,
+    describe_lifecycle,
+    describe_model,
+    describe_schema,
+    describe_type,
+)
 
 
 def by(items: Any, key: str) -> dict[str, bool]:
@@ -79,3 +85,11 @@ def test_schema_patterns_parse_and_resolve() -> None:
         model = compiled_model(name)
         for item in describe_schema(graph_entry(model), model)["relationships"]:
             resolve(parse(f"MATCH {item['pattern']} RETURN 1"), model)
+
+
+def test_a_type_by_its_unique_local_name() -> None:
+    model = compiled_model("notes_and_sources")
+    entry = graph_entry(model)
+    assert describe_type(entry, model, "Note") == describe_type(entry, model, "nas:Note")
+    assert describe_fields(entry, model, "Note")["type"] == "nas:Note"
+    assert describe_lifecycle(entry, model, "Note") == describe_lifecycle(entry, model, "nas:Note")

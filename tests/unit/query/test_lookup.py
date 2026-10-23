@@ -56,6 +56,7 @@ def test_plan_selects_label_bearing_classes() -> None:
 def test_type_family_includes_inherited_roles() -> None:
     p = plan("x", types=("nas:Source",))
     assert p.query.types == ("nas:Book", "nas:Source", "nas:WebPage")
+    assert plan("x", types=("Source",)).query.types == p.query.types
     assert p.labels["nas:Book"] == (("title", "label"),)
 
 

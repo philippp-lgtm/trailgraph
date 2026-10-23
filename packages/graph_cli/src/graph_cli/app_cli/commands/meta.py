@@ -21,7 +21,9 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead
 
-TYPE_ARG: Final = ParamSpec("type", "term", "Type CURIE.", required=True, positional=True)
+TYPE_ARG: Final = ParamSpec(
+    "type", "term", "Type CURIE or unique local name.", required=True, positional=True
+)
 GRAPH_ERRORS: Final = (
     "graph.not_selected",
     "graph.not_found",
@@ -147,7 +149,7 @@ def _describe(
     options: tuple[ParamSpec, ...] = (),
 ) -> CommandSpec:
     params = (TYPE_ARG, *options, GRAPH) if with_type else (*options, GRAPH)
-    errors = (*GRAPH_ERRORS, "term.unknown") if with_type else GRAPH_ERRORS
+    errors = (*GRAPH_ERRORS, "term.unknown", "query.ambiguous_term") if with_type else GRAPH_ERRORS
     return CommandSpec(
         path=("describe", name),
         kind="read",

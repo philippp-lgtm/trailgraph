@@ -65,6 +65,11 @@ either position.
 
 References in arguments are full ids, aliases or 8-32 trailing hex digits of
 an id; change set documents allow full ids, aliases and `@local` names only.
+Types and relations in read arguments (`find`, `lookup`, `search`,
+`neighbors`, `describe`) are CURIEs or, as in `graph query`, the local name
+when exactly one CURIE has it (`Topic` for `ex:Topic`); an ambiguous local
+name is `query.ambiguous_term` with the candidates. Writes and change set
+documents take the CURIE: what is recorded stays explicit.
 Writes take `--dry-run`, `--reason`, `--idempotency-key` and, on
 single-entity commands, `--expect REV`. `find` filters are flags without
 shell metacharacters: `--where attr=value` or `--where attr:op=value` with

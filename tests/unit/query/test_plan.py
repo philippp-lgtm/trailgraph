@@ -8,7 +8,7 @@ import pytest
 from support.fixtures import compiled_model
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import EntityId
+from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.query_ast import And, Cmp, NeighborQuery, Not, OrderKey, RelConstraint
 from graph_cli.query.plan import FindSpec, parse_rel_flag, plan_find, plan_neighbors
 
@@ -107,6 +107,25 @@ def test_did_you_mean() -> None:
     with pytest.raises(GraphCliError) as info:
         plan_find(INV, FindSpec(types=("inv:Iten",)))
     assert info.value.details["did_you_mean"][0] == "inv:Item"  # type: ignore[index]
+
+
+def test_a_unique_local_name_stands_for_its_curie() -> None:
+    assert (
+        plan_find(NAS, FindSpec(types=("Source",))).types
+        == plan_find(NAS, FindSpec(types=("nas:Source",))).types
+    )
+    query = plan_find(INV, FindSpec(rels=(("located_in", (ID,)),)))
+    assert query.rels[0].rel == TermRef("inv:located_in")
+    assert plan_neighbors(INV, ID, rels=("located_in",)).rels == (TermRef("inv:located_in"),)
+
+
+def test_an_ambiguous_local_name_lists_the_candidates() -> None:
+    model = replace(NAS, classes={**NAS.classes, "provenance:Note": NAS.classes["nas:Note"]})
+    with pytest.raises(GraphCliError) as info:
+        plan_find(model, FindSpec(types=("Note",)))
+    assert info.value.code == "query.ambiguous_term"
+    assert info.value.details["candidates"] == ["nas:Note", "provenance:Note"]
+    assert len(plan_find(model, FindSpec(types=("provenance:Note",))).types) == 1
 
 
 def test_relations() -> None:

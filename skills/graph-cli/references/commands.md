@@ -79,7 +79,7 @@ Usage: `graph describe fields TYPE [OPTIONS]`
 
 | Argument | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `type` | term | yes | no | Type CURIE. |
+| `type` | term | yes | no | Type CURIE or unique local name. |
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
@@ -100,7 +100,7 @@ Usage: `graph describe lifecycle TYPE [OPTIONS]`
 
 | Argument | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `type` | term | yes | no | Type CURIE. |
+| `type` | term | yes | no | Type CURIE or unique local name. |
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
@@ -157,7 +157,7 @@ Usage: `graph describe type TYPE [OPTIONS]`
 
 | Argument | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `type` | term | yes | no | Type CURIE. |
+| `type` | term | yes | no | Type CURIE or unique local name. |
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
@@ -276,7 +276,7 @@ Usage: `graph find [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--type` | term | no | yes | Type CURIE, subtypes included. |
+| `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
 | `--where` | filter | no | yes | attr=value or attr:op=value (ne lt le gt ge contains prefix in exists). |
 | `--rel` | string | no | yes | Outgoing relation, optionally =<id>[,<id>...]. |
 | `--in-rel` | string | no | yes | Incoming relation, optionally =<id>[,<id>...]. |
@@ -412,7 +412,7 @@ Usage: `graph lookup TEXT [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--type` | term | no | yes | Type CURIE, subtypes included. |
+| `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
 | `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
@@ -534,7 +534,7 @@ Usage: `graph search TEXT [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--type` | term | no | yes | Type CURIE, subtypes included. |
+| `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
 | `--field` | string | no | yes | Only this text field. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |

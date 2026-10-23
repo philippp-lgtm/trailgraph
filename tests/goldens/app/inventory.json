@@ -289,7 +289,7 @@
           "type": "term",
           "required": true,
           "repeatable": false,
-          "summary": "Type CURIE."
+          "summary": "Type CURIE or unique local name."
         }
       ],
       "options": [
@@ -321,6 +321,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -349,7 +350,7 @@
           "type": "term",
           "required": true,
           "repeatable": false,
-          "summary": "Type CURIE."
+          "summary": "Type CURIE or unique local name."
         }
       ],
       "options": [
@@ -381,6 +382,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -522,7 +524,7 @@
           "type": "term",
           "required": true,
           "repeatable": false,
-          "summary": "Type CURIE."
+          "summary": "Type CURIE or unique local name."
         }
       ],
       "options": [
@@ -554,6 +556,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -939,7 +942,7 @@
           "type": "term",
           "required": false,
           "repeatable": true,
-          "summary": "Type CURIE, subtypes included."
+          "summary": "Type CURIE or unique local name, subtypes included."
         },
         {
           "name": "--where",
@@ -1048,6 +1051,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "temporal.as_of_unsupported",
         "term.unknown",
         "usage.invalid_argument"
@@ -1440,7 +1444,7 @@
           "type": "term",
           "required": false,
           "repeatable": true,
-          "summary": "Type CURIE, subtypes included."
+          "summary": "Type CURIE or unique local name, subtypes included."
         },
         {
           "name": "--match",
@@ -1519,6 +1523,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "temporal.as_of_unsupported",
         "term.no_labels",
         "term.unknown",
@@ -1626,6 +1631,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "temporal.as_of_unsupported",
         "term.unknown",
         "usage.invalid_argument"
@@ -1900,7 +1906,7 @@
           "type": "term",
           "required": false,
           "repeatable": true,
-          "summary": "Type CURIE, subtypes included."
+          "summary": "Type CURIE or unique local name, subtypes included."
         },
         {
           "name": "--field",
@@ -1967,6 +1973,7 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "query.ambiguous_term",
         "temporal.as_of_unsupported",
         "term.no_text_fields",
         "term.unknown",

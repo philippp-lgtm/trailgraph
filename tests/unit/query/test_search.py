@@ -104,6 +104,7 @@ def test_type_and_field_filters() -> None:
     p = plan("x1", types=("nas:Source",), fields=("title",))
     assert p.query.types == ("nas:Book", "nas:Source", "nas:WebPage")
     assert all([f.attr for f in found] == ["title"] for found in p.fields.values())
+    assert plan("x1", types=("Source",), fields=("title",)).query.types == p.query.types
     with pytest.raises(GraphCliError) as caught:
         plan("x1", fields=("titel",))
     assert caught.value.code == "term.unknown"

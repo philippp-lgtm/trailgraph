@@ -35,7 +35,7 @@ from graph_cli.kernel.records import RECORD_STATUSES, Revision
 from graph_cli.kernel.text import normalize_label
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
-from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, check_types
+from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, resolve_types
 
 MatchKind = Literal["exact", "prefix"]
 MATCH_KINDS: Final[tuple[MatchKind, ...]] = ("exact", "prefix")
@@ -105,8 +105,8 @@ def plan_lookup(model: CompiledModel, spec: LookupSpec) -> LookupPlan:
     key = normalize_label(spec.text)
     if not key:
         raise _usage("text", "the text is blank", actual=spec.text)
-    check_types(model, spec.types)
-    families = {t: model.subtypes(t) for t in spec.types} or {"": tuple(sorted(model.classes))}
+    types = resolve_types(model, spec.types)
+    families = {t: model.subtypes(t) for t in types} or {"": tuple(sorted(model.classes))}
     labels = {
         c: found
         for family in families.values()

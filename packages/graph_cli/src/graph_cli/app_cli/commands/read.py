@@ -574,7 +574,12 @@ SPECS: Final = (
         action="read.find",
         summary="Find entities by type, field filters and relations; paged.",
         params=(
-            ParamSpec("--type", "term", "Type CURIE, subtypes included.", repeatable=True),
+            ParamSpec(
+                "--type",
+                "term",
+                "Type CURIE or unique local name, subtypes included.",
+                repeatable=True,
+            ),
             ParamSpec(
                 "--where",
                 "filter",
@@ -618,7 +623,7 @@ SPECS: Final = (
                 "The entities of a type as they were after that tx.",
             ),
         ),
-        errors=(*REF_ERRORS, "term.unknown"),
+        errors=(*REF_ERRORS, "term.unknown", "query.ambiguous_term"),
         handler=find,
         limits={"limit": MAX_LIMIT},
     ),
@@ -634,7 +639,12 @@ SPECS: Final = (
         ),
         params=(
             ParamSpec("text", "string", "The name to look for.", required=True, positional=True),
-            ParamSpec("--type", "term", "Type CURIE, subtypes included.", repeatable=True),
+            ParamSpec(
+                "--type",
+                "term",
+                "Type CURIE or unique local name, subtypes included.",
+                repeatable=True,
+            ),
             ParamSpec(
                 "--match",
                 "choice",
@@ -662,7 +672,13 @@ SPECS: Final = (
                 "Names of one type that start with the text.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, "temporal.as_of_unsupported", "term.unknown", "term.no_labels"),
+        errors=(
+            *GRAPH_ERRORS,
+            "temporal.as_of_unsupported",
+            "term.unknown",
+            "query.ambiguous_term",
+            "term.no_labels",
+        ),
         handler=lookup,
         limits={"limit": MAX_LIMIT},
     ),
@@ -678,7 +694,12 @@ SPECS: Final = (
         ),
         params=(
             ParamSpec("text", "string", "The words to look for.", required=True, positional=True),
-            ParamSpec("--type", "term", "Type CURIE, subtypes included.", repeatable=True),
+            ParamSpec(
+                "--type",
+                "term",
+                "Type CURIE or unique local name, subtypes included.",
+                repeatable=True,
+            ),
             ParamSpec("--field", "string", "Only this text field.", repeatable=True),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec(
@@ -699,6 +720,7 @@ SPECS: Final = (
             *GRAPH_ERRORS,
             "temporal.as_of_unsupported",
             "term.unknown",
+            "query.ambiguous_term",
             "term.no_text_fields",
         ),
         handler=search,
@@ -732,7 +754,7 @@ SPECS: Final = (
                 "Two hops along one relation.",
             ),
         ),
-        errors=(*REF_ERRORS, "term.unknown"),
+        errors=(*REF_ERRORS, "term.unknown", "query.ambiguous_term"),
         handler=neighbors,
         limits={"depth": 3},
     ),

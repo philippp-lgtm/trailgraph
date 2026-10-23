@@ -42,7 +42,7 @@ from graph_cli.kernel.records import RECORD_STATUSES, Revision
 from graph_cli.kernel.text import containment, normalize_label, search_key, trigrams
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
-from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, check_types, unknown_term
+from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, resolve_types, unknown_term
 
 SearchKind = Literal["exact", "phrase", "words", "similar"]
 SEARCH_KINDS: Final[tuple[SearchKind, ...]] = ("exact", "phrase", "words", "similar")
@@ -154,8 +154,8 @@ def plan_search(model: CompiledModel, spec: SearchSpec) -> SearchPlan:
     key = search_key(spec.text)
     if len(key.replace(" ", "")) < MIN_KEY_CHARS:
         raise _usage("text", f"needs at least {MIN_KEY_CHARS} letters or digits", actual=spec.text)
-    check_types(model, spec.types)
-    families = {t: model.subtypes(t) for t in spec.types} or {"": tuple(sorted(model.classes))}
+    types = resolve_types(model, spec.types)
+    families = {t: model.subtypes(t) for t in types} or {"": tuple(sorted(model.classes))}
     every = {c: searchable(model, c) for family in families.values() for c in family}
     if spec.fields:
         known = {f.attr for found in every.values() for f in found}
