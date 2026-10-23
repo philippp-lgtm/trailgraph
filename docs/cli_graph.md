@@ -8,6 +8,8 @@ The complete per-command reference (arguments, options, limits, examples)
 and every error code are generated from the command declarations:
 [`skills/graph-cli/references/commands.md`](../skills/graph-cli/references/commands.md)
 and [`skills/graph-cli/references/errors.md`](../skills/graph-cli/references/errors.md).
+The change set documents of `apply` are described in
+[`skills/graph-cli/references/changesets.md`](../skills/graph-cli/references/changesets.md).
 The same data comes as JSON from `graph describe commands --json`.
 
 ## Output and exit codes

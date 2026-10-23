@@ -75,7 +75,8 @@ overview in `docs/cli_graph.md` names exactly the commands of `graph`.
 
 `skills/graph-cli/` is generated from the app inventory and never edited by
 hand (see [`docs/skills.md`](docs/skills.md#the-graph-cli-skill)).
-Regenerate after a change to a command declaration, then review the diff:
+Regenerate after a change to a command declaration or to the change set
+keys in `kernel.changeset`, then review the diff:
 
 ```sh
 GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/skills
@@ -83,7 +84,8 @@ GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/skills
 
 The tests fail on a stale skill (the committed files must equal a fresh
 render of the live inventory), check every generated table against the
-inventory and the envelope keys against the renderer (docs-vs-code), and
+inventory, the change set tables and example against the parser and the
+envelope keys against the renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
 placeholders outside `<graph> <type> <id> <attr> <value> <relation>
 <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The

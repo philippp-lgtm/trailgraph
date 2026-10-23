@@ -20,7 +20,7 @@ attribute or qualifier value reaches the validator as
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import ClassVar, Final
@@ -54,6 +54,27 @@ IDEMPOTENCY_KEY_RE: Final = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SCHEMA_RE: Final = re.compile(r"^graph_cli\.changeset/[0-9]+$")
 
 EMPTY_TEXT: Final[Mapping[str, str]] = MappingProxyType({})
+
+# (required, optional) keys of the document, an edge and each op; the parser and
+# skill 1's change set reference read them, so the two cannot drift.
+Keys = tuple[tuple[str, ...], tuple[str, ...]]
+DOCUMENT_KEYS: Final[Keys] = (("ops",), ("schema", "reason", "idempotency_key", "expect_seq"))
+EDGE_KEYS: Final[Keys] = (("rel", "target"), ("qualifiers", "target_rev"))
+OP_KEYS: Final[Mapping[str, Keys]] = MappingProxyType(
+    {
+        "create": (
+            ("op", "type"),
+            ("local", "attrs", "attrs_text", "edges", "valid_from", "valid_to"),
+        ),
+        "update": (("op", "id"), ("set", "set_text", "unset", "expect_rev")),
+        "link": (("op", "id", "rel", "target"), ("qualifiers", "target_rev", "expect_rev")),
+        "unlink": (("op", "id"), ("edge_id", "rel", "target", "expect_rev")),
+        "transition": (("op", "id", "to"), ("attr", "expect_rev")),
+        "supersede": (("op", "by", "targets"), ()),
+        "retract": (("op", "id"), ("by", "expect_rev")),
+        "set_alias": (("op", "id", "alias"), ()),
+    }
+)
 
 
 class FloatLiteral(str):
@@ -296,9 +317,8 @@ def _object(value: JsonValue, path: str) -> Mapping[str, JsonValue]:
     return value
 
 
-def _keys(
-    obj: Mapping[str, JsonValue], path: str, *, required: Sequence[str], optional: Sequence[str]
-) -> None:
+def _keys(obj: Mapping[str, JsonValue], path: str, keys: Keys) -> None:
+    required, optional = keys
     allowed = (*required, *optional)
     for key in obj:
         if key not in allowed:
@@ -408,12 +428,7 @@ def _edge(obj: Mapping[str, JsonValue], path: str) -> EdgeSpec:
 def _create(obj: Mapping[str, JsonValue], path: str) -> CreateOp:
     if "id" in obj:
         raise _malformed(_join(path, "id"), "a create carries no id; ids are minted (B1.2)")
-    _keys(
-        obj,
-        path,
-        required=("op", "type"),
-        optional=("local", "attrs", "attrs_text", "edges", "valid_from", "valid_to"),
-    )
+    _keys(obj, path, OP_KEYS["create"])
     attrs = _values(obj.get("attrs", {}), _join(path, "attrs"))
     attrs_text = _texts(obj.get("attrs_text", {}), _join(path, "attrs_text"))
     _disjoint(attrs, attrs_text, _join(path, "attrs_text"), "attrs and attrs_text")
@@ -425,9 +440,7 @@ def _create(obj: Mapping[str, JsonValue], path: str) -> CreateOp:
     for index, item in enumerate(raw_edges):
         edge_path = _join(edges_path, index)
         edge_obj = _object(item, edge_path)
-        _keys(
-            edge_obj, edge_path, required=("rel", "target"), optional=("qualifiers", "target_rev")
-        )
+        _keys(edge_obj, edge_path, EDGE_KEYS)
         edges.append(_edge(edge_obj, edge_path))
     local = obj.get("local")
     return CreateOp(
@@ -446,7 +459,7 @@ def _create(obj: Mapping[str, JsonValue], path: str) -> CreateOp:
 
 
 def _update(obj: Mapping[str, JsonValue], path: str) -> UpdateOp:
-    _keys(obj, path, required=("op", "id"), optional=("set", "set_text", "unset", "expect_rev"))
+    _keys(obj, path, OP_KEYS["update"])
     values = _values(obj.get("set", {}), _join(path, "set"))
     texts = _texts(obj.get("set_text", {}), _join(path, "set_text"))
     _disjoint(values, texts, _join(path, "set_text"), "set and set_text")
@@ -474,12 +487,7 @@ def _update(obj: Mapping[str, JsonValue], path: str) -> UpdateOp:
 
 
 def _link(obj: Mapping[str, JsonValue], path: str) -> LinkOp:
-    _keys(
-        obj,
-        path,
-        required=("op", "id", "rel", "target"),
-        optional=("qualifiers", "target_rev", "expect_rev"),
-    )
+    _keys(obj, path, OP_KEYS["link"])
     return LinkOp(
         id=_ref(obj["id"], _join(path, "id")),
         edge=_edge(obj, path),
@@ -488,7 +496,7 @@ def _link(obj: Mapping[str, JsonValue], path: str) -> LinkOp:
 
 
 def _unlink(obj: Mapping[str, JsonValue], path: str) -> UnlinkOp:
-    _keys(obj, path, required=("op", "id"), optional=("edge_id", "rel", "target", "expect_rev"))
+    _keys(obj, path, OP_KEYS["unlink"])
     by_id = "edge_id" in obj
     by_rel = "rel" in obj or "target" in obj
     if by_id == by_rel or (by_rel and not ("rel" in obj and "target" in obj)):
@@ -512,7 +520,7 @@ def _unlink(obj: Mapping[str, JsonValue], path: str) -> UnlinkOp:
 
 
 def _transition(obj: Mapping[str, JsonValue], path: str) -> TransitionOp:
-    _keys(obj, path, required=("op", "id", "to"), optional=("attr", "expect_rev"))
+    _keys(obj, path, OP_KEYS["transition"])
     return TransitionOp(
         id=_ref(obj["id"], _join(path, "id")),
         to=_name(obj["to"], _join(path, "to")),
@@ -522,7 +530,7 @@ def _transition(obj: Mapping[str, JsonValue], path: str) -> TransitionOp:
 
 
 def _supersede(obj: Mapping[str, JsonValue], path: str) -> SupersedeOp:
-    _keys(obj, path, required=("op", "by", "targets"), optional=())
+    _keys(obj, path, OP_KEYS["supersede"])
     targets_path = _join(path, "targets")
     raw = obj["targets"]
     if not isinstance(raw, list | tuple) or not raw:
@@ -537,7 +545,7 @@ def _supersede(obj: Mapping[str, JsonValue], path: str) -> SupersedeOp:
 
 
 def _retract(obj: Mapping[str, JsonValue], path: str) -> RetractOp:
-    _keys(obj, path, required=("op", "id"), optional=("by", "expect_rev"))
+    _keys(obj, path, OP_KEYS["retract"])
     return RetractOp(
         id=_ref(obj["id"], _join(path, "id")),
         by=None if "by" not in obj else _ref(obj["by"], _join(path, "by")),
@@ -546,7 +554,7 @@ def _retract(obj: Mapping[str, JsonValue], path: str) -> RetractOp:
 
 
 def _set_alias(obj: Mapping[str, JsonValue], path: str) -> SetAliasOp:
-    _keys(obj, path, required=("op", "id", "alias"), optional=())
+    _keys(obj, path, OP_KEYS["set_alias"])
     return SetAliasOp(
         id=_ref(obj["id"], _join(path, "id")),
         alias=_grammar(obj["alias"], _join(path, "alias"), ALIAS_RE, "an alias PREFIX-0001"),
@@ -579,9 +587,7 @@ def _op(value: JsonValue, path: str) -> Op:
 def parse_changeset(doc: JsonValue, *, max_ops: int = MAX_OPS) -> ChangeSet:
     """Check a parsed change set document strictly (W.1)."""
     obj = _object(doc, "")
-    _keys(
-        obj, "", required=("ops",), optional=("schema", "reason", "idempotency_key", "expect_seq")
-    )
+    _keys(obj, "", DOCUMENT_KEYS)
     if "schema" in obj:
         schema = _str(obj["schema"], "schema")
         if schema != CHANGESET_SCHEMA:

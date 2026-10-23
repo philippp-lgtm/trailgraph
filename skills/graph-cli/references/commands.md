@@ -229,8 +229,8 @@ Usage: `graph file check [REFS...] [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--limit` | integer | no | no | Page size, at most 500. |
-| `--offset` | integer | no | no | Skip this many files. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many files. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Limit | Value |
@@ -280,8 +280,8 @@ Usage: `graph find [OPTIONS]`
 | `--in-rel` | string | no | yes | Incoming relation, optionally =<id>[,<id>...]. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--sort` | string | no | yes | Field to sort by, optionally :desc. |
-| `--limit` | integer | no | no | Page size, at most 500. |
-| `--offset` | integer | no | no | Skip this many results. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -348,8 +348,8 @@ Usage: `graph history REF [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--limit` | integer | no | no | Page size, at most 500. |
-| `--offset` | integer | no | no | Skip this many revisions. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many revisions. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -407,11 +407,11 @@ Usage: `graph lookup TEXT [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE, subtypes included. |
-| `--match` | choice | no | no | Whole name, or names that start with the text. |
+| `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
-| `--limit` | integer | no | no | Page size, at most 500. |
-| `--offset` | integer | no | no | Skip this many results. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -439,8 +439,8 @@ Usage: `graph neighbors REF [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--rel` | term | no | yes | Only these relations. |
-| `--direction` | choice | no | no | Edge direction. |
-| `--depth` | integer | no | no | Hops, 1 to 3. |
+| `--direction` | choice | no | no | Edge direction. One of `out`, `in`, `both`. Default: `both`. |
+| `--depth` | integer | no | no | Hops, 1 to 3. Default: `1`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -471,8 +471,8 @@ Usage: `graph query [TEXT] [OPTIONS]`
 | `--param` | assignment | no | yes | name=value binds $name; the value is JSON when it parses, else text. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--explain` | flag | no | no | Show the resolved query; run nothing. |
-| `--limit` | integer | no | no | Rows per page, at most 500. |
-| `--offset` | integer | no | no | Skip this many rows. |
+| `--limit` | integer | no | no | Rows per page, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many rows. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
@@ -523,7 +523,7 @@ Usage: `graph skills check [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. |
+| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. One of `user`, `project`. |
 | `--dir` | directory | no | no | Project directory for --scope project; default: the working directory. |
 
 | Example | Summary |
@@ -560,7 +560,7 @@ Usage: `graph skills install [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. |
+| `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. One of `user`, `project`. |
 | `--dir` | directory | no | no | Project directory for --scope project; default: the working directory. |
 | `--graph` | graph_ref | no | yes | Also the skill of this graph (name or id); repeatable. |
 | `--force` | flag | no | no | Replace skill directories that are not ours or were edited by hand. |

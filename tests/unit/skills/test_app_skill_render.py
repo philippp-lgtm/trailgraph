@@ -8,7 +8,9 @@ import pytest
 from support.fixtures import GOLDENS
 
 from graph_cli.kernel.canonical import hash_value
+from graph_cli.skills import app_skill
 from graph_cli.skills.app_skill import (
+    CHANGESETS_FILE,
     COMMANDS_FILE,
     ERRORS_FILE,
     QUERY_FILE,
@@ -33,9 +35,11 @@ def _reordered(value: Any, rng: random.Random) -> Any:
     return value
 
 
-def test_renders_the_three_files_deterministically() -> None:
+def test_renders_the_five_files_deterministically() -> None:
     first = render_app_skill(inventory())
-    assert sorted(first) == sorted([SKILL_FILE, COMMANDS_FILE, ERRORS_FILE, QUERY_FILE])
+    assert sorted(first) == sorted(
+        [SKILL_FILE, COMMANDS_FILE, ERRORS_FILE, QUERY_FILE, CHANGESETS_FILE]
+    )
     assert render_app_skill(inventory()) == first
     assert all(text.endswith("\n") and "\r" not in text for text in first.values())
 
@@ -77,6 +81,46 @@ def test_refuses_an_error_category_without_guidance() -> None:
     doc["error_codes"].append({"code": "x.y", "category": "novel", "exit": 7})
     with pytest.raises(ValueError, match="novel"):
         render_app_skill(doc)
+
+
+@pytest.mark.parametrize(
+    ("name", "missing"),
+    [("CHANGESET_OP_GUIDANCE", "set_alias"), ("CHANGESET_DOCUMENT_GUIDANCE", "expect_seq")],
+)
+def test_refuses_a_change_set_key_or_op_without_guidance(
+    monkeypatch: pytest.MonkeyPatch, name: str, missing: str
+) -> None:
+    guidance = dict(getattr(app_skill, name))
+    del guidance[missing]
+    monkeypatch.setattr(app_skill, name, guidance)
+    with pytest.raises(ValueError, match=missing):
+        render_app_skill(inventory())
+
+
+def test_option_cells_name_choices_and_defaults() -> None:
+    doc = inventory()
+    (lookup,) = [c for c in doc["commands"] if c["path"] == ["lookup"]]
+    lookup["options"] = [
+        {
+            "name": "--mode",
+            "type": "choice",
+            "required": False,
+            "repeatable": False,
+            "summary": "How.",
+            "choices": ["a", "b"],
+            "default": "a",
+        },
+        {
+            "name": "--plain",
+            "type": "flag",
+            "required": False,
+            "repeatable": False,
+            "summary": "Plain.",
+        },
+    ]
+    text = render_app_skill(doc)[COMMANDS_FILE]
+    assert "| How. One of `a`, `b`. Default: `a`. |" in text
+    assert "| Plain. |" in text
 
 
 def test_table_cells_escape_pipes_and_refuse_line_breaks() -> None:

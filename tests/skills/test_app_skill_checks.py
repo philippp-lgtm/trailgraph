@@ -26,6 +26,13 @@ from support.skills import SKILL_DIR, committed_files
 from test_vocabulary_leak import deny_list
 
 from graph_cli.cli_kit.envelope import envelope, error_json
+from graph_cli.kernel.changeset import (
+    DOCUMENT_KEYS,
+    MAX_BYTES,
+    MAX_OPS,
+    OP_KEYS,
+    parse_changeset,
+)
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.query.cypher.resolve import FUNCTIONS
 from graph_cli.skills.app_skill import QUERY_SUBSET, render_app_skill
@@ -95,9 +102,18 @@ def yes(value: bool) -> str:
     return "yes" if value else "no"
 
 
+def described(param: dict[str, Any]) -> str:
+    text = param["summary"]
+    if "choices" in param:
+        text += " One of " + ", ".join(f"`{c}`" for c in param["choices"]) + "."
+    if "default" in param:
+        text += f" Default: `{param['default']}`."
+    return text
+
+
 def param_rows(params: list[dict[str, Any]]) -> list[list[str]]:
     return [
-        [p["name"], p["type"], yes(p["required"]), yes(p["repeatable"]), p["summary"]]
+        [p["name"], p["type"], yes(p["required"]), yes(p["repeatable"]), described(p)]
         for p in params
     ]
 
@@ -167,6 +183,44 @@ class TestDocsVsCode:
         exits = {e["category"]: str(e["exit"]) for e in codes}
         assert {row[0]: row[1] for row in todo} == exits
         assert len(todo) == len(exits) and all(row[2] for row in todo)
+
+    def test_change_set_tables(self) -> None:
+        text = committed_files()["references/changesets.md"]
+        _, document = table_with(text, "Key")
+        required, optional = DOCUMENT_KEYS
+        assert [row[:2] for row in document] == [
+            [k, yes(k in required)] for k in (*required, *optional)
+        ]
+        _, ops = table_with(text, "Op")
+        assert [
+            (
+                row[0],
+                [c.strip("`") for c in row[1].split(", ") if c],
+                [c.strip("`") for c in row[2].split(", ") if c],
+            )
+            for row in ops
+        ] == [(op, list(keys[0]), list(keys[1])) for op, keys in OP_KEYS.items()]
+        assert all(row[-1] for row in document + ops)
+        assert f"At most {MAX_OPS} operations and {MAX_BYTES // 2**20} MiB" in text
+
+    def test_change_set_ops_are_the_ones_the_parser_takes(self) -> None:
+        with pytest.raises(GraphCliError) as caught:
+            parse_changeset({"ops": [{"op": "novel"}]})
+        assert caught.value.details["expected"] == sorted(OP_KEYS)
+
+    def test_change_set_example_parses(self) -> None:
+        text = committed_files()["references/changesets.md"]
+        example = text.split("```json\n")[1].split("```")[0]
+        for placeholder, value in {
+            "<type>": "ex:Thing",
+            "<relation>": "ex:rel",
+            "<attr>": "name",
+            "<value>": "x",
+            "<id>": "ALIAS-0001",
+        }.items():
+            example = example.replace(placeholder, value)
+        changeset = parse_changeset(json.loads(example))
+        assert [op.OP for op in changeset.ops] == ["create", "create", "link", "update"]
 
     def test_envelope_keys(self) -> None:
         body = committed_files()["SKILL.md"]

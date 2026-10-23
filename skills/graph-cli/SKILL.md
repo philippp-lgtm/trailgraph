@@ -77,9 +77,8 @@ Read [references/query.md](references/query.md) before the first query.
   through `graph transition`.
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file, dry-run it with
-  `graph apply <file> --dry-run --json`, then apply it. Its idempotency key
-  is `idempotency_key` in the document, or `--idempotency-key` for a file
-  with a single document.
+  `graph apply <file> --dry-run --json`, then apply it. Read
+  [references/changesets.md](references/changesets.md) before the first one.
 
 ## Access
 
@@ -191,3 +190,5 @@ equals `graph find --graph <graph>`):
   do per category.
 - [references/query.md](references/query.md): what `graph query` supports,
   names, parameters and examples.
+- [references/changesets.md](references/changesets.md): the documents
+  `graph apply` takes: keys, operations, limits and an example.
