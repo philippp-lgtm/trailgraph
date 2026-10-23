@@ -25,7 +25,7 @@ against it and audited. The CLI is on `PATH`.
 - If a skill for the selected graph exists, read it first: it names the
   graph's types, fields and relations. This skill never does.
 - Never guess a type, field, relation or state name. Ask `graph describe`.
-- Reads never change anything. Writes are recorded with who made them.
+- Reads never change anything. Every write is audited.
 - `graph skills` commands install agent skills such as this one. Run them
   only when the user asks; `graph skills check` only reads and is safe.
 
@@ -35,23 +35,19 @@ against it and audited. The CLI is on `PATH`.
    one with `--graph <graph>` on every command (a project may preset a
    default).
 2. Learn the model: `graph describe types --json`, then
-   `graph describe type <type> --json` for fields, relations and lifecycles.
+   `graph describe type <type> --json`: fields with their datatype, enum
+   `values` and `limits`; relations with their `qualifiers` (values on the
+   edge); lifecycles with states and transitions, and the `guards`: the
+   conditions a transition needs, checked by a dry run.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
-   `graph get <id> --json`, `graph neighbors <id> --json`. Follow
-   `page.next_offset` or the hint when `page.truncated` is true. To find
-   something by name, `graph lookup <value> --json` lists candidates, since
-   names are not unique. Use the returned id only when exactly one
-   candidate matches exactly (`match.kind` is `exact`). With several
-   candidates, or only prefix matches, do not answer about one of them
-   first: list them and ask which one is meant, then answer. When asked
-   when or why something changed, `graph history <id> --json` lists its
-   revisions with the reason and the names of what changed;
-   `graph get <id> --rev <value> --json` shows an earlier revision. To
-   read the whole graph as it was, add `--as-of tx:<seq>` (a `tx_seq` from
-   the history) to any read; the answer warns that it is not the current
-   state. For
-   questions over several hops, with OR or NOT across relations, or with
-   counts, use `graph query` (below).
+   `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
+   paged: follow `page.next_offset` or the hint until `page.truncated` is
+   false. To find something by name, `graph lookup <value> --json` lists
+   the candidates named exactly so (`--match prefix` adds names that
+   start with it), since names are not unique. Use the returned id only
+   when exactly one candidate matches exactly (`match.kind` is `exact`).
+   With several candidates, or only prefix matches, do not answer about
+   one of them first: list them and ask which one is meant, then answer.
 4. Preview every write with `--dry-run --json` and check the findings.
 5. Write with the same command without `--dry-run`.
 6. Verify with `graph get <id> --json`.
@@ -64,17 +60,33 @@ question needs several hops, OR or NOT across relations, or counts; `find`,
 name. `graph describe schema --json` lists the patterns a query can use.
 Read [references/query.md](references/query.md) before the first query.
 
+## History
+
+- `graph history <id> --json` lists how an entity changed, newest first:
+  when, by which command, why, the names (not values) of what changed and
+  the `tx_seq`. It shows who wrote a revision only as `own_session` (your
+  session or not); who else did, only the maintainer can see.
+- `graph get <id> --rev <value> --json` shows one earlier revision.
+- `--as-of tx:<seq>` on any read answers from the graph as it was after
+  that transaction; just before a change is its `tx_seq` minus one. A
+  time works too, with an offset (`2030-01-01T12:00:00Z`). Such answers
+  carry the warning `temporal.as_of_read`.
+
 ## Writing safely
 
-- Pass `--idempotency-key` with a key of your choice; retrying with the same
-  key never writes twice.
+- Pass `--idempotency-key` with a key of your choice. A dry run does not
+  use it up. Repeating the same command with the same key never writes
+  twice: it returns the first result (`idempotent_replay` is true).
+  Without a key, check `graph history <id> --json` before a retry.
 - Pass `--expect` with the `rev` you read so that a concurrent change is a
   conflict instead of a lost update. `graph get` shows it as
   `data.entity.rev`; a write returns the new one in `data.entities[].rev`.
-- Give `--reason` when the change needs one; some operations require it.
-- Nothing is deleted. Correct with `graph supersede` (a newer entity
-  replaces older ones) or `graph retract` (withdrawn); state changes go
-  through `graph transition`.
+- Give `--reason` when the change needs one: always for `supersede` and
+  `retract`, for other writes when `graph whoami` lists `require_reason`.
+- Fix a wrong value with `graph update`; the history keeps the old one.
+  Nothing is deleted: `graph supersede <id> <id>` when a newer entity (the
+  first id) replaces older ones, `graph retract` when one is withdrawn,
+  `graph unlink` for a wrong edge. States change with `graph transition`.
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file, dry-run it with
   `graph apply <file> --dry-run --json`, then apply it. Read
@@ -101,22 +113,9 @@ Read [references/query.md](references/query.md) before the first query.
 ## Files
 
 Graphs whose ontology imports the `files` module store files: scans,
-documents, saved web pages.
-
-- When facts come from a file, store the file first:
-  `graph file add <file> --json`. Known content is not stored twice; the
-  result then names the file that holds it.
-- Link every entity you take from the file to it, with the page:
-  `graph link <id> files:from_file <id> --qualifier-json page=<value> --json`
-  (`last_page` for a range, `--qualifier locator=<value>` for a place that
-  is not a page).
-- Read a stored file at the path from `graph file path <id> --json`. Never
-  edit, move or delete anything there.
-- `graph` does not read files; you do. Do not guess what you cannot read:
-  leave the field out and tell the user.
-- `graph file check --json` compares stored files with where they came
-  from. On `changed`, store the new version with `graph file add` and
-  replace the old file: `graph supersede <id> <id> --reason <value>`.
+documents, saved web pages. When facts come from a file, read
+[references/files.md](references/files.md) first: store the file, link what
+you take from it, never edit a stored file.
 
 ## Output envelope
 
@@ -129,6 +128,8 @@ Every `--json` call prints one JSON object on stdout.
 - On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is a command to run next,
   or null.
 - Warnings never change the exit code.
+- [references/output.md](references/output.md) lists the fields of pages,
+  entities, `lookup` and `history` items and write results.
 
 ## Commands
 
@@ -194,3 +195,6 @@ equals `graph find --graph <graph>`):
   names, parameters and examples.
 - [references/changesets.md](references/changesets.md): the documents
   `graph apply` takes: keys, operations, limits and an example.
+- [references/output.md](references/output.md): the fields of the answers.
+- [references/files.md](references/files.md): storing, linking and reading
+  files.

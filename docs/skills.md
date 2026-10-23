@@ -18,11 +18,14 @@ inventory (`graph describe commands --json`, `graph_cli.inventory/1`) into
 defaults, limits and examples per command), `references/errors.md` (every
 error code and what to do per category), `references/query.md` (when and
 how to use `graph query`: names, parameters, the supported subset,
-examples; fixed text of the renderer) and `references/changesets.md` (the
+examples; fixed text of the renderer), `references/changesets.md` (the
 change set documents of `graph apply`: keys, operations, values, limits,
 an example; key tables and limits from `kernel.changeset`, prose fixed in
-the renderer). The renderer reads nothing but that document and imports only
-the kernel (import contract). The frontmatter `metadata` carries the
+the renderer), `references/output.md` (the fields of pages, hints,
+warnings, entities, `lookup` and `history` items and write results; fixed
+text, checked against real answers) and `references/files.md` (storing,
+linking and reading files; fixed text). The renderer reads nothing but
+that document and imports only the kernel (import contract). The frontmatter `metadata` carries the
 inventory hash and program version. How to regenerate it and what the
 tests check: [`CONTRIBUTING.md`](../CONTRIBUTING.md#generated-files).
 

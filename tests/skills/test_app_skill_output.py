@@ -1,0 +1,104 @@
+"""D: the field tables of skill 1's ``references/output.md`` against real answers.
+
+A seeded graph answers ``find``, ``get``, ``lookup``, ``history`` and a write; every
+field the answer holds must be listed, and every listed top-level field must be in
+the answer. Nested fields (``edges[].rel``, ``match.kind``) are compared one level
+deep and may be absent (a qualifier only shows when set).
+"""
+
+import re
+from pathlib import Path
+from typing import Any
+
+import pytest
+from harness import CliRunner
+from support.admin import init, write_documents
+from support.app import app, create_graph
+from support.fixtures import FIXTURES
+from support.roles import load_roles
+from support.skills import committed_files
+
+from graph_cli.kernel.changeset import read_documents
+
+ONTOLOGY = "notes_and_sources"
+ENV = {"GRAPH_CLI_GRAPH": "example_graph"}
+
+
+def documented() -> dict[str, set[str]]:
+    """``{section heading: listed fields}``, read without the renderer's code."""
+    text = committed_files()["references/output.md"]
+    parts = re.split(r"^## (.*)$", text, flags=re.MULTILINE)
+    fields: dict[str, set[str]] = {}
+    for heading, body in zip(parts[1::2], parts[2::2], strict=True):
+        rows = [line for line in body.splitlines() if line.startswith("| `")]
+        fields[heading] = {re.match(r"\| `([^`]+)`", row).group(1) for row in rows}  # type: ignore[union-attr]
+    return fields
+
+
+def flat(objects: list[dict[str, Any]], listed: set[str]) -> set[str]:
+    """Field names as the reference writes them: ``key``, ``key[].sub``, ``key.sub``."""
+    names: set[str] = set()
+    for obj in objects:
+        for key, value in obj.items():
+            if isinstance(value, list) and any(f.startswith(f"{key}[].") for f in listed):
+                names |= {f"{key}[].{sub}" for item in value for sub in item}
+            elif isinstance(value, dict) and any(f.startswith(f"{key}.") for f in listed):
+                names |= {f"{key}.{sub}" for sub in value}
+            else:
+                names.add(key)
+    return names
+
+
+def check(section: str, objects: list[dict[str, Any]], skip: frozenset[str] = frozenset()) -> None:
+    listed = documented()[section]
+    found = flat(objects, listed) - skip
+    assert found <= listed, (section, found - listed)
+    top = {f for f in listed if "." not in f}
+    assert top <= {key for obj in objects for key in obj}, (section, top)
+
+
+@pytest.fixture
+def seeded(run_cli: CliRunner, isolated_env: dict[str, str]) -> Path:
+    root = init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", ONTOLOGY)
+    seeds = read_documents((FIXTURES / "seeds" / ONTOLOGY / "changes.jsonl").read_bytes())
+    write_documents(root, "example_graph", seeds)  # type: ignore[arg-type]
+    return root
+
+
+def test_output_reference_lists_the_fields_of_real_answers(
+    run_cli: CliRunner, seeded: Path
+) -> None:
+    roles = load_roles(ONTOLOGY)
+    note_type = roles.term("retractable_type")
+    found = app(run_cli, "find", "--type", note_type, "--limit", "1", env=ENV)
+    assert found.code == 0, found.envelope
+    check("Pages", [found.envelope["page"]])
+    every = app(run_cli, "find", "--limit", "500", env=ENV)
+    check("Entities", every.data["items"])
+
+    entity = found.data["items"][0]
+    got = app(run_cli, "get", entity["id"], env=ENV)
+    check("Entities", [got.data["entity"]])
+    check("Get", [got.data], skip=frozenset({"entity"}))
+
+    superseded = app(
+        run_cli, "find", "--where", "record_status=superseded", "--include-inactive", env=ENV
+    )
+    warned = app(run_cli, "get", superseded.data["items"][0]["id"], env=ENV)
+    hints_and_warnings = {"hints": found.envelope["hints"], "warnings": warned.envelope["warnings"]}
+    assert all(hints_and_warnings.values())
+    check("Hints and warnings", [hints_and_warnings])
+
+    label_type, _, label_attr = str(roles.get("label_attribute")).rpartition(".")
+    labelled = app(run_cli, "find", "--type", label_type, "--limit", "1", env=ENV)
+    name = labelled.data["items"][0]["attrs"][label_attr]
+    lookup = app(run_cli, "lookup", name, env=ENV)
+    check("Lookup", lookup.data["items"])
+
+    retracted = app(run_cli, "retract", entity["id"], "--reason", "test", env=ENV)
+    assert retracted.code == 0, retracted.envelope
+    check("Write results", [retracted.data])
+    history = app(run_cli, "history", entity["id"], env=ENV)
+    assert set(history.data) == {"id", "current_rev", "items"}
+    check("History", history.data["items"])

@@ -51,9 +51,9 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
   take text converted by the attribute's datatype, as `--set` does. Name
   an attribute in only one of the two. A JSON number with a fraction is
   refused: write a decimal as a string or use the text form.
-- `qualifiers` are values on the edge itself, such as a page; which ones a
-  relation takes: `graph describe relations --json`. `target_rev` pins the
-  revision of the target the edge refers to.
+- `qualifiers` are typed JSON values on the edge itself (a page is a
+  number); which ones a relation takes: `graph describe relations --json`.
+  `target_rev` pins the revision of the target the edge refers to.
 - `expect_rev` refuses the op unless that entity is at this revision, as
   `--expect` does.
 - `valid_from` and `valid_to` take a date or an RFC 3339 timestamp.

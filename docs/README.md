@@ -8,7 +8,9 @@ Start with the [project README](../README.md) (install, quickstart).
   codes, graph selection, references, filters, lookup
 - Generated per-command reference:
   [commands](../skills/graph-cli/references/commands.md),
-  [error codes](../skills/graph-cli/references/errors.md)
+  [error codes](../skills/graph-cli/references/errors.md),
+  [change sets](../skills/graph-cli/references/changesets.md),
+  [output fields](../skills/graph-cli/references/output.md)
 - [Configuration](configuration.md): locations, `config.toml`, the project
   pointer, environment variables
 - [Files](files.md): storing files, origins and roots, backups

@@ -84,8 +84,9 @@ GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/skills
 
 The tests fail on a stale skill (the committed files must equal a fresh
 render of the live inventory), check every generated table against the
-inventory, the change set tables and example against the parser and the
-envelope keys against the renderer (docs-vs-code), and
+inventory, the change set tables and example against the parser, the
+output fields against real answers and the envelope keys against the
+renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
 placeholders outside `<graph> <type> <id> <attr> <value> <relation>
 <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
