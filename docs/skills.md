@@ -146,7 +146,10 @@ graph skill installed there before is refreshed; one whose graph is gone,
 no longer visible or unpublished is reported as `unavailable` and left
 alone. Each installed directory carries the marker `.graph_cli_skill.json`
 (program, source, file hashes); a directory without it, or with files that
-differ from it, is replaced only with `--force`. Unrelated skill
+differ from it, is replaced only with `--force`. Without `--force` such a
+directory is left as it is and the other skills are still installed; the
+answer lists every skill (`action: refused` for the held-back ones) and
+fails with `skills.modified` or `skills.not_owned`. Unrelated skill
 directories are never touched. Each skill is swapped in with renames from a
 staging directory next to `skills/`, so an agent never sees a half copy.
 `--dry-run` shows the plan. `graph skills check` reports each skill as

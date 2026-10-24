@@ -76,7 +76,7 @@ qualifier, lifecycle, rule, guard) takes:
 | --- | --- |
 | `summary` | required one sentence; what agents read (see [naming_and_descriptions.md](naming_and_descriptions.md)) |
 | `description` | optional longer text; shown on the type pages of a generated graph skill |
-| `deprecated` | `true` marks a term as on its way out; `graph describe` shows it and a generated graph skill puts "Deprecated." before the summary |
+| `deprecated` | `true` marks a term as on its way out; `graph describe` shows it, a generated graph skill puts "Deprecated." before the summary, and a write that uses a deprecated class, attribute, datatype, enum, lifecycle or relation gets the warning `data.structural.deprecated_term` |
 | `annotations` | free JSON under a namespace key (`annotations: {ui: {color: green}}`); for other tools, ignored by graph_cli |
 
 Enum values and lifecycle states take only a `summary`.

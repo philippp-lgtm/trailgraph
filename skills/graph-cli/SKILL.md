@@ -58,11 +58,11 @@ against it and audited. The CLI is on `PATH`.
    thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
-6. Preview every write with `--dry-run --json` and check the findings. On
+6. Preview every write with `--dry-run --json`. On
    `data.semantic.possible_duplicate`, reuse a candidate from `actual` or
-   give the new entity a name that tells them apart.
-7. Write with the same command without `--dry-run`, then verify with
-   `graph get <id> --json`.
+   tell the names apart; on `data.structural.deprecated_term`, use the
+   replacement its message names.
+7. Then run it without `--dry-run` and verify with `graph get <id> --json`.
 
 ## Questions across relations
 

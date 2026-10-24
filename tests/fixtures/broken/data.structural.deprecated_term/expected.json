@@ -1,0 +1,10 @@
+{
+  "code": "data.structural.deprecated_term",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "t",
+    "path": "type",
+    "type": "brk:Thing"
+  }
+}

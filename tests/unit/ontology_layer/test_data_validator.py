@@ -875,3 +875,62 @@ def test_check_graph_reports_a_shared_name_once() -> None:
     first, second = sorted((TOPIC, twin), key=lambda r: str(r.id))
     assert finding.target["id"] == str(first.id)
     assert [c["id"] for c in finding.actual] == [str(second.id)]  # type: ignore[union-attr]
+
+
+def deprecating(model: CompiledModel, *terms: str) -> CompiledModel:
+    """``model`` with ``inv:Item``, its attribute ``attr:<name>``, an enum or a relation
+    marked deprecated."""
+
+    def doc(term: Any) -> Any:
+        return replace(term, doc=replace(term.doc, deprecated=True, summary="Use the other."))
+
+    classes = dict(model.classes)
+    item_class = classes["inv:Item"]
+    attributes = {
+        name: doc(a) if f"attr:{name}" in terms else a for name, a in item_class.attributes.items()
+    }
+    classes["inv:Item"] = replace(
+        doc(item_class) if "inv:Item" in terms else item_class, attributes=attributes
+    )
+    return replace(
+        model,
+        classes=classes,
+        enums={k: doc(v) if k in terms else v for k, v in model.enums.items()},
+        relations={k: doc(v) if k in terms else v for k, v in model.relations.items()},
+    )
+
+
+def deprecated_uses(model: CompiledModel, *ops: dict[str, Any]) -> list[tuple[str, Any]]:
+    found = judge(model, *ops, base=INV_BASE)[1]
+    assert all(f.severity.value == "warning" for f in found if "deprecated" in f.code)
+    return [(str(f.target.get("path")), f.actual) for f in found if "deprecated" in f.code]
+
+
+def test_a_write_that_uses_a_deprecated_term_warns() -> None:
+    model = deprecating(INV, "inv:Item", "attr:serial_number", "inv:Condition", "inv:located_in")
+    assert deprecated_uses(model, item(serial_number="SN-1234", condition="good")) == [
+        ("attrs.condition", "inv:Condition"),
+        ("attrs.serial_number", "serial_number"),
+        ("edges.inv:located_in", "inv:located_in"),
+        ("type", "inv:Item"),
+    ]
+    (finding,) = [
+        f for f in judge(model, item(), base=INV_BASE)[1] if f.target.get("path") == "type"
+    ]
+    assert finding.message == "inv:Item is deprecated: Use the other."
+
+
+def test_values_and_edges_an_entity_already_had_are_not_reported_again() -> None:
+    model = deprecating(INV, "inv:Item", "attr:serial_number", "inv:located_in")
+    assert deprecated_uses(model, {"op": "update", "id": D, "set": {"name": "Desk 2"}}) == []
+    assert deprecated_uses(
+        model, {"op": "update", "id": D, "set": {"serial_number": "SN-0002"}}
+    ) == [("attrs.serial_number", "serial_number")]
+    assert deprecated_uses(
+        model, {"op": "link", "id": D, "rel": "inv:located_in", "target": R}
+    ) == [("edges.inv:located_in", "inv:located_in")]
+
+
+def test_check_graph_does_not_report_deprecated_terms() -> None:
+    model = deprecating(INV, "inv:Item", "attr:serial_number", "inv:located_in")
+    assert [f for f in check_graph(model, INV_BASE) if "deprecated" in f.code] == []

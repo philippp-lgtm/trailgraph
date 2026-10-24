@@ -1,0 +1,12 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "label": "T"
+      },
+      "local": "t",
+      "op": "create",
+      "type": "brk:Thing"
+    }
+  ]
+}

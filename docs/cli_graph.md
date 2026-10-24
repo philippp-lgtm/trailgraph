@@ -215,6 +215,15 @@ candidate, or give the new entity a name that tells them apart. Only names
 the entity did not carry before count, and a value that a `unique` field
 already refuses is not reported twice.
 
+A write that puts a deprecated term to use gets the warning finding
+`data.structural.deprecated_term`, in the dry run too: it creates an
+entity of a deprecated type (path `type`), sets or changes a value of a
+deprecated field or of one whose datatype, enum or lifecycle is deprecated
+(`attrs.<attr>`), or adds an edge of a deprecated relation
+(`edges.<relation>`). The message carries the term's summary, which names
+its replacement; `actual` is the term. Values and edges the entity already
+had are not reported again. The warning never refuses the write.
+
 ## Search
 
 `graph search TEXT` answers "is there anything about this": it reads every

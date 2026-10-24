@@ -7,7 +7,8 @@ directories (foreign); anything else is not ours and ignored.
 
 ``plan_install`` decides per skill (create, replace, unchanged, refused)
 before anything is written; ``apply_install`` then replaces each skill
-directory on its own: the new tree is written into a staging directory
+directory that is not refused on its own, so one hand-edited or foreign
+directory holds back only itself (F63): the new tree is written into a staging directory
 next to ``skills/`` (never inside it, so an agent never loads a half
 copy), the old directory is renamed into staging, the new one into place,
 and the old one is deleted. A crash leaves every skill old or new, never
@@ -253,7 +254,8 @@ def plan_install(
 
 
 def refusal(plan: InstallPlan, details: Mapping[str, JsonValue] = EMPTY) -> GraphCliError | None:
-    """``skills.not_owned`` (a foreign directory) or ``skills.modified`` (a hand-edited one)."""
+    """``skills.not_owned`` (a foreign directory) or ``skills.modified`` (a hand-edited one),
+    the error of a partial install: the refused directories stay as they are."""
     refused = plan.refused
     if not refused:
         return None
@@ -267,22 +269,21 @@ def refusal(plan: InstallPlan, details: Mapping[str, JsonValue] = EMPTY) -> Grap
     if foreign:
         return GraphCliError(
             "skills.not_owned",
-            f"{', '.join(foreign)} in {plan.target.skills} was not installed by this program;"
-            " pass --force to replace it",
+            f"{', '.join(foreign)} in {plan.target.skills} was not installed by this program"
+            " and was left as it is; pass --force to replace it",
             details=data,
         )
     return GraphCliError(
         "skills.modified",
-        f"{', '.join(edited)} in {plan.target.skills} was edited by hand;"
-        " pass --force to discard the edits",
+        f"{', '.join(edited)} in {plan.target.skills} was edited by hand and was left as it"
+        " is; pass --force to discard the edits",
         details=data,
     )
 
 
 def apply_install(plan: InstallPlan) -> None:
-    """Replace every skill directory of the plan that changes, one atomic swap each."""
-    if plan.refused:
-        raise GraphCliError("internal.error", "a refused install plan cannot be applied")
+    """Replace every skill directory of the plan that changes, one atomic swap each;
+    refused steps are left as they are."""
     target = plan.target
     try:
         clean_staging(target)

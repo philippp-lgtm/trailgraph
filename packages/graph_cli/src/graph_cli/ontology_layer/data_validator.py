@@ -50,6 +50,13 @@ from here.
   same value) is not reported again. Batch reports each ``same`` name once,
   at the entity with the lowest id; a ``similar`` pair already in the graph
   is someone's decision or a ``graph search`` away.
+- **Deprecated terms** (``deprecated_term``, a warning, write path only): a
+  write that creates an entity of a deprecated class, sets or changes a value
+  of a deprecated attribute or of one whose datatype, enum or lifecycle is
+  deprecated, or adds an edge of a deprecated relation. The message carries
+  the term's summary, which names the replacement. Values and edges the
+  entity already had are not reported again; ``graph find`` or ``graph
+  query`` list existing uses.
 - **Immutable** is write-once: set while absent, never changed or removed.
 - **Blobs** (write path): a new or changed ``blob`` value names a stored file
   or one the request stages (``blob_missing``); batch checks the shape only,
@@ -81,7 +88,16 @@ from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.kernel.text import edit_distance, search_key
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
-from graph_cli.ontology_layer.model import AttributeKind, ClassDef, CompiledModel
+from graph_cli.ontology_layer.model import (
+    AttributeDef,
+    AttributeKind,
+    ClassDef,
+    CompiledModel,
+    DatatypeDef,
+    EnumDef,
+    LifecycleDef,
+    TermDoc,
+)
 from graph_cli.ontology_layer.values import (
     DECIMAL_RE,
     DURATION_RE,
@@ -734,7 +750,9 @@ def validate_write(
         checker.attributes(revision, cls, lifecycle_states=False)
         previous = before.get(entity)
         old_edges = frozenset(e.edge_id for e in previous.edges) if previous else frozenset()
-        checker.edges(revision, new_edges=frozenset(e.edge_id for e in revision.edges) - old_edges)
+        new_edges = frozenset(e.edge_id for e in revision.edges) - old_edges
+        checker.edges(revision, new_edges=new_edges)
+        _deprecated(checker, previous, revision, cls, new_edges)
         if previous is not None:
             _immutables(checker, previous, revision, cls)
         if blob_exists is not None:
@@ -789,6 +807,56 @@ def _neighbours(
         if cls is None or cls.abstract:
             continue
         checker.rules(revision, frozenset({"write"}), frozenset(links[entity]))
+
+
+def _deprecated(
+    checker: _Checker,
+    previous: Revision | None,
+    revision: Revision,
+    cls: ClassDef,
+    new_edges: frozenset[EdgeId],
+) -> None:
+    """Deprecated terms the write puts to use: a class created, values set, edges added."""
+    model = checker.model
+
+    def warn(path: str, term: str, doc: TermDoc) -> None:
+        checker.add(
+            "data.structural.deprecated_term",
+            revision,
+            path,
+            f"{term} is deprecated: {doc.summary}",
+            severity=Severity.WARNING,
+            actual=term,
+        )
+
+    if previous is None and cls.doc.deprecated:
+        warn("type", revision.type, cls.doc)
+    for name, attribute in cls.attributes.items():
+        value = revision.attrs.get(name)
+        if value is None or (
+            previous is not None and strict_equal(previous.attrs.get(name), value)
+        ):
+            continue
+        if attribute.doc.deprecated:
+            warn(f"attrs.{name}", name, attribute.doc)
+        elif (doc := _type_doc(model, attribute)) is not None and doc.deprecated:
+            warn(f"attrs.{name}", attribute.type, doc)
+    for edge in revision.edges:
+        relation = model.relations.get(edge.rel)
+        if edge.edge_id in new_edges and relation is not None and relation.doc.deprecated:
+            warn(f"edges.{edge.rel}", edge.rel, relation.doc)
+
+
+def _type_doc(model: CompiledModel, attribute: AttributeDef) -> TermDoc | None:
+    """The doc of an attribute's datatype, enum or lifecycle; None for a base type."""
+    found: DatatypeDef | EnumDef | LifecycleDef | None = None
+    if attribute.kind == "datatype":
+        found = model.datatypes.get(attribute.type)
+    elif attribute.kind == "enum":
+        found = model.enums.get(attribute.type)
+    elif attribute.kind == "lifecycle":
+        found = model.lifecycles.get(attribute.type)
+    return None if found is None else found.doc
 
 
 def _immutables(checker: _Checker, previous: Revision, revision: Revision, cls: ClassDef) -> None:

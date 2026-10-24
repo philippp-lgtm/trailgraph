@@ -46,8 +46,9 @@ gets. Good summaries:
   violated ("The steps of a recipe take no longer than its total time.").
 - **Deprecated terms**: name the replacement ("Use `rcp:Ingredient`
   instead."). The flag itself is shown: `graph describe` carries
-  `deprecated` and a generated graph skill puts "Deprecated." before the
-  summary.
+  `deprecated`, a generated graph skill puts "Deprecated." before the
+  summary, and a write that uses the term gets a warning with the
+  summary as its message.
 - No examples taken from real data, no values of one particular case;
   describe the criterion so it holds for every case.
 

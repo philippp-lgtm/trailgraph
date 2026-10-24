@@ -114,6 +114,12 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _data("structural", "enum_value_unknown", "A value is not a member of its enum."),
     _data("structural", "cardinality_many", "A list where one value belongs, or vice versa."),
     _data("structural", "float_not_allowed", "A value contains a floating point number."),
+    _data(
+        "structural",
+        "deprecated_term",
+        "The write uses a deprecated class, attribute, datatype or relation.",
+        _W,
+    ),
     _data("referential", "unknown_relation", "The relation does not exist."),
     _data("referential", "target_missing", "The edge target does not exist."),
     _data("referential", "domain_violation", "The relation does not apply to the source type."),

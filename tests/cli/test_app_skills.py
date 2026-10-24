@@ -299,7 +299,7 @@ def test_foreign_and_edited_directories_need_force(
         refused.error["hint"]
         == f"graph skills install --scope project --dir {project.resolve()} --force"
     )
-    assert refused.data is None
+    assert [(s["skill"], s["action"]) for s in refused.data["skills"]] == [("graph-cli", "refused")]
     assert snapshot(project) == before
     forced = install(run_cli, *args, "--force")
     assert forced.code == 0 and forced.data["skills"][0]["action"] == "replace"
@@ -311,6 +311,33 @@ def test_foreign_and_edited_directories_need_force(
     assert (edited.code, edited.error["code"]) == (1, "skills.modified")
     assert edited.error["details"]["refused"] == [{"skill": "graph-cli", "installed": "modified"}]
     assert install(run_cli, *args, "--force").code == 0
+
+
+def test_an_edited_graph_skill_holds_back_only_itself(
+    run_cli: CliRunner, published: str, tmp_path: Path
+) -> None:
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project))
+    assert install(run_cli, *args, "--graph", "example_graph").code == 0
+    skills = project / ".claude" / "skills"
+    (skills / "graph-cli" / "SKILL.md").write_text("old copy")
+    (skills / "graph-cli" / MARKER).unlink()
+    (skills / "graph-cli" / ".graph_cli_install").write_text("")  # a legacy copy: stale
+    (skills / "graph-example-graph" / "SKILL.md").write_text("edited by hand")
+    dry = install(run_cli, *args, "--dry-run")
+    assert (dry.code, dry.error["code"]) == (1, "skills.modified")
+    assert (skills / "graph-cli" / "SKILL.md").read_text() == "old copy"
+    outcome = install(run_cli, *args)
+    assert (outcome.code, outcome.error["code"]) == (1, "skills.modified")
+    assert outcome.error["details"]["refused"] == [
+        {"skill": "graph-example-graph", "installed": "modified"}
+    ]
+    assert [(s["skill"], s["action"]) for s in outcome.data["skills"]] == [
+        ("graph-cli", "replace"),
+        ("graph-example-graph", "refused"),
+    ]
+    assert without_marker(installed(skills)["graph-cli"]) == committed_skill()
+    assert (skills / "graph-example-graph" / "SKILL.md").read_text() == "edited by hand"
 
 
 def test_dry_run_writes_nothing(run_cli: CliRunner, home: Path, tmp_path: Path) -> None:

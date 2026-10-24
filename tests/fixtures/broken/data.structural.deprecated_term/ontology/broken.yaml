@@ -1,0 +1,23 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with a deprecated class and exactly one defect.
+
+classes:
+  Thing:
+    summary: Deprecated, use Item instead.
+    deprecated: true
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true
+  Item:
+    summary: Something that is tracked.
+    attributes:
+      label:
+        summary: Display label.
+        type: string
+        required: true

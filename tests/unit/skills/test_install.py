@@ -136,13 +136,19 @@ def test_hand_edits_are_refused_unless_forced(target: SkillTarget) -> None:
     assert install_all(target, app_skill(), force=True) == ["replace"]
 
 
-def test_refusals_are_found_before_anything_is_written(target: SkillTarget) -> None:
-    install_all(target, app_skill())
-    put(target.skills / "graph-example", {"SKILL.md": b"foreign"})
-    before = read_tree(target.skills / "graph-cli")[0]
-    with pytest.raises(GraphCliError):
-        install_all(target, app_skill("two"), graph_skill())
-    assert read_tree(target.skills / "graph-cli")[0] == before
+def test_a_refused_skill_holds_back_only_itself(target: SkillTarget) -> None:
+    install_all(target, app_skill(), graph_skill())
+    (target.skills / "graph-example" / "SKILL.md").write_text("edited")
+    plan = plan_install(target, scan(target), (app_skill("two"), graph_skill("h")), force=False)
+    assert [s.action for s in plan.steps] == ["replace", "refused"]
+    error = refusal(plan)
+    assert error is not None and error.code == "skills.modified"
+    apply_install(plan)
+    assert statuses(target, app_skill("two"), graph_skill("h")) == {
+        "graph-cli": "fresh",
+        "graph-example": "modified",
+    }
+    assert (target.skills / "graph-example" / "SKILL.md").read_text() == "edited"
 
 
 def test_legacy_marker_counts_as_ours(target: SkillTarget) -> None:

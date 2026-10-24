@@ -269,8 +269,6 @@ def install(
     wanted, unavailable = wanted_skills(state, target, installed, graphs)
     plan = plan_install(target, installed, wanted, force=force)
     error = refusal(plan, {"graphs": list(graphs)})
-    if error is not None:
-        raise error
     if not dry_run:
         apply_install(plan)
     return Result(
@@ -282,7 +280,8 @@ def install(
             "unavailable": [
                 {"skill": name, **details} for name, details in sorted(unavailable.items())
             ],
-        }
+        },
+        error=error,
     )
 
 
@@ -364,7 +363,9 @@ SPECS: Final = (
         " ~/.claude/skills; --scope project into <dir>/.claude/skills (<dir>/.claude must"
         " exist). Skill 1 is always installed, graph skills named with --graph, and every"
         " graph skill installed here before is refreshed. Directories without our marker"
-        " (.graph_cli_skill.json) or edited by hand are replaced only with --force.",
+        " (.graph_cli_skill.json) or edited by hand are replaced only with --force; without"
+        " it they are left as they are, the other skills are still installed, and the"
+        " answer lists every skill and ends with the refusal (exit 1).",
     ),
     CommandSpec(
         path=("skills", "check"),

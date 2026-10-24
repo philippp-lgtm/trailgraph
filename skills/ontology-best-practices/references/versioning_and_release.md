@@ -40,7 +40,8 @@ without releasing and also lists the warnings. In practice:
 
 1. Minor release: set `deprecated: true`, name the replacement in the
    summary and add the replacement. `graph describe` and generated graph
-   skills mark the term as deprecated.
+   skills mark the term as deprecated, and a write that uses it gets the
+   warning `data.structural.deprecated_term` with that summary.
 2. Move existing data with `graph update`, `graph link`, `graph unlink` or
    `graph supersede`; tell the graph skill to stop using the term.
 3. Major release: remove the term once no active data uses it.
