@@ -62,6 +62,7 @@ class Completed:
     stdout_bytes: int
     exit_code: int
     spilled_bytes: int | None = None  # the answer's size when it went to a file
+    text: str | None = None  # the command's own text rendering, if any (B14.5)
 
 
 json_option = click.option(
@@ -147,7 +148,8 @@ def run(
             err.write(stderr)
     exit_code = exit_code_for(error.category) if error is not None else EXIT_OK
     if after is not None:
-        after(Completed(document, json_mode, len(stdout.encode()), exit_code, spilled))
+        text = state.result.text if state.result is not None else None
+        after(Completed(document, json_mode, len(stdout.encode()), exit_code, spilled, text))
     return exit_code
 
 

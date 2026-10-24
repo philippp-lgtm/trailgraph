@@ -103,6 +103,35 @@ def parse_pointer(data: bytes, *, path: Path) -> tuple[PointerFile, tuple[Warnin
     return PointerFile(path, project, tuple(graphs), default), warnings
 
 
+REQUEST_POINTER: Final = "<request>"
+
+
+def request_pointer(value: object) -> PointerFile | None:
+    """The pointer a server request carries (B14.4): ``{graphs, default?, file?}`` with the
+    rules of the pointer file; ``file`` only names the client's pointer in messages. The
+    project is part of the request's actor, not of its pointer."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"graphs", "default", "file"}:
+        raise GraphCliError(
+            "usage.invalid_input",
+            "pointer must be {graphs, default?, file?}",
+            details={"argument": "pointer"},
+        )
+    shown = value.get("file")
+    path = Path(shown) if isinstance(shown, str) and shown else Path(REQUEST_POINTER)
+    graphs, default = value.get("graphs"), value.get("default")
+    if (
+        not isinstance(graphs, list)
+        or not graphs
+        or not all(isinstance(g, str) and g for g in graphs)
+    ):
+        raise _invalid(path, "graphs", "must be a non-empty array of graph names or ids")
+    if default is not None and (not isinstance(default, str) or default not in graphs):
+        raise _invalid(path, "default", "must be one of 'graphs'")
+    return PointerFile(path, None, tuple(graphs), default)
+
+
 def find_pointer(cwd: Path) -> tuple[PointerFile | None, tuple[WarningRecord, ...]]:
     """The first pointer walking up from ``cwd`` to the filesystem root."""
     for directory in (cwd, *cwd.parents):

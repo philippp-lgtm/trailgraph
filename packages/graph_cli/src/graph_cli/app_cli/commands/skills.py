@@ -333,6 +333,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "skills.not_owned", "skills.target_invalid"),
         handler=emit,
+        remote="client",
         description="One directory per skill, without an install marker. Install skills"
         " for an agent with `graph skills install` instead.",
     ),
@@ -359,6 +360,7 @@ SPECS: Final = (
             "skills.target_invalid",
         ),
         handler=install,
+        remote="client",
         description="--scope user installs into $CLAUDE_CONFIG_DIR/skills, else"
         " ~/.claude/skills; --scope project into <dir>/.claude/skills (<dir>/.claude must"
         " exist). Skill 1 is always installed, graph skills named with --graph, and every"
@@ -386,6 +388,7 @@ SPECS: Final = (
             "skills.target_invalid",
         ),
         handler=check_command,
+        remote="client",
         description="Statuses: fresh, stale (installed unchanged, but the program, the"
         " published graph skill or, for a generated one, the graph's ontology changed since),"
         " modified (edited by hand), unexpected (extra"

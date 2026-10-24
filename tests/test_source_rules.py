@@ -1,6 +1,6 @@
 """Static source rules that import-linter cannot express (contracts ID.6, T.3, B2.2, B3.1).
 
-Each rule scans the AST of every module in both distributions and has a
+Each rule scans the AST of every module in every distribution and has a
 positive control, so a broken scanner cannot pass silently.
 """
 
@@ -11,7 +11,10 @@ from pathlib import Path
 import pytest
 from harness import REPO_ROOT
 
-SRC_ROOTS = [REPO_ROOT / "packages" / name / "src" for name in ("graph_cli", "graph_cli_admin")]
+SRC_ROOTS = [
+    REPO_ROOT / "packages" / name / "src"
+    for name in ("graph_cli", "graph_cli_admin", "graph_cli_server")
+]
 
 UUID_MINTING = {"uuid1", "uuid4", "uuid6", "uuid7", "uuid8"}
 WALL_CLOCK = {

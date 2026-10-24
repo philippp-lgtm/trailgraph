@@ -872,6 +872,7 @@ SPECS: Final = (
         ),
         errors=QUERY_ERRORS,
         handler=query,
+        remote="hooked",
         limits={"limit": MAX_LIMIT},
     ),
 )

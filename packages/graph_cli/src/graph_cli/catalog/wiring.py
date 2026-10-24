@@ -15,6 +15,12 @@ With ``[audit] access_log``, a command that built the context is recorded
 in the access log after its envelope is written (``record_access``), with
 the command's ``Timings``: building the context is the ``context`` phase,
 the services add theirs.
+
+The server builds one ``AppServices`` per request with a ``RequestScope``
+(B14.8): the request's actor (token principal, entrypoint ``server``),
+pointer, ``GRAPH_CLI_GRAPH`` and the origins of uploaded files take the
+place of the process's identity, the working directory's pointer, its
+environment variable and the configured file roots.
 """
 
 from __future__ import annotations
@@ -33,7 +39,7 @@ from graph_cli.catalog.access_log import AccessLogFile, access_record
 from graph_cli.catalog.activity import SocketActivity, activity_dir
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
-from graph_cli.catalog.file_roots import FileRoots
+from graph_cli.catalog.file_roots import FileRoots, GivenOrigins
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, select_graph
@@ -52,7 +58,7 @@ from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
 if TYPE_CHECKING:
-    from graph_cli.services.files import FileService
+    from graph_cli.services.files import FileService, Origins
     from graph_cli.services.write import WriteService
 
 PROGRAM: Final = "graph"
@@ -95,7 +101,7 @@ class _Backend:
     ids: Uuid7Provider
     env: EnvInfo
     activity: ActivitySink
-    origins: FileRoots
+    origins: Origins
     timings: Timings
 
 
@@ -172,6 +178,17 @@ class _Visibility:
         return self.context.reader.refuse_hidden(self.context.actor, entry, ref, request)
 
 
+@dataclass(frozen=True)
+class RequestScope:
+    """What a server request decides instead of the process (B14.8)."""
+
+    actor: ActorContext
+    warnings: tuple[WarningRecord, ...]  # from the request's asserted facets
+    pointer: PointerFile | None
+    graph_env: str | None
+    origins: Mapping[Path, Mapping[str, JsonValue] | None]  # uploaded file -> its origin
+
+
 @dataclass
 class AppServices:
     """Handed to the commands; builds the context on first use, once."""
@@ -180,6 +197,7 @@ class AppServices:
     cwd: Path
     executable: str | None = None  # the running program's own path (sys.argv[0]), F6
     timings: Timings = field(default_factory=Timings)
+    request: RequestScope | None = None  # set by the server, one per request
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
 
@@ -270,8 +288,13 @@ class AppServices:
         roots, root_warnings = resolve_roots(
             self.env, config=config, cwd=self.cwd, data_root_flag=None, allow_flag=False
         )
-        pointer, pointer_warnings = find_pointer(self.cwd)
-        actor, actor_warnings = self._actor(config, pointer)
+        request = self.request
+        if request is None:
+            pointer, pointer_warnings = find_pointer(self.cwd)
+            actor, actor_warnings = self._actor(config, pointer)
+        else:  # never the server's own working directory or identity
+            pointer, pointer_warnings = request.pointer, ()
+            actor, actor_warnings = request.actor, request.warnings
         clock = SystemClock()
         ids = Uuid7Provider(clock)
         oplog = OpLogFile(roots.state_root, clock)
@@ -315,10 +338,12 @@ class AppServices:
                 ids=ids,
                 env=env,
                 activity=activity,
-                origins=FileRoots.from_config(config.file_roots, self.env),
+                origins=FileRoots.from_config(config.file_roots, self.env)
+                if request is None
+                else GivenOrigins(request.origins),
                 timings=self.timings,
             ),
-            graph_env=self.env.get(GRAPH_ENV) or None,
+            graph_env=self.env.get(GRAPH_ENV) or None if request is None else request.graph_env,
             command=command,
         )
         unknown = project_warning(actor, policy.current(None))  # fails closed on a bad policy

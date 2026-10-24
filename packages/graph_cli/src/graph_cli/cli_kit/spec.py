@@ -36,6 +36,10 @@ ParamType = Literal[
     "directory",
 ]
 Kind = Literal["read", "write", "meta"]
+# B14: who runs a command when the app is a client of the server API. ``server``: the
+# server runs it and the client passes it through; ``hooked``: the server runs it and the
+# client adds work (uploads, downloads, origins); ``client``: only the client runs it.
+Remote = Literal["server", "hooked", "client"]
 Surface = Literal["model", "retrieve", "act", "trace", "meta"]
 
 
@@ -94,6 +98,7 @@ class CommandSpec:
     handler: Callable[..., Result] = field(compare=False, repr=False)
     limits: Mapping[str, JsonValue] = field(default=EMPTY)
     description: str | None = None
+    remote: Remote = "server"
 
 
 def _click_type(param: ParamSpec) -> click.ParamType[Any]:

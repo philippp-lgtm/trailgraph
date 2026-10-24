@@ -6,7 +6,8 @@
 packages/
   graph_cli/src/graph_cli/              application distribution
   graph_cli_admin/src/graph_cli_admin/  maintenance distribution
-tests/                                  tests for both distributions
+  graph_cli_server/src/graph_cli_server/ server distribution (graph-server)
+tests/                                  tests for every distribution
 skills/                                 agent skills (skill directories use `-`)
 docs/                                   documentation
 ```
@@ -34,7 +35,9 @@ Dependencies point down only. Enforced by import-linter
 | Kernel | `kernel` |
 
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
-`graph_cli_admin`. Within `graph_cli_admin`, `maintenance_cli` sits above
+`graph_cli_admin`. `graph_cli_server` depends on `graph_cli` and `waitress`
+and never imports `graph_cli_admin`; `graph_cli` never imports
+`graph_cli_server`, and only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli` sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
@@ -47,6 +50,19 @@ the kernel's strict loader `kernel.yaml_strict`.
 The cross-cutting packages have their own documents:
 [Storage](storage.md), [Audit](audit.md) and
 [Access control](access_control.md) (behavior; modules below).
+
+## Server
+
+`graph_cli_server` serves the `graph` command surface over HTTP
+(`graph-server serve`). `app` is a small WSGI application: its command
+routes come from the same declarations as the CLI (every command whose
+`remote` is not `client`), `argv` turns a request's JSON parameters into
+argv for the one click program, and `cli_kit.runner.run` runs it with an
+`AppServices` per request whose `RequestScope` carries the request's actor
+(`catalog.identity.request`), pointer, `GRAPH_CLI_GRAPH` and file origins.
+`uploads` stages uploaded bytes per token, `openapi` derives the OpenAPI
+document from the inventory, `main` serves the app with `waitress` (one
+process, a thread pool). Operating it: [Server](server.md).
 
 ## CLIs
 

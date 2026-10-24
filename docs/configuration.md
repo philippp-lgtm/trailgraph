@@ -30,6 +30,8 @@ limit and the read signal. The sections described elsewhere:
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
 - `[activity]`: [Live view](live_view.md)
+- `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
+  allowed to call `graph-server` (default none); read by the server only
 
 Unknown config or manifest keys are warnings; an unknown `format_version`
 or an invalid value stops the command.

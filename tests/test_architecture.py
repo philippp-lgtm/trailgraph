@@ -44,6 +44,14 @@ POSITIVE_CONTROLS = {
         "graph_cli/query/cypher/__init__.py",
         "import graph_cli.query.plan\n",
     ),
+    "The server never imports the maintenance distribution": (
+        "graph_cli_server/argv.py",
+        "import graph_cli_admin.maintenance_cli.hints\n",
+    ),
+    "App distribution never imports the server distribution": (
+        "graph_cli/app_cli/__init__.py",
+        "import graph_cli_server.uploads\n",
+    ),
 }
 # Allowed by the same contracts: admin may use the maintenance port.
 ALLOWED_IMPORTS = {
@@ -55,7 +63,7 @@ def test_contracts_catch_violations(tmp_path: Path) -> None:
     """Positive controls: a scratch copy with one violation per contract breaks exactly
     those contracts, and the allowed admin import breaks none."""
     src = tmp_path / "src"
-    for package in ("graph_cli", "graph_cli_admin"):
+    for package in ("graph_cli", "graph_cli_admin", "graph_cli_server"):
         shutil.copytree(
             REPO_ROOT / "packages" / package / "src" / package,
             src / package,
@@ -90,7 +98,7 @@ def wheels(tmp_path_factory: pytest.TempPathFactory) -> dict[str, list[str]]:
         pytest.skip("uv not on PATH")
     out = tmp_path_factory.mktemp("dist")
     names: dict[str, list[str]] = {}
-    for package in ("graph_cli", "graph_cli_admin"):
+    for package in ("graph_cli", "graph_cli_admin", "graph_cli_server"):
         subprocess.run(
             [uv, "build", "--package", package, "--wheel", "--out-dir", str(out / package)],
             cwd=REPO_ROOT,
@@ -118,3 +126,10 @@ def test_admin_wheel_does_not_bundle_app_code(wheels: dict[str, list[str]]) -> N
     files = wheels["graph_cli_admin"]
     assert not [f for f in files if f.startswith("graph_cli/")]
     assert "graph_cli_admin/maintenance_cli/static/view.html" in files  # the view page ships
+
+
+@pytest.mark.slow
+def test_server_wheel_bundles_neither_app_nor_admin_code(wheels: dict[str, list[str]]) -> None:
+    files = wheels["graph_cli_server"]
+    assert "graph_cli_server/app.py" in files
+    assert not [f for f in files if f.startswith(("graph_cli/", "graph_cli_admin/"))]

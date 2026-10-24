@@ -210,6 +210,7 @@ APPLY: Final = CommandSpec(
     ),
     errors=APPLY_ERRORS,
     handler=apply,
+    remote="hooked",
 )
 
 SPECS: Final = (APPLY,)

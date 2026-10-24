@@ -188,6 +188,7 @@ SPECS: Final = (
         ),
         errors=(*WRITE_ERRORS, *FILE_ERRORS),
         handler=add,
+        remote="hooked",
     ),
     CommandSpec(
         path=("file", "path"),
@@ -217,6 +218,7 @@ SPECS: Final = (
             "backend.corrupt",
         ),
         handler=path,
+        remote="hooked",
     ),
     CommandSpec(
         path=("file", "check"),
@@ -248,6 +250,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "entity.not_found", "entity.ambiguous_ref", "file.module_missing"),
         handler=check,
+        remote="hooked",
         limits={"limit": MAX_LIMIT},
     ),
 )

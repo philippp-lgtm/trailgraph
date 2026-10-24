@@ -64,6 +64,7 @@ def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:
         version=__version__,
         surface="app",
         global_options=GLOBAL_OPTIONS,
+        remote=True,
     )
 
 
@@ -208,6 +209,7 @@ SPECS: Final = (
         ),
         errors=(),
         handler=describe_commands,
+        remote="client",
     ),
     _describe(
         "types",

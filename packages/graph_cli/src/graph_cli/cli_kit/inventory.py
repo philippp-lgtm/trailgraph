@@ -31,9 +31,9 @@ def _exit(code: str) -> int:
     return exit_code_for(found.category)
 
 
-def _command(spec: CommandSpec) -> dict[str, JsonValue]:
+def _command(spec: CommandSpec, remote: bool) -> dict[str, JsonValue]:
     codes = _codes(spec)
-    return {
+    command: dict[str, JsonValue] = {
         "path": list(spec.path),
         "kind": spec.kind,
         "surface": spec.surface,
@@ -46,6 +46,9 @@ def _command(spec: CommandSpec) -> dict[str, JsonValue]:
         "exit_codes": sorted({EXIT_OK, *(_exit(c) for c in codes)}),
         "limits": dict(spec.limits),
     }
+    if remote:
+        command["remote"] = spec.remote
+    return command
 
 
 def build_inventory(
@@ -55,7 +58,9 @@ def build_inventory(
     version: str,
     surface: str,
     global_options: Sequence[ParamSpec] = (),
+    remote: bool = False,
 ) -> dict[str, JsonValue]:
+    """``remote`` adds each command's ``remote`` value (B14: the app surface)."""
     ordered = sorted(specs, key=lambda s: s.path)
     codes = sorted({c for spec in ordered for c in _codes(spec)})
     return {
@@ -64,7 +69,7 @@ def build_inventory(
         "program_version": version,
         "surface": surface,
         "global_options": [p.to_json() for p in global_options],
-        "commands": [_command(spec) for spec in ordered],
+        "commands": [_command(spec, remote) for spec in ordered],
         "actions": sorted({spec.action for spec in ordered if spec.action is not None}),
         "error_codes": [
             {"code": code, "category": _category(code), "exit": _exit(code)} for code in codes

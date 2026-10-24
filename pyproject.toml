@@ -1,10 +1,11 @@
-# Workspace root. Not a distribution itself; the two distributions live in
-# packages/ (graph_cli: app CLI, graph_cli_admin: maintenance CLI).
+# Workspace root. Not a distribution itself; the three distributions live in
+# packages/ (graph_cli: app CLI, graph_cli_admin: maintenance CLI,
+# graph_cli_server: HTTP API server).
 [project]
 name = "graph_cli_workspace"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["graph_cli", "graph_cli_admin"]
+dependencies = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 
 [dependency-groups]
 dev = [
@@ -14,6 +15,7 @@ dev = [
     "pytest>=8.3",
     "ruff>=0.6",
     "types-pyyaml>=6.0",
+    "types-waitress>=3.0",
 ]
 
 [tool.uv]
@@ -25,6 +27,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 graph_cli = { workspace = true }
 graph_cli_admin = { workspace = true }
+graph_cli_server = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -40,15 +43,15 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["graph_cli", "graph_cli_admin"]
+known-first-party = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 
 [tool.mypy]
 strict = true
-packages = ["graph_cli", "graph_cli_admin"]
+packages = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 
 # Dependencies point down only. See the layer table in docs/architecture.md.
 [tool.importlinter]
-root_packages = ["graph_cli", "graph_cli_admin"]
+root_packages = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -80,6 +83,25 @@ name = "App distribution never imports the maintenance distribution"
 type = "forbidden"
 source_modules = ["graph_cli"]
 forbidden_modules = ["graph_cli_admin"]
+
+# B14: the server serves the app surface only; maintenance stays where the data lives.
+[[tool.importlinter.contracts]]
+name = "The server never imports the maintenance distribution"
+type = "forbidden"
+source_modules = ["graph_cli_server"]
+forbidden_modules = ["graph_cli_admin"]
+
+[[tool.importlinter.contracts]]
+name = "App distribution never imports the server distribution"
+type = "forbidden"
+source_modules = ["graph_cli"]
+forbidden_modules = ["graph_cli_server"]
+
+[[tool.importlinter.contracts]]
+name = "Only the server distribution uses the WSGI server"
+type = "forbidden"
+source_modules = ["graph_cli", "graph_cli_admin"]
+forbidden_modules = ["waitress"]
 
 # Storage adapters see kernel types only (no ontology semantics, no query
 # planning). The query AST lives in the kernel for this reason.

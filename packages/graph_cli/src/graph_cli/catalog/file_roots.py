@@ -83,3 +83,27 @@ class FileRoots:
                 details={"root": name},
             )
         return root.joinpath(*relative.split("/"))
+
+
+class GivenOrigins:
+    """Origins a client computed with its own roots, by the server-side path of each
+    uploaded file (B14.4). The server has no roots: resolving an origin is the client's
+    work, so ``resolve`` reports the root as unknown here."""
+
+    def __init__(self, origins: Mapping[Path, Mapping[str, JsonValue] | None]) -> None:
+        self._origins = {path.resolve(): origin for path, origin in origins.items()}
+
+    def origin_of(self, path: Path) -> dict[str, JsonValue] | None:
+        found = self._origins.get(path)
+        if found is None:
+            return None
+        origin: dict[str, JsonValue] = {"root": found.get("root"), "path": found.get("path")}
+        return origin if local_path_problem(origin) is None else None
+
+    def resolve(self, origin: Mapping[str, JsonValue]) -> Path:
+        raise GraphCliError(
+            "file.root_unknown",
+            f"the file root {origin.get('root')!r} is not configured on this machine;"
+            f" add it to [roots] in config.toml",
+            details={"root": origin.get("root")},
+        )

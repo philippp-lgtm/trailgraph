@@ -9,6 +9,7 @@ writes the file, and only when it does not exist yet.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
             "roots",
             "files",
             "activity",
+            "server",
         }
     ),
     "device": frozenset({"id", "name"}),
@@ -49,12 +51,14 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
+    "server": frozenset({"cors_origins"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
 MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
 MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
+ORIGIN_RE: Final = re.compile(r"^https?://[^/\s?#]+$")  # a browser Origin: scheme://host[:port]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +79,8 @@ class Config:
     file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
+    mode: Literal["local", "remote"] = "local"  # [runtime] mode
+    cors_origins: tuple[str, ...] = ()  # [server]: browser origins allowed to call graph-server
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -155,6 +161,11 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
         raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
     signal_reads = get("activity.signal_reads", bool, "a boolean")
+    cors_origins = get("server.cors_origins", list, "an array of origins")
+    if cors_origins is not None and not all(
+        isinstance(o, str) and ORIGIN_RE.match(o) for o in cors_origins
+    ):
+        raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -176,6 +187,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         file_roots=file_roots,
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
+        cors_origins=tuple(cors_origins or ()),
     )
     return config, tuple(warnings)
 
