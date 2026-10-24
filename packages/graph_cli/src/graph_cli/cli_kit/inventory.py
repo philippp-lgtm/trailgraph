@@ -11,15 +11,15 @@ from collections.abc import Sequence
 from typing import Final
 
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
-from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
+from graph_cli.cli_kit.spec import SERVED, CommandSpec, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.error_codes import ErrorCategory, lookup_error_code
 
 INVENTORY_SCHEMA: Final = "graph_cli.inventory/1"
 # Every command can fail on usage, an unavailable backend and a bug.
 COMMON_ERRORS: Final = ("usage.invalid_argument", "backend.unavailable", "internal.error")
-# B14.10: what every command the server runs can meet in the remote mode; a write also
-# a lost answer.
+# B14.10: what every app command the server runs can meet in the remote mode; a write
+# also a lost answer. graph-admin's commands list their own (no project binding).
 REMOTE_ERRORS: Final = (
     "remote.unreachable",
     "remote.unauthorized",
@@ -29,10 +29,12 @@ REMOTE_ERRORS: Final = (
 REMOTE_WRITE_ERRORS: Final = ("remote.outcome_unknown",)
 
 
-def _codes(spec: CommandSpec, remote: bool = False) -> list[str]:
+def _codes(
+    spec: CommandSpec, remote: bool = False, remote_errors: Sequence[str] = REMOTE_ERRORS
+) -> list[str]:
     extra: tuple[str, ...] = ()
-    if remote and spec.remote != "client":
-        extra = (*REMOTE_ERRORS, *(REMOTE_WRITE_ERRORS if spec.kind == "write" else ()))
+    if remote and spec.remote in SERVED:
+        extra = (*remote_errors, *(REMOTE_WRITE_ERRORS if spec.kind == "write" else ()))
     return sorted({*spec.errors, *COMMON_ERRORS, *extra})
 
 
@@ -43,8 +45,8 @@ def _exit(code: str) -> int:
     return exit_code_for(found.category)
 
 
-def _command(spec: CommandSpec, remote: bool) -> dict[str, JsonValue]:
-    codes = _codes(spec, remote)
+def _command(spec: CommandSpec, remote: bool, remote_errors: Sequence[str]) -> dict[str, JsonValue]:
+    codes = _codes(spec, remote, remote_errors)
     command: dict[str, JsonValue] = {
         "path": list(spec.path),
         "kind": spec.kind,
@@ -71,17 +73,19 @@ def build_inventory(
     surface: str,
     global_options: Sequence[ParamSpec] = (),
     remote: bool = False,
+    remote_errors: Sequence[str] = REMOTE_ERRORS,
 ) -> dict[str, JsonValue]:
-    """``remote`` adds each command's ``remote`` value (B14: the app surface)."""
+    """``remote`` adds each command's ``remote`` value and, to every command the server
+    runs, the ``remote_errors`` a client can meet (B14)."""
     ordered = sorted(specs, key=lambda s: s.path)
-    codes = sorted({c for spec in ordered for c in _codes(spec, remote)})
+    codes = sorted({c for spec in ordered for c in _codes(spec, remote, remote_errors)})
     return {
         "schema": INVENTORY_SCHEMA,
         "program": program,
         "program_version": version,
         "surface": surface,
         "global_options": [p.to_json() for p in global_options],
-        "commands": [_command(spec, remote) for spec in ordered],
+        "commands": [_command(spec, remote, remote_errors) for spec in ordered],
         "actions": sorted({spec.action for spec in ordered if spec.action is not None}),
         "error_codes": [
             {"code": code, "category": _category(code), "exit": _exit(code)} for code in codes

@@ -6,9 +6,12 @@ installation event comes first (``change.token{name, hash_prefix, ...}``),
 then the token file is replaced, so ``audit verify`` can replay the events
 against the file. The secret is returned once by ``create`` and never
 stored, logged or audited; the file keeps its SHA-256, events a 16-hex
-prefix of that. ``create`` warns when the installed policy grants the new
-token, as entrypoint ``server``, nothing on any graph. ``list`` reads the
-file without a lock and records nothing.
+prefix of that. A token's scope is ``app`` (the app surface of the server)
+or ``admin`` (its admin API, acting through the entrypoint ``maint``); an
+admin token is never bound to a project. ``create`` warns when the
+installed policy grants a new app token, as entrypoint ``server``, nothing
+on any graph, or would not let a new admin token maintain. ``list`` reads
+the file without a lock and records nothing.
 """
 
 from __future__ import annotations
@@ -23,6 +26,9 @@ from graph_cli.access_control.effective import graph_level
 from graph_cli.audit import events
 from graph_cli.catalog.identity.request import TOKEN_SOURCE, token_principal
 from graph_cli.catalog.tokens import (
+    ADMIN_SCOPE,
+    APP_SCOPE,
+    SCOPES,
     TOKEN_NAME_RE,
     TokenRecord,
     new_token,
@@ -70,19 +76,28 @@ def create(
     project: str | None,
     expires: str | None,
     reason: str | None,
+    scope: str = APP_SCOPE,
 ) -> Outcome:
     _check_name(name)
+    if scope not in SCOPES:
+        raise _usage("--scope", f"{scope!r} is not one of {', '.join(SCOPES)}", scope)
     if project is not None and not is_valid_asserted_value(project):
         raise _usage("--project", f"{project!r} is not a project name", project)
+    if project is not None and scope == ADMIN_SCOPE:
+        raise _usage(
+            "--project", "an admin token has no project: maintenance is not project scoped", project
+        )
     today = ctx.clock.now().date()
     if expires is not None:
         _check_expires(expires, today)
     args: dict[str, JsonValue] = {"name": name, "project": project, "expires": expires}
+    if scope != APP_SCOPE:
+        args["scope"] = scope
     meta = RequestMeta.of("token create", args)
     decisions = ctx.authorize([(CREATE, "installation")], request=meta, reason=reason)
     secret = new_token()
     record = TokenRecord(
-        name, token_hash(secret), project, expires, format_timestamp(ctx.clock.now())
+        name, token_hash(secret), project, expires, format_timestamp(ctx.clock.now()), scope
     )
     with ctx.maintenance.registry(timeout_s=ctx.lock_timeout_s) as registry:
         records = parse_tokens(registry.read_tokens())
@@ -99,13 +114,16 @@ def create(
                 event_id=ctx.event_id(),
                 env=ctx.env,
                 change=events.token_change(
-                    name, record.hash, project=project, expires=expires, created=True
+                    name, record.hash, project=project, expires=expires, created=True, scope=scope
                 ),
                 reason=reason,
             )
         )
         registry.replace_tokens(tokens_document([*records, record]), receipt)
-    warnings = () if _granted(ctx, record) else (_not_granted(name),)
+    if scope == ADMIN_SCOPE:
+        warnings = () if _maintains(ctx, record) else (_not_maintainer(name),)
+    else:
+        warnings = () if _granted(ctx, record) else (_not_granted(name),)
     data: dict[str, JsonValue] = {**_listed(record, today), "token": secret}
     text = f"Token {name} created. It is shown only now; keep it secret:\n{secret}\n"
     return Outcome(data, warnings, text)
@@ -145,7 +163,8 @@ def revoke(ctx: AdminContext, *, name: str, reason: str | None) -> Outcome:
 
 
 def server_actor(record: TokenRecord, version: str) -> ActorContext:
-    """The actor a request with this token would have, without asserted facets."""
+    """The actor a request with this token would have, without asserted facets: the
+    entrypoint ``server`` for an app token, ``maint`` for an admin token."""
     project = (
         Facet(Assurance.VERIFIED, id=record.project, source=TOKEN_SOURCE)
         if record.project is not None
@@ -157,7 +176,11 @@ def server_actor(record: TokenRecord, version: str) -> ActorContext:
         session=ABSENT,
         device=ABSENT,
         project=project,
-        client=ClientInfo(SERVER_PROGRAM, version, Entrypoint.SERVER),
+        client=ClientInfo(
+            SERVER_PROGRAM,
+            version,
+            Entrypoint.MAINT if record.scope == ADMIN_SCOPE else Entrypoint.SERVER,
+        ),
         pid=None,
     )
 
@@ -171,9 +194,16 @@ def _granted(ctx: AdminContext, record: TokenRecord) -> bool:
     return any(graph_level(actor, g.id, ctx.policy.current(g.id)) != "none" for g in graphs)
 
 
+def _maintains(ctx: AdminContext, record: TokenRecord) -> bool:
+    actor = server_actor(record, ctx.actor.client.version)
+    decision = authorize(actor, CREATE, "installation", _PROBE, ctx.policy.current(None))
+    return decision.effect == "allow"
+
+
 def _listed(record: TokenRecord, today: date) -> dict[str, JsonValue]:
     return {
         "name": record.name,
+        "scope": record.scope,
         "project": record.project,
         "expires": record.expires,
         "expired": not record.valid_on(today),
@@ -203,6 +233,15 @@ def _not_granted(name: str) -> WarningRecord:
         "admin.token_not_granted",
         f"the installed policy grants token {name} nothing on any graph; add a grant with"
         " entrypoint: server and apply the policy",
+        {"name": name},
+    )
+
+
+def _not_maintainer(name: str) -> WarningRecord:
+    return WarningRecord(
+        "admin.token_not_maintainer",
+        f"the installed policy does not let admin token {name} maintain; add"
+        f' {{id: "token:{name}"}} to maintainers and apply the policy',
         {"name": name},
     )
 

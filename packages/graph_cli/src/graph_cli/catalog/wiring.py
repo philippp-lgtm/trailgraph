@@ -319,32 +319,16 @@ class AppServices:
 
     def _token(self, config: Config) -> str:
         """``GRAPH_CLI_TOKEN``, else the token file, which nobody else may read."""
-        from graph_cli.catalog.remote import unauthorized
+        from graph_cli.catalog.remote import read_token
 
-        given = self.env.get(TOKEN_ENV, "").strip()
-        if given:
-            return given
-        if config.token_file is None:
-            raise unauthorized()
-        path = self.path(config.token_file)
-        try:
-            if path.stat().st_mode & 0o077:
-                raise GraphCliError(
-                    "config.invalid",
-                    f"{config.path}: remote.token_file {path} may be read by others;"
-                    f" chmod 600 {path}",
-                    details={"file": str(config.path), "key": "remote.token_file"},
-                )
-            token = path.read_text().strip()
-        except OSError as exc:
-            raise GraphCliError(
-                "config.invalid",
-                f"{config.path}: remote.token_file cannot be read: {exc.strerror or exc}",
-                details={"file": str(config.path), "key": "remote.token_file"},
-            ) from exc
-        if not token:
-            raise unauthorized()
-        return token
+        file = self.path(config.token_file) if config.token_file is not None else None
+        return read_token(
+            self.env.get(TOKEN_ENV),
+            file,
+            config=config.path,
+            key="remote.token_file",
+            hint="set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token",
+        )
 
     def spill_config(self) -> Config:
         """The config for large answers: the command's, else read now (defaults if broken)."""

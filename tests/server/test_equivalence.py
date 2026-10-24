@@ -10,7 +10,6 @@ and facet sources are left out: the only differences the server may make.
 
 import json
 import os
-import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -20,6 +19,7 @@ from typing import Any
 import pytest
 from harness import BIN_DIR
 from support.app import create_args
+from support.equivalence import differences, home_env, normalized
 from support.files import synthetic_pdf, write_pdf, write_text
 from support.fixtures import FIXTURES, ONTOLOGIES, TOY_ONTOLOGIES, compiled_model
 from support.roles import Roles, lifecycle_path, load_roles
@@ -31,25 +31,8 @@ from graph_cli.app_cli.commands import all_specs
 
 pytestmark = pytest.mark.slow
 
-UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-HASH = re.compile(r"sha256:[0-9a-f]{64}")
-TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z")
 Run = Callable[..., tuple[int, Any, str, str]]
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
-
-
-def home_env(base: dict[str, str], home: Path) -> dict[str, str]:
-    env = {
-        **base,
-        "HOME": str(home),
-        "XDG_CONFIG_HOME": str(home / ".config"),
-        "XDG_DATA_HOME": str(home / ".local" / "share"),
-        "XDG_STATE_HOME": str(home / ".local" / "state"),
-        "GRAPH_CLI_GRAPH": "example_graph",
-    }
-    for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
-        Path(env[key]).mkdir(parents=True, exist_ok=True)
-    return env
 
 
 def runner(env: dict[str, str], cwd: Path) -> Run:
@@ -175,37 +158,6 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     return seen
 
 
-def normalized(value: Any) -> Any:
-    """Ids, hashes and times numbered by first appearance; the actor without principal,
-    client, pid and sources."""
-    names: dict[str, str] = {}
-
-    def number(kind: str) -> Callable[[re.Match[str]], str]:
-        def replace(match: re.Match[str]) -> str:
-            return names.setdefault(match.group(0), f"<{kind}{len(names)}>")
-
-        return replace
-
-    def walk(item: Any) -> Any:
-        if isinstance(item, dict):
-            if "principal" in item and "client" in item:
-                return {
-                    k: walk({f: v for f, v in facet.items() if f != "source"})
-                    for k, facet in item.items()
-                    if k not in ("principal", "client", "pid")
-                }
-            return {k: walk(v) for k, v in item.items()}
-        if isinstance(item, list):
-            return [walk(v) for v in item]
-        if isinstance(item, str):
-            item = UUID.sub(number("id"), item)
-            item = HASH.sub(number("hash"), item)
-            return TIME.sub("<time>", item)
-        return item
-
-    return walk(value)
-
-
 @pytest.mark.parametrize("ontology", TOY_ONTOLOGIES)
 def test_local_and_remote_answers_are_equal(
     isolated_env: dict[str, str], tmp_path: Path, ontology: str
@@ -259,22 +211,6 @@ def covered(outcomes: list[Any]) -> set[tuple[str, ...]]:
     for args, *_ in outcomes:
         found |= {p for p in paths if tuple(args[: len(p)]) == p}
     return found
-
-
-def differences(mine: Any, theirs: Any, path: str = "") -> list[str]:
-    """Where two outcomes differ, for the failure message."""
-    if isinstance(mine, dict) and isinstance(theirs, dict):
-        found = []
-        for key in sorted(set(mine) | set(theirs)):
-            found += differences(mine.get(key), theirs.get(key), f"{path}.{key}")
-        return found
-    if isinstance(mine, list) and isinstance(theirs, list) and len(mine) == len(theirs):
-        return [
-            d
-            for i, (a, b) in enumerate(zip(mine, theirs, strict=True))
-            for d in differences(a, b, f"{path}[{i}]")
-        ]
-    return [] if mine == theirs else [f"{path}: remote {mine!r} != local {theirs!r}"]
 
 
 def files_scenario(run: Run, home: Path) -> list[Any]:

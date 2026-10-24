@@ -6,17 +6,28 @@ config and roots with the same catalog code as the app, adds graph-admin's
 (entrypoint ``maint``), clock, ids, catalog, audit log, maintenance port,
 policy (the installed files, falling back past an invalid one) and the op
 log. Everything is built lazily per command, so a broken config renders as
-an error envelope. A host whose config says ``mode = "remote"`` keeps no
-data: every command that opens the data root is refused there
-(``admin.remote_mode``, B14.13), so no second writer appears by accident.
+an error envelope.
+
+The admin API of graph-server builds one ``Services`` per request with an
+``AdminRequest``: the request's actor (the token's principal, entrypoint
+``maint``) takes the place of the process's identity, and the data root is
+always the server's own (B14.15).
+
+A host whose config says ``mode = "remote"`` keeps no data: the commands
+the server runs go to its admin API (``remote`` builds the command's
+``RemoteSession`` with ``GRAPH_CLI_ADMIN_TOKEN``, else ``[remote]
+admin_token_file``); every other command that opens the data root is
+refused there (``admin.remote_mode``, B14.13), so no second writer appears
+by accident.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
@@ -25,7 +36,7 @@ from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import config_path, resolve_roots
 from graph_cli.cli_kit.runner import Invocation
-from graph_cli.kernel.actor import ClientInfo, Entrypoint
+from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
@@ -35,7 +46,16 @@ from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli_admin import __version__
 from graph_cli_admin.services_admin.context import AdminContext
 
+if TYPE_CHECKING:
+    from graph_cli.catalog.remote import RemoteSession
+
 PROGRAM = "graph-admin"
+ADMIN_TOKEN_ENV: Final = "GRAPH_CLI_ADMIN_TOKEN"  # the admin token in remote mode (B14.15)
+ADMIN_ROUTE: Final = "/v1/admin/commands/"
+TOKEN_HINT: Final = (
+    "set GRAPH_CLI_ADMIN_TOKEN or [remote] admin_token_file to a token created with"
+    " graph-admin token create --scope admin"
+)
 
 
 def process_env() -> dict[str, str]:
@@ -53,18 +73,98 @@ def invocation(env: Mapping[str, str]) -> Invocation:
     return Invocation(PROGRAM, output == "json", env.get("GRAPH_CLI_DEBUG") == "1")
 
 
+@dataclass(frozen=True)
+class AdminRequest:
+    """What an admin API request decides instead of the process (B14.15)."""
+
+    actor: ActorContext
+    warnings: tuple[WarningRecord, ...]  # from the request's asserted facets
+
+
 @dataclass
 class Services:
     """Handed to the commands; builds the context on first use."""
 
     env: Mapping[str, str]
     cwd: Path
+    request: AdminRequest | None = None  # set by the server's admin API, one per request
+    _remote: RemoteSession | None = field(default=None, init=False, repr=False)
 
     def config(self) -> tuple[Config, tuple[WarningRecord, ...]]:
         return load_config(config_path(self.env))
 
+    def remote_mode(self) -> bool:
+        """Whether config says ``mode = "remote"``; a broken config is reported by the
+        command itself."""
+        try:
+            return self.request is None and self.config()[0].mode == "remote"
+        except GraphCliError:
+            return False
+
+    def remote(self, warnings: list[WarningRecord]) -> RemoteSession:
+        """The command's link to the server's admin API (remote mode only), built once."""
+        if self._remote is None:
+            self._remote = self._connect(warnings)
+        return self._remote
+
+    def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
+        from graph_cli.catalog.endpoint import parse_endpoint
+        from graph_cli.catalog.remote import RemoteClient, RemoteSession, read_token
+        from graph_cli.catalog.wiring import asserted_facets
+
+        config, config_warnings = self.config()
+        endpoint = parse_endpoint(config.endpoint or "")
+        if isinstance(endpoint, str):
+            raise GraphCliError("internal.error", "remote mode without a valid endpoint")
+        actor, actor_warnings = self._actor(config)
+        warnings += [*config_warnings, *actor_warnings]
+        if endpoint.plain_http and not endpoint.loopback:
+            warnings.append(
+                WarningRecord(
+                    "remote.plain_http",
+                    f"{endpoint.display} is plain HTTP: the token travels without encryption",
+                    {"endpoint": endpoint.display},
+                )
+            )
+        file = config.admin_token_file
+        token = read_token(
+            self.env.get(ADMIN_TOKEN_ENV),
+            self._path(file) if file is not None else None,
+            config=config.path,
+            key="remote.admin_token_file",
+            hint=TOKEN_HINT,
+        )
+        client = RemoteClient(
+            endpoint,
+            token,
+            timeout_s=config.remote_timeout_s,
+            version=__version__,
+            token_hint=TOKEN_HINT,
+        )
+        return RemoteSession(
+            client, asserted_facets(actor), None, None, warnings, commands=ADMIN_ROUTE
+        )
+
+    def _path(self, value: str) -> Path:
+        home = self.env.get("HOME")
+        if home and (value == "~" or value.startswith("~/")):
+            value = home + value[1:]
+        return (self.cwd / value).resolve()
+
+    def _actor(self, config: Config) -> tuple[ActorContext, tuple[WarningRecord, ...]]:
+        if self.request is not None:  # never the server's own identity
+            return self.request.actor, self.request.warnings
+        return resolve_actor(
+            system_inputs(),
+            client=ClientInfo(PROGRAM, __version__, Entrypoint.MAINT),
+            device_id=config.device_id,
+            providers=config.identity_providers,
+        )
+
     def context(self, *, data_root: Path | None, warnings: list[WarningRecord]) -> AdminContext:
         config, config_warnings = self.config()
+        if self.request is not None and data_root is not None:
+            raise GraphCliError("internal.error", "a request never names the data root")
         if config.mode == "remote":
             raise GraphCliError(
                 "admin.remote_mode",
@@ -76,13 +176,7 @@ class Services:
             self.env, config=config, cwd=self.cwd, data_root_flag=data_root, allow_flag=True
         )
         clock = SystemClock()
-        client = ClientInfo(PROGRAM, __version__, Entrypoint.MAINT)
-        actor, actor_warnings = resolve_actor(
-            system_inputs(),
-            client=client,
-            device_id=config.device_id,
-            providers=config.identity_providers,
-        )
+        actor, actor_warnings = self._actor(config)
         warnings += [*config_warnings, *root_warnings, *actor_warnings]
         oplog = OpLogFile(roots.state_root, clock)
 

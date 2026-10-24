@@ -379,19 +379,22 @@ def _is_size(value: JsonValue) -> bool:
 
 def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
     """B14.11: a token event names the token and a 16-hex prefix of its hash; a created
-    token also its project and expiry (each possibly null)."""
+    token also its project and expiry (each possibly null), an admin token its scope."""
     created = "maint.token_create" in actions
     keys = {"name", "hash_prefix", *(("project", "expires") if created else ())}
     token = change.get("token") if isinstance(change, Mapping) else None
+    if created and isinstance(token, Mapping) and "scope" in token:
+        keys.add("scope")
     if not (
         isinstance(token, Mapping)
         and set(token) == keys
+        and token.get("scope", "admin") == "admin"
         and isinstance(token["name"], str)
         and isinstance(token["hash_prefix"], str)
         and _TOKEN_PREFIX_RE.match(token["hash_prefix"]) is not None
         and all(token.get(k) is None or isinstance(token[k], str) for k in ("project", "expires"))
     ):
-        shown = "name, hash_prefix, project, expires" if created else "name, hash_prefix"
+        shown = "name, hash_prefix, project, expires[, scope]" if created else "name, hash_prefix"
         return [f"a token event needs change.token{{{shown}}}"]
     return []
 

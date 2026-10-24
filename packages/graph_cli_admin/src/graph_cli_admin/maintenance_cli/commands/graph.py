@@ -188,6 +188,7 @@ SPECS: Final = (
             "admin.graph_name_taken",
         ),
         handler=create,
+        remote="hooked",
     ),
     CommandSpec(
         path=("graph", "list"),
@@ -252,6 +253,7 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. With --ontology, checks the data under an"
         " authored version before it is released.",
+        remote="hooked",
     ),
     CommandSpec(
         path=("graph", "reindex"),
@@ -306,6 +308,7 @@ SPECS: Final = (
         " app renders it with the graph's live model at every install (kind generated); it is"
         " rendered and checked against the current pin first. Without markers the files are"
         " installed as they are (kind static). Publishing the same files again changes nothing.",
+        remote="hooked",
     ),
     CommandSpec(
         path=("graph", "skill", "render"),
@@ -342,5 +345,6 @@ SPECS: Final = (
         description="Renders against the graph's current ontology pin with this checkout's"
         " program and runs the checks of publish; changes nothing in the data root. Problems"
         " publish would refuse are reported (exit 1) next to the written preview.",
+        remote="hooked",
     ),
 )

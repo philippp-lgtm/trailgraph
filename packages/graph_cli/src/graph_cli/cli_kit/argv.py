@@ -10,7 +10,9 @@ flag without value; then ``--`` and the positionals in declaration order, so
 a positional that starts with ``-`` stays a positional. ``false`` and
 ``null`` mean "not given". Parsing, defaults and usage errors are the click
 program's, exactly as for the CLI. A ``file`` parameter is resolved by the
-caller (an upload); a ``directory`` parameter has no meaning on the server.
+caller (an upload); a ``directory`` parameter has no meaning on the server
+unless the caller resolves it too (``directories``: the admin API's
+uploaded directories).
 """
 
 from __future__ import annotations
@@ -39,8 +41,15 @@ def request_args(spec: CommandSpec, values: Mapping[str, Any]) -> dict[str, Json
     return args
 
 
-def to_argv(spec: CommandSpec, args: Mapping[str, JsonValue], file_value: FileValue) -> list[str]:
-    """The argv after the program name; ``usage.invalid_argument`` for what cannot be one."""
+def to_argv(
+    spec: CommandSpec,
+    args: Mapping[str, JsonValue],
+    file_value: FileValue,
+    *,
+    directories: bool = False,
+) -> list[str]:
+    """The argv after the program name; ``usage.invalid_argument`` for what cannot be one.
+    With ``directories``, ``file_value`` resolves directory parameters as well."""
     known = {param.name for param in spec.params}
     unknown = sorted(set(args) - known)
     if unknown:
@@ -59,7 +68,7 @@ def to_argv(spec: CommandSpec, args: Mapping[str, JsonValue], file_value: FileVa
         if param.repeatable and not isinstance(value, list):
             raise _usage(param.name, "takes a list of values")
         values = value if isinstance(value, list) and param.repeatable else [value]
-        texts = [_text(param, item, file_value) for item in values]
+        texts = [_text(param, item, file_value, directories) for item in values]
         if param.positional:
             positionals += texts
         else:
@@ -69,8 +78,8 @@ def to_argv(spec: CommandSpec, args: Mapping[str, JsonValue], file_value: FileVa
     return [*spec.path, *options, *tail]
 
 
-def _text(param: ParamSpec, value: JsonValue, file_value: FileValue) -> str:
-    if param.type == "file":
+def _text(param: ParamSpec, value: JsonValue, file_value: FileValue, directories: bool) -> str:
+    if param.type == "file" or (param.type == "directory" and directories):
         return file_value(param, value)
     if param.type == "directory":
         raise _usage(param.name, "a directory is not available on the server")

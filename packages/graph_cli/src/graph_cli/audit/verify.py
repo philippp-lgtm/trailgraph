@@ -325,7 +325,8 @@ def check_tokens(
 
     Replaying ``maint.token_create`` and ``maint.token_revoke`` in seq order gives the
     live tokens. ``installed`` maps each name in the file to ``{hash_prefix, project,
-    expires}``; ``None`` when the file cannot be read. A file token that is not live,
+    expires, scope}``; ``None`` when the file cannot be read. An event without a scope
+    created an app token. A file token that is not live,
     or differs, was added by hand or survived an interrupted revoke
     (``token_mismatch``); a live token missing from the file is an interrupted create.
     """
@@ -353,8 +354,12 @@ def check_tokens(
     findings = []
     for name, entry in sorted(installed.items()):
         actual = {key: entry.get(key) for key in ("hash_prefix", "project", "expires")}
+        actual["scope"] = entry.get("scope") or "app"
         found = live.get(name)
-        expected = {key: found[1].get(key) for key in actual} if found is not None else None
+        expected = None
+        if found is not None:
+            expected = {key: found[1].get(key) for key in actual}
+            expected["scope"] = found[1].get("scope") or "app"
         if expected != actual:
             findings.append(
                 _finding(

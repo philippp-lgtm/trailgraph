@@ -40,5 +40,6 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=init_command,
+        remote="local",
     ),
 )

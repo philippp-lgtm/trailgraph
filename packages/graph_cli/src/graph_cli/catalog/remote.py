@@ -17,6 +17,7 @@ import shutil
 import ssl
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, Final
 
 from graph_cli.catalog.endpoint import Endpoint
@@ -26,6 +27,10 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
 VERSION_HEADER: Final = "Graph-Cli-Version"
 CHUNK: Final = 1024 * 1024
+APP_TOKEN_HINT: Final = (
+    "set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token"
+)
+COMMANDS_ROUTE: Final = "/v1/commands/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,11 +57,20 @@ class Write:
 
 
 class RemoteClient:
-    def __init__(self, endpoint: Endpoint, token: str, *, timeout_s: float, version: str) -> None:
+    def __init__(
+        self,
+        endpoint: Endpoint,
+        token: str,
+        *,
+        timeout_s: float,
+        version: str,
+        token_hint: str = APP_TOKEN_HINT,
+    ) -> None:
         self.endpoint = endpoint
         self._token = token
         self.timeout_s = timeout_s
         self.version = version
+        self.token_hint = token_hint  # where this program's token comes from
 
     def call(
         self,
@@ -106,7 +120,7 @@ class RemoteClient:
             finally:
                 connection.close()
             if response.status == 401:
-                raise unauthorized()
+                raise unauthorized(self.token_hint)
             return Answer(response.status, found, data)
         raise GraphCliError("internal.error", "no attempt was made")
 
@@ -168,12 +182,37 @@ def envelope_of(answer: Answer) -> Mapping[str, JsonValue]:
     return value
 
 
-def unauthorized() -> GraphCliError:
+def unauthorized(hint: str = APP_TOKEN_HINT) -> GraphCliError:
     return GraphCliError(
         "remote.unauthorized",
-        "the server does not accept the token (missing, unknown, revoked or expired);"
-        " set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token",
+        f"the server does not accept the token (missing, unknown, revoked or expired); {hint}",
     )
+
+
+def read_token(given: str | None, file: Path | None, *, config: Path, key: str, hint: str) -> str:
+    """The token of the environment variable, else of the token file, which nobody else
+    may read; ``remote.unauthorized`` without one. ``key`` names the file's config key."""
+    if given and given.strip():
+        return given.strip()
+    if file is None:
+        raise unauthorized(hint)
+    try:
+        if file.stat().st_mode & 0o077:
+            raise GraphCliError(
+                "config.invalid",
+                f"{config}: {key} {file} may be read by others; chmod 600 {file}",
+                details={"file": str(config), "key": key},
+            )
+        token = file.read_text().strip()
+    except OSError as exc:
+        raise GraphCliError(
+            "config.invalid",
+            f"{config}: {key} cannot be read: {exc.strerror or exc}",
+            details={"file": str(config), "key": key},
+        ) from exc
+    if not token:
+        raise unauthorized(hint)
+    return token
 
 
 def protocol(status: int, why: str) -> GraphCliError:
@@ -213,6 +252,7 @@ class RemoteSession:
     pointer: Mapping[str, JsonValue] | None
     graph_env: str | None
     warnings: list[WarningRecord]  # the running command's warnings
+    commands: str = COMMANDS_ROUTE  # the route of the commands; graph-admin's are /v1/admin/
 
     def command(
         self,
@@ -223,14 +263,17 @@ class RemoteSession:
         write: Write | None,
     ) -> tuple[Mapping[str, JsonValue], str | None, str | None]:
         """``(envelope, stdout, stderr)`` of a command run by the server; the text only
-        with ``text``."""
+        with ``text`` and when the server rendered it (a refusal before the command, such
+        as a token of the other scope, comes as a bare envelope)."""
         body = self.body(args=dict(args))
-        route = "/v1/commands/" + "/".join(path) + ("?render=text" if text else "")
+        route = self.commands + "/".join(path) + ("?render=text" if text else "")
         answer = self.client.call("POST", route, body=body, write=write)
         self._note_version(answer)
         if not text:
             return envelope_of(answer), None, None
         value = answer.json()
+        if isinstance(value, Mapping) and value.get("schema") == ENVELOPE_SCHEMA:
+            return value, None, None  # refused before any command ran: rendered here
         if not isinstance(value, Mapping) or not isinstance(value.get("envelope"), Mapping):
             raise protocol(answer.status, "the answer is not a rendered envelope")
         document = value["envelope"]

@@ -4,8 +4,9 @@
 environment through ``catalog.wiring``), then serves the WSGI app with
 ``waitress``: one process, a thread pool. It binds ``127.0.0.1`` unless
 ``--host`` names another address, which needs ``--allow-plain-http``: TLS
-belongs to a reverse proxy. The address it listens on is printed to stderr,
-then one line per request.
+belongs to a reverse proxy. With ``[server] admin_api = true`` it also
+serves the ``graph-admin`` commands (``graph_cli_server.admin_api``, B14.15).
+The address it listens on is printed to stderr, then one line per request.
 """
 
 from __future__ import annotations
@@ -78,7 +79,12 @@ def main(argv: list[str] | None = None) -> None:
     from waitress.server import create_server  # the server's own dependency
 
     sys.stdin = open(os.devnull)  # noqa: SIM115 - nothing a request runs reads the terminal
-    app = ServerApp(settings, log=sys.stderr)
+    admin = None
+    if settings.admin_api:
+        from graph_cli_server.admin_api import AdminApi
+
+        admin = AdminApi
+    app = ServerApp(settings, log=sys.stderr, admin=admin)
     server = create_server(
         app,
         host=options.host,
@@ -95,8 +101,10 @@ def main(argv: list[str] | None = None) -> None:
 
     signal.signal(signal.SIGTERM, stop)
     port = getattr(server, "effective_port", options.port)
+    surfaces = " (with the admin API)" if settings.admin_api else ""
     print(
-        f"{SERVER_PROGRAM} {__version__} listening on http://{options.host}:{port}", file=sys.stderr
+        f"{SERVER_PROGRAM} {__version__} listening on http://{options.host}:{port}{surfaces}",
+        file=sys.stderr,
     )
     sys.stderr.flush()
     try:

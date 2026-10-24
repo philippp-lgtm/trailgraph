@@ -84,11 +84,16 @@ type = "forbidden"
 source_modules = ["graph_cli"]
 forbidden_modules = ["graph_cli_admin"]
 
-# B14: the server serves the app surface only; maintenance stays where the data lives.
+# B14, B14.15: the app surface of the server never reaches maintenance code; only the
+# admin API module imports it, and main loads that only with [server] admin_api.
 [[tool.importlinter.contracts]]
-name = "The server never imports the maintenance distribution"
+name = "Only the server's admin API imports the maintenance distribution"
 type = "forbidden"
-source_modules = ["graph_cli_server"]
+source_modules = [
+    "graph_cli_server.app",
+    "graph_cli_server.openapi",
+    "graph_cli_server.uploads",
+]
 forbidden_modules = ["graph_cli_admin"]
 
 [[tool.importlinter.contracts]]

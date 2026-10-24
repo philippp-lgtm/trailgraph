@@ -23,8 +23,8 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from pathlib import Path
-from typing import IO, Any, Final
+from pathlib import Path, PurePosixPath
+from typing import IO, Any, Final, Protocol
 
 import click
 
@@ -36,7 +36,7 @@ from graph_cli.catalog.config import load_config
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.pointer import PointerFile, request_pointer
 from graph_cli.catalog.resolve import config_path, resolve_roots
-from graph_cli.catalog.tokens import TokenRecord, TokenStore
+from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE, TokenRecord, TokenStore
 from graph_cli.catalog.wiring import PROGRAM, AppServices, RequestScope
 from graph_cli.cli_kit.argv import to_argv
 from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
@@ -73,11 +73,23 @@ CORS_HEADERS: Final = "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
 _SKILL_KEYS: Final = frozenset({"actor", "graph_env"})
 _UPLOAD_KEYS: Final = frozenset({"upload", "name", "origin"})
+_DIRECTORY_KEYS: Final = frozenset({"files", "name"})
+MAX_DIRECTORY_FILES: Final = 1000  # files of one directory parameter (admin API)
 STDIN: Final = "-"  # the CLI's stdin argument; the server has no stdin of the caller
 # Plain string parameters whose "-" means stdin (file parameters take uploads only).
 STDIN_ARGS: Final[Mapping[tuple[str, ...], tuple[str, ...]]] = {("query",): ("text",)}
 
 StartResponse = Callable[[str, list[tuple[str, str]]], Any]
+
+
+class AdminRoutes(Protocol):
+    """The admin API (``graph_cli_server.admin_api``): ``/v1/admin/<parts>`` for a token
+    with the admin scope. Plugged in by ``main`` when ``[server] admin_api`` is on, so this
+    module never imports the maintenance distribution."""
+
+    def dispatch(
+        self, environ: Mapping[str, Any], method: str, parts: list[str], token: TokenRecord
+    ) -> Response: ...
 
 
 @dataclass(frozen=True)
@@ -90,6 +102,7 @@ class Settings:
     state_root: Path
     cors_origins: frozenset[str]
     max_upload_bytes: int
+    admin_api: bool = False
 
     @classmethod
     def load(cls, env: Mapping[str, str], cwd: Path) -> Settings:
@@ -109,6 +122,7 @@ class Settings:
             state_root=roots.state_root,
             cors_origins=frozenset(config.cors_origins),
             max_upload_bytes=config.max_file_bytes,
+            admin_api=config.admin_api,
         )
 
 
@@ -121,7 +135,14 @@ class Response:
 
 
 class ServerApp:
-    def __init__(self, settings: Settings, *, log: IO[str], clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        log: IO[str],
+        clock: Clock | None = None,
+        admin: Callable[[ServerApp], AdminRoutes] | None = None,
+    ) -> None:
         self.settings = settings
         self.log = log
         self.clock = clock or SystemClock()
@@ -131,6 +152,7 @@ class ServerApp:
         }
         self.tokens = TokenStore(settings.data_root)
         self.uploads = Uploads(settings.state_root)
+        self.admin = admin(self) if admin is not None else None
 
     def __call__(
         self, environ: Mapping[str, Any], start_response: StartResponse
@@ -181,15 +203,25 @@ class ServerApp:
             return _json(200, {"ok": True, "version": __version__, "api": API_VERSION})
         token = self._authenticate(environ)
         name.append(token.name)
+        if parts == ["v1", "uploads"]:
+            self._method(method, "PUT")
+            return self._upload(environ, token)
+        if parts[1:2] == ["admin"]:
+            if self.admin is None:
+                return self._admin_off(path)
+            refused = _scope_refusal(token, ADMIN_SCOPE)
+            if refused is not None:
+                return self._error(None, refused, status=403)
+            return self.admin.dispatch(environ, method, parts[2:], token)
+        refused = _scope_refusal(token, APP_SCOPE)
+        if refused is not None:
+            return self._error(None, refused, status=403)
         if parts == ["v1", "inventory"]:
             self._method(method, "GET")
             return _json(200, self._inventory())
         if parts == ["v1", "openapi.json"]:
             self._method(method, "GET")
             return _json(200, openapi(self._inventory(), version=__version__))
-        if parts == ["v1", "uploads"]:
-            self._method(method, "PUT")
-            return self._upload(environ, token)
         if len(parts) > 2 and parts[1] == "commands":
             spec = self.specs.get("/".join(parts[2:]))
             if spec is None:
@@ -215,6 +247,14 @@ class ServerApp:
 
     def _unknown(self, path: str) -> Response:
         error = GraphCliError("usage.unknown_command", f"no such endpoint: {path}")
+        return self._error(None, error, status=404)
+
+    def _admin_off(self, path: str) -> Response:
+        error = GraphCliError(
+            "usage.unknown_command",
+            f"no such endpoint: {path}; the admin API is off on this server"
+            " ([server] admin_api = true turns it on)",
+        )
         return self._error(None, error, status=404)
 
     def _authenticate(self, environ: Mapping[str, Any]) -> TokenRecord:
@@ -247,15 +287,7 @@ class ServerApp:
         outcome = self.run_command(spec, body, token)
         if spec.path == ("file", "path"):
             outcome = _without_server_path(outcome)
-        if render == "text":
-            stdout, stderr = render_text(outcome.document, text=outcome.text)
-            payload: dict[str, JsonValue] = {
-                "envelope": dict(outcome.document),
-                "stdout": stdout,
-                "stderr": stderr,
-            }
-            return _json(outcome.status, payload, exit_code=outcome.exit_code)
-        return _json(outcome.status, dict(outcome.document), exit_code=outcome.exit_code)
+        return answer(outcome, render)
 
     def run_command(
         self, spec: CommandSpec, body: Mapping[str, JsonValue], token: TokenRecord
@@ -263,7 +295,7 @@ class ServerApp:
         """Run one command for a request; every error becomes an envelope."""
         command = " ".join(spec.path)
         args = body.get("args", {})
-        staged: list[_Staged] = []
+        staged: list[Staged] = []
         try:
             if not isinstance(args, Mapping):
                 raise GraphCliError(
@@ -279,17 +311,21 @@ class ServerApp:
                     )
             scope = self._scope(body, token)
             with self.uploads.request_dir(token.name) as directory:
-                argv = to_argv(spec, args, self._stager(token, directory, staged))
+                argv = to_argv(spec, args, self.stager(token, directory, staged))
                 origins = {s.link: s.origin for s in staged}
                 done = self._run(argv, RequestScope(**scope, origins=origins))
         except GraphCliError as exc:
             failed = envelope(command, program=PROGRAM, error=exc)
-            return Outcome(failed, None, *_status_of(failed))
+            return Outcome(failed, None, *status_of(failed))
         finally:
-            for item in staged:
-                self.uploads.remove(token.name, item.digest)
-        document = _restore_names(done.document, staged)
-        return Outcome(document, done.text, *_status_of(document))
+            self.release(token, staged)
+        document = restore_names(done.document, staged)
+        return Outcome(document, done.text, *status_of(document))
+
+    def release(self, token: TokenRecord, staged: list[Staged]) -> None:
+        """Remove the uploads a command used (after it ran, whatever its outcome)."""
+        for digest in sorted({d for item in staged for d in item.digests}):
+            self.uploads.remove(token.name, digest)
 
     def _scope(self, body: Mapping[str, JsonValue], token: TokenRecord) -> dict[str, Any]:
         asserted = body.get("actor")
@@ -334,10 +370,15 @@ class ServerApp:
             raise GraphCliError("internal.error", "the command gave no answer")
         return done[0]
 
-    def _stager(
-        self, token: TokenRecord, directory: Path, staged: list[_Staged]
+    def stager(
+        self, token: TokenRecord, directory: Path, staged: list[Staged]
     ) -> Callable[[ParamSpec, JsonValue], str]:
+        """Turns an upload reference into a path below the request ``directory``: a hard
+        link for a file parameter, a tree of them for a directory parameter (admin API)."""
+
         def stage(param: ParamSpec, value: JsonValue) -> str:
+            if param.type == "directory":
+                return self._stage_directory(token, directory, staged, param, value)
             reference = _object(value, param.name, _UPLOAD_KEYS)
             digest, name = reference.get("upload"), reference.get("name")
             origin = reference.get("origin")
@@ -358,10 +399,55 @@ class ServerApp:
             slot.mkdir()
             link = slot / link_name(name)
             os.link(found, link)
-            staged.append(_Staged(link, digest, name, dict(origin) if origin else None))
+            staged.append(Staged(link, (digest,), name, dict(origin) if origin else None))
             return str(link)
 
         return stage
+
+    def _stage_directory(
+        self,
+        token: TokenRecord,
+        directory: Path,
+        staged: list[Staged],
+        param: ParamSpec,
+        value: JsonValue,
+    ) -> str:
+        """``{files: {relative path: upload}, name}``: the directory rebuilt from hard links,
+        named like the client's directory. No path may leave it."""
+        reference = _object(value, param.name, _DIRECTORY_KEYS)
+        files, name = reference.get("files"), reference.get("name")
+        if not isinstance(name, str) or not name:
+            raise _bad_upload(param.name, "name must be the argument as given")
+        if not isinstance(files, Mapping):
+            raise _bad_upload(param.name, "files must map relative paths to uploads")
+        if len(files) > MAX_DIRECTORY_FILES:
+            raise _bad_upload(param.name, f"a directory holds at most {MAX_DIRECTORY_FILES} files")
+        sources: dict[PurePosixPath, Path] = {}
+        for relative, digest in files.items():
+            if not _is_relative(relative):
+                raise _bad_upload(param.name, f"{relative!r} is not a relative path")
+            if not isinstance(digest, str) or not DIGEST_RE.match(digest):
+                raise _bad_upload(param.name, f"{relative}: upload must be sha256:<hex>")
+            found = self.uploads.find(token.name, digest)
+            if found is None:
+                raise _bad_upload(param.name, f"{relative}: no such upload; upload it again")
+            sources[PurePosixPath(relative)] = found
+        slot = directory / str(len(staged))
+        slot.mkdir()
+        root = slot / link_name(name)
+        root.mkdir()
+        digests = tuple(sorted({str(d) for d in files.values()}))
+        staged.append(Staged(root, digests, name, None))
+        try:
+            for posix, source in sorted(sources.items()):
+                target = root.joinpath(*posix.parts)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.link(source, target)
+        except OSError:
+            raise _bad_upload(
+                param.name, "files name a path twice (as a file and a directory)"
+            ) from None
+        return str(root)
 
     # ---- uploads, files, skills ----------------------------------------
 
@@ -425,7 +511,7 @@ class ServerApp:
             skill = graph_skill(ctx, entry, warnings)
         except GraphCliError as exc:
             document = envelope("skills", program=PROGRAM, error=exc, warnings=warnings)
-            status, exit_code = _status_of(document)
+            status, exit_code = status_of(document)
             return _json(status, dict(document), exit_code=exit_code)
         data: dict[str, JsonValue] = {
             "graph": {"id": str(entry.id), "name": entry.name},
@@ -448,8 +534,11 @@ class ServerApp:
         self, command: str | None, error: GraphCliError, status: int | None = None
     ) -> Response:
         document = envelope(command, program=PROGRAM, error=error)
-        found, exit_code = _status_of(document)
-        headers = [("WWW-Authenticate", "Bearer")] if error.code == "remote.unauthorized" else []
+        found, exit_code = status_of(document)
+        headers = []
+        if error.code == "remote.unauthorized":
+            challenge = 'Bearer error="insufficient_scope"' if status == 403 else "Bearer"
+            headers.append(("WWW-Authenticate", challenge))
         response = _json(status or found, dict(document), exit_code=exit_code)
         response.headers += headers
         return response
@@ -491,14 +580,55 @@ class Outcome:
 
 
 @dataclass(frozen=True)
-class _Staged:
+class Staged:
+    """An upload reference made a path for one command: a file's hard link or a directory
+    of them, the uploads it used and the client's argument it stands for."""
+
     link: Path
-    digest: str
+    digests: tuple[str, ...]
     name: str
     origin: dict[str, JsonValue] | None
 
 
-def _status_of(document: Mapping[str, JsonValue]) -> tuple[int, int]:
+def _scope_refusal(token: TokenRecord, scope: str) -> GraphCliError | None:
+    """An app token reaches the app routes only, an admin token the admin routes only
+    (403 with ``remote.unauthorized``: the token is valid, its scope is not this one)."""
+    if token.scope == scope:
+        return None
+    reaches = "the admin API (/v1/admin/)" if token.scope == ADMIN_SCOPE else "the app routes"
+    return GraphCliError(
+        "remote.unauthorized",
+        f"token {token.name} has the scope {token.scope} and reaches {reaches} only;"
+        f" this endpoint needs a token with the scope {scope}",
+        details={"scope": token.scope, "required": scope},
+    )
+
+
+def answer(outcome: Outcome, render: str) -> Response:
+    """A command's HTTP answer: the envelope, or with ``render=text`` also its text."""
+    if render == "text":
+        stdout, stderr = render_text(outcome.document, text=outcome.text)
+        payload: dict[str, JsonValue] = {
+            "envelope": dict(outcome.document),
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        return _json(outcome.status, payload, exit_code=outcome.exit_code)
+    return _json(outcome.status, dict(outcome.document), exit_code=outcome.exit_code)
+
+
+def _is_relative(value: str) -> bool:
+    """A relative POSIX path that stays below its directory."""
+    parts = value.split("/")
+    return (
+        0 < len(value.encode()) <= 1024
+        and "\x00" not in value
+        and "\\" not in value
+        and all(part not in ("", ".", "..") for part in parts)
+    )
+
+
+def status_of(document: Mapping[str, JsonValue]) -> tuple[int, int]:
     """``(HTTP status, exit code)`` of an envelope (B14.5)."""
     error = document.get("error")
     if not isinstance(error, Mapping):
@@ -520,8 +650,8 @@ def _without_server_path(outcome: Outcome) -> Outcome:
     return Outcome(document, None, outcome.status, outcome.exit_code)
 
 
-def _restore_names(
-    document: Mapping[str, JsonValue], staged: list[_Staged]
+def restore_names(
+    document: Mapping[str, JsonValue], staged: list[Staged]
 ) -> Mapping[str, JsonValue]:
     """Hints and messages name the client's argument, not the staged link."""
     if not staged:

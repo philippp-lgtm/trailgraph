@@ -89,6 +89,7 @@ SPECS: Final = (
         handler=check,
         description="The file's id says its layer: installation (one per installation) or"
         " graph (needs --graph).",
+        remote="hooked",
     ),
     CommandSpec(
         path=("policy", "show"),
@@ -120,6 +121,7 @@ SPECS: Final = (
         ),
         errors=SOURCE_ERRORS,
         handler=diff,
+        remote="hooked",
     ),
     CommandSpec(
         path=("policy", "apply"),
@@ -149,6 +151,7 @@ SPECS: Final = (
         handler=apply,
         description="Refused when it would stop you from changing policies again. Applying"
         " the installed policy again changes nothing.",
+        remote="hooked",
     ),
     CommandSpec(
         path=("policy", "explain"),
@@ -184,5 +187,6 @@ SPECS: Final = (
         errors=SOURCE_ERRORS,
         handler=explain,
         description="Records nothing.",
+        remote="hooked",
     ),
 )

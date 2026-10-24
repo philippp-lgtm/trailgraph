@@ -121,8 +121,8 @@ class Uploads:
 
 
 def link_name(name: str) -> str:
-    """The file name a staged upload gets: the last part of the client's argument."""
-    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    """The name a staged upload or directory gets: the last part of the client's argument."""
+    base = name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
     if base in ("", ".", "..", "-") or "\x00" in base or len(base.encode()) > 255:
         return "input"
     return base

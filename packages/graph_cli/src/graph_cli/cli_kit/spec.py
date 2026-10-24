@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 import click
 
@@ -36,10 +36,12 @@ ParamType = Literal[
     "directory",
 ]
 Kind = Literal["read", "write", "meta"]
-# B14: who runs a command when the app is a client of the server API. ``server``: the
+# B14: who runs a command when the program is a client of the server API. ``server``: the
 # server runs it and the client passes it through; ``hooked``: the server runs it and the
-# client adds work (uploads, downloads, origins); ``client``: only the client runs it.
-Remote = Literal["server", "hooked", "client"]
+# client adds work (uploads, downloads, origins); ``client``: only the client runs it;
+# ``local``: only where the data lives, never over the API (graph-admin init and view).
+Remote = Literal["server", "hooked", "client", "local"]
+SERVED: Final = ("server", "hooked")  # the remote values the server runs
 Surface = Literal["model", "retrieve", "act", "trace", "meta"]
 
 

@@ -3,7 +3,11 @@
 A token is ``gct_`` plus 32 random bytes in base64url. Only the SHA-256 of
 the whole token is stored, by name, in ``tokens/tokens.json``
 (``graph_cli.tokens/1``); audit events name a token by a 16-hex prefix of
-that hash. ``TokenStore`` is the server's lock-free reader: it parses the
+that hash. A token's scope says which surface it reaches: ``app`` (the
+default, the ``graph`` commands) or ``admin`` (the ``graph-admin`` commands
+of the admin API). The file names the scope of admin tokens only, so a
+server that predates scopes fails closed on it instead of taking an admin
+token for an app token. ``TokenStore`` is the server's lock-free reader: it parses the
 file again only when its mtime, size or inode changed, and fails closed on
 an unreadable or invalid file (``backend.unavailable``). A token is valid
 through its ``expires`` date in UTC.
@@ -32,8 +36,11 @@ TOKEN_PREFIX: Final = "gct_"
 TOKEN_NAME_RE: Final = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 _HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _DATE_RE: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_KEYS: Final = frozenset({"name", "hash", "project", "expires", "created_at"})
+_KEYS: Final = frozenset({"name", "hash", "project", "expires", "created_at", "scope"})
 PREFIX_HEX: Final = 16
+APP_SCOPE: Final = "app"
+ADMIN_SCOPE: Final = "admin"
+SCOPES: Final = (APP_SCOPE, ADMIN_SCOPE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +50,7 @@ class TokenRecord:
     project: str | None = None  # bound project: the request's project facet is verified
     expires: str | None = None  # YYYY-MM-DD, valid through that day (UTC)
     created_at: str | None = None
+    scope: str = APP_SCOPE  # the surface it reaches: app or admin
 
     @property
     def hash_prefix(self) -> str:
@@ -52,13 +60,16 @@ class TokenRecord:
         return self.expires is None or today <= date.fromisoformat(self.expires)
 
     def to_json(self) -> dict[str, JsonValue]:
-        return {
+        data: dict[str, JsonValue] = {
             "name": self.name,
             "hash": self.hash,
             "project": self.project,
             "expires": self.expires,
             "created_at": self.created_at,
         }
+        if self.scope != APP_SCOPE:
+            data["scope"] = self.scope
+        return data
 
 
 def new_token() -> str:
@@ -109,6 +120,7 @@ def _record(entry: JsonValue, index: int) -> TokenRecord:
     name, digest = entry.get("name"), entry.get("hash")
     project, expires = entry.get("project"), entry.get("expires")
     created = entry.get("created_at")
+    scope = entry.get("scope", APP_SCOPE)
     if not isinstance(name, str) or not TOKEN_NAME_RE.match(name):
         raise _invalid(f"tokens[{index}].name is not a token name")
     if not isinstance(digest, str) or not _HASH_RE.match(digest):
@@ -119,7 +131,12 @@ def _record(entry: JsonValue, index: int) -> TokenRecord:
         raise _invalid(f"tokens[{index}].expires is not a date")
     if created is not None and not isinstance(created, str):
         raise _invalid(f"tokens[{index}].created_at is not a time")
-    return TokenRecord(name, digest, project, expires, created)
+    if scope not in SCOPES:
+        raise _invalid(f"tokens[{index}].scope is not one of {', '.join(SCOPES)}")
+    if scope == ADMIN_SCOPE and project is not None:
+        raise _invalid(f"tokens[{index}] is an admin token bound to a project")
+    assert isinstance(scope, str)
+    return TokenRecord(name, digest, project, expires, created, scope)
 
 
 def _is_date(text: str) -> bool:

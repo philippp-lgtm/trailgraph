@@ -53,8 +53,8 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
-    "server": frozenset({"cors_origins"}),
-    "remote": frozenset({"token_file", "allow_plain_http", "timeout_s"}),
+    "server": frozenset({"cors_origins", "admin_api"}),
+    "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
@@ -85,9 +85,11 @@ class Config:
     mode: Literal["local", "remote"] = "local"  # [runtime] mode
     endpoint: str | None = None  # [runtime]: the server's URL in remote mode
     token_file: str | None = None  # [remote]: as written; absolute or "~/..."
+    admin_token_file: str | None = None  # [remote]: graph-admin's token; absolute or "~/..."
     allow_plain_http: bool = False  # [remote]: http:// to a host that is not loopback
     remote_timeout_s: float = 60.0  # [remote] timeout_s
     cors_origins: tuple[str, ...] = ()  # [server]: browser origins allowed to call graph-server
+    admin_api: bool = False  # [server]: graph-server also serves the graph-admin commands
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -142,6 +144,9 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     token_file = get("remote.token_file", str, "a string")
     if token_file is not None and not token_file.startswith(("/", "~/")):
         raise _invalid(path, "remote.token_file", "must be an absolute path or start with ~/")
+    admin_token_file = get("remote.admin_token_file", str, "a string")
+    if admin_token_file is not None and not admin_token_file.startswith(("/", "~/")):
+        raise _invalid(path, "remote.admin_token_file", "must be an absolute path or start with ~/")
     allow_plain_http = get("remote.allow_plain_http", bool, "a boolean")
     remote_timeout = get("remote.timeout_s", (int, float), "a number")
     if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
@@ -191,6 +196,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         isinstance(o, str) and ORIGIN_RE.match(o) for o in cors_origins
     ):
         raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
+    admin_api = get("server.admin_api", bool, "a boolean")
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -213,9 +219,11 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
+        admin_api=bool(admin_api),
         mode=mode or defaults.mode,
         endpoint=endpoint,
         token_file=token_file,
+        admin_token_file=admin_token_file,
         allow_plain_http=bool(allow_plain_http),
         remote_timeout_s=float(remote_timeout)
         if remote_timeout is not None

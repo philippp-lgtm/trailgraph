@@ -141,12 +141,14 @@ version = "0.1.0.dev0"
 source = { editable = "packages/graph_cli_server" }
 dependencies = [
     { name = "graph-cli" },
+    { name = "graph-cli-admin" },
     { name = "waitress" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "graph-cli", editable = "packages/graph_cli" },
+    { name = "graph-cli-admin", editable = "packages/graph_cli_admin" },
     { name = "waitress", specifier = ">=3.0.2" },
 ]
 

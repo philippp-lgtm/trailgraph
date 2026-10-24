@@ -338,12 +338,16 @@ def token_change(
     created: bool,
     project: str | None = None,
     expires: str | None = None,
+    scope: str = "app",
 ) -> dict[str, JsonValue]:
     """``change`` of ``maint.token_create|revoke`` (B14.11): the token by name and a prefix
-    of its hash, never the token; a created token also names its project and expiry."""
+    of its hash, never the token; a created token also names its project and expiry, and
+    its scope when it is an admin token (an app token's event is as before scopes)."""
     token: dict[str, JsonValue] = {"name": name, "hash_prefix": digest[:TOKEN_HASH_PREFIX]}
     if created:
         token.update(project=project, expires=expires)
+        if scope != "app":
+            token["scope"] = scope
     return {"token": token}
 
 

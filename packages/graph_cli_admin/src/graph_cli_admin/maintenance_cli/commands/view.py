@@ -140,5 +140,6 @@ SPECS: Final = (
         " no JSON mode."
         " Writes show up by themselves (green: new, blue: changed). Reads (yellow) show only"
         " when the app sends them: [activity] signal_reads = true in config.toml.",
+        remote="local",
     ),
 )

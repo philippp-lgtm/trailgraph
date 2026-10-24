@@ -22,7 +22,7 @@ from graph_cli.ontology_layer.ir import (
 )
 from graph_cli.ontology_layer.report import Report
 from graph_cli.ontology_layer.semver import Version
-from graph_cli.ontology_layer.vocabulary import BASE_TYPES, CORE_MODULE, CURIE_RE
+from graph_cli.ontology_layer.vocabulary import BASE_TYPES, CORE_MODULE, CURIE_RE, MODULE_ID_RE
 
 TermKind = Literal["class", "datatype", "enum", "lifecycle", "relation"]
 
@@ -56,6 +56,8 @@ class DirectorySource:
         self._directory = directory
 
     def read(self, module_id: str) -> bytes | None:
+        if not MODULE_ID_RE.match(module_id):  # never a path outside the directory
+            return None
         path = self._directory / f"{module_id}.yaml"
         return path.read_bytes() if path.is_file() else None
 

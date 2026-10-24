@@ -20,8 +20,19 @@ def describe_commands(state: CommandState) -> Result:
     return Result(data=inventory(all_specs()))
 
 
+# What every command the admin API runs can meet in the remote mode (B14.15).
+REMOTE_ERRORS: Final = ("remote.unreachable", "remote.unauthorized", "remote.protocol")
+
+
 def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:
-    return build_inventory(specs, program=PROGRAM, version=__version__, surface="maint")
+    return build_inventory(
+        specs,
+        program=PROGRAM,
+        version=__version__,
+        surface="maint",
+        remote=True,
+        remote_errors=REMOTE_ERRORS,
+    )
 
 
 SPECS: Final = (
@@ -38,5 +49,6 @@ SPECS: Final = (
         ),
         errors=(),
         handler=describe_commands,
+        remote="client",
     ),
 )

@@ -44,7 +44,7 @@ POSITIVE_CONTROLS = {
         "graph_cli/query/cypher/__init__.py",
         "import graph_cli.query.plan\n",
     ),
-    "The server never imports the maintenance distribution": (
+    "Only the server's admin API imports the maintenance distribution": (
         "graph_cli_server/openapi.py",
         "import graph_cli_admin.maintenance_cli.hints\n",
     ),
@@ -53,9 +53,11 @@ POSITIVE_CONTROLS = {
         "import graph_cli_server.uploads\n",
     ),
 }
-# Allowed by the same contracts: admin may use the maintenance port.
+# Allowed by the same contracts: admin may use the maintenance port, the server's
+# composition root may load the admin API.
 ALLOWED_IMPORTS = {
     "graph_cli_admin/services_admin/__init__.py": "import graph_cli.storage.files.maintenance\n",
+    "graph_cli_server/main.py": "import graph_cli_admin.maintenance_cli.hints\n",
 }
 
 

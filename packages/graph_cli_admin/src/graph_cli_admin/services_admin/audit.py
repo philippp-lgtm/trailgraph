@@ -186,7 +186,12 @@ def _installed_tokens(ctx: AdminContext) -> dict[str, Mapping[str, JsonValue]] |
     except GraphCliError:
         return None
     return {
-        r.name: {"hash_prefix": r.hash_prefix, "project": r.project, "expires": r.expires}
+        r.name: {
+            "hash_prefix": r.hash_prefix,
+            "project": r.project,
+            "expires": r.expires,
+            "scope": r.scope,
+        }
         for r in records
     }
 

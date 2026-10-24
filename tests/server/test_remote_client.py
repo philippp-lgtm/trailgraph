@@ -139,9 +139,13 @@ def test_token_file_spill_and_maintenance_refusal(
         (warning,) = [w for w in spilled.envelope["warnings"] if w["code"] == "output.spilled"]
         assert json.loads(Path(warning["details"]["path"]).read_text())["data"]["types"]
 
-        admin = parse(run_cli("graph-admin", "graph", "list", "--json", env=env))
+        admin = parse(run_cli("graph-admin", "init", "--json", env=env))
         assert (admin.code, admin.error["code"]) == (1, "admin.remote_mode")
         assert "graph-admin" not in str(admin.error["hint"])
+        # the app token is not graph-admin's: the admin API needs an admin token
+        listed = parse(run_cli("graph-admin", "graph", "list", "--json", env=env))
+        assert (listed.code, listed.error["code"]) == (3, "remote.unauthorized")
+        assert "GRAPH_CLI_ADMIN_TOKEN" in listed.error["message"]
 
 
 def test_another_server_version_warns(

@@ -88,13 +88,14 @@ def new_key() -> str:
 def command_line(spec: CommandSpec, args: dict[str, JsonValue]) -> list[str]:
     """The arguments that repeat a command (after the program name), as a person types
     them: positionals first, ``--`` only when one looks like an option, so options can
-    still be added at the end. An upload is named by the argument it came from."""
+    still be added at the end. An upload (of a file or a directory) is named by the
+    argument it came from."""
 
     def named(param: ParamSpec, value: JsonValue) -> str:
         name = value.get("name") if isinstance(value, dict) else value
         return str(name)
 
-    argv = to_argv(spec, args, named)
+    argv = to_argv(spec, args, named, directories=True)
     if END_OF_OPTIONS not in argv:
         return argv
     cut = argv.index(END_OF_OPTIONS)

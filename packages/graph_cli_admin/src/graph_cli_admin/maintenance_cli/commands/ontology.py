@@ -87,6 +87,7 @@ SPECS: Final = (
         ),
         errors=("admin.model_invalid",),
         handler=validate,
+        remote="client",
     ),
     CommandSpec(
         path=("ontology", "diff"),
@@ -116,6 +117,7 @@ SPECS: Final = (
         errors=(*GRAPH_ERRORS, "usage.missing_argument", "admin.model_invalid"),
         handler=diff_command,
         description="Reports whether the declared version bump suffices; release enforces it.",
+        remote="hooked",
     ),
     CommandSpec(
         path=("ontology", "release"),
@@ -155,5 +157,6 @@ SPECS: Final = (
         handler=release_command,
         description="The version bump must cover the changes against the pinned release;"
         " re-running a release that is already pinned changes nothing.",
+        remote="hooked",
     ),
 )

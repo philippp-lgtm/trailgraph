@@ -30,7 +30,7 @@ from graph_cli.ontology_layer.diff import BumpCheck, DiffReport, check_bump, cla
 from graph_cli.ontology_layer.exporters.jsonschema import export_jsonschema
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version, bump_level
-from graph_cli.ontology_layer.vocabulary import IR_FORMAT
+from graph_cli.ontology_layer.vocabulary import IR_FORMAT, MODULE_ID_RE
 
 RELEASE_SCHEMA: Final = "graph_cli.ontology_release/1"
 COMPILED_FILE: Final = "compiled.json"
@@ -86,6 +86,12 @@ def main_module(directory: Path, module: str | None) -> str:
             details={"argument": "source"},
         )
     if module is not None:
+        if not MODULE_ID_RE.match(module):  # a module id never names another directory
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--module {module!r} is not a module id ({MODULE_ID_RE.pattern})",
+                details={"argument": "module"},
+            )
         if not (directory / f"{module}.yaml").is_file():
             raise GraphCliError(
                 "usage.invalid_argument",

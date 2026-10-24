@@ -3,7 +3,8 @@
 The click program is generated from the command declarations
 (``maintenance_cli.commands``); ``main`` hands it to ``cli_kit.runner.run``,
 which renders every outcome as the B9 envelope (text or ``--json``) with
-its exit code.
+its exit code. On a host in remote mode the commands the server runs go to
+its admin API instead (``maintenance_cli.remote``, B14.15).
 """
 
 from __future__ import annotations
@@ -21,7 +22,14 @@ from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_admin.services_admin import error_codes
 
 
-def program() -> click.Group:
+def program(*, remote: bool = False) -> click.Group:
+    """The click program; ``remote`` sends every command the server runs to its admin API."""
+    specs = all_specs()
+    if remote:
+        from graph_cli_admin.maintenance_cli.remote import remote_specs
+
+        specs = remote_specs(specs)
+
     @click.group(context_settings={"help_option_names": ["-h", "--help"]})
     @click.version_option(__version__, prog_name="graph-admin")
     def cli() -> None:
@@ -29,7 +37,7 @@ def program() -> click.Group:
 
     return build_click(
         cli,
-        all_specs(),
+        specs,
         group_help={
             "audit": "Verify and anchor the audit trail.",
             "describe": "Describe the commands of this program.",
@@ -49,7 +57,7 @@ def main() -> None:
     hints.register()
     services = wiring.Services(env, Path.cwd())
     code = run(
-        program(),
+        program(remote=services.remote_mode()),
         sys.argv[1:],
         wiring.invocation(env),
         services=services,
