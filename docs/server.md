@@ -143,13 +143,18 @@ asks `/v1/health`.
 
 Moving an existing data root into the container:
 
-1. Stop every local writer and run `graph-admin audit verify`.
+1. Stop every local writer. If the installed policy names `maintainers`,
+   add `{id: "os:10001"}` (the container's user) and grant the server, then
+   apply it here: in the container no other user can apply a policy, not
+   even run `audit verify`. Run `graph-admin audit verify`.
 2. Copy the data root into the volume, for example with `docker compose
    run --rm --no-deps -v <data root>:/source:ro --entrypoint sh graph -c
-   'cp -a /source/. /data/graph_cli/'` before the first start.
+   'cp -a /source/. /data/graph_cli/'` before the first start. Settings
+   the server reads (`[audit]`, `[files]`, `[server]`) go into
+   `/config/graph_cli/config.toml` in the container.
 3. Start the container and run `graph-admin audit verify` in it.
-4. Grant the server in the policy, create the tokens, and switch the
-   clients to the [remote mode](#remote-mode-of-graph).
+4. Create the tokens and switch the clients to the
+   [remote mode](#remote-mode-of-graph).
 
 `docker build --target test .` runs the whole test suite on Linux in the
 image.
