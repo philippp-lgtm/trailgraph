@@ -21,7 +21,12 @@ def describe_commands(state: CommandState) -> Result:
 
 
 # What every command the admin API runs can meet in the remote mode (B14.15).
-REMOTE_ERRORS: Final = ("remote.unreachable", "remote.unauthorized", "remote.protocol")
+REMOTE_ERRORS: Final = (
+    "remote.unreachable",
+    "remote.unauthorized",
+    "remote.protocol",
+    "remote.client_outdated",
+)
 
 
 def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:

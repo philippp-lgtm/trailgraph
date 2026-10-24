@@ -24,6 +24,7 @@ REMOTE_ERRORS: Final = (
     "remote.unreachable",
     "remote.unauthorized",
     "remote.protocol",
+    "remote.client_outdated",
     "access.project_mismatch",
 )
 REMOTE_WRITE_ERRORS: Final = ("remote.outcome_unknown",)

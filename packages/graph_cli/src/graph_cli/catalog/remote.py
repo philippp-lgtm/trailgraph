@@ -6,7 +6,9 @@ connection lost after the request was sent is ``remote.outcome_unknown``
 for a write (it may have been applied; the idempotency key makes running
 it again safe) and one retry for a read. 401 is ``remote.unauthorized``;
 an answer that is not the API's is ``remote.protocol``. The token goes into
-the ``Authorization`` header only, never into an error.
+the ``Authorization`` header only, never into an error. Every request names
+this program's build (``catalog.build``); every answer that is no error is
+compared with the server's version and build (``remote.version_differs``).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Final
 
+from graph_cli.catalog.build import BUILD_HEADER, build_header, parse_build_header, short
 from graph_cli.catalog.endpoint import Endpoint
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -64,12 +67,18 @@ class RemoteClient:
         *,
         timeout_s: float,
         version: str,
+        program: str,
+        build: str | None = None,
+        warnings: list[WarningRecord] | None = None,
         token_hint: str = APP_TOKEN_HINT,
     ) -> None:
         self.endpoint = endpoint
         self._token = token
         self.timeout_s = timeout_s
         self.version = version
+        self.program = program  # graph or graph-admin: whose build the server compares
+        self.build = build  # None: no build id to claim (an editable install)
+        self.warnings = warnings  # the running command's warnings; None: not noted
         self.token_hint = token_hint  # where this program's token comes from
 
     def call(
@@ -121,11 +130,33 @@ class RemoteClient:
                 connection.close()
             if response.status == 401:
                 raise unauthorized(self.token_hint)
-            return Answer(response.status, found, data)
+            answer = Answer(response.status, found, data)
+            self._note_version(answer)
+            return answer
         raise GraphCliError("internal.error", "no attempt was made")
 
     def version_warning(self, answer: Answer) -> WarningRecord | None:
+        """``remote.version_differs`` when the server runs another build of this program
+        (both known) or another version; ``None`` for an error answer, which says why."""
+        if answer.status >= 400:
+            return None
         server = answer.headers.get(VERSION_HEADER.lower())
+        named = parse_build_header(answer.headers.get(BUILD_HEADER.lower()))
+        theirs = named[1] if named is not None and named[0] == self.program else None
+        if self.build is not None and theirs is not None:
+            if theirs == self.build:
+                return None
+            return WarningRecord(
+                "remote.version_differs",
+                f"the server runs build {short(theirs)} of {self.program}, this is build"
+                f" {short(self.build)}; commands and answers may differ",
+                {
+                    "client": self.version,
+                    "server": server,
+                    "client_build": self.build,
+                    "server_build": theirs,
+                },
+            )
         if server is None or server == self.version:
             return None
         return WarningRecord(
@@ -134,6 +165,13 @@ class RemoteClient:
             " may differ",
             {"client": self.version, "server": server},
         )
+
+    def _note_version(self, answer: Answer) -> None:
+        if self.warnings is None:
+            return
+        warning = self.version_warning(answer)
+        if warning is not None and warning not in self.warnings:
+            self.warnings.append(warning)
 
     def _connection(self) -> http.client.HTTPConnection:
         endpoint = self.endpoint
@@ -158,6 +196,8 @@ class RemoteClient:
             "Accept": "application/json",
             **(extra or {}),
         }
+        if self.build is not None:
+            headers[BUILD_HEADER] = build_header(self.program, self.build)
         if isinstance(body, bytes):
             headers.setdefault("Content-Type", "application/json")
             headers["Content-Length"] = str(len(body))
@@ -268,7 +308,6 @@ class RemoteSession:
         body = self.body(args=dict(args))
         route = self.commands + "/".join(path) + ("?render=text" if text else "")
         answer = self.client.call("POST", route, body=body, write=write)
-        self._note_version(answer)
         if not text:
             return envelope_of(answer), None, None
         value = answer.json()
@@ -294,8 +333,3 @@ class RemoteSession:
         if self.graph_env is not None:
             document["graph_env"] = self.graph_env
         return json.dumps(document, ensure_ascii=False).encode()
-
-    def _note_version(self, answer: Answer) -> None:
-        warning = self.client.version_warning(answer)
-        if warning is not None and warning not in self.warnings:
-            self.warnings.append(warning)

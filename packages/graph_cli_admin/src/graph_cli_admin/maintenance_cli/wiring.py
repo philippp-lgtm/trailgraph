@@ -108,6 +108,8 @@ class Services:
         return self._remote
 
     def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
+        import graph_cli_admin
+        from graph_cli.catalog.build import read_build
         from graph_cli.catalog.endpoint import parse_endpoint
         from graph_cli.catalog.remote import RemoteClient, RemoteSession, read_token
         from graph_cli.catalog.wiring import asserted_facets
@@ -139,6 +141,9 @@ class Services:
             token,
             timeout_s=config.remote_timeout_s,
             version=__version__,
+            program=PROGRAM,
+            build=read_build(graph_cli_admin.__file__),
+            warnings=warnings,
             token_hint=TOKEN_HINT,
         )
         return RemoteSession(

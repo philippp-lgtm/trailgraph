@@ -187,6 +187,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "remote.unauthorized": None,  # the message names the token settings
     "remote.protocol": None,
     "remote.outcome_unknown": _same_key,
+    "remote.client_outdated": None,  # the message says what to install
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}

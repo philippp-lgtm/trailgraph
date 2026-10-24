@@ -220,3 +220,56 @@ def test_plain_http_beyond_loopback_warns_when_allowed(
     )
     refused = remote(run_cli, env, "whoami")
     assert (refused.code, refused.error["code"]) == (5, "config.invalid")
+
+
+def test_the_client_names_its_build_and_compares_the_servers() -> None:
+    """Plan origin_lifecycle E2: a warning when the server runs another build, unless the
+    answer is an error (it says why); without a build id only the versions are compared."""
+    from graph_cli.catalog.endpoint import parse_endpoint
+    from graph_cli.catalog.remote import RemoteClient
+    from graph_cli.kernel.errors import WarningRecord
+
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    sent: list[str | None] = []
+    replies: list[tuple[int, str | None]] = []
+
+    def behaviour(handler: BaseHTTPRequestHandler, number: int) -> None:
+        sent.append(handler.headers.get("Graph-Cli-Build"))
+        status, build = replies[number - 1]
+        body = json.dumps(ENVELOPE).encode()
+        handler.send_response(status)
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Graph-Cli-Version", "0.1.0.dev0")
+        if build is not None:
+            handler.send_header("Graph-Cli-Build", build)
+        handler.end_headers()
+        handler.wfile.write(body)
+
+    with stub(behaviour) as seen:
+        endpoint = parse_endpoint(f"http://127.0.0.1:{port_of(seen)}")
+        assert not isinstance(endpoint, str)
+
+        def client(build: str | None, warnings: list[WarningRecord]) -> RemoteClient:
+            return RemoteClient(
+                endpoint,
+                "gct_x",
+                timeout_s=5,
+                version="0.1.0.dev0",
+                program="graph",
+                build=build,
+                warnings=warnings,
+            )
+
+        warnings: list[WarningRecord] = []
+        replies[:] = [(200, f"graph {a}"), (200, f"graph {b}"), (200, f"graph {b}")]
+        replies += [(422, f"graph {b}"), (200, f"graph-admin {b}")]
+        for _ in range(5):
+            client(a, warnings).call("POST", "/v1/commands/whoami", body=b"{}")
+        assert sent == [f"graph {a}"] * 5
+        assert [w.code for w in warnings] == ["remote.version_differs"]  # noted once
+        assert warnings[0].details["server_build"] == b
+        assert "build bbbbbbbbbbbb of graph, this is build aaaaaaaaaaaa" in warnings[0].message
+        alone: list[WarningRecord] = []
+        replies.append((200, f"graph {b}"))
+        client(None, alone).call("POST", "/v1/commands/whoami", body=b"{}")
+    assert sent[-1] is None and alone == []  # no build to claim, the versions are equal

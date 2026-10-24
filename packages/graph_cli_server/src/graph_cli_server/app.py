@@ -7,7 +7,10 @@ program, run by ``cli_kit.runner.run`` with one ``AppServices`` per request
 (the request's actor, pointer, ``GRAPH_CLI_GRAPH`` and file origins). Every
 answer is the envelope; the HTTP status follows the error category. A
 request without a valid bearer token reaches no service and is only logged.
-No body, token or query string is ever logged.
+A request that names another build of its program than the server runs is
+refused before any route (``remote.client_outdated``; ``[server]
+client_builds = "warn"`` lets it through). No body, token or query string
+is ever logged.
 """
 
 from __future__ import annotations
@@ -28,10 +31,12 @@ from typing import IO, Any, Final, Protocol
 
 import click
 
+import graph_cli
 from graph_cli import __version__
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.meta import inventory
 from graph_cli.app_cli.main import program
+from graph_cli.catalog.build import BUILD_HEADER, parse_build_header, read_build, short
 from graph_cli.catalog.config import load_config
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.pointer import PointerFile, request_pointer
@@ -69,7 +74,9 @@ STATUS_BY_CATEGORY: Final[Mapping[ErrorCategory, int]] = {
     ErrorCategory.INTERNAL: 500,
 }
 CORS_METHODS: Final = "GET, POST, PUT"
-CORS_HEADERS: Final = "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Actor"
+CORS_HEADERS: Final = (
+    "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Actor"
+)
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
 _SKILL_KEYS: Final = frozenset({"actor", "graph_env"})
 _UPLOAD_KEYS: Final = frozenset({"upload", "name", "origin"})
@@ -103,6 +110,7 @@ class Settings:
     cors_origins: frozenset[str]
     max_upload_bytes: int
     admin_api: bool = False
+    client_builds: str = "exact"  # or "warn": another build of a client is let through
 
     @classmethod
     def load(cls, env: Mapping[str, str], cwd: Path) -> Settings:
@@ -123,6 +131,7 @@ class Settings:
             cors_origins=frozenset(config.cors_origins),
             max_upload_bytes=config.max_file_bytes,
             admin_api=config.admin_api,
+            client_builds=config.client_builds,
         )
 
 
@@ -142,8 +151,13 @@ class ServerApp:
         log: IO[str],
         clock: Clock | None = None,
         admin: Callable[[ServerApp], AdminRoutes] | None = None,
+        builds: Mapping[str, str | None] | None = None,
     ) -> None:
         self.settings = settings
+        # Program to the build id the server runs (the admin API adds graph-admin's);
+        # None: unknown, so nothing is compared. ``builds`` replaces them in tests.
+        self.builds: dict[str, str | None] = {PROGRAM: read_build(graph_cli.__file__)}
+        self.builds.update(builds or {})
         self.log = log
         self.clock = clock or SystemClock()
         self.program: click.Group = program()
@@ -170,6 +184,7 @@ class ServerApp:
         headers = [
             ("Content-Type", response.content_type),
             (VERSION_HEADER, __version__),
+            *self._build_header(environ),
             ("Cache-Control", "no-store"),
             ("X-Content-Type-Options", "nosniff"),
             *response.headers,
@@ -203,6 +218,9 @@ class ServerApp:
             return _json(200, {"ok": True, "version": __version__, "api": API_VERSION})
         token = self._authenticate(environ)
         name.append(token.name)
+        outdated = self._outdated(environ)
+        if outdated is not None:
+            return self._error(None, outdated)
         if parts == ["v1", "uploads"]:
             self._method(method, "PUT")
             return self._upload(environ, token)
@@ -270,6 +288,30 @@ class ServerApp:
                 " set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token",
             )
         return found
+
+    def _outdated(self, environ: Mapping[str, Any]) -> GraphCliError | None:
+        """``remote.client_outdated`` for a client that names another build of its program
+        than the server runs; nothing when either build is unknown or in ``warn`` mode."""
+        named = parse_build_header(environ.get("HTTP_GRAPH_CLI_BUILD"))
+        if named is None or self.settings.client_builds == "warn":
+            return None
+        client, build = named
+        ours = self.builds.get(client)
+        if ours is None or ours == build:
+            return None
+        return GraphCliError(
+            "remote.client_outdated",
+            f"this {client} is build {short(build)}, the server runs build {short(ours)};"
+            f" install the {client} the server runs, then run the command again",
+            details={"program": client, "client": build, "server": ours},
+        )
+
+    def _build_header(self, environ: Mapping[str, Any]) -> list[tuple[str, str]]:
+        """The server's build of the program the request named (default ``graph``)."""
+        named = parse_build_header(environ.get("HTTP_GRAPH_CLI_BUILD"))
+        client = named[0] if named is not None and named[0] in self.builds else PROGRAM
+        ours = self.builds.get(client)
+        return [] if ours is None else [(BUILD_HEADER, f"{client} {ours}")]
 
     def _inventory(self) -> dict[str, JsonValue]:
         return inventory(all_specs())
@@ -550,7 +592,7 @@ class ServerApp:
         return [
             ("Access-Control-Allow-Origin", str(origin)),
             ("Vary", "Origin"),
-            ("Access-Control-Expose-Headers", f"{VERSION_HEADER}, {EXIT_HEADER}"),
+            ("Access-Control-Expose-Headers", f"{VERSION_HEADER}, {BUILD_HEADER}, {EXIT_HEADER}"),
         ]
 
     def _preflight(self, environ: Mapping[str, Any]) -> Response:

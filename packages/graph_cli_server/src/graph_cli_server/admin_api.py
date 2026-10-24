@@ -34,7 +34,9 @@ from typing import TYPE_CHECKING, Any, Final
 
 import click
 
+import graph_cli_admin
 from graph_cli import __version__
+from graph_cli.catalog.build import read_build
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.tokens import TokenRecord
 from graph_cli.cli_kit.argv import to_argv
@@ -86,6 +88,7 @@ class AdminApi:
         error_codes.register()
         hints.register()
         self.server = server
+        server.builds.setdefault(PROGRAM, read_build(graph_cli_admin.__file__))
         self.program: click.Group = program()
         self.declared = tuple(served(spec) for spec in all_specs())
         self.specs: dict[str, CommandSpec] = {

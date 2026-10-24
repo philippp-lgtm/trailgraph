@@ -45,6 +45,10 @@ uv export --frozen --package graph-cli --no-hashes --no-emit-workspace \
 uv tool install --reinstall --compile-bytecode --constraints <file> ./packages/graph_cli
 ```
 
+For a client of a `graph-server`, wrap the install in `python3
+scripts/build_id.py` and `python3 scripts/build_id.py --clean`, so the
+installed program names its build ([Builds](docs/server.md#builds)).
+
 ## Quickstart
 
 Create a data root and a graph from one of the toy ontologies:

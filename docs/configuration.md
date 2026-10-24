@@ -32,8 +32,10 @@ limit and the read signal. The sections described elsewhere:
 - `[activity]`: [Live view](live_view.md)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
-  `false`) makes it serve the [admin API](server.md#admin-api) too; read
-  by the server only
+  `false`) makes it serve the [admin API](server.md#admin-api) too;
+  `client_builds`: `"exact"` (default) refuses a client of another build,
+  `"warn"` lets it through with a warning ([Builds](server.md#builds));
+  read by the server only
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 

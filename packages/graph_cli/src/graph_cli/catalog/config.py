@@ -53,7 +53,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
-    "server": frozenset({"cors_origins", "admin_api"}),
+    "server": frozenset({"cors_origins", "admin_api", "client_builds"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
@@ -90,6 +90,8 @@ class Config:
     remote_timeout_s: float = 60.0  # [remote] timeout_s
     cors_origins: tuple[str, ...] = ()  # [server]: browser origins allowed to call graph-server
     admin_api: bool = False  # [server]: graph-server also serves the graph-admin commands
+    # [server]: "exact" refuses a client of another build, "warn" lets it through
+    client_builds: Literal["exact", "warn"] = "exact"
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -197,6 +199,9 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     ):
         raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
     admin_api = get("server.admin_api", bool, "a boolean")
+    client_builds = get("server.client_builds", str, "a string")
+    if client_builds is not None and client_builds not in ("exact", "warn"):
+        raise _invalid(path, "server.client_builds", "must be 'exact' or 'warn'")
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -220,6 +225,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
         admin_api=bool(admin_api),
+        client_builds="warn" if client_builds == "warn" else "exact",
         mode=mode or defaults.mode,
         endpoint=endpoint,
         token_file=token_file,

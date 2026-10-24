@@ -280,6 +280,8 @@ class AppServices:
         return config, roots, FileRoots.from_config(config.file_roots, self.env)
 
     def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
+        import graph_cli
+        from graph_cli.catalog.build import read_build
         from graph_cli.catalog.endpoint import parse_endpoint
         from graph_cli.catalog.remote import RemoteClient, RemoteSession
 
@@ -303,6 +305,9 @@ class AppServices:
             self._token(config),
             timeout_s=config.remote_timeout_s,
             version=__version__,
+            program=PROGRAM,
+            build=read_build(graph_cli.__file__),
+            warnings=warnings,
         )
         shown: dict[str, JsonValue] | None = None
         if pointer is not None:

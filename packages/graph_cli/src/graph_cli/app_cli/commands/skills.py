@@ -63,6 +63,7 @@ GRAPH_ERRORS: Final = (
     "remote.unreachable",  # graph skills come from the server in the remote mode (B14.10)
     "remote.unauthorized",
     "remote.protocol",
+    "remote.client_outdated",
     "graph.not_found",
     "graph.not_in_project",
     "config.invalid",
@@ -475,6 +476,7 @@ SPECS: Final = (
             "remote.unreachable",
             "remote.unauthorized",
             "remote.protocol",
+            "remote.client_outdated",
         ),
         handler=check_command,
         remote="client",

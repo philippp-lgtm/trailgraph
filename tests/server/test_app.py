@@ -315,3 +315,76 @@ def test_cors(installation: dict[str, Any], tmp_path: Path) -> None:
     reply = call(app, "GET", "/v1/health", headers=allowed)
     assert reply.headers["Vary"] == "Origin"
     assert "Access-Control-Allow-Credentials" not in reply.headers
+
+
+BUILD_A = "sha256:" + "a" * 64
+BUILD_B = "sha256:" + "b" * 64
+
+
+def test_another_build_of_the_client_is_refused(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """Plan origin_lifecycle E2: the server is the origin; its build is the one to run."""
+    settings = Settings.load(installation["env"], tmp_path)
+    app = ServerApp(settings, log=io.StringIO(), builds={"graph": BUILD_A})
+    token = installation["tokens"]["ci"]
+
+    def whoami(build: str | None) -> Any:
+        headers = {} if build is None else {"Graph-Cli-Build": build}
+        return call(app, "POST", "/v1/commands/whoami", token=token, body={}, headers=headers)
+
+    same = whoami(f"graph {BUILD_A}")
+    assert same.status == 200 and same.headers["Graph-Cli-Build"] == f"graph {BUILD_A}"
+    refused = whoami(f"graph {BUILD_B}")
+    assert (refused.status, refused.error["code"]) == (422, "remote.client_outdated")
+    assert refused.error["details"] == {"program": "graph", "client": BUILD_B, "server": BUILD_A}
+    assert "build bbbbbbbbbbbb, the server runs build aaaaaaaaaaaa" in refused.error["message"]
+    assert refused.headers["Graph-Cli-Exit-Code"] == "1"
+    # no build, a malformed one, or one of a program this server does not know: no gate
+    for build in (None, "graph unknown", f"other {BUILD_B}"):
+        assert whoami(build).status == 200
+    # the token is checked first; health needs neither
+    anonymous = call(
+        app, "POST", "/v1/commands/whoami", body={}, headers={"Graph-Cli-Build": f"graph {BUILD_B}"}
+    )
+    assert anonymous.error["code"] == "remote.unauthorized"
+    health = call(app, "GET", "/v1/health", headers={"Graph-Cli-Build": f"graph {BUILD_B}"})
+    assert health.status == 200
+    # upload too: every route after the token
+    upload = call(
+        app,
+        "PUT",
+        "/v1/uploads",
+        token=token,
+        raw=b"x",
+        headers={"Graph-Cli-Build": f"graph {BUILD_B}"},
+    )
+    assert upload.error["code"] == "remote.client_outdated"
+    # a server of unknown build compares nothing
+    unknown = ServerApp(settings, log=io.StringIO(), builds={"graph": None})
+    reply = call(
+        unknown,
+        "POST",
+        "/v1/commands/whoami",
+        token=token,
+        body={},
+        headers={"Graph-Cli-Build": f"graph {BUILD_B}"},
+    )
+    assert reply.status == 200 and "Graph-Cli-Build" not in reply.headers
+
+
+def test_warn_mode_lets_another_build_through(installation: dict[str, Any], tmp_path: Path) -> None:
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + '\n[server]\nclient_builds = "warn"\n')
+    settings = Settings.load(installation["env"], tmp_path)
+    app = ServerApp(settings, log=io.StringIO(), builds={"graph": BUILD_A})
+    reply = call(
+        app,
+        "POST",
+        "/v1/commands/whoami",
+        token=installation["tokens"]["ci"],
+        body={},
+        headers={"Graph-Cli-Build": f"graph {BUILD_B}"},
+    )
+    assert reply.status == 200
+    assert reply.headers["Graph-Cli-Build"] == f"graph {BUILD_A}"  # the client warns

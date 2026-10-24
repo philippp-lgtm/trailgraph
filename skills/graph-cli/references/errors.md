@@ -22,6 +22,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `remote.unreachable`, `remote.unauthorized`: stop and tell the user. Never look for, set or pass a token yourself.
 - `remote.outcome_unknown`: a write was sent and its answer lost. Run exactly the command in `hint` (the same write with the same idempotency key, safe to repeat), never a changed one, then read the result.
 - `access.project_mismatch`: the token belongs to another project. Stop and tell the user; never change the project.
+- `remote.client_outdated`: this program is not the build the server runs. Stop and tell the user; never install or change the program yourself.
 
 ## Codes
 
@@ -69,6 +70,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `query.too_large` | refused | 1 |
 | `query.unbound_variable` | usage | 2 |
 | `query.unsupported` | refused | 1 |
+| `remote.client_outdated` | refused | 1 |
 | `remote.outcome_unknown` | unavailable | 5 |
 | `remote.protocol` | unavailable | 5 |
 | `remote.unauthorized` | denied | 3 |

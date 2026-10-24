@@ -333,7 +333,7 @@ Usage: `graph get REF [OPTIONS]`
 
 List the graphs this project may use.
 
-Kind: read. Surface: retrieve. Action: `read.list`. Exit codes: 0, 2, 3, 5, 6.
+Kind: read. Surface: retrieve. Action: `read.list`. Exit codes: 0, 1, 2, 3, 5, 6.
 
 Usage: `graph graphs`
 
@@ -732,7 +732,7 @@ Usage: `graph update REF [OPTIONS]`
 
 Show who is acting: the identity facets and what the policy allows.
 
-Kind: meta. Surface: meta. Action: none. Exit codes: 0, 2, 3, 5, 6.
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
 
 Usage: `graph whoami`
 

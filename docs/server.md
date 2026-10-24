@@ -89,6 +89,30 @@ cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
 given.
 
+## Builds
+
+The server is the origin: the program it runs is the one clients should
+run. Every installed build of `graph` and `graph-admin` carries a build id,
+a hash over the sources of the distribution and of the distributions it
+depends on, so two installs of the same source tree have the same id
+whatever their version says. The client names its program and build in
+`Graph-Cli-Build: <program> sha256:<hex>`; every answer carries the
+server's build of that program in the same header.
+
+After the token, before any route, the server compares the two: another
+build of the same program is refused with `remote.client_outdated` (422,
+exit code 1); the message names both builds. With `[server] client_builds
+= "warn"` the request runs, and the client warns `remote.version_differs`
+instead (for a rolling upgrade). Nothing is compared when either side has
+no build id: a web app or `curl` sends none, and neither does a program
+run from a checkout (`uv run graph`), which then only gets the warning
+when the version string differs. `/v1/health` is never refused.
+
+Installing a client from a checkout with a build id: run
+`python3 scripts/build_id.py` before `uv tool install` and `python3
+scripts/build_id.py --clean` after it. The image's build stage does the
+same, so a client and a server built from the same tree match.
+
 ## Admin API
 
 With `admin_api = true` under `[server]` in the server's `config.toml`
@@ -143,8 +167,9 @@ device and the pointer's project and graphs are sent with each request.
   writes never.
 - `remote.unreachable`: no connection; `remote.unauthorized`: no token, or
   the server refused it; `remote.protocol`: the answer is not the API's (a
-  proxy page); `remote.version_differs` (warning): the server runs another
-  version.
+  proxy page); `remote.client_outdated`: the server runs another build of
+  `graph` ([Builds](#builds)); `remote.version_differs` (warning): the
+  server runs another version or, in `warn` mode, another build.
 - `describe commands` runs locally.
 - `apply FILE|-` and `query -|--file` read their input here and upload it.
 - `file add PATH` uploads the file with its origin under this machine's
@@ -171,6 +196,8 @@ as `graph` does.
 - `graph skill render` checks `--out` here and writes the preview into it.
 - `describe commands` and `ontology validate` run here; `init`, `view` and
   `--data-root` are refused (`admin.remote_mode`).
+- The server compares its build of `graph-admin` with this one, as for
+  `graph` ([Builds](#builds)).
 - Writes are never retried. A lost answer is `remote.outcome_unknown`:
   check the state (`graph show`, `token list`, `policy show`) before
   running the command again.

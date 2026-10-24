@@ -135,6 +135,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |
 | `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)); `catalog.identity.request` builds the actor of a server request from its token and the client's facets |
 | `catalog.endpoint`, `catalog.remote` | the remote mode: the server endpoint, the HTTP transport (`http.client`, imported in remote mode only) and the `RemoteSession` of one command |
+| `catalog.build` | the build id an installed distribution carries (`_build_id`, written by `scripts/build_id.py`) and the `Graph-Cli-Build` header |
 | `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
 
 `catalog.identity` builds the one `ActorContext` per invocation. Only

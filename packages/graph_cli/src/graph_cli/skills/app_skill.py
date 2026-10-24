@@ -935,6 +935,8 @@ REMOTE_GUIDANCE: Final = (
     " never a changed one, then read the result.",
     "- `access.project_mismatch`: the token belongs to another project. Stop and tell"
     " the user; never change the project.",
+    "- `remote.client_outdated`: this program is not the build the server runs. Stop and"
+    " tell the user; never install or change the program yourself.",
     "",
 )
 

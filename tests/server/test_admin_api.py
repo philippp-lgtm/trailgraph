@@ -87,6 +87,34 @@ def test_the_admin_api_is_off_unless_plugged_in(
     assert "admin_api" in reply.error["message"]
 
 
+def test_graph_admin_is_compared_with_the_servers_graph_admin(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """Plan origin_lifecycle E2: each program against the server's build of it."""
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    settings = Settings.load(installation["env"], tmp_path)
+    app = ServerApp(
+        settings, log=io.StringIO(), admin=AdminApi, builds={"graph": a, "graph-admin": b}
+    )
+    root = installation["tokens"]["root"]
+
+    def token_list(build: str) -> Any:
+        return call(
+            app,
+            "POST",
+            "/v1/admin/commands/token/list",
+            token=root,
+            body={},
+            headers={"Graph-Cli-Build": build},
+        )
+
+    same = token_list(f"graph-admin {b}")
+    assert same.status == 200 and same.headers["Graph-Cli-Build"] == f"graph-admin {b}"
+    refused = token_list(f"graph-admin {a}")
+    assert refused.error["code"] == "remote.client_outdated"
+    assert refused.error["details"]["program"] == "graph-admin"
+
+
 def test_token_scopes_keep_the_surfaces_apart(installation: dict[str, Any], tmp_path: Path) -> None:
     app = served(installation, tmp_path)
     tokens = installation["tokens"]

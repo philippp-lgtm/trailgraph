@@ -24,6 +24,8 @@ __pycache__/
 htmlcov/
 build/
 dist/
+# written by scripts/build_id.py for a build, removed after
+packages/*/src/*/_build_id
 
 # Node
 node_modules/

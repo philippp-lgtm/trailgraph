@@ -118,6 +118,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("remote.unauthorized", _C.DENIED, False, "The server refused the token."),
     ErrorSpec("remote.protocol", _C.UNAVAILABLE, False, "The server's answer is not understood."),
     ErrorSpec("remote.outcome_unknown", _C.UNAVAILABLE, True, "The answer to a write was lost."),
+    ErrorSpec(
+        "remote.client_outdated",
+        _C.REFUSED,
+        False,
+        "The server runs another build of this program.",
+    ),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),
@@ -144,7 +150,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
     ),
     ErrorSpec("config.unknown_key", _C.WARNING, False, "A configuration key is unknown."),
-    ErrorSpec("remote.version_differs", _C.WARNING, False, "The server runs another version."),
+    ErrorSpec(
+        "remote.version_differs", _C.WARNING, False, "The server runs another version or build."
+    ),
     ErrorSpec("remote.plain_http", _C.WARNING, False, "The token travels without encryption."),
     ErrorSpec(
         "skills.source_behind_ontology",

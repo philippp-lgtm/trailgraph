@@ -10,13 +10,17 @@ ARG UV=ghcr.io/astral-sh/uv:0.13
 FROM ${UV} AS uv
 
 # ---- build: wheels of the three distributions, pinned third-party requirements ----
+# Each wheel carries its build id (scripts/build_id.py): a client installed from the same
+# tree names the same one, and the server refuses another (docs/server.md).
 FROM ${PYTHON} AS build
 COPY --from=uv /uv /bin/uv
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
 COPY packages ./packages
-RUN uv build --package graph_cli --wheel --out-dir /wheels \
+COPY scripts/build_id.py ./scripts/
+RUN python scripts/build_id.py \
+ && uv build --package graph_cli --wheel --out-dir /wheels \
  && uv build --package graph_cli_admin --wheel --out-dir /wheels \
  && uv build --package graph_cli_server --wheel --out-dir /wheels \
  && uv export --frozen --no-dev --no-emit-workspace --package graph_cli_server \
