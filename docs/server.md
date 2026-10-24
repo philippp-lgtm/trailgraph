@@ -109,8 +109,11 @@ principal `token:<name>`, like a maintainer on the server: an installed
 policy with `maintainers` must name the token (`{id: "token:<name>"}`;
 `token create --scope admin` warns `admin.token_not_maintainer` when it
 does not), one without `maintainers` lets every maintenance caller
-maintain. Denials and changes are audited exactly as locally, with the
-token and the asserted agent as the actor.
+maintain. Every admin request, reads such as `token list` or `policy show`
+included, must first be allowed `maint.audit_read` on `installation`, so
+an admin token that is no maintainer reaches nothing. Denials and changes
+are audited exactly as locally, with the token and the asserted agent as
+the actor.
 
 The API never takes a path: `--data-root` is not part of it, a file
 parameter (a policy) takes an upload, and a directory parameter (an

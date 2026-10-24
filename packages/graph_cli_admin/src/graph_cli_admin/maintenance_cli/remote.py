@@ -33,14 +33,14 @@ from typing import Any, Final
 
 from graph_cli.app_cli.remote import command_line
 from graph_cli.app_cli.remote_hooks import upload
-from graph_cli.catalog.remote import RemoteSession, Write
+from graph_cli.catalog.remote import RemoteSession, Write, protocol
 from graph_cli.cli_kit.argv import request_args
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import SERVED, CommandSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.skills.tree import write_tree
+from graph_cli.skills.tree import MAX_NAME, NAME_RE, write_tree
 from graph_cli_admin.maintenance_cli.commands.common import DATA_ROOT
 
 MAX_FILES: Final = 1000  # files of one uploaded directory, as the server takes them
@@ -155,7 +155,10 @@ def _write_rendered(
     rendered = data.get("rendered") if isinstance(data, Mapping) else None
     if not isinstance(data, Mapping) or not isinstance(rendered, Mapping):
         return document
-    dest = out / str(data.get("skill"))
+    skill = data.get("skill")
+    if not isinstance(skill, str) or len(skill) > MAX_NAME or not NAME_RE.match(skill):
+        raise protocol(0, "the rendered skill has no valid skill name")  # never a path
+    dest = out / skill
     exists = dest.is_symlink() or dest.exists()
     if exists and (not dest.is_dir() or any(dest.iterdir())) and not values.get("force"):
         graph = document.get("graph")
@@ -169,7 +172,12 @@ def _write_rendered(
                 "path": str(dest),
             },
         )
-    files = {str(name): base64.b64decode(str(content)) for name, content in rendered.items()}
+    try:
+        files = {str(name): base64.b64decode(str(content)) for name, content in rendered.items()}
+    except ValueError:
+        raise protocol(0, "the rendered files are not base64") from None
+    if not all(_inside(name) for name in files):  # checked before anything is replaced
+        raise protocol(0, "a rendered file name is not a relative path")
     try:
         if exists:
             if dest.is_dir() and not dest.is_symlink():
@@ -181,6 +189,12 @@ def _write_rendered(
         raise _usage("out", f"cannot write {dest}: {exc}") from exc
     shown = {key: value for key, value in data.items() if key != "rendered"}
     return {**document, "data": {**shown, "path": str(dest)}}
+
+
+def _inside(name: str) -> bool:
+    """A relative POSIX path that stays below the preview directory."""
+    parts = name.split("/")
+    return "\\" not in name and "\x00" not in name and all(p not in ("", ".", "..") for p in parts)
 
 
 def _usage(argument: str, message: str) -> GraphCliError:

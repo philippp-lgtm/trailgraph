@@ -145,6 +145,9 @@ def test_the_maintainers_decide(
     denied = command(app, "token/revoke", installation["tokens"]["root"], args={"name": "ci"})
     assert denied.status == 403, denied.json
     assert denied.error["code"] == "access.denied"
+    for path in ("token/list", "policy/show", "graph/list", "audit/verify"):
+        read = command(app, path, installation["tokens"]["root"])
+        assert (read.status, read.error["code"]) == (403, "access.denied"), (path, read.json)
     refusals = [
         e
         for e in audit_events(installation["root"])
@@ -446,3 +449,24 @@ def test_remote_graph_admin_answers_as_locally(
     assert len(mine) == len(theirs)
     for a, b in zip(mine, theirs, strict=True):
         assert a == b, differences(a, b)
+
+
+@pytest.mark.parametrize(
+    ("skill", "files"),
+    [("..", {"SKILL.md": "eA=="}), ("graph-x", {"../SKILL.md": "eA=="}), ("a/b", {})],
+)
+def test_a_rendered_answer_never_writes_outside_out(
+    tmp_path: Path, skill: str, files: dict[str, str]
+) -> None:
+    from graph_cli.kernel.errors import GraphCliError
+    from graph_cli_admin.maintenance_cli.remote import _write_rendered
+
+    out = tmp_path / "out"
+    (out / "graph-x").mkdir(parents=True)
+    (out / "graph-x" / "keep.md").write_text("kept")
+    document = {"data": {"skill": skill, "rendered": files, "path": None}}
+    with pytest.raises(GraphCliError) as caught:
+        _write_rendered(document, out, {"force": True, "source": "dir"})
+    assert caught.value.code == "remote.protocol"
+    assert (out / "graph-x" / "keep.md").read_text() == "kept"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out"]

@@ -7,7 +7,12 @@ command the server runs (``remote`` is ``server`` or ``hooked``) is ``POST
 /v1/admin/commands/<path>``, run by the same click program with one admin
 ``Services`` per request. The request acts through the entrypoint ``maint``
 with the token's principal, so the installed policy's maintainers decide
-and every change is audited as locally.
+and every change is audited as locally. Before any command runs, the
+request must be allowed ``maint.audit_read`` on ``installation`` (a denial
+is audited): locally only who can read the data root runs ``graph-admin``
+at all, so the reads (``token list``, ``policy show``, ``graph show``)
+authorize nothing themselves; over HTTP an admin token that is no
+maintainer reaches none of them.
 
 ``--data-root`` is not part of the API, and every file or directory
 parameter takes uploads only: the server never takes a path from a
@@ -38,7 +43,8 @@ from graph_cli.cli_kit.runner import Completed, Invocation, run
 from graph_cli.cli_kit.spec import SERVED, CommandSpec
 from graph_cli.kernel.actor import ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.records import RequestMeta
 from graph_cli.skills.tree import read_tree
 from graph_cli_admin.maintenance_cli import hints
 from graph_cli_admin.maintenance_cli.commands import all_specs
@@ -66,6 +72,7 @@ if TYPE_CHECKING:
 CLIENT: Final = ClientInfo(SERVER_PROGRAM, __version__, Entrypoint.MAINT)
 COMMANDS: Final = "/v1/admin/commands/"
 RENDER: Final = ("graph", "skill", "render")
+GATE: Final = ("maint.audit_read", "installation")  # every admin request: a maintainer
 _BODY_KEYS: Final = frozenset({"args", "actor"})
 
 
@@ -131,6 +138,7 @@ class AdminApi:
                     "usage.invalid_input", "actor must be an object", details={"argument": "actor"}
                 )
             actor, warnings = request_actor(asserted, token=token, client=CLIENT)
+            self._gate(command, AdminRequest(actor, warnings))
             with uploads.request_dir(token.name) as directory:
                 stage = self.server.stager(token, directory, staged)
                 argv = to_argv(spec, args, stage, directories=True)
@@ -147,6 +155,14 @@ class AdminApi:
         assert isinstance(restored, Mapping)
         text = _restore(done.text, staged) if done.text is not None else None
         return Outcome(restored, text if isinstance(text, str) else None, *status_of(restored))
+
+    def _gate(self, command: str, request: AdminRequest) -> None:
+        """Only a maintainer reaches any admin command; a denial is audited and raised."""
+        settings = self.server.settings
+        services = Services(settings.env, settings.cwd, request=request)
+        found: list[WarningRecord] = []
+        ctx = services.context(data_root=None, warnings=found)
+        ctx.authorize([GATE], request=RequestMeta.of(command, {}))
 
     def _run(self, argv: list[str], request: AdminRequest) -> Completed:
         settings = self.server.settings
