@@ -38,6 +38,14 @@ def _whoami(details: Mapping[str, JsonValue], program: str) -> str | None:
     return None if program == ADMIN_PROGRAM else f"{program} whoami"
 
 
+def _same_key(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A lost write answer: the same command with the key it was sent with is safe (B14.10)."""
+    argv = details.get("argv")
+    if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+        return None
+    return shlex.join([program, *(str(a) for a in argv)])
+
+
 def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe types"
 
@@ -174,6 +182,11 @@ _BASE: Final[dict[str, Hint | None]] = {
     "file.root_unknown": None,
     "file.origin_missing": None,
     "file.no_local_path": None,
+    "access.project_mismatch": None,
+    "remote.unreachable": None,
+    "remote.unauthorized": None,  # the message names the token settings
+    "remote.protocol": None,
+    "remote.outcome_unknown": _same_key,
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}

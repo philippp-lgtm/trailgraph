@@ -5,8 +5,8 @@ Order:
 1. the action must be in the taxonomy or a well-formed extension action, and
    the resource must follow the grammar; anything else is a bug
    (``internal.error``, B6.2);
-2. the **ceiling**: the app entrypoint never gets a ``maint.*`` action
-   (B6.5); hard-coded, evaluated before any policy;
+2. the **ceiling**: the app and server entrypoints never get a ``maint.*``
+   action (B6.5); hard-coded, evaluated before any policy;
 3. the first matching **deny** rule of any document: an explicit deny wins
    (B6.6);
 4. the first matching allow rule, else default deny;
@@ -47,6 +47,9 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 
 CEILING_RULE: Final = "ceiling.app_no_maint"
+SERVER_CEILING_RULE: Final = "ceiling.server_no_maint"
+# The entrypoints that serve the app surface and their ceiling rules (B6.5, B14).
+CEILINGS: Final = {"app": CEILING_RULE, "server": SERVER_CEILING_RULE}
 DEFAULT_DENY_RULE: Final = "default.deny"
 REASON_RULE: Final = "obligation.require_reason"
 BATCH_RULE: Final = "obligation.max_batch"
@@ -64,8 +67,9 @@ def authorize(
     def deny(rule_id: str, code: str) -> Decision:
         return Decision("deny", checked, resource, rule_id, policy.hash, code=code)
 
-    if actor.client.entrypoint.value == "app" and action.startswith("maint."):
-        return deny(CEILING_RULE, "access.ceiling")
+    ceiling = CEILINGS.get(actor.client.entrypoint.value)
+    if ceiling is not None and action.startswith("maint."):
+        return deny(ceiling, "access.ceiling")
     documents = [_checked_document(d) for d in policy.documents]
     facts = principal_facts(actor)
     matching = [

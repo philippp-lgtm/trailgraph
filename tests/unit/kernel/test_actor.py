@@ -39,6 +39,20 @@ def test_round_trip_and_shape() -> None:
     assert canonical_bytes(ActorContext.from_json(data).to_json()) == canonical_bytes(data)
 
 
+def test_server_entrypoint_round_trip() -> None:
+    """B2.7, B14.12: the server's actor: a token principal, client facets, no pid."""
+    actor = replace(
+        make_actor(),
+        principal=Facet(Assurance.VERIFIED, id="token:ci", name="ci", source="token"),
+        project=Facet(Assurance.VERIFIED, id="example_project", source="token"),
+        client=ClientInfo("graph-server", "0.1.0", Entrypoint.SERVER),
+        pid=None,
+    )
+    data = actor.to_json()
+    assert data["client"] == {"name": "graph-server", "version": "0.1.0", "entrypoint": "server"}
+    assert ActorContext.from_json(data) == actor
+
+
 def test_pid_is_omitted_when_unknown() -> None:
     data = replace(make_actor(), pid=None).to_json()
     assert "pid" not in data

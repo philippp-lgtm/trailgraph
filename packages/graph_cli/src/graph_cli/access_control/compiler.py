@@ -2,7 +2,8 @@
 
 Two authored forms, told apart by ``id``:
 
-- ``installation``: ``grants`` (who may use which graphs at which level),
+- ``installation``: ``grants`` (who may use which graphs at which level,
+  through the app or, with ``entrypoint: server``, the server API),
   optional ``maintainers``, project ``scopes``, the required ``no_project``
   scope, ``deny`` rules and ``obligations``;
 - ``graph``: one graph's ``types`` limits, ``obligations`` and ``deny``
@@ -65,6 +66,8 @@ _GRAPH_KEYS: Final = frozenset({"schema", "id", "types", "obligations", "deny"})
 _PRINCIPAL_KEYS: Final = frozenset({"name", "id"})
 _MATCHERS: Final = ("entrypoint", "principal_id", "principal_name", *ASSERTED_KEYS)
 _DENY_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]*$")
+# The entrypoints a grant may name; the maintenance entrypoint is for maintainers only.
+GRANT_ENTRYPOINTS: Final = ("app", "server")
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,8 +198,8 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     entry = _map(node, path, ctx, required=True)
     if entry is None:
         return []
-    _unknown_keys(node, frozenset({"principal", "graphs", "level"}), path, ctx)
-    principal: dict[str, JsonValue] = {"entrypoint": "app"}
+    _unknown_keys(node, frozenset({"principal", "entrypoint", "graphs", "level"}), path, ctx)
+    principal: dict[str, JsonValue] = {"entrypoint": _entrypoints(entry, path, ctx)}
     if "principal" in entry:
         found = _principal(entry["principal"], f"{path}.principal", ctx)
         principal.update(found or {})
@@ -213,6 +216,19 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
             "resource": resources,
         }
     ]
+
+
+def _entrypoints(entry: Mapping[str, YamlNode], path: str, ctx: _Context) -> JsonValue:
+    """``app`` unless the grant names ``server`` or both; one value stays a string, so a
+    policy written before the server compiles to the same hash."""
+    if "entrypoint" not in entry:
+        return "app"
+    names = _texts(entry["entrypoint"], f"{path}.entrypoint", ctx) or []
+    unknown = [n for n in names if n not in GRANT_ENTRYPOINTS]
+    if unknown:
+        ctx.add(f"{path}.entrypoint", f"must be {' or '.join(GRANT_ENTRYPOINTS)}")
+    chosen = sorted(set(names) & set(GRANT_ENTRYPOINTS)) or ["app"]
+    return chosen[0] if len(chosen) == 1 else list(chosen)
 
 
 def _maintainer(principal: Mapping[str, JsonValue], rule_id: str) -> dict[str, JsonValue]:

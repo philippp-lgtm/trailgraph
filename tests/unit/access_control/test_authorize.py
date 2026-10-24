@@ -15,7 +15,7 @@ from graph_cli.access_control.policy import (
     BuiltinPolicySource,
 )
 from graph_cli.kernel.actions import ACTIONS
-from graph_cli.kernel.actor import ActorContext
+from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.authz import AuthzContext, Obligations
 from graph_cli.kernel.canonical import JsonValue, canonical_bytes, hash_value
 from graph_cli.kernel.errors import GraphCliError
@@ -26,6 +26,9 @@ GRAPH = "graph:0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"
 TYPED = f"{GRAPH}/type:inv:Item"
 CTX = AuthzContext(op_count=1, has_reason=False, dry_run=False)
 APP, MAINT = actor(), maint_actor()
+SERVER = dataclasses.replace(
+    actor("token:ci"), client=ClientInfo("graph-server", "0.1.0", Entrypoint.SERVER)
+)
 
 # (actor, action, resource) -> (effect, rule, code)
 TABLE: list[tuple[ActorContext, str, str, str, str, str | None]] = [
@@ -38,6 +41,8 @@ TABLE: list[tuple[ActorContext, str, str, str, str, str | None]] = [
     (APP, "write.create", "installation", "deny", "default.deny", "access.denied"),
     (APP, "maint.repair", GRAPH, "deny", "ceiling.app_no_maint", "access.ceiling"),
     (APP, "maint.audit_verify", "installation", "deny", "ceiling.app_no_maint", "access.ceiling"),
+    (SERVER, "read.get", GRAPH, "deny", "default.deny", "access.denied"),  # B14: not granted
+    (SERVER, "maint.repair", GRAPH, "deny", "ceiling.server_no_maint", "access.ceiling"),
     (MAINT, "maint.repair", GRAPH, "allow", "builtin.allow_maint", None),
     (MAINT, "read.get", "installation", "allow", "builtin.allow_maint", None),
     (
@@ -62,12 +67,15 @@ def test_decision_table(
 
 
 def test_no_maint_action_is_reachable_from_the_app() -> None:
-    """B6.5 for the whole taxonomy, even under a policy that allows everything."""
+    """B6.5 for the whole taxonomy, even under a policy that allows everything; the server
+    has the same ceiling (B14)."""
     allow_all = _policy({"id": "x", "effect": "allow", "action": ["*"], "resource": "*"})
     for action in sorted(a for a in ACTIONS if a.startswith("maint.")):
         for policy in (BUILTIN_POLICY_SET, allow_all):
-            decision = authorize(APP, action, "installation", CTX, policy)
-            assert decision.code == "access.ceiling", action
+            for who in (APP, SERVER):
+                decision = authorize(who, action, "installation", CTX, policy)
+                assert decision.code == "access.ceiling", action
+    assert authorize(SERVER, "read.get", GRAPH, CTX, allow_all).effect == "allow"
 
 
 def test_reason_obligation() -> None:

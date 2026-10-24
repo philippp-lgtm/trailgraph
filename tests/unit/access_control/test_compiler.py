@@ -15,7 +15,7 @@ from graph_cli.access_control.compiler import BASE_OBLIGATION, compile_policy, l
 from graph_cli.access_control.documents import document_problems
 from graph_cli.access_control.effective import graph_level
 from graph_cli.access_control.policy import policy_set
-from graph_cli.kernel.actor import ActorContext, Assurance, Facet
+from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint, Facet
 from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -72,6 +72,55 @@ def installation() -> dict[str, JsonValue]:
 def levels(subject: ActorContext, *documents: dict[str, JsonValue]) -> list[str]:
     policy = policy_set(*documents)
     return [graph_level(subject, g, policy) for g in (EXAMPLE, OTHER, THIRD)]
+
+
+SERVER_GRANTS = b"""\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: tester}, graphs: "*", level: write}
+  - {entrypoint: server, principal: {id: "token:ci"}, graphs: [example_graph], level: write}
+  - {entrypoint: [server, app], graphs: [other_graph], level: read}
+no_project: {"*": write}
+"""
+
+
+def served(subject: ActorContext) -> ActorContext:
+    return dataclasses.replace(
+        subject, client=ClientInfo("graph-server", "0.1.0", Entrypoint.SERVER)
+    )
+
+
+def test_grants_name_the_server_entrypoint() -> None:
+    """B6.13 (B14): a grant without entrypoint stays an app grant, with the same hash."""
+    compiled = compile_policy(SERVER_GRANTS, file="installation.yaml", graphs=GRAPHS)
+    rules = {r["id"]: r for r in compiled.document["rules"]}  # type: ignore[index, union-attr]
+    assert rules["grant.1"]["principal"] == {"entrypoint": "app", "principal_name": "tester"}
+    assert rules["grant.2"]["principal"] == {"entrypoint": "server", "principal_id": "token:ci"}
+    assert rules["grant.3"]["principal"] == {"entrypoint": ["app", "server"]}
+    token = served(
+        dataclasses.replace(
+            actor(), principal=Facet(Assurance.VERIFIED, id="token:ci", name="ci", source="token")
+        )
+    )
+    assert levels(token, compiled.document) == ["write", "read", "none"]
+    assert levels(served(actor()), compiled.document) == ["none", "read", "none"]
+    assert levels(actor(), compiled.document) == ["write", "write", "write"]
+    plain = INSTALLATION.replace(
+        b"{principal: {name: tester},", b"{entrypoint: app, principal: {name: tester},"
+    )
+    assert (
+        compile_policy(plain, file="i.yaml", graphs=GRAPHS).hash
+        == compile_policy(INSTALLATION, file="i.yaml", graphs=GRAPHS).hash
+    )
+
+
+def test_grants_refuse_other_entrypoints() -> None:
+    bad = SERVER_GRANTS.replace(b"entrypoint: server,", b"entrypoint: maint,")
+    with pytest.raises(GraphCliError) as info:
+        compile_policy(bad, file="installation.yaml", graphs=GRAPHS)
+    paths = [p["path"] for p in info.value.details["problems"]]  # type: ignore[union-attr]
+    assert paths == ["grants[1].entrypoint"]
 
 
 def test_installation_levels_per_project() -> None:

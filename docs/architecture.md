@@ -103,7 +103,8 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
 | `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |
-| `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)) |
+| `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)); `catalog.identity.request` builds the actor of a server request from its token and the client's facets |
+| `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
 
 `catalog.identity` builds the one `ActorContext` per invocation. Only
 `catalog` and the admin wiring may read the process environment.

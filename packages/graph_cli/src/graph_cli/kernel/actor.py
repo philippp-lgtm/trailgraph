@@ -31,6 +31,7 @@ class Assurance(StrEnum):
 class Entrypoint(StrEnum):
     APP = "app"
     MAINT = "maint"
+    SERVER = "server"  # graph-server: the app surface over HTTP (B14)
 
 
 def is_valid_asserted_value(value: str) -> bool:

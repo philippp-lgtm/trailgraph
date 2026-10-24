@@ -18,6 +18,12 @@ with a warning and never block. The project comes from the
 [pointer file](configuration.md#project-pointer). `graph whoami` shows the
 actor and what the policy allows it.
 
+Requests to the server API have the entrypoint `server`. Their verified
+principal is the bearer token (`token:<name>`); agent, session, device and
+project are asserted by the client in the request. A token bound to a
+project verifies the project: a request naming another project is refused
+(`access.project_mismatch`).
+
 ## Policy layers
 
 - The **installation policy** grants, per principal, a level on graphs and
@@ -38,12 +44,17 @@ actor and what the policy allows it.
 - Deny rules may name the agent type, agent, session, device or project;
   grants only the verified principal. An explicit deny wins, the default
   is deny.
+- A grant is for `graph` (`entrypoint: app`, the default), for the server
+  API (`entrypoint: server`) or for both (`entrypoint: [app, server]`).
+  Scopes and deny rules apply to every entrypoint. `principal: {id:
+  token:<name>}` grants one token.
 
 ```yaml
 schema: graph_cli.policy/1
 id: installation
 grants:
   - {principal: {name: owner_name}, graphs: "*", level: write}
+  - {entrypoint: server, graphs: "*", level: write}
 scopes:
   example_project: {example_graph: write, other_graph: read}
 no_project: {"*": read}
@@ -63,8 +74,8 @@ obligations:
 ## Decisions
 
 `graph_cli.access_control.authorize()` is the one decision point. It is pure
-and answers for one (action, resource) pair: the app entrypoint never gets a
-`maint.*` action, then the first matching deny rule of any policy layer
+and answers for one (action, resource) pair: the app and server entrypoints
+never get a `maint.*` action, then the first matching deny rule of any policy layer
 wins, then the first matching allow rule, else deny, then the obligations
 of every layer (`require_reason`, `max_batch`).
 

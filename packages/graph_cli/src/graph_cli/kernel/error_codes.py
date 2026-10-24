@@ -111,6 +111,13 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("file.root_unknown", _C.NOT_FOUND, False, "The file root is not configured here."),
     ErrorSpec("file.origin_missing", _C.NOT_FOUND, False, "The origin of the file is missing."),
     ErrorSpec("file.no_local_path", _C.REFUSED, False, "The backend gives no local file path."),
+    ErrorSpec(
+        "access.project_mismatch", _C.DENIED, False, "The token is bound to another project."
+    ),
+    ErrorSpec("remote.unreachable", _C.UNAVAILABLE, True, "The server cannot be reached."),
+    ErrorSpec("remote.unauthorized", _C.DENIED, False, "The server refused the token."),
+    ErrorSpec("remote.protocol", _C.UNAVAILABLE, False, "The server's answer is not understood."),
+    ErrorSpec("remote.outcome_unknown", _C.UNAVAILABLE, True, "The answer to a write was lost."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),
@@ -137,6 +144,8 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "graph.unreadable", _C.WARNING, False, "A graph could not be read; it is not listed."
     ),
     ErrorSpec("config.unknown_key", _C.WARNING, False, "A configuration key is unknown."),
+    ErrorSpec("remote.version_differs", _C.WARNING, False, "The server runs another version."),
+    ErrorSpec("remote.plain_http", _C.WARNING, False, "The token travels without encryption."),
     ErrorSpec(
         "skills.source_behind_ontology",
         _C.WARNING,
