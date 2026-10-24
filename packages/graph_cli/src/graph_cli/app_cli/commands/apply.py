@@ -40,7 +40,8 @@ if TYPE_CHECKING:
 STDIN: Final = "-"
 
 
-def _read(file: str) -> bytes:
+def read_input(file: str) -> bytes:
+    """The input of ``apply``: a file or, for ``-``, stdin (also the remote mode's)."""
     if file == STDIN:
         return sys.stdin.buffer.read()
     try:
@@ -111,7 +112,7 @@ def apply(
     from graph_cli.services.write import WriteRequest  # loaded by apply only
 
     ctx = context(state)
-    changesets = _with_key(_parse(ctx.writer, _read(file)), idempotency_key)
+    changesets = _with_key(_parse(ctx.writer, read_input(file)), idempotency_key)
     entry = ctx.select(graph)
     requests = [
         WriteRequest(

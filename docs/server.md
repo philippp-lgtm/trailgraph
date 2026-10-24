@@ -98,3 +98,13 @@ device and the pointer's project and graphs are sent with each request.
   proxy page); `remote.version_differs` (warning): the server runs another
   version.
 - `describe commands` runs locally.
+- `apply FILE|-` and `query -|--file` read their input here and upload it.
+- `file add PATH` uploads the file with its origin under this machine's
+  `[roots]`; the server stores it.
+- `file path` downloads the stored file into
+  `<state>/files/<graph id>/<hash>` on this machine (read only, kept as a
+  cache) and answers that path; `--origin` and `file check` look at the
+  origins on this machine, as locally.
+- `skills emit|install|check` run here; a graph skill comes from the
+  server, rendered for the graph's current ontology, and must be allowed by
+  this project's pointer.

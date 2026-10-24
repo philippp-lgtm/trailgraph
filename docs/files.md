@@ -48,6 +48,12 @@ another. The media type comes from a built-in table of magic bytes and
 extensions (`--media-type` overrides it), so it is the same on every
 machine.
 
+In the [remote mode](server.md#remote-mode-of-graph) the roots of the
+machine running `graph` count: `file add` records the origin there,
+`file path --origin` and `file check` resolve origins there, and `file
+path` answers a read-only copy downloaded to this machine; `[files]
+max_bytes` of the server limits what it stores.
+
 ## Privacy
 
 Audit events name stored files by hash and size only: never a file name,

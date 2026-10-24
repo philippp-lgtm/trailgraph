@@ -415,7 +415,7 @@ def neighbors(
     return Result(data=data, graph=view.envelope_graph())
 
 
-def _query_text(text: str | None, file: str | None) -> str:
+def query_text(text: str | None, file: str | None) -> str:
     """The query from the argument, ``-`` (stdin) or ``--file`` (F10: no heredoc needed)."""
     if (text is None) == (file is None):
         raise _usage("text", "give the query as an argument, - for stdin, or --file <path>")
@@ -494,7 +494,7 @@ def query(
 ) -> Result:
     point = _as_of(as_of)
     check_paging(limit, offset)
-    source = _query_text(text, file)
+    source = query_text(text, file)
     parameters = _parameters(param)
     reader = context(state).reader
     parsed = reader.parse_query(source)

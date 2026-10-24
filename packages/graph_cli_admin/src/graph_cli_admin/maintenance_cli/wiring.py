@@ -68,7 +68,7 @@ class Services:
         if config.mode == "remote":
             raise GraphCliError(
                 "admin.remote_mode",
-                f"{config.path} says mode = \"remote\": the data lives with the server;"
+                f'{config.path} says mode = "remote": the data lives with the server;'
                 " run maintenance where the data lives",
                 details={"file": str(config.path)},
             )

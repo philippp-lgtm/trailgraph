@@ -560,7 +560,7 @@ Usage: `graph search TEXT [OPTIONS]`
 
 Check that installed agent skills equal what this program installs now.
 
-Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 5, 6.
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
 
 Usage: `graph skills check [OPTIONS]`
 

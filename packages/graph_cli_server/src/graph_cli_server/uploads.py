@@ -120,6 +120,6 @@ def link_name(name: str) -> str:
 def _too_large(max_bytes: int) -> GraphCliError:
     return GraphCliError(
         "file.too_large",
-        f"the upload is larger than {max_bytes} bytes",
+        f"the file is larger than {max_bytes} bytes",
         details={"max_bytes": max_bytes},
     )

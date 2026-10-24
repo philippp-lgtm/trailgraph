@@ -359,6 +359,7 @@ class FileService:
                     "alias": revision.alias,
                     "status": status,
                     "origin": where,
+                    "hash": revision.attrs.get("content"),
                 }
             )
         counts_json: dict[str, JsonValue] = dict(counts)
@@ -418,7 +419,7 @@ class FileService:
         resolved = origin.get("resolved")
         if not isinstance(resolved, str):
             return "root_unknown", origin
-        digest = _hash_file(Path(resolved))
+        digest = hash_file(Path(resolved))
         if digest is None:
             return "missing", origin
         return ("same" if digest == revision.attrs.get("content") else "changed"), origin
@@ -556,7 +557,7 @@ class FileService:
         return FileAddResult(entry, entity, file, True, None, (warning,), read.head().seq)
 
 
-def _hash_file(path: Path) -> str | None:
+def hash_file(path: Path) -> str | None:
     """The sha256 of a regular file, ``None`` when it is not there or cannot be read."""
     hasher = hashlib.sha256()
     try:

@@ -8,7 +8,9 @@ app writes outside the runtime area only into the directory named on the
 command line. Every refusal is found before anything is written. ``check``
 compares what is installed with what this very process renders now (F6).
 The ``graph_cli.skills`` modules are imported where they are used, so no
-other command loads them.
+other command loads them. In the remote mode (B14.10) a graph skill comes
+from the server, rendered there for the graph's current pin; this program
+checks it against its pointer and marks it as its own.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
 
 if TYPE_CHECKING:
+    from graph_cli.catalog.remote import RemoteSession
     from graph_cli.skills.install import Installed, RenderedSkill, SkillTarget
 
 GRAPHS: Final = ParamSpec(
@@ -57,6 +60,9 @@ OUT: Final = ParamSpec(
     "--out", "directory", "Existing directory to write one directory per skill into.", required=True
 )
 GRAPH_ERRORS: Final = (
+    "remote.unreachable",  # graph skills come from the server in the remote mode (B14.10)
+    "remote.unauthorized",
+    "remote.protocol",
     "graph.not_found",
     "graph.not_in_project",
     "config.invalid",
@@ -113,15 +119,101 @@ def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord
     return skill
 
 
+class SkillSource:
+    """Where graph skills come from: this installation, or the server (remote mode)."""
+
+    def __init__(self, state: CommandState) -> None:
+        self.state = state
+        app = services(state)
+        self.remote = app.remote(state.warnings) if app.remote_mode() else None
+        self._context: AppContext | None = None
+
+    @property
+    def context(self) -> AppContext:
+        if self._context is None:
+            self._context = services(self.state).context(self.state.warnings, self.state.command)
+        return self._context
+
+    @property
+    def pointer(self) -> PointerFile | None:
+        """The invoking project's pointer."""
+        if self.remote is None:
+            return self.context.pointer
+        return services(self.state).pointer_at(services(self.state).cwd)[0]
+
+    def skills(self, refs: Sequence[str], pointer: PointerFile | None) -> list[RenderedSkill]:
+        """The skills of ``refs``, each graph once, selected like ``--graph`` as a project
+        with ``pointer`` would see it."""
+        if self.remote is None:
+            entries: dict[str, GraphEntry] = {}
+            for ref in refs:
+                entry = self.context.select_for(ref, pointer)
+                entries.setdefault(str(entry.id), entry)
+            return [graph_skill(self.context, e, self.state.warnings) for e in entries.values()]
+        found: dict[str, RenderedSkill] = {}
+        for ref in refs:
+            skill = remote_graph_skill(self.remote, ref, pointer, self.state.warnings)
+            found.setdefault(skill.name, skill)
+        return list(found.values())
+
+
+def remote_graph_skill(
+    session: RemoteSession, ref: str, pointer: PointerFile | None, warnings: list[WarningRecord]
+) -> RenderedSkill:
+    """A graph skill rendered by the server, checked against this project's pointer."""
+    import base64
+    from urllib.parse import quote
+
+    from graph_cli.app_cli.remote_hooks import error_of
+    from graph_cli.catalog.remote import envelope_of, protocol
+    from graph_cli.skills.install import rendered
+
+    answer = session.client.call(
+        "POST", f"/v1/graphs/{quote(ref, safe='')}/skill", body=session.body()
+    )
+    document = envelope_of(answer)
+    found = document.get("warnings")
+    for warning in found if isinstance(found, list) else []:
+        if isinstance(warning, dict):
+            record = WarningRecord(
+                str(warning.get("code")), str(warning.get("message")), warning.get("details") or {}
+            )
+            if record not in warnings:
+                warnings.append(record)
+    if document.get("ok") is not True:
+        raise error_of(document)
+    data = document.get("data")
+    try:
+        assert isinstance(data, dict)
+        graph, skill = data["graph"], data["skill"]
+        assert isinstance(graph, dict) and isinstance(skill, dict)
+        files = skill["files"]
+        assert isinstance(files, dict)
+        contents = {str(p): base64.b64decode(str(c)) for p, c in files.items()}
+        name, kind, source = str(skill["name"]), skill["kind"], skill["source"]
+        assert kind in ("app", "graph") and isinstance(source, dict)
+    except (AssertionError, KeyError, ValueError):
+        raise protocol(answer.status, "the answer is not a graph skill") from None
+    if pointer is not None and not (
+        graph["name"] in pointer.graphs or graph["id"] in pointer.graphs
+    ):
+        raise GraphCliError(
+            "graph.not_in_project",
+            f"graph {graph['name']} is not allowed by this project's pointer file",
+            details={
+                "graph": graph["name"],
+                "allowed": list(pointer.graphs),
+                "file": str(pointer.path),
+            },
+        )
+    return rendered(name, kind, contents, program=program_block(), source=source)
+
+
 def named_graph_skills(
-    ctx: AppContext, refs: Sequence[str], warnings: list[WarningRecord]
+    source: SkillSource, refs: Sequence[str], warnings: list[WarningRecord]
 ) -> list[RenderedSkill]:
     """The skills of the graphs named with ``--graph``, selected like any ``--graph``."""
-    entries: dict[str, GraphEntry] = {}
-    for ref in refs:
-        entry = ctx.select(ref)
-        entries.setdefault(str(entry.id), entry)
-    return [graph_skill(ctx, entry, warnings) for entry in entries.values()]
+    return source.skills(refs, source.pointer)
 
 
 def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) -> Result:
@@ -136,8 +228,7 @@ def emit(state: CommandState, out: str, graphs: tuple[str, ...], force: bool) ->
         )
     skills = [app_skill()]
     if graphs:
-        ctx = services(state).context(state.warnings, state.command)
-        skills += named_graph_skills(ctx, graphs, state.warnings)
+        skills += named_graph_skills(SkillSource(state), graphs, state.warnings)
     details: dict[str, JsonValue] = {"out": str(target), "graphs": list(graphs)}
     steps = emit_skills(target, skills, force=force, details=details)
     return Result(
@@ -188,10 +279,10 @@ def target_of(state: CommandState, scope: str, dir: str | None) -> SkillTarget:
     return target
 
 
-def pointer_of(state: CommandState, ctx: AppContext, target: SkillTarget) -> PointerFile | None:
+def pointer_of(state: CommandState, source: SkillSource, target: SkillTarget) -> PointerFile | None:
     """Q3 visibility: a project gets the skills of the graphs it may use."""
     if target.dir is None:
-        return ctx.pointer
+        return source.pointer
     pointer, warnings = services(state).pointer_at(target.dir)
     state.warnings += warnings
     return pointer
@@ -233,20 +324,15 @@ def wanted_skills(
     }
     if not graphs and not refresh:
         return wanted, unavailable
-    ctx = services(state).context(state.warnings, state.command)
-    pointer = pointer_of(state, ctx, target)
-    entries: dict[str, GraphEntry] = {}
-    for ref in graphs:
-        entry = ctx.select_for(ref, pointer)
-        entries.setdefault(str(entry.id), entry)
-    named = [graph_skill(ctx, entry, state.warnings) for entry in entries.values()]
+    source = SkillSource(state)
+    pointer = pointer_of(state, source, target)
+    named = source.skills(graphs, pointer)
     wanted += named
     for name, ref in sorted(refresh.items()):
         if name in {skill.name for skill in named}:
             continue
         try:
-            entry = ctx.select_for(ref, pointer)
-            wanted.append(graph_skill(ctx, entry, state.warnings))
+            wanted += source.skills([ref], pointer)
         except GraphCliError as exc:
             if exc.code not in UNAVAILABLE:
                 raise
@@ -386,6 +472,9 @@ SPECS: Final = (
             "usage.missing_argument",
             "skills.check_failed",
             "skills.target_invalid",
+            "remote.unreachable",
+            "remote.unauthorized",
+            "remote.protocol",
         ),
         handler=check_command,
         remote="client",
