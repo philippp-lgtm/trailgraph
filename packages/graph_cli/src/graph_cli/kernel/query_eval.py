@@ -63,7 +63,10 @@ class Universe(Protocol):
 
     def current(self, entity: EntityId) -> Revision | None: ...
 
-    def current_revisions(self) -> Iterable[Revision]: ...
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterable[Revision]:
+        """Current revisions in id order; non-empty ``types`` is a hint that callers only
+        want those types, so a backend may skip decoding the rest. Callers still filter."""
+        ...
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
@@ -270,7 +273,7 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
         raise _invalid("as_of must be None at the port (B8.8)")
     types = frozenset(query.types)
     found = []
-    for revision in universe.current_revisions():
+    for revision in universe.current_revisions(types):
         if types and revision.type not in types:
             continue
         if revision.record_status not in query.record_status:

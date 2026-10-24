@@ -15,7 +15,11 @@ Detection covers policy files edited, placed or deleted by hand and
 decisions made under another policy (see
 [Audit: policy verification](audit.md#policy-verification)), but not a
 consistent rewrite of every stream (all tails, all hashes); that needs a
-head kept outside the data root. Reads are not audited, so a read under
+head kept outside the data root. Reads trust the derived files (revision
+files, the checkpoint, the index) and check the transaction log only
+after them, so an edited derived file changes what reads return until
+`graph-admin audit verify` reports it and `graph-admin graph reindex`
+rebuilds it (see [Storage](storage.md#filestore)). Reads are not audited, so a read under
 another policy leaves no trace in the audit; the opt-in
 [access log](audit.md#access-log) records reads, but it is not chained
 and can be edited.

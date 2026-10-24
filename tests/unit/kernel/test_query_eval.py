@@ -96,7 +96,7 @@ class Universe:
     def current(self, entity: EntityId) -> Revision | None:
         return self.revisions.get(entity)
 
-    def current_revisions(self) -> Iterable[Revision]:
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterable[Revision]:
         return [self.revisions[k] for k in sorted(self.revisions)]
 
     def incoming(

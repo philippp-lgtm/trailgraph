@@ -9,19 +9,22 @@ Read path (lock-free, B4.10, B13.7): the snapshot seq is the last complete,
 hash-valid tx line. Point reads (``get``, ``get_revision``, ``history``)
 use revision files with ``tx_seq <= S``, overlaid with the txs after the
 checkpoint. Scans (``query``, ``incoming``, ``neighbors``, aliases,
-suffixes) replay the tx log into a view that is cached per store instance
-and extended incrementally (plan D5). Reads never write anything.
+suffixes, ``tx``) read the disposable index plus the txs after it
+(``storage.files.index``); without a usable index, or before its seq, they
+replay the tx log into a view that is cached per store instance and
+extended incrementally (plan D5). Reads never write anything; writers
+update the index after the checkpoint.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, TypeVar
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json, pretty_bytes
@@ -63,6 +66,15 @@ from graph_cli.storage.common.view import GraphView, ViewAt
 from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Durability, OsSyncer, Syncer, ensure_dir, write_temp
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
+from graph_cli.storage.files.index import (
+    INDEX_ERRORS,
+    IndexedView,
+    IndexReader,
+    IndexUnusable,
+    ScanView,
+    TxSpan,
+    update_index,
+)
 from graph_cli.storage.files.layout import (
     AUDIT_SEGMENT_PREFIX,
     DEFAULT_SEGMENT_BYTES,
@@ -81,6 +93,9 @@ from graph_cli.storage.files.segments import (
 )
 
 _PENDING: Final = "storage.recovery_pending"
+_INDEX_STALE: Final = "storage.index_stale"
+
+T = TypeVar("T")
 
 
 def _corrupt(message: str, **details: JsonValue) -> GraphCliError:
@@ -143,6 +158,7 @@ class _ViewCache:
         self._txlog = txlog
         self._lock = threading.Lock()
         self._view = GraphView()
+        self._spans: list[TxSpan] = []  # where each tx of the view lies in the log
         self._link = GENESIS
         self._position: LogPosition | None = None
 
@@ -152,25 +168,34 @@ class _ViewCache:
                 self._extend(seq)
             return self._view
 
+    def spans_through(self, seq: int) -> tuple[GraphView, list[TxSpan]]:
+        """The view and the positions of its txs, at least through ``seq``."""
+        with self._lock:
+            if self._view.seq < seq:
+                self._extend(seq)
+            return self._view, list(self._spans)
+
     def _extend(self, seq: int) -> None:
         result = self._txlog.scan(self._link, at=self._position)
         if result.corruption is not None and not result.records:
             # The log changed under the cache (repair, tamper): rebuild from the start.
-            self._view, self._link, self._position = GraphView(), GENESIS, None
+            self._view, self._spans, self._link, self._position = GraphView(), [], GENESIS, None
             result = self._txlog.scan()
         for record in result.records:
             self._view.apply(parse_tx(record.document))
+            self._spans.append(TxSpan(record.start, record.end))
         self._link, self._position = result.end, result.position
         if self._view.seq < seq:
             details = corruption_details(result.corruption) if result.corruption else {}
             raise _corrupt(f"the tx log is damaged before seq {seq}; repair is needed", **details)
 
-    def committed(self, record: TxRecord, position: LogPosition) -> None:
+    def committed(self, record: TxRecord, span: TxSpan) -> None:
         """A writer of this instance appended ``record``; skip re-reading it."""
         with self._lock:
             if self._view.seq == record.seq - 1:
                 self._view.apply(record)
-                self._link, self._position = ChainLink(record.seq, record.hash), position
+                self._spans.append(span)
+                self._link, self._position = ChainLink(record.seq, record.hash), span.end
 
 
 class FileStore:
@@ -186,8 +211,10 @@ class FileStore:
         faults: FaultHook | None = None,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         oplog: OpLog | None = None,
+        use_index: bool = True,
     ) -> None:
         self.layout = GraphLayout(graph_dir)
+        self.use_index = use_index
         self.oplog = oplog
         self.graph_id = graph_id
         self.stream = graph_stream(str(graph_id))
@@ -215,8 +242,24 @@ class FileStore:
         return blobs.local_path(self.layout, digest)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
+        # The index is opened before the log is read: it is published after its txs
+        # are committed, so it never runs ahead of the log read afterwards.
+        reader, problem = self._open_index()
         state = self.read_state()
-        return FileSnapshot(self, state, resolve_at_seq(at_seq, state.end.seq))
+        seq = resolve_at_seq(at_seq, state.end.seq)
+        index = None
+        if reader is not None:
+            try:
+                index = self._bind_index(reader, state, seq)
+            except IndexUnusable as exc:
+                problem = str(exc)
+            if index is None:
+                reader.close()
+        warnings = state.warnings
+        if problem is not None:
+            message = f"{problem}; reads replay the tx log (graph-admin graph reindex rebuilds it)"
+            warnings = (*warnings, WarningRecord(_INDEX_STALE, message))
+        return FileSnapshot(self, state, seq, index, warnings)
 
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]:
         end = self.read_state().end.seq
@@ -249,8 +292,61 @@ class FileStore:
     def view_at(self, seq: int) -> ViewAt:
         return self._cache.view_through(seq).at(seq)
 
-    def note_commit(self, record: TxRecord, position: LogPosition) -> None:
-        self._cache.committed(record, position)
+    def note_commit(self, record: TxRecord, span: TxSpan) -> None:
+        self._cache.committed(record, span)
+
+    def update_index(self, seq: int) -> None:
+        """Bring the index to ``seq`` (W.15); the caller holds the graph lock."""
+        view, spans = self._cache.spans_through(seq)
+        update_index(
+            self.layout, self.graph_id, view, spans, syncer=self.syncer, faults=self.faults
+        )
+
+    def _open_index(self) -> tuple[IndexReader | None, str | None]:
+        """The index file, or why an existing one cannot be used; a missing one is normal."""
+        if not self.use_index:
+            return None, None
+        try:
+            return IndexReader.open(self.layout.index), None
+        except IndexUnusable as exc:
+            return None, str(exc)
+
+    def _bind_index(self, reader: IndexReader, state: LogState, seq: int) -> IndexedView | None:
+        """The index plus the txs after it, as of ``seq``; ``None`` for a seq before it."""
+        meta = reader.meta
+        if meta.graph_id != str(self.graph_id):
+            raise IndexUnusable("the index belongs to another graph")
+        if meta.seq > state.end.seq:
+            raise IndexUnusable("the index is ahead of the tx log")
+        if seq < meta.seq:
+            return None  # an earlier state (--as-of): the replay answers it
+        mismatch = IndexUnusable("the index does not match the tx log")
+        base = state.base_seq
+        if meta.seq >= base:
+            if meta.seq == base:
+                checkpoint = state.checkpoint
+                if checkpoint is None or (checkpoint.link, checkpoint.txlog) != (
+                    meta.link,
+                    meta.position,
+                ):
+                    raise mismatch
+            else:
+                at = meta.seq - base - 1
+                if (state.tail[at].hash, state.scan.records[at].end) != (
+                    meta.link.hash,
+                    meta.position,
+                ):
+                    raise mismatch
+            tail = state.tail[meta.seq - base :]
+        else:  # the index is behind the checkpoint (an older writer, a failed update)
+            try:
+                scan = self.txlog.scan(meta.link, at=meta.position)
+            except OSError as exc:
+                raise _unavailable("cannot read the tx log", exc) from exc
+            if not scan.records or scan.end.seq < seq:
+                raise mismatch
+            tail = tuple(parse_tx(record.document) for record in scan.records)
+        return IndexedView(reader, seq, [tx for tx in tail if tx.seq <= seq], self.txlog)
 
     def _require_layout(self) -> None:
         if not self.layout.txlog.is_dir() or not self.layout.audit.is_dir():
@@ -344,10 +440,18 @@ class FileStore:
 class FileSnapshot:
     """A lock-free snapshot at seq S (B4.10)."""
 
-    def __init__(self, store: FileStore, state: LogState, seq: int) -> None:
+    def __init__(
+        self,
+        store: FileStore,
+        state: LogState,
+        seq: int,
+        index: IndexedView | None = None,
+        warnings: tuple[WarningRecord, ...] | None = None,
+    ) -> None:
         self._store = store
         self._seq = seq
-        self._warnings = state.warnings
+        self._index = index
+        self._warnings = state.warnings if warnings is None else warnings
         self._overlay: dict[EntityId, list[Revision]] = {}
         for tx in state.tail:
             if tx.seq > seq:
@@ -364,10 +468,19 @@ class FileSnapshot:
     def warnings(self) -> tuple[WarningRecord, ...]:
         return self._warnings
 
-    def _scan_view(self) -> ViewAt:
+    def _replay(self) -> ViewAt:
         if self._view is None:
             self._view = self._store.view_at(self._seq)
         return self._view
+
+    def _scan(self, read: Callable[[ScanView], T]) -> T:
+        """``read`` on the index view; on the replay when there is none or it fails."""
+        if self._index is not None:
+            try:
+                return read(self._index)
+            except IndexUnusable:
+                self._index = None  # damaged after the bind check: replay from now on
+        return read(self._replay())
 
     # point reads: revision files with tx_seq <= S, overlaid with the tail
 
@@ -407,26 +520,26 @@ class FileSnapshot:
         return [metas[rev] for rev in sorted(metas)]
 
     def tx(self, seq: int) -> TxRecord | None:
-        return self._scan_view().tx(seq) if 1 <= seq <= self._seq else None
+        return self._scan(lambda view: view.tx(seq)) if 1 <= seq <= self._seq else None
 
-    # scans: replay view at S
+    # scans: the index view at S, else the replay view at S
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
     ) -> Sequence[tuple[EntityId, EdgeRecord]]:
-        return self._scan_view().incoming(entity, rel)
+        return self._scan(lambda view: view.incoming(entity, rel))
 
     def resolve_alias(self, alias: str) -> tuple[EntityId, bool] | None:
-        return self._scan_view().resolve_alias(alias)
+        return self._scan(lambda view: view.resolve_alias(alias))
 
     def match_suffix(self, hex_suffix: str, *, limit: int = 10) -> Sequence[EntityId]:
-        return self._scan_view().match_suffix(hex_suffix, limit=limit)
+        return self._scan(lambda view: view.match_suffix(hex_suffix, limit=limit))
 
     def query(self, q: Query) -> QueryPage:
-        return run_query(self._scan_view(), q)
+        return self._scan(lambda view: run_query(view, q))
 
     def neighbors(self, q: NeighborQuery) -> Sequence[tuple[EntityId, EdgeRecord, Revision]]:
-        return run_neighbors(self._scan_view(), q)
+        return self._scan(lambda view: run_neighbors(view, q))
 
 
 class FileSession:
@@ -578,7 +691,7 @@ class FileSession:
         self._position = pending.end
         self._head = Head(record.seq, record.tx_id, record.hash, record.recorded_at)
         self._pending.append(record)
-        store.note_commit(record, pending.end)
+        store.note_commit(record, TxSpan(pending.start, pending.end))
         self._view_seq = record.seq
         warnings: list[WarningRecord] = []
         try:
@@ -593,6 +706,8 @@ class FileSession:
                     f"the tx is committed; derived files are not updated yet: {exc}",
                 )
             )
+        else:
+            warnings += self._update_index()
         return CommitResult(record.seq, record.tx_id, record.hash, tuple(warnings))
 
     # ---- derived files -------------------------------------------------
@@ -603,6 +718,22 @@ class FileSession:
         self._pending.clear()
         if self._end.seq > 0:
             self._write_head()
+
+    def _update_index(self) -> list[WarningRecord]:
+        """Best effort (W.15): a failure leaves the old index, which readers still bind."""
+        store = self._store
+        if not store.use_index:
+            return []
+        try:
+            store.update_index(self._end.seq)
+        except INDEX_ERRORS as exc:
+            return [
+                WarningRecord(
+                    "storage.materialization_deferred",
+                    f"the tx is committed; the index is not updated yet: {exc}",
+                )
+            ]
+        return []
 
     def _write_head(self) -> None:
         store = self._store

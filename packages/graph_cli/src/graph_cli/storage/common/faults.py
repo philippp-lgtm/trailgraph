@@ -24,6 +24,9 @@ class CrashPoint(StrEnum):
     MATERIALIZE_BEFORE_DIR_SYNC = "materialize.before_dir_sync"
     HEAD_BEFORE_RENAME = "head.before_rename"
     HEAD_AFTER_RENAME = "head.after_rename"
+    # The disposable index after the checkpoint (W.15): the commit point is the rename.
+    INDEX_BEFORE_RENAME = "index.before_rename"
+    INDEX_AFTER_RENAME = "index.after_rename"
     # Section 4.1 windows KB0-KB2: a blob of the request, staged before the lock.
     BLOB_AFTER_STAGE = "blob.after_stage"
     BLOB_BEFORE_RENAME = "blob.before_rename"
@@ -40,12 +43,15 @@ class CrashPoint(StrEnum):
     POLICY_BEFORE_RENAME = "policy.before_rename"
 
 
-# Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3").
+# Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3")
+# and the disposable index plan (DECISIONS.md "Disposable index: plan approved").
 EXTRA_POINTS: Final = frozenset(
     {
         CrashPoint.TX_BEFORE_WRITE,
         CrashPoint.RECOVERY_AFTER_TRUNCATE,
         CrashPoint.RECOVERY_AFTER_MATERIALIZE,
+        CrashPoint.INDEX_BEFORE_RENAME,
+        CrashPoint.INDEX_AFTER_RENAME,
     }
 )
 # Points of the maintenance effects (P1 item 5), outside the write-path table.

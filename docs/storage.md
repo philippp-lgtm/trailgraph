@@ -11,6 +11,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
+| `storage.files.index` | the disposable index: building and updating it, binding it to the tx log, the read view over it |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
@@ -25,12 +26,38 @@ POSIX only, local filesystems only.
   `head.json` checkpoint are derived and can be rebuilt from the log.
 - One exclusive `flock` lock per graph serializes writers; readers take no
   lock and see a consistent snapshot (the last complete log line).
-- Scans (`find`, `lookup`, `neighbors`, aliases, incoming edges) verify
-  every log line (canonical form, hash, chain) and replay the log into a
-  view that lives as long as the process. Each `graph` command is a new
-  process, so its `query` time grows with the size of the log. The
+- Scans (`find`, `lookup`, `search`, `neighbors`, `query`, aliases,
+  incoming edges, tx records) read the disposable index (below) plus the
+  transactions after it. Without a usable index, and for a snapshot
+  before its seq (`--as-of`), they verify every log line (canonical form,
+  hash, chain) and replay the log into a view that lives as long as the
+  process, so their time grows with the size of the log. The
   canonical-form check runs on the C JSON encoder where it agrees with
   JCS and on the reference encoder otherwise; both accept the same lines.
+- The index `data/index/index.sqlite` (SQLite, `graph_cli.index/1`) holds
+  the state at one seq: the current revision of every entity, every alias
+  binding, the incoming edges of current revisions and the position of
+  every tx line. Queries decode only the types they ask for. The index is
+  never changed in place: after the checkpoint, a writer copies it (or
+  builds a new one when it does not match the log) into
+  `index.sqlite.tmp`, applies its transactions, syncs it and renames it
+  over the old one. Readers open it read-only and immutable, so they take
+  no lock and create no journal; a reader keeps its file while a writer
+  replaces it. A failed update leaves the old index and adds
+  `storage.materialization_deferred` to the result.
+- A reader binds the index to the log as it binds `head.json`: the tx at
+  the index seq must carry the recorded hash and end at the recorded
+  position; a tx read through the index is checked against the chain. So
+  scans verify the log only from the index position on, as point reads
+  do from the checkpoint. Damage before it is found by every writer
+  (writers replay the whole log for their commit checks) and by
+  `graph-admin audit verify`, which also compares the index with the log
+  (`integrity.storage.index_inconsistent`). A missing index is normal (a
+  new graph before its first write, a graph last written by an older
+  version) and falls back silently; an index that exists but cannot be
+  used (another graph, unreadable, ahead of or not matching the log)
+  falls back with the warning `storage.index_stale`. `graph-admin graph
+  reindex` rebuilds it, as does the next write.
 - A write appends the audit intent, then the transaction (the commit
   point), then materializes revision files and the checkpoint. Each step is
   synced (`F_FULLFSYNC` on macOS with `durability="full"`).

@@ -158,7 +158,7 @@ def _kind(path: str, store: FileStore) -> str:
 
 def test_sync_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """D2: intent before tx, tx before the first revision rename, file before rename,
-    directory after rename, head last."""
+    directory after rename, head, then the disposable index last."""
     env = files_env(tmp_path)
     env.random(2)
     store = store_of(env)
@@ -193,7 +193,7 @@ def test_sync_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             i for i, (k, p) in enumerate(events) if k == "dir" and p == str(Path(target).parent)
         ]
         assert dir_syncs and max(dir_syncs) > rename_at, target
-    assert Path(renames[-1]).name == "head.json"
+    assert [Path(r).name for r in renames][-2:] == ["head.json", "index.sqlite"]
 
 
 @pytest.mark.parametrize(

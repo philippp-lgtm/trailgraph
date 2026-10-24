@@ -16,19 +16,21 @@ from pathlib import Path
 import pytest
 from support.audit_events import finding_codes_of, verify_graph_stream
 from support.crash_runner import run_child
-from support.stores import StoreEnv, snapshot_state
+from support.stores import ALL_STATUSES, StoreEnv, snapshot_state
 
 from graph_cli.audit.finding_codes import INTENT_WITHOUT_EFFECT
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.ports.audit import AuditEventDraft
+from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.store import FileStore
 
 pytestmark = pytest.mark.slow
 
 KEY = "k-crash"
+EVERYTHING = Query(record_status=ALL_STATUSES, limit=1000)
 BASE_SEQ = 2
 
 
@@ -57,6 +59,8 @@ ROWS = {
     CrashPoint.MATERIALIZE_BEFORE_DIR_SYNC: Row(3, True, "all", 2, True, CLEAN),  # K3
     CrashPoint.HEAD_BEFORE_RENAME: Row(3, True, "all", 2, True, CLEAN),  # K4
     CrashPoint.HEAD_AFTER_RENAME: Row(3, True, "all", 3, False, CLEAN),  # K5
+    CrashPoint.INDEX_BEFORE_RENAME: Row(3, True, "all", 3, False, CLEAN),  # K5, index behind
+    CrashPoint.INDEX_AFTER_RENAME: Row(3, True, "all", 3, False, CLEAN),  # K5
 }
 
 
@@ -133,6 +137,8 @@ def test_crash_point(tmp_path: Path, point: CrashPoint) -> None:
     assert head_seq(store) == row.head_seq
     if point is CrashPoint.HEAD_BEFORE_RENAME:
         assert store.layout.head.with_name("head.json.tmp").exists()
+    if point is CrashPoint.INDEX_BEFORE_RENAME:
+        assert store.layout.index.with_name("index.sqlite.tmp").exists()
     assert audit_verify(env, store) == row.verify
 
     # a lock-free reader before recovery
@@ -140,6 +146,9 @@ def test_crash_point(tmp_path: Path, point: CrashPoint) -> None:
     assert snapshot.seq == BASE_SEQ + row.committed
     for revision in tx.revisions:
         assert (snapshot.get_revision(revision.id, revision.rev) == revision) is row.committed
+    replay = FileStore(store.layout.root, env.graph_id, use_index=False).snapshot()
+    assert snapshot.warnings == replay.warnings
+    assert snapshot.query(EVERYTHING).items == replay.query(EVERYTHING).items
 
     # recovery at session start, then the retry
     with store.session(timeout_s=5) as session:

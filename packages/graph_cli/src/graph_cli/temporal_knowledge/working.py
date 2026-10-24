@@ -135,7 +135,7 @@ class WorkingState:
     def current(self, entity: EntityId) -> Revision | None:
         return self.get(entity)
 
-    def current_revisions(self) -> Iterator[Revision]:
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterator[Revision]:
         base = self._cache.get("base")
         if base is None:
             base = {r.id: r for r in self.base.query(_ALL).items}

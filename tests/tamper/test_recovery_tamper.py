@@ -73,12 +73,13 @@ def test_torn_tail_is_ignored_by_readers_and_truncated_by_the_writer(
 
 
 def test_torn_tx_tail_of_the_checkpointed_tx_warns_readers(tmp_path: Path) -> None:
-    """Cutting a tx that head.json already covers makes the checkpoint inconsistent."""
+    """Cutting a tx that head.json and the index already cover makes both inconsistent."""
     env, store, _ = setup(tmp_path)
     cut_last_line(last_segment(store.txlog))
     snapshot = FileStore(store.layout.root, env.graph_id).snapshot()
     assert snapshot.seq == 3
-    assert [w.code for w in snapshot.warnings] == ["storage.recovery_pending"]
+    codes = [w.code for w in snapshot.warnings]
+    assert codes == ["storage.recovery_pending", "storage.index_stale"]
 
 
 def damage_interior(path: Path) -> None:
@@ -88,8 +89,9 @@ def damage_interior(path: Path) -> None:
 
 
 def test_interior_damage_behind_the_checkpoint(tmp_path: Path) -> None:
-    """Writers replay the whole log and refuse; lock-free point reads continue, scans
-    (which replay the log) report the damage (plan D9)."""
+    """Writers replay the whole log and refuse; lock-free point reads continue, and so do
+    scans from the index; scans that replay the log report the damage (plan D9, disposable
+    index Q3)."""
     env, store, _ = setup(tmp_path)
     created = store.snapshot().query(Query(record_status=ALL_STATUSES, limit=100)).items
     damage_interior(last_segment(store.txlog))
@@ -102,8 +104,10 @@ def test_interior_damage_behind_the_checkpoint(tmp_path: Path) -> None:
     assert reader.seq == 4
     for revision in created:
         assert reader.get(revision.id) == revision
+    assert reader.query(Query(record_status=ALL_STATUSES, limit=100)).items == created
+    replaying = FileStore(store.layout.root, env.graph_id, use_index=False).snapshot()
     with pytest.raises(GraphCliError) as info:
-        reader.query(Query())
+        replaying.query(Query())
     assert info.value.code == "backend.corrupt"
 
 
@@ -115,7 +119,8 @@ def test_interior_damage_in_the_read_range_warns_readers(tmp_path: Path) -> None
     reader = FileStore(store.layout.root, env.graph_id)
     snapshot = reader.snapshot()
     assert snapshot.seq == 1
-    assert [w.code for w in snapshot.warnings] == ["storage.recovery_pending"]
+    codes = [w.code for w in snapshot.warnings]
+    assert codes == ["storage.recovery_pending", "storage.index_stale"]  # the index is ahead
     assert snapshot.query(Query(record_status=ALL_STATUSES)).total >= 1
     assert reader.head().seq == 1
     with pytest.raises(GraphCliError) as info, store.session(timeout_s=5):

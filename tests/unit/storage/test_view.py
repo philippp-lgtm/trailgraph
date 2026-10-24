@@ -33,6 +33,19 @@ def test_replay_at_every_seq_equals_the_state_after_n_txs(ontology: str) -> None
             assert view.revision(entity, revision.rev + 1) is None
 
 
+def test_current_revisions_narrowed_to_types() -> None:
+    log = MemLog("inventory", seed=2)
+    for _ in range(20):
+        draft = log.draft()
+        log.builder.random_tx(draft)
+        log.commit(draft.build())
+    view = log.at()
+    everything = list(view.current_revisions())
+    assert everything == [view.current(e) for e in view.entity_ids()]
+    wanted = frozenset({everything[0].type})
+    assert list(view.current_revisions(wanted)) == [r for r in everything if r.type in wanted]
+
+
 def test_fresh_view_replays_the_same_lines() -> None:
     log = MemLog("notes_and_sources", seed=1)
     for _ in range(10):

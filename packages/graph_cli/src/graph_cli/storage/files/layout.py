@@ -88,6 +88,11 @@ class GraphLayout:
         return self.data / "entities"
 
     @property
+    def index(self) -> Path:
+        """The disposable index (``storage.files.index``); its directory is created on use."""
+        return self.data / "index" / "index.sqlite"
+
+    @property
     def audit(self) -> Path:
         return self.root / "audit"
 

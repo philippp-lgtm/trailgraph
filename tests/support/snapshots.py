@@ -145,7 +145,7 @@ class DictSnapshot:
     def current(self, entity: EntityId) -> Revision | None:
         return self._current.get(entity)
 
-    def current_revisions(self) -> list[Revision]:
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> list[Revision]:
         return [self._current[e] for e in sorted(self._current)]
 
     def query(self, q: Query) -> QueryPage:

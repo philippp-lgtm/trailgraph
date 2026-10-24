@@ -98,11 +98,12 @@ class ViewAt:
             if history[0].tx_seq <= self.seq
         )
 
-    def current_revisions(self) -> Iterator[Revision]:
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterator[Revision]:
         for entity in self.entity_ids():
             current = self.current(entity)
             assert current is not None
-            yield current
+            if not types or current.type in types:
+                yield current
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
@@ -125,6 +126,12 @@ class ViewAt:
         entity = bound[0]
         current = self.current(entity)
         return entity, current is not None and current.alias == alias
+
+    def alias_bindings(self) -> Iterator[tuple[str, EntityId, int]]:
+        """Every alias bound up to ``seq``: ``(alias, entity, seq of the binding)``."""
+        for alias, (entity, seq) in self._view._aliases.items():
+            if seq <= self.seq:
+                yield alias, entity, seq
 
     def alias_bound(self, alias: str) -> bool:
         return self.resolve_alias(alias) is not None
