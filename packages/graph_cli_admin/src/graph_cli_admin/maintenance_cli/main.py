@@ -38,6 +38,7 @@ def program() -> click.Group:
             "ontology": "Validate, compare and release authored ontologies.",
             "policy": "Check, show, compare, apply and explain access policies.",
             "skill": "Publish the graph skill that the app installs for agents, or preview it.",
+            "token": "Create, list and revoke bearer tokens of the server API.",
         },
     )
 

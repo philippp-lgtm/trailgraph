@@ -31,7 +31,10 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
 | `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change` (the installation policy also mirrored into every graph stream); refuses one that would lock you out; the installed policy again records missing mirrors |
 | `policy explain --graph G [--project P] [--action A] [--type T] [--file F]` | what an app caller from a project (or from none) would get, and by which rule; records nothing |
-| `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
+| `token create NAME [--project P] [--expires DATE] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; warns when the policy grants it nothing |
+| `token list` | the tokens: name, project, expiry, creation time, hash prefix; never the token |
+| `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
+| `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
 
 ## Auditing and releases
 

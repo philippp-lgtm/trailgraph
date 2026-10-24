@@ -83,6 +83,23 @@ def test_only_token_and_local_host_get_in(server: ViewServer) -> None:
     assert response.getheader("Access-Control-Allow-Origin") is None
 
 
+def test_another_bind_address_keeps_token_and_host_checks(svc: ServiceEnv) -> None:
+    """B14.13: bound for a container (``--host``), any port of 127.0.0.1 or localhost
+    passes (a published port may differ), any other name does not."""
+    running = ViewServer(
+        open_view(admin_context(svc.root), graph_ref=svc.name), page=page(), host="0.0.0.0"
+    )
+    running.start()
+    try:
+        token = running.token
+        assert get(running, f"/graph?t={token}", host="localhost:18080").status == 200
+        assert get(running, f"/graph?t={token}", host="127.0.0.1:8080").status == 200
+        assert get(running, f"/graph?t={token}", host="evil.example:8080").status == 403
+        assert get(running, "/graph?t=wrong", host="127.0.0.1:8080").status == 403
+    finally:
+        running.stop()
+
+
 def test_graph_json(server: ViewServer, svc: ServiceEnv) -> None:
     response = get(server, f"/graph?t={server.token}")
     data = json.loads(response.read())

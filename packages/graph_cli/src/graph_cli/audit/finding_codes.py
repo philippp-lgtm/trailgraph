@@ -38,6 +38,7 @@ POLICY_MISMATCH: Final = "integrity.audit.policy_mismatch"
 POLICY_HASH_MISMATCH: Final = "integrity.audit.policy_hash_mismatch"
 POLICY_FALLBACK: Final = "integrity.audit.policy_fallback"
 POLICY_HASH_UNCHECKED: Final = "integrity.audit.policy_hash_unchecked"
+TOKEN_MISMATCH: Final = "integrity.audit.token_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -90,5 +91,8 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "policy_hash_unchecked",
         Severity.INFO,
         "Decisions before the first mirrored installation policy change are checked loosely.",
+    ),
+    _integrity(
+        "token_mismatch", Severity.ERROR, "The token file differs from the recorded token events."
     ),
 )

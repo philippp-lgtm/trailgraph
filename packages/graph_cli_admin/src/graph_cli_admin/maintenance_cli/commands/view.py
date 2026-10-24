@@ -29,7 +29,12 @@ def page() -> bytes:
 
 
 def view_command(
-    state: CommandState, graph_ref: str, port: int, no_open: bool, data_root: str | None
+    state: CommandState,
+    graph_ref: str,
+    port: int,
+    host: str,
+    no_open: bool,
+    data_root: str | None,
 ) -> Result:
     if click.get_current_context().params.get("json_mode") or state.invocation.json_default:
         raise GraphCliError(  # B9.1: the address goes to stderr, which JSON mode keeps empty
@@ -61,14 +66,19 @@ def view_command(
             )
     try:
         server = ViewServer(
-            source, page=page(), port=port, listener=listener, signal_reads=ctx.config.signal_reads
+            source,
+            page=page(),
+            port=port,
+            host=host,
+            listener=listener,
+            signal_reads=ctx.config.signal_reads,
         )
     except OSError as exc:
         if listener is not None:
             listener.close()
         raise GraphCliError(
             "admin.view_port_unavailable",
-            f"cannot serve on 127.0.0.1:{port}: {exc.strerror or exc}",
+            f"cannot serve on {host}:{port}: {exc.strerror or exc}",
             details={"graph": source.entry.name, "port": port},
         ) from exc
     try:
@@ -100,7 +110,13 @@ SPECS: Final = (
         summary="Show a graph in the browser; reads, updates and new entities light up live.",
         params=(
             GRAPH_OPTION,
-            ParamSpec("--port", "integer", "Port on 127.0.0.1; 0 picks a free one.", default=0),
+            ParamSpec("--port", "integer", "Port to serve on; 0 picks a free one.", default=0),
+            ParamSpec(
+                "--host",
+                "string",
+                "Address to bind, for a container (0.0.0.0); the page still needs its token.",
+                default="127.0.0.1",
+            ),
             ParamSpec("--no-open", "flag", "Print the address only; open no browser."),
             DATA_ROOT,
         ),
@@ -113,8 +129,9 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "admin.view_port_unavailable"),
         handler=view_command,
-        description="Serves a read-only page on 127.0.0.1 until Ctrl+C and prints its address"
-        " on stderr; the address carries a token, keep it to yourself. There is no JSON mode."
+        description="Serves a read-only page on 127.0.0.1 (or --host) until Ctrl+C and prints"
+        " its address on stderr; the address carries a token, keep it to yourself. There is"
+        " no JSON mode."
         " Writes show up by themselves (green: new, blue: changed). Reads (yellow) show only"
         " when the app sends them: [activity] signal_reads = true in config.toml.",
     ),

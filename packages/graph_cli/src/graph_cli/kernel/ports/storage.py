@@ -247,6 +247,14 @@ class RegistrySession(Protocol):
         """Every graph's manifest, archived ones included."""
         ...
 
+    def read_tokens(self) -> bytes | None:
+        """The token file of the server API as stored, under the registry lock (B14.11)."""
+        ...
+
+    def replace_tokens(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Replace the token file; ``receipt`` is its installation event (B14.11)."""
+        ...
+
     def read_installation_policy(self) -> bytes | None:
         """The installed installation policy as stored; ``None`` without one (B6.14)."""
         ...

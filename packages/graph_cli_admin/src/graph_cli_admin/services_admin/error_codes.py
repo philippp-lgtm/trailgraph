@@ -29,6 +29,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.policy_lockout", _C.REFUSED, False, "The policy would lock out its maintainer."
     ),
+    ErrorSpec("admin.token_exists", _C.REFUSED, False, "A token with this name exists."),
+    ErrorSpec("admin.token_not_found", _C.NOT_FOUND, False, "There is no token with this name."),
+    ErrorSpec("admin.token_not_granted", _C.WARNING, False, "The policy grants the token nothing."),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
     ErrorSpec("admin.alias_prefix_taken", _C.WARNING, False, "A new type gets no alias prefix."),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),

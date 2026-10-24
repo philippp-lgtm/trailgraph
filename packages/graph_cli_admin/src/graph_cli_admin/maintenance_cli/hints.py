@@ -31,6 +31,10 @@ def _view_any_port(details: Mapping[str, JsonValue], program: str) -> str | None
     return f"{program} view --graph {shlex.quote(graph)} --port 0"
 
 
+def _token_list(details: Mapping[str, JsonValue], program: str) -> str | None:
+    return f"{program} token list"
+
+
 ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.model_invalid": None,
     "admin.version_bump_insufficient": None,
@@ -43,6 +47,8 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.skill_render_exists": _render_force,
     "admin.view_port_unavailable": _view_any_port,
+    "admin.token_exists": _token_list,
+    "admin.token_not_found": _token_list,
 }
 
 

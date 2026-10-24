@@ -2,8 +2,11 @@
 
 Stdlib only. It binds ``127.0.0.1`` and answers nothing but GET requests
 that carry the token (``?t=``) and a ``Host`` of ``127.0.0.1:<port>`` or
-``localhost:<port>`` (DNS rebinding). No CORS headers; every response is
-``no-store`` with a strict content security policy and no referrer.
+``localhost:<port>`` (DNS rebinding). Bound to another address (``--host``,
+in a container), the ``Host`` must still name ``127.0.0.1`` or
+``localhost``, with any port: a published port may differ from the bound
+one. No CORS headers; every response is ``no-store`` with a strict content
+security policy and no referrer.
 
 Routes: ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
 one entity in full (attributes, edges, history with the writing agents),
@@ -94,6 +97,7 @@ class ViewServer:
         *,
         page: bytes,
         port: int = 0,
+        host: str = HOST,
         listener: ActivityListener | None = None,
         signal_reads: bool = False,
         poll_s: float = POLL_S,
@@ -107,7 +111,8 @@ class ViewServer:
         self.hub = Hub()
         self.feed = ViewFeed(source, source.read.head().seq)
         self._stop = threading.Event()
-        self._http = ThreadingHTTPServer((HOST, port), _handler(self))
+        self.host = host
+        self._http = ThreadingHTTPServer((host, port), _handler(self))
         self._http.daemon_threads = True
         self._threads: list[threading.Thread] = []
 
@@ -231,7 +236,10 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
 
         def _allowed(self, query: str) -> bool:
             host = self.headers.get("Host", "")
-            if host not in (f"{HOST}:{server.port}", f"localhost:{server.port}"):
+            if server.host == HOST:
+                if host not in (f"{HOST}:{server.port}", f"localhost:{server.port}"):
+                    return False
+            elif host.rpartition(":")[0] not in (HOST, "localhost"):
                 return False
             given = parse_qs(query).get("t", [""])[0]
             return secrets.compare_digest(given.encode(), server.token.encode())

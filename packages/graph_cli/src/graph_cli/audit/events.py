@@ -74,6 +74,8 @@ INSTALLATION_MAINT: Final = frozenset(
         "maint.policy_change",
         "maint.audit_verify",
         "maint.audit_anchor",
+        "maint.token_create",
+        "maint.token_revoke",
     )
 )
 # B5.15: a policy change is installation-scoped for the installation policy and
@@ -324,6 +326,25 @@ def installation_policy_change(old_hash: str | None, new_hash: str) -> dict[str,
     """``change`` of the mirror of an installation policy change in a graph stream (B5.15):
     from then on, that graph's decisions are made under ``new_hash``."""
     return {"installation_policy": {"from": old_hash, "to": new_hash}}
+
+
+TOKEN_HASH_PREFIX: Final = len("sha256:") + 16
+
+
+def token_change(
+    name: str,
+    digest: str,
+    *,
+    created: bool,
+    project: str | None = None,
+    expires: str | None = None,
+) -> dict[str, JsonValue]:
+    """``change`` of ``maint.token_create|revoke`` (B14.11): the token by name and a prefix
+    of its hash, never the token; a created token also names its project and expiry."""
+    token: dict[str, JsonValue] = {"name": name, "hash_prefix": digest[:TOKEN_HASH_PREFIX]}
+    if created:
+        token.update(project=project, expires=expires)
+    return {"token": token}
 
 
 def anchor(receipt: Anchorable) -> dict[str, JsonValue]:

@@ -2,7 +2,7 @@
 
 `graph-admin view --graph <graph>` prints an address on stderr and opens
 it: the whole graph as dots and lines, with labels, and a list of recent
-activity. It serves until Ctrl+C (`--port`, `--no-open`).
+activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`).
 
 ## Activity
 
@@ -26,9 +26,11 @@ very long state directory the view starts without reads and says so.
 
 ## Access
 
-The server listens on `127.0.0.1` only and answers only requests that
+The server listens on `127.0.0.1` and answers only requests that
 carry the random token in the printed address, so keep the address to
-yourself. The graph itself carries labels, types, aliases and record
+yourself. `--host` binds another address, for a view inside a container
+whose port is published to `127.0.0.1` on the host; requests must then still
+name `127.0.0.1` or `localhost` (any port) and carry the token. The graph itself carries labels, types, aliases and record
 status only.
 
 ## Using the view

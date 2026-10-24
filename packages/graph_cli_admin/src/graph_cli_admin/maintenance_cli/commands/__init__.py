@@ -14,6 +14,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         meta,
         ontology,
         policy,
+        token,
         view,
     )
 
@@ -25,5 +26,6 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *audit.SPECS,
         *files.SPECS,
         *policy.SPECS,
+        *token.SPECS,
         *view.SPECS,
     )

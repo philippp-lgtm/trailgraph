@@ -98,6 +98,7 @@ from graph_cli.storage.files.releases import (
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
+from graph_cli.storage.files.token_files import read_tokens_file, tokens_path, write_tokens_file
 from graph_cli.storage.finding_codes import (
     BLOB_MISSING,
     HEAD_INCONSISTENT,
@@ -213,6 +214,25 @@ class FileRegistrySession:
         """The installed installation policy as stored, read under the registry lock."""
         self._check_open()
         return read_policy_file(installation_policy_path(self._maintenance.data_root))
+
+    def read_tokens(self) -> bytes | None:
+        """The token file as stored, read under the registry lock (B14.11)."""
+        self._check_open()
+        return read_tokens_file(tokens_path(self._maintenance.data_root))
+
+    def replace_tokens(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Replace the token file; ``receipt`` is its installation event (B14.11)."""
+        self._check_open()
+        if receipt.stream != INSTALLATION_STREAM or receipt.event_id in self._used:
+            raise GraphCliError(
+                "internal.error",
+                "a token change needs its own installation event",
+                details={"rule": "receipt_stream"},
+            )
+        self._used.add(receipt.event_id)
+        write_tokens_file(
+            tokens_path(self._maintenance.data_root), document, self._maintenance.syncer
+        )
 
     def replace_installation_policy(
         self, document: Mapping[str, JsonValue], receipt: AuditReceipt

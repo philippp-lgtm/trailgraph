@@ -18,8 +18,8 @@ from graph_cli.kernel.errors import GraphCliError
 
 
 def test_taxonomy_sizes_and_disjointness() -> None:
-    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (9, 8, 15)
-    assert len(ACTIONS) == 32
+    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (9, 8, 17)
+    assert len(ACTIONS) == 34  # B14.11: maint.token_create, maint.token_revoke
     assert RESERVED_ACTIONS <= ACTIONS
 
 

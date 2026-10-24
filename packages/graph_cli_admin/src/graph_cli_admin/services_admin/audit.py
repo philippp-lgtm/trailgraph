@@ -4,8 +4,9 @@
 manifest pin) with the audit verifier (chains, shapes, tx <-> intent,
 maintenance effects, pin events, anchors). Order, without cascades:
 
-1. the installation stream, for its findings and its anchors, and the
-   installed installation policy against its policy events (B5.15);
+1. the installation stream, for its findings and its anchors, the
+   installed installation policy against its policy events (B5.15) and the
+   token file against the token events (B14.11);
 2. each graph under its maintenance lock: storage findings, then the graph
    stream with the txs (only if the tx log is clean) and the maintenance
    effects (the manifest pin only if storage found it intact, the graph's
@@ -35,12 +36,14 @@ from graph_cli.audit.verify import (
     check_anchors,
     check_policy,
     check_policy_hashes,
+    check_tokens,
     effect_anchors,
     graph_creations,
     installation_changes,
     verify_graph,
     verify_stream,
 )
+from graph_cli.catalog.tokens import parse_tokens
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findings
@@ -50,6 +53,7 @@ from graph_cli.kernel.ports.storage import GraphStoreRead
 from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
+from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
 
 
@@ -82,6 +86,7 @@ def verify(ctx: AdminContext) -> Verification:
     findings: list[Finding] = list(installation.findings)
     installed = _installed(lambda: read_policy_file(installation_policy_path(ctx.roots.data_root)))
     findings += check_policy(installation.events, installed)
+    findings += check_tokens(installation.events, _installed_tokens(ctx))
     changes = installation_changes(installation.events, installed)
     created = graph_creations(installation.events)
     reports: dict[str, StreamReport] = {}
@@ -172,6 +177,18 @@ def _verify_graph(
             effects=effects,
         )
     return [*storage, *report.findings], report
+
+
+def _installed_tokens(ctx: AdminContext) -> dict[str, Mapping[str, JsonValue]] | None:
+    """The token file as ``check_tokens`` compares it; ``None`` when it cannot be read."""
+    try:
+        records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
+    except GraphCliError:
+        return None
+    return {
+        r.name: {"hash_prefix": r.hash_prefix, "project": r.project, "expires": r.expires}
+        for r in records
+    }
 
 
 def all_txs(store: GraphStoreRead) -> list[TxRecord]:

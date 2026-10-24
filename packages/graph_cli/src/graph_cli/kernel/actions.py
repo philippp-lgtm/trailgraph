@@ -61,6 +61,8 @@ MAINT_ACTIONS: Final = frozenset(
         "repair",
         "reindex",
         "purge",
+        "token_create",  # bearer tokens of the server API (B14.11)
+        "token_revoke",
     )
 )
 # Names are part of the closed taxonomy now; their behaviour comes later.

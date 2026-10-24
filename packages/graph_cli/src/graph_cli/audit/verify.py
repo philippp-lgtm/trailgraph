@@ -32,6 +32,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Final
 
 from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.events import changeset_size
@@ -309,6 +310,73 @@ def check_policy(
             confirmed.add(pending)
             pending = None
     return _policy_walk(INSTALLATION_STREAM, ok, installed, frozenset(confirmed))
+
+
+TOKENS_FILE: Final = "tokens/tokens.json"
+TOKEN_CREATE: Final = "maint.token_create"
+TOKEN_REVOKE: Final = "maint.token_revoke"
+
+
+def check_tokens(
+    events: Iterable[Mapping[str, JsonValue]],
+    installed: Mapping[str, Mapping[str, JsonValue]] | None,
+) -> list[Finding]:
+    """The token file against the installation stream's token events (B14.11, B5.12).
+
+    Replaying ``maint.token_create`` and ``maint.token_revoke`` in seq order gives the
+    live tokens. ``installed`` maps each name in the file to ``{hash_prefix, project,
+    expires}``; ``None`` when the file cannot be read. A file token that is not live,
+    or differs, was added by hand or survived an interrupted revoke
+    (``token_mismatch``); a live token missing from the file is an interrupted create.
+    """
+    live: dict[str, tuple[JsonValue, Mapping[str, JsonValue]]] = {}
+    for event in events:
+        change = event.get("change")
+        token = change.get("token") if _ok(event) and isinstance(change, Mapping) else None
+        if not isinstance(token, Mapping) or not isinstance(token.get("name"), str):
+            continue
+        name = str(token["name"])
+        if event.get("actions") == [TOKEN_CREATE]:
+            live[name] = (event.get("seq"), token)
+        elif event.get("actions") == [TOKEN_REVOKE]:
+            live.pop(name, None)
+    where: dict[str, JsonValue] = {"stream": INSTALLATION_STREAM, "path": TOKENS_FILE}
+    if installed is None:
+        return [
+            _finding(
+                codes.TOKEN_MISMATCH,
+                where,
+                "the token file cannot be read as a token document",
+                actual="unreadable",
+            )
+        ]
+    findings = []
+    for name, entry in sorted(installed.items()):
+        actual = {key: entry.get(key) for key in ("hash_prefix", "project", "expires")}
+        found = live.get(name)
+        expected = {key: found[1].get(key) for key in actual} if found is not None else None
+        if expected != actual:
+            findings.append(
+                _finding(
+                    codes.TOKEN_MISMATCH,
+                    {**where, "name": name},
+                    f"token {name} in the token file differs from its events (added by hand,"
+                    " or a revoke was interrupted: revoke it again)",
+                    expected=expected,
+                    actual=actual,
+                )
+            )
+    for name, (seq, _) in sorted(live.items()):
+        if name not in installed:
+            findings.append(
+                _finding(
+                    codes.INTENT_WITHOUT_EFFECT,
+                    {"stream": INSTALLATION_STREAM, "seq": seq},
+                    f"token {name} was created without reaching the token file"
+                    " (an interrupted create)",
+                )
+            )
+    return findings
 
 
 @dataclass(frozen=True, slots=True)

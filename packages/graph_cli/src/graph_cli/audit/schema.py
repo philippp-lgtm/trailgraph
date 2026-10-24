@@ -38,8 +38,10 @@ CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
 REINDEX_ACTION: Final = "maint.reindex"
 POLICY_ACTION: Final = "maint.policy_change"
+TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke")
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
+_TOKEN_PREFIX_RE: Final = re.compile(r"^sha256:[0-9a-f]{16}$")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
 _REQUIRED_TAIL: Final = ("result", "request")
 _CHAIN: Final = ("seq", "prev_hash", "hash")
@@ -278,6 +280,8 @@ def _routing_problems(
         problems.extend(_maint_change_problems(_actions(event), change))
     elif status == "ok" and isinstance(change, Mapping) and POLICY_ACTION in _actions(event):
         problems.extend(_maint_change_problems([POLICY_ACTION], change))  # installation policy
+    if status == "ok" and any(a in TOKEN_ACTIONS for a in _actions(event)):
+        problems.extend(_token_change_problems(_actions(event), change))
     anchors = event.get("anchors")
     if anchors is not None:
         if stream != INSTALLATION:
@@ -371,6 +375,25 @@ def is_blob_list(value: JsonValue) -> bool:
 def _is_size(value: JsonValue) -> bool:
     """A byte count: a non-negative integer."""
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
+    """B14.11: a token event names the token and a 16-hex prefix of its hash; a created
+    token also its project and expiry (each possibly null)."""
+    created = "maint.token_create" in actions
+    keys = {"name", "hash_prefix", *(("project", "expires") if created else ())}
+    token = change.get("token") if isinstance(change, Mapping) else None
+    if not (
+        isinstance(token, Mapping)
+        and set(token) == keys
+        and isinstance(token["name"], str)
+        and isinstance(token["hash_prefix"], str)
+        and _TOKEN_PREFIX_RE.match(token["hash_prefix"]) is not None
+        and all(token.get(k) is None or isinstance(token[k], str) for k in ("project", "expires"))
+    ):
+        shown = "name, hash_prefix, project, expires" if created else "name, hash_prefix"
+        return [f"a token event needs change.token{{{shown}}}"]
+    return []
 
 
 def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:

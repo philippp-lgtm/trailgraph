@@ -1349,6 +1349,191 @@
     },
     {
       "path": [
+        "token",
+        "create"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_create",
+      "summary": "Create a bearer token for the server API; the token is shown only once.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Token name: lowercase letters, digits, _ . -"
+        }
+      ],
+      "options": [
+        {
+          "name": "--project",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Bind the token to a project: requests then act for it, verified."
+        },
+        {
+          "name": "--expires",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Last valid day, YYYY-MM-DD (UTC)."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin token create <value>",
+          "summary": "A token for one client."
+        },
+        {
+          "command": "graph-admin token create <value> --project <value> --expires <value> --json",
+          "summary": "A token bound to a project, valid until a date."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.token_exists",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "token",
+        "list"
+      ],
+      "kind": "read",
+      "surface": "meta",
+      "action": null,
+      "summary": "List the tokens: name, project, expiry, creation time and a hash prefix.",
+      "args": [],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin token list",
+          "summary": "Every token."
+        },
+        {
+          "command": "graph-admin token list --json",
+          "summary": "The tokens as JSON."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        2,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "token",
+        "revoke"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_revoke",
+      "summary": "Revoke a token; the server refuses it from the next request on.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Token name: lowercase letters, digits, _ . -"
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin token revoke <value>",
+          "summary": "Revoke one token."
+        },
+        {
+          "command": "graph-admin token revoke <value> --reason <value> --json",
+          "summary": "With a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.token_not_found",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
         "view"
       ],
       "kind": "read",
@@ -1369,8 +1554,16 @@
           "type": "integer",
           "required": false,
           "repeatable": false,
-          "summary": "Port on 127.0.0.1; 0 picks a free one.",
+          "summary": "Port to serve on; 0 picks a free one.",
           "default": 0
+        },
+        {
+          "name": "--host",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Address to bind, for a container (0.0.0.0); the page still needs its token.",
+          "default": "127.0.0.1"
         },
         {
           "name": "--no-open",
@@ -1423,7 +1616,9 @@
     "maint.ontology_release",
     "maint.policy_change",
     "maint.reindex",
-    "maint.repair"
+    "maint.repair",
+    "maint.token_create",
+    "maint.token_revoke"
   ],
   "error_codes": [
     {
@@ -1474,6 +1669,16 @@
     {
       "code": "admin.skill_render_exists",
       "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.token_exists",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.token_not_found",
+      "category": "not_found",
       "exit": 1
     },
     {
