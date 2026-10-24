@@ -1,9 +1,11 @@
 # Server
 
-`graph-server` serves the command surface of `graph` over HTTP. With it,
-the server process owns the data root: agents in containers, other
-machines, web apps and the local `graph` go through one API, and every
-request is authorized for the bearer token it carries.
+`graph-server` serves the command surface of `graph` over HTTP, and on
+request the maintenance commands of `graph-admin` too (the
+[admin API](#admin-api)). With it, the server process owns the data root:
+agents in containers, other machines, web apps and the local `graph` go
+through one API, and every request is authorized for the bearer token it
+carries.
 
 ## Running it
 
@@ -39,7 +41,12 @@ The built-in policy grants the server nothing, and `token create` warns
 when the policy grants the new token nothing. Agent, session, device and
 project are asserted by the client in each request; a token created with
 `--project` verifies its project instead, so project scopes become a
-boundary for that token. The server never runs a maintenance action.
+boundary for that token. An app token never runs a maintenance action.
+
+Every token has a scope: `app` (the default) reaches the `graph` commands,
+`admin` (`token create NAME --scope admin`) only the admin API. Either may
+upload. A token used on the other surface is refused with 403 and
+`remote.unauthorized`, before any command runs.
 
 ## API
 
@@ -82,6 +89,40 @@ cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
 given.
 
+## Admin API
+
+With `admin_api = true` under `[server]` in the server's `config.toml`
+([Configuration](configuration.md#configtoml)), the server also runs the
+`graph-admin` commands: creating graphs, validating, comparing and
+releasing ontologies, checking graphs, publishing skills, policies, tokens,
+audit and file maintenance. Off (the default), every `/v1/admin/` path is
+404.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /v1/admin/inventory` | the `graph-admin` inventory, as the API takes it |
+| `GET /v1/admin/openapi.json` | an OpenAPI 3.1 document of the admin API |
+| `POST /v1/admin/commands/{path}` | run a `graph-admin` command (`{"args": {...}, "actor": {...}}`) |
+
+An admin request acts through the entrypoint `maint` with the token's
+principal `token:<name>`, like a maintainer on the server: an installed
+policy with `maintainers` must name the token (`{id: "token:<name>"}`;
+`token create --scope admin` warns `admin.token_not_maintainer` when it
+does not), one without `maintainers` lets every maintenance caller
+maintain. Denials and changes are audited exactly as locally, with the
+token and the asserted agent as the actor.
+
+The API never takes a path: `--data-root` is not part of it, a file
+parameter (a policy) takes an upload, and a directory parameter (an
+ontology, a skill) takes `{"files": {"<relative path>": "sha256:<hex>"},
+"name": "<dir>"}`, every file an upload of the same token. Relative paths
+have no empty, `.` or `..` parts; at most 1000 files. The server builds the
+directory under the name's last part and removes it after the command;
+answers name the client's arguments, never the server's copy. `graph skill
+render` takes `--out` as an empty directory and answers `path: null` with
+`rendered`, its files by name in base64. `init` and `view` run only where
+the data lives.
+
 ## Remote mode of `graph`
 
 A machine whose `config.toml` says `[runtime] mode = "remote"` (see
@@ -113,6 +154,24 @@ device and the pointer's project and graphs are sent with each request.
   server, rendered for the graph's current ontology, and must be allowed by
   this project's pointer.
 
+## Remote mode of `graph-admin`
+
+On the same machine `graph-admin` sends its commands to the admin API,
+with the admin token from `GRAPH_CLI_ADMIN_TOKEN` or `[remote]
+admin_token_file` ([Configuration](configuration.md#remote-mode)). It
+parses the command line itself and prints the server's answer as its own,
+as `graph` does.
+
+- Ontology and skill directories and policy files are read here and
+  uploaded: every regular file below a directory; a symlink or another
+  file kind is refused.
+- `graph skill render` checks `--out` here and writes the preview into it.
+- `describe commands` and `ontology validate` run here; `init`, `view` and
+  `--data-root` are refused (`admin.remote_mode`).
+- Writes are never retried. A lost answer is `remote.outcome_unknown`:
+  check the state (`graph show`, `token list`, `policy show`) before
+  running the command again.
+
 ## Container
 
 The repository's `Dockerfile` and `compose.yaml` run the server in a
@@ -137,7 +196,11 @@ scope, and a request without one may read. Add scopes for your projects
 (or bind tokens to projects) and apply your own policy. Maintenance runs
 in the container (`docker compose exec graph graph-admin ...`); the
 directory `GRAPH_WORKSPACE` (default `docker/workspace`) is mounted read
-only at `/workspace` for authored ontologies and policies. A
+only at `/workspace` for authored ontologies and policies. To maintain
+from another machine instead, turn on the [admin API](#admin-api) in
+`/config/graph_cli/config.toml` in the container, restart it, create an
+admin token there, name it among the policy's `maintainers` if the policy
+has them, and use `graph-admin` in remote mode. A
 [live view](live_view.md) started in the container on port 8471 is
 published to `127.0.0.1:8471` (`GRAPH_VIEW_PORT`); open the printed
 address on the host. The `tls`

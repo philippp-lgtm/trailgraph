@@ -24,6 +24,12 @@ project are asserted by the client in the request. A token bound to a
 project verifies the project: a request naming another project is refused
 (`access.project_mismatch`).
 
+Requests to the admin API (`graph-admin` commands over HTTP, an admin
+token) have the entrypoint `maint` and the principal `token:<name>`: the
+installation policy's `maintainers` decide as for a local maintainer, so
+an installation that lists maintainers names the token there
+(`{id: "token:<name>"}`).
+
 ## Policy layers
 
 - The **installation policy** grants, per principal, a level on graphs and

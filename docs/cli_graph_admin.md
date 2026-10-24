@@ -1,7 +1,9 @@
 # `graph-admin`: the maintenance CLI
 
 `graph-admin` is run from the repository checkout (`uv run graph-admin ...`)
-and is not installed on `PATH`. Output and exit codes are those of `graph`
+and is not installed on `PATH`. On a machine in remote mode it sends its
+commands to the server's admin API
+([Server](server.md#remote-mode-of-graph-admin)). Output and exit codes are those of `graph`
 (see [Output and exit codes](cli_graph.md#output-and-exit-codes)).
 `graph-admin --help` and `graph-admin <command> --help` show every option;
 `graph-admin describe commands --json` lists every command as data
@@ -31,8 +33,8 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
 | `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change` (the installation policy also mirrored into every graph stream); refuses one that would lock you out; the installed policy again records missing mirrors |
 | `policy explain --graph G [--project P] [--action A] [--type T] [--file F]` | what an app caller from a project (or from none) would get, and by which rule; records nothing |
-| `token create NAME [--project P] [--expires DATE] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; warns when the policy grants it nothing |
-| `token list` | the tokens: name, project, expiry, creation time, hash prefix; never the token |
+| `token create NAME [--project P] [--expires DATE] [--scope S] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; `--scope admin` makes it a token of the [admin API](server.md#admin-api) (never bound to a project); warns when the policy grants an app token nothing or does not let an admin token maintain |
+| `token list` | the tokens: name, scope, project, expiry, creation time, hash prefix; never the token |
 | `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
 

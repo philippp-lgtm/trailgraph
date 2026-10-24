@@ -33,8 +33,12 @@ files, the policy or the audit, and the same policies decide. What it
 prevents depends on what is verified:
 
 - The token is verified: a grant or deny rule on `principal_id:
-  token:<name>` holds for every request with it. A token reaches no
-  maintenance action.
+  token:<name>` holds for every request with it. An app token reaches no
+  maintenance action; an admin token (scope `admin`, only with the
+  [admin API](server.md#admin-api) turned on) reaches only maintenance, as
+  one of the policy's maintainers. Treat an admin token like a shell in
+  the container: whoever holds it can change policies, tokens and
+  ontologies, and every change is audited under its name.
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token; without a
   binding the client asserts the project and the scope stays a guardrail.
@@ -46,8 +50,9 @@ prevents depends on what is verified:
   are stored as hashes and never logged or audited; a request without a
   valid token is logged but reaches nothing.
 
-Whoever can run `graph-admin` where the data lives (`docker compose exec`)
-remains the maintainer. Without a server, a coding agent's own
+Whoever can run `graph-admin` where the data lives (`docker compose exec`),
+or holds an admin token of a server with the admin API on, remains the
+maintainer. Without a server, a coding agent's own
 permissions narrow the normal path further, for example in a project's
 Claude Code settings:
 

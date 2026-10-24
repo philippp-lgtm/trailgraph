@@ -90,9 +90,10 @@ from outside. `graph-admin` does not write it (its changes are audited).
 Bearer tokens of the server API live in `tokens/tokens.json` as SHA-256
 hashes; `token create` and `token revoke` append an installation event
 (`change.token{name, hash_prefix}`, a created token also with project and
-expiry) before they replace the file, never the token itself. `audit
-verify` replays these events: a token in the file that they do not create,
-or that differs in prefix, project or expiry, is
+expiry, an admin token with `scope: admin`) before they replace the file,
+never the token itself. `audit verify` replays these events: a token in the
+file that they do not create, or that differs in prefix, project, expiry or
+scope, is
 `integrity.audit.token_mismatch` (added or widened by hand, or a revoke that
 was interrupted: revoke it again); a created token missing from the file is
 an interrupted create (`intent_without_effect`, info).

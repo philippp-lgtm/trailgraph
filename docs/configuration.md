@@ -31,7 +31,9 @@ limit and the read signal. The sections described elsewhere:
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
 - `[activity]`: [Live view](live_view.md)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
-  allowed to call `graph-server` (default none); read by the server only
+  allowed to call `graph-server` (default none); `admin_api` (default
+  `false`) makes it serve the [admin API](server.md#admin-api) too; read
+  by the server only
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 
@@ -51,14 +53,18 @@ endpoint = "https://graphs.example.org"   # http:// only to 127.0.0.1 or localho
 
 [remote]
 token_file = "~/.config/graph_cli/token"  # or GRAPH_CLI_TOKEN; chmod 600
+admin_token_file = "~/.config/graph_cli/admin_token"  # graph-admin; or GRAPH_CLI_ADMIN_TOKEN
 timeout_s = 60
 # allow_plain_http = true                 # http:// to another host: the token travels in clear
 ```
 
 The token comes from `GRAPH_CLI_TOKEN`, else from `token_file`, which must
-not be readable by group or others. `graph-admin` refuses to run on a
-machine in remote mode (`admin.remote_mode`): maintenance runs where the
-data lives. What changes for each command: [Server](server.md#remote-mode-of-graph).
+not be readable by group or others. `graph-admin` sends its commands to the
+server's [admin API](server.md#admin-api) with an admin token from
+`GRAPH_CLI_ADMIN_TOKEN`, else from `admin_token_file` (the same rule); what
+only runs where the data lives (`init`, `view`, `--data-root`) is refused
+(`admin.remote_mode`). What changes for each command:
+[Server](server.md#remote-mode-of-graph).
 
 ## Project pointer
 
@@ -87,6 +93,7 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_OUTPUT` | `json` makes JSON output the default |
 | `GRAPH_CLI_SPILL_BYTES` | overrides `[output] spill_bytes`; `0` keeps every answer on stdout |
 | `GRAPH_CLI_TOKEN` | the bearer token in [remote mode](#remote-mode), before `[remote] token_file` |
+| `GRAPH_CLI_ADMIN_TOKEN` | the admin token of `graph-admin` in [remote mode](#remote-mode), before `[remote] admin_token_file` |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
 
 Only `catalog` and the admin wiring may read the process environment.

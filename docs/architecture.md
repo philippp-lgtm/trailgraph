@@ -35,9 +35,9 @@ Dependencies point down only. Enforced by import-linter
 | Kernel | `kernel` |
 
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
-`graph_cli_admin`. `graph_cli_server` depends on `graph_cli` and `waitress`
-and never imports `graph_cli_admin`; `graph_cli` never imports
-`graph_cli_server`, and only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli` sits above
+`graph_cli_admin`. `graph_cli_server` depends on `graph_cli`,
+`graph_cli_admin` and `waitress`; of its modules only `admin_api` imports
+`graph_cli_admin`; `graph_cli` never imports `graph_cli_server`, and only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli` sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
@@ -61,8 +61,12 @@ into argv for the one click program, and `cli_kit.runner.run` runs it with an
 `AppServices` per request whose `RequestScope` carries the request's actor
 (`catalog.identity.request`), pointer, `GRAPH_CLI_GRAPH` and file origins.
 `uploads` stages uploaded bytes per token, `openapi` derives the OpenAPI
-document from the inventory, `main` serves the app with `waitress` (one
-process, a thread pool). Operating it: [Server](server.md).
+documents from the inventories, `main` serves the app with `waitress` (one
+process, a thread pool). `admin_api` serves the `graph-admin` declarations
+the same way under `/v1/admin/`, with an admin `Services` per request whose
+`AdminRequest` carries the request's actor (entrypoint `maint`); `main`
+plugs it in only with `[server] admin_api`, so the app routes never load
+maintenance code. Operating it: [Server](server.md).
 
 The remote mode of `graph` is the other half: `app_cli.remote` gives every
 command the server runs a handler that sends its parsed parameters
@@ -70,7 +74,9 @@ command the server runs a handler that sends its parsed parameters
 `Result.forwarded`, which `cli_kit.runner` writes as it came;
 `app_cli.remote_hooks` adds the client work of the hooked commands
 (uploads, downloads, origins), and the skills commands take graph skills
-from the server.
+from the server. `maintenance_cli.remote` does the same for `graph-admin`:
+it uploads file and directory parameters and writes the files of `graph
+skill render` into `--out`.
 
 ## CLIs
 
