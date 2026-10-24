@@ -20,7 +20,7 @@ from typing import Any, Final
 
 from graph_cli.app_cli.commands.common import PROGRAM, services
 from graph_cli.catalog.remote import RemoteSession, Write
-from graph_cli.cli_kit.argv import request_args, to_argv
+from graph_cli.cli_kit.argv import END_OF_OPTIONS, request_args, to_argv
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
@@ -86,14 +86,23 @@ def new_key() -> str:
 
 
 def command_line(spec: CommandSpec, args: dict[str, JsonValue]) -> list[str]:
-    """The arguments that repeat a command (after the program name); an upload is named by
-    the argument it came from."""
+    """The arguments that repeat a command (after the program name), as a person types
+    them: positionals first, ``--`` only when one looks like an option, so options can
+    still be added at the end. An upload is named by the argument it came from."""
 
     def named(param: ParamSpec, value: JsonValue) -> str:
         name = value.get("name") if isinstance(value, dict) else value
         return str(name)
 
-    return to_argv(spec, args, named)
+    argv = to_argv(spec, args, named)
+    if END_OF_OPTIONS not in argv:
+        return argv
+    cut = argv.index(END_OF_OPTIONS)
+    positionals = argv[cut + 1 :]
+    if any(p.startswith("-") for p in positionals):
+        return argv
+    head = len(spec.path)
+    return [*argv[:head], *positionals, *argv[head:cut]]
 
 
 __all__ = ["PROGRAM", "forward", "remote_specs"]

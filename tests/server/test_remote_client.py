@@ -176,7 +176,7 @@ def test_a_lost_write_answer_names_its_key(
     key = outcome.error["details"]["idempotency_key"]
     assert key.startswith("r-") and len(key) == 34
     assert outcome.error["hint"] == (
-        f"graph create --set name=Shelf --idempotency-key {key} -- inv:Location"
+        f"graph create inv:Location --set name=Shelf --idempotency-key {key}"
     )
     with stub(lambda h, n: hang_up(h)) as seen:
         env = client_env(isolated_env, tmp_path / "client", port_of(seen), "gct_x")
