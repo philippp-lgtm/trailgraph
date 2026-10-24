@@ -50,6 +50,7 @@ class ParamSpec:
     choices: tuple[str, ...] = ()
     default: JsonValue = None
     keyword: str | None = None  # the handler's keyword when the name would clash
+    must_exist: bool = False  # a file or directory that must exist (a usage error otherwise)
 
     @property
     def dest(self) -> str:
@@ -95,23 +96,32 @@ class CommandSpec:
     description: str | None = None
 
 
+def _click_type(param: ParamSpec) -> click.ParamType[Any]:
+    if param.type == "integer":
+        return click.INT
+    if param.type == "directory":
+        return click.Path(file_okay=False, exists=param.must_exist)
+    if param.type == "file" and param.must_exist:
+        return click.Path(dir_okay=False, exists=True)
+    return click.STRING
+
+
 def _click_param(param: ParamSpec, **extra: Any) -> click.Parameter:
     if param.positional:
         return click.Argument(
             [param.dest],
             required=param.required,
             nargs=-1 if param.repeatable else 1,
-            type=click.INT if param.type == "integer" else click.STRING,
+            type=_click_type(param),
+            metavar=param.name.upper(),
         )
     kwargs: dict[str, Any] = {"help": param.summary, "required": param.required}
     if param.type == "flag":
         kwargs.update(is_flag=True, default=False)
     elif param.type == "choice":
         kwargs.update(type=click.Choice(param.choices), default=param.default)
-    elif param.type == "integer":
-        kwargs.update(type=click.INT, default=param.default)
-    elif param.type == "directory":
-        kwargs.update(type=click.Path(file_okay=False), default=param.default)
+    elif param.type in ("integer", "directory"):
+        kwargs.update(type=_click_type(param), default=param.default)
     else:
         kwargs.update(default=param.default)
     if param.repeatable:

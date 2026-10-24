@@ -1,1 +1,29 @@
-"""graph-admin command groups; each module adds one group or command to the program."""
+"""The ``graph-admin`` commands, declared as data (contracts B11.1)."""
+
+from __future__ import annotations
+
+from graph_cli.cli_kit.spec import CommandSpec
+
+
+def all_specs() -> tuple[CommandSpec, ...]:
+    from graph_cli_admin.maintenance_cli.commands import (
+        audit,
+        files,
+        graph,
+        init,
+        meta,
+        ontology,
+        policy,
+        view,
+    )
+
+    return (
+        *meta.SPECS,
+        *init.SPECS,
+        *graph.SPECS,
+        *ontology.SPECS,
+        *audit.SPECS,
+        *files.SPECS,
+        *policy.SPECS,
+        *view.SPECS,
+    )

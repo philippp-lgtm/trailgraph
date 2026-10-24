@@ -1,7 +1,9 @@
 """Entry point of the ``graph-admin`` console script.
 
-``main`` hands the click program to ``cli_kit.runner.run``, which renders
-every outcome as the B9 envelope (text or ``--json``) with its exit code.
+The click program is generated from the command declarations
+(``maintenance_cli.commands``); ``main`` hands it to ``cli_kit.runner.run``,
+which renders every outcome as the B9 envelope (text or ``--json``) with
+its exit code.
 """
 
 from __future__ import annotations
@@ -12,31 +14,32 @@ from pathlib import Path
 import click
 
 from graph_cli.cli_kit.runner import run
+from graph_cli.cli_kit.spec import build_click
 from graph_cli_admin import __version__
 from graph_cli_admin.maintenance_cli import hints, wiring
-from graph_cli_admin.maintenance_cli.commands.audit import audit_group
-from graph_cli_admin.maintenance_cli.commands.files import files_group
-from graph_cli_admin.maintenance_cli.commands.graph import graph_group
-from graph_cli_admin.maintenance_cli.commands.init import init_command
-from graph_cli_admin.maintenance_cli.commands.ontology import ontology_group
-from graph_cli_admin.maintenance_cli.commands.policy import policy_group
-from graph_cli_admin.maintenance_cli.commands.view import view_command
+from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_admin.services_admin import error_codes
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(__version__, prog_name="graph-admin")
-def cli() -> None:
-    """Create, version and archive knowledge graphs and their ontologies."""
+def program() -> click.Group:
+    @click.group(context_settings={"help_option_names": ["-h", "--help"]})
+    @click.version_option(__version__, prog_name="graph-admin")
+    def cli() -> None:
+        """Create, version and archive knowledge graphs and their ontologies."""
 
-
-cli.add_command(init_command)
-cli.add_command(graph_group)
-cli.add_command(ontology_group)
-cli.add_command(audit_group)
-cli.add_command(files_group)
-cli.add_command(policy_group)
-cli.add_command(view_command)
+    return build_click(
+        cli,
+        all_specs(),
+        group_help={
+            "audit": "Verify and anchor the audit trail.",
+            "describe": "Describe the commands of this program.",
+            "files": "Verify and clean up the stored files of a graph.",
+            "graph": "Create and inspect graphs.",
+            "ontology": "Validate, compare and release authored ontologies.",
+            "policy": "Check, show, compare, apply and explain access policies.",
+            "skill": "Publish the graph skill that the app installs for agents, or preview it.",
+        },
+    )
 
 
 def main() -> None:
@@ -45,7 +48,7 @@ def main() -> None:
     hints.register()
     services = wiring.Services(env, Path.cwd())
     code = run(
-        cli,
+        program(),
         sys.argv[1:],
         wiring.invocation(env),
         services=services,

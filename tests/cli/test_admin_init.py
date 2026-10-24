@@ -1,12 +1,16 @@
-"""S: graph-admin init, output modes and usage errors (contracts B9, B12.4, B12.7; plan M7, M8)."""
+"""S: graph-admin init, output modes, usage errors and the command inventory (contracts B9,
+B11, B12.4, B12.7; plan M7, M8)."""
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
 from harness import CliRunner
 from support.admin import admin, parse
+from support.fixtures import GOLDENS, assert_golden
 from support.trees import tree_hash
+from test_vocabulary_leak import deny_list
 
 
 def xdg(env: dict[str, str], name: str) -> Path:
@@ -82,3 +86,30 @@ def test_help_has_examples_and_no_side_effects(run_cli: CliRunner, tmp_path: Pat
         assert result.returncode == 0
     assert result.stdout.count("graph-admin init") >= 2
     assert tree_hash(tmp_path) == before
+
+
+def test_inventory_golden_and_examples(run_cli: CliRunner) -> None:
+    outcome = admin(run_cli, "describe", "commands")
+    assert outcome.code == 0
+    inventory = outcome.data
+    assert_golden(
+        GOLDENS / "admin" / "inventory.json", (json.dumps(inventory, indent=2) + "\n").encode()
+    )
+    assert (inventory["program"], inventory["surface"]) == ("graph-admin", "maint")  # B11.2
+    assert all(a.startswith("maint.") for a in inventory["actions"])
+    words, prefixes = deny_list()  # B11.4: placeholder-only examples
+    for command in inventory["commands"]:
+        assert len(command["summary"]) <= 100 and len(command["examples"]) >= 2
+        for example in command["examples"]:
+            text = example["command"]
+            assert text.startswith("graph-admin ")
+            assert not [w for w in words if w in text], text
+            assert not [p for p in prefixes if f"{p}:" in text], text
+            assert not re.search(r"[/\\]|\.(yaml|toml|json)\b", text), text  # no paths
+
+
+def test_help_names_positional_arguments(run_cli: CliRunner) -> None:
+    result = run_cli("graph-admin", "graph", "skill", "publish", "--help")
+    assert result.returncode == 0 and "REF DIR" in result.stdout
+    missing = admin(run_cli, "graph", "skill", "publish", "example_graph", "no_such_dir")
+    assert (missing.code, missing.error["code"]) == (2, "usage.invalid_argument")

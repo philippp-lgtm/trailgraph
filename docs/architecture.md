@@ -50,9 +50,10 @@ The cross-cutting packages have their own documents:
 
 ## CLIs
 
-Commands of `graph` are declared as data in `graph_cli.app_cli.commands`
-(`cli_kit.spec.CommandSpec`); the click tree and the inventory are built from
-the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
+Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
+those of `graph-admin` in `graph_cli_admin.maintenance_cli.commands`
+(`cli_kit.spec.CommandSpec`); for each program the click tree and the
+inventory are built from the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer

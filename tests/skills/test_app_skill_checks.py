@@ -36,7 +36,7 @@ from graph_cli.kernel.changeset import (
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.query.cypher.resolve import FUNCTIONS
 from graph_cli.skills.app_skill import QUERY_SUBSET, render_app_skill
-from graph_cli_admin.maintenance_cli.main import cli as admin_cli
+from graph_cli_admin.maintenance_cli.commands import all_specs as admin_specs
 
 Table = tuple[list[str], list[list[str]]]
 
@@ -250,7 +250,7 @@ def vocabulary() -> tuple[set[str], set[str]]:
 
 def admin_only_names() -> set[str]:
     app_top = {c["path"][0] for c in golden_inventory()["commands"]}
-    return set(admin_cli.commands) - app_top  # type: ignore[attr-defined]
+    return {spec.path[0] for spec in admin_specs()} - app_top
 
 
 def leaks(files: dict[str, str]) -> list[str]:

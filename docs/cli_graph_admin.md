@@ -3,10 +3,15 @@
 `graph-admin` is run from the repository checkout (`uv run graph-admin ...`)
 and is not installed on `PATH`. Output and exit codes are those of `graph`
 (see [Output and exit codes](cli_graph.md#output-and-exit-codes)).
-`graph-admin --help` and `graph-admin <command> --help` show every option.
+`graph-admin --help` and `graph-admin <command> --help` show every option;
+`graph-admin describe commands --json` lists every command as data
+(`graph_cli.inventory/1` with `surface: "maint"`).
+
+## Commands
 
 | Command | What it does |
 | --- | --- |
+| `describe commands` | every command as data: arguments, options, examples, error codes, exit codes |
 | `init` | create the data root and, if missing, `config.toml` with a device id |
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
 | `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
@@ -26,6 +31,8 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `policy apply FILE [--graph G] --reason R` | install a policy, audited as `maint.policy_change` (the installation policy also mirrored into every graph stream); refuses one that would lock you out; the installed policy again records missing mirrors |
 | `policy explain --graph G [--project P] [--action A] [--type T] [--file F]` | what an app caller from a project (or from none) would get, and by which rule; records nothing |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
+
+## Auditing and releases
 
 Every change is audited: an intent in the graph's stream, the effect, then
 an installation event anchoring the intent. A release must bump the version

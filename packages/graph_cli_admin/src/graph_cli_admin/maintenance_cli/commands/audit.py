@@ -2,36 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import click
+from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.runner import CommandState, json_option, leaf
-from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
+from graph_cli.cli_kit.runner import CommandState
+from graph_cli.cli_kit.spec import CommandSpec, Example
+from graph_cli_admin.maintenance_cli.commands.common import (
+    CHANGE_ERRORS,
+    DATA_ROOT,
+    ROOT_ERRORS,
+    admin_context,
+)
 from graph_cli_admin.services_admin import audit
 
 
-@click.group("audit")
-def audit_group() -> None:
-    """Verify and anchor the audit trail."""
-
-
-@audit_group.command("verify")
-@data_root_option
-@json_option
-@leaf
-def verify(state: CommandState, data_root: Path | None) -> Result:
-    """Check every audit chain, tx log, revision file and manifest pin.
-
-    Exits 1 (admin.integrity_errors) if any error finding exists; warnings
-    and info findings (such as interrupted writes) do not fail.
-
-    \b
-    Examples:
-      graph-admin audit verify
-      graph-admin audit verify --json
-    """
+def verify(state: CommandState, data_root: str | None) -> Result:
     ctx = admin_context(state, data_root)
     verification = audit.verify(ctx)
     state.warnings += verification.warnings
@@ -39,16 +24,39 @@ def verify(state: CommandState, data_root: Path | None) -> Result:
     return Result(data=verification.data)
 
 
-@audit_group.command("anchor")
-@data_root_option
-@json_option
-@leaf
-def anchor(state: CommandState, data_root: Path | None) -> Result:
-    """Record the current head of every graph stream in the installation stream.
-
-    \b
-    Examples:
-      graph-admin audit anchor
-      graph-admin audit anchor --json
-    """
+def anchor(state: CommandState, data_root: str | None) -> Result:
     return Result(data=audit.anchor(admin_context(state, data_root)))
+
+
+SPECS: Final = (
+    CommandSpec(
+        path=("audit", "verify"),
+        kind="read",
+        surface="trace",
+        action="maint.audit_verify",
+        summary="Check every audit chain, tx log, revision file and manifest pin.",
+        params=(DATA_ROOT,),
+        examples=(
+            Example("graph-admin audit verify", "Verify the whole installation."),
+            Example("graph-admin audit verify --json", "The findings as JSON."),
+        ),
+        errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.integrity_errors"),
+        handler=verify,
+        description="Exits 1 (admin.integrity_errors) if any error finding exists; warnings"
+        " and info findings (such as interrupted writes) do not fail.",
+    ),
+    CommandSpec(
+        path=("audit", "anchor"),
+        kind="write",
+        surface="trace",
+        action="maint.audit_anchor",
+        summary="Record the current head of every graph stream in the installation stream.",
+        params=(DATA_ROOT,),
+        examples=(
+            Example("graph-admin audit anchor", "Anchor every graph stream."),
+            Example("graph-admin audit anchor --json", "The anchored heads as JSON."),
+        ),
+        errors=(*ROOT_ERRORS, *CHANGE_ERRORS),
+        handler=anchor,
+    ),
+)

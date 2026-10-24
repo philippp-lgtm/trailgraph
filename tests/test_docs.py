@@ -1,18 +1,21 @@
 """The documentation holds together: links resolve, the index lists every document and
-the command overview of `graph` names exactly the commands it has.
+the command overviews of `graph` and `graph-admin` name exactly the commands each has,
+with options those commands take.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md,
 docs/ and the hand-written `ontology-best-practices` skill). Links inside
 code blocks are ignored. Anchors follow GitHub's heading slugs. The command
-overview is compared with the inventory golden, which
-`tests/cli/test_app_meta.py` keeps equal to `graph describe commands`.
+overviews are compared with the inventory goldens, which `tests/cli/test_app_meta.py`
+and `tests/cli/test_admin_init.py` keep equal to `describe commands` of each program.
 Each check has a positive control, so a broken scanner cannot pass silently.
 """
 
 import json
 import re
 from pathlib import Path
+from typing import Any
 
+import pytest
 from harness import REPO_ROOT
 from support.fixtures import GOLDENS
 
@@ -26,6 +29,9 @@ HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 CELL_SEPARATOR = re.compile(r"(?<!\\)\|")
 CODE_SPAN = re.compile(r"`([^`]+)`")
 COMMAND_WORD = re.compile(r"[a-z][a-z_-]*")
+OPTION = re.compile(r"(?<![\w-])--[a-z][a-z-]*")
+# The command overview of each program and the golden of its inventory.
+OVERVIEWS = (("cli_graph.md", "app"), ("cli_graph_admin.md", "admin"))
 
 
 def _documents() -> list[Path]:
@@ -69,22 +75,40 @@ def _section(text: str, heading: str) -> str:
     return rest.split("\n## ", 1)[0]
 
 
-def _overview_commands(section: str) -> list[tuple[str, ...]]:
-    """The command paths named in the first column of the table: the leading words of each
-    code span, up to the first placeholder or option."""
-    commands: list[tuple[str, ...]] = []
+def _overview_rows(section: str) -> list[tuple[list[tuple[str, ...]], set[str]]]:
+    """Per table row: the command paths named in the first column (the leading words of
+    each code span, up to the first placeholder or option; a span of options only names
+    none) and the options named in code spans anywhere in the row."""
+    rows: list[tuple[list[tuple[str, ...]], set[str]]] = []
     for line in section.splitlines():
         if not line.startswith("| `"):
             continue
-        first_cell = CELL_SEPARATOR.split(line)[1]
-        for span in CODE_SPAN.findall(first_cell):
+        cells = CELL_SEPARATOR.split(line)
+        commands: list[tuple[str, ...]] = []
+        for span in CODE_SPAN.findall(cells[1]):
             words: list[str] = []
             for token in span.split():
                 if not COMMAND_WORD.fullmatch(token):
                     break
                 words.append(token)
-            commands.append(tuple(words))
-    return commands
+            if words:
+                commands.append(tuple(words))
+        options = {o for span in CODE_SPAN.findall(line) for o in OPTION.findall(span)}
+        rows.append((commands, options))
+    return rows
+
+
+def _overview_commands(section: str) -> list[tuple[str, ...]]:
+    return [command for commands, _ in _overview_rows(section) for command in commands]
+
+
+def _inventory(golden: str) -> dict[str, Any]:
+    found: dict[str, Any] = json.loads((GOLDENS / golden / "inventory.json").read_text())
+    return found
+
+
+def _overview(doc: str) -> str:
+    return _section((DOCS_DIR / doc).read_text(), "Commands")
 
 
 def test_documents_exist() -> None:
@@ -110,11 +134,26 @@ def test_index_lists_every_document() -> None:
     assert missing == []
 
 
-def test_command_overview_names_every_command() -> None:
-    inventory = json.loads((GOLDENS / "app" / "inventory.json").read_text())
-    expected = sorted(tuple(command["path"]) for command in inventory["commands"])
-    section = _section((DOCS_DIR / "cli_graph.md").read_text(), "Commands")
-    assert sorted(_overview_commands(section)) == expected
+@pytest.mark.parametrize(("doc", "golden"), OVERVIEWS)
+def test_command_overview_names_every_command(doc: str, golden: str) -> None:
+    expected = sorted(tuple(command["path"]) for command in _inventory(golden)["commands"])
+    assert sorted(_overview_commands(_overview(doc))) == expected
+
+
+@pytest.mark.parametrize(("doc", "golden"), OVERVIEWS)
+def test_command_overview_names_only_real_options(doc: str, golden: str) -> None:
+    """Every option a row names belongs to one of the row's commands or is global."""
+    inventory = _inventory(golden)
+    common = {"--json", "--help", *(o["name"] for o in inventory["global_options"])}
+    options = {
+        tuple(c["path"]): {o["name"] for o in c["options"]} | common for c in inventory["commands"]
+    }
+    unknown = [
+        (commands, sorted(named - set().union(*(options[c] for c in commands))))
+        for commands, named in _overview_rows(_overview(doc))
+        if named - set().union(*(options[c] for c in commands))
+    ]
+    assert unknown == []
 
 
 def test_positive_controls() -> None:
@@ -130,11 +169,14 @@ def test_positive_controls() -> None:
         "| `get REF`, `describe type T` | one `find` |\n"
         "| `skills install --scope user\\|project` | a \\| b |\n"
         "| `file check [REF...]` | c |\n"
+        "| `diff DIR --against DIR` / `--graph REF` | `--module` |\n"
     )
     assert _overview_commands(table) == [
         ("get",),
         ("describe", "type"),
         ("skills", "install"),
         ("file", "check"),
+        ("diff",),
     ]
+    assert _overview_rows(table)[-1] == ([("diff",)], {"--against", "--graph", "--module"})
     assert _section("# T\n\n## A\nx\n## B\ny\n", "A") == "x"

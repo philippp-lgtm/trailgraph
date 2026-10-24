@@ -59,7 +59,7 @@ Update the documentation in the same change as the code:
 | Change | Update |
 | --- | --- |
 | a `graph` command or option | regenerate the skill; `docs/cli_graph.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
-| a `graph-admin` command or option | `docs/cli_graph_admin.md` (hand-written) |
+| a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `skills/ontology-best-practices/references/` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
@@ -69,7 +69,9 @@ Update the documentation in the same change as the code:
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
 resolves, that `docs/README.md` lists every document and that the command
-overview in `docs/cli_graph.md` names exactly the commands of `graph`.
+overviews in `docs/cli_graph.md` and `docs/cli_graph_admin.md` name exactly
+the commands of `graph` and `graph-admin`, and only options those commands
+take.
 
 ## Generated files
 
@@ -105,7 +107,7 @@ skill names no graph type.
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
 | skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written `ontology-best-practices` skill: its YAML examples compile, the format reference names every accepted key, structure |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the `graph` command overview matches the inventory |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
 by default and take a few seconds. Storage tests build transactions with a

@@ -2,66 +2,83 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import click
+from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.runner import CommandState, json_option, leaf
-from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
+from graph_cli.cli_kit.runner import CommandState
+from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli_admin.maintenance_cli.commands.common import (
+    CHANGE_ERRORS,
+    DATA_ROOT,
+    GRAPH_ERRORS,
+    GRAPH_OPTION,
+    admin_context,
+)
 from graph_cli_admin.services_admin import files, graphs
 
-graph_option = click.option("--graph", "graph_ref", required=True, help="Graph name or id.")
 
-
-@click.group("files")
-def files_group() -> None:
-    """Verify and clean up the stored files of a graph."""
-
-
-@files_group.command("verify")
-@graph_option
-@click.option("--rehash", is_flag=True, help="Read every stored file and compare its hash.")
-@data_root_option
-@json_option
-@leaf
-def verify(state: CommandState, graph_ref: str, rehash: bool, data_root: Path | None) -> Result:
-    """Check that every file a tx names is stored; list orphans and staging leftovers.
-
-    Exits 1 (admin.integrity_errors) on a missing or, with --rehash, damaged
-    file; orphans and staging leftovers are info findings (files gc removes
-    them).
-
-    \b
-    Examples:
-      graph-admin files verify --graph example_graph
-      graph-admin files verify --graph example_graph --rehash --json
-    """
+def verify(state: CommandState, graph_ref: str, rehash: bool, data_root: str | None) -> Result:
     outcome = files.verify(admin_context(state, data_root), graph_ref=graph_ref, rehash=rehash)
     return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
 
 
-@files_group.command("gc")
-@graph_option
-@click.option("--reason", help="Why the files are removed; recorded in the audit event.")
-@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing it.")
-@data_root_option
-@json_option
-@leaf
 def gc(
-    state: CommandState, graph_ref: str, reason: str | None, dry_run: bool, data_root: Path | None
+    state: CommandState, graph_ref: str, reason: str | None, dry_run: bool, data_root: str | None
 ) -> Result:
-    """Remove stored files no tx names and staging files older than one hour.
-
-    Files that any revision ever named stay, history included. The removal
-    is audited (maint.repair); nothing to remove writes nothing.
-
-    \b
-    Examples:
-      graph-admin files gc --graph example_graph --dry-run
-      graph-admin files gc --graph example_graph --reason "after an interrupted add" --json
-    """
     outcome = files.gc(
         admin_context(state, data_root), graph_ref=graph_ref, reason=reason, dry_run=dry_run
     )
     return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
+
+
+SPECS: Final = (
+    CommandSpec(
+        path=("files", "verify"),
+        kind="read",
+        surface="trace",
+        action="maint.audit_verify",
+        summary="Check that every file a tx names is stored; list orphans and staging leftovers.",
+        params=(
+            GRAPH_OPTION,
+            ParamSpec("--rehash", "flag", "Read every stored file and compare its hash."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin files verify --graph <graph>", "Check the stored files."),
+            Example(
+                "graph-admin files verify --graph <graph> --rehash --json",
+                "Also compare every file's hash.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, "access.denied", "admin.integrity_errors"),
+        handler=verify,
+        description="Exits 1 (admin.integrity_errors) on a missing or, with --rehash, damaged"
+        " file; orphans and staging leftovers are info findings (files gc removes them).",
+    ),
+    CommandSpec(
+        path=("files", "gc"),
+        kind="write",
+        surface="act",
+        action="maint.repair",
+        summary="Remove stored files no tx names and staging files older than one hour.",
+        params=(
+            GRAPH_OPTION,
+            ParamSpec(
+                "--reason", "string", "Why the files are removed; recorded in the audit event."
+            ),
+            ParamSpec("--dry-run", "flag", "Show what would be removed without removing it."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin files gc --graph <graph> --dry-run", "Show what would go."),
+            Example(
+                "graph-admin files gc --graph <graph> --reason <reason> --json",
+                "Remove them, with a reason.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS),
+        handler=gc,
+        description="Files that any revision ever named stay, history included. The removal"
+        " is audited (maint.repair); nothing to remove writes nothing.",
+    ),
+)

@@ -3,79 +3,48 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import click
+from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.runner import CommandState, json_option, leaf
+from graph_cli.cli_kit.runner import CommandState
+from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli_admin.maintenance_cli.commands.common import admin_context, data_root_option
+from graph_cli_admin.maintenance_cli.commands.common import (
+    CHANGE_ERRORS,
+    DATA_ROOT,
+    GRAPH_ERRORS,
+    admin_context,
+)
 from graph_cli_admin.services_admin import graphs, ontology
 from graph_cli_admin.services_admin.release import release
 
-source_argument = click.argument("source", type=click.Path(path_type=Path, file_okay=False))
-module_option = click.option(
-    "--module", help="Main module id (the file <module>.yaml); needed if SOURCE holds several."
+SOURCE: Final = ParamSpec(
+    "source", "directory", "Directory with the authored ontology.", required=True, positional=True
+)
+MODULE: Final = ParamSpec(
+    "--module", "string", "Main module id (the file <module>.yaml); needed if SOURCE holds several."
 )
 
 
-@click.group("ontology")
-def ontology_group() -> None:
-    """Validate, compare and release authored ontologies."""
+def validate(state: CommandState, source: str, module: str | None) -> Result:
+    return Result(data=ontology.summary(ontology.compile_source(Path(source), module)))
 
 
-@ontology_group.command("validate")
-@source_argument
-@module_option
-@json_option
-@leaf
-def validate(state: CommandState, source: Path, module: str | None) -> Result:
-    """Check an authored ontology; error findings fail with admin.model_invalid.
-
-    \b
-    Examples:
-      graph-admin ontology validate data/example_graph/ontology
-      graph-admin ontology validate ./drafts --module inventory --json
-    """
-    return Result(data=ontology.summary(ontology.compile_source(source, module)))
-
-
-@ontology_group.command("diff")
-@source_argument
-@module_option
-@click.option(
-    "--against",
-    type=click.Path(path_type=Path, file_okay=False),
-    help="Older authored version to compare with.",
-)
-@click.option("--graph", "graph_ref", help="Compare with the release this graph is pinned to.")
-@data_root_option
-@json_option
-@leaf
 def diff_command(
     state: CommandState,
-    source: Path,
+    source: str,
     module: str | None,
-    against: Path | None,
+    against: str | None,
     graph_ref: str | None,
-    data_root: Path | None,
+    data_root: str | None,
 ) -> Result:
-    """Classify the changes from an older version to SOURCE (patch, minor, major).
-
-    Reports whether the declared version bump suffices; release enforces it.
-
-    \b
-    Examples:
-      graph-admin ontology diff ./v2 --against ./v1
-      graph-admin ontology diff ./drafts --graph example_graph --json
-    """
     if (against is None) == (graph_ref is None):
         raise GraphCliError(
             "usage.missing_argument",
             "give exactly one of --against or --graph",
             details={"argument": "against|graph"},
         )
-    new = ontology.compile_source(source, module)
+    new = ontology.compile_source(Path(source), module)
     graph = None
     if graph_ref is not None:
         ctx = admin_context(state, data_root)
@@ -84,35 +53,107 @@ def diff_command(
         graph = {"id": str(entry.id), "name": entry.name, "state": entry.state}
     else:
         assert against is not None
-        old = ontology.compile_source(against, module).model
+        old = ontology.compile_source(Path(against), module).model
     report, bump = ontology.diff(old, new.model)
     return Result(data={**report.to_json(), "bump": bump}, graph=graph)
 
 
-@ontology_group.command("release")
-@click.argument("graph_ref", metavar="GRAPH")
-@source_argument
-@module_option
-@data_root_option
-@json_option
-@leaf
 def release_command(
-    state: CommandState, graph_ref: str, source: Path, module: str | None, data_root: Path | None
+    state: CommandState, graph_ref: str, source: str, module: str | None, data_root: str | None
 ) -> Result:
-    """Publish SOURCE as a release of GRAPH and pin the graph to it.
-
-    The version bump must cover the changes against the pinned release;
-    re-running a release that is already pinned changes nothing.
-
-    \b
-    Examples:
-      graph-admin ontology release example_graph data/example_graph/ontology
-      graph-admin ontology release example_graph ./onto --module inventory --json
-    """
     ctx = admin_context(state, data_root)
-    outcome = release(ctx, graph_ref=graph_ref, source=source, module=module)
+    outcome = release(ctx, graph_ref=graph_ref, source=Path(source), module=module)
     return Result(
         data=outcome.data,
         graph=graphs.envelope_graph(outcome.entry, outcome.seq),
         warnings=outcome.warnings,
     )
+
+
+SPECS: Final = (
+    CommandSpec(
+        path=("ontology", "validate"),
+        kind="read",
+        surface="model",
+        action=None,
+        summary="Check an authored ontology; error findings fail with admin.model_invalid.",
+        params=(SOURCE, MODULE),
+        examples=(
+            Example("graph-admin ontology validate <dir>", "Check an authored ontology."),
+            Example(
+                "graph-admin ontology validate <dir> --module <module> --json",
+                "Check one module of several, as JSON.",
+            ),
+        ),
+        errors=("admin.model_invalid",),
+        handler=validate,
+    ),
+    CommandSpec(
+        path=("ontology", "diff"),
+        kind="read",
+        surface="model",
+        action=None,
+        summary="Classify the changes from an older version to SOURCE (patch, minor, major).",
+        params=(
+            SOURCE,
+            MODULE,
+            ParamSpec("--against", "directory", "Older authored version to compare with."),
+            ParamSpec(
+                "--graph",
+                "graph_ref",
+                "Compare with the release this graph is pinned to.",
+                keyword="graph_ref",
+            ),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin ontology diff <dir> --against <dir>", "Compare two versions."),
+            Example(
+                "graph-admin ontology diff <dir> --graph <graph> --json",
+                "Compare with a graph's pinned release.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, "usage.missing_argument", "admin.model_invalid"),
+        handler=diff_command,
+        description="Reports whether the declared version bump suffices; release enforces it.",
+    ),
+    CommandSpec(
+        path=("ontology", "release"),
+        kind="write",
+        surface="act",
+        action="maint.ontology_release",
+        summary="Publish SOURCE as a release of GRAPH and pin the graph to it.",
+        params=(
+            ParamSpec(
+                "graph",
+                "graph_ref",
+                "Graph name or id.",
+                required=True,
+                positional=True,
+                keyword="graph_ref",
+            ),
+            SOURCE,
+            MODULE,
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin ontology release <graph> <dir>", "Release and pin."),
+            Example(
+                "graph-admin ontology release <graph> <dir> --module <module> --json",
+                "Release one module of several, as JSON.",
+            ),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            *CHANGE_ERRORS,
+            "graph.archived",
+            "admin.model_invalid",
+            "admin.version_bump_insufficient",
+            "admin.release_exists",
+            "admin.migration_required",
+        ),
+        handler=release_command,
+        description="The version bump must cover the changes against the pinned release;"
+        " re-running a release that is already pinned changes nothing.",
+    ),
+)
