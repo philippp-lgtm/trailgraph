@@ -105,6 +105,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("skills.source_missing", _C.NOT_FOUND, False, "The graph has no published skill."),
     ErrorSpec("skills.source_invalid", _C.INVALID, False, "The published skill is invalid."),
     ErrorSpec("skills.check_failed", _C.INVALID, False, "Installed skills are not up to date."),
+    ErrorSpec(
+        "skills.outdated", _C.REFUSED, False, "An installed skill is older than what it describes."
+    ),
     ErrorSpec("file.unreadable", _C.USAGE, False, "The path is not a readable regular file."),
     ErrorSpec("file.too_large", _C.REFUSED, False, "The file exceeds the size limit."),
     ErrorSpec("file.module_missing", _C.REFUSED, False, "The graph's model has no files module."),
@@ -165,6 +168,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         _C.WARNING,
         False,
         "A graph skill names terms, commands or aliases that do not exist.",
+    ),
+    ErrorSpec(
+        "skills.stale", _C.WARNING, False, "An installed skill is older than what it describes."
     ),
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
     ErrorSpec("file.already_present", _C.WARNING, False, "The graph already stores this file."),

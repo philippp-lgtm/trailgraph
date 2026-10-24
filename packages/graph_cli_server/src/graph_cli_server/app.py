@@ -9,8 +9,10 @@ answer is the envelope; the HTTP status follows the error category. A
 request without a valid bearer token reaches no service and is only logged.
 A request that names another build of its program than the server runs is
 refused before any route (``remote.client_outdated``; ``[server]
-client_builds = "warn"`` lets it through). No body, token or query string
-is ever logged.
+client_builds = "warn"`` lets it through). The graph skills a client has
+installed come in ``Graph-Cli-Skills`` and are judged when a command selects
+a graph (``catalog.skill_claims``). No body, token or query string is ever
+logged.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from graph_cli.catalog.config import load_config
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.pointer import PointerFile, request_pointer
 from graph_cli.catalog.resolve import config_path, resolve_roots
+from graph_cli.catalog.skill_claims import SkillClaim, parse_claims_header
 from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE, TokenRecord, TokenStore
 from graph_cli.catalog.wiring import PROGRAM, AppServices, RequestScope
 from graph_cli.cli_kit.argv import to_argv
@@ -75,7 +78,8 @@ STATUS_BY_CATEGORY: Final[Mapping[ErrorCategory, int]] = {
 }
 CORS_METHODS: Final = "GET, POST, PUT"
 CORS_HEADERS: Final = (
-    "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Actor"
+    "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Skills,"
+    " Graph-Cli-Actor"
 )
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
 _SKILL_KEYS: Final = frozenset({"actor", "graph_env"})
@@ -326,15 +330,21 @@ class ServerApp:
             body = _object(_read_json(environ), "body", _BODY_KEYS)
         except GraphCliError as exc:
             return self._error(command, exc)
-        outcome = self.run_command(spec, body, token)
+        claims = parse_claims_header(environ.get("HTTP_GRAPH_CLI_SKILLS"))
+        outcome = self.run_command(spec, body, token, claims)
         if spec.path == ("file", "path"):
             outcome = _without_server_path(outcome)
         return answer(outcome, render)
 
     def run_command(
-        self, spec: CommandSpec, body: Mapping[str, JsonValue], token: TokenRecord
+        self,
+        spec: CommandSpec,
+        body: Mapping[str, JsonValue],
+        token: TokenRecord,
+        claims: tuple[SkillClaim, ...] = (),
     ) -> Outcome:
-        """Run one command for a request; every error becomes an envelope."""
+        """Run one command for a request; every error becomes an envelope. ``claims`` are
+        the graph skills the client has installed (B14.17)."""
         command = " ".join(spec.path)
         args = body.get("args", {})
         staged: list[Staged] = []
@@ -355,7 +365,7 @@ class ServerApp:
             with self.uploads.request_dir(token.name) as directory:
                 argv = to_argv(spec, args, self.stager(token, directory, staged))
                 origins = {s.link: s.origin for s in staged}
-                done = self._run(argv, RequestScope(**scope, origins=origins))
+                done = self._run(argv, RequestScope(**scope, origins=origins, claims=claims))
         except GraphCliError as exc:
             failed = envelope(command, program=PROGRAM, error=exc)
             return Outcome(failed, None, *status_of(failed))

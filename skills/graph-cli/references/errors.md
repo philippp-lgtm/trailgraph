@@ -24,6 +24,11 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `access.project_mismatch`: the token belongs to another project. Stop and tell the user; never change the project.
 - `remote.client_outdated`: this program is not the build the server runs. Stop and tell the user; never install or change the program yourself.
 
+## When an installed skill is outdated
+
+- `skills.outdated`: this skill, or the skill of the graph, was installed for an older program or an older state of the graph, so the write was refused. Stop and tell the user the command in `hint`, which refreshes the installed skills; never change skill files yourself. After the refresh, read the skills again before repeating the write.
+- `skills.stale` (a warning on a read): the same, but the answer is right. Finish the read and tell the user.
+
 ## Codes
 
 | Error code | Error category | Exit |
@@ -78,6 +83,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `skills.check_failed` | invalid | 1 |
 | `skills.modified` | refused | 1 |
 | `skills.not_owned` | refused | 1 |
+| `skills.outdated` | refused | 1 |
 | `skills.source_invalid` | invalid | 1 |
 | `skills.source_missing` | not_found | 1 |
 | `skills.target_invalid` | refused | 1 |

@@ -11,17 +11,21 @@ from typing import Any
 
 import pytest
 from harness import CliRunner
-from support.admin import init
+from support.admin import admin, init
 from support.app import create_graph
 from support.files import synthetic_pdf
+from support.fixtures import FIXTURES
 from support.server import actor_header, call, grant_server, new_token
 
 from graph_cli.kernel.canonical import hash_bytes
+from graph_cli.kernel.ports.catalog import skill_hash
+from graph_cli.skills.tree import read_tree
 from graph_cli_server.app import ServerApp, Settings
 
 pytestmark = pytest.mark.slow
 
 LOCATION = {"type": "inv:Location", "--set": ["name=Shelf", "code=S1"]}
+GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 
 
 @pytest.fixture
@@ -310,6 +314,7 @@ def test_cors(installation: dict[str, Any], tmp_path: Path) -> None:
     assert preflight.status == 204
     assert preflight.headers["Access-Control-Allow-Origin"] == "https://app.example.org"
     assert "Authorization" in preflight.headers["Access-Control-Allow-Headers"]
+    assert "Graph-Cli-Skills" in preflight.headers["Access-Control-Allow-Headers"]
     other = call(app, "OPTIONS", "/v1/commands/whoami", headers={"Origin": "https://evil.example"})
     assert other.status == 403 and "Access-Control-Allow-Origin" not in other.headers
     reply = call(app, "GET", "/v1/health", headers=allowed)
@@ -388,3 +393,48 @@ def test_warn_mode_lets_another_build_through(installation: dict[str, Any], tmp_
     )
     assert reply.status == 200
     assert reply.headers["Graph-Cli-Build"] == f"graph {BUILD_A}"  # the client warns
+
+
+def test_installed_graph_skills_are_judged_from_the_header(
+    run_cli: CliRunner, served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """Plan origin_lifecycle E3: the client claims its graph skills, the server judges them
+    against the graph's slot; a malformed or foreign claim is no claim."""
+    app, _ = served
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(GRAPH_SKILL))
+    assert published.code == 0, published.envelope
+    token = installation["tokens"]["ci"]
+    listed = command(app, "graphs", token)
+    (graph,) = [g["id"] for g in listed.json["data"]["items"] if g["name"] == "example_graph"]
+    current = skill_hash(read_tree(GRAPH_SKILL)[0])
+    pointer = {"graphs": ["example_graph"], "default": "example_graph"}
+    codes = iter(range(1, 100))
+
+    def create(claims: str, shown: dict[str, Any] = pointer) -> Any:
+        args = {"type": "inv:Location", "--set": ["name=Shelf", f"code=S{next(codes)}"]}
+        body = {"args": args, "pointer": shown}
+        headers = {"Graph-Cli-Skills": claims}
+        return call(app, "POST", "/v1/commands/create", token=token, body=body, headers=headers)
+
+    fresh = create(f"graph={graph};hash={current};scope=user")
+    assert fresh.status == 200 and fresh.json["warnings"] == [], fresh.json
+    stale = f"graph={graph};hash=sha256:{'0' * 64};scope=project"
+    refused = create(stale, {**pointer, "file": "/client/project/.graph_cli.toml"})
+    assert (refused.status, refused.error["code"]) == (422, "skills.outdated")
+    assert refused.error["hint"] == "graph skills install --scope project --dir /client/project"
+    assert refused.headers["Graph-Cli-Exit-Code"] == "1"
+    assert refused.error["details"]["skills"][0]["current"] == {"hash": current, "model": None}
+    unnamed = create(stale)  # no pointer file named: the hint cannot name the directory
+    assert unnamed.error["hint"] == "graph skills install --scope project"
+    for ignored in ("garbage", f"graph={graph};hash=nope;scope=project", stale.replace(graph, "x")):
+        assert create(ignored).status == 200
+    read = call(
+        app,
+        "POST",
+        "/v1/commands/find",
+        token=token,
+        body={"args": {"--type": ["inv:Location"]}, "pointer": pointer},
+        headers={"Graph-Cli-Skills": stale},
+    )
+    assert read.status == 200
+    assert [w["code"] for w in read.json["warnings"]] == ["skills.stale"]

@@ -96,8 +96,8 @@ def app_skill() -> RenderedSkill:
 def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord]) -> RenderedSkill:
     """The published skill of ``entry``; ``skills.source_missing`` when there is none. A
     template (kind ``generated``) is rendered with the model of the graph's current pin."""
+    from graph_cli.kernel.skill_marker import GENERATED
     from graph_cli.skills import sources
-    from graph_cli.skills.template import GENERATED
 
     request = RequestMeta.of("skills", {"graph": entry.name})
     slot = ctx.reader.skill(ctx.actor, entry, request)
@@ -292,7 +292,7 @@ def pointer_of(state: CommandState, source: SkillSource, target: SkillTarget) ->
 def installed_graph_ref(found: Installed) -> str | None:
     """Which graph a marked graph skill belongs to: the marker's id, else (legacy marker)
     the name ``graph-<graph>``."""
-    from graph_cli.skills.tree import GRAPH_SKILL_PREFIX
+    from graph_cli.kernel.skill_marker import GRAPH_SKILL_PREFIX
 
     if found.integrity not in ("intact", "legacy", "modified", "unexpected"):
         return None

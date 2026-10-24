@@ -3,8 +3,8 @@
 import pytest
 
 from graph_cli.kernel.canonical import canonical_bytes, hash_bytes, parse_json
+from graph_cli.kernel.skill_marker import MARKER_SCHEMA
 from graph_cli.skills.marker import (
-    MARKER_SCHEMA,
     Marker,
     decode_marker,
     encode_marker,

@@ -21,12 +21,13 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.json_access import as_object, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
+from graph_cli.kernel.skill_marker import GENERATED, STATIC, graph_skill_name
 from graph_cli.skills.app_skill import SKILL_NAME, inventory_hash, render_app_skill
 from graph_cli.skills.graph_skill import graph_block, render_checked
 from graph_cli.skills.install import RenderedSkill, rendered
 from graph_cli.skills.names import check_names
-from graph_cli.skills.template import GENERATED, STATIC, parse_template
-from graph_cli.skills.tree import Problem, graph_skill_name, validate
+from graph_cli.skills.template import parse_template
+from graph_cli.skills.tree import Problem, validate
 
 KINDS: Final = (STATIC, GENERATED)
 

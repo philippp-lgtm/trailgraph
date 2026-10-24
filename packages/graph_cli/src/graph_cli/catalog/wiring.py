@@ -16,6 +16,10 @@ in the access log after its envelope is written (``record_access``), with
 the command's ``Timings``: building the context is the ``context`` phase,
 the services add theirs.
 
+A read or write command checks the installed skills when it selects a
+graph (``catalog.skill_claims``): locally the claims of the skills installed
+for this process's agent, on the server the ones the request carries.
+
 The server builds one ``AppServices`` per request with a ``RequestScope``
 (B14.8): the request's actor (token principal, entrypoint ``server``),
 pointer, ``GRAPH_CLI_GRAPH`` and the origins of uploaded files take the
@@ -30,13 +34,14 @@ this process and the pointer as seen from the working directory (B14.10).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 from graph_cli import __version__
 from graph_cli.access_control.effective import project_warning
@@ -47,9 +52,16 @@ from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.file_roots import FileRoots, GivenOrigins
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
-from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, select_graph
+from graph_cli.catalog.pointer import (
+    GRAPH_ENV,
+    POINTER_NAME,
+    PointerFile,
+    find_pointer,
+    select_graph,
+)
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import Roots, config_path, resolve_roots
+from graph_cli.catalog.skill_claims import SkillClaim, SkillGate, claims_header, read_claims
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import SystemClock
@@ -58,6 +70,7 @@ from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo, RequestMeta
+from graph_cli.kernel.skill_marker import SKILLS_DIR
 from graph_cli.kernel.timing import Timings
 from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
@@ -123,6 +136,7 @@ class AppContext:
     backend: _Backend = field(repr=False)
     graph_env: str | None
     command: str = ""  # the running command, for audited selection refusals
+    gate: SkillGate | None = None  # the skill freshness check of a read or write
 
     @functools.cached_property
     def writer(self) -> WriteService:
@@ -154,14 +168,18 @@ class AppContext:
         )
 
     def select(self, flag: str | None) -> GraphEntry:
-        """B12.5: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer default."""
-        return select_graph(
+        """B12.5: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer default; then the installed
+        skills of that graph are checked (B14.17)."""
+        entry = select_graph(
             self.catalog,
             flag=flag,
             env_value=self.graph_env,
             pointer=self.pointer,
             visibility=_Visibility(self),
         )
+        if self.gate is not None:
+            self.gate.check(self.catalog, entry)
+        return entry
 
     def select_for(self, ref: str, pointer: PointerFile | None) -> GraphEntry:
         """A named graph as a project with ``pointer`` would see it (D15 Q3); the policy
@@ -194,6 +212,7 @@ class RequestScope:
     pointer: PointerFile | None
     graph_env: str | None
     origins: Mapping[Path, Mapping[str, JsonValue] | None]  # uploaded file -> its origin
+    claims: tuple[SkillClaim, ...] = ()  # the graph skills the client has (B14.17)
 
 
 @dataclass
@@ -208,6 +227,9 @@ class AppServices:
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _remote: RemoteSession | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
+    _skills: tuple[tuple[SkillClaim, ...], Path | None] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def _actor(
         self, config: Config, pointer: PointerFile | None
@@ -250,12 +272,33 @@ class AppServices:
         """The project pointer as seen from ``directory`` (B12.6 walk-up)."""
         return find_pointer(directory)
 
-    def context(self, warnings: list[WarningRecord], command: str | None = None) -> AppContext:
+    def context(
+        self, warnings: list[WarningRecord], command: str | None = None, kind: str | None = None
+    ) -> AppContext:
+        """The command's context; ``kind`` ``read`` or ``write`` checks the installed skills
+        of the graph it selects, adding to ``warnings``."""
         if self._context is None:
             with self.timings.phase("context"):
-                self._context, self._warnings = self._build(command or "")
+                self._context, self._warnings = self._build(command or "", kind, warnings)
         warnings += self._warnings
         return self._context
+
+    def skill_claims(self) -> tuple[tuple[SkillClaim, ...], Path | None]:
+        """``(claims, project directory)`` of the skills installed for this process's agent:
+        the project scope at the pointer's directory, and the user scope (B14.17)."""
+        if self._skills is None:
+            try:
+                pointer = find_pointer(self.cwd)[0]
+            except GraphCliError:
+                pointer = None  # the command reports the broken pointer itself
+            project = pointer.path.parent if pointer is not None else None
+            dirs: list[tuple[Literal["project", "user"], Path]] = []
+            if project is not None:
+                dirs.append(("project", project / ".claude" / SKILLS_DIR))
+            with contextlib.suppress(GraphCliError):  # no HOME: no user scope
+                dirs.append(("user", self.skill_dirs("user", None)[0] / SKILLS_DIR))
+            self._skills = read_claims(dirs), project
+        return self._skills
 
     def remote_mode(self) -> bool:
         """Whether config says ``mode = "remote"``; a broken config is reported by the
@@ -308,6 +351,7 @@ class AppServices:
             program=PROGRAM,
             build=read_build(graph_cli.__file__),
             warnings=warnings,
+            skills=claims_header(self.skill_claims()[0]),
         )
         shown: dict[str, JsonValue] | None = None
         if pointer is not None:
@@ -369,7 +413,26 @@ class AppServices:
         )
         AccessLogFile(context.roots.state_root).append(record)
 
-    def _build(self, command: str) -> tuple[AppContext, tuple[WarningRecord, ...]]:
+    def _gate(
+        self, kind: str | None, pointer: PointerFile | None, warnings: list[WarningRecord]
+    ) -> SkillGate | None:
+        if kind not in ("read", "write"):
+            return None
+        request = self.request
+        if request is None:
+            return SkillGate(
+                lambda: self.skill_claims()[0],
+                kind == "write",
+                warnings,
+                pointer.path.parent if pointer is not None else None,
+            )
+        shown = request.pointer.path if request.pointer is not None else None
+        project = shown.parent if shown is not None and shown.name == POINTER_NAME else None
+        return SkillGate(lambda: request.claims, kind == "write", warnings, project)
+
+    def _build(
+        self, command: str, kind: str | None, command_warnings: list[WarningRecord]
+    ) -> tuple[AppContext, tuple[WarningRecord, ...]]:
         config, config_warnings = load_config(config_path(self.env))
         if config.mode == "remote":  # every command goes through the server (B14.10)
             raise GraphCliError("internal.error", "remote mode has no local context")
@@ -433,6 +496,7 @@ class AppServices:
             ),
             graph_env=self.env.get(GRAPH_ENV) or None if request is None else request.graph_env,
             command=command,
+            gate=self._gate(kind, pointer, command_warnings),
         )
         unknown = project_warning(actor, policy.current(None))  # fails closed on a bad policy
         warnings = (

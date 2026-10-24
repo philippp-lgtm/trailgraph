@@ -38,11 +38,12 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot, skill_hash
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.skill_marker import GENERATED, graph_skill_name
 from graph_cli.services.describe import describe_model
 from graph_cli.skills.graph_skill import graph_block, render_checked
 from graph_cli.skills.names import check_names
-from graph_cli.skills.template import GENERATED, kind_of, parse_template
-from graph_cli.skills.tree import Problem, graph_skill_name, read_tree, validate, write_tree
+from graph_cli.skills.template import kind_of, parse_template
+from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 

@@ -10,3 +10,4 @@ def test_isolated_env_points_into_tmp(isolated_env: dict[str, str], tmp_path: Pa
     overrides = {k: v for k, v in isolated_env.items() if k.startswith("GRAPH_CLI_")}
     assert overrides == {"GRAPH_CLI_SPILL_BYTES": "0"}  # answers stay on stdout
     assert isolated_env["HOME"] != os.environ.get("HOME")
+    assert "CLAUDE_CONFIG_DIR" not in isolated_env  # the user's installed skills stay unseen

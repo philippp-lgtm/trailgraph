@@ -20,11 +20,11 @@ from pathlib import Path, PurePosixPath
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.skill_marker import MARKER_FILE
 
 SkillFiles = Mapping[str, bytes]
 
 SKILL_FILE: Final = "SKILL.md"
-MARKER_FILE: Final = ".graph_cli_skill.json"
 LEGACY_MARKER_FILE: Final = ".graph_cli_install"  # written by the former install script
 MARKER_FILES: Final = frozenset({MARKER_FILE, LEGACY_MARKER_FILE})
 NAME_RE: Final = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -32,7 +32,6 @@ MAX_NAME: Final = 64  # Agent Skills: name at most 64 characters
 MAX_DESCRIPTION: Final = 1024  # Agent Skills: description at most 1024 characters
 MAX_SKILL_LINES: Final = 500
 MAX_TOTAL_BYTES: Final = 256 * 1024
-GRAPH_SKILL_PREFIX: Final = "graph-"
 
 # What an agent-facing skill must not carry: the maintenance surface and local paths.
 LEAKS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
@@ -58,11 +57,6 @@ class Problem:
 
     def to_json(self) -> dict[str, JsonValue]:
         return {"rule": self.rule, "path": self.path, "message": self.message}
-
-
-def graph_skill_name(graph_name: str) -> str:
-    """``graph-<graph>`` with ``_`` -> ``-`` (P1.5 Q5 naming rule)."""
-    return GRAPH_SKILL_PREFIX + graph_name.replace("_", "-")
 
 
 def read_tree(directory: Path) -> tuple[dict[str, bytes], list[Problem]]:

@@ -113,6 +113,19 @@ Installing a client from a checkout with a build id: run
 scripts/build_id.py --clean` after it. The image's build stage does the
 same, so a client and a server built from the same tree match.
 
+## Skill freshness
+
+A client sends the graph skills installed for its agent in
+`Graph-Cli-Skills`: one item per installed copy, separated by `, `, each
+`graph=<graph id>;hash=<slot hash>[;bundle=<bundle>;version=<version>];scope=<project|user>`
+(the bundle and version of a generated skill's model). The server judges
+the item of the graph a command selects against the graph's published
+skill and pin: a write is refused with `skills.outdated` (422), a read
+warns `skills.stale` ([Stale skills](skills.md#stale-skills)). A malformed
+item is ignored, and a client without installed skills sends no header:
+like the build check, this keeps agents consistent and is no access
+control.
+
 ## Admin API
 
 With `admin_api = true` under `[server]` in the server's `config.toml`

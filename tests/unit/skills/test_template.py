@@ -2,11 +2,10 @@
 
 import pytest
 
+from graph_cli.kernel.skill_marker import GENERATED, STATIC
 from graph_cli.skills.template import (
     BLOCKS,
-    GENERATED,
     MODEL_FILE,
-    STATIC,
     kind_of,
     parse_template,
 )

@@ -5,12 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from graph_cli.kernel.skill_marker import MARKER_FILE, graph_skill_name
 from graph_cli.skills.tree import (
     LEAKS,
-    MARKER_FILE,
     MAX_SKILL_LINES,
     MAX_TOTAL_BYTES,
-    graph_skill_name,
     read_tree,
     validate,
     write_tree,

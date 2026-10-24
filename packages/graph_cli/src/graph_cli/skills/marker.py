@@ -23,9 +23,9 @@ from graph_cli.kernel.canonical import (
 )
 from graph_cli.kernel.errors import EMPTY
 from graph_cli.kernel.json_access import JsonShapeError, as_object, req_obj, req_str
+from graph_cli.kernel.skill_marker import MARKER_SCHEMA
 from graph_cli.skills.tree import SkillFiles
 
-MARKER_SCHEMA: Final = "graph_cli.skill_install/1"
 SkillKind = Literal["app", "graph"]
 KINDS: Final = ("app", "graph")
 

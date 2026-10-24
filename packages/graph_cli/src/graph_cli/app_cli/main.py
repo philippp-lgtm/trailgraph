@@ -2,7 +2,8 @@
 
 The click program is generated from the command declarations
 (``app_cli.commands``) and run by ``cli_kit.runner.run``, which renders every
-outcome as the B9 envelope (text or ``--json``) with its exit code. The
+outcome as the B9 envelope (text or ``--json``) with its exit code. Every read
+and write checks the installed skill 1 first (``app_cli.skill_check``). The
 command's timings start at the first import of ``graph_cli``; everything up
 to running the command (imports, the click tree) is the ``startup`` phase.
 """
@@ -17,6 +18,7 @@ import click
 from graph_cli import __version__
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.common import GLOBAL_OPTIONS
+from graph_cli.app_cli.skill_check import guarded
 from graph_cli.catalog import wiring
 from graph_cli.cli_kit.runner import Invocation, run
 from graph_cli.cli_kit.spec import build_click
@@ -30,6 +32,7 @@ def program(*, remote: bool = False) -> click.Group:
         from graph_cli.app_cli.remote import remote_specs
 
         specs = remote_specs(specs)
+    specs = guarded(specs)
 
     @click.group(context_settings={"help_option_names": ["-h", "--help"]})
     @click.version_option(__version__, prog_name="graph")

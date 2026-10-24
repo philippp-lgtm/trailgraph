@@ -126,8 +126,9 @@ test clock and seeded ids, and a factory for valid creates of any class).
 ### Test harness
 
 CLIs are tested as subprocesses (`tests/conftest.py`: `run_cli`). Every run
-gets a throwaway `HOME` and XDG directories and no `GRAPH_CLI_*` variables, so
-tests never touch real user config, data or state.
+gets a throwaway `HOME` and XDG directories, no `GRAPH_CLI_*` variables and no
+`CLAUDE_CONFIG_DIR`, so tests never touch real user config, data, state or
+installed skills.
 
 ### Fixtures
 

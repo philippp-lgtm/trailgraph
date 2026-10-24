@@ -60,6 +60,7 @@ class CommandState:
     services: Any = None  # set by the program (lazy composition root)
     json_mode: bool = False  # how the answer will be written (run() decides)
     command: str | None = None
+    kind: str | None = None  # the running command's kind: read, write or meta
     result: Result | None = None
     warnings: list[WarningRecord] = field(default_factory=list)
     global_values: dict[str, Any] = field(default_factory=dict)  # option name -> value

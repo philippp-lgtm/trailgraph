@@ -171,3 +171,27 @@ graph skills check --scope project --dir <dir>
 Run `install` and `check` with the installed `graph` (see
 [Install](../README.md#install)), not with `uv run graph` from the
 checkout: `check` compares against the program that runs it.
+
+## Stale skills
+
+An agent follows the skills installed for it, so a copy older than what it
+describes misleads it. Every `graph` command that reads or writes a graph
+first checks the installed copies an agent may load: those in
+`<dir>/.claude/skills/`, where `<dir>` holds the project's pointer
+`.graph_cli.toml`, and those in the user skill directory; both count. Skill
+1 is stale when it was rendered from another inventory than the running
+program's, a graph skill when the graph published another skill since or,
+for a generated one, when the graph's ontology pin moved.
+
+- A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
+  the hint is the `graph skills install` command that refreshes the copy.
+- A read runs and warns `skills.stale`, naming the same command.
+- Meta commands (`whoami`, `describe commands`, `skills ...`) are never
+  checked: they are how a stale copy is found and refreshed.
+- Without an installed skill nothing is checked (a person at a shell).
+
+The details list each stale copy (`skill`, `kind`, `scope`, what it was
+rendered from and what is current). In the
+[remote mode](server.md#skill-freshness) the server judges the graph
+skills; skill 1 is judged by the client, because `graph skills install`
+renders it from the client's own inventory.

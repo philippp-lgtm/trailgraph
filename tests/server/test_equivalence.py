@@ -297,3 +297,88 @@ def run_skills(env: dict[str, str], home: Path) -> list[str]:
     code, document, _, _ = install("skills", "check", "--scope", "project")
     assert code == 0, document
     return [s["status"] for s in document["data"]["skills"]]
+
+
+def freshness_scenario(run: Run, owner: dict[str, str], project: Path) -> list[Any]:
+    """Plan origin_lifecycle E3 from ``project``: graph skills judged where the graph lives,
+    skill 1 by the program that runs the command; the same answers either way."""
+    (project / ".claude").mkdir(parents=True)
+    (project / ".graph_cli.toml").write_text('format_version = 1\ngraphs = ["example_graph"]\n')
+    skills = project / ".claude" / "skills"
+    seen: list[Any] = []
+    codes = iter(range(1, 100))
+
+    def call(*args: str) -> Any:
+        code, document, _, _ = run(*args)
+        error = document["error"] or {}
+        shown = json.dumps(
+            [code, error.get("code"), error.get("hint"), document["warnings"]]
+        ).replace(str(project), "<project>")
+        seen.append([list(args), json.loads(shown)])
+        return document
+
+    def create() -> Any:
+        return call(
+            "create", "inv:Location", "--set", "name=Shelf", "--set", f"code=S{next(codes)}"
+        )
+
+    def republish(line: str) -> None:
+        changed = project.parent / f"{project.name}_skill"
+        shutil.copytree(GRAPH_SKILL, changed / GRAPH_SKILL.name)
+        with (changed / GRAPH_SKILL.name / "SKILL.md").open("a") as handle:
+            handle.write(f"\n{line}\n")
+        args = ("graph", "skill", "publish", "example_graph", str(changed / GRAPH_SKILL.name))
+        result = subprocess.run(
+            [str(BIN_DIR / "graph-admin"), *args], env=owner, capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    call("skills", "install", "--scope", "project", "--graph", "example_graph")
+    assert create()["ok"] is True
+    republish("Changed once.")
+    call("find", "--type", "inv:Location")  # a read warns
+    assert create()["error"]["code"] == "skills.outdated"  # a write is refused
+    call("create", "inv:Location", "--set", "name=Shelf", "--dry-run")
+    call("skills", "install", "--scope", "project")
+    assert create()["ok"] is True
+    marker = skills / "graph-cli" / ".graph_cli_skill.json"
+    document = json.loads(marker.read_text())
+    document["source"]["inventory_hash"] = "sha256:" + "0" * 64
+    marker.write_text(json.dumps(document))
+    call("find", "--type", "inv:Location")
+    assert create()["error"]["code"] == "skills.outdated"
+    call("whoami")  # meta commands are how a stale skill is found and refreshed
+    call("skills", "install", "--scope", "project")
+    assert create()["ok"] is True
+    return seen
+
+
+def test_installed_skills_are_judged_the_same(isolated_env: dict[str, str], tmp_path: Path) -> None:
+    local = home_env(isolated_env, tmp_path / "local")
+    prepare(local, tmp_path, "inventory")
+    mine = tmp_path / "local_project"
+    expected = freshness_scenario(runner(local, mine), local, mine)
+
+    owner = home_env(isolated_env, tmp_path / "server")
+    prepare(owner, tmp_path, "inventory")
+    created = subprocess.run(
+        [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
+        env=owner,
+        capture_output=True,
+        text=True,
+    )
+    token = json.loads(created.stdout)["data"]["token"]
+    project = tmp_path / "client_project"
+    with graph_server(owner, tmp_path) as server:
+        client = client_env(
+            {**isolated_env, "GRAPH_CLI_GRAPH": "example_graph"},
+            tmp_path / "client",
+            server.port,
+            token,
+        )
+        actual = freshness_scenario(runner(client, project), owner, project)
+    assert normalized(actual) == normalized(expected)
+    stale = [w for _, (_, _, _, warnings) in expected for w in warnings]
+    assert {w["code"] for w in stale} == {"skills.stale"}
+    refused = [hint for _, (_, code, hint, _) in expected if code == "skills.outdated"]
+    assert refused == ["graph skills install --scope project --dir <project>"] * 3

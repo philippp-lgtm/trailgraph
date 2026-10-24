@@ -29,20 +29,17 @@ from typing import Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import EMPTY, GraphCliError
+from graph_cli.kernel.skill_marker import APP_SKILL, GRAPH_SKILL_PREFIX, MARKER_FILE, SKILLS_DIR
 from graph_cli.skills.marker import Marker, SkillKind, decode_marker, encode_marker, file_hashes
 from graph_cli.skills.tree import (
-    GRAPH_SKILL_PREFIX,
     LEGACY_MARKER_FILE,
-    MARKER_FILE,
     MARKER_FILES,
     SkillFiles,
     read_tree,
     write_tree,
 )
 
-SKILLS_DIR: Final = "skills"
 STAGING_DIR: Final = ".graph_cli_staging"
-APP_SKILL: Final = "graph-cli"
 
 Scope = Literal["user", "project"]
 Integrity = Literal["intact", "legacy", "modified", "unexpected", "foreign"]

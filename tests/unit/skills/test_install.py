@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.skill_marker import MARKER_FILE
 from graph_cli.skills import install
 from graph_cli.skills.install import (
     STAGING_DIR,
@@ -19,7 +20,7 @@ from graph_cli.skills.install import (
     require_target,
     scan,
 )
-from graph_cli.skills.tree import LEGACY_MARKER_FILE, MARKER_FILE, SkillFiles, read_tree, write_tree
+from graph_cli.skills.tree import LEGACY_MARKER_FILE, SkillFiles, read_tree, write_tree
 
 PROGRAM = {"name": "graph", "version": "0.1.0"}
 

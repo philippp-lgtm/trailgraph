@@ -9,6 +9,8 @@ an answer that is not the API's is ``remote.protocol``. The token goes into
 the ``Authorization`` header only, never into an error. Every request names
 this program's build (``catalog.build``); every answer that is no error is
 compared with the server's version and build (``remote.version_differs``).
+The graph skills installed for this process's agent go along in
+``Graph-Cli-Skills`` (``catalog.skill_claims``), so the server can judge them.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from typing import BinaryIO, Final
 
 from graph_cli.catalog.build import BUILD_HEADER, build_header, parse_build_header, short
 from graph_cli.catalog.endpoint import Endpoint
+from graph_cli.catalog.skill_claims import SKILLS_HEADER
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 
@@ -71,6 +74,7 @@ class RemoteClient:
         build: str | None = None,
         warnings: list[WarningRecord] | None = None,
         token_hint: str = APP_TOKEN_HINT,
+        skills: str | None = None,
     ) -> None:
         self.endpoint = endpoint
         self._token = token
@@ -80,6 +84,7 @@ class RemoteClient:
         self.build = build  # None: no build id to claim (an editable install)
         self.warnings = warnings  # the running command's warnings; None: not noted
         self.token_hint = token_hint  # where this program's token comes from
+        self.skills = skills  # the Graph-Cli-Skills value; None: no graph skill installed
 
     def call(
         self,
@@ -198,6 +203,8 @@ class RemoteClient:
         }
         if self.build is not None:
             headers[BUILD_HEADER] = build_header(self.program, self.build)
+        if self.skills is not None:
+            headers[SKILLS_HEADER] = self.skills
         if isinstance(body, bytes):
             headers.setdefault("Content-Type", "application/json")
             headers["Content-Length"] = str(len(body))

@@ -940,6 +940,19 @@ REMOTE_GUIDANCE: Final = (
     "",
 )
 
+# B14.17: an installed skill older than the program or the graph it describes.
+SKILL_GUIDANCE: Final = (
+    "## When an installed skill is outdated",
+    "",
+    "- `skills.outdated`: this skill, or the skill of the graph, was installed for an older"
+    " program or an older state of the graph, so the write was refused. Stop and tell the"
+    " user the command in `hint`, which refreshes the installed skills; never change skill"
+    " files yourself. After the refresh, read the skills again before repeating the write.",
+    "- `skills.stale` (a warning on a read): the same, but the answer is right. Finish the"
+    " read and tell the user.",
+    "",
+)
+
 
 def _errors_file(codes: Sequence[JsonObject]) -> str:
     categories = sorted(
@@ -962,6 +975,7 @@ def _errors_file(codes: Sequence[JsonObject]) -> str:
         ),
         "",
         *REMOTE_GUIDANCE,
+        *SKILL_GUIDANCE,
         "## Codes",
         "",
         *table(

@@ -282,6 +282,30 @@ def test_install_for_the_user_follows_claude_config_dir(
     assert snapshot(home) == before
 
 
+def test_a_user_skill_of_another_program_refuses_writes(
+    run_cli: CliRunner, published: str, home: Path, tmp_path: Path
+) -> None:
+    """Plan origin_lifecycle E3: skill 1 is judged against this program's inventory, in
+    the user scope too; meta commands still run, and refreshing makes writes work again."""
+    (home / ".claude").mkdir()
+    assert install(run_cli, "--scope", "user").code == 0
+    marker = home / ".claude" / "skills" / "graph-cli" / MARKER
+    document = json.loads(marker.read_text())
+    document["source"]["inventory_hash"] = "sha256:" + "0" * 64
+    marker.write_text(json.dumps(document))
+    note = ("create", "inv:Location", "--set", "name=Shelf", "--set", "code=S1")
+    refused = app(run_cli, *note, "--graph", "example_graph")
+    assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
+    assert refused.error["hint"] == "graph skills install --scope user"
+    assert refused.error["details"]["skills"][0]["skill"] == "graph-cli"
+    listed = app(run_cli, "graphs")
+    assert listed.code == 0 and listed.warning_codes == ["skills.stale"]
+    for meta in (("whoami",), ("describe", "commands"), ("skills", "check", "--scope", "user")):
+        assert "skills.stale" not in app(run_cli, *meta).warning_codes, meta
+    assert install(run_cli, "--scope", "user").code == 0
+    assert app(run_cli, *note, "--graph", "example_graph").code == 0
+
+
 def test_foreign_and_edited_directories_need_force(
     run_cli: CliRunner, home: Path, tmp_path: Path
 ) -> None:
@@ -639,12 +663,25 @@ def test_a_release_makes_the_copy_stale_and_install_refreshes_it(
     stale = check(run_cli, project)
     assert stale.code == 1 and stale.warning_codes == []  # no source_behind_ontology
     assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
+    # plan origin_lifecycle E3: an agent working from the stale copy may read, not write
+    read = app(run_cli, "find", "--type", "inv:Location", "--graph", "example_graph", cwd=project)
+    assert read.code == 0 and read.warning_codes == ["skills.stale"]
+    (entry,) = read.envelope["warnings"][0]["details"]["skills"]
+    assert entry["installed"]["model"] == {"bundle": "inventory", "version": "1.0.0"}
+    assert entry["current"]["model"] == {"bundle": "inventory", "version": "1.1.0"}
+    location = ("create", "inv:Location", "--set", "name=Shelf", "--graph", "example_graph")
+    refused = app(run_cli, *location, "--set", "code=S1", cwd=project)
+    assert (refused.code, refused.error["code"]) == (1, "skills.outdated")
+    assert refused.error["hint"] == f"graph skills install --scope project --dir {project}"
+    elsewhere = app(run_cli, *location, "--set", "code=S2", cwd=tmp_path)
+    assert elsewhere.code == 0  # no pointer here: the project's skills are not this agent's
     refreshed = install(run_cli, *args)
     assert refreshed.code == 0, refreshed.envelope
     assert [(s["skill"], s["action"]) for s in refreshed.data["skills"]] == [
         ("graph-cli", "unchanged"),
         ("graph-example-graph", "replace"),
     ]
+    assert app(run_cli, *location, "--set", "code=S3", cwd=project).code == 0
     skill = project / ".claude" / "skills" / "graph-example-graph"
     assert "`inv:Supplier` (`SUP-0001`)" in (skill / "SKILL.md").read_text()  # seeded prefix
     assert "`refurbished`" in (skill / "SKILL.md").read_text()  # the new enum value

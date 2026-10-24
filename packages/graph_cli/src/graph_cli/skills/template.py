@@ -20,10 +20,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
+from graph_cli.kernel.skill_marker import GENERATED, STATIC
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles
 
-STATIC: Final = "static"
-GENERATED: Final = "generated"
 BLOCKS: Final = ("start", "types", "relations", "constraints", "names", "model")
 MODEL_FILE: Final = "references/model.md"
 MARKER_RE: Final = re.compile(r"^<!-- graph_cli:block ([a-z_]+) -->$")

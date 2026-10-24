@@ -160,6 +160,7 @@ def _help(spec: CommandSpec) -> str:
 
 def _command(spec: CommandSpec) -> click.Command:
     def call(state: CommandState, **kwargs: Any) -> Result:
+        state.kind = spec.kind
         return spec.handler(state, **kwargs)
 
     callback = leaf(call)

@@ -55,6 +55,7 @@ WRITE_ERRORS: Final = (
     "backend.lock_timeout",
     "backend.corrupt",
     "audit.unavailable",
+    "skills.outdated",
 )
 EXPECT_ERRORS: Final = (*WRITE_ERRORS, "conflict.version_mismatch")
 

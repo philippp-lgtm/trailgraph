@@ -176,6 +176,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "skills.source_missing": _publish,
     "skills.source_invalid": None,
     "skills.check_failed": _refresh,
+    "skills.outdated": _refresh,
     "file.unreadable": None,
     "file.too_large": None,
     "file.module_missing": None,
