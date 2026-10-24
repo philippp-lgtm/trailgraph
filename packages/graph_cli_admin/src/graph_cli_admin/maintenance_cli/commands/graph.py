@@ -1,4 +1,4 @@
-"""``graph-admin graph create|list|show|check`` and ``graph-admin graph skill publish|render``."""
+"""``graph-admin graph create|list|show|check|reindex`` and ``graph skill publish|render``."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
 )
 from graph_cli_admin.services_admin import graphs, skill
 from graph_cli_admin.services_admin.check import check
+from graph_cli_admin.services_admin.reindex import reindex
 
 REF: Final = ParamSpec("ref", "graph_ref", "Graph name or id.", required=True, positional=True)
 SKILL_DIR: Final = ParamSpec(
@@ -84,6 +85,15 @@ def check_command(
         graph=graphs.envelope_graph(outcome.entry, outcome.seq),
         warnings=outcome.warnings,
     )
+
+
+def reindex_command(
+    state: CommandState, ref: str, reason: str | None, dry_run: bool, data_root: str | None
+) -> Result:
+    outcome = reindex(
+        admin_context(state, data_root), graph_ref=ref, reason=reason, dry_run=dry_run
+    )
+    return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
 
 
 def app_inventory() -> dict[str, JsonValue]:
@@ -242,6 +252,32 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. With --ontology, checks the data under an"
         " authored version before it is released.",
+    ),
+    CommandSpec(
+        path=("graph", "reindex"),
+        kind="write",
+        surface="act",
+        action="maint.reindex",
+        summary="Rebuild the revision files, checkpoint and index of graph REF from its tx log.",
+        params=(
+            REF,
+            ParamSpec("--reason", "string", "Why it is rebuilt; recorded in the audit event."),
+            ParamSpec("--dry-run", "flag", "Show the seq it would rebuild from without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph reindex <graph> --dry-run", "Show what would be rebuilt."),
+            Example(
+                "graph-admin graph reindex <graph> --reason <reason> --json",
+                "Rebuild, with a reason.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "backend.corrupt", "backend.unavailable"),
+        handler=reindex_command,
+        description="The tx log is not changed. Use it when graph-admin audit verify reports"
+        " derived files that differ from the log, or when reads warn storage.index_stale. A"
+        " damaged tx log is backend.corrupt (repair first). Reads during the rebuild may miss"
+        " a revision file for a moment.",
     ),
     CommandSpec(
         path=("graph", "skill", "publish"),

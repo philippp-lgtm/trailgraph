@@ -244,3 +244,12 @@ def test_file_removals_name_hashes_and_sizes_only() -> None:
     ):
         with pytest.raises(GraphCliError):
             Stream().maint("maint.repair", change)  # type: ignore[arg-type]
+
+
+def test_reindex_intents_name_the_seq() -> None:
+    stream = Stream()
+    stream.maint("maint.reindex", builders.reindexed(7))
+    assert stream.check(None) == []
+    for change in ({"reindex": {"seq": -1}}, {"reindex": {"seq": True}}, {"reindex": {}}):
+        with pytest.raises(GraphCliError):
+            Stream().maint("maint.reindex", change)  # type: ignore[arg-type]

@@ -29,6 +29,7 @@ REVISION_HASH_MISMATCH: Final = "integrity.storage.revision_hash_mismatch"
 REVISION_MISSING: Final = "integrity.storage.revision_missing"
 REVISION_UNEXPECTED: Final = "integrity.storage.revision_unexpected"
 HEAD_INCONSISTENT: Final = "integrity.storage.head_inconsistent"
+INDEX_INCONSISTENT: Final = "integrity.storage.index_inconsistent"
 PIN_MISMATCH: Final = "integrity.storage.pin_mismatch"
 BLOB_MISSING: Final = "integrity.storage.blob_missing"
 BLOB_HASH_MISMATCH: Final = "integrity.storage.blob_hash_mismatch"
@@ -41,6 +42,7 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("revision_missing", "A revision recorded in the tx log has no revision file."),
     _integrity("revision_unexpected", "A revision file has no copy in the tx log."),
     _integrity("head_inconsistent", "The head checkpoint does not match the tx log."),
+    _integrity("index_inconsistent", "The disposable index does not match the tx log."),
     _integrity("pin_mismatch", "The manifest pin does not match the installed release."),
     _integrity("blob_missing", "A file referenced by a tx is not stored."),
     _integrity("blob_hash_mismatch", "The bytes of a stored file differ from its hash."),

@@ -16,12 +16,13 @@ and is not installed on `PATH`. Output and exit codes are those of `graph`
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
 | `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
 | `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; `--ontology DIR` checks against an authored version before it is released |
+| `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`) |
-| `audit verify` | check every chain, tx log, revision file, manifest pin and installed policy; exit 1 on error findings |
+| `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
 | `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |

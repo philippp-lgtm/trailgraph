@@ -36,6 +36,7 @@ RELEASE_ACTION: Final = "maint.ontology_release"
 PIN_ACTION: Final = "maint.ontology_pin"
 CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
+REINDEX_ACTION: Final = "maint.reindex"
 POLICY_ACTION: Final = "maint.policy_change"
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
@@ -407,6 +408,12 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             problems.append(
                 "a file removal needs change.blobs_removed[{hash, size}] and staging_removed"
             )
+    if REINDEX_ACTION in actions and "reindex" in entries:
+        reindex = entries["reindex"]
+        if not (
+            isinstance(reindex, Mapping) and set(reindex) == {"seq"} and _is_size(reindex["seq"])
+        ):
+            problems.append("a reindex intent needs change.reindex{seq}")
     if CONFIGURE_ACTION in actions and "skill" in entries:
         skill = entries["skill"]
         if not (

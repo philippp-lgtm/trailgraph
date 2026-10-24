@@ -481,6 +481,78 @@
     {
       "path": [
         "graph",
+        "reindex"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.reindex",
+      "summary": "Rebuild the revision files, checkpoint and index of graph REF from its tx log.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why it is rebuilt; recorded in the audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show the seq it would rebuild from without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph reindex <graph> --dry-run",
+          "summary": "Show what would be rebuilt."
+        },
+        {
+          "command": "graph-admin graph reindex <graph> --reason <reason> --json",
+          "summary": "Rebuild, with a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {}
+    },
+    {
+      "path": [
+        "graph",
         "show"
       ],
       "kind": "read",
@@ -1350,6 +1422,7 @@
     "maint.graph_create",
     "maint.ontology_release",
     "maint.policy_change",
+    "maint.reindex",
     "maint.repair"
   ],
   "error_codes": [
@@ -1415,6 +1488,11 @@
     },
     {
       "code": "audit.unavailable",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "backend.corrupt",
       "category": "unavailable",
       "exit": 5
     },

@@ -70,6 +70,7 @@ from graph_cli.storage.files.durable import (
     write_tree,
 )
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
+from graph_cli.storage.files.index import INDEX_ERRORS, TxSpan, index_difference
 from graph_cli.storage.files.layout import (
     AUDIT_SEGMENT_PREFIX,
     DEFAULT_SEGMENT_BYTES,
@@ -100,6 +101,7 @@ from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
 from graph_cli.storage.finding_codes import (
     BLOB_MISSING,
     HEAD_INCONSISTENT,
+    INDEX_INCONSISTENT,
     PIN_MISMATCH,
     REVISION_HASH_MISMATCH,
     REVISION_MISSING,
@@ -446,7 +448,7 @@ class FileMaintenanceSession:
     def _referenced(self) -> frozenset[str] | None:
         """Blob hashes named by any tx; ``None`` when the tx log cannot be read whole."""
         self._check_open()
-        view, damage = replay(self._store)
+        view, damage, _ = replay(self._store)
         if damage is not None:
             return None
         return frozenset(h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs)
@@ -481,30 +483,36 @@ class FileMaintenanceSession:
         store = self._store
         blobs.remove(store.layout, hashes, staging, referenced=referenced, syncer=store.syncer)
 
-    def reindex(self) -> None:
-        """Rebuild ``data/entities/`` and ``head.json`` from the tx log (B4.1).
+    def reindex(self, receipt: AuditReceipt | None = None) -> None:
+        """Rebuild ``data/entities/``, ``head.json`` and the index from the tx log (B4.1).
 
-        ``head.json`` goes first, so an interrupted reindex leaves a state that
-        readers scan and the next writer rolls forward.
+        The index and ``head.json`` go first, so an interrupted reindex leaves a
+        state that readers scan and the next writer rolls forward.
         """
         if not self._open:
             raise GraphCliError("internal.error", "the maintenance session is closed")
+        if receipt is not None:
+            self._writer().claim_receipt(receipt)
         store = self._store
         state = store.read_state()
         if state.scan.corruption is not None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; reindex needs repair")
         layout = store.layout
         try:
+            if layout.index.parent.exists():
+                shutil.rmtree(layout.index.parent)
             layout.head.unlink(missing_ok=True)
             store.syncer.sync_dir(layout.data)
             if layout.entities.exists():
                 shutil.rmtree(layout.entities)
                 store.syncer.sync_dir(layout.data)
         except OSError as exc:
-            raise GraphCliError(
-                "backend.unavailable", f"reindex failed: {exc.strerror or exc}"
-            ) from exc
+            raise _unavailable("reindex failed", exc) from exc
         self.recover()
+        try:
+            store.update_index(state.end.seq)
+        except INDEX_ERRORS as exc:
+            raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
 
 
 class Verifier:
@@ -527,13 +535,14 @@ class Verifier:
         self.findings.append(Finding(severity, code, target, message, expected, actual))
 
     def run(self) -> list[Finding]:
-        view = self._tx_log()
+        view, spans = self._tx_log()
         complete = not self.findings
         checkpoint = self._checkpoint()
         materialized_seq = checkpoint.seq if checkpoint is not None else 0
         self._revisions(view, materialized_seq, complete=complete)
         if complete:  # beyond damage nothing can be judged; no cascades
             self._head(view, checkpoint)
+            self._index(view, spans)
         self._blobs(view)
         self._pin()
         return self.findings
@@ -571,9 +580,17 @@ class Verifier:
                 actual=actual,
             )
 
-    def _tx_log(self) -> GraphView:
+    def _index(self, view: GraphView, spans: Sequence[TxSpan]) -> None:
+        """The index, if present, holds exactly the state at its seq (disposable, B4.1)."""
+        layout = self.store.layout
+        difference = index_difference(layout.index, self.store.graph_id, view, spans)
+        if difference is not None:
+            target = {"path": str(layout.index.relative_to(layout.root))}
+            self.add(INDEX_INCONSISTENT, target, difference)
+
+    def _tx_log(self) -> tuple[GraphView, list[TxSpan]]:
         """Replay the whole log; damage ends the replay with one finding."""
-        view, damage = replay(self.store)
+        view, damage, spans = replay(self.store)
         if damage is not None:
             self.add(
                 TX_CHAIN_BROKEN,
@@ -582,7 +599,7 @@ class Verifier:
                 expected=damage.expected,
                 actual=damage.actual,
             )
-        return view
+        return view, spans
 
     def _checkpoint(self) -> HeadFile | None:
         try:
@@ -690,26 +707,32 @@ class ReplayDamage:
     actual: JsonValue
 
 
-def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None]:
-    """The whole tx log as a view; the damage that ended the replay, if any."""
+def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None, list[TxSpan]]:
+    """The whole tx log as a view; the damage that ended the replay, if any; tx positions."""
     result = store.txlog.scan()
     view = GraphView()
+    spans: list[TxSpan] = []
     for record in result.records:
         try:
             view.apply(parse_tx(record.document))
         except (GraphCliError, JsonShapeError) as exc:
             path = f"data/txlog/{record.start.segment}"
             message = f"tx line has a bad shape: {exc}"
-            return view, ReplayDamage(path, message, None, {"offset": record.start.offset})
+            return view, ReplayDamage(path, message, None, {"offset": record.start.offset}), spans
+        spans.append(TxSpan(record.start, record.end))
     if result.corruption is not None:
         damage = result.corruption
-        return view, ReplayDamage(
-            f"data/txlog/{damage.segment}",
-            f"the tx log is damaged: {damage.reason}",
-            {"seq": damage.expected_seq},
-            {"offset": damage.offset},
+        return (
+            view,
+            ReplayDamage(
+                f"data/txlog/{damage.segment}",
+                f"the tx log is damaged: {damage.reason}",
+                {"seq": damage.expected_seq},
+                {"offset": damage.offset},
+            ),
+            spans,
         )
-    return view, None
+    return view, None, spans
 
 
 def _check_release(version: str, files: Mapping[str, bytes]) -> None:

@@ -213,7 +213,9 @@ class MaintenanceSession(WriteSession, Protocol):
         """``integrity.storage.*`` findings."""
         ...
 
-    def reindex(self) -> None: ...
+    def reindex(self, receipt: AuditReceipt | None = None) -> None:
+        """Rebuild every derived file from the tx log; ``receipt`` is this session's intent."""
+        ...
 
     def blobs(self) -> Iterator[BlobInfo]:
         """Every stored blob, in hash order."""

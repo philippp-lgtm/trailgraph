@@ -149,6 +149,11 @@ def blobs_removed(blobs: Sequence[BlobInfo], staging: int) -> dict[str, JsonValu
     return {"blobs_removed": blob_list(blobs) if blobs else [], "staging_removed": staging}
 
 
+def reindexed(seq: int) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.reindex`` intent: the seq the derived files are rebuilt from."""
+    return {"reindex": {"seq": seq}}
+
+
 def blob_list(blobs: Sequence[BlobInfo]) -> list[JsonValue]:
     """``[{hash, size}]`` by hash, each once: what an event may say about stored files."""
     unique = {b.hash: b.size for b in blobs}

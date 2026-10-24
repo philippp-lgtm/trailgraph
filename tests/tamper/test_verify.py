@@ -6,6 +6,7 @@ Contracts B4.1, B13.1, R.6, section 4.2; plan D9, D10.
 import hashlib
 import json
 import shutil
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.storage import finding_codes
+from graph_cli.storage.files.index import IndexReader
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.store import FileStore
 
@@ -107,6 +109,11 @@ def edit_head(store: FileStore) -> None:
     store.layout.head.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
+def edit_index(store: FileStore) -> None:
+    with sqlite3.connect(store.layout.index) as db:
+        db.execute("UPDATE entity SET type = 'ex:Tampered' WHERE id = (SELECT min(id) FROM entity)")
+
+
 def edit_pinned_release(store: FileStore) -> None:
     (compiled,) = store.layout.ontology.glob("*/compiled.json")
     document = json.loads(compiled.read_text())
@@ -120,6 +127,7 @@ SCENARIOS: dict[str, Callable[[FileStore], None]] = {
     finding_codes.REVISION_MISSING: delete_revision_file,
     finding_codes.REVISION_UNEXPECTED: add_revision_file,
     finding_codes.HEAD_INCONSISTENT: edit_head,
+    finding_codes.INDEX_INCONSISTENT: edit_index,
     finding_codes.PIN_MISMATCH: edit_pinned_release,
     finding_codes.BLOB_MISSING: delete_blob,
     finding_codes.BLOB_HASH_MISMATCH: flip_blob_byte,
@@ -201,17 +209,28 @@ def _derived_tree(store: FileStore) -> str:
     return tree_hash(store.layout.entities) + store.layout.head.read_text()
 
 
+def _index_seq(store: FileStore) -> int | None:
+    reader = IndexReader.open(store.layout.index)
+    if reader is None:
+        return None
+    reader.close()
+    return reader.meta.seq
+
+
 def test_reindex_rebuilds_an_identical_tree(tmp_path: Path) -> None:
     """C, B4.1: delete entities/ and head.json, rebuild from the log."""
     env, store, maintenance = setup(tmp_path)
     before = _derived_tree(store)
     shutil.rmtree(store.layout.entities)
     store.layout.head.unlink()
+    shutil.rmtree(store.layout.index.parent)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
         session.reindex()
     assert _derived_tree(store) == before
+    assert _index_seq(store) == store.head().seq
+    edit_index(store)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        session.reindex()  # also from a complete tree
+        session.reindex()  # also from a complete tree, replacing a damaged index
         assert session.verify() == []
     assert _derived_tree(store) == before
 
