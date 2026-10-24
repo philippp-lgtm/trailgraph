@@ -279,7 +279,7 @@ Usage: `graph find [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
-| `--where` | filter | no | yes | attr=value or attr:op=value (ne lt le gt ge contains prefix in exists). |
+| `--where` | filter | no | yes | attr=value or attr:op=value (ne lt le gt ge contains prefix in exists lang). |
 | `--rel` | string | no | yes | Outgoing relation, optionally =<id>[,<id>...]. |
 | `--in-rel` | string | no | yes | Incoming relation, optionally =<id>[,<id>...]. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
@@ -418,6 +418,7 @@ Usage: `graph lookup TEXT... [OPTIONS]`
 | `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
+| `--lang` | string | no | no | Only names in this language (a BCP 47 tag or range such as de, or *); also picks the shown label. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
@@ -540,6 +541,7 @@ Usage: `graph search TEXT [OPTIONS]`
 | `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
 | `--field` | string | no | yes | Only this text field. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
+| `--lang` | string | no | no | Only text in this language (a BCP 47 tag or range such as de, or *); also picks the shown label. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |

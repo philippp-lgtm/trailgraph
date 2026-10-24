@@ -154,3 +154,39 @@ def test_neighbors() -> None:
     for kwargs in ({"depth": 4}, {"direction": "up"}, {"rels": ["inv:nope"]}):
         with pytest.raises(GraphCliError):
             plan_neighbors(INV, ID, **kwargs)  # type: ignore[arg-type]
+
+
+NAS_LANG = compiled_model("notes_and_sources", "1.2.0")
+GLOSSARY = ("nas:GlossaryEntry",)
+
+
+def test_language_tagged_fields() -> None:
+    assert where(NAS_LANG, "usage_hint=selten", types=GLOSSARY) == Cmp(
+        "usage_hint", "eq", "selten", tagged=True
+    )
+    assert where(NAS_LANG, 'usage_hint="selten"@DE', types=GLOSSARY) == Cmp(
+        "usage_hint", "eq", {"lang": "de", "value": "selten"}, tagged=True
+    )
+    assert where(NAS_LANG, "usage_hint:contains=sel@de", types=GLOSSARY) == Cmp(
+        "usage_hint", "contains", "sel@de", tagged=True
+    )
+    assert where(NAS_LANG, "heading=SuK@de", types=GLOSSARY) == Cmp(
+        "heading", "contains", {"lang": "de", "value": "SuK"}, tagged=True
+    )
+    assert where(NAS_LANG, "heading:lang=de-CH", types=GLOSSARY) == Cmp("heading", "lang", "de-CH")
+    assert where(NAS_LANG, "heading:lang=*", types=GLOSSARY) == Cmp("heading", "lang", "*")
+    sort = plan_find(NAS_LANG, FindSpec(types=GLOSSARY, sort=("usage_hint:desc",))).order
+    assert sort == (OrderKey("usage_hint", descending=True, tagged=True),)
+
+
+@pytest.mark.parametrize("text", ["heading:lang=de_CH", "heading:lang=", "usage_hint:lang=x-foo"])
+def test_lang_needs_a_language_range(text: str) -> None:
+    with pytest.raises(GraphCliError) as info:
+        where(NAS_LANG, text, types=GLOSSARY)
+    assert info.value.code == "usage.invalid_argument"
+
+
+def test_lang_needs_a_language_tagged_field() -> None:
+    with pytest.raises(GraphCliError) as info:
+        where(NAS, "label:lang=de", types=("nas:Topic",))
+    assert "not language-tagged" in info.value.message

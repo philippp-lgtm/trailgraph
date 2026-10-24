@@ -13,6 +13,13 @@ attribute and the record status, without paging. ``match_revision`` and
 - ``--match exact|prefix``: the whole normalized value, or its start.
 - ``--ignore-accents``: also match with combining marks dropped; such
   matches rank after unfolded ones.
+- Language-tagged labels (``lang_string``) match by their text; the match
+  names its tag (``match.lang``, null for a plain string). ``--lang R``
+  keeps only matches in a language the range selects (RFC 4647 basic
+  filtering); a plain string counts as the graph language, and with no
+  graph language it is kept. The shown main label (``label_text``) is the
+  one in ``--lang``, else the graph language, else the matched value's
+  language, else the smallest tag.
 
 Order: exact before prefix, unfolded before folded, main label before
 alternative before hidden label, shorter matched value, normalized main
@@ -23,13 +30,14 @@ is null.
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import TermRef
+from graph_cli.kernel.langtag import language_matches, normalize_language_tag, tagged_parts
 from graph_cli.kernel.query_ast import Cmp, Or, Pred, Query
 from graph_cli.kernel.records import RECORD_STATUSES, Revision
 from graph_cli.kernel.text import normalize_label
@@ -50,6 +58,7 @@ class LookupSpec:
     include_inactive: bool = False
     limit: int = DEFAULT_LIMIT
     offset: int = 0
+    lang: str | None = None  # a language range
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +70,11 @@ class LookupPlan:
     labels: Mapping[str, tuple[tuple[str, str], ...]]  # class -> (attribute, role)
     limit: int
     offset: int
+    lang: str | None = None  # the --lang range
+    language: str | None = None  # the graph language
+
+    def in_language(self, tag: str | None) -> bool:
+        return in_language(self.lang, tag, self.language)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,8 +83,9 @@ class LabelMatch:
     role: str
     kind: MatchKind
     folded: bool
-    value: str  # as stored
+    value: str  # the text as stored
     normalized: str
+    lang: str | None = None  # the tag of a language-tagged value
 
     def rank(self) -> tuple[int, bool, int, int, str]:
         return (
@@ -87,6 +102,7 @@ class LabelMatch:
             "role": self.role,
             "kind": self.kind,
             "value": None if self.role == "hidden_label" else self.value,
+            "lang": self.lang,
         }
 
 
@@ -98,8 +114,51 @@ def _usage(argument: str, message: str, **details: JsonValue) -> GraphCliError:
     )
 
 
-def plan_lookup(model: CompiledModel, spec: LookupSpec) -> LookupPlan:
+def check_language_range(language_range: str | None) -> None:
+    valid = language_range in (None, "*") or normalize_language_tag(str(language_range))
+    if not valid:
+        raise _usage("--lang", "expected a language range such as de or *", actual=language_range)
+
+
+def in_language(language_range: str | None, tag: str | None, graph_language: str | None) -> bool:
+    """A value with ``tag`` (None: a plain string, in the graph language) is in the range."""
+    tag = tag or graph_language
+    return language_range is None or tag is None or language_matches(tag, language_range)
+
+
+def text_values(value: JsonValue) -> list[tuple[str, str | None]]:
+    """``(text, tag)`` of each plain or language-tagged string in a value or list."""
+    items = value if isinstance(value, list) else [value]
+    found: list[tuple[str, str | None]] = []
+    for item in items:
+        if isinstance(item, str):
+            found.append((item, None))
+        elif (parts := tagged_parts(item)) is not None:
+            found.append(parts)
+    return found
+
+
+def label_text(value: JsonValue, preferred: Sequence[str | None]) -> str | None:
+    """The text of a main label: a plain string, or the tagged value in the first
+    preferred language range that has one, else the one with the smallest tag."""
+    found = sorted(text_values(value), key=lambda pair: (pair[1] or "", pair[0]))
+    if not found:
+        return None
+    for language_range in preferred:
+        for text, tag in found:
+            if (
+                language_range is not None
+                and tag is not None
+                and language_matches(tag, language_range)
+            ):
+                return text
+    return found[0][0]
+
+
+def plan_lookup(model: CompiledModel, spec: LookupSpec, language: str | None = None) -> LookupPlan:
+    """``language`` is the graph language (``--lang`` treats plain strings as in it)."""
     check_paging(spec.limit, spec.offset)
+    check_language_range(spec.lang)
     if spec.match not in MATCH_KINDS:
         raise _usage("--match", "expected exact or prefix", actual=spec.match)
     key = normalize_label(spec.text)
@@ -139,12 +198,9 @@ def plan_lookup(model: CompiledModel, spec: LookupSpec) -> LookupPlan:
         labels=labels,
         limit=spec.limit,
         offset=spec.offset,
+        lang=spec.lang,
+        language=language,
     )
-
-
-def _values(value: JsonValue) -> list[str]:
-    items = value if isinstance(value, list) else [value]
-    return [v for v in items if isinstance(v, str)]
 
 
 def _compare(plan: LookupPlan, key: str, candidate: str) -> MatchKind | None:
@@ -159,7 +215,9 @@ def match_revision(plan: LookupPlan, revision: Revision) -> LabelMatch | None:
     """The best label match of an entity, or None."""
     best: LabelMatch | None = None
     for attr, role in plan.labels.get(revision.type, ()):
-        for value in _values(revision.attrs.get(attr)):
+        for value, tag in text_values(revision.attrs.get(attr)):
+            if not plan.in_language(tag):
+                continue
             keys = [(plan.key, False)]
             if plan.folded_key is not None:
                 keys.append((plan.folded_key, True))
@@ -168,24 +226,25 @@ def match_revision(plan: LookupPlan, revision: Revision) -> LabelMatch | None:
                 kind = _compare(plan, key, normalized)
                 if kind is None:
                     continue
-                found = LabelMatch(attr, role, kind, folded, value, normalized)
+                found = LabelMatch(attr, role, kind, folded, value, normalized, tag)
                 if best is None or found.rank() < best.rank():
                     best = found
     return best
 
 
-def main_label(plan: LookupPlan, revision: Revision) -> str | None:
+def main_label(plan: LookupPlan, revision: Revision, match: LabelMatch | None = None) -> str | None:
+    """The main label to show, in the language ``label_text`` prefers."""
+    preferred = (plan.lang, plan.language, None if match is None else match.lang)
     for attr, role in plan.labels.get(revision.type, ()):
-        value = revision.attrs.get(attr)
-        if role == "label" and isinstance(value, str):
-            return value
+        if role == "label":
+            return label_text(revision.attrs.get(attr), preferred)
     return None
 
 
 def rank_key(
     plan: LookupPlan, revision: Revision, match: LabelMatch
 ) -> tuple[int, bool, int, int, bool, str, str]:
-    label = main_label(plan, revision)
+    label = main_label(plan, revision, match)
     kind, folded, role, length, _ = match.rank()
     normalized = normalize_label(label) if label is not None else ""
     return (kind, folded, role, length, label is None, normalized, str(revision.id))

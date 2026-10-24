@@ -571,6 +571,7 @@ OUTPUT_SECTIONS: Final = (
             ("match.role", "`label`, `alt_label` or `hidden_label`."),
             ("match.kind", "`exact` or `prefix`."),
             ("match.value", "The matching name; null for a hidden label."),
+            ("match.lang", "The language tag of the matching name, or null."),
         ),
     ),
     (
@@ -594,6 +595,7 @@ OUTPUT_SECTIONS: Final = (
                 "match.excerpt",
                 "The matching value or the part around the hit; null for a hidden label.",
             ),
+            ("match.lang", "The language tag of the matching value, or null."),
             ("fields", "Every field that matched, best first."),
         ),
     ),

@@ -6,11 +6,15 @@ expanded), validated fields, values of the right JSON type. The flag syntax
 
 - ``--type T`` (repeatable): a class and its subclasses.
 - ``--where attr=value`` or ``--where attr:op=value`` with ``op`` in
-  ``eq ne lt le gt ge contains prefix in exists``, all AND-ed. The field is
-  an attribute of a selected type (of any class without ``--type``) or a
-  system field. Values are coerced by the attribute's base type, like
-  ``--set``; ``in`` takes a comma list, ``exists`` takes ``true|false``. On
-  a many-valued attribute ``=`` means membership.
+  ``eq ne lt le gt ge contains prefix in exists lang``, all AND-ed. The
+  field is an attribute of a selected type (of any class without
+  ``--type``) or a system field. Values are coerced by the attribute's base
+  type, like ``--set``; ``in`` takes a comma list, ``exists`` takes
+  ``true|false``. On a many-valued attribute ``=`` means membership. On a
+  language-tagged attribute (``lang_string``, ``lang_text``) an untagged
+  value matches the text in any language, ``"text"@tag`` text and tag
+  (``Cmp.tagged``); ``lang`` takes a language range (``de``, ``*``) and is
+  allowed there only.
 - ``--rel rel[=target,...]`` and ``--in-rel rel[=source,...]``: an edge to
   (from) any of the listed entities; targets are resolved by the caller.
 - ``--sort field[:desc]`` (repeatable), ``--limit`` (at most 500),
@@ -33,6 +37,7 @@ from typing import Final, Literal
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
+from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.query_ast import (
     MAX_NEIGHBOR_DEPTH,
     And,
@@ -48,7 +53,7 @@ from graph_cli.kernel.query_ast import (
 from graph_cli.kernel.records import RECORD_STATUSES
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.ontology_layer.values import coerce_text
-from graph_cli.ontology_layer.vocabulary import SYSTEM_FIELDS
+from graph_cli.ontology_layer.vocabulary import LANG_BASES, SYSTEM_FIELDS
 
 DEFAULT_LIMIT: Final = 50
 MAX_LIMIT: Final = 500
@@ -63,6 +68,7 @@ OPS: Final[tuple[CmpOp, ...]] = (
     "prefix",
     "in",
     "exists",
+    "lang",
 )
 _SYSTEM_BASES: Final = {
     "rev": "integer",
@@ -221,25 +227,36 @@ class _Planner:
             if value not in ("true", "false"):
                 raise _usage(argument, "exists takes true or false", actual=value)
             return Cmp(name, "exists", value == "true")
-        numeric = base == "decimal"
+        numeric, tagged = base == "decimal", base in LANG_BASES
+        if op == "lang":
+            if not tagged:
+                raise _usage(argument, f"{name!r} is not language-tagged", actual=name)
+            if value != "*" and normalize_language_tag(value) is None:
+                raise _usage(argument, "expected a language range such as de or *", actual=value)
+            return Cmp(name, "lang", value)
         if attribute is not None and attribute.many:
             if op not in ("eq", "ne", "contains"):
-                raise _usage(argument, f"{name!r} has several values; use =, ne or contains")
-            member = Cmp(name, "contains", self.coerce(base, value, argument))
+                raise _usage(argument, f"{name!r} has several values; use =, ne, contains or lang")
+            member = Cmp(name, "contains", self.coerce(base, value, argument), tagged=tagged)
             return Not(member) if op == "ne" else member
         if op == "in":
             items = [self.coerce(base, item, argument) for item in value.split(",")]
-            return Cmp(name, "in", items, numeric=numeric)
+            return Cmp(name, "in", items, numeric=numeric, tagged=tagged)
         if op in ("contains", "prefix"):
-            return Cmp(name, op, value)
-        return Cmp(name, op, self.coerce(base, value, argument), numeric=numeric)
+            return Cmp(name, op, value, tagged=tagged)
+        return Cmp(name, op, self.coerce(base, value, argument), numeric=numeric, tagged=tagged)
 
     def order(self, text: str) -> OrderKey:
         name, _, direction = text.partition(":")
         if direction not in ("", "asc", "desc"):
             raise _usage("--sort", f"expected field[:desc], got {text!r}", actual=text)
         base, _ = self.base_of(name, "--sort")
-        return OrderKey(name, descending=direction == "desc", numeric=base == "decimal")
+        return OrderKey(
+            name,
+            descending=direction == "desc",
+            numeric=base == "decimal",
+            tagged=base in LANG_BASES,
+        )
 
     def relation(self, name: str) -> TermRef:
         return TermRef(resolve_term("relation", name, self.model.relations))

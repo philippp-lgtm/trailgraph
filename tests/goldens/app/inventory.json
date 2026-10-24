@@ -960,7 +960,7 @@
           "type": "filter",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists)."
+          "summary": "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists lang)."
         },
         {
           "name": "--rel",
@@ -1484,6 +1484,13 @@
           "summary": "Include superseded and retracted entities."
         },
         {
+          "name": "--lang",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only names in this language (a BCP 47 tag or range such as de, or *); also picks the shown label."
+        },
+        {
           "name": "--limit",
           "type": "integer",
           "required": false,
@@ -1936,6 +1943,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Include superseded and retracted entities."
+        },
+        {
+          "name": "--lang",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only text in this language (a BCP 47 tag or range such as de, or *); also picks the shown label."
         },
         {
           "name": "--limit",

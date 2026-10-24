@@ -207,6 +207,7 @@ def test_entity_match_lists_every_matching_field_best_first() -> None:
         "kind": "exact",
         "score": 100,
         "excerpt": "Optics",
+        "lang": None,
     }
 
 
@@ -238,3 +239,33 @@ def test_excerpt_cuts_long_values_around_the_hit() -> None:
     assert len(cut) <= EXCERPT_CHARS + 2
     start = excerpt(f"Light {after}", plan("light"), "phrase")
     assert start.startswith("Light") and start.endswith("…")
+
+
+NAS_LANG = compiled_model("notes_and_sources", "1.2.0")
+
+
+def test_language_tagged_text_is_searched() -> None:
+    entry = revision(
+        "g",
+        "nas:GlossaryEntry",
+        {
+            "heading": [{"lang": "de", "value": "Steuerung"}, {"lang": "en", "value": "Control"}],
+            "explanation": [{"lang": "en", "value": "How a process is kept on course."}],
+        },
+    )
+    p = plan_search(NAS_LANG, SearchSpec(text="kept on course"))
+    fields = {f.attr: f.long_text for f in p.fields["nas:GlossaryEntry"]}
+    assert fields == {
+        "explanation": True,
+        "heading": False,
+        "usage_hint": False,
+        "variant_names": False,
+    }
+    match = match_revision(p, entry)
+    assert match is not None and match.to_json(p)["lang"] == "en"
+    assert main_label(p, entry, match) == "Control"
+    german = plan_search(NAS_LANG, SearchSpec(text="kept on course", lang="de"))
+    assert match_revision(german, entry) is None
+    typo = plan_search(NAS_LANG, SearchSpec(text="Steurung"))
+    found = match_revision(typo, entry)
+    assert found is not None and found.best.kind == "similar"

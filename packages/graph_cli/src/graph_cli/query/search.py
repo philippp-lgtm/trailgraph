@@ -6,9 +6,12 @@ one store query without paging and matches on keys (``kernel.text``) after
 it, because no backend has to know Unicode normalization; ``match_revision``
 and ``rank_key`` are pure.
 
-- Searched: every attribute whose base is ``string`` or ``text`` (also
-  datatypes over them), each value of a many-valued one. Not enum values
-  or lifecycle states (codes).
+- Searched: every attribute whose base is ``string``, ``text``,
+  ``lang_string`` or ``lang_text`` (also datatypes over them), each value
+  of a many-valued one; a language-tagged value by its text, and the match
+  names its tag (``match.lang``). ``--lang R`` keeps only values in a
+  language the range selects, as in ``lookup``. Not enum values or
+  lifecycle states (codes).
 - ``--type T`` (repeatable): a class and its subclasses. ``--field A``
   (repeatable): only these attributes; a name no class in scope can
   search is ``term.unknown``. No searchable attribute in scope is
@@ -18,7 +21,7 @@ and ``rank_key`` are pure.
   any order), ``similar`` (trigram containment of at least
   ``SIMILAR_MIN``, and of at least ``WORD_MIN`` for each query word on its
   own, so a missing word never passes while a typo in a short one does;
-  ``string`` attributes only, long ``text`` would match almost anything).
+  short text only, long ``text`` would match almost anything).
 
 Order: the attribute's group (names, other strings, text), so a close
 name comes before a phrase deep in a description; kind; the place within
@@ -42,6 +45,7 @@ from graph_cli.kernel.records import RECORD_STATUSES, Revision
 from graph_cli.kernel.text import containment, normalize_label, search_key, trigrams
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
+from graph_cli.query.lookup import check_language_range, in_language, label_text, text_values
 from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, resolve_types, unknown_term
 
 SearchKind = Literal["exact", "phrase", "words", "similar"]
@@ -50,7 +54,8 @@ SIMILAR_MIN: Final = 0.7
 WORD_MIN: Final = 0.5
 EXCERPT_CHARS: Final = 160
 MIN_KEY_CHARS: Final = 2
-_TEXT_BASES: Final = ("string", "text")
+_TEXT_BASES: Final = ("string", "text", "lang_string", "lang_text")
+_LONG_BASES: Final = ("text", "lang_text")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,13 +66,14 @@ class SearchSpec:
     include_inactive: bool = False
     limit: int = DEFAULT_LIMIT
     offset: int = 0
+    lang: str | None = None  # a language range
 
 
 @dataclass(frozen=True, slots=True)
 class SearchField:
     attr: str
     role: str | None
-    long_text: bool  # base ``text``: no ``similar`` matches
+    long_text: bool  # base ``text`` or ``lang_text``: no ``similar`` matches
 
     @property
     def group(self) -> int:
@@ -91,6 +97,8 @@ class SearchPlan:
     labels: dict[str, str]  # class -> its main label attribute
     limit: int
     offset: int
+    lang: str | None = None  # the --lang range
+    language: str | None = None  # the graph language
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +106,9 @@ class SearchMatch:
     field: SearchField
     kind: SearchKind
     score: float
-    value: str  # as stored
+    value: str  # the text as stored
     length: int  # of the value's key
+    lang: str | None = None  # the tag of a language-tagged value
 
     def rank(self) -> tuple[int, int, int, float, int, str]:
         return (
@@ -126,6 +135,7 @@ class EntityMatch:
             "kind": best.kind,
             "score": round(best.score * 100),  # percent: no floats in JSON
             "excerpt": None if hidden else excerpt(best.value, plan, best.kind),
+            "lang": best.lang,
         }
 
 
@@ -145,12 +155,14 @@ def searchable(model: CompiledModel, class_curie: str) -> tuple[SearchField, ...
             continue
         base = model.value_base(a.kind, a.type)
         if base in _TEXT_BASES:
-            found.append(SearchField(name, a.role, base == "text"))
+            found.append(SearchField(name, a.role, base in _LONG_BASES))
     return tuple(found)
 
 
-def plan_search(model: CompiledModel, spec: SearchSpec) -> SearchPlan:
+def plan_search(model: CompiledModel, spec: SearchSpec, language: str | None = None) -> SearchPlan:
+    """``language`` is the graph language (``--lang`` treats plain strings as in it)."""
     check_paging(spec.limit, spec.offset)
+    check_language_range(spec.lang)
     key = search_key(spec.text)
     if len(key.replace(" ", "")) < MIN_KEY_CHARS:
         raise _usage("text", f"needs at least {MIN_KEY_CHARS} letters or digits", actual=spec.text)
@@ -193,12 +205,9 @@ def plan_search(model: CompiledModel, spec: SearchSpec) -> SearchPlan:
         },
         limit=spec.limit,
         offset=spec.offset,
+        lang=spec.lang,
+        language=language,
     )
-
-
-def _values(value: JsonValue) -> list[str]:
-    items = value if isinstance(value, list) else [value]
-    return [v for v in items if isinstance(v, str)]
 
 
 def _compare(plan: SearchPlan, field: SearchField, key: str) -> tuple[SearchKind, float] | None:
@@ -222,12 +231,14 @@ def match_revision(plan: SearchPlan, revision: Revision) -> EntityMatch | None:
     """The best match of an entity and every attribute that matched, or None."""
     best_per_attr: dict[str, SearchMatch] = {}
     for field in plan.fields.get(revision.type, ()):
-        for value in _values(revision.attrs.get(field.attr)):
+        for value, tag in text_values(revision.attrs.get(field.attr)):
+            if not in_language(plan.lang, tag, plan.language):
+                continue
             key = search_key(value)
             found = _compare(plan, field, key)
             if found is None:
                 continue
-            match = SearchMatch(field, found[0], found[1], value, len(key))
+            match = SearchMatch(field, found[0], found[1], value, len(key), tag)
             current = best_per_attr.get(field.attr)
             if current is None or match.rank() < current.rank():
                 best_per_attr[field.attr] = match
@@ -237,17 +248,22 @@ def match_revision(plan: SearchPlan, revision: Revision) -> EntityMatch | None:
     return EntityMatch(ordered[0], tuple(m.field.attr for m in ordered))
 
 
-def main_label(plan: SearchPlan, revision: Revision) -> str | None:
-    """The entity's main label, also when ``--field`` does not search it."""
+def main_label(
+    plan: SearchPlan, revision: Revision, match: EntityMatch | None = None
+) -> str | None:
+    """The entity's main label, also when ``--field`` does not search it; a
+    language-tagged one as ``lookup`` picks it."""
     attr = plan.labels.get(revision.type)
-    value = None if attr is None else revision.attrs.get(attr)
-    return value if isinstance(value, str) else None
+    if attr is None:
+        return None
+    preferred = (plan.lang, plan.language, None if match is None else match.best.lang)
+    return label_text(revision.attrs.get(attr), preferred)
 
 
 def rank_key(
     plan: SearchPlan, revision: Revision, match: EntityMatch
 ) -> tuple[int, int, int, float, int, bool, str, str]:
-    label = main_label(plan, revision)
+    label = main_label(plan, revision, match)
     group, kind, place, score, length, _ = match.best.rank()
     normalized = normalize_label(label) if label is not None else ""
     return (group, kind, place, score, length, label is None, normalized, str(revision.id))

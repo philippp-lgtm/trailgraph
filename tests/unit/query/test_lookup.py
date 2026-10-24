@@ -105,6 +105,7 @@ def test_matches_any_role_after_normalization() -> None:
         "role": "alt_label",
         "kind": "exact",
         "value": "Chem",
+        "lang": None,
     }
     assert match_revision(p, topic("p", "Physics")) is None
     assert match_revision(p, topic("q", "Chemistry")) is None  # exact is the default
@@ -118,6 +119,7 @@ def test_hidden_label_value_is_never_shown() -> None:
         "role": "hidden_label",
         "kind": "exact",
         "value": None,
+        "lang": None,
     }
 
 
@@ -165,3 +167,70 @@ def test_missing_main_label_sorts_last_among_equals() -> None:
     assert main_label(p, without) is None
     keys = [rank_key(p, r, m) for r in (without, with_label) if (m := match_revision(p, r))]
     assert sorted(keys)[0][-2] == "quantum chemistry"
+
+
+NAS_LANG = compiled_model("notes_and_sources", "1.2.0")
+
+
+def de(text: str) -> dict[str, Any]:
+    return {"lang": "de", "value": text}
+
+
+def en(text: str) -> dict[str, Any]:
+    return {"lang": "en", "value": text}
+
+
+ENTRY = revision(
+    "g",
+    "nas:GlossaryEntry",
+    {
+        "heading": [de("Steuerung und Kontrolle"), en("Control and Monitoring")],
+        "variant_names": [de("SuK"), en("CaM")],
+    },
+)
+
+
+def lang_plan(text: str, language: str | None = None, **changes: Any) -> LookupPlan:
+    return plan_lookup(NAS_LANG, LookupSpec(text=text, **changes), language)
+
+
+def test_tagged_labels_match_by_text_and_name_their_tag() -> None:
+    p = lang_plan("suk")
+    match = match_revision(p, ENTRY)
+    assert match is not None
+    assert match.to_json() == {
+        "attr": "variant_names",
+        "role": "alt_label",
+        "kind": "exact",
+        "value": "SuK",
+        "lang": "de",
+    }
+    assert main_label(p, ENTRY, match) == "Steuerung und Kontrolle"  # the match's language
+    cam = match_revision(p := lang_plan("cam"), ENTRY)
+    assert cam is not None and main_label(p, ENTRY, cam) == "Control and Monitoring"
+    assert match_revision(lang_plan("steuerung und kontrolle"), ENTRY) is not None
+
+
+def test_lang_filters_matches_and_picks_the_label() -> None:
+    assert match_revision(lang_plan("suk", lang="en"), ENTRY) is None
+    assert match_revision(lang_plan("suk", lang="de"), ENTRY) is not None
+    p = lang_plan("suk", lang="*")
+    match = match_revision(p, ENTRY)
+    assert match is not None and main_label(p, ENTRY, match) == "Steuerung und Kontrolle"
+    english = lang_plan("suk", "en")  # the graph language comes before the match's
+    match = match_revision(english, ENTRY)
+    assert match is not None and main_label(english, ENTRY, match) == "Control and Monitoring"
+
+
+def test_plain_labels_count_as_the_graph_language() -> None:
+    physics = topic("t", "Physics")
+    assert match_revision(plan_lookup(NAS, LookupSpec("physics", lang="de"), "en"), physics) is None
+    assert match_revision(plan_lookup(NAS, LookupSpec("physics", lang="en"), "en"), physics)
+    kept = match_revision(plan_lookup(NAS, LookupSpec("physics", lang="de"), None), physics)
+    assert kept is not None and kept.lang is None
+
+
+def test_lang_must_be_a_language_range() -> None:
+    with pytest.raises(GraphCliError) as info:
+        lang_plan("suk", lang="de_DE")
+    assert info.value.details["argument"] == "--lang"

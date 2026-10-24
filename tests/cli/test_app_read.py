@@ -286,6 +286,7 @@ def test_lookup_finds_candidates(run_cli: CliRunner, root: Path, roles: Roles) -
         "role": "label",
         "kind": "exact",
         "value": value,
+        "lang": None,
     }
     assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match"}
     assert item["text"] == value.upper()
@@ -407,6 +408,7 @@ def test_search_finds_names_inside_words_and_with_typos(
             "kind": kind,
             "score": 100,
             "excerpt": None,
+            "lang": None,
         }
         assert attr in item["fields"]
     if len(value) >= 8:  # one dropped letter in a longer name is still similar

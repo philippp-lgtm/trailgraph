@@ -20,6 +20,7 @@ from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.langtag import tagged_parts
 from graph_cli.kernel.query_ast import AsOf
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.cypher.values import Value, parameter_value
@@ -238,6 +239,7 @@ def lookup(
     match: str,
     ignore_accents: bool,
     include_inactive: bool,
+    lang: str | None,
     limit: int,
     offset: int,
     graph: str | None,
@@ -256,6 +258,7 @@ def lookup(
         "match": match,
         "ignore_accents": ignore_accents,
         "include_inactive": include_inactive,
+        "lang": lang,
         "limit": limit,
         "offset": offset,
     }
@@ -268,6 +271,7 @@ def lookup(
         include_inactive=include_inactive,
         limit=limit,
         offset=offset,
+        lang=lang,
     )
     data, page = context(state).reader.lookup(view, spec, text)
     page_json = page.to_json()
@@ -284,6 +288,7 @@ def lookup(
         options = (
             ("--type", type),
             ("--match", (match_kind,) if match_kind != "exact" else ()),
+            ("--lang", (lang,) if lang else ()),
             *_pinned(view, point),
         )
         return _command_line(
@@ -305,7 +310,7 @@ def lookup(
             },
         )
     elif missing:
-        options = (("--type", type), *_pinned(view, point))
+        options = (("--type", type), ("--lang", (lang,) if lang else ()), *_pinned(view, point))
         hints += tuple(
             {
                 "text": "No name starts with the text; search names and text fields",
@@ -329,6 +334,7 @@ def search(
     type: tuple[str, ...],
     field: tuple[str, ...],
     include_inactive: bool,
+    lang: str | None,
     limit: int,
     offset: int,
     graph: str | None,
@@ -340,6 +346,7 @@ def search(
         "type": list(type),
         "field": list(field),
         "include_inactive": include_inactive,
+        "lang": lang,
         "limit": limit,
         "offset": offset,
     }
@@ -351,10 +358,12 @@ def search(
         include_inactive=include_inactive,
         limit=limit,
         offset=offset,
+        lang=lang,
     )
     data, page = context(state).reader.search(view, spec)
     page_json = page.to_json()
-    options = (("--type", type), ("--field", field), *_pinned(view, point))
+    language = ("--lang", (lang,) if lang else ())
+    options = (("--type", type), ("--field", field), language, *_pinned(view, point))
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
@@ -371,7 +380,7 @@ def search(
                     "search",
                     (text,),
                     view.entry.name,
-                    _pinned(view, point),
+                    (language, *_pinned(view, point)),
                     switches,
                     DEFAULT_LIMIT,
                 ),
@@ -444,13 +453,19 @@ def _usage(argument: str, message: str, actual: JsonValue = None) -> GraphCliErr
 
 
 def _cell(value: JsonValue) -> str:
-    """A table cell: an entity as ``alias type`` (or id), an edge as its relation."""
+    """A table cell: an entity as ``alias type`` (or id), an edge as its relation, a
+    language-tagged value as ``"text"@tag``."""
     if isinstance(value, Mapping) and "content_hash" in value and "type" in value:
         return f"{value.get('alias') or value.get('id')} {value.get('type')}"
     if isinstance(value, Mapping) and "edge_id" in value and "rel" in value:
         return str(value["rel"])
     if value is None:
         return "-"
+    parts = tagged_parts(value)
+    if parts is not None:
+        return f"{json.dumps(parts[0], ensure_ascii=False)}@{parts[1]}"
+    if isinstance(value, list) and value and all(tagged_parts(v) for v in value):
+        return ", ".join(_cell(v) for v in value)
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
@@ -600,7 +615,7 @@ SPECS: Final = (
             ParamSpec(
                 "--where",
                 "filter",
-                "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists).",
+                "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists lang).",
                 repeatable=True,
             ),
             ParamSpec(
@@ -686,6 +701,12 @@ SPECS: Final = (
             ),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec(
+                "--lang",
+                "string",
+                "Only names in this language (a BCP 47 tag or range such as de, or *); "
+                "also picks the shown label.",
+            ),
+            ParamSpec(
                 "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
             ),
             ParamSpec("--offset", "integer", "Skip this many results.", default=0),
@@ -733,6 +754,12 @@ SPECS: Final = (
             ),
             ParamSpec("--field", "string", "Only this text field.", repeatable=True),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
+            ParamSpec(
+                "--lang",
+                "string",
+                "Only text in this language (a BCP 47 tag or range such as de, or *); "
+                "also picks the shown label.",
+            ),
             ParamSpec(
                 "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
             ),

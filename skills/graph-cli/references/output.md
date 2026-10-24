@@ -82,6 +82,7 @@ they are null.
 | `match.role` | `label`, `alt_label` or `hidden_label`. |
 | `match.kind` | `exact` or `prefix`. |
 | `match.value` | The matching name; null for a hidden label. |
+| `match.lang` | The language tag of the matching name, or null. |
 
 ## Search
 
@@ -99,6 +100,7 @@ they are null.
 | `match.kind` | `exact` (the whole value), `phrase` (inside it), `words` (each word in it) or `similar` (a close spelling, names and short fields only). |
 | `match.score` | 100, or how close a `similar` match is, 70 to 99. |
 | `match.excerpt` | The matching value or the part around the hit; null for a hidden label. |
+| `match.lang` | The language tag of the matching value, or null. |
 | `fields` | Every field that matched, best first. |
 
 ## History

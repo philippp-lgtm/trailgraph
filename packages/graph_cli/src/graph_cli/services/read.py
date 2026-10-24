@@ -536,7 +536,7 @@ class ReadService:
         """
         plans: dict[str, tuple[str, LookupPlan]] = {}
         for text in texts or (spec.text,):
-            plan = plan_lookup(view.model, replace(spec, text=text))
+            plan = plan_lookup(view.model, replace(spec, text=text), view.entry.language)
             plans.setdefault(plan.key, (text, plan))
         revisions = view.snapshot.query(next(iter(plans.values()))[1].query).items
         items: list[JsonValue] = []
@@ -558,7 +558,7 @@ class ReadService:
                     "alias": revision.alias,
                     "type": revision.type,
                     "record_status": revision.record_status,
-                    "label": main_label(plan, revision),
+                    "label": main_label(plan, revision, match),
                     "match": match.to_json(),
                 }
                 for _, revision, match in shown
@@ -575,7 +575,7 @@ class ReadService:
     @_query
     def search(self, view: GraphRead, spec: SearchSpec) -> tuple[dict[str, JsonValue], Page]:
         """Entities whose text fields match, best first; one item per entity."""
-        plan = plan_search(view.model, spec)
+        plan = plan_search(view.model, spec, view.entry.language)
         found = []
         for revision in view.snapshot.query(plan.query).items:
             match = search_match(plan, revision)
@@ -589,7 +589,7 @@ class ReadService:
                 "alias": revision.alias,
                 "type": revision.type,
                 "record_status": revision.record_status,
-                "label": search_label(plan, revision),
+                "label": search_label(plan, revision, match),
                 "match": match.to_json(plan),
                 "fields": list(match.fields),
             }
