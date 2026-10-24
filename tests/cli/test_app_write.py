@@ -215,6 +215,25 @@ def test_add_and_remove_change_a_list_without_a_read(
     assert (none.code, none.error["code"]) == (2, "usage.missing_argument")
 
 
+def test_a_json_array_as_text_for_a_list_is_refused(
+    run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
+) -> None:
+    curie, _, attr = str(roles.get("alt_label_attribute")).rpartition(".")
+    ids = cli_create(run_cli, factory, curie)
+    assert app(run_cli, "update", ids["x"], "--add", f"{attr}=One", env=ENV).code == 0
+    for args in (("--set", f'{attr}=["One","Two"]'), ("--add", f'{attr}=["Two"]')):
+        for dry in (("--dry-run",), ()):
+            refused = app(run_cli, "update", ids["x"], *args, *dry, env=ENV)
+            assert (refused.code, refused.error["code"]) == (1, "write.invalid"), args
+            (finding,) = refused.error["details"]["findings"]
+            assert finding["code"] == "data.structural.cardinality_many"
+            assert "--set-json" in finding["message"]
+    shown = app(run_cli, "get", ids["x"], "--fields", attr, env=ENV)
+    assert shown.data["entity"]["attrs"][attr] == ["One"]
+    fixed = app(run_cli, "update", ids["x"], "--set-json", f'{attr}=["One","Two"]', env=ENV)
+    assert fixed.code == 0, fixed.envelope
+
+
 def test_a_write_that_changes_nothing_commits_nothing(
     run_cli: CliRunner, root: Path, roles: Roles, factory: OpsFactory
 ) -> None:

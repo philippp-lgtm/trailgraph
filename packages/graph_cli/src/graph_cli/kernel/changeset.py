@@ -241,6 +241,7 @@ class OpEffect:
     applied: bool = True
     names: tuple[str, ...] = ()  # create/update: attributes given; update: every key
     lists: tuple[str, ...] = ()  # update: attributes of add/remove (judged for many: true)
+    array_texts: tuple[str, ...] = ()  # create/update: many attributes given a JSON array as text
     attr: str | None = None  # transition
     from_state: JsonValue = None
     to_state: str | None = None

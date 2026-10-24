@@ -19,7 +19,9 @@ reported once.
 - **Text values** (``attrs_text``, ``set_text``) are coerced per base type
   (``values.coerce_text``, B3.16); a value that does not coerce, or an
   unknown attribute, stays the given string; a ``many`` attribute becomes a
-  one-element list.
+  one-element list. A text for a ``many`` attribute that reads as a JSON
+  array is recorded in ``OpEffect.array_texts`` (F64); the validator refuses
+  it, since it would store the array's text as one value.
 - **List changes** (``add``, ``remove`` and their ``_text`` forms, coerced
   per item) apply to ``many`` attributes only: ``add`` appends each value
   not yet present (canonical equality), ``remove`` drops every equal value,
@@ -58,6 +60,7 @@ from graph_cli.kernel.changeset import (
     TransitionOp,
     UnlinkOp,
     UpdateOp,
+    load_document,
 )
 from graph_cli.kernel.clock import parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
@@ -236,6 +239,16 @@ class _Run:
         except ValueError:
             return text
 
+    def array_texts(self, type: str, texts: Mapping[str, Sequence[str]]) -> tuple[str, ...]:
+        """The ``many`` attributes given a text that reads as a JSON array."""
+        return tuple(
+            sorted(
+                name
+                for name, items in texts.items()
+                if self.is_list(type, name) and any(_reads_as_array(t) for t in items)
+            )
+        )
+
     def is_list(self, type: str, name: str) -> bool:
         cls = self.cls(type)
         attribute = None if cls is None else cls.attributes.get(name)
@@ -287,7 +300,10 @@ class _Run:
             work.alias = format_alias(prefix, number)
             self.allocate(entity, work.alias)
         names = tuple(sorted({*op.attrs, *op.attrs_text}))
-        self.effects.append(OpEffect(index, op.OP, entity, names=names, initial=tuple(initial)))
+        arrays = self.array_texts(op.type, {k: (v,) for k, v in op.attrs_text.items()})
+        self.effects.append(
+            OpEffect(index, op.OP, entity, names=names, initial=tuple(initial), array_texts=arrays)
+        )
 
     def check_interval(self, entity: EntityId, start: str | None, end: str | None) -> None:
         if start is not None and end is not None and _instant(start) > _instant(end):
@@ -316,7 +332,14 @@ class _Run:
         for name in lists:
             if self.is_list(work.type, name):  # otherwise the validator reports it
                 self.change_list(work.attrs, work.type, name, op)
-        self.effects.append(OpEffect(index, op.OP, entity, names=names, lists=lists))
+        texts: dict[str, tuple[str, ...]] = {k: (v,) for k, v in op.set_text.items()}
+        for given in (op.add_text, op.remove_text):
+            for name, items in given.items():
+                texts[name] = (*texts.get(name, ()), *items)
+        arrays = self.array_texts(work.type, texts)
+        self.effects.append(
+            OpEffect(index, op.OP, entity, names=names, lists=lists, array_texts=arrays)
+        )
 
     def change_list(self, attrs: dict[str, JsonValue], type: str, name: str, op: UpdateOp) -> None:
         """Append the values not yet present, in order; drop every value removed."""
@@ -496,6 +519,15 @@ class _Run:
             return 1 if previous is None else previous.rev + 1
         revision = self.base.get(entity)
         return None if revision is None else revision.rev
+
+
+def _reads_as_array(text: str) -> bool:
+    if not text.lstrip().startswith("["):
+        return False
+    try:
+        return isinstance(load_document(text), list)
+    except GraphCliError:
+        return False
 
 
 def _instant(value: str) -> datetime:

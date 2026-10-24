@@ -934,3 +934,45 @@ def test_values_and_edges_an_entity_already_had_are_not_reported_again() -> None
 def test_check_graph_does_not_report_deprecated_terms() -> None:
     model = deprecating(INV, "inv:Item", "attr:serial_number", "inv:located_in")
     assert [f for f in check_graph(model, INV_BASE) if "deprecated" in f.code] == []
+
+
+def list_text_findings(*ops: dict[str, Any]) -> list[tuple[str, str, str]]:
+    return [
+        (f.code, str(f.target.get("local") or f.target.get("id")), str(f.target.get("path")))
+        for f in judge(NAS, *ops, base=NAS_BASE)[1]
+    ]
+
+
+def test_a_json_array_given_as_text_to_a_list_is_refused() -> None:
+    array = '["optics", "lenses"]'
+    expected = ("data.structural.cardinality_many", T, "attrs.synonyms")
+    assert list_text_findings({"op": "update", "id": T, "set_text": {"synonyms": array}}) == [
+        expected
+    ]
+    assert list_text_findings({"op": "update", "id": T, "add_text": {"synonyms": [array]}}) == [
+        expected
+    ]
+    assert list_text_findings(
+        {"op": "update", "id": T, "remove_text": {"synonyms": ["x", " [1]"]}}
+    ) == [expected]
+    assert list_text_findings(
+        {
+            "op": "create",
+            "type": "nas:Topic",
+            "local": "x",
+            "attrs_text": {"label": "Optics", "synonyms": array},
+        }
+    ) == [("data.structural.cardinality_many", "x", "attrs.synonyms")]
+    (finding,) = judge(
+        NAS, {"op": "update", "id": T, "set_text": {"synonyms": array}}, base=NAS_BASE
+    )[1]
+    assert "--set-json" in finding.message and "--add" in finding.message
+
+
+def test_bracketed_text_and_json_lists_are_fine() -> None:
+    assert (
+        list_text_findings({"op": "update", "id": T, "set_text": {"synonyms": "[sic] optics"}})
+        == []
+    )
+    assert list_text_findings({"op": "update", "id": T, "set_text": {"label": '["a"]'}}) == []
+    assert list_text_findings({"op": "update", "id": T, "set": {"synonyms": ["a", "b"]}}) == []

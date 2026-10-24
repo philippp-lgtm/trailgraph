@@ -148,8 +148,8 @@ tx:<seq>` on any read show earlier states; read
   use it up. Repeating the same command with the same key never writes
   twice: it returns the first result (`idempotent_replay` is true).
   Without a key, check `graph history <id> --json` before a retry.
-- `graph update --add <attr>=<value>` (or `--remove`) changes a list field
-  without a read; `--set` replaces it. No change: `entity.unchanged`.
+- `graph update --add <attr>=<value>` (or `--remove`) adds one list value
+  without a read; `--set-json` replaces the list. No change: `entity.unchanged`.
 - When a write depends on what you read, pass `--expect` with that `rev`
   so that a concurrent change is a conflict instead of a lost update.
   `graph get` shows it as `data.entity.rev`; a write returns the new one

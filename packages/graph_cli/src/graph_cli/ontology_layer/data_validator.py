@@ -878,6 +878,14 @@ def _judge_effect(
 ) -> None:
     """Names an op carries are judged even when the post-state no longer shows them."""
     model = checker.model
+    for name in effect.array_texts if effect.applied else ():
+        checker.add(
+            "data.structural.cardinality_many",
+            revision,
+            f"attrs.{name}",
+            f"the text given for {name!r} is a JSON array and would be stored as one value;"
+            " give the array as JSON (--set-json, set) or each value on its own (--add, add_text)",
+        )
     if effect.op == "create":
         for name, value in effect.initial:
             lifecycle = model.lifecycles[cls.attributes[name].type]

@@ -107,7 +107,13 @@ document; `apply --idempotency-key` sets it for input with a single document
 and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
 nothing, audit files included.
 
-`--set` on a list attribute (`many: true`) replaces the whole list.
+`--set` on a list attribute (`many: true`) replaces the whole list; its text
+is one value, so `--set attr=value` leaves a list of one. A text that reads
+as a JSON array (`--set attr=["a","b"]`, also in `--add`, `--remove` and the
+`_text` keys of change sets) is refused with
+`data.structural.cardinality_many`, since it would be stored as one value:
+give the array with `--set-json attr=["a","b"]` or each value with its own
+`--add`.
 `update --add attr=value` and `--remove attr=value` (and `--add-json`,
 `--remove-json`; repeatable, one value per flag) change it in place, in
 change sets the update keys `add`, `add_text`, `remove` and `remove_text`
