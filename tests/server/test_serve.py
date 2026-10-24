@@ -119,3 +119,18 @@ def test_concurrent_writers_lose_no_writes(
         assert status == 200
         assert envelope["page"]["total"] == threads * writes
     assert admin(run_cli, "audit", "verify").code == 0
+
+
+def test_a_body_larger_than_any_route_takes_is_refused_unread(
+    isolated_env: dict[str, str], tmp_path: Path, token: str
+) -> None:
+    """Security review: waitress would buffer up to 1 GiB before the token is checked."""
+    import http.client
+
+    with graph_server(isolated_env, tmp_path) as server:
+        conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=30)
+        conn.putrequest("POST", "/v1/commands/whoami")
+        conn.putheader("Content-Length", str(2 * 1024 * 1024 * 1024))
+        conn.endheaders()
+        conn.send(b"{}")
+        assert conn.getresponse().status == 413

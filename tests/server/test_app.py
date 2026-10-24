@@ -156,6 +156,21 @@ def test_usage_errors_unknown_routes_and_methods(
     assert plain.status == 400 and plain.error["details"]["argument"] == "file"
 
 
+def test_the_server_never_reads_stdin_and_hides_its_paths(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """Security review: ``query -`` would read the server's stdin; ``file path`` would
+    show where the server keeps a file."""
+    app, log = served
+    token = installation["tokens"]["ci"]
+    stdin = command(app, "query", token, args={"text": "-", "--graph": "example_graph"})
+    assert stdin.status == 400 and stdin.error["details"] == {"argument": "text"}
+    forged = call(app, "GET", "/v1/x\ngraph-server 2026 POST /v1/commands/create 200 1ms token=x")
+    assert forged.status == 401
+    assert len(log.getvalue().splitlines()) == 2
+    assert "\\x0a" in log.getvalue()
+
+
 def test_denials_are_audited_and_projects_verified(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:
@@ -250,6 +265,8 @@ def test_file_add_with_origin_and_download(
     assert stored["media_type"] == "application/pdf"
     assert stored["origin"] == {"root": "notes", "path": "scans/report 2024.pdf"}
     entity = added.json["data"]["entity"]["id"]
+    shown = command(app, "file/path", token, args={"ref": entity, "--graph": "files_graph"})
+    assert shown.status == 200 and shown.json["data"]["path"] is None
     download = call(
         app,
         "GET",

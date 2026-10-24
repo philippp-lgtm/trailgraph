@@ -21,6 +21,7 @@ import base64
 import contextlib
 import json
 import os
+import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from graph_cli.app_cli.remote import Hook
 
 KEY_OPTION: Final = "--idempotency-key"
+DIGEST_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 ACTOR_HEADER: Final = "Graph-Cli-Actor"
 
 
@@ -188,9 +190,14 @@ def file_path_hook(
 
 
 def _resolved(file_roots: object, where: Mapping[str, JsonValue]) -> JsonValue:
+    """The origin on this machine, ``None`` for a root not set here; an origin from the
+    server that is not a relative path under its root resolves nowhere."""
     from graph_cli.catalog.file_roots import FileRoots
+    from graph_cli.ontology_layer.values import local_path_problem
 
     assert isinstance(file_roots, FileRoots)
+    if local_path_problem({"root": where.get("root"), "path": where.get("path")}) is not None:
+        return None
     try:
         return str(file_roots.resolve(where))
     except GraphCliError as exc:
@@ -204,11 +211,18 @@ def _origin_path(file_roots: object, where: JsonValue, ref: str, entity: str) ->
     from graph_cli.catalog.file_roots import FileRoots
 
     assert isinstance(file_roots, FileRoots)
-    if not isinstance(where, Mapping):
+    from graph_cli.ontology_layer.values import local_path_problem
+
+    origin = (
+        {"root": where.get("root"), "path": where.get("path")}
+        if isinstance(where, Mapping)
+        else None
+    )
+    if origin is None or local_path_problem(origin) is not None:
         raise GraphCliError(
             "file.origin_missing", f"{ref} has no recorded origin", details={"id": entity}
         )
-    resolved = file_roots.resolve({"root": where.get("root"), "path": where.get("path")})
+    resolved = file_roots.resolve(origin)
     if not resolved.is_file():
         raise GraphCliError(
             "file.origin_missing",
@@ -222,8 +236,16 @@ def _download(
     session: RemoteSession, state_root: Path, graph_id: str, entity: str, digest: str
 ) -> Path:
     """The stored file in this machine's cache, downloaded unless it is there already."""
+    from graph_cli.kernel.ids import parse_id
     from graph_cli.services.files import hash_file
 
+    try:  # the server names what becomes a path here: only ids and a hash
+        parse_id(graph_id)
+        parse_id(entity)
+    except (GraphCliError, ValueError):
+        raise protocol(200, "the answer names no graph or file id") from None
+    if not DIGEST_RE.match(digest):
+        raise protocol(200, "the answer names no content hash")
     hex_digest = digest.removeprefix("sha256:")
     directory = state_root / "files" / graph_id
     target = directory / hex_digest

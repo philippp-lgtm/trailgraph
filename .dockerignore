@@ -10,6 +10,7 @@
 local
 data
 CLAUDE.local.md
+.graph_cli.toml
 .claude
 .env
 .env.*

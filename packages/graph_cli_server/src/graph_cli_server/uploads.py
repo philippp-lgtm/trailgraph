@@ -6,7 +6,9 @@ its SHA-256. Uploads are kept per token, so a hash names only what that
 token sent. A command that uses one gets a hard link in a request
 directory, named after the client's argument (``file add`` keeps the file
 name), and the upload is removed after the command. Uploads that nobody
-used are removed after an hour, on the next upload.
+used are removed after an hour, on the next upload. A token's pending
+uploads may hold at most ``PENDING_UPLOADS`` times the size limit, so one
+token cannot fill the state directory.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ DIR_MODE: Final = 0o700
 FILE_MODE: Final = 0o600
 _PARTIAL: Final = ".partial-"
 _REQUEST: Final = "request-"
+PENDING_UPLOADS: Final = 4  # a token's staged bytes: at most this many uploads of full size
 
 
 class Uploads:
@@ -42,6 +45,14 @@ class Uploads:
         if length > max_bytes:
             raise _too_large(max_bytes)
         directory = self._dir(token)
+        pending = sum(entry.stat().st_size for entry in directory.iterdir() if entry.is_file())
+        if pending + length > PENDING_UPLOADS * max_bytes:
+            raise GraphCliError(
+                "file.too_large",
+                f"this token's pending uploads would exceed {PENDING_UPLOADS * max_bytes} bytes;"
+                " use or let expire the uploads first",
+                details={"max_bytes": max_bytes},
+            )
         partial = directory / f"{_PARTIAL}{secrets.token_hex(8)}"
         hasher, size = hashlib.sha256(), 0
         try:

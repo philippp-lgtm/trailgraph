@@ -70,7 +70,11 @@ A command request names the parameters by their inventory names:
 A file parameter (`apply`, `query --file`, `file add`) takes an upload:
 `{"upload": "sha256:<hex>", "name": "<file>"}`, for `file add` also the
 `origin` the client computed. An upload is kept for its token only and
-removed after the command that used it, or after an hour. `?render=text`
+removed after the command that used it, or after an hour; a token's
+pending uploads hold at most four times `[files] max_bytes`. A body larger
+than any route takes is refused before it is read. `-` (stdin) does not
+exist on the server: upload the input instead. Over the API `file path`
+answers `path: null`; the bytes come from the file endpoint. `?render=text`
 answers `{envelope, stdout, stderr}`, the text `graph` would print.
 
 Browsers may call the API from the origins listed in `[server]

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import os
 import signal
 import sys
 from pathlib import Path
@@ -22,12 +23,13 @@ from graph_cli.catalog import wiring
 from graph_cli.cli_kit.exit_codes import exit_code_for
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_server import __version__
-from graph_cli_server.app import SERVER_PROGRAM, ServerApp, Settings
+from graph_cli_server.app import MAX_BODY_BYTES, SERVER_PROGRAM, ServerApp, Settings
 
 DEFAULT_HOST: Final = "127.0.0.1"
 DEFAULT_PORT: Final = 8470
 DEFAULT_THREADS: Final = 8
 CHANNEL_TIMEOUT_S: Final = 120
+BODY_SLACK: Final = 64 * 1024
 
 
 def parser() -> argparse.ArgumentParser:
@@ -75,6 +77,7 @@ def main(argv: list[str] | None = None) -> None:
         _fail(f"{exc.code}: {exc.message}", exit_code_for(exc.category))
     from waitress.server import create_server  # the server's own dependency
 
+    sys.stdin = open(os.devnull)  # noqa: SIM115 - nothing a request runs reads the terminal
     app = ServerApp(settings, log=sys.stderr)
     server = create_server(
         app,
@@ -82,6 +85,8 @@ def main(argv: list[str] | None = None) -> None:
         port=options.port,
         threads=options.threads,
         channel_timeout=CHANNEL_TIMEOUT_S,
+        # waitress buffers a body before the app sees it: refuse more than any route takes
+        max_request_body_size=max(MAX_BODY_BYTES, settings.max_upload_bytes) + BODY_SLACK,
         ident=SERVER_PROGRAM,
     )
 

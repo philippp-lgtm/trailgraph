@@ -73,6 +73,9 @@ CORS_HEADERS: Final = "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
 _SKILL_KEYS: Final = frozenset({"actor", "graph_env"})
 _UPLOAD_KEYS: Final = frozenset({"upload", "name", "origin"})
+STDIN: Final = "-"  # the CLI's stdin argument; the server has no stdin of the caller
+# Plain string parameters whose "-" means stdin (file parameters take uploads only).
+STDIN_ARGS: Final[Mapping[tuple[str, ...], tuple[str, ...]]] = {("query",): ("text",)}
 
 StartResponse = Callable[[str, list[tuple[str, str]]], Any]
 
@@ -155,8 +158,10 @@ class ServerApp:
         millis = int((time.perf_counter() - started) * 1000)
         stamp = self.clock.now().strftime("%Y-%m-%dT%H:%M:%SZ")
         who = name[0] if name else "-"
+        shown = _loggable(method), _loggable(path)
         self.log.write(
-            f"{SERVER_PROGRAM} {stamp} {method} {path} {response.status} {millis}ms token={who}\n"
+            f"{SERVER_PROGRAM} {stamp} {shown[0]} {shown[1]} {response.status} {millis}ms"
+            f" token={who}\n"
         )
         self.log.flush()
         return response.body
@@ -240,6 +245,8 @@ class ServerApp:
         except GraphCliError as exc:
             return self._error(command, exc)
         outcome = self.run_command(spec, body, token)
+        if spec.path == ("file", "path"):
+            outcome = _without_server_path(outcome)
         if render == "text":
             stdout, stderr = render_text(outcome.document, text=outcome.text)
             payload: dict[str, JsonValue] = {
@@ -262,6 +269,14 @@ class ServerApp:
                 raise GraphCliError(
                     "usage.invalid_input", "args must be an object", details={"argument": "args"}
                 )
+            for name in STDIN_ARGS.get(spec.path, ()):
+                if args.get(name) == STDIN:
+                    raise GraphCliError(
+                        "usage.invalid_argument",
+                        f"{name}: - (stdin) is not available on the server; upload the input"
+                        " and pass it as a file parameter",
+                        details={"argument": name},
+                    )
             scope = self._scope(body, token)
             with self.uploads.request_dir(token.name) as directory:
                 argv = to_argv(spec, args, self._stager(token, directory, staged))
@@ -495,6 +510,16 @@ def _status_of(document: Mapping[str, JsonValue]) -> tuple[int, int]:
     return status, exit_code_for(category)
 
 
+def _without_server_path(outcome: Outcome) -> Outcome:
+    """``file path`` over the API: the stored copy's path on the server means nothing to a
+    caller (``path: null``); the bytes are at ``GET /v1/graphs/{graph}/files/{ref}``."""
+    data = outcome.document.get("data")
+    if outcome.document.get("ok") is not True or not isinstance(data, Mapping):
+        return outcome
+    document = {**outcome.document, "data": {**data, "path": None}}
+    return Outcome(document, None, outcome.status, outcome.exit_code)
+
+
 def _restore_names(
     document: Mapping[str, JsonValue], staged: list[_Staged]
 ) -> Mapping[str, JsonValue]:
@@ -525,6 +550,15 @@ def _restore_names(
                 repaired[key] = fix(str(repaired[key]))
         fixed["error"] = repaired
     return fixed
+
+
+def _loggable(text: str) -> str:
+    """One log field: no control characters or spaces (no forged lines), at most 200
+    characters."""
+    escaped = "".join(
+        c if c.isprintable() and not c.isspace() else f"\\x{ord(c):02x}" for c in text
+    )
+    return escaped[:200]
 
 
 def _json(

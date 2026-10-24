@@ -1,5 +1,8 @@
 # The tls profile of compose.yaml: HTTPS for GRAPH_DOMAIN with an automatic
 # certificate (ACME), proxied to graph-server inside the compose network.
 {$GRAPH_DOMAIN} {
+	request_body {
+		max_size 1GB
+	}
 	reverse_proxy graph:8470
 }
