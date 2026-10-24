@@ -1,4 +1,8 @@
-"""A command request's parameters as argv for the one click parser (contracts B14.4).
+"""Command parameters by inventory name, and argv for the one click parser (B14.4, B14.10).
+
+``request_args`` is the remote client's half: the parsed values of a
+command, keyed by the parameters' inventory names, as a request carries
+them. ``to_argv`` is the server's half and turns them back into argv.
 
 ``args`` names parameters by their inventory names (``"type"``, ``"--set"``,
 ``"--dry-run"``). Options come first, a repeatable option once per value, a
@@ -12,7 +16,7 @@ caller (an upload); a ``directory`` parameter has no meaning on the server.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Final
+from typing import Any, Final
 
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -21,6 +25,18 @@ from graph_cli.kernel.errors import GraphCliError
 END_OF_OPTIONS: Final = "--"
 
 FileValue = Callable[[ParamSpec, JsonValue], str]
+
+
+def request_args(spec: CommandSpec, values: Mapping[str, Any]) -> dict[str, JsonValue]:
+    """The parsed values of ``spec`` (by handler keyword) by inventory name; what was not
+    given (``None``, ``False``, an empty repeat) is left out."""
+    args: dict[str, JsonValue] = {}
+    for param in spec.params:
+        value = values.get(param.dest)
+        if value is None or value is False or value == ():
+            continue
+        args[param.name] = list(value) if isinstance(value, tuple) else value
+    return args
 
 
 def to_argv(spec: CommandSpec, args: Mapping[str, JsonValue], file_value: FileValue) -> list[str]:

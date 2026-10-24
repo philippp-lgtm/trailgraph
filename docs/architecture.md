@@ -56,8 +56,8 @@ The cross-cutting packages have their own documents:
 `graph_cli_server` serves the `graph` command surface over HTTP
 (`graph-server serve`). `app` is a small WSGI application: its command
 routes come from the same declarations as the CLI (every command whose
-`remote` is not `client`), `argv` turns a request's JSON parameters into
-argv for the one click program, and `cli_kit.runner.run` runs it with an
+`remote` is not `client`), `cli_kit.argv` turns a request's JSON parameters
+into argv for the one click program, and `cli_kit.runner.run` runs it with an
 `AppServices` per request whose `RequestScope` carries the request's actor
 (`catalog.identity.request`), pointer, `GRAPH_CLI_GRAPH` and file origins.
 `uploads` stages uploaded bytes per token, `openapi` derives the OpenAPI

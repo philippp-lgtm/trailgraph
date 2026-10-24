@@ -23,7 +23,14 @@ from graph_cli.cli_kit.spec import build_click
 from graph_cli.kernel.timing import Timings
 
 
-def program() -> click.Group:
+def program(*, remote: bool = False) -> click.Group:
+    """The click program; ``remote`` sends every command the server runs there (B14.10)."""
+    specs = all_specs()
+    if remote:
+        from graph_cli.app_cli.remote import remote_specs
+
+        specs = remote_specs(specs)
+
     @click.group(context_settings={"help_option_names": ["-h", "--help"]})
     @click.version_option(__version__, prog_name="graph")
     def cli() -> None:
@@ -37,7 +44,7 @@ def program() -> click.Group:
 
     return build_click(
         cli,
-        all_specs(),
+        specs,
         group_help={
             "describe": "Describe the commands, or the ontology of a graph.",
             "file": "Store files in a graph and find them again.",
@@ -52,7 +59,7 @@ def main() -> None:
     env = wiring.process_env()
     json_mode, debug = wiring.output_mode(env)
     services = wiring.AppServices(env, Path.cwd(), wiring.process_executable(), timings)
-    cli = program()
+    cli = program(remote=services.remote_mode())
     timings.until_now("startup")
     code = run(
         cli,

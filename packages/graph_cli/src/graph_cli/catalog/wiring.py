@@ -21,6 +21,11 @@ The server builds one ``AppServices`` per request with a ``RequestScope``
 pointer, ``GRAPH_CLI_GRAPH`` and the origins of uploaded files take the
 place of the process's identity, the working directory's pointer, its
 environment variable and the configured file roots.
+
+In remote mode (``[runtime] mode = "remote"``) there is no local context:
+``remote`` builds the command's ``RemoteSession`` instead, with the token
+(``GRAPH_CLI_TOKEN``, else ``[remote] token_file``), the asserted facets of
+this process and the pointer as seen from the working directory (B14.10).
 """
 
 from __future__ import annotations
@@ -45,7 +50,7 @@ from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import GRAPH_ENV, PointerFile, find_pointer, select_graph
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import Roots, config_path, resolve_roots
-from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
+from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -58,12 +63,14 @@ from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
 if TYPE_CHECKING:
+    from graph_cli.catalog.remote import RemoteSession
     from graph_cli.services.files import FileService, Origins
     from graph_cli.services.write import WriteService
 
 PROGRAM: Final = "graph"
 CLAUDE_CONFIG_ENV: Final = "CLAUDE_CONFIG_DIR"  # relocates the user's ~/.claude (D15 step 0)
 SPILL_ENV: Final = "GRAPH_CLI_SPILL_BYTES"  # overrides [output] spill_bytes; 0 turns it off
+TOKEN_ENV: Final = "GRAPH_CLI_TOKEN"  # the bearer token in remote mode (B14.10)
 
 
 def process_env() -> dict[str, str]:
@@ -199,6 +206,7 @@ class AppServices:
     timings: Timings = field(default_factory=Timings)
     request: RequestScope | None = None  # set by the server, one per request
     _context: AppContext | None = field(default=None, init=False, repr=False)
+    _remote: RemoteSession | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
 
     def _actor(
@@ -249,6 +257,95 @@ class AppServices:
         warnings += self._warnings
         return self._context
 
+    def remote_mode(self) -> bool:
+        """Whether config says ``mode = "remote"``; a broken config is reported by the
+        command itself, locally."""
+        try:
+            return load_config(config_path(self.env))[0].mode == "remote"
+        except GraphCliError:
+            return False
+
+    def remote(self, warnings: list[WarningRecord]) -> RemoteSession:
+        """The command's link to the server (remote mode only), built once."""
+        if self._remote is None:
+            self._remote = self._connect(warnings)
+        return self._remote
+
+    def remote_roots(self) -> tuple[Config, Roots, FileRoots]:
+        """Config, roots (the state directory for caches) and file roots of this client."""
+        config, _ = load_config(config_path(self.env))
+        roots, _ = resolve_roots(
+            self.env, config=config, cwd=self.cwd, data_root_flag=None, allow_flag=False
+        )
+        return config, roots, FileRoots.from_config(config.file_roots, self.env)
+
+    def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
+        from graph_cli.catalog.endpoint import parse_endpoint
+        from graph_cli.catalog.remote import RemoteClient, RemoteSession
+
+        config, config_warnings = load_config(config_path(self.env))
+        endpoint = parse_endpoint(config.endpoint or "")
+        if isinstance(endpoint, str):
+            raise GraphCliError("internal.error", "remote mode without a valid endpoint")
+        pointer, pointer_warnings = find_pointer(self.cwd)
+        actor, actor_warnings = self._actor(config, pointer)
+        warnings += [*config_warnings, *pointer_warnings, *actor_warnings]
+        if endpoint.plain_http and not endpoint.loopback:
+            warnings.append(
+                WarningRecord(
+                    "remote.plain_http",
+                    f"{endpoint.display} is plain HTTP: the token travels without encryption",
+                    {"endpoint": endpoint.display},
+                )
+            )
+        client = RemoteClient(
+            endpoint,
+            self._token(config),
+            timeout_s=config.remote_timeout_s,
+            version=__version__,
+        )
+        shown: dict[str, JsonValue] | None = None
+        if pointer is not None:
+            shown = {"graphs": list(pointer.graphs), "file": str(pointer.path)}
+            if pointer.default is not None:
+                shown["default"] = pointer.default
+        return RemoteSession(
+            client,
+            asserted_facets(actor),
+            shown,
+            self.env.get(GRAPH_ENV) or None,
+            warnings,
+        )
+
+    def _token(self, config: Config) -> str:
+        """``GRAPH_CLI_TOKEN``, else the token file, which nobody else may read."""
+        from graph_cli.catalog.remote import unauthorized
+
+        given = self.env.get(TOKEN_ENV, "").strip()
+        if given:
+            return given
+        if config.token_file is None:
+            raise unauthorized()
+        path = self.path(config.token_file)
+        try:
+            if path.stat().st_mode & 0o077:
+                raise GraphCliError(
+                    "config.invalid",
+                    f"{config.path}: remote.token_file {path} may be read by others;"
+                    f" chmod 600 {path}",
+                    details={"file": str(config.path), "key": "remote.token_file"},
+                )
+            token = path.read_text().strip()
+        except OSError as exc:
+            raise GraphCliError(
+                "config.invalid",
+                f"{config.path}: remote.token_file cannot be read: {exc.strerror or exc}",
+                details={"file": str(config.path), "key": "remote.token_file"},
+            ) from exc
+        if not token:
+            raise unauthorized()
+        return token
+
     def spill_config(self) -> Config:
         """The config for large answers: the command's, else read now (defaults if broken)."""
         if self._context is not None:
@@ -285,6 +382,8 @@ class AppServices:
 
     def _build(self, command: str) -> tuple[AppContext, tuple[WarningRecord, ...]]:
         config, config_warnings = load_config(config_path(self.env))
+        if config.mode == "remote":  # every command goes through the server (B14.10)
+            raise GraphCliError("internal.error", "remote mode has no local context")
         roots, root_warnings = resolve_roots(
             self.env, config=config, cwd=self.cwd, data_root_flag=None, allow_flag=False
         )
@@ -355,6 +454,22 @@ class AppServices:
             *((unknown,) if unknown is not None else ()),
         )
         return context, warnings
+
+
+def asserted_facets(actor: ActorContext) -> dict[str, JsonValue]:
+    """The ``actor`` object of a request: this process's asserted facets (B14.4)."""
+    found: dict[str, JsonValue] = {}
+    for name, keys in (
+        ("agent", ("id", "type")),
+        ("session", ("id", "parent")),
+        ("device", ("id",)),
+    ):
+        facet = getattr(actor, name)
+        if facet.assurance is not Assurance.ABSENT and facet.id is not None:
+            found[name] = {k: getattr(facet, k) for k in keys if getattr(facet, k) is not None}
+    if actor.project.assurance is not Assurance.ABSENT and actor.project.id is not None:
+        found["project"] = actor.project.id
+    return found
 
 
 @dataclass(frozen=True)

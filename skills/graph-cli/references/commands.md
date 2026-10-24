@@ -732,7 +732,7 @@ Usage: `graph update REF [OPTIONS]`
 
 Show who is acting: the identity facets and what the policy allows.
 
-Kind: meta. Surface: meta. Action: none. Exit codes: 0, 2, 5, 6.
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 2, 3, 5, 6.
 
 Usage: `graph whoami`
 

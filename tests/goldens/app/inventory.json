@@ -84,6 +84,7 @@
       "errors": [
         "access.batch_too_large",
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -109,6 +110,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "usage.invalid_input",
         "write.invalid"
@@ -219,6 +224,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -238,6 +244,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -327,6 +337,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -336,6 +347,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -389,6 +403,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -398,6 +413,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -443,6 +461,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -451,6 +470,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -506,6 +528,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -514,6 +537,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -566,6 +592,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -575,6 +602,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "term.unknown",
         "usage.invalid_argument"
       ],
@@ -620,6 +650,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -628,6 +659,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -757,6 +791,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -779,6 +814,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -849,6 +888,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -860,6 +900,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -921,6 +964,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.corrupt",
         "backend.unavailable",
         "config.forbidden_key",
@@ -936,6 +980,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "usage.invalid_argument"
       ],
@@ -1064,6 +1111,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1075,6 +1123,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "term.unknown",
         "usage.invalid_argument"
@@ -1163,6 +1214,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1174,6 +1226,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "usage.invalid_argument"
       ],
@@ -1210,10 +1265,14 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
         "internal.error",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -1287,6 +1346,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1297,6 +1357,9 @@
         "graph.not_selected",
         "internal.error",
         "ontology.artifact_missing",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "usage.invalid_argument"
       ],
@@ -1414,6 +1477,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -1434,6 +1498,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -1554,6 +1622,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1563,6 +1632,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "term.no_labels",
         "term.unknown",
@@ -1661,6 +1733,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1672,6 +1745,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "term.unknown",
         "usage.invalid_argument"
@@ -1786,6 +1862,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -1801,6 +1878,9 @@
         "query.too_large",
         "query.unbound_variable",
         "query.unsupported",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "term.unknown",
         "usage.invalid_argument"
@@ -1891,6 +1971,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -1911,6 +1992,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -2015,6 +2100,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -2024,6 +2110,9 @@
         "internal.error",
         "ontology.artifact_missing",
         "query.ambiguous_term",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "temporal.as_of_unsupported",
         "term.no_text_fields",
         "term.unknown",
@@ -2328,6 +2417,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -2347,6 +2437,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -2442,6 +2536,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -2462,6 +2557,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -2564,6 +2663,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -2584,6 +2684,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -2718,6 +2822,7 @@
       ],
       "errors": [
         "access.denied",
+        "access.project_mismatch",
         "access.reason_required",
         "audit.unavailable",
         "backend.corrupt",
@@ -2738,6 +2843,10 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument",
         "write.invalid"
       ],
@@ -2774,14 +2883,19 @@
         }
       ],
       "errors": [
+        "access.project_mismatch",
         "backend.unavailable",
         "config.invalid",
         "internal.error",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
         "usage.invalid_argument"
       ],
       "exit_codes": [
         0,
         2,
+        3,
         5,
         6
       ],
@@ -2813,6 +2927,11 @@
     },
     {
       "code": "access.denied",
+      "category": "denied",
+      "exit": 3
+    },
+    {
+      "code": "access.project_mismatch",
       "category": "denied",
       "exit": 3
     },
@@ -3010,6 +3129,26 @@
       "code": "query.unsupported",
       "category": "refused",
       "exit": 1
+    },
+    {
+      "code": "remote.outcome_unknown",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "remote.protocol",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "remote.unauthorized",
+      "category": "denied",
+      "exit": 3
+    },
+    {
+      "code": "remote.unreachable",
+      "category": "unavailable",
+      "exit": 5
     },
     {
       "code": "skills.check_failed",

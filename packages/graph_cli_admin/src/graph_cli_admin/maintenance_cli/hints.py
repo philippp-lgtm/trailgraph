@@ -47,6 +47,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.skill_render_exists": _render_force,
     "admin.view_port_unavailable": _view_any_port,
+    "admin.remote_mode": None,  # the message says where to run it
     "admin.token_exists": _token_list,
     "admin.token_not_found": _token_list,
 }

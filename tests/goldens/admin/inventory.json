@@ -36,6 +36,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -45,6 +46,7 @@
       ],
       "exit_codes": [
         0,
+        1,
         2,
         3,
         5,
@@ -84,6 +86,7 @@
       "errors": [
         "access.denied",
         "admin.integrity_errors",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -187,6 +190,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -251,6 +255,7 @@
       "errors": [
         "access.denied",
         "admin.integrity_errors",
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -322,6 +327,7 @@
         "access.denied",
         "admin.data_errors",
         "admin.model_invalid",
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -411,6 +417,7 @@
         "access.denied",
         "admin.graph_name_taken",
         "admin.model_invalid",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -465,6 +472,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "internal.error",
@@ -472,6 +480,7 @@
       ],
       "exit_codes": [
         0,
+        1,
         2,
         5,
         6
@@ -531,6 +540,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.corrupt",
         "backend.lock_timeout",
@@ -588,6 +598,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -664,6 +675,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "admin.skill_invalid",
         "audit.unavailable",
         "backend.lock_timeout",
@@ -744,6 +756,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "admin.skill_invalid",
         "admin.skill_render_exists",
         "backend.unavailable",
@@ -798,6 +811,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "internal.error",
@@ -805,6 +819,7 @@
       ],
       "exit_codes": [
         0,
+        1,
         2,
         5,
         6
@@ -871,6 +886,7 @@
       ],
       "errors": [
         "admin.model_invalid",
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -943,6 +959,7 @@
         "admin.migration_required",
         "admin.model_invalid",
         "admin.release_exists",
+        "admin.remote_mode",
         "admin.version_bump_insufficient",
         "audit.unavailable",
         "backend.lock_timeout",
@@ -1069,6 +1086,7 @@
       "errors": [
         "access.denied",
         "admin.policy_lockout",
+        "admin.remote_mode",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -1134,6 +1152,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -1196,6 +1215,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -1278,6 +1298,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -1332,6 +1353,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -1407,6 +1429,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "admin.token_exists",
         "audit.unavailable",
         "backend.lock_timeout",
@@ -1455,6 +1478,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "internal.error",
@@ -1462,6 +1486,7 @@
       ],
       "exit_codes": [
         0,
+        1,
         2,
         5,
         6
@@ -1514,6 +1539,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.remote_mode",
         "admin.token_not_found",
         "audit.unavailable",
         "backend.lock_timeout",
@@ -1591,6 +1617,7 @@
         }
       ],
       "errors": [
+        "admin.remote_mode",
         "admin.view_port_unavailable",
         "backend.unavailable",
         "config.invalid",
@@ -1658,6 +1685,11 @@
     },
     {
       "code": "admin.release_exists",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.remote_mode",
       "category": "refused",
       "exit": 1
     },

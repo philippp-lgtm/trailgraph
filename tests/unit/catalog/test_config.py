@@ -13,8 +13,8 @@ FULL = b"""format_version = 1
 id = "0192e000-0000-7000-8000-00000000d001"
 name = "workstation"
 [runtime]
-mode = "local"
-endpoint = "reserved"
+mode = "remote"
+endpoint = "https://graphs.example.org/api/"
 [paths]
 data_root = "~/graphs"
 [identity]
@@ -36,6 +36,12 @@ archive_2 = "/srv/archive"
 max_bytes = 2048
 [activity]
 signal_reads = true
+[server]
+cors_origins = ["https://app.example.org", "http://localhost:5173"]
+[remote]
+token_file = "~/.config/graph_cli/token"
+allow_plain_http = false
+timeout_s = 30
 """
 
 
@@ -66,7 +72,25 @@ def test_every_key() -> None:
         file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
         max_file_bytes=2048,
         signal_reads=True,
+        mode="remote",
+        endpoint="https://graphs.example.org/api/",
+        cors_origins=("https://app.example.org", "http://localhost:5173"),
+        token_file="~/.config/graph_cli/token",
+        remote_timeout_s=30.0,
     )
+
+
+def test_plain_http_beyond_loopback_needs_the_switch() -> None:
+    """B14.10: the token would travel in clear."""
+    loopback = (
+        b'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "http://127.0.0.1:8470"\n'
+    )
+    assert parse_config(loopback, path=PATH)[0].mode == "remote"
+    allowed = (
+        b'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "http://x.example"\n'
+        b"[remote]\nallow_plain_http = true\n"
+    )
+    assert parse_config(allowed, path=PATH)[0].allow_plain_http is True
 
 
 def test_file_defaults() -> None:
@@ -106,7 +130,25 @@ def test_unknown_major() -> None:
     ("body", "key"),
     [
         ("", "format_version"),
-        ('format_version = 1\n[runtime]\nmode = "remote"\n', "runtime.mode"),
+        ('format_version = 1\n[runtime]\nmode = "remote"\n', "runtime.endpoint"),
+        (
+            'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "ftp://x.example"\n',
+            "runtime.endpoint",
+        ),
+        (
+            'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "http://x.example"\n',
+            "runtime.endpoint",
+        ),
+        (
+            'format_version = 1\n[runtime]\nmode = "remote"\nendpoint = "https://u:p@x.example"\n',
+            "runtime.endpoint",
+        ),
+        ('format_version = 1\n[remote]\ntoken_file = "token"\n', "remote.token_file"),
+        ("format_version = 1\n[remote]\ntimeout_s = 0\n", "remote.timeout_s"),
+        (
+            'format_version = 1\n[server]\ncors_origins = ["https://x.example/path"]\n',
+            "server.cors_origins",
+        ),
         ('format_version = 1\n[runtime]\nmode = "cloud"\n', "runtime.mode"),
         ("format_version = 1\n[storage]\nlock_timeout_s = true\n", "storage.lock_timeout_s"),
         ("format_version = 1\n[storage]\nlock_timeout_s = 0\n", "storage.lock_timeout_s"),

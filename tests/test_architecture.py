@@ -45,7 +45,7 @@ POSITIVE_CONTROLS = {
         "import graph_cli.query.plan\n",
     ),
     "The server never imports the maintenance distribution": (
-        "graph_cli_server/argv.py",
+        "graph_cli_server/openapi.py",
         "import graph_cli_admin.maintenance_cli.hints\n",
     ),
     "App distribution never imports the server distribution": (

@@ -21,7 +21,7 @@ GRAPH_OPTION: Final = ParamSpec(
 # Every command that opens the data root can meet a broken config; one that names a
 # graph, a missing graph; one that changes something, a denial, a held lock and an
 # unwritable audit log.
-ROOT_ERRORS: Final = ("config.invalid",)
+ROOT_ERRORS: Final = ("config.invalid", "admin.remote_mode")
 GRAPH_ERRORS: Final = (*ROOT_ERRORS, "graph.not_found")
 CHANGE_ERRORS: Final = ("access.denied", "backend.lock_timeout", "audit.unavailable")
 

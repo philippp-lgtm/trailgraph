@@ -10,7 +10,10 @@ reach the command as if given after it (``leaf``). After the envelope is
 written, an optional ``after`` callback learns what was delivered
 (``Completed``), for the access log; rendering and writing the envelope is
 the ``render`` phase of the given ``Timings``. A JSON envelope larger than
-the ``Invocation``'s spill limit goes to a file (``cli_kit.spill``).
+the ``Invocation``'s spill limit goes to a file (``cli_kit.spill``). A
+command whose answer was rendered elsewhere (``Result.forwarded``: the
+server, B14.10) is written as it came, after the local warnings; its exit
+code follows its error category.
 """
 
 from __future__ import annotations
@@ -23,10 +26,18 @@ from typing import IO, Any, Final
 
 import click
 
-from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
+from graph_cli.cli_kit.envelope import (
+    Forwarded,
+    Result,
+    envelope,
+    render_json,
+    render_text,
+    warning_lines,
+)
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
 from graph_cli.cli_kit.spill import SpillTarget, spill_json
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
 
@@ -47,6 +58,7 @@ class CommandState:
 
     invocation: Invocation
     services: Any = None  # set by the program (lazy composition root)
+    json_mode: bool = False  # how the answer will be written (run() decides)
     command: str | None = None
     result: Result | None = None
     warnings: list[WarningRecord] = field(default_factory=list)
@@ -97,8 +109,8 @@ def run(
     after: Callable[[Completed], None] | None = None,
     timings: Timings | None = None,
 ) -> int:
-    state = CommandState(invocation, services)
     json_mode = invocation.json_default or JSON_FLAG in argv
+    state = CommandState(invocation, services, json_mode)
     error: GraphCliError | None = None
     try:
         code = program.main(
@@ -123,14 +135,19 @@ def run(
         if invocation.debug:
             err.write(traceback.format_exc())
         error = GraphCliError("internal.error", f"unexpected {type(exc).__name__}")
+    forwarded = state.result.forwarded if state.result is not None and error is None else None
     with (timings or Timings()).phase("render"):
-        document: Mapping[str, JsonValue] = envelope(
-            state.command,
-            program=invocation.program,
-            result=state.result,
-            error=error,
-            warnings=[*state.warnings, *(error.warnings if error is not None else ())],
-        )
+        if forwarded is not None:
+            document, error_category = _forwarded(forwarded, state.warnings)
+        else:
+            document = envelope(
+                state.command,
+                program=invocation.program,
+                result=state.result,
+                error=error,
+                warnings=[*state.warnings, *(error.warnings if error is not None else ())],
+            )
+            error_category = error.category if error is not None else None
         spilled = None
         if json_mode:
             stdout = render_json(document)
@@ -142,15 +159,42 @@ def run(
                     rendered.spilled_bytes,
                 )
             out.write(stdout)
+        elif forwarded is not None and forwarded.stdout is not None:
+            stdout = forwarded.stdout
+            out.write(stdout)
+            local = [w.to_json() for w in state.warnings]
+            err.write("".join(line + "\n" for line in warning_lines(local)))
+            err.write(forwarded.stderr or "")
         else:
             stdout, stderr = render_text(document, text=state.result.text if state.result else None)
             out.write(stdout)
             err.write(stderr)
-    exit_code = exit_code_for(error.category) if error is not None else EXIT_OK
+    exit_code = exit_code_for(error_category) if error_category is not None else EXIT_OK
     if after is not None:
         text = state.result.text if state.result is not None else None
         after(Completed(document, json_mode, len(stdout.encode()), exit_code, spilled, text))
     return exit_code
+
+
+def _forwarded(
+    forwarded: Forwarded, warnings: list[WarningRecord]
+) -> tuple[Mapping[str, JsonValue], ErrorCategory | None]:
+    """The forwarded envelope with the local warnings first, and its error category."""
+    theirs = forwarded.document.get("warnings")
+    document = {
+        **forwarded.document,
+        "warnings": [
+            *(w.to_json() for w in warnings),
+            *(theirs if isinstance(theirs, list) else []),
+        ],
+    }
+    error = document.get("error")
+    if not isinstance(error, Mapping):
+        return document, None
+    try:
+        return document, ErrorCategory(str(error.get("category")))
+    except ValueError:
+        return document, ErrorCategory.INTERNAL
 
 
 def _take_global_values(ctx: click.Context, state: CommandState, kwargs: dict[str, Any]) -> None:

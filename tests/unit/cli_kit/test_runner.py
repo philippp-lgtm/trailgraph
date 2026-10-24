@@ -7,7 +7,7 @@ import click
 import pytest
 from support.fixtures import GOLDENS, assert_golden
 
-from graph_cli.cli_kit.envelope import Result, render_text
+from graph_cli.cli_kit.envelope import Forwarded, Result, render_text
 from graph_cli.cli_kit.hints import hint_for, known_hint_codes
 from graph_cli.cli_kit.runner import (
     CommandState,
@@ -84,6 +84,38 @@ def partial(state: CommandState) -> Result:
 @leaf
 def boom(state: CommandState) -> Result:
     raise RuntimeError("secret detail")
+
+
+FORWARDED_ERROR = {
+    "schema": "graph_cli.envelope/1",
+    "ok": False,
+    "command": "thing relay",
+    "graph": None,
+    "data": None,
+    "page": None,
+    "hints": [],
+    "warnings": [{"code": "entity.retracted", "message": "retracted", "details": {}}],
+    "error": {
+        "code": "access.denied",
+        "category": "denied",
+        "retryable": False,
+        "message": "no",
+        "hint": None,
+        "details": {},
+    },
+}
+
+
+@thing.command("relay")
+@json_option
+@leaf
+def relay(state: CommandState) -> Result:
+    """An answer rendered by a server (B14.10), after a local warning."""
+    state.warnings.append(WarningRecord("remote.version_differs", "other version", {}))
+    text = state.json_mode is False
+    return Result(
+        forwarded=Forwarded(FORWARDED_ERROR, "served text\n" if text else None, "served err\n")
+    )
 
 
 def invoke(*argv: str, debug: bool = False, json_default: bool = False) -> tuple[int, str, str]:
@@ -238,3 +270,19 @@ def test_partial_result_keeps_data_and_fails_with_its_error() -> None:
     code, out, err = invoke("thing", "partial")
     assert code == 4 and "results" in out
     assert err.startswith("error: conflict.seq_mismatch: document 1")
+
+
+def test_a_forwarded_answer_is_written_as_it_came() -> None:
+    code, out, err = invoke("thing", "relay", "--json")
+    document = json.loads(out)
+    assert code == 3 and err == ""
+    assert [w["code"] for w in document["warnings"]] == [
+        "remote.version_differs",
+        "entity.retracted",
+    ]
+    assert {k: v for k, v in document.items() if k != "warnings"} == {
+        k: v for k, v in FORWARDED_ERROR.items() if k != "warnings"
+    }
+    code, out, err = invoke("thing", "relay")
+    assert (code, out) == (3, "served text\n")
+    assert err == "warning: remote.version_differs: other version\nserved err\n"

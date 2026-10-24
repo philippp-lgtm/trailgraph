@@ -3,8 +3,9 @@
 The pointer narrows, it never widens: it names the graphs a project may use
 (``graphs``), optionally a ``default`` and the ``project`` facet of the
 actor. The first file found walking up from the working directory wins;
-files are never merged. It must not move the data root, so any root or path
-key is ``config.forbidden_key``.
+files are never merged. It must not move the data root, name a server or
+carry a token, so any root, path, ``endpoint`` or token key is
+``config.forbidden_key``.
 
 Selection: ``--graph`` > ``GRAPH_CLI_GRAPH`` > pointer ``default`` >
 ``graph.not_selected`` with the visible graphs as candidates. There is no
@@ -29,7 +30,7 @@ POINTER_NAME: Final = ".graph_cli.toml"
 POINTER_FORMAT: Final = 1
 GRAPH_ENV: Final = "GRAPH_CLI_GRAPH"
 _KEYS: Final = frozenset({"format_version", "project", "graphs", "default"})
-_FORBIDDEN: Final = frozenset({"data_root", "root"})
+_FORBIDDEN: Final = frozenset({"data_root", "root", "endpoint"})
 
 
 class Visibility(Protocol):
@@ -66,10 +67,11 @@ def parse_pointer(data: bytes, *, path: Path) -> tuple[PointerFile, tuple[Warnin
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise _invalid(path, "", f"is not valid TOML: {exc}") from None
     for key in sorted(document):
-        if key in _FORBIDDEN or key.startswith("path"):
+        if key in _FORBIDDEN or key.startswith(("path", "token")):
             raise GraphCliError(
                 "config.forbidden_key",
-                f"{path}: {key!r} is not allowed in a pointer file; it cannot move the data root",
+                f"{path}: {key!r} is not allowed in a pointer file; it cannot move the data"
+                " root, name a server or carry a token",
                 details={"file": str(path), "key": key},
             )
     version = document.get("format_version")

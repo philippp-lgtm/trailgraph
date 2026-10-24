@@ -23,6 +23,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 |---|---|---|
 | `access.batch_too_large` | denied | 3 |
 | `access.denied` | denied | 3 |
+| `access.project_mismatch` | denied | 3 |
 | `access.reason_required` | denied | 3 |
 | `audit.unavailable` | unavailable | 5 |
 | `backend.corrupt` | unavailable | 5 |
@@ -62,6 +63,10 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `query.too_large` | refused | 1 |
 | `query.unbound_variable` | usage | 2 |
 | `query.unsupported` | refused | 1 |
+| `remote.outcome_unknown` | unavailable | 5 |
+| `remote.protocol` | unavailable | 5 |
+| `remote.unauthorized` | denied | 3 |
+| `remote.unreachable` | unavailable | 5 |
 | `skills.check_failed` | invalid | 1 |
 | `skills.modified` | refused | 1 |
 | `skills.not_owned` | refused | 1 |

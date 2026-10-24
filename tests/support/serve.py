@@ -67,3 +67,25 @@ def graph_server(env: Mapping[str, str], cwd: Path, *args: str) -> Iterator[Runn
             process.terminate()
         process.wait(timeout=30)
         reader.join(timeout=5)
+
+
+def client_env(
+    base: Mapping[str, str], home: Path, port: int, token: str | None, *, extra: str = ""
+) -> dict[str, str]:
+    """A second machine: its own home and config in remote mode, pointing at the server."""
+    config_home = home / ".config"
+    (config_home / "graph_cli").mkdir(parents=True, exist_ok=True)
+    (config_home / "graph_cli" / "config.toml").write_text(
+        "format_version = 1\n"
+        f'[runtime]\nmode = "remote"\nendpoint = "http://127.0.0.1:{port}"\n' + extra
+    )
+    env = {
+        **base,
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(config_home),
+        "XDG_DATA_HOME": str(home / ".local" / "share"),
+        "XDG_STATE_HOME": str(home / ".local" / "state"),
+    }
+    if token is not None:
+        env["GRAPH_CLI_TOKEN"] = token
+    return env

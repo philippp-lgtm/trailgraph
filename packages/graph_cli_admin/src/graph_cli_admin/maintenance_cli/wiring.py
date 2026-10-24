@@ -6,7 +6,9 @@ config and roots with the same catalog code as the app, adds graph-admin's
 (entrypoint ``maint``), clock, ids, catalog, audit log, maintenance port,
 policy (the installed files, falling back past an invalid one) and the op
 log. Everything is built lazily per command, so a broken config renders as
-an error envelope.
+an error envelope. A host whose config says ``mode = "remote"`` keeps no
+data: every command that opens the data root is refused there
+(``admin.remote_mode``, B14.13), so no second writer appears by accident.
 """
 
 from __future__ import annotations
@@ -63,6 +65,13 @@ class Services:
 
     def context(self, *, data_root: Path | None, warnings: list[WarningRecord]) -> AdminContext:
         config, config_warnings = self.config()
+        if config.mode == "remote":
+            raise GraphCliError(
+                "admin.remote_mode",
+                f"{config.path} says mode = \"remote\": the data lives with the server;"
+                " run maintenance where the data lives",
+                details={"file": str(config.path)},
+            )
         roots, root_warnings = resolve_roots(
             self.env, config=config, cwd=self.cwd, data_root_flag=data_root, allow_flag=True
         )

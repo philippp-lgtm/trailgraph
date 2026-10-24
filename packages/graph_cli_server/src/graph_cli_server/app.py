@@ -38,6 +38,7 @@ from graph_cli.catalog.pointer import PointerFile, request_pointer
 from graph_cli.catalog.resolve import config_path, resolve_roots
 from graph_cli.catalog.tokens import TokenRecord, TokenStore
 from graph_cli.catalog.wiring import PROGRAM, AppServices, RequestScope
+from graph_cli.cli_kit.argv import to_argv
 from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
 from graph_cli.cli_kit.runner import Completed, Invocation, run
@@ -48,7 +49,6 @@ from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
-from graph_cli_server.argv import to_argv
 from graph_cli_server.openapi import API_VERSION, openapi
 from graph_cli_server.uploads import DIGEST_RE, Uploads, link_name
 

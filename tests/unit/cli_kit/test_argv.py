@@ -5,10 +5,10 @@ from typing import Any
 import pytest
 
 from graph_cli.app_cli.commands import all_specs
+from graph_cli.cli_kit.argv import request_args, to_argv
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli_server.argv import to_argv
 
 SPECS = {" ".join(spec.path): spec for spec in all_specs()}
 
@@ -86,3 +86,10 @@ def test_file_parameters_are_resolved_by_the_caller() -> None:
     upload = {"upload": "sha256:" + "0" * 64, "name": "changes.json"}
     assert to_argv(SPECS["apply"], {"file": upload}, stage) == ["apply", "--", "/staged/input"]
     assert seen == [upload]
+
+
+def test_request_args_leave_out_what_was_not_given() -> None:
+    values = {"type": "inv:Item", "set": ("a=1",), "set_json": (), "dry_run": False, "graph": None}
+    assert request_args(SPECS["create"], values) == {"type": "inv:Item", "--set": ["a=1"]}
+    round_trip = to_argv(SPECS["create"], request_args(SPECS["create"], values), no_files)
+    assert round_trip == ["create", "--set", "a=1", "--", "inv:Item"]

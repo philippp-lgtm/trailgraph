@@ -77,3 +77,24 @@ Browsers may call the API from the origins listed in `[server]
 cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
 given.
+
+## Remote mode of `graph`
+
+A machine whose `config.toml` says `[runtime] mode = "remote"` (see
+[Configuration](configuration.md#remote-mode)) sends every command to the
+server. `graph` still parses the command line itself, so usage errors and
+`--help` need no server, and prints the server's answer as its own: the
+same envelope, text and exit code as locally. Its own warnings come
+first; large JSON answers go to a file on this machine. Agent, session,
+device and the pointer's project and graphs are sent with each request.
+
+- A write always carries an idempotency key: the given
+  `--idempotency-key`, else a generated one. If the connection breaks
+  after a write was sent, `remote.outcome_unknown` names the key and the
+  command to run again with it, which is safe. Reads are retried once;
+  writes never.
+- `remote.unreachable`: no connection; `remote.unauthorized`: no token, or
+  the server refused it; `remote.protocol`: the answer is not the API's (a
+  proxy page); `remote.version_differs` (warning): the server runs another
+  version.
+- `describe commands` runs locally.

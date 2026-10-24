@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from graph_cli.catalog.endpoint import parse_endpoint
 from graph_cli.catalog.identity import DEFAULT_PROVIDERS
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
@@ -40,6 +41,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
             "files",
             "activity",
             "server",
+            "remote",
         }
     ),
     "device": frozenset({"id", "name"}),
@@ -52,6 +54,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
     "server": frozenset({"cors_origins"}),
+    "remote": frozenset({"token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
@@ -80,6 +83,10 @@ class Config:
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
     mode: Literal["local", "remote"] = "local"  # [runtime] mode
+    endpoint: str | None = None  # [runtime]: the server's URL in remote mode
+    token_file: str | None = None  # [remote]: as written; absolute or "~/..."
+    allow_plain_http: bool = False  # [remote]: http:// to a host that is not loopback
+    remote_timeout_s: float = 60.0  # [remote] timeout_s
     cors_origins: tuple[str, ...] = ()  # [server]: browser origins allowed to call graph-server
 
 
@@ -129,11 +136,29 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         return value
 
     mode = get("runtime.mode", str, "a string")
+    if mode not in (None, "local", "remote"):
+        raise _invalid(path, "runtime.mode", "must be 'local' or 'remote'")
+    endpoint = get("runtime.endpoint", str, "a string")
+    token_file = get("remote.token_file", str, "a string")
+    if token_file is not None and not token_file.startswith(("/", "~/")):
+        raise _invalid(path, "remote.token_file", "must be an absolute path or start with ~/")
+    allow_plain_http = get("remote.allow_plain_http", bool, "a boolean")
+    remote_timeout = get("remote.timeout_s", (int, float), "a number")
+    if remote_timeout is not None and not 1 <= remote_timeout <= 3600:
+        raise _invalid(path, "remote.timeout_s", "must be between 1 and 3600 seconds")
     if mode == "remote":
-        raise _invalid(path, "runtime.mode", "'remote' is reserved and not supported yet")
-    if mode not in (None, "local"):
-        raise _invalid(path, "runtime.mode", "must be 'local'")
-    get("runtime.endpoint", str, "a string")
+        if endpoint is None:
+            raise _invalid(path, "runtime.endpoint", "is required with mode 'remote'")
+        found = parse_endpoint(endpoint)
+        if isinstance(found, str):
+            raise _invalid(path, "runtime.endpoint", found)
+        if found.plain_http and not found.loopback and not allow_plain_http:
+            raise _invalid(
+                path,
+                "runtime.endpoint",
+                "is plain http:// to a host that is not loopback: the token would travel"
+                " in clear; use https:// (or set [remote] allow_plain_http = true)",
+            )
     data_root = get("paths.data_root", str, "a string")
     if data_root is not None and not (data_root.startswith(("/", "~/"))):
         raise _invalid(path, "paths.data_root", "must be an absolute path or start with ~/")
@@ -188,6 +213,13 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
+        mode=mode or defaults.mode,
+        endpoint=endpoint,
+        token_file=token_file,
+        allow_plain_http=bool(allow_plain_http),
+        remote_timeout_s=float(remote_timeout)
+        if remote_timeout is not None
+        else defaults.remote_timeout_s,
     )
     return config, tuple(warnings)
 

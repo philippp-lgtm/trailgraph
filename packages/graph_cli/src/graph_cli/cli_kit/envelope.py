@@ -21,6 +21,16 @@ ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
 
 
 @dataclass(frozen=True, slots=True)
+class Forwarded:
+    """An answer another process rendered (the server, B14.10): its envelope and, when it
+    rendered text, the text; ``None`` text is rendered here from the envelope."""
+
+    document: Mapping[str, JsonValue]
+    stdout: str | None = None
+    stderr: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Result:
     """What a command returns; ``text`` overrides the generic text rendering of ``data``.
 
@@ -35,6 +45,7 @@ class Result:
     text: str | None = None
     page: Mapping[str, JsonValue] | None = field(default=None)
     error: GraphCliError | None = None
+    forwarded: Forwarded | None = None  # the whole answer came from the server
 
 
 def error_json(error: GraphCliError, *, program: str) -> dict[str, JsonValue]:
@@ -80,12 +91,9 @@ def render_text(document: Mapping[str, JsonValue], *, text: str | None = None) -
     out = ""
     if document["ok"] or document["data"] is not None:
         out = text if text is not None else _block(document["data"])
-    err_lines = []
     warnings = document["warnings"]
     assert isinstance(warnings, list)
-    for warning in warnings:
-        assert isinstance(warning, Mapping)
-        err_lines.append(f"warning: {warning['code']}: {warning['message']}")
+    err_lines = warning_lines(warnings)
     error = document["error"]
     if isinstance(error, Mapping):
         err_lines.append(f"error: {error['code']}: {error['message']}")
@@ -101,6 +109,15 @@ def render_text(document: Mapping[str, JsonValue], *, text: str | None = None) -
             if isinstance(hint, Mapping):
                 err_lines.append(f"hint: {hint.get('text')}: {hint.get('command')}")
     return out, "".join(line + "\n" for line in err_lines)
+
+
+def warning_lines(warnings: Sequence[JsonValue]) -> list[str]:
+    """The text rendering of envelope warnings, one line each (for stderr)."""
+    lines = []
+    for warning in warnings:
+        assert isinstance(warning, Mapping)
+        lines.append(f"warning: {warning['code']}: {warning['message']}")
+    return lines
 
 
 def _findings(findings: Sequence[JsonValue]) -> list[str]:

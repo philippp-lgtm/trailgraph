@@ -18,10 +18,22 @@ from graph_cli.kernel.error_codes import ErrorCategory, lookup_error_code
 INVENTORY_SCHEMA: Final = "graph_cli.inventory/1"
 # Every command can fail on usage, an unavailable backend and a bug.
 COMMON_ERRORS: Final = ("usage.invalid_argument", "backend.unavailable", "internal.error")
+# B14.10: what every command the server runs can meet in the remote mode; a write also
+# a lost answer.
+REMOTE_ERRORS: Final = (
+    "remote.unreachable",
+    "remote.unauthorized",
+    "remote.protocol",
+    "access.project_mismatch",
+)
+REMOTE_WRITE_ERRORS: Final = ("remote.outcome_unknown",)
 
 
-def _codes(spec: CommandSpec) -> list[str]:
-    return sorted({*spec.errors, *COMMON_ERRORS})
+def _codes(spec: CommandSpec, remote: bool = False) -> list[str]:
+    extra: tuple[str, ...] = ()
+    if remote and spec.remote != "client":
+        extra = (*REMOTE_ERRORS, *(REMOTE_WRITE_ERRORS if spec.kind == "write" else ()))
+    return sorted({*spec.errors, *COMMON_ERRORS, *extra})
 
 
 def _exit(code: str) -> int:
@@ -32,7 +44,7 @@ def _exit(code: str) -> int:
 
 
 def _command(spec: CommandSpec, remote: bool) -> dict[str, JsonValue]:
-    codes = _codes(spec)
+    codes = _codes(spec, remote)
     command: dict[str, JsonValue] = {
         "path": list(spec.path),
         "kind": spec.kind,
@@ -62,7 +74,7 @@ def build_inventory(
 ) -> dict[str, JsonValue]:
     """``remote`` adds each command's ``remote`` value (B14: the app surface)."""
     ordered = sorted(specs, key=lambda s: s.path)
-    codes = sorted({c for spec in ordered for c in _codes(spec)})
+    codes = sorted({c for spec in ordered for c in _codes(spec, remote)})
     return {
         "schema": INVENTORY_SCHEMA,
         "program": program,
