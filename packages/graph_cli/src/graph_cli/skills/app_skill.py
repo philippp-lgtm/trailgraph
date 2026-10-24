@@ -924,6 +924,21 @@ def _commands_file(commands: Sequence[JsonObject]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# B14.10: the codes a client of graph-server meets, where the category alone misleads.
+REMOTE_GUIDANCE: Final = (
+    "## When graph talks to a server",
+    "",
+    "- `remote.unreachable`, `remote.unauthorized`: stop and tell the user. Never look"
+    " for, set or pass a token yourself.",
+    "- `remote.outcome_unknown`: a write was sent and its answer lost. Run exactly the"
+    " command in `hint` (the same write with the same idempotency key, safe to repeat),"
+    " never a changed one, then read the result.",
+    "- `access.project_mismatch`: the token belongs to another project. Stop and tell"
+    " the user; never change the project.",
+    "",
+)
+
+
 def _errors_file(codes: Sequence[JsonObject]) -> str:
     categories = sorted(
         {req_str(e, "category") for e in codes}, key=lambda c: (_exit_of(codes, c), c)
@@ -944,6 +959,7 @@ def _errors_file(codes: Sequence[JsonObject]) -> str:
             [[code(c), str(_exit_of(codes, c)), CATEGORY_GUIDANCE[c]] for c in categories],
         ),
         "",
+        *REMOTE_GUIDANCE,
         "## Codes",
         "",
         *table(

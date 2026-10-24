@@ -17,6 +17,12 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `unavailable` | 5 | Storage, the audit log, a lock or the installation is not usable. If `error.retryable` is true, retry later with the same `--idempotency-key`; otherwise tell the user, a maintainer has to look at it. |
 | `internal` | 6 | A bug in the CLI. Report the full envelope to the user. |
 
+## When graph talks to a server
+
+- `remote.unreachable`, `remote.unauthorized`: stop and tell the user. Never look for, set or pass a token yourself.
+- `remote.outcome_unknown`: a write was sent and its answer lost. Run exactly the command in `hint` (the same write with the same idempotency key, safe to repeat), never a changed one, then read the result.
+- `access.project_mismatch`: the token belongs to another project. Stop and tell the user; never change the project.
+
 ## Codes
 
 | Error code | Error category | Exit |

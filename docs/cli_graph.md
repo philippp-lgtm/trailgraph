@@ -12,6 +12,10 @@ The change set documents of `apply` are described in
 [`skills/graph-cli/references/changesets.md`](../skills/graph-cli/references/changesets.md).
 The same data comes as JSON from `graph describe commands --json`.
 
+With `[runtime] mode = "remote"` in `config.toml`, `graph` keeps no data on
+the machine and sends every command to a `graph-server`; answers, text and
+exit codes stay the same (see [Server: remote mode](server.md#remote-mode-of-graph)).
+
 ## Output and exit codes
 
 Both CLIs print the `graph_cli.envelope/1` envelope: text by default, one

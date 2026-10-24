@@ -141,6 +141,10 @@ directory. There is no default target:
   when that variable is set, else `~/.claude/skills/` (the configuration
   directory must exist).
 
+In the [remote mode](server.md#remote-mode-of-graph) the skills are
+written on this machine as well; a graph skill comes from the server,
+rendered there for the graph's current ontology.
+
 Skill 1 is always installed, graph skills named with `--graph`, and every
 graph skill installed there before is refreshed; one whose graph is gone,
 no longer visible or unpublished is reported as `unavailable` and left

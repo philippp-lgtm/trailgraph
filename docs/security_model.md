@@ -1,7 +1,7 @@
 # Security model
 
-Every agent runs as the same OS user, and only the program (`graph` or
-`graph-admin`) is a verified difference between callers. The project,
+Locally, every agent runs as the same OS user, and only the program
+(`graph` or `graph-admin`) is a verified difference between callers. The project,
 agent and session are asserted, so locally [access control](access_control.md)
 is a guardrail plus detection, not prevention: it stops well-behaved agents
 and mistakes (the wrong project, the wrong graph, a write where only reading
@@ -26,8 +26,28 @@ and can be edited.
 
 ## Prevention
 
-Prevention needs a separate OS user for the data (a local service) or a
-server; both would reuse the same policies. A coding agent's own
+Prevention needs the data out of the agents' reach. With
+[`graph-server`](server.md) owning the data root (in the container, or as
+another OS user), callers hold only a bearer token: they cannot edit the
+files, the policy or the audit, and the same policies decide. What it
+prevents depends on what is verified:
+
+- The token is verified: a grant or deny rule on `principal_id:
+  token:<name>` holds for every request with it. A token reaches no
+  maintenance action.
+- A token bound to a project (`token create --project`) verifies the
+  project, so that project's scope is a boundary for the token; without a
+  binding the client asserts the project and the scope stays a guardrail.
+- Agent, session and device are still asserted by the client: deny rules
+  on them stop well-behaved clients only.
+- The transport: the server speaks plain HTTP on `127.0.0.1`; beyond the
+  machine it belongs behind TLS (the compose `tls` profile), and the
+  client refuses plain HTTP to another host unless told otherwise. Tokens
+  are stored as hashes and never logged or audited; a request without a
+  valid token is logged but reaches nothing.
+
+Whoever can run `graph-admin` where the data lives (`docker compose exec`)
+remains the maintainer. Without a server, a coding agent's own
 permissions narrow the normal path further, for example in a project's
 Claude Code settings:
 

@@ -64,6 +64,14 @@ into argv for the one click program, and `cli_kit.runner.run` runs it with an
 document from the inventory, `main` serves the app with `waitress` (one
 process, a thread pool). Operating it: [Server](server.md).
 
+The remote mode of `graph` is the other half: `app_cli.remote` gives every
+command the server runs a handler that sends its parsed parameters
+(`cli_kit.argv.request_args`) and returns the server's answer as
+`Result.forwarded`, which `cli_kit.runner` writes as it came;
+`app_cli.remote_hooks` adds the client work of the hooked commands
+(uploads, downloads, origins), and the skills commands take graph skills
+from the server.
+
 ## CLIs
 
 Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
@@ -120,6 +128,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |
 | `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)); `catalog.identity.request` builds the actor of a server request from its token and the client's facets |
+| `catalog.endpoint`, `catalog.remote` | the remote mode: the server endpoint, the HTTP transport (`http.client`, imported in remote mode only) and the `RemoteSession` of one command |
 | `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
 
 `catalog.identity` builds the one `ActorContext` per invocation. Only
