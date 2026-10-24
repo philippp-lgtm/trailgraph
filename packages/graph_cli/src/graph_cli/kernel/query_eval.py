@@ -18,9 +18,18 @@ are sibling layers. The rules:
   match and sort as missing.
 - **``contains``**: substring for strings, element membership for arrays.
   **``prefix``**: strings only.
+- **``tagged``** (set by the planner for ``lang_string`` and ``lang_text``
+  attributes): a language-tagged value ``{lang, value}`` compares by its
+  text with a plain string operand (any language) and structurally with a
+  tagged one (text and tag); ``contains`` on one value, ``prefix`` and the
+  ordering operators use the text; ``contains`` on a list is membership by
+  the same equality. **``lang``** takes a language range and matches a
+  value (or any list element) whose tag it selects (RFC 4647 basic
+  filtering, ``*`` for any tag).
 - **Order.** Keys in order, then ``id`` ascending. Missing values sort last
   in both directions; mixed types sort booleans, numbers, strings, arrays,
-  objects. ``total`` is exact; paging is ``offset``/``limit`` over that order.
+  objects; a ``tagged`` key orders by text, then tag. ``total`` is exact;
+  paging is ``offset``/``limit`` over that order.
 - **``fields``** is a rendering hint for services; whole revisions are
   returned so ``content_hash`` stays true.
 - **Neighbors** walk breadth-first up to ``depth`` hops; each entity is
@@ -39,6 +48,7 @@ from graph_cli.kernel.canonical import JsonValue, canonical_bytes
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
+from graph_cli.kernel.langtag import language_matches, tagged_parts, text_of
 from graph_cli.kernel.query_ast import (
     And,
     Cmp,
@@ -55,7 +65,7 @@ from graph_cli.kernel.records import EdgeRecord, Revision
 
 _ORDERING_OPS: Final = frozenset({"lt", "le", "gt", "ge"})
 _NUMERIC_OPS: Final = _ORDERING_OPS | {"eq", "ne", "in"}
-_ALL_OPS: Final = _NUMERIC_OPS | {"contains", "prefix", "exists"}
+_ALL_OPS: Final = _NUMERIC_OPS | {"contains", "prefix", "exists", "lang"}
 
 
 class Universe(Protocol):
@@ -170,8 +180,10 @@ def _check_cmp(cmp: Cmp) -> None:
         raise _invalid(f"numeric does not apply to {cmp.op!r}")
     if cmp.op == "in" and not isinstance(cmp.value, list | tuple):
         raise _invalid("'in' needs an array value")
-    if cmp.op == "prefix" and not isinstance(cmp.value, str):
-        raise _invalid("'prefix' needs a string value")
+    if cmp.op in ("prefix", "lang") and not isinstance(cmp.value, str):
+        raise _invalid(f"{cmp.op!r} needs a string value")
+    if cmp.numeric and cmp.tagged:
+        raise _invalid("numeric and tagged exclude each other")
     if cmp.op == "exists" and cmp.value is not None and not isinstance(cmp.value, bool):
         raise _invalid("'exists' takes true, false or no value")
 
@@ -183,6 +195,14 @@ def _match_cmp(revision: Revision, cmp: Cmp) -> bool:
         return (value is not None) == (cmp.value is not False)
     if value is None:
         return False
+    if cmp.op == "lang":
+        items = value if isinstance(value, list | tuple) else [value]
+        return any(
+            (parts := tagged_parts(item)) is not None and language_matches(parts[1], str(cmp.value))
+            for item in items
+        )
+    if cmp.tagged:
+        return _match_tagged(value, cmp)
     match cmp.op:
         case "eq":
             return values_equal(value, cmp.value, cmp.numeric)
@@ -200,6 +220,41 @@ def _match_cmp(revision: Revision, cmp: Cmp) -> bool:
         case "prefix":
             return isinstance(value, str) and value.startswith(str(cmp.value))
     result = order_values(value, cmp.value, cmp.numeric)
+    if result is None:
+        return False
+    return {"lt": result < 0, "le": result <= 0, "gt": result > 0, "ge": result >= 0}[cmp.op]
+
+
+def tagged_equal(value: JsonValue, operand: JsonValue) -> bool:
+    """``eq`` for a language-tagged value: by text with a plain string operand,
+    structurally (text and tag) otherwise."""
+    if isinstance(operand, str):
+        return text_of(value) == operand
+    return strict_equal(value, operand)
+
+
+def _match_tagged(value: JsonValue, cmp: Cmp) -> bool:
+    if isinstance(value, list | tuple):
+        if cmp.op == "contains":
+            return any(tagged_equal(item, cmp.value) for item in value)
+        return cmp.op == "ne" and not strict_equal(value, cmp.value)
+    match cmp.op:
+        case "eq":
+            return tagged_equal(value, cmp.value)
+        case "ne":
+            return not tagged_equal(value, cmp.value)
+        case "in":
+            assert isinstance(cmp.value, list | tuple)
+            return any(tagged_equal(value, item) for item in cmp.value)
+    text, operand = text_of(value), text_of(cmp.value)
+    if text is None or operand is None:
+        return False
+    match cmp.op:
+        case "contains":
+            return operand in text
+        case "prefix":
+            return text.startswith(operand)
+    result = order_values(text, operand)
     if result is None:
         return False
     return {"lt": result < 0, "le": result <= 0, "gt": result > 0, "ge": result >= 0}[cmp.op]
@@ -239,10 +294,12 @@ _Row = tuple[Revision, list[_SortKey]]
 _TYPE_RANK: Final = {bool: 0, int: 1, Decimal: 1, str: 2, list: 3, tuple: 3}
 
 
-def _sort_value(value: JsonValue, numeric: bool) -> _SortKey:
+def _sort_value(value: JsonValue, numeric: bool, tagged: bool = False) -> _SortKey:
     """A totally ordered key for one present value; ``None`` sorts as missing."""
     if value is None:
         return None
+    if tagged and (parts := tagged_parts(value)) is not None:
+        return 2, f"{parts[0]}\x00{parts[1]}"  # text, then tag
     if numeric:
         number = _decimal(value)
         return None if number is None else (1, number)
@@ -286,7 +343,10 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
             continue
         found.append(revision)
     rows = [
-        (revision, [_sort_value(field_value(revision, k.field), k.numeric) for k in query.order])
+        (
+            revision,
+            [_sort_value(field_value(revision, k.field), k.numeric, k.tagged) for k in query.order],
+        )
         for revision in found
     ]
     rows.sort(key=_row_key(query.order))

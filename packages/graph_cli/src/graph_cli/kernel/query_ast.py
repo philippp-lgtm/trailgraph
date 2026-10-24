@@ -17,7 +17,7 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.records import Revision
 
 FieldName = str  # attribute name or reserved system field (B7.8)
-CmpOp = Literal["eq", "ne", "lt", "le", "gt", "ge", "contains", "prefix", "exists", "in"]
+CmpOp = Literal["eq", "ne", "lt", "le", "gt", "ge", "contains", "prefix", "exists", "in", "lang"]
 
 MAX_NEIGHBOR_DEPTH: Final = 3
 
@@ -40,12 +40,14 @@ class AsOf:
 
 @dataclass(frozen=True, slots=True)
 class Cmp:
-    """``numeric`` compares decimal strings as numbers; the planner sets it (B13.13)."""
+    """``numeric`` compares decimal strings as numbers, ``tagged`` the text of
+    language-tagged values; the planner sets both (B13.13)."""
 
     field: FieldName
     op: CmpOp
     value: JsonValue = None
     numeric: bool = False
+    tagged: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +81,7 @@ class OrderKey:
     field: FieldName
     descending: bool = False
     numeric: bool = False
+    tagged: bool = False
 
 
 @dataclass(frozen=True, slots=True)

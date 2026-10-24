@@ -314,6 +314,8 @@ def test_paging_is_stable_and_total_exact() -> None:
         Query(where=Cmp("v", "prefix", 1)),
         Query(where=Cmp("v", "contains", "x", numeric=True)),
         Query(where=Cmp("v", "exists", "yes")),
+        Query(where=Cmp("v", "lang", 1)),
+        Query(where=Cmp("v", "eq", "x", numeric=True, tagged=True)),
         Query(as_of=AsOf(tx_seq=1)),
     ],
 )
@@ -321,6 +323,60 @@ def test_invalid_queries_are_internal_errors(query: Query) -> None:
     with pytest.raises(GraphCliError) as info:
         run_query(Universe(universe_of_values()), query)
     assert info.value.code == "internal.error"
+
+
+def tagged(text: str, lang: str) -> JsonValue:
+    return {"lang": lang, "value": text}
+
+
+def tagged_universe() -> list[Revision]:
+    return [
+        revision(1, {"n": tagged("Steuerung und Kontrolle", "de")}),
+        revision(2, {"n": tagged("Control and Monitoring", "en")}),
+        revision(3, {"n": tagged("SuK", "de-CH")}),
+        revision(4, {"m": [tagged("SuK", "de"), tagged("CaM", "en-GB")]}),
+        revision(5, {"n": "SuK"}),  # a plain string compares as before
+    ]
+
+
+@pytest.mark.parametrize(
+    ("pred", "expected"),
+    [
+        (Cmp("n", "eq", "SuK", tagged=True), [3, 5]),
+        (Cmp("n", "eq", tagged("SuK", "de-CH"), tagged=True), [3]),
+        (Cmp("n", "eq", tagged("SuK", "de"), tagged=True), []),
+        (Cmp("n", "ne", "SuK", tagged=True), [1, 2]),
+        (Cmp("n", "in", ["SuK", tagged("Control and Monitoring", "en")], tagged=True), [2, 3, 5]),
+        (Cmp("n", "contains", "und", tagged=True), [1]),
+        (Cmp("n", "prefix", "Contr", tagged=True), [2]),
+        (Cmp("n", "lt", "D", tagged=True), [2]),
+        (Cmp("m", "contains", "CaM", tagged=True), [4]),
+        (Cmp("m", "contains", tagged("SuK", "de"), tagged=True), [4]),
+        (Cmp("m", "contains", tagged("SuK", "en"), tagged=True), []),
+        (Cmp("n", "lang", "de"), [1, 3]),
+        (Cmp("n", "lang", "DE-ch"), [3]),
+        (Cmp("n", "lang", "d"), []),
+        (Cmp("n", "lang", "*"), [1, 2, 3]),
+        (Cmp("m", "lang", "en"), [4]),
+        (Cmp("n", "eq", "SuK"), [5]),  # untagged comparison: structural
+    ],
+)
+def test_tagged_values(pred: Cmp, expected: list[int]) -> None:
+    assert where(pred, *tagged_universe()) == expected
+
+
+def test_tagged_order_by_text_then_tag() -> None:
+    universe = Universe(
+        [
+            revision(1, {"n": tagged("b", "de")}),
+            revision(2, {"n": tagged("a", "fr")}),
+            revision(3, {"n": tagged("a", "de")}),
+            revision(4),
+        ]
+    )
+    assert ids(universe, Query(order=(OrderKey("n", tagged=True),))) == [3, 2, 1, 4]
+    descending = Query(order=(OrderKey("n", descending=True, tagged=True),))
+    assert ids(universe, descending) == [1, 2, 3, 4]
 
 
 def graph() -> Universe:
