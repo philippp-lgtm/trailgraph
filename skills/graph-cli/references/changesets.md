@@ -16,7 +16,8 @@ a single change the single-operation commands are simpler.
 4. `graph apply <file> --json`. `data.results` has one entry per document;
    its `result.entities` lists every entity written with its `local` name,
    `id`, `alias` and new `rev` (`--summary`: only `entity_count`).
-5. Verify with `graph get <id> --json`.
+5. Read `data.results[].result.findings`; `graph get <id> --json` shows
+   what was stored.
 
 ## Document
 

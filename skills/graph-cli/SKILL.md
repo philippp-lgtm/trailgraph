@@ -58,11 +58,12 @@ against it and audited. The CLI is on `PATH`.
    thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
-6. Preview every write with `--dry-run --json`. On
-   `data.semantic.possible_duplicate`, reuse a candidate from `actual` or
-   tell the names apart; on `data.structural.deprecated_term`, use the
-   replacement its message names.
-7. Then run it without `--dry-run` and verify with `graph get <id> --json`.
+6. Preview a write that adds entities or is hard to take back (`create`,
+   `apply`, `supersede`, `retract`, `transition`) with `--dry-run --json`;
+   one `update`, `link` or `unlink` may run directly (undo: `update`, `unlink`).
+7. Read `data.findings` of every write: on `data.semantic.possible_duplicate`
+   reuse a candidate from `actual` or tell the names apart, on
+   `data.structural.deprecated_term` use the replacement its message names.
 
 ## Questions across relations
 
@@ -87,9 +88,8 @@ tx:<seq>` on any read show earlier states; read
 - `graph update --add <attr>=<value>` (or `--remove`) adds one list value
   without a read; `--set-json` replaces the list. No change: `entity.unchanged`.
 - When a write depends on what you read, pass `--expect` with that `rev`
-  so that a concurrent change is a conflict instead of a lost update.
-  `graph get` shows it as `data.entity.rev`; a write returns the new one
-  in `data.entities[].rev`.
+  so that a concurrent change is a conflict, not a lost update (`graph
+  get`: `data.entity.rev`; a write: the new one in `data.entities[].rev`).
 - Give `--reason` when the change needs one: always for `supersede` and
   `retract`, for other writes when `graph whoami` lists `require_reason`.
 - Fix a wrong value with `graph update`; the history keeps the old one.
