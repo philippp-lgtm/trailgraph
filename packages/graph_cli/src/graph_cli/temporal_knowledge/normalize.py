@@ -27,6 +27,13 @@ reported once.
   not yet present (canonical equality), ``remove`` drops every equal value,
   a list left empty is unset. On any other attribute nothing changes and
   the validator reports it from ``OpEffect.lists``.
+- **Language-tagged values** (``lang_string``, ``lang_text`` attributes and
+  qualifiers) given without a tag take ``default_language``, the graph
+  language (``values.with_language``; Q18 stage 3), and a tag gets
+  canonical case, so the stored value always names its language. Without a
+  graph language an untagged value stays as given and the validator
+  refuses it. ``remove`` of an untagged value drops that text in every
+  language.
 - **Aliases** (B1.8): a create of a type with a configured prefix (exact
   type) gets ``kernel.ids.format_alias`` (``<PREFIX>-<n:04d>``);
   ``set_alias`` renames, and an explicit alias above an auto prefix's
@@ -42,7 +49,7 @@ reported once.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from typing import Final
@@ -77,7 +84,7 @@ from graph_cli.kernel.ids import (
     format_alias,
 )
 from graph_cli.kernel.ports.storage import Snapshot
-from graph_cli.kernel.query_eval import strict_equal
+from graph_cli.kernel.query_eval import strict_equal, tagged_equal
 from graph_cli.kernel.records import (
     EdgeRecord,
     RecordStatus,
@@ -85,8 +92,9 @@ from graph_cli.kernel.records import (
     content_hash,
     content_projection,
 )
-from graph_cli.ontology_layer.model import ClassDef, CompiledModel
-from graph_cli.ontology_layer.values import coerce_text
+from graph_cli.ontology_layer.model import AttributeDef, ClassDef, CompiledModel, QualifierDef
+from graph_cli.ontology_layer.values import coerce_text, with_language
+from graph_cli.ontology_layer.vocabulary import LANG_BASES
 from graph_cli.temporal_knowledge.working import WorkingState
 
 SUPERSEDES: Final = TermRef("core:supersedes")
@@ -131,6 +139,7 @@ class _Run:
     alias_prefixes: Mapping[TermRef, str]
     allocate_aliases: bool
     counters: dict[str, int]
+    default_language: str | None = None
     work: dict[EntityId, _Work] = field(default_factory=dict)
     created: dict[EntityId, None] = field(default_factory=dict)
     doc_locals: dict[str, EntityId] = field(default_factory=dict)
@@ -218,9 +227,33 @@ class _Run:
         qualifiers: Mapping[str, JsonValue],
         target_rev: int | None,
     ) -> EdgeRecord:
-        edge = EdgeRecord(EdgeId(self.new_id()), rel, target, dict(qualifiers), target_rev)
+        relation = self.model.relations.get(rel)
+        tagged = {
+            name: self.with_language(None if relation is None else relation.qualifiers.get(name), v)
+            for name, v in qualifiers.items()
+        }
+        edge = EdgeRecord(EdgeId(self.new_id()), rel, target, tagged, target_rev)
         self.added_edges.add(edge.edge_id)
         return edge
+
+    def is_tagged(self, field: AttributeDef | QualifierDef | None) -> bool:
+        return field is not None and self.model.value_base(field.kind, field.type) in LANG_BASES
+
+    def with_language(
+        self, field: AttributeDef | QualifierDef | None, value: JsonValue
+    ) -> JsonValue:
+        """A value of ``field`` with the graph language on untagged language-tagged text."""
+        if not self.is_tagged(field):
+            return value
+        if isinstance(value, list | tuple):
+            return [with_language(item, self.default_language) for item in value]
+        return with_language(value, self.default_language)
+
+    def tag(self, type: str, attrs: dict[str, JsonValue], names: Iterable[str]) -> None:
+        cls = self.cls(type)
+        for name in names:
+            if cls is not None and name in attrs:
+                attrs[name] = self.with_language(cls.attributes.get(name), attrs[name])
 
     def coerce(self, type: str, name: str, text: str) -> JsonValue:
         cls = self.cls(type)
@@ -267,6 +300,7 @@ class _Run:
         attrs: dict[str, JsonValue] = dict(op.attrs)
         for name, text in op.attrs_text.items():
             attrs[name] = self.coerce(op.type, name, text)
+        self.tag(op.type, attrs, [*op.attrs, *op.attrs_text])
         initial: list[tuple[str, JsonValue]] = []
         if cls is not None:
             for name, attribute in cls.attributes.items():
@@ -327,6 +361,7 @@ class _Run:
         work.attrs.update(op.set)
         for name, text in op.set_text.items():
             work.attrs[name] = self.coerce(work.type, name, text)
+        self.tag(work.type, work.attrs, [*op.set, *op.set_text])
         for name in op.unset:
             work.attrs.pop(name, None)
         for name in lists:
@@ -351,12 +386,21 @@ class _Run:
             *op.remove.get(name, ()),
             *(self.coerce_item(type, name, text) for text in texts),
         ]
+        cls = self.cls(type)
+        attribute = None if cls is None else cls.attributes.get(name)
         if name in op.add or name in op.add_text:
             for value in given:
+                value = self.with_language(attribute, value)
                 if not any(strict_equal(value, item) for item in items):
                     items.append(value)
         else:
-            items = [item for item in items if not any(strict_equal(item, v) for v in given)]
+            tagged = self.is_tagged(attribute)
+            given = [
+                v if tagged and isinstance(v, str) else self.with_language(attribute, v)
+                for v in given
+            ]
+            equal = tagged_equal if tagged else strict_equal
+            items = [item for item in items if not any(equal(item, v) for v in given)]
         if items:
             attrs[name] = items
         else:
@@ -595,6 +639,7 @@ def normalize(
     alias_counters: Mapping[str, int],
     alias_prefixes: Mapping[TermRef, str],
     allocate_aliases: bool = True,
+    default_language: str | None = None,
 ) -> WorkingState:
     """Apply ``ops`` to a working copy of ``base`` (W.10).
 
@@ -602,6 +647,8 @@ def normalize(
     earlier document (``@name``) to its id (services resolve them, W.4);
     full ids are used as given and locals declared here are bound to the
     ids minted for their creates. ``allocate_aliases`` is false in dry-run.
+    ``default_language`` is the graph language given to untagged
+    language-tagged values.
     """
     run = _Run(
         base=base,
@@ -611,6 +658,7 @@ def normalize(
         alias_prefixes=alias_prefixes,
         allocate_aliases=allocate_aliases,
         counters=dict(alias_counters),
+        default_language=default_language,
     )
     create_ids: list[EntityId] = []
     for op in ops:

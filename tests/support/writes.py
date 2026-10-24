@@ -26,6 +26,7 @@ def judge(
     refs: Mapping[str, EntityId] | None = None,
     prefixes: Mapping[str, str] | None = None,
     counters: Mapping[str, int] | None = None,
+    language: str | None = None,
 ) -> tuple[WorkingState, list[Finding]]:
     """Normalize and validate ``ops``; temporal and data findings together, sorted."""
     base = base if base is not None else DictSnapshot()
@@ -41,6 +42,7 @@ def judge(
         pin_version=model.bundle_version,
         alias_counters=counters or {},
         alias_prefixes=prefixes or {},
+        default_language=language,
     )
     found = validate_write(
         model,

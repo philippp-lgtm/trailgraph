@@ -446,6 +446,7 @@ class WriteService:
                     pin_version=entry.pin.version,
                     alias_counters=session.alias_counters(),
                     alias_prefixes=entry.alias_prefixes,
+                    default_language=entry.language,
                 )
             with self.timings.phase("validate"):
                 stored = _blob_check(request, prepared.read)
@@ -541,6 +542,7 @@ class WriteService:
                 alias_counters={},
                 alias_prefixes=prepared.entry.alias_prefixes,
                 allocate_aliases=False,
+                default_language=prepared.entry.language,
             )
         hidden = placeholders.issued
         with self.timings.phase("validate"):

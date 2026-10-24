@@ -155,6 +155,8 @@ class OpsFactory:
                 "duration": f"P{n}D",
                 "iri": f"https://example.org/{n}",
                 "json": {"n": n},
+                "lang_string": {"lang": "en", "value": f"value {n}"},
+                "lang_text": {"lang": "en", "value": f"value {n}"},
             }.get(base, f"value {n}")
         return [value] if attribute.many else value
 
@@ -195,6 +197,7 @@ class ServiceEnv:
     name: str = "example_graph"
     model_override: CompiledModel | None = None  # memory backend only
     version: str | None = None  # fixture version; the first one by default
+    language: str | None = None  # the graph language (BCP 47)
 
     def __post_init__(self) -> None:
         self.model = self.model_override or compiled_model(self.ontology, self.version)
@@ -211,6 +214,7 @@ class ServiceEnv:
                 pin_of(self.model),
                 alias_prefixes(self.model),
                 (),
+                language=self.language,
             )
             memory.add(entry, self.model, EventId(self.ids.new_id()))
             self.catalog: MemoryCatalog | FileCatalog = memory
@@ -225,7 +229,7 @@ class ServiceEnv:
                 source=source,
                 module=None,
                 title=None,
-                language=None,
+                language=self.language,
             )
             self.catalog = FileCatalog(self.root, faults=self.faults)
             self.audit = FileAuditLog(self.root, faults=self.faults)

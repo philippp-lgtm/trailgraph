@@ -1,4 +1,4 @@
-"""Base types ``lang_string`` and ``lang_text``: shapes, model rules, checks, export (Q18 stage 3)."""
+"""Base types ``lang_string`` and ``lang_text``: shapes, model rules, checks (Q18 stage 3)."""
 
 from typing import Any
 
@@ -155,7 +155,7 @@ def test_model_rules(attributes: str, expected: list[str]) -> None:
     assert _model_codes(attributes) == expected
 
 
-def test_qualifiers_may_be_language_tagged() -> None:
+def test_qualifiers_may_be_language_tagged_and_take_the_graph_language() -> None:
     text = """\
 format: graph_cli.ir/1
 module:
@@ -177,7 +177,22 @@ relations:
     outcome = compile_bundle(
         "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
     )
-    assert outcome.findings == ()
+    assert outcome.findings == () and outcome.model is not None
+    ops = [
+        {"op": "create", "type": "ex:Thing", "local": "a"},
+        {
+            "op": "create",
+            "type": "ex:Thing",
+            "local": "b",
+            "edges": [{"rel": "ex:cites", "target": "@a", "qualifiers": {"quote": "Zitat"}}],
+        },
+    ]
+    working, found = judge(outcome.model, *ops, language="de")
+    assert codes(found) == []
+    (edge,) = [e for r in working.revisions.values() for e in r.edges]
+    assert edge.qualifiers == {"quote": de("Zitat")}
+    _, refused = judge(outcome.model, *ops)
+    assert codes(refused) == ["data.structural.datatype_mismatch"]
 
 
 # ---- data checks --------------------------------------------------------
@@ -199,7 +214,8 @@ def test_valid_tagged_writes_have_no_findings() -> None:
     ("attrs", "expected"),
     [
         ({"heading": ["Steuerung"]}, ["data.structural.datatype_mismatch"]),
-        ({"heading": [{"lang": "DE", "value": "x"}]}, ["data.structural.datatype_mismatch"]),
+        ({"heading": [{"lang": "DE", "value": "x"}]}, []),  # normalize puts it in canonical case
+        ({"heading": [{"lang": "de_DE", "value": "x"}]}, ["data.structural.datatype_mismatch"]),
         ({"heading": [de("x" * 81)]}, ["data.structural.facet_violation"]),
         ({"heading": [de("a"), de("b")]}, ["data.structural.language_repeated"]),
         ({"heading": [de("a")], "variant_names": [de("b"), de("c")]}, []),
@@ -227,10 +243,11 @@ def test_names_in_any_language_count_as_duplicates() -> None:
     assert "'Kontrolle'" in finding.message
 
 
-def test_check_graph_reports_untagged_stored_values() -> None:
-    stored = revision("g", "nas:GlossaryEntry", {"heading": ["untagged"]})
-    found = check_graph(NAS, DictSnapshot(stored))
-    assert codes(found) == ["data.structural.datatype_mismatch"]
+def test_check_graph_reports_untagged_and_non_canonical_stored_values() -> None:
+    untagged = revision("g", "nas:GlossaryEntry", {"heading": ["untagged"]})
+    upper = revision("h", "nas:GlossaryEntry", {"heading": [{"lang": "DE", "value": "x"}]})
+    found = check_graph(NAS, DictSnapshot(untagged, upper))
+    assert codes(found) == ["data.structural.datatype_mismatch"] * 2
 
 
 def test_rules_see_the_text() -> None:
