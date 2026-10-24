@@ -1,0 +1,9 @@
+# The installation policy a new container installs once (docs/server.md#container).
+# The server may write every graph for a project scope; add scopes for your
+# projects (or bind tokens to them) and apply your own policy with
+#   docker compose exec graph graph-admin policy apply /workspace/<file> --reason <reason>
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: server, graphs: "*", level: write}
+no_project: {"*": read}

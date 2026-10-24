@@ -7,7 +7,7 @@ Setup is in the [README](README.md#install). The design of the code base
 ## Development
 
 ```sh
-uv sync                     # create .venv with both distributions + dev tools
+uv sync                     # create .venv with the three distributions + dev tools
 uv run pytest               # all tests (includes import contracts and wheel checks)
 uv run pytest -m "not slow" # skip distribution builds, crash and process tests
 uv run ruff check .
@@ -15,6 +15,8 @@ uv run ruff format --check .
 uv run mypy
 uv run lint-imports
 GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files and the generated skill after an intended change
+docker build --target test .               # the whole suite on Linux, in the image
+GRAPH_CLI_DOCKER_TESTS=1 uv run pytest tests/docker  # the container: kill mid-write, restart, verify
 ```
 
 Run the CLIs from the checkout:
@@ -22,6 +24,7 @@ Run the CLIs from the checkout:
 ```sh
 uv run graph --help
 uv run graph-admin --help
+uv run graph-server serve --port 0
 ```
 
 ## Documentation
@@ -106,6 +109,8 @@ skill names no graph type.
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
 | CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
 | skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written `ontology-best-practices` skill: its YAML examples compile, the format reference names every accepted key, structure |
+| server | `tests/server/` | `graph-server` in-process (routes, auth, uploads, CORS, denials audited) and as a process (threads plus a `graph-admin` process lose no writes); the remote `graph` against stub servers (lost answers, retries, versions); every command answers the same locally and remotely on both toy ontologies |
+| docker | `tests/docker/` | opt-in (`GRAPH_CLI_DOCKER_TESTS=1`): the container killed mid-write recovers, `audit verify` in it stays clean |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 | docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
 

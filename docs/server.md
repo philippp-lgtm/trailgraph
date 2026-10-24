@@ -108,3 +108,44 @@ device and the pointer's project and graphs are sent with each request.
 - `skills emit|install|check` run here; a graph skill comes from the
   server, rendered for the graph's current ontology, and must be allowed by
   this project's pointer.
+
+## Container
+
+The repository's `Dockerfile` and `compose.yaml` run the server in a
+container that owns the data. The image holds the three distributions,
+runs as a user without a login, and keeps data, state and config in the
+named volumes `graph_data` (`/data`), `graph_state` (`/state`) and
+`graph_config` (`/config`). On macOS a named volume lives in the Docker
+VM's Linux file system, so locks and `fsync` behave as on Linux; a bind
+mount of an existing data root works when the container is its only
+writer, but is not the default.
+
+```sh
+docker compose up -d                       # 127.0.0.1:8470 on this machine only
+docker compose exec graph graph-admin token create <name> --project <value>
+GRAPH_DOMAIN=graphs.example.org docker compose --profile tls up -d   # HTTPS via Caddy
+```
+
+The first start creates the data root and installs a default
+installation policy: the server may write every graph from a project
+scope, and a request without one may read. Add scopes for your projects
+(or bind tokens to projects) and apply your own policy. Maintenance runs
+in the container (`docker compose exec graph graph-admin ...`); the
+directory `GRAPH_WORKSPACE` (default `docker/workspace`) is mounted read
+only at `/workspace` for authored ontologies and policies. The `tls`
+profile adds Caddy with an automatic certificate for `GRAPH_DOMAIN`; then
+80 and 443 are the only ports published beyond `127.0.0.1`. A healthcheck
+asks `/v1/health`.
+
+Moving an existing data root into the container:
+
+1. Stop every local writer and run `graph-admin audit verify`.
+2. Copy the data root into the volume, for example with `docker compose
+   run --rm --no-deps -v <data root>:/source:ro --entrypoint sh graph -c
+   'cp -a /source/. /data/graph_cli/'` before the first start.
+3. Start the container and run `graph-admin audit verify` in it.
+4. Grant the server in the policy, create the tokens, and switch the
+   clients to the [remote mode](#remote-mode-of-graph).
+
+`docker build --target test .` runs the whole test suite on Linux in the
+image.

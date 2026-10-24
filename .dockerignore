@@ -1,0 +1,18 @@
+# Only what the image builds and tests from; never local data or secrets.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.import_linter_cache
+local
+data
+CLAUDE.local.md
+.claude
+.env
+.env.*
+docker/workspace
+dist
+build

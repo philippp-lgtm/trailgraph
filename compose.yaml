@@ -1,0 +1,45 @@
+# graph-server owning the data in named volumes (docs/server.md#container).
+#
+#   docker compose up -d                                   127.0.0.1:8470 only
+#   GRAPH_DOMAIN=graphs.example.org docker compose --profile tls up -d
+#                                                          HTTPS on 443 via Caddy (ACME)
+#   docker compose exec graph graph-admin token create <name>
+
+services:
+  graph:
+    build:
+      context: .
+      target: runtime
+    image: graph_cli_server:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GRAPH_PORT:-8470}:8470"
+    volumes:
+      - graph_data:/data
+      - graph_state:/state
+      - graph_config:/config
+      # authored ontologies and policies for graph-admin, read only
+      - ${GRAPH_WORKSPACE:-./docker/workspace}:/workspace:ro
+    stop_grace_period: 30s
+
+  caddy:
+    image: caddy:2
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on: [graph]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GRAPH_DOMAIN: ${GRAPH_DOMAIN:-}  # required with the tls profile: the public name
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  graph_data:
+  graph_state:
+  graph_config:
+  caddy_data:
+  caddy_config:

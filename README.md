@@ -1,7 +1,7 @@
 # graph_cli
 
 A domain-agnostic shell for knowledge graphs. Two command-line tools with a
-strict split between usage and maintenance:
+strict split between usage and maintenance, and a server:
 
 - `graph` (distribution `graph_cli`): the application CLI. Installed on
   `PATH`; reads and writes instance data. Built for coding agents and people
@@ -10,14 +10,20 @@ strict split between usage and maintenance:
 - `graph-admin` (distribution `graph_cli_admin`): the maintenance CLI. Not on
   `PATH`; run from the repository checkout. Creates graphs, versions
   ontologies, installs policies and skills, verifies the audit trail.
+- `graph-server` (distribution `graph_cli_server`): the command surface of
+  `graph` over HTTP with bearer tokens, for agents in containers, other
+  machines and web apps; `graph` in remote mode is its client. Runs from
+  the checkout or in the container (`docker compose up -d`, see
+  [Server](docs/server.md)).
 
 Every write is a validated, audited change set against a versioned ontology.
 Access is decided by policies per principal, project and graph, and agents
 get generated skills that describe the CLI and each graph.
 
-Status: foundation. Both CLIs, the ontology layer, the file store, audit,
-access control, stored files and the agent skills work; storage is local
-(POSIX file systems only).
+Status: foundation. Both CLIs, the server, the ontology layer, the file
+store, audit, access control, stored files and the agent skills work;
+storage is local to the machine that owns the data (POSIX file systems
+only).
 
 ## Install
 
@@ -25,7 +31,7 @@ Requires [uv](https://docs.astral.sh/uv/). uv provisions the Python version
 from `.python-version`.
 
 ```sh
-uv sync                     # create .venv with both distributions + dev tools
+uv sync                     # create .venv with the three distributions + dev tools
 ```
 
 `graph-admin` stays in the checkout (`uv run graph-admin ...`). Install
