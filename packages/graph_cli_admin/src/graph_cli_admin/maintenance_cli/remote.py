@@ -11,7 +11,11 @@ returned as it came (``Result.forwarded``):
   (every regular file below it; anything else is refused here) and named
   by its relative paths;
 - ``graph skill render`` checks ``--out`` here, and writes the files the
-  server answers into ``OUT/graph-<graph>/``.
+  server answers into ``OUT/graph-<graph>/``;
+- ``graph pull`` writes the files the server answers into ``DIR`` (the
+  same checks as locally, ``services_admin.sources``);
+- ``graph push`` uploads only what push reads of ``DIR`` (the base file,
+  ``ontology/``, ``skill/``) and records the answered base in ``DIR``.
 
 ``client`` commands keep their own handler, ``local`` ones too, which
 refuse in remote mode (``admin.remote_mode``). ``--data-root`` names a
@@ -42,10 +46,14 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, write_tree
 from graph_cli_admin.maintenance_cli.commands.common import DATA_ROOT
+from graph_cli_admin.services_admin import sources
 
 MAX_FILES: Final = 1000  # files of one uploaded directory, as the server takes them
 RENDER: Final = ("graph", "skill", "render")
+PULL: Final = ("graph", "pull")
+PUSH: Final = ("graph", "push")
 OUT: Final = "--out"
+DIR: Final = "dir"
 
 
 def remote_specs(specs: Sequence[CommandSpec]) -> tuple[CommandSpec, ...]:
@@ -67,24 +75,37 @@ def _handler(spec: CommandSpec) -> Callable[..., Result]:
             )
         session: RemoteSession = state.services.remote(state.warnings)
         out = _local_out(args) if spec.path == RENDER else None
+        target = Path(str(args[DIR])).resolve() if spec.path == PULL else None
+        dry_run = args.get("--dry-run") is True
+        if spec.path == PUSH and not dry_run and not os.access(str(args[DIR]), os.W_OK):
+            raise _usage(DIR, f"{args[DIR]} is not writable: push records the new base there")
         for param in spec.params:
             value = args.get(param.name)
             if value is None or (param.name == OUT and out is not None):
                 continue
+            if param.name == DIR and target is not None:
+                continue
             if param.type == "file":
                 args[param.name] = _upload_file(session, str(value), param.name)
             elif param.type == "directory":
-                args[param.name] = upload_tree(session, str(value), param.name)
+                only = sources.PARTS if spec.path == PUSH else None
+                args[param.name] = upload_tree(session, str(value), param.name, only=only)
         write = None
-        if spec.kind == "write" and args.get("--dry-run") is not True:
+        if spec.kind == "write" and not dry_run:
             write = Write(None, command_line(spec, args))
         if out is not None:
             args[OUT] = {"files": {}, "name": str(values["out"])}
             document, _, _ = session.command(spec.path, args, text=False, write=write)
             return Result(forwarded=Forwarded(_write_rendered(document, out, values)))
+        if target is not None:
+            args[DIR] = {"files": {}, "name": str(values["target"])}
+            document, _, _ = session.command(spec.path, args, text=False, write=None)
+            return Result(forwarded=Forwarded(_write_pulled(document, target, values)))
         document, stdout, stderr = session.command(
             spec.path, args, text=not state.json_mode, write=write
         )
+        if spec.path == PUSH and not dry_run:
+            _record_base(document, Path(str(values["source"])))
         return Result(forwarded=Forwarded(document, stdout, stderr))
 
     return handler
@@ -100,14 +121,20 @@ def _upload_file(session: RemoteSession, value: str, argument: str) -> dict[str,
     return upload(session, path, value)
 
 
-def upload_tree(session: RemoteSession, value: str, argument: str) -> dict[str, JsonValue]:
+def upload_tree(
+    session: RemoteSession, value: str, argument: str, *, only: frozenset[str] | None = None
+) -> dict[str, JsonValue]:
     """``{files: {relative path: upload}, name}`` of a local directory: every regular file
-    below it, uploaded; a symlink or any other file kind is refused, never followed."""
+    below it (``only``: below these top-level entries), uploaded; a symlink or any other
+    file kind is refused, never followed."""
     directory = Path(value)
     if not directory.is_dir():
         raise _usage(argument, f"{value} is not a directory")
     found: dict[str, Path] = {}
     for current, dirs, names in os.walk(directory, followlinks=False):
+        if only is not None and Path(current) == directory:
+            dirs[:] = [d for d in dirs if d in only]
+            names = [n for n in names if n in only]
         dirs.sort()
         for name in sorted([*dirs, *names]):
             path = Path(current) / name
@@ -189,6 +216,41 @@ def _write_rendered(
         raise _usage("out", f"cannot write {dest}: {exc}") from exc
     shown = {key: value for key, value in data.items() if key != "rendered"}
     return {**document, "data": {**shown, "path": str(dest)}}
+
+
+def _write_pulled(
+    document: Mapping[str, JsonValue], target: Path, values: Mapping[str, Any]
+) -> Mapping[str, JsonValue]:
+    """Write the files the server pulled into ``DIR`` and answer that path, as ``graph
+    pull`` does locally."""
+    data = document.get("data")
+    pulled = data.get("pulled") if isinstance(data, Mapping) else None
+    if not isinstance(data, Mapping) or not isinstance(pulled, Mapping):
+        return document
+    try:
+        files = {str(name): base64.b64decode(str(content)) for name, content in pulled.items()}
+    except ValueError:
+        raise protocol(0, "the pulled files are not base64") from None
+    if not files or any(sources.workspace_entry(name) is None for name in files):
+        raise protocol(0, "a pulled file name is not one of a workspace")  # never a path
+    if sources.SOURCE_FILE not in files:
+        raise protocol(0, f"the pulled files have no {sources.SOURCE_FILE}")
+    sources.write_workspace(
+        target, files, graph_ref=str(values["ref"]), force=bool(values.get("force"))
+    )
+    shown = {key: value for key, value in data.items() if key != "pulled"}
+    return {**document, "data": {**shown, "path": str(target)}}
+
+
+def _record_base(document: Mapping[str, JsonValue], source: Path) -> None:
+    """Write the base a push answered into ``DIR``, as ``graph push`` does locally."""
+    data = document.get("data")
+    if document.get("error") is not None or not isinstance(data, Mapping):
+        return
+    base = data.get("source")
+    if not isinstance(base, Mapping) or base.get("schema") != sources.SOURCE_SCHEMA:
+        raise protocol(0, "the push answer names no base")
+    sources.write_base(source, base)
 
 
 def _inside(name: str) -> bool:

@@ -108,7 +108,10 @@ graph skills install --scope project --dir <project>
 install` would (without the marker), with this checkout's program, and
 reports what publish would refuse (exit 1, the preview is written anyway);
 it changes nothing in the data root. A non-empty preview directory is
-replaced only with `--force`.
+replaced only with `--force`. Without the authored copy at hand (another
+machine, the remote mode), `graph-admin graph pull` writes the published
+template into a workspace and `graph-admin graph push` publishes it again
+([Workspaces](cli_graph_admin.md#workspaces-pull-and-push)).
 
 ## The `ontology-best-practices` skill
 

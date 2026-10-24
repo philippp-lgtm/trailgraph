@@ -530,6 +530,185 @@
     {
       "path": [
         "graph",
+        "pull"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "maint.graph_configure",
+      "summary": "Write graph REF's ontology release and skill into DIR to edit and push them.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "Workspace directory; created if missing."
+        }
+      ],
+      "options": [
+        {
+          "name": "--version",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Pull this installed release instead of the pin."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace the version directory, skill directory and base file if they exist."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph pull <graph> <dir>",
+          "summary": "Pull a graph's sources."
+        },
+        {
+          "command": "graph-admin graph pull <graph> <dir> --force --json",
+          "summary": "Pull them again over an earlier pull, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.source_exists",
+        "backend.corrupt",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.source_invalid",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
+        "push"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Release and publish what changed in DIR, a directory pulled from graph REF.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "A directory written by graph pull."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why it changes; recorded in every audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run every check and show the change without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph push <graph> <dir> --dry-run",
+          "summary": "Show what would change."
+        },
+        {
+          "command": "graph-admin graph push <graph> <dir> --reason <reason> --json",
+          "summary": "Release and publish, with a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.migration_required",
+        "admin.model_invalid",
+        "admin.release_exists",
+        "admin.remote_mode",
+        "admin.skill_invalid",
+        "admin.source_conflict",
+        "admin.version_bump_insufficient",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.archived",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
         "reindex"
       ],
       "kind": "write",
@@ -1900,6 +2079,16 @@
       "exit": 1
     },
     {
+      "code": "admin.source_conflict",
+      "category": "conflict",
+      "exit": 4
+    },
+    {
+      "code": "admin.source_exists",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "admin.token_exists",
       "category": "refused",
       "exit": 1
@@ -1960,6 +2149,11 @@
       "exit": 6
     },
     {
+      "code": "ontology.artifact_missing",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
       "code": "policy.invalid",
       "category": "unavailable",
       "exit": 5
@@ -1988,6 +2182,11 @@
       "code": "remote.unreachable",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "skills.source_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "update.available",

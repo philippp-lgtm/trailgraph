@@ -26,6 +26,10 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),
+    ErrorSpec("admin.source_exists", _C.REFUSED, False, "The directory holds pulled files."),
+    ErrorSpec(
+        "admin.source_conflict", _C.CONFLICT, False, "The graph changed since it was pulled."
+    ),
     ErrorSpec(
         "admin.policy_lockout", _C.REFUSED, False, "The policy would lock out its maintainer."
     ),

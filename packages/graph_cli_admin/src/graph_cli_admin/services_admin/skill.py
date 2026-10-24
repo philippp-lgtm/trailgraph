@@ -34,11 +34,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from graph_cli.audit import events
+from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot, skill_hash
+from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kernel.skill_marker import GENERATED, graph_skill_name
+from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.describe import describe_model
 from graph_cli.skills.graph_skill import graph_block, render_checked
 from graph_cli.skills.names import check_names
@@ -46,6 +49,7 @@ from graph_cli.skills.template import kind_of, parse_template
 from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
+from graph_cli_admin.services_admin.release import check_state
 
 DAMAGED = frozenset({"skills.source_invalid", "format.unsupported_version"})
 
@@ -73,7 +77,6 @@ def check_source(
     ctx: AdminContext, entry: GraphEntry, source: Path, inventory: Mapping[str, JsonValue]
 ) -> Checked:
     """``admin.skill_invalid`` when the directory cannot become the graph's skill at all."""
-    name = graph_skill_name(entry.name)
     try:
         files, problems = read_tree(source)
     except OSError as exc:
@@ -82,20 +85,69 @@ def check_source(
             f"cannot read {source}: {exc.strerror or exc}",
             details={"argument": "dir"},
         ) from exc
+    return check_files(
+        ctx, entry, files, problems, label=source, directory=source.name, inventory=inventory
+    )
+
+
+def check_files(
+    ctx: AdminContext,
+    entry: GraphEntry,
+    files: dict[str, bytes],
+    problems: list[Problem],
+    *,
+    label: Path | str,
+    directory: str | None,
+    inventory: Mapping[str, JsonValue],
+    model: CompiledModel | None = None,
+) -> Checked:
+    """``check_source`` for files read already; a template renders against ``model`` (the
+    entry's pinned model when ``None``)."""
+    name = graph_skill_name(entry.name)
     kind = kind_of(files)
     if kind != GENERATED:
-        problems += validate(files, name=name, directory=source.name)
-        _refuse(source, entry, name, problems)
+        problems = [*problems, *validate(files, name=name, directory=directory)]
+        refuse(label, entry, name, problems)
         return Checked(kind, files, files)
-    model = describe_model(entry, pinned_model(ctx.catalog, entry))
+    described = describe_model(
+        entry, model if model is not None else pinned_model(ctx.catalog, entry)
+    )
     graph = graph_block(entry)
     rendered, render_problems = render_checked(
-        files, model, graph, name=name, directory=source.name
+        files, described, graph, name=name, directory=directory
     )
-    _refuse(source, entry, name, [*problems, *render_problems])
+    refuse(label, entry, name, [*problems, *render_problems])
     template, _ = parse_template(files)
     assert rendered is not None and template is not None  # render_checked found no problem
-    return Checked(kind, files, rendered, check_names(template, model, graph, inventory))
+    return Checked(kind, files, rendered, check_names(template, described, graph, inventory))
+
+
+def current_slot(session: MaintenanceSession) -> SkillSlot | None:
+    """The published skill; a damaged slot is replaced like a missing one."""
+    try:
+        return session.read_skill()
+    except GraphCliError as exc:
+        if exc.code not in DAMAGED:
+            raise
+        return None
+
+
+def write(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    entry: GraphEntry,
+    decisions: tuple[Decision, ...],
+    meta: RequestMeta,
+    current: SkillSlot | None,
+    slot: SkillSlot,
+    *,
+    reason: str | None,
+) -> None:
+    """Switch the slot from ``current`` to ``slot`` in the W.e shape."""
+    change = events.skill_change(current.hash if current is not None else None, slot.hash)
+    receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
+    session.replace_skill(slot, receipt)
+    ctx.anchor(entry, decisions, meta, receipt, reason=reason)
 
 
 def publish(
@@ -108,10 +160,10 @@ def publish(
     inventory: Mapping[str, JsonValue],
 ) -> Published:
     entry = ctx.catalog.resolve(graph_ref)
-    _check_state(entry)
+    check_state(entry)
     name = graph_skill_name(entry.name)
     checked = check_source(ctx, entry, source, inventory)
-    _refuse(source, entry, name, checked.problems)
+    refuse(source, entry, name, checked.problems)
     checked_against = entry.pin
     files = checked.files
     digest = skill_hash(files)
@@ -126,16 +178,11 @@ def publish(
     )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
-        _check_state(entry)
+        check_state(entry)
         if checked.kind == GENERATED and entry.pin != checked_against:
             # A release came in between: the template must render against the new pin.
-            _refuse(source, entry, name, check_source(ctx, entry, source, inventory).problems)
-        try:
-            current = session.read_skill()
-        except GraphCliError as exc:
-            if exc.code not in DAMAGED:
-                raise
-            current = None  # a damaged slot is replaced like a missing one
+            refuse(source, entry, name, check_source(ctx, entry, source, inventory).problems)
+        current = current_slot(session)
         slot = SkillSlot(checked.kind, digest, entry.pin, files)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
@@ -150,10 +197,7 @@ def publish(
         unchanged = current is not None and current.summary() == slot.summary()
         if unchanged or dry_run:
             return Published(entry, data, seq)
-        change = events.skill_change(current.hash if current is not None else None, digest)
-        receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
-        session.replace_skill(slot, receipt)
-        ctx.anchor(entry, decisions, meta, receipt, reason=reason)
+        write(ctx, session, entry, decisions, meta, current, slot, reason=reason)
         data["published"] = True
         return Published(entry, data, seq)
 
@@ -223,12 +267,14 @@ def render(
     return Rendered(entry, data, error)
 
 
-def _refuse(source: Path, entry: GraphEntry, name: str, problems: list[Problem]) -> None:
+def refuse(source: Path | str, entry: GraphEntry, name: str, problems: list[Problem]) -> None:
     if problems:
         raise _invalid(source, entry, name, problems)
 
 
-def _invalid(source: Path, entry: GraphEntry, name: str, problems: list[Problem]) -> GraphCliError:
+def _invalid(
+    source: Path | str, entry: GraphEntry, name: str, problems: list[Problem]
+) -> GraphCliError:
     return GraphCliError(
         "admin.skill_invalid",
         f"{source} is not a valid skill for graph {entry.name}: {_summary(problems)}",
@@ -244,10 +290,3 @@ def _summary(problems: list[Problem]) -> str:
 
 def _json(problems: list[Problem]) -> list[JsonValue]:
     return [p.to_json() for p in problems]
-
-
-def _check_state(entry: GraphEntry) -> None:
-    if entry.state == "archived":
-        raise GraphCliError(
-            "graph.archived", f"graph {entry.name} is archived", details={"graph_id": str(entry.id)}
-        )

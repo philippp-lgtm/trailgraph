@@ -19,6 +19,8 @@ commands to the server's admin API
 | `graph list`, `graph show REF` | list graphs with title and language; show manifest, head, installed releases and the published skill |
 | `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; `--ontology DIR` checks against an authored version before it is released |
 | `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
+| `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one) and its published skill, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
+| `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`) |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
@@ -38,6 +40,42 @@ commands to the server's admin API
 | `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
 | `self update` | in the remote mode install the server's build of `graph-admin` when it differs (`--check` only reports); see [Self update](server.md#self-update) |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
+
+## Workspaces: pull and push
+
+`graph pull REF DIR` writes what a graph was released and published from,
+so it can be changed on any machine, also one in the remote mode:
+
+```
+DIR/ontology/<version>/<module>.yaml   the authored modules of the release
+DIR/skill/graph-<graph>/...            the published skill (if the graph has one)
+DIR/.graph_cli_source.json             the base: graph, ontology release, skill hash
+```
+
+Pull owns these three entries: if any exists, it is refused
+(`admin.source_exists`) unless `--force` replaces them. Everything else in
+`DIR` stays (a README, notes, older version directories, `.git`).
+
+To change the ontology, copy the version directory to a new one named
+after the new version and bump the module version there; to change the
+skill, edit `skill/graph-<graph>/`. `graph push REF DIR` then, under the
+graph's lock:
+
+- refuses with `admin.source_conflict` when the graph no longer has the
+  base, unless it already has what `DIR` holds (a push repeated after a
+  lost answer is safe). Pull into another directory, carry the changes
+  over and push from there;
+- releases and pins the highest version directory when it is newer than
+  the base (the rules of `ontology release`; a changed module under the
+  base version is `admin.release_exists`), and publishes the skill
+  directory when it differs (the rules of `graph skill publish`);
+- checks the skill the graph will have against the ontology it will have
+  whenever either changes, and every other rule, before the first write;
+- writes the new base into `DIR` (not with `--dry-run`).
+
+Pull is authorized as `maint.graph_configure` on the graph; push as that
+and, for a release, `maint.ontology_release` and `maint.ontology_pin`. Every
+change is audited as by the single commands, with the push's `--reason`.
 
 ## Auditing and releases
 

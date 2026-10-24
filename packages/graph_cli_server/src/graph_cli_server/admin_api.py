@@ -73,7 +73,7 @@ if TYPE_CHECKING:
 
 CLIENT: Final = ClientInfo(SERVER_PROGRAM, __version__, Entrypoint.MAINT)
 COMMANDS: Final = "/v1/admin/commands/"
-RENDER: Final = ("graph", "skill", "render")
+RETURNED: Final = {("graph", "skill", "render"): "rendered", ("graph", "pull"): "pulled"}
 GATE: Final = ("maint.audit_read", "installation")  # every admin request: a maintainer
 _BODY_KEYS: Final = frozenset({"args", "actor"})
 
@@ -147,8 +147,8 @@ class AdminApi:
                 argv = to_argv(spec, args, stage, directories=True)
                 done = self._run(argv, AdminRequest(actor, warnings))
                 document = done.document
-                if spec.path == RENDER:
-                    document = _rendered(document)
+                if spec.path in RETURNED:
+                    document = _returned(document, RETURNED[spec.path])
         except GraphCliError as exc:
             failed = envelope(command, program=PROGRAM, error=exc)
             return Outcome(failed, None, *status_of(failed))
@@ -192,9 +192,10 @@ def _failed(command: str, error: GraphCliError) -> Response:
     return _json(status, document, exit_code=exit_code)
 
 
-def _rendered(document: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-    """``graph skill render`` over the API: the files it wrote instead of their place on
-    the server (``path: null``); the client writes them into its own ``--out``."""
+def _returned(document: Mapping[str, JsonValue], key: str) -> Mapping[str, JsonValue]:
+    """``graph skill render`` and ``graph pull`` over the API: the files they wrote under
+    ``key`` instead of their place on the server (``path: null``); the client writes them
+    into its own directory."""
     data = document.get("data")
     if not isinstance(data, Mapping) or not isinstance(data.get("path"), str):
         return document
@@ -202,7 +203,7 @@ def _rendered(document: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
     rendered: dict[str, JsonValue] = {
         name: base64.b64encode(content).decode() for name, content in sorted(files.items())
     }
-    return {**document, "data": {**data, "path": None, "rendered": rendered}}
+    return {**document, "data": {**data, "path": None, key: rendered}}
 
 
 def _restore(value: JsonValue, staged: list[Staged]) -> JsonValue:

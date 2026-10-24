@@ -266,6 +266,9 @@ as `graph` does.
   uploaded: every regular file below a directory; a symlink or another
   file kind is refused.
 - `graph skill render` checks `--out` here and writes the preview into it.
+- `graph pull` writes the files the server answers into `DIR`, with the
+  checks it makes locally; `graph push` uploads only the base file,
+  `ontology/` and `skill/` of `DIR` and writes the new base into it.
 - `describe commands` and `ontology validate` run here; `init`, `view` and
   `--data-root` are refused (`admin.remote_mode`).
 - The server compares its build of `graph-admin` with this one, as for

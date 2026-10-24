@@ -23,6 +23,15 @@ def _render_force(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} graph skill render {graph} {source} --out {out} --force"
 
 
+def _pull_force(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Repeat ``graph pull`` with ``--force``."""
+    words = [details.get(key) for key in ("graph", "dir")]
+    if not all(isinstance(word, str) for word in words):
+        return None
+    graph, target = (shlex.quote(str(word)) for word in words)
+    return f"{program} graph pull {graph} {target} --force"
+
+
 def _view_any_port(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Let the system pick a free port."""
     graph = details.get("graph")
@@ -46,6 +55,8 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.policy_lockout": None,  # details.rule names the rule that locks out
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.skill_render_exists": _render_force,
+    "admin.source_exists": _pull_force,
+    "admin.source_conflict": None,  # the message says to pull into another directory
     "admin.view_port_unavailable": _view_any_port,
     "admin.remote_mode": None,  # the message says where to run it
     "admin.token_exists": _token_list,

@@ -77,7 +77,7 @@ command the server runs a handler that sends its parsed parameters
 (uploads, downloads, origins), and the skills commands take graph skills
 from the server. `maintenance_cli.remote` does the same for `graph-admin`:
 it uploads file and directory parameters and writes the files of `graph
-skill render` into `--out`.
+skill render` and `graph pull` into their directories.
 
 ## CLIs
 

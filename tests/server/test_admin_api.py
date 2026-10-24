@@ -34,6 +34,7 @@ pytestmark = pytest.mark.slow
 
 V100 = ONTOLOGIES / "inventory" / "1.0.0"
 V101 = ONTOLOGIES / "inventory" / "1.0.1"
+V110 = ONTOLOGIES / "inventory" / "1.1.0"
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
@@ -311,6 +312,8 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     preview = cwd / "preview"
     shutil.rmtree(preview, ignore_errors=True)
     preview.mkdir()
+    workspace = cwd / "workspace"
+    shutil.rmtree(workspace, ignore_errors=True)
     (cwd / "policy.yaml").write_text(POLICY)
 
     def run(*args: str, text: bool = False) -> None:
@@ -350,6 +353,12 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
             "preview",
             "--force",
         ),
+        ("graph", "pull", "example_graph", "workspace"),
+        ("graph", "pull", "example_graph", "workspace"),
+        ("graph", "pull", "example_graph", "workspace", "--force"),
+        ("graph", "pull", "example_graph", "elsewhere", "--version", "9.9.9"),
+        ("graph", "push", "example_graph", "workspace", "--dry-run"),
+        ("graph", "push", "example_graph", "workspace"),
         ("policy", "check", "policy.yaml"),
         ("policy", "check", "missing.yaml"),
         ("policy", "diff", "policy.yaml"),
@@ -368,6 +377,15 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     ):
         run(*args)
     seen.append(sorted(str(p.relative_to(preview)) for p in preview.rglob("*")))
+    model = workspace / "skill" / "graph-example-graph" / "references" / "model.md"
+    model.write_text(model.read_text() + "\nOne more line.\n")
+    shutil.copytree(V110, workspace / "ontology" / "1.1.0")
+    run("graph", "push", "example_graph", "workspace", "--reason", "equivalence")
+    run("graph", "push", "example_graph", "workspace")
+    run("graph", "push", "second", "workspace")
+    seen.append(sorted(str(p.relative_to(workspace)) for p in workspace.rglob("*")))
+    seen.append([json.loads((workspace / ".graph_cli_source.json").read_text())])
+    run("audit", "verify")
     run("graph", "list", text=True)
     run("token", "list", text=True)
     return seen
@@ -499,3 +517,27 @@ def test_a_rendered_answer_never_writes_outside_out(
     assert caught.value.code == "remote.protocol"
     assert (out / "graph-x" / "keep.md").read_text() == "kept"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["out"]
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"../x.yaml": "eA=="},
+        {"ontology/1.0.0/../../x": "eA=="},
+        {"skill/graph-x/../../x": "eA=="},
+        {"ontology/1.0.0/inventory.yaml": "eA=="},  # no base file
+        {".graph_cli_source.json": "eA==", "README.md": "eA=="},
+    ],
+)
+def test_a_pulled_answer_never_writes_outside_the_workspace(
+    tmp_path: Path, files: dict[str, str]
+) -> None:
+    from graph_cli.kernel.errors import GraphCliError
+    from graph_cli_admin.maintenance_cli.remote import _write_pulled
+
+    target = tmp_path / "work"
+    document = {"data": {"pulled": files, "path": None}}
+    with pytest.raises(GraphCliError) as caught:
+        _write_pulled(document, target, {"ref": "example_graph", "force": True})
+    assert caught.value.code == "remote.protocol"
+    assert sorted(p.name for p in tmp_path.iterdir()) == []

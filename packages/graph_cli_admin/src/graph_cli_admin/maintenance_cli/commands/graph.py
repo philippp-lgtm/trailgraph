@@ -1,4 +1,5 @@
-"""``graph-admin graph create|list|show|check|reindex`` and ``graph skill publish|render``."""
+"""``graph-admin graph create|list|show|check|reindex|pull|push`` and ``graph skill
+publish|render``."""
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     admin_context,
     path,
 )
-from graph_cli_admin.services_admin import graphs, skill
+from graph_cli_admin.services_admin import graphs, skill, sources
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
 
@@ -142,6 +143,45 @@ def render(
         data=rendered.data,
         error=rendered.error,
         graph=graphs.envelope_graph(rendered.entry, None),
+    )
+
+
+def pull(
+    state: CommandState,
+    ref: str,
+    target: str,
+    version: str | None,
+    force: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    pulled = sources.pull(
+        ctx, graph_ref=ref, target=Path(target).resolve(), version=version, force=force
+    )
+    return Result(data=pulled.data, graph=graphs.envelope_graph(pulled.entry, None))
+
+
+def push(
+    state: CommandState,
+    ref: str,
+    source: str,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    pushed = sources.push(
+        ctx,
+        graph_ref=ref,
+        source=Path(source),  # as given: messages name it as the caller typed it
+        reason=reason,
+        dry_run=dry_run,
+        inventory=app_inventory(),
+    )
+    return Result(
+        data=pushed.data,
+        graph=graphs.envelope_graph(pushed.entry, pushed.seq),
+        warnings=pushed.warnings,
     )
 
 
@@ -280,6 +320,101 @@ SPECS: Final = (
         " derived files that differ from the log, or when reads warn storage.index_stale. A"
         " damaged tx log is backend.corrupt (repair first). Reads during the rebuild may miss"
         " a revision file for a moment.",
+    ),
+    CommandSpec(
+        path=("graph", "pull"),
+        kind="read",
+        surface="model",
+        action="maint.graph_configure",
+        summary="Write graph REF's ontology release and skill into DIR to edit and push them.",
+        params=(
+            REF,
+            ParamSpec(
+                "dir",
+                "directory",
+                "Workspace directory; created if missing.",
+                required=True,
+                positional=True,
+                keyword="target",
+            ),
+            ParamSpec("--version", "string", "Pull this installed release instead of the pin."),
+            ParamSpec(
+                "--force",
+                "flag",
+                "Replace the version directory, skill directory and base file if they exist.",
+            ),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph pull <graph> <dir>", "Pull a graph's sources."),
+            Example(
+                "graph-admin graph pull <graph> <dir> --force --json",
+                "Pull them again over an earlier pull, as JSON.",
+            ),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            "access.denied",
+            "admin.source_exists",
+            "backend.corrupt",
+            "ontology.artifact_missing",
+            "skills.source_invalid",
+        ),
+        handler=pull,
+        description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
+        " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any) and"
+        " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
+        " nothing in the data root.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "push"),
+        kind="write",
+        surface="act",
+        action="maint.graph_configure",
+        summary="Release and publish what changed in DIR, a directory pulled from graph REF.",
+        params=(
+            REF,
+            ParamSpec(
+                "dir",
+                "directory",
+                "A directory written by graph pull.",
+                required=True,
+                positional=True,
+                keyword="source",
+                must_exist=True,
+            ),
+            ParamSpec("--reason", "string", "Why it changes; recorded in every audit event."),
+            ParamSpec("--dry-run", "flag", "Run every check and show the change without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph push <graph> <dir> --dry-run", "Show what would change."),
+            Example(
+                "graph-admin graph push <graph> <dir> --reason <reason> --json",
+                "Release and publish, with a reason.",
+            ),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            *CHANGE_ERRORS,
+            "graph.archived",
+            "admin.source_conflict",
+            "admin.model_invalid",
+            "admin.version_bump_insufficient",
+            "admin.release_exists",
+            "admin.migration_required",
+            "admin.skill_invalid",
+        ),
+        handler=push,
+        description="The graph must still have the ontology release and skill DIR was pulled"
+        " from (or already what DIR holds), else admin.source_conflict. The highest"
+        " ontology/<version>/ is released and pinned when it differs (maint.ontology_release,"
+        " maint.ontology_pin), the skill directory published when it differs"
+        " (maint.graph_configure); whenever either changes, the skill is checked against the"
+        " ontology it will render with. Everything is checked before the first write; the new"
+        " base is written into DIR.",
+        remote="hooked",
     ),
     CommandSpec(
         path=("graph", "skill", "publish"),
