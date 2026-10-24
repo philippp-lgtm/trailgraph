@@ -57,6 +57,7 @@ def explain(
     action: str | None,
     type_curie: str | None,
     file: str | None,
+    token: str | None,
     data_root: str | None,
 ) -> Result:
     outcome = policy.explain(
@@ -66,6 +67,7 @@ def explain(
         action=action,
         type_curie=type_curie,
         file=path(file),
+        token=token,
     )
     return Result(data=outcome.data, warnings=outcome.warnings)
 
@@ -163,6 +165,12 @@ SPECS: Final = (
             GRAPH_OPTION,
             ParamSpec("--project", "string", "The project of the caller; without it: no project."),
             ParamSpec(
+                "--token",
+                "string",
+                "The name of a token (never the token): a server request with it instead, its"
+                " project verified; for an admin token the project admin's actions.",
+            ),
+            ParamSpec(
                 "--action", "string", "One action, e.g. write.create; without it: every app action."
             ),
             ParamSpec(
@@ -183,8 +191,12 @@ SPECS: Final = (
                 "graph-admin policy explain --graph <graph> --action write.create --type <type>",
                 "One action on one type.",
             ),
+            Example(
+                "graph-admin policy explain --graph <graph> --token <value>",
+                "What a token's requests get, e.g. whether a project admin maintains the graph.",
+            ),
         ),
-        errors=SOURCE_ERRORS,
+        errors=(*SOURCE_ERRORS, "admin.token_not_found"),
         handler=explain,
         description="Records nothing.",
         remote="hooked",

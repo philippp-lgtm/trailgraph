@@ -7,9 +7,11 @@ that hash. A token's scope says which surface it reaches: ``app`` (the
 default, the ``graph`` commands) or ``admin`` (the ``graph-admin`` commands
 of the admin API). The file names the scope of admin tokens only, so a
 server that predates scopes fails closed on it instead of taking an admin
-token for an app token. ``TokenStore`` is the server's lock-free reader: it parses the
-file again only when its mtime, size or inode changed, and fails closed on
-an unreadable or invalid file (``backend.unavailable``). A token is valid
+token for an app token. An admin token bound to a project is a project
+admin: it maintains the graphs the project's scope says ``maintain`` for.
+``TokenStore`` is the server's lock-free reader: it parses the file again
+only when its mtime, size or inode changed, and fails closed on an
+unreadable or invalid file (``backend.unavailable``). A token is valid
 through its ``expires`` date in UTC.
 """
 
@@ -133,8 +135,6 @@ def _record(entry: JsonValue, index: int) -> TokenRecord:
         raise _invalid(f"tokens[{index}].created_at is not a time")
     if scope not in SCOPES:
         raise _invalid(f"tokens[{index}].scope is not one of {', '.join(SCOPES)}")
-    if scope == ADMIN_SCOPE and project is not None:
-        raise _invalid(f"tokens[{index}] is an admin token bound to a project")
     assert isinstance(scope, str)
     return TokenRecord(name, digest, project, expires, created, scope)
 

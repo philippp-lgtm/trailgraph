@@ -74,6 +74,16 @@ ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 
 # B6.11 access levels: a closed ladder per graph, expanded to action globs.
 ACCESS_LEVELS: Final = ("none", "read", "write")
+# A project scope may also say ``maintain`` for a named graph: ``write`` for the
+# project's callers, plus these actions for an admin token bound to the project.
+MAINTAIN_LEVEL: Final = "maintain"
+SCOPE_LEVELS: Final = (*ACCESS_LEVELS, MAINTAIN_LEVEL)
+PROJECT_MAINT_ACTIONS: Final = tuple(
+    Action(f"maint.{verb}")
+    for verb in ("audit_verify", "graph_configure", "ontology_pin", "ontology_release", "reindex")
+)
+# ... and ``read.get``: check and migration findings quote the graph's data.
+PROJECT_ADMIN_ACTIONS: Final = (*PROJECT_MAINT_ACTIONS, Action("read.get"))
 _LEVEL_READS: Final = tuple(
     Action(f"read.{verb}")
     for verb in ("list", "get", "find", "traverse", "history", "describe", "query")
@@ -136,6 +146,6 @@ def actions_above(level: str) -> tuple[str, ...]:
         return ("read.*", "write.*", "ext.*")
     if level == "read":
         return ("write.*", "ext.*")
-    if level == "write":
+    if level in ("write", MAINTAIN_LEVEL):
         return ()
     raise GraphCliError("internal.error", f"unknown access level {level!r}")

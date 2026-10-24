@@ -14,7 +14,7 @@ from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.compiler import BASE_OBLIGATION, compile_policy, layer_of_source
 from graph_cli.access_control.documents import document_problems
 from graph_cli.access_control.effective import graph_level
-from graph_cli.access_control.policy import policy_set
+from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint, Facet
 from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonValue
@@ -170,6 +170,106 @@ def test_maintainers() -> None:
     )
 
 
+PROJECTS = INSTALLATION.replace(
+    b"  another_project: {other_graph: write}\n",
+    b"  another_project: {other_graph: maintain, example_graph: maintain}\n",
+).replace(
+    b"grants:\n",
+    b"grants:\n"
+    b"  - {entrypoint: server, principal: {project: another_project}, graphs: [other_graph],"
+    b" level: write}\n",
+)
+
+
+def token_of(project: str | None, entrypoint: Entrypoint) -> ActorContext:
+    """A server request with token ``t``, bound to ``project`` (verified) when given."""
+    bound = Facet(Assurance.VERIFIED, id=project, source="token") if project else actor().project
+    return dataclasses.replace(
+        actor(),
+        principal=Facet(Assurance.VERIFIED, id="token:t", name="t", source="token"),
+        project=bound,
+        client=ClientInfo("graph-server", "0.1.0", entrypoint),
+    )
+
+
+def test_maintain_lets_a_project_admin_maintain_named_graphs_only() -> None:
+    """Plan origin_lifecycle E8-E10: one allow rule for the project's admin tokens."""
+    compiled = compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS)
+    rules = {r["id"]: r for r in compiled.document["rules"]}  # type: ignore[index, union-attr]
+    assert rules["scope.another_project:maintain"]["principal"] == {
+        "entrypoint": "maint",
+        "project": "another_project",
+    }
+    policy = policy_set(compiled.document)
+    admin = token_of("another_project", Entrypoint.MAINT)
+    for graph, effect in ((OTHER, "allow"), (EXAMPLE, "allow"), (THIRD, "deny")):
+        decision = authorize(admin, "maint.ontology_release", f"graph:{graph}", CTX, policy)
+        assert decision.effect == effect, graph
+    assert authorize(admin, "read.get", f"graph:{OTHER}", CTX, policy).effect == "allow"
+    for action, resource in (
+        ("read.find", f"graph:{OTHER}"),  # findings quote data (read.get), nothing more
+        ("write.create", f"graph:{OTHER}"),
+        ("maint.graph_archive", f"graph:{OTHER}"),  # destructive: maintainers only
+        ("maint.repair", f"graph:{OTHER}"),
+        ("maint.token_create", "installation"),
+        ("maint.audit_read", "installation"),
+    ):
+        decision = authorize(admin, action, resource, CTX, policy)
+        assert (decision.rule_id, decision.code) == ("ceiling.project_maint", "access.ceiling")
+    # maintain is write for the project's callers, nothing more
+    assert levels(who("another_project"), compiled.document) == ["write", "write", "none"]
+    # the maintainer rule (none listed: every maintainer) never reaches a project admin
+    assert "maint.any" in rules
+    elsewhere = token_of("example_project", Entrypoint.MAINT)
+    decision = authorize(elsewhere, "maint.reindex", f"graph:{OTHER}", CTX, policy)
+    assert (decision.effect, decision.rule_id) == ("deny", "default.deny")
+
+
+def test_a_maintain_rule_needs_a_verified_project() -> None:
+    policy = policy_set(compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS).document)
+    asserted = dataclasses.replace(maint_actor(), project=who("another_project").project)
+    unbound = dataclasses.replace(
+        maint_actor(), principal=token_of(None, Entrypoint.MAINT).principal
+    )
+    named = INSTALLATION + b"maintainers:\n  - {name: somebody_else}\n"
+    strict = policy_set(
+        compile_policy(
+            named.replace(
+                b"another_project: {other_graph: write}",
+                b"another_project: {other_graph: maintain}",
+            ),
+            file="i.yaml",
+            graphs=GRAPHS,
+        ).document
+    )
+    for subject in (asserted, unbound):
+        decision = authorize(subject, "maint.reindex", f"graph:{OTHER}", CTX, strict)
+        assert (decision.effect, decision.rule_id) == ("deny", "default.deny")
+    # the built-in policy lets every maintainer maintain, but no project admin
+    admin = token_of("another_project", Entrypoint.MAINT)
+    assert authorize(admin, "maint.reindex", f"graph:{OTHER}", CTX, BUILTIN_POLICY_SET).effect == (
+        "deny"
+    )
+    assert authorize(asserted, "maint.reindex", f"graph:{OTHER}", CTX, policy).effect == "allow"
+
+
+def test_a_grant_to_a_project_matches_its_tokens_only() -> None:
+    """E11: every token bound to the project, never an asserted project."""
+    compiled = compile_policy(PROJECTS, file="i.yaml", graphs=GRAPHS)
+    rules = {r["id"]: r for r in compiled.document["rules"]}  # type: ignore[index, union-attr]
+    assert rules["grant.1"]["principal"] == {"entrypoint": "server", "project": "another_project"}
+    bound = token_of("another_project", Entrypoint.SERVER)
+    assert levels(bound, compiled.document) == ["none", "write", "none"]
+    asserted = served(
+        dataclasses.replace(
+            token_of(None, Entrypoint.SERVER), project=who("another_project").project
+        )
+    )
+    assert levels(asserted, compiled.document) == ["none", "none", "none"]
+    plain = compile_policy(INSTALLATION, file="i.yaml", graphs=GRAPHS)
+    assert "project" not in str(plain.document["rules"][0])  # type: ignore[index]
+
+
 def test_graph_policy() -> None:
     compiled = compile_policy(
         GRAPH_POLICY,
@@ -247,6 +347,26 @@ def test_layer_of_source() -> None:
         (
             INSTALLATION + b'obligations:\n  - {action: ["read.get"], require_reason: true}\n',
             "obligations[0].action",
+        ),
+        (
+            INSTALLATION.replace(b"other_graph: read}", b'"*": maintain}'),
+            "scopes.example_project.*",
+        ),
+        (
+            INSTALLATION.replace(b'{"*": read}', b"{example_graph: maintain}"),
+            "no_project.example_graph",
+        ),
+        (
+            INSTALLATION.replace(b"{name: tester}", b"{project: example_project}"),
+            "grants[0].entrypoint",
+        ),
+        (
+            INSTALLATION.replace(b"{name: tester}", b"{project: 'bad project'}"),
+            "grants[0].principal.project",
+        ),
+        (
+            INSTALLATION + b"maintainers:\n  - {project: example_project}\n",
+            "maintainers[0].project",
         ),
         (b"[1, 2]", ""),
         (b"schema: graph_cli.policy/1\nid: installation\nid: graph\n", ""),

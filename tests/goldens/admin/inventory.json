@@ -792,7 +792,7 @@
       ],
       "kind": "read",
       "surface": "retrieve",
-      "action": null,
+      "action": "maint.graph_configure",
       "summary": "Show the manifest, head seq and installed releases of graph REF (name or id).",
       "args": [
         {
@@ -823,6 +823,7 @@
         }
       ],
       "errors": [
+        "access.denied",
         "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
@@ -941,7 +942,7 @@
       ],
       "kind": "read",
       "surface": "meta",
-      "action": null,
+      "action": "maint.graph_configure",
       "summary": "Preview DIR as graph REF's skill: write what graph skills install would install.",
       "args": [
         {
@@ -993,6 +994,7 @@
         }
       ],
       "errors": [
+        "access.denied",
         "admin.remote_mode",
         "admin.skill_invalid",
         "admin.skill_render_exists",
@@ -1129,6 +1131,7 @@
         }
       ],
       "errors": [
+        "access.denied",
         "admin.model_invalid",
         "admin.remote_mode",
         "backend.unavailable",
@@ -1534,6 +1537,13 @@
           "summary": "The project of the caller; without it: no project."
         },
         {
+          "name": "--token",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "The name of a token (never the token): a server request with it instead, its project verified; for an admin token the project admin's actions."
+        },
+        {
           "name": "--action",
           "type": "string",
           "required": false,
@@ -1570,10 +1580,15 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action write.create --type <type>",
           "summary": "One action on one type."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --token <value>",
+          "summary": "What a token's requests get, e.g. whether a project admin maintains the graph."
         }
       ],
       "errors": [
         "admin.remote_mode",
+        "admin.token_not_found",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
@@ -1733,7 +1748,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Bind the token to a project: requests then act for it, verified."
+          "summary": "Bind the token to a project: requests then act for it, verified; an admin token then maintains only the graphs the project's scope says maintain for."
         },
         {
           "name": "--expires",
@@ -1781,6 +1796,10 @@
         {
           "command": "graph-admin token create <value> --scope admin",
           "summary": "A token for the admin API."
+        },
+        {
+          "command": "graph-admin token create <value> --scope admin --project <value>",
+          "summary": "A project admin: maintains the graphs the project's scope says maintain for."
         }
       ],
       "errors": [

@@ -10,9 +10,14 @@ with the token's principal, so the installed policy's maintainers decide
 and every change is audited as locally. Before any command runs, the
 request must be allowed ``maint.audit_read`` on ``installation`` (a denial
 is audited): locally only who can read the data root runs ``graph-admin``
-at all, so the reads (``token list``, ``policy show``, ``graph show``)
+at all, so the installation reads (``token list``, ``policy show``)
 authorize nothing themselves; over HTTP an admin token that is no
-maintainer reaches none of them.
+maintainer reaches none of them. A project admin (an admin token bound to
+a project) passes instead when the command is one of ``PROJECT_COMMANDS``
+and the project maintains at least one graph; every other command is
+refused by the ``audit_read`` decision, which the ceiling denies it. Each
+of those commands authorizes its graph itself and shows a project admin
+only the graphs it maintains (``AdminContext.resolve``).
 
 ``--data-root`` is not part of the API, and every file or directory
 parameter takes uploads only: the server never takes a path from a
@@ -75,6 +80,23 @@ CLIENT: Final = ClientInfo(SERVER_PROGRAM, __version__, Entrypoint.MAINT)
 COMMANDS: Final = "/v1/admin/commands/"
 RETURNED: Final = {("graph", "skill", "render"): "rendered", ("graph", "pull"): "pulled"}
 GATE: Final = ("maint.audit_read", "installation")  # every admin request: a maintainer
+# What a project admin may run: commands on one graph that authorize it themselves, the
+# graph list (filtered) and the pure diff. Anything new stays with the maintainers.
+PROJECT_COMMANDS: Final = frozenset(
+    {
+        "files verify",
+        "graph check",
+        "graph list",
+        "graph pull",
+        "graph push",
+        "graph reindex",
+        "graph show",
+        "graph skill publish",
+        "graph skill render",
+        "ontology diff",
+        "ontology release",
+    }
+)
 _BODY_KEYS: Final = frozenset({"args", "actor"})
 
 
@@ -160,11 +182,18 @@ class AdminApi:
         return Outcome(restored, text if isinstance(text, str) else None, *status_of(restored))
 
     def _gate(self, command: str, request: AdminRequest) -> None:
-        """Only a maintainer reaches any admin command; a denial is audited and raised."""
+        """Only a maintainer, or a project admin that maintains a graph running a project
+        command, reaches an admin command; a denial is audited and raised."""
         settings = self.server.settings
         services = Services(settings.env, settings.cwd, request=request)
         found: list[WarningRecord] = []
         ctx = services.context(data_root=None, warnings=found)
+        if (
+            ctx.project_admin
+            and command in PROJECT_COMMANDS
+            and ctx.manifests(include_archived=True)
+        ):
+            return
         ctx.authorize([GATE], request=RequestMeta.of(command, {}))
 
     def _run(self, argv: list[str], request: AdminRequest) -> Completed:

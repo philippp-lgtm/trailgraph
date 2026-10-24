@@ -37,7 +37,7 @@ class FilesOutcome:
 
 
 def verify(ctx: AdminContext, *, graph_ref: str, rehash: bool) -> FilesOutcome:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "files verify")
     meta = RequestMeta.of("files verify", {"graph": str(entry.id), "rehash": rehash})
     ctx.authorize([("maint.audit_verify", f"graph:{entry.id}")], request=meta, graph=entry.id)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
@@ -61,7 +61,7 @@ def verify(ctx: AdminContext, *, graph_ref: str, rehash: bool) -> FilesOutcome:
 
 
 def gc(ctx: AdminContext, *, graph_ref: str, reason: str | None, dry_run: bool) -> FilesOutcome:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "files gc")
     meta = RequestMeta.of("files gc", {"graph": str(entry.id), "dry_run": dry_run})
     decisions = ctx.authorize(
         [("maint.repair", f"graph:{entry.id}")], request=meta, graph=entry.id, reason=reason

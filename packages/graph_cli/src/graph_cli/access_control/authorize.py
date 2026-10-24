@@ -6,7 +6,10 @@ Order:
    the resource must follow the grammar; anything else is a bug
    (``internal.error``, B6.2);
 2. the **ceiling**: the app and server entrypoints never get a ``maint.*``
-   action (B6.5); hard-coded, evaluated before any policy;
+   action (B6.5), and a project admin (the maintenance entrypoint with a
+   verified project: an admin token bound to a project) gets at most the
+   actions of the ``maintain`` scope level (graph-level maintenance and
+   ``read.get``), on a graph; hard-coded, evaluated before any policy;
 3. the first matching **deny** rule of any document: an explicit deny wins
    (B6.6);
 4. the first matching allow rule, else default deny;
@@ -39,8 +42,13 @@ from graph_cli.access_control.documents import (
     rules,
     strings,
 )
-from graph_cli.kernel.actions import EXT_ACTION_RE, Action, is_known_action
-from graph_cli.kernel.actor import ActorContext
+from graph_cli.kernel.actions import (
+    EXT_ACTION_RE,
+    PROJECT_ADMIN_ACTIONS,
+    Action,
+    is_known_action,
+)
+from graph_cli.kernel.actor import ActorContext, Assurance, Entrypoint
 from graph_cli.kernel.authz import AuthzContext, Decision, Obligations
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -50,6 +58,7 @@ CEILING_RULE: Final = "ceiling.app_no_maint"
 SERVER_CEILING_RULE: Final = "ceiling.server_no_maint"
 # The entrypoints that serve the app surface and their ceiling rules (B6.5, B14).
 CEILINGS: Final = {"app": CEILING_RULE, "server": SERVER_CEILING_RULE}
+PROJECT_CEILING_RULE: Final = "ceiling.project_maint"
 DEFAULT_DENY_RULE: Final = "default.deny"
 REASON_RULE: Final = "obligation.require_reason"
 BATCH_RULE: Final = "obligation.max_batch"
@@ -70,18 +79,34 @@ def authorize(
     ceiling = CEILINGS.get(actor.client.entrypoint.value)
     if ceiling is not None and action.startswith("maint."):
         return deny(ceiling, "access.ceiling")
+    project_admin = is_project_admin(actor)
+    if project_admin and (action not in PROJECT_ADMIN_ACTIONS or not resource.startswith("graph:")):
+        return deny(PROJECT_CEILING_RULE, "access.ceiling")
     documents = [_checked_document(d) for d in policy.documents]
     facts = principal_facts(actor)
-    matching = [
-        rule
-        for document in documents
-        for rule in rules(document)
-        if _matches(rule, facts, action, resource)
-    ]
-    denied = next((r for r in matching if r.get("effect") == "deny"), None)
+    denied = next(
+        (
+            rule
+            for document in documents
+            for rule in rules(document)
+            if rule.get("effect") == "deny" and _matches(rule, facts, facts, action, resource)
+        ),
+        None,
+    )
     if denied is not None:
         return deny(_text(denied, "id"), "access.denied")
-    allowed = next((r for r in matching if r.get("effect") == "allow"), None)
+    verified = principal_facts(actor, verified_only=True)
+    allowed = next(
+        (
+            rule
+            for document in documents
+            for rule in rules(document)
+            if rule.get("effect") == "allow"
+            and _matches(rule, verified, facts, action, resource)
+            and (not project_admin or "project" in _principal(rule))
+        ),
+        None,
+    )
     if allowed is None:
         return deny(DEFAULT_DENY_RULE, "access.denied")
     obligations = _obligations(documents, action)
@@ -92,18 +117,30 @@ def authorize(
     return Decision("allow", checked, resource, _text(allowed, "id"), policy.hash, obligations)
 
 
+def is_project_admin(actor: ActorContext) -> bool:
+    """The maintenance entrypoint acting for a verified project: an admin token bound to
+    a project. Locally the project is asserted, so a local maintainer never is one."""
+    return (
+        actor.client.entrypoint is Entrypoint.MAINT
+        and actor.project.assurance is Assurance.VERIFIED
+    )
+
+
 def _matches(
     rule: Mapping[str, JsonValue],
     facts: Mapping[str, str | None],
+    conditions: Mapping[str, str | None],
     action: str,
     resource: str,
 ) -> bool:
+    """``facts`` for the principal (verified ones only for an allow rule), ``conditions``
+    for ``unless``."""
     return (
         _principal_matches(rule.get("principal", {}), facts)
         and any(glob(pattern, action) for pattern in strings(rule, "action"))
         and _resource_matches(rule.get("resource"), resource)
         and not any(
-            _condition_matches(condition, facts, resource) for condition in _conditions(rule)
+            _condition_matches(condition, conditions, resource) for condition in _conditions(rule)
         )
     )
 
@@ -133,6 +170,12 @@ def _condition_matches(
     if "principal" in condition and not _principal_matches(condition["principal"], facts):
         return False
     return "resource" not in condition or _resource_matches(condition["resource"], resource)
+
+
+def _principal(rule: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
+    value = rule.get("principal", {})
+    assert isinstance(value, Mapping)  # guaranteed by _checked_document
+    return value
 
 
 def _conditions(rule: Mapping[str, JsonValue]) -> list[Mapping[str, JsonValue]]:

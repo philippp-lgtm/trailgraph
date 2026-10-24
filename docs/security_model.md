@@ -38,10 +38,21 @@ prevents depends on what is verified:
   [admin API](server.md#admin-api) turned on) reaches only maintenance, as
   one of the policy's maintainers. Treat an admin token like a shell in
   the container: whoever holds it can change policies, tokens and
-  ontologies, and every change is audited under its name.
+  ontologies, and every change is audited under its name. An admin token
+  bound to a project is narrower: it maintains only the graphs the
+  project's scope says `maintain` for (release, publish, push, check,
+  reindex) and sees no other graph; a hard-coded ceiling keeps it from
+  every installation and destructive action and from the maintainer
+  rules ([Project admins](access_control.md#project-admins)). Whoever
+  holds it can still change those graphs' ontology and skill, and reads
+  their data through check findings. The skill steers every agent that
+  uses the graph, in every project: `maintain` on a graph other projects
+  read lets one project's admin write instructions for their agents.
 - A token bound to a project (`token create --project`) verifies the
-  project, so that project's scope is a boundary for the token; without a
-  binding the client asserts the project and the scope stays a guardrail.
+  project, so that project's scope is a boundary for the token, and a
+  grant to the project (`principal: {project: P}`) reaches it; without a
+  binding the client asserts the project, the scope stays a guardrail and
+  no project grant or `maintain` level applies.
 - Agent, session and device are still asserted by the client: deny rules
   on them stop well-behaved clients only.
 - The transport: the server speaks plain HTTP on `127.0.0.1`; beyond the
@@ -54,7 +65,8 @@ prevents depends on what is verified:
   over the same connection, so the check catches a broken transfer, and
   TLS is what keeps them authentic: `self update` installs nothing over
   plain HTTP to another host. Whoever can replace the wheels in the image
-  or the server's answers runs code on every client that updates. The
+  or the server's answers runs code on every client that updates (the
+  wheels are not signed: trusting the server is trusting its code). The
   `graph` wheel is public (program code without data); the `graph-admin`
   wheel needs an admin token ([Self update](server.md#self-update)).
 

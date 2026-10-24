@@ -2,14 +2,19 @@
 
 Built by ``graph_cli_admin.maintenance_cli.wiring`` only; services never
 read the environment, the clock or the filesystem layout on their own.
+Services resolve a graph reference through ``AdminContext.resolve``, never
+the catalog: a project admin (an admin token bound to a project) sees only
+the graphs it maintains.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Final
 
-from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.authorize import authorize, is_project_admin
+from graph_cli.access_control.effective import maintains
 from graph_cli.audit import events
 from graph_cli.catalog.config import Config
 from graph_cli.catalog.file_catalog import FileCatalog
@@ -18,15 +23,18 @@ from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EventId, GraphId, IdProvider
 from graph_cli.kernel.ports.audit import AuditReceipt
-from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
+
+# The action whose denial a project admin's look at another graph records.
+VISIBLE: Final = "maint.graph_configure"
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,62 @@ class AdminContext:
 
     def event_id(self) -> EventId:
         return EventId(self.ids.new_id())
+
+    @property
+    def project_admin(self) -> bool:
+        return is_project_admin(self.actor)
+
+    def resolve(self, ref: str, command: str) -> GraphEntry:
+        """The graph ``ref`` names. A project admin sees only the graphs it maintains;
+        any other is ``graph.not_found`` as if it did not exist (no existence leak, as in
+        the app, B6.15), its denial of ``maint.graph_configure`` audited."""
+        if not self.project_admin:
+            return self.catalog.resolve(ref)
+        found = self.catalog.manifests(include_archived=True, skip_unreadable=True)
+        entry = next(
+            (m.entry for m in found if m.entry.name == ref or str(m.entry.id) == ref.lower()),
+            None,
+        )
+        if entry is None:
+            raise graph_not_found(ref)
+        if not maintains(self.actor, entry.id, self.policy.current(entry.id)):
+            try:
+                self.authorize(
+                    [(VISIBLE, f"graph:{entry.id}")],
+                    request=RequestMeta.of(command, {"graph": ref}),
+                    graph=entry.id,
+                )
+            except GraphCliError as exc:
+                if not exc.code.startswith("access."):
+                    raise
+            raise graph_not_found(ref)
+        return entry
+
+    def manifests(self, *, include_archived: bool) -> list[ManifestData]:
+        """The graphs' manifests; a project admin's are those of the graphs it maintains
+        (an unreadable manifest of another graph neither shows nor stops it)."""
+        if not self.project_admin:
+            return list(self.catalog.manifests(include_archived=include_archived))
+        found = self.catalog.manifests(include_archived=include_archived, skip_unreadable=True)
+        return [
+            m for m in found if maintains(self.actor, m.entry.id, self.policy.current(m.entry.id))
+        ]
+
+    def catalog_warnings(self) -> tuple[WarningRecord, ...]:
+        """What the catalog found reading manifests; a project admin's only about the graphs
+        it maintains (others would name graphs it cannot see)."""
+        warnings = self.catalog.warnings
+        if not self.project_admin:
+            return warnings
+        seen = {str(m.entry.id) for m in self.manifests(include_archived=True)}
+        return tuple(w for w in warnings if any(graph in str(dict(w.details)) for graph in seen))
+
+    def read_data(self, entry: GraphEntry, request: RequestMeta) -> None:
+        """A project admin's command that answers with the graph's data (check and migration
+        findings quote values) also needs ``read.get`` on the graph, so the policy's deny
+        rules on reads hold for it; a maintainer reads the data root anyway."""
+        if self.project_admin:
+            self.authorize([("read.get", f"graph:{entry.id}")], request=request, graph=entry.id)
 
     def authorize(
         self,

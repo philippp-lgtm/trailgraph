@@ -211,6 +211,15 @@ an admin token that is no maintainer reaches nothing. Denials and changes
 are audited exactly as locally, with the token and the asserted agent as
 the actor.
 
+An admin token bound to a project (`token create NAME --scope admin
+--project P`) is a [project admin](access_control.md#project-admins): it
+needs no `maintainers` entry, and passes instead when its project's scope
+says `maintain` for at least one graph (`token create` warns otherwise).
+It runs only the commands on one graph (`graph show|check|pull|push|
+reindex`, `graph skill publish|render`, `ontology release|diff`, `files
+verify`) and `graph list`, and sees only the graphs it maintains; every
+other command is refused with `access.ceiling`.
+
 The API never takes a path: `--data-root` is not part of it, a file
 parameter (a policy) takes an upload, and a directory parameter (an
 ontology, a skill) takes `{"files": {"<relative path>": "sha256:<hex>"},

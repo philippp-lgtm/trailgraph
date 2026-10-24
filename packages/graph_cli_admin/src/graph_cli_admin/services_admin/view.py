@@ -73,7 +73,7 @@ class BlobStream:
 
 
 def open_view(ctx: AdminContext, *, graph_ref: str) -> ViewSource:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "view")
     meta = RequestMeta.of("view", {"graph": str(entry.id)})
     ctx.authorize([("read.get", f"graph:{entry.id}")], request=meta, graph=entry.id)
     model, warnings = ModelCache(ctx.catalog).load_for_read(entry)

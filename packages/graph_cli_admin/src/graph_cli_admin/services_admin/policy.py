@@ -18,7 +18,8 @@ nothing.
 
 ``check``, ``show``, ``diff`` and ``explain`` write nothing and take no
 lock. ``explain`` asks ``authorize()`` what an app caller from a project, or
-from no project, would get: with the installed policy or with a file.
+from no project, or a request with a given server token would get: with the
+installed policy or with a file.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from graph_cli.access_control.compiler import Compiled, compile_policy, layer_of
 from graph_cli.access_control.documents import GRAPH_LAYER, INSTALLATION_LAYER, RESOURCE_RE, rules
 from graph_cli.access_control.effective import (
     graph_level,
+    maintains,
     project_warning,
     scope_of,
     withheld_actions,
@@ -48,7 +50,13 @@ from graph_cli.audit.verify import (
     verify_stream,
 )
 from graph_cli.catalog.policy_source import FilePolicySource
-from graph_cli.kernel.actions import WRITE_ACTIONS, is_known_action, level_actions
+from graph_cli.catalog.tokens import ADMIN_SCOPE, TokenRecord, parse_tokens
+from graph_cli.kernel.actions import (
+    PROJECT_ADMIN_ACTIONS,
+    WRITE_ACTIONS,
+    is_known_action,
+    level_actions,
+)
 from graph_cli.kernel.actor import (
     ABSENT,
     ActorContext,
@@ -66,8 +74,10 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
+from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
+from graph_cli_admin.services_admin.tokens import check_name, server_actor
 
 ACTION: Final = "maint.policy_change"
 APP_PROGRAM: Final = "graph"
@@ -89,7 +99,7 @@ class _Source:
 
 
 def check(ctx: AdminContext, *, file: Path, graph_ref: str | None) -> Outcome:
-    source = _compile(ctx, file, graph_ref)
+    source = _compile(ctx, file, graph_ref, "policy check")
     compiled = source.compiled
     data: dict[str, JsonValue] = {
         "file": str(file),
@@ -103,7 +113,7 @@ def check(ctx: AdminContext, *, file: Path, graph_ref: str | None) -> Outcome:
 
 
 def show(ctx: AdminContext, *, graph_ref: str | None) -> Outcome:
-    entry = ctx.catalog.resolve(graph_ref) if graph_ref is not None else None
+    entry = ctx.resolve(graph_ref, "policy show") if graph_ref is not None else None
     installed = _installed(ctx, entry)
     document = installed if installed is not None or entry is not None else BUILTIN_POLICY
     data: dict[str, JsonValue] = {
@@ -117,7 +127,7 @@ def show(ctx: AdminContext, *, graph_ref: str | None) -> Outcome:
 
 
 def diff(ctx: AdminContext, *, file: Path, graph_ref: str | None) -> Outcome:
-    source = _compile(ctx, file, graph_ref)
+    source = _compile(ctx, file, graph_ref, "policy diff")
     new = source.compiled.document
     installed = _installed(ctx, source.entry)
     old = installed if installed is not None or source.entry is not None else BUILTIN_POLICY
@@ -148,7 +158,7 @@ def diff(ctx: AdminContext, *, file: Path, graph_ref: str | None) -> Outcome:
 
 
 def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) -> Outcome:
-    source = _compile(ctx, file, graph_ref)
+    source = _compile(ctx, file, graph_ref, "policy apply")
     compiled, entry = source.compiled, source.entry
     resource = "installation" if entry is None else f"graph:{entry.id}"
     if entry is None:
@@ -205,14 +215,24 @@ def explain(
     action: str | None,
     type_curie: str | None,
     file: Path | None,
+    token: str | None = None,
 ) -> Outcome:
-    entry = ctx.catalog.resolve(graph_ref)
+    if token is not None and project is not None:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--token and --project exclude each other: a token names its own project",
+            details={"argument": "project"},
+        )
+    entry = ctx.resolve(graph_ref, "policy explain")
     installation = ctx.policy.current(None).documents[0]
     layer = _installed(ctx, entry)
     warnings: tuple[WarningRecord, ...] = ()
     if file is not None:
         source = _compile(
-            ctx, file, graph_ref if layer_of_source(_read(file)) == GRAPH_LAYER else None
+            ctx,
+            file,
+            graph_ref if layer_of_source(_read(file)) == GRAPH_LAYER else None,
+            "policy explain",
         )
         warnings = source.warnings
         if source.entry is None:
@@ -220,7 +240,14 @@ def explain(
         else:
             layer = source.compiled.document
     policy = policy_set(installation, layer)
-    caller = _app_caller(ctx.actor, project)
+    record = _token(ctx, token) if token is not None else None
+    caller = (
+        server_actor(record, ctx.actor.client.version)
+        if record is not None
+        else _app_caller(ctx.actor, project)
+    )
+    if record is not None:
+        project = record.project
     resource = f"graph:{entry.id}" + (f"/type:{type_curie}" if type_curie is not None else "")
     if not RESOURCE_RE.match(resource):
         raise GraphCliError(
@@ -234,16 +261,20 @@ def explain(
             f"--action {action}: unknown action",
             details={"argument": "action"},
         )
-    actions = [action] if action is not None else _app_actions()
+    admin = record is not None and record.scope == ADMIN_SCOPE
+    default = list(PROJECT_ADMIN_ACTIONS) if admin else _app_actions()
+    actions = [action] if action is not None else default
     decisions = [authorize(caller, a, resource, _PROBE, policy) for a in actions]
     warning = project_warning(caller, policy)
     data: dict[str, JsonValue] = {
         "graph": entry.name,
         "project": project,
+        "token": token,
         "scope": scope_of(caller, policy),
         "policy_hash": policy.hash,
         "level": graph_level(caller, entry.id, policy),
         "withheld": withheld_actions(caller, entry.id, policy),
+        "maintains": maintains(caller, entry.id, policy),
         "resource": resource,
         "decisions": [_decision_json(d) for d in decisions],
     }
@@ -253,7 +284,7 @@ def explain(
 # ---- helpers -----------------------------------------------------------------------
 
 
-def _compile(ctx: AdminContext, file: Path, graph_ref: str | None) -> _Source:
+def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str) -> _Source:
     data = _read(file)
     layer = layer_of_source(data)
     if layer == GRAPH_LAYER and graph_ref is None:
@@ -269,7 +300,7 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None) -> _Source:
             details={"argument": "graph"},
         )
     graphs = {e.name: e.id for e in ctx.catalog.list_graphs(include_archived=True)}
-    entry = ctx.catalog.resolve(graph_ref) if graph_ref is not None else None
+    entry = ctx.resolve(graph_ref, command) if graph_ref is not None else None
     classes = pinned_model(ctx.catalog, entry).classes if entry is not None else None
     compiled = compile_policy(
         data,
@@ -414,6 +445,17 @@ def _app_caller(maintainer: ActorContext, project: str | None) -> ActorContext:
         project=facet,
         client=ClientInfo(APP_PROGRAM, maintainer.client.version, Entrypoint.APP),
     )
+
+
+def _token(ctx: AdminContext, name: str) -> TokenRecord:
+    check_name(name, "--token")
+    records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
+    found = next((r for r in records if r.name == name), None)
+    if found is None:
+        raise GraphCliError(
+            "admin.token_not_found", f"no token named {name}", details={"name": name}
+        )
+    return found
 
 
 def _app_actions() -> list[str]:

@@ -163,10 +163,11 @@ def test_the_manifest_round_trips() -> None:
         with pytest.raises(GraphCliError) as caught:
             parse_manifest(broken, 200)
         assert caught.value.code == "remote.protocol"
-    bad = manifest()
-    bad["programs"]["graph"]["file"] = "../graph.whl"
-    with pytest.raises(GraphCliError):
-        parse_manifest(bad, 200)
+    for name in ("../graph.whl", "a/graph.whl", "a\\graph.whl", ".graph.whl", "c:graph.whl", ""):
+        bad = manifest()
+        bad["programs"]["graph"]["file"] = name
+        with pytest.raises(GraphCliError):
+            parse_manifest(bad, 200)
 
 
 def test_a_tool_environment_is_found_by_its_receipt(package: Path, tmp_path: Path) -> None:

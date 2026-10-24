@@ -23,7 +23,8 @@ Publishing the same files against the same pin again changes nothing.
 
 ``render`` writes what ``graph skills install`` would install (without the
 marker) into a preview directory; read-only for the data root, like
-``graph show``: no lock, no authorization call, no event.
+``graph show``: no lock, no event, authorized ``maint.graph_configure``
+(whoever may publish may preview).
 """
 
 from __future__ import annotations
@@ -159,7 +160,7 @@ def publish(
     dry_run: bool,
     inventory: Mapping[str, JsonValue],
 ) -> Published:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph skill publish")
     check_state(entry)
     name = graph_skill_name(entry.name)
     checked = check_source(ctx, entry, source, inventory)
@@ -221,7 +222,12 @@ def render(
     """Write ``<out>/graph-<graph>/`` as ``graph skills install`` would (Q5). Problems of the
     curated text do not stop the preview; they come back as ``admin.skill_invalid`` next to
     the data, because publish would refuse them."""
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph skill render")
+    ctx.authorize(
+        [("maint.graph_configure", f"graph:{entry.id}")],
+        request=RequestMeta.of("graph skill render", {"graph": graph_ref}),
+        graph=entry.id,
+    )
     name = graph_skill_name(entry.name)
     if not out.is_dir():
         raise GraphCliError(

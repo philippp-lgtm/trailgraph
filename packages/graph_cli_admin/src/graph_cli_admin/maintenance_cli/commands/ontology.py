@@ -9,6 +9,7 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.records import RequestMeta
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -48,7 +49,12 @@ def diff_command(
     graph = None
     if graph_ref is not None:
         ctx = admin_context(state, data_root)
-        entry = ctx.catalog.resolve(graph_ref)
+        entry = ctx.resolve(graph_ref, "ontology diff")
+        ctx.authorize(
+            [("maint.graph_configure", f"graph:{entry.id}")],
+            request=RequestMeta.of("ontology diff", {"graph": graph_ref}),
+            graph=entry.id,
+        )
         old = ontology.pinned_model(ctx.catalog, entry)
         graph = {"id": str(entry.id), "name": entry.name, "state": entry.state}
     else:
@@ -114,9 +120,10 @@ SPECS: Final = (
                 "Compare with a graph's pinned release.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, "usage.missing_argument", "admin.model_invalid"),
+        errors=(*GRAPH_ERRORS, "access.denied", "usage.missing_argument", "admin.model_invalid"),
         handler=diff_command,
-        description="Reports whether the declared version bump suffices; release enforces it.",
+        description="Reports whether the declared version bump suffices; release enforces it."
+        " With --graph, authorized maint.graph_configure on the graph.",
         remote="hooked",
     ),
     CommandSpec(

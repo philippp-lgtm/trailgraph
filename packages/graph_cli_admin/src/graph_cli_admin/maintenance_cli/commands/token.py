@@ -63,7 +63,8 @@ SPECS: Final = (
             ParamSpec(
                 "--project",
                 "string",
-                "Bind the token to a project: requests then act for it, verified.",
+                "Bind the token to a project: requests then act for it, verified; an admin"
+                " token then maintains only the graphs the project's scope says maintain for.",
             ),
             ParamSpec("--expires", "string", "Last valid day, YYYY-MM-DD (UTC)."),
             ParamSpec(
@@ -83,12 +84,17 @@ SPECS: Final = (
                 "A token bound to a project, valid until a date.",
             ),
             Example("graph-admin token create <value> --scope admin", "A token for the admin API."),
+            Example(
+                "graph-admin token create <value> --scope admin --project <value>",
+                "A project admin: maintains the graphs the project's scope says maintain for.",
+            ),
         ),
         errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.token_exists"),
         handler=create,
         description="Only a hash of the token is stored. The installed policy must grant"
         " the server entrypoint (or this token) a level; create warns when it grants nothing."
-        " An admin token acts as a maintainer and must be one of the policy's maintainers.",
+        " An admin token acts as a maintainer and must be one of the policy's maintainers;"
+        " bound to a project, it is a project admin instead and needs no maintainers entry.",
     ),
     CommandSpec(
         path=("token", "list"),

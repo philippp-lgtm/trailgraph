@@ -1,11 +1,11 @@
 """What a policy lets an actor do, summarized (contracts B2.10, B6.11, B6.13).
 
-Pure helpers over ``authorize()`` for ``graph whoami`` and ``graph-admin
-policy explain``: the access level per graph, the actions a deny rule
-withholds below it, the obligations of the allowed writes, the project scope
-that applies and the warning for a project the installation policy has no
-scope for. Nothing here decides on its own; every
-answer is a set of ``authorize()`` calls.
+Pure helpers over ``authorize()`` for ``graph whoami``, ``graph-admin
+policy explain`` and the admin API: the access level per graph, whether an
+actor maintains a graph, the actions a deny rule withholds below it, the
+obligations of the allowed writes, the project scope that applies and the
+warning for a project the installation policy has no scope for. Nothing here
+decides on its own; every answer is a set of ``authorize()`` calls.
 """
 
 from __future__ import annotations
@@ -14,7 +14,12 @@ from typing import Final
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.documents import INSTALLATION_LAYER, layer_of, strings
-from graph_cli.kernel.actions import ACCESS_LEVELS, WRITE_ACTIONS, level_actions
+from graph_cli.kernel.actions import (
+    ACCESS_LEVELS,
+    PROJECT_MAINT_ACTIONS,
+    WRITE_ACTIONS,
+    level_actions,
+)
 from graph_cli.kernel.actor import ActorContext, Assurance
 from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonValue
@@ -41,6 +46,16 @@ def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
             break
         reached = level
     return reached
+
+
+def maintains(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
+    """Whether ``actor`` may run any graph-level maintenance action of the ``maintain``
+    scope level on ``graph:<id>``: what a project admin sees of a graph."""
+    resource = f"graph:{graph}"
+    return any(
+        authorize(actor, a, resource, _PROBE, policy).effect == "allow"
+        for a in PROJECT_MAINT_ACTIONS
+    )
 
 
 def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> list[str]:

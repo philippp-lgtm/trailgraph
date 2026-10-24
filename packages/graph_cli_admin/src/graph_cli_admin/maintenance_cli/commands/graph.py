@@ -57,14 +57,14 @@ def create(
 def list_command(state: CommandState, include_archived: bool, data_root: str | None) -> Result:
     ctx = admin_context(state, data_root)
     items = graphs.list_graphs(ctx, include_archived=include_archived)
-    state.warnings += ctx.catalog.warnings
+    state.warnings += ctx.catalog_warnings()
     return Result(data={"items": items})
 
 
 def show(state: CommandState, ref: str, data_root: str | None) -> Result:
     ctx = admin_context(state, data_root)
     entry, data = graphs.show(ctx, ref)
-    state.warnings += ctx.catalog.warnings
+    state.warnings += ctx.catalog_warnings()
     seq = data["seq"]
     return Result(
         data=data, graph=graphs.envelope_graph(entry, seq if isinstance(seq, int) else None)
@@ -246,19 +246,21 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=list_command,
+        description="A project admin (an admin token bound to a project) sees only the graphs"
+        " it maintains.",
     ),
     CommandSpec(
         path=("graph", "show"),
         kind="read",
         surface="retrieve",
-        action=None,
+        action="maint.graph_configure",
         summary="Show the manifest, head seq and installed releases of graph REF (name or id).",
         params=(REF, DATA_ROOT),
         examples=(
             Example("graph-admin graph show <graph>", "Show one graph."),
             Example("graph-admin graph show <graph> --json", "The same as JSON."),
         ),
-        errors=GRAPH_ERRORS,
+        errors=(*GRAPH_ERRORS, "access.denied"),
         handler=show,
     ),
     CommandSpec(
@@ -449,7 +451,7 @@ SPECS: Final = (
         path=("graph", "skill", "render"),
         kind="read",
         surface="meta",
-        action=None,
+        action="maint.graph_configure",
         summary="Preview DIR as graph REF's skill: write what graph skills install would install.",
         params=(
             REF,
@@ -472,6 +474,7 @@ SPECS: Final = (
         ),
         errors=(
             *GRAPH_ERRORS,
+            "access.denied",
             "graph.archived",
             "admin.skill_invalid",
             "admin.skill_render_exists",

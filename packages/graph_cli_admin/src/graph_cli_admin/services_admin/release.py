@@ -98,12 +98,14 @@ def authorize(
     pairs = [("maint.ontology_release", resource)]
     release = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     pairs = [("maint.ontology_pin", resource)]
-    return Decisions(release, ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason))
+    pin = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
+    ctx.read_data(entry, meta)  # a release checks the data; its findings quote values
+    return Decisions(release, pin)
 
 
 def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | None) -> Released:
     compiled = compile_source(source, module)
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "ontology release")
     check_state(entry)
     meta = RequestMeta.of(
         "ontology release", {"graph": str(entry.id), "ontology": compiled.pin.to_json()}

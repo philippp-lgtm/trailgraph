@@ -141,6 +141,32 @@ def test_only_the_write_service_commits() -> None:
     assert _commit_calls(ast.parse("session.commit(tx, receipt)"))
 
 
+def _catalog_lookups(tree: ast.Module) -> list[str]:
+    """``<x>.catalog.resolve(...)`` and ``<x>.catalog.manifests(...)``."""
+    return [
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("resolve", "manifests")
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "catalog"
+    ]
+
+
+def test_admin_services_find_graphs_through_the_context() -> None:
+    """B14.20: a project admin sees only the graphs it maintains; ``AdminContext.resolve``
+    and ``manifests`` are the only way the admin side finds a graph."""
+    found = _violations(
+        _catalog_lookups,
+        lambda n: (
+            not n.startswith("graph_cli_admin.") or n == "graph_cli_admin.services_admin.context"
+        ),
+    )
+    assert found == {}
+    assert _catalog_lookups(ast.parse("ctx.catalog.resolve(ref)"))
+
+
 @pytest.mark.parametrize(
     ("source", "rule"),
     [

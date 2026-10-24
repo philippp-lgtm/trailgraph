@@ -153,11 +153,22 @@ def parse_manifest(value: JsonValue, status: int) -> Manifest:
 
 
 def _dist_file(value: JsonValue) -> DistFile:
-    assert isinstance(value, Mapping)
+    """A listed file; its name becomes a path under the state root, so it is checked
+    explicitly (never with ``assert``, which ``python -O`` drops)."""
+    if not isinstance(value, Mapping):
+        raise ValueError("not an object")
     file, digest, size = value["file"], value["hash"], value["size"]
-    assert isinstance(file, str) and file and "/" not in file and not file.startswith(".")
-    assert isinstance(digest, str) and digest.startswith(DIGEST_PREFIX)
-    assert isinstance(size, int) and not isinstance(size, bool) and size >= 0
+    if not (
+        isinstance(file, str)
+        and file
+        and not file.startswith(".")
+        and not any(c in file for c in "/\\\0:")
+    ):
+        raise ValueError("not a file name")
+    if not (isinstance(digest, str) and digest.startswith(DIGEST_PREFIX)):
+        raise ValueError("not a hash")
+    if not (isinstance(size, int) and not isinstance(size, bool) and size >= 0):
+        raise ValueError("not a size")
     return DistFile(file, digest, size)
 
 

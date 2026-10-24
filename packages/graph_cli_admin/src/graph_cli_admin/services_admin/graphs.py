@@ -190,12 +190,17 @@ def list_graphs(ctx: AdminContext, *, include_archived: bool) -> list[JsonValue]
             "state": m.entry.state,
             "ontology": {"bundle": m.entry.pin.bundle, "version": m.entry.pin.version},
         }
-        for m in ctx.catalog.manifests(include_archived=include_archived)
+        for m in ctx.manifests(include_archived=include_archived)
     ]
 
 
 def show(ctx: AdminContext, ref: str) -> tuple[GraphEntry, dict[str, JsonValue]]:
-    entry = ctx.catalog.resolve(ref)
+    entry = ctx.resolve(ref, "graph show")
+    ctx.authorize(
+        [("maint.graph_configure", f"graph:{entry.id}")],
+        request=RequestMeta.of("graph show", {"graph": ref}),
+        graph=entry.id,
+    )
     manifest = ctx.catalog.manifest(entry.id)
     head = ctx.catalog.file_store(entry.id).head()
     layout = GraphLayout(ctx.catalog.graphs_dir / str(entry.id))

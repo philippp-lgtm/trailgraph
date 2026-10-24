@@ -30,6 +30,12 @@ installation policy's `maintainers` decide as for a local maintainer, so
 an installation that lists maintainers names the token there
 (`{id: "token:<name>"}`).
 
+An admin token bound to a project is a **project admin** instead: it
+maintains the graphs its project's scope says `maintain` for and reaches
+nothing else (see [Project admins](#project-admins)). Locally the
+project comes from the pointer and is only asserted, so a local
+`graph-admin` never acts as a project admin.
+
 ## Policy layers
 
 - The **installation policy** grants, per principal, a level on graphs and
@@ -37,7 +43,9 @@ an installation that lists maintainers names the token there
   `project`), the required `no_project` scope covers invocations without a
   project and with a project it does not know (warning
   `access.project_unknown`). Levels are `none` (the graph is invisible),
-  `read` and `write` (read plus writes and extension actions).
+  `read` and `write` (read plus writes and extension actions). A project
+  scope may also say `maintain` for a named graph: `write` for the
+  project's callers, plus maintenance by the project's admin tokens.
 - A **graph policy** narrows inside one graph for everyone: types that are
   read-only, obligations (`require_reason`, `max_batch`) and deny rules.
   `max_batch` bounds the operations of one change set, that is one
@@ -48,12 +56,15 @@ an installation that lists maintainers names the token there
   must name concrete types (or `prefix:*`); an abstract type or one with
   subclasses is refused.
 - Deny rules may name the agent type, agent, session, device or project;
-  grants only the verified principal. An explicit deny wins, the default
-  is deny.
+  grants only the verified principal and a verified project. An explicit
+  deny wins, the default is deny.
 - A grant is for `graph` (`entrypoint: app`, the default), for the server
   API (`entrypoint: server`) or for both (`entrypoint: [app, server]`).
   Scopes and deny rules apply to every entrypoint. `principal: {id:
-  token:<name>}` grants one token.
+  token:<name>}` grants one token, `principal: {project: <project>}` every
+  token bound to that project (only a bound token verifies a project, so
+  such a grant needs `entrypoint: server`): a new token for the project
+  needs no policy change.
 
 ```yaml
 schema: graph_cli.policy/1
@@ -61,8 +72,9 @@ id: installation
 grants:
   - {principal: {name: owner_name}, graphs: "*", level: write}
   - {entrypoint: server, graphs: "*", level: write}
+  - {entrypoint: server, principal: {project: example_project}, graphs: [example_graph], level: write}
 scopes:
-  example_project: {example_graph: write, other_graph: read}
+  example_project: {example_graph: maintain, other_graph: read}
 no_project: {"*": read}
 deny:
   - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
@@ -77,11 +89,41 @@ obligations:
   - {action: ["write.*"], max_batch: 200}
 ```
 
+## Project admins
+
+`scopes.<project>.<graph>: maintain` lets an admin token bound to the
+project (`graph-admin token create NAME --scope admin --project P`) run
+the graph-level maintenance of that graph: `ontology release` (release
+and pin), `graph skill publish` and `graph push` (`graph_configure`),
+`graph check` and `files verify` (`audit_verify`) and `graph reindex`;
+reads that show the graph's configuration (`graph show`, `graph pull`,
+`graph skill render`, `ontology diff --graph`) need `graph_configure`
+too. Check and release findings quote the graph's data, so `maintain`
+includes `read.get` on the graph, and `graph check`, `ontology release`
+and a `graph push` that releases also authorize it for a project admin: a
+deny rule on reads (by project, for example) holds there too. Everything
+else stays with the `maintainers`: creating, archiving
+and restoring graphs, migrations, purges and repairs, policies, tokens
+and the installation audit. `maintain` names graphs one by one (`"*":
+maintain` is refused), so a new graph is never maintained implicitly.
+
+A project admin is held to this by a hard-coded ceiling, like the app:
+any other action, or any resource but a graph, is `access.ceiling`, and
+of the policy's allow rules only those naming its project count, so the
+`maintainers` (and the built-in policy, which lets every maintenance
+caller maintain) never reach it. Over the admin API it sees only the
+graphs it maintains: `graph list` lists those, any other graph is
+`graph.not_found` as if it did not exist (the refusal is audited),
+warnings about other graphs' manifests are left out, and every other
+command is refused. `graph-admin policy explain --graph G
+--token NAME` shows what a token's requests get, `maintains` included.
+
 ## Decisions
 
 `graph_cli.access_control.authorize()` is the one decision point. It is pure
 and answers for one (action, resource) pair: the app and server entrypoints
-never get a `maint.*` action, then the first matching deny rule of any policy layer
+never get a `maint.*` action and a project admin only the graph-level
+maintenance of its `maintain` graphs, then the first matching deny rule of any policy layer
 wins, then the first matching allow rule, else deny, then the obligations
 of every layer (`require_reason`, `max_batch`).
 

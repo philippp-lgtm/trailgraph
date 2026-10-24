@@ -185,10 +185,176 @@ def test_the_maintainers_decide(
     assert refusals[-1]["actor"]["principal"]["id"] == "token:root"
 
 
-def test_an_admin_token_has_no_project(run_cli: CliRunner, installation: dict[str, Any]) -> None:
-    outcome = admin(run_cli, "token", "create", "x", "--scope", "admin", "--project", "p1")
-    assert outcome.code == 2
-    assert outcome.error["details"]["argument"] == "--project"
+PROJECT_POLICY = (
+    SERVER_POLICY
+    + f'maintainers:\n  - {{id: "os:{os.getuid()}"}}\n  - {{id: "token:root"}}\n'
+    + "scopes:\n  p1: {example_graph: maintain}\n  p2: {other_graph: write}\n"
+)
+
+
+@pytest.fixture
+def project_admins(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> dict[str, Any]:
+    """Plan origin_lifecycle E8-E10: ``p1`` maintains example_graph, ``p2`` nothing."""
+    create_graph(run_cli, "other_graph", version="1.0.0")
+    grant_server(run_cli, tmp_path, PROJECT_POLICY)
+    created = admin(run_cli, "token", "create", "pa", "--scope", "admin", "--project", "p1")
+    assert created.code == 0 and created.warning_codes == [], created.envelope
+    idle = admin(run_cli, "token", "create", "pb", "--scope", "admin", "--project", "p2")
+    assert idle.warning_codes == ["admin.token_not_maintainer"], idle.envelope
+    assert "scopes.p2" in idle.envelope["warnings"][0]["message"]
+    return {**installation, "pa": created.data["token"], "pb": idle.data["token"]}
+
+
+def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: str) -> Any:
+    """Arguments that get every project command as far as resolving ``graph``."""
+    ontology = upload_tree(app, token, V101)
+    skill = upload_tree(app, token, GRAPH_SKILL)
+    empty = {"files": {}, "name": "out"}
+    return {
+        ("files", "verify"): {"--graph": graph},
+        ("graph", "check"): {"ref": graph},
+        ("graph", "list"): {},
+        ("graph", "pull"): {"ref": graph, "dir": empty},
+        ("graph", "push"): {"ref": graph, "dir": ontology, "--dry-run": True},
+        ("graph", "reindex"): {"ref": graph, "--reason": "test"},
+        ("graph", "show"): {"ref": graph},
+        ("graph", "skill", "publish"): {"ref": graph, "dir": skill, "--reason": "test"},
+        ("graph", "skill", "render"): {"ref": graph, "dir": skill, "--out": empty},
+        ("ontology", "diff"): {"source": ontology, "--graph": graph},
+        ("ontology", "release"): {"graph": graph, "source": ontology},
+    }[spec_path]
+
+
+def test_a_project_admin_reaches_its_graphs_and_nothing_else(
+    project_admins: dict[str, Any], tmp_path: Path
+) -> None:
+    """E10: every served admin command, run by a project admin, is refused or shows only
+    the project's graphs; another graph is not found, as one that does not exist."""
+    from graph_cli_server.admin_api import PROJECT_COMMANDS
+
+    app = served(project_admins, tmp_path)
+    pa = project_admins["pa"]
+    commands = [s for s in all_specs() if s.remote in ("server", "hooked")]
+    assert {" ".join(s.path) for s in commands} >= PROJECT_COMMANDS
+    for spec in commands:
+        path = "/".join(spec.path)
+        if " ".join(spec.path) not in PROJECT_COMMANDS:
+            reply = command(app, path, pa, args={})
+            assert (reply.status, reply.error["code"]) == (403, "access.ceiling"), path
+            continue
+        args = project_args(app, pa, spec.path, "other_graph")
+        reply = command(app, path, pa, args=args)
+        if spec.path == ("graph", "list"):
+            names = [g["name"] for g in reply.json["data"]["items"]]
+            assert names == ["example_graph"], reply.json
+            continue
+        missing = command(app, path, pa, args=project_args(app, pa, spec.path, "no_such_graph"))
+        assert (reply.status, reply.error["code"]) == (404, "graph.not_found"), (path, reply.json)
+        assert reply.error["message"].replace("other_graph", "X") == missing.error[
+            "message"
+        ].replace("no_such_graph", "X"), path
+    shown = command(app, "graph/show", pa, args={"ref": "example_graph"})
+    assert shown.status == 200, shown.json
+    reindexed = command(app, "graph/reindex", pa, args={"ref": "example_graph", "--reason": "x"})
+    assert reindexed.status == 200, reindexed.json
+    released = command(
+        app,
+        "ontology/release",
+        pa,
+        args={"graph": "example_graph", "source": upload_tree(app, pa, V101)},
+    )
+    assert released.status == 200, released.json
+    refusals = [
+        e
+        for e in audit_events(project_admins["root"])
+        if e.get("result", {}).get("status") == "denied"
+        and e["actor"]["principal"]["id"] == "token:pa"
+    ]
+    assert {e["actor"]["project"]["assurance"] for e in refusals} == {"verified"}
+    assert {d["rule"] for e in refusals for d in e["authz"]["decisions"]} >= {
+        "ceiling.project_maint",
+        "default.deny",
+    }
+    assert command(app, "audit/verify", project_admins["tokens"]["root"]).status == 200
+
+
+def test_a_project_admin_without_graphs_reaches_nothing(
+    project_admins: dict[str, Any], tmp_path: Path
+) -> None:
+    app = served(project_admins, tmp_path)
+    for path in ("graph/list", "graph/show", "token/list"):
+        reply = command(app, path, project_admins["pb"], args={})
+        assert (reply.status, reply.error["code"]) == (403, "access.ceiling"), path
+
+
+def test_a_project_admin_reads_data_only_where_reads_are_not_denied(
+    run_cli: CliRunner, project_admins: dict[str, Any], tmp_path: Path
+) -> None:
+    """Security review of step 5: check findings quote values, so they need read.get."""
+    app = served(project_admins, tmp_path)
+    pa = project_admins["pa"]
+    assert command(app, "graph/check", pa, args={"ref": "example_graph"}).status == 200
+    denied = PROJECT_POLICY.replace(
+        "deny:\n",
+        "deny:\n  - {id: no_p1_reads, project: p1, action: [read.get], graph: [example_graph]}\n",
+    )
+    grant_server(run_cli, tmp_path, denied)
+    refused = command(app, "graph/check", pa, args={"ref": "example_graph"})
+    assert (refused.status, refused.error["code"]) == (403, "access.denied"), refused.json
+    release = command(
+        app,
+        "ontology/release",
+        pa,
+        args={"graph": "example_graph", "source": upload_tree(app, pa, V101)},
+    )
+    assert release.error["code"] == "access.denied", release.json
+    shown = command(app, "graph/show", pa, args={"ref": "example_graph"})
+    assert shown.status == 200, shown.json
+
+
+def test_another_graphs_broken_manifest_neither_shows_nor_stops_a_project_admin(
+    project_admins: dict[str, Any], tmp_path: Path
+) -> None:
+    app = served(project_admins, tmp_path)
+    root = project_admins["tokens"]["root"]
+    other = command(app, "graph/show", root, args={"ref": "other_graph"}).json["data"]["id"]
+    manifest = project_admins["root"] / "graphs" / other / "manifest.toml"
+    manifest.write_text(manifest.read_text() + "\nsurprise = 1\n")
+    pa = project_admins["pa"]
+    listed = command(app, "graph/list", pa)
+    assert listed.status == 200 and other not in json.dumps(listed.json), listed.json
+    assert other in json.dumps(command(app, "graph/list", root).json)  # a maintainer sees it
+    manifest.write_text("not toml [")
+    for path, args in (("graph/list", {}), ("graph/show", {"ref": "example_graph"})):
+        reply = command(app, path, pa, args=args)
+        assert reply.status == 200 and other not in json.dumps(reply.json), reply.json
+    missing = command(app, "graph/show", pa, args={"ref": other})
+    assert missing.error["code"] == "graph.not_found"
+
+
+def test_policy_explain_names_what_a_token_gets(
+    run_cli: CliRunner, project_admins: dict[str, Any]
+) -> None:
+    explained = admin(run_cli, "policy", "explain", "--graph", "example_graph", "--token", "pa")
+    assert explained.code == 0, explained.envelope
+    data = explained.data
+    assert (data["token"], data["project"], data["maintains"]) == ("pa", "p1", True)
+    assert {d["rule"] for d in data["decisions"]} == {"scope.p1:maintain"}
+    other = admin(run_cli, "policy", "explain", "--graph", "other_graph", "--token", "pa")
+    assert other.data["maintains"] is False
+    app = admin(run_cli, "policy", "explain", "--graph", "other_graph", "--token", "ci")
+    assert (app.data["level"], app.data["maintains"]) == ("write", False)
+    both = admin(
+        run_cli, "policy", "explain", "--graph", "other_graph", "--token", "pa", "--project", "p1"
+    )
+    assert both.code == 2
+    unknown = admin(run_cli, "policy", "explain", "--graph", "other_graph", "--token", "nobody")
+    assert unknown.error["code"] == "admin.token_not_found"
+    secret = project_admins["pa"]
+    mistaken = admin(run_cli, "policy", "explain", "--graph", "other_graph", "--token", secret)
+    assert mistaken.code == 2 and secret not in json.dumps(mistaken.envelope)
 
 
 def test_no_request_names_a_path_on_the_server(

@@ -93,7 +93,7 @@ class Pushed:
 def pull(
     ctx: AdminContext, *, graph_ref: str, target: Path, version: str | None, force: bool
 ) -> Pulled:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph pull")
     meta = RequestMeta.of("graph pull", {"graph": str(entry.id), "version": version})
     ctx.authorize([("maint.graph_configure", f"graph:{entry.id}")], request=meta, graph=entry.id)
     installed = release_hashes(GraphLayout(ctx.catalog.graphs_dir / str(entry.id)))
@@ -307,7 +307,7 @@ def push(
     dry_run: bool,
     inventory: Mapping[str, JsonValue],
 ) -> Pushed:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph push")
     release.check_state(entry)
     base = read_base(source)
     if base.graph_id != str(entry.id):

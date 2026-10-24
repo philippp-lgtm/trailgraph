@@ -40,9 +40,10 @@ class CheckOutcome:
 def check(
     ctx: AdminContext, *, graph_ref: str, source: Path | None, module: str | None
 ) -> CheckOutcome:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph check")
     meta = RequestMeta.of("graph check", {"graph": str(entry.id)})
     ctx.authorize([("maint.audit_verify", f"graph:{entry.id}")], request=meta, graph=entry.id)
+    ctx.read_data(entry, meta)
     if source is None:
         model = pinned_model(ctx.catalog, entry)
     else:

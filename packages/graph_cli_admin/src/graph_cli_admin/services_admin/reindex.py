@@ -28,7 +28,7 @@ class ReindexOutcome:
 def reindex(
     ctx: AdminContext, *, graph_ref: str, reason: str | None, dry_run: bool
 ) -> ReindexOutcome:
-    entry = ctx.catalog.resolve(graph_ref)
+    entry = ctx.resolve(graph_ref, "graph reindex")
     meta = RequestMeta.of("graph reindex", {"graph": str(entry.id), "dry_run": dry_run})
     decisions = ctx.authorize(
         [("maint.reindex", f"graph:{entry.id}")], request=meta, graph=entry.id, reason=reason

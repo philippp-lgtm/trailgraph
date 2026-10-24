@@ -3,9 +3,10 @@
 Two authored forms, told apart by ``id``:
 
 - ``installation``: ``grants`` (who may use which graphs at which level,
-  through the app or, with ``entrypoint: server``, the server API),
-  optional ``maintainers``, project ``scopes``, the required ``no_project``
-  scope, ``deny`` rules and ``obligations``;
+  through the app or, with ``entrypoint: server``, the server API; a grant
+  may name a project, which only a token bound to it verifies), optional
+  ``maintainers``, project ``scopes``, the required ``no_project`` scope,
+  ``deny`` rules and ``obligations``;
 - ``graph``: one graph's ``types`` limits, ``obligations`` and ``deny``
   rules. It only narrows.
 
@@ -13,7 +14,11 @@ Levels expand to action globs here (``kernel.actions``), graph names to ids,
 so the compiled document says exactly what it means and its hash names that
 meaning. Scopes narrow: a scope becomes deny rules for the actions above its
 level; the ``no_project`` scope applies unless the actor names a scoped
-project, so an absent and an unknown project get it alike. The installation
+project, so an absent and an unknown project get it alike. A scope's
+``maintain`` level is ``write`` for the project's callers plus one allow rule
+that lets an admin token bound to the project run the graph-level
+maintenance actions on the graphs it names, and read their data as check
+findings do (``authorize`` keeps such a token from every other rule). The installation
 document always carries the built-in reason obligation.
 
 Validation is total: every problem is collected with its path and the
@@ -40,7 +45,14 @@ from graph_cli.access_control.documents import (
     is_action_glob,
     is_write_glob,
 )
-from graph_cli.kernel.actions import ACCESS_LEVELS, actions_above, level_actions
+from graph_cli.kernel.actions import (
+    ACCESS_LEVELS,
+    MAINTAIN_LEVEL,
+    PROJECT_ADMIN_ACTIONS,
+    SCOPE_LEVELS,
+    actions_above,
+    level_actions,
+)
 from graph_cli.kernel.actor import is_valid_asserted_value
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
@@ -64,6 +76,7 @@ _INSTALLATION_KEYS: Final = frozenset(
 )
 _GRAPH_KEYS: Final = frozenset({"schema", "id", "types", "obligations", "deny"})
 _PRINCIPAL_KEYS: Final = frozenset({"name", "id"})
+_GRANT_PRINCIPAL_KEYS: Final = frozenset({*_PRINCIPAL_KEYS, "project"})
 _MATCHERS: Final = ("entrypoint", "principal_id", "principal_name", *ASSERTED_KEYS)
 _DENY_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 # The entrypoints a grant may name; the maintenance entrypoint is for maintainers only.
@@ -174,12 +187,13 @@ def _installation(root: YamlMap, ctx: _Context) -> dict[str, JsonValue]:
             ctx.add(f"scopes.{project}", "is not a valid project name")
             continue
         projects.append(project)
-        levels = _scope(node, f"scopes.{project}", ctx)
+        levels = _scope(node, f"scopes.{project}", ctx, allowed=SCOPE_LEVELS)
         rules += _scope_rules(levels, f"scope.{project}", {"project": [project]}, [], ctx)
+        rules += _maintain_rule(project, levels, ctx)
     if "no_project" not in root.items:
         ctx.add("no_project", "is required: decide what an invocation without a project may do")
     else:
-        levels = _scope(root.items["no_project"], "no_project", ctx)
+        levels = _scope(root.items["no_project"], "no_project", ctx, allowed=ACCESS_LEVELS)
         unless: list[JsonValue] = [{"principal": {"project": projects}}] if projects else []
         rules += _scope_rules(levels, "no_project", {}, unless, ctx)
     rules += _deny_rules(root.items.get("deny"), None, ctx)
@@ -199,10 +213,19 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     if entry is None:
         return []
     _unknown_keys(node, frozenset({"principal", "entrypoint", "graphs", "level"}), path, ctx)
-    principal: dict[str, JsonValue] = {"entrypoint": _entrypoints(entry, path, ctx)}
+    entrypoints = _entrypoints(entry, path, ctx)
+    principal: dict[str, JsonValue] = {"entrypoint": entrypoints}
     if "principal" in entry:
-        found = _principal(entry["principal"], f"{path}.principal", ctx)
+        found = _principal(entry["principal"], f"{path}.principal", ctx, _GRANT_PRINCIPAL_KEYS)
         principal.update(found or {})
+        if "project" in principal and "server" not in (
+            entrypoints if isinstance(entrypoints, list) else [entrypoints]
+        ):
+            ctx.add(
+                f"{path}.entrypoint",
+                "a grant to a project needs entrypoint: server (only a token bound to the"
+                " project verifies it)",
+            )
     resources = _graph_resources(entry.get("graphs"), f"{path}.graphs", ctx, required=True)
     level = _level(entry.get("level"), f"{path}.level", ctx, allowed=("read", "write"))
     if level is None or resources is None:
@@ -241,33 +264,56 @@ def _maintainer(principal: Mapping[str, JsonValue], rule_id: str) -> dict[str, J
     }
 
 
-def _principal(node: YamlNode, path: str, ctx: _Context) -> dict[str, JsonValue] | None:
+def _principal(
+    node: YamlNode, path: str, ctx: _Context, keys: frozenset[str] = _PRINCIPAL_KEYS
+) -> dict[str, JsonValue] | None:
     entry = _map(node, path, ctx, required=True)
     if entry is None:
         return None
-    _unknown_keys(node, _PRINCIPAL_KEYS, path, ctx)
+    _unknown_keys(node, keys, path, ctx)
     found: dict[str, JsonValue] = {}
-    for key, facet in (("name", "principal_name"), ("id", "principal_id")):
-        if key in entry:
+    for key, facet in (("name", "principal_name"), ("id", "principal_id"), ("project", "project")):
+        if key in entry and key in keys:
             value = _text(entry[key], f"{path}.{key}", ctx)
-            if value is not None:
+            if value is not None and key == "project" and not is_valid_asserted_value(value):
+                ctx.add(f"{path}.project", "is not a valid project name")
+            elif value is not None:
                 found[facet] = value
     if not entry:
-        ctx.add(path, "names a principal by name or id")
+        ctx.add(path, "names a principal by " + " or ".join(sorted(keys)))
     return found
 
 
-def _scope(node: YamlNode, path: str, ctx: _Context) -> dict[str, str]:
+def _scope(node: YamlNode, path: str, ctx: _Context, *, allowed: tuple[str, ...]) -> dict[str, str]:
     entry = _map(node, path, ctx, required=True) or {}
     levels: dict[str, str] = {}
     for name, value in sorted(entry.items()):
         if name != ALL and name not in ctx.graphs:
             ctx.add(f"{path}.{name}", "is not a graph of this installation")
             continue
-        level = _level(value, f"{path}.{name}", ctx, allowed=ACCESS_LEVELS)
-        if level is not None:
+        level = _level(value, f"{path}.{name}", ctx, allowed=allowed)
+        if level == MAINTAIN_LEVEL and name == ALL:
+            ctx.add(f"{path}.{name}", "maintain names graphs one by one, never every graph")
+        elif level is not None:
             levels[name] = level
     return levels
+
+
+def _maintain_rule(project: str, levels: Mapping[str, str], ctx: _Context) -> list[JsonValue]:
+    """The allow rule of a scope's ``maintain`` graphs: the graph-level maintenance
+    actions for the maintenance entrypoint acting for the (verified) project."""
+    graphs = sorted(_graph_glob(ctx.graphs[n]) for n, lv in levels.items() if lv == MAINTAIN_LEVEL)
+    if not graphs:
+        return []
+    return [
+        {
+            "id": f"scope.{project}:maintain",  # ":" is in no graph name
+            "effect": "allow",
+            "principal": {"entrypoint": "maint", "project": project},
+            "action": list(PROJECT_ADMIN_ACTIONS),
+            "resource": graphs,
+        }
+    ]
 
 
 def _scope_rules(

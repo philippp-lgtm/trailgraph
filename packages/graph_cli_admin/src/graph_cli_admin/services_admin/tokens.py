@@ -8,10 +8,11 @@ against the file. The secret is returned once by ``create`` and never
 stored, logged or audited; the file keeps its SHA-256, events a 16-hex
 prefix of that. A token's scope is ``app`` (the app surface of the server)
 or ``admin`` (its admin API, acting through the entrypoint ``maint``); an
-admin token is never bound to a project. ``create`` warns when the
+admin token bound to a project is a project admin, which maintains only the
+graphs the project's scope says ``maintain`` for. ``create`` warns when the
 installed policy grants a new app token, as entrypoint ``server``, nothing
-on any graph, or would not let a new admin token maintain. ``list`` reads
-the file without a lock and records nothing.
+on any graph, or would not let a new admin token maintain (a project admin:
+any graph). ``list`` reads the file without a lock and records nothing.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from datetime import date
 from typing import Final
 
 from graph_cli.access_control.authorize import authorize
-from graph_cli.access_control.effective import graph_level
+from graph_cli.access_control.effective import graph_level, maintains
 from graph_cli.audit import events
 from graph_cli.catalog.identity.request import TOKEN_SOURCE, token_principal
 from graph_cli.catalog.tokens import (
@@ -30,6 +31,7 @@ from graph_cli.catalog.tokens import (
     APP_SCOPE,
     SCOPES,
     TOKEN_NAME_RE,
+    TOKEN_PREFIX,
     TokenRecord,
     new_token,
     parse_tokens,
@@ -78,15 +80,11 @@ def create(
     reason: str | None,
     scope: str = APP_SCOPE,
 ) -> Outcome:
-    _check_name(name)
+    check_name(name)
     if scope not in SCOPES:
         raise _usage("--scope", f"{scope!r} is not one of {', '.join(SCOPES)}", scope)
     if project is not None and not is_valid_asserted_value(project):
         raise _usage("--project", f"{project!r} is not a project name", project)
-    if project is not None and scope == ADMIN_SCOPE:
-        raise _usage(
-            "--project", "an admin token has no project: maintenance is not project scoped", project
-        )
     today = ctx.clock.now().date()
     if expires is not None:
         _check_expires(expires, today)
@@ -121,7 +119,7 @@ def create(
         )
         registry.replace_tokens(tokens_document([*records, record]), receipt)
     if scope == ADMIN_SCOPE:
-        warnings = () if _maintains(ctx, record) else (_not_maintainer(name),)
+        warnings = () if _maintains(ctx, record) else (_not_maintainer(record),)
     else:
         warnings = () if _granted(ctx, record) else (_not_granted(name),)
     data: dict[str, JsonValue] = {**_listed(record, today), "token": secret}
@@ -136,7 +134,7 @@ def list_tokens(ctx: AdminContext) -> Outcome:
 
 
 def revoke(ctx: AdminContext, *, name: str, reason: str | None) -> Outcome:
-    _check_name(name)
+    check_name(name)
     meta = RequestMeta.of("token revoke", {"name": name})
     decisions = ctx.authorize([(REVOKE, "installation")], request=meta, reason=reason)
     with ctx.maintenance.registry(timeout_s=ctx.lock_timeout_s) as registry:
@@ -196,6 +194,10 @@ def _granted(ctx: AdminContext, record: TokenRecord) -> bool:
 
 def _maintains(ctx: AdminContext, record: TokenRecord) -> bool:
     actor = server_actor(record, ctx.actor.client.version)
+    if record.project is not None:
+        return any(
+            maintains(actor, g.id, ctx.policy.current(g.id)) for g in ctx.catalog.list_graphs()
+        )
     decision = authorize(actor, CREATE, "installation", _PROBE, ctx.policy.current(None))
     return decision.effect == "allow"
 
@@ -212,9 +214,12 @@ def _listed(record: TokenRecord, today: date) -> dict[str, JsonValue]:
     }
 
 
-def _check_name(name: str) -> None:
+def check_name(name: str, argument: str = "name") -> None:
+    """A token name; a token's secret given by mistake is refused without echoing it."""
+    if name.startswith(TOKEN_PREFIX):
+        raise _usage(argument, "this is a token, not a token name; pass the name", None)
     if not TOKEN_NAME_RE.match(name):
-        raise _usage("name", f"{name!r} is not a token name ({TOKEN_NAME_RE.pattern})", name)
+        raise _usage(argument, f"{name!r} is not a token name ({TOKEN_NAME_RE.pattern})", name)
 
 
 def _check_expires(text: str, today: date) -> None:
@@ -237,13 +242,20 @@ def _not_granted(name: str) -> WarningRecord:
     )
 
 
-def _not_maintainer(name: str) -> WarningRecord:
-    return WarningRecord(
-        "admin.token_not_maintainer",
-        f"the installed policy does not let admin token {name} maintain; add"
-        f' {{id: "token:{name}"}} to maintainers and apply the policy',
-        {"name": name},
-    )
+def _not_maintainer(record: TokenRecord) -> WarningRecord:
+    name, project = record.name, record.project
+    if project is not None:
+        message = (
+            f"the installed policy lets admin token {name} of project {project} maintain no"
+            f" graph; give the project maintain for a graph in scopes.{project} and apply the"
+            " policy"
+        )
+    else:
+        message = (
+            f"the installed policy does not let admin token {name} maintain; add"
+            f' {{id: "token:{name}"}} to maintainers and apply the policy'
+        )
+    return WarningRecord("admin.token_not_maintainer", message, {"name": name})
 
 
 def _usage(argument: str, message: str, actual: JsonValue) -> GraphCliError:

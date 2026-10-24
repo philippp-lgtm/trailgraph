@@ -13,8 +13,9 @@ one) or ``graph`` (one graph's own policy, ``graph`` names it). Keys:
 - ``projects`` (installation): the project names the scopes cover;
 - ``types`` (graph): the declared type limits, for display.
 
-Allow rules match verified facets and the entrypoint only (B6.7); a graph
-layer has no allow rules, it only narrows. ``document_problems`` lists
+Allow rules match verified facets and the entrypoint only (B6.7): their
+``project`` is the project a bound token verifies, never an asserted one; a
+graph layer has no allow rules, it only narrows. ``document_problems`` lists
 every violation with its path; the loader turns them into
 ``policy.invalid``, ``authorize`` into ``internal.error``.
 """
@@ -34,6 +35,8 @@ POLICY_SCHEMA: Final = "graph_cli.policy/1"
 INSTALLATION_LAYER: Final = "installation"
 GRAPH_LAYER: Final = "graph"
 VERIFIED_KEYS: Final = ("entrypoint", "principal_id", "principal_name")
+# An allow rule may also name a project: it matches only a verified one (a bound token).
+ALLOW_KEYS: Final = (*VERIFIED_KEYS, "project")
 ASSERTED_KEYS: Final = ("agent_id", "agent_type", "session_id", "device_id", "project")
 TYPE_LIMITS: Final = ("read", "write")
 
@@ -94,10 +97,13 @@ def glob(pattern: str, value: str) -> bool:
     return pattern == value
 
 
-def principal_facts(actor: ActorContext) -> dict[str, str | None]:
-    """The values principal matchers compare with; ``None`` for an absent facet."""
+def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict[str, str | None]:
+    """The values principal matchers compare with; ``None`` for an absent facet, and with
+    ``verified_only`` (allow rules) for every facet that is not verified."""
 
     def asserted(facet: Facet, value: str | None) -> str | None:
+        if verified_only:
+            return value if facet.assurance is Assurance.VERIFIED else None
         return None if facet.assurance is Assurance.ABSENT else value
 
     return {
@@ -220,7 +226,7 @@ def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
             add(f"{path}.effect", "must be allow or deny")
         elif effect == "allow" and graph_layer:
             add(f"{path}.effect", "a graph layer only narrows; it has no allow rules")
-        keys = VERIFIED_KEYS if effect == "allow" else (*VERIFIED_KEYS, *ASSERTED_KEYS)
+        keys = ALLOW_KEYS if effect == "allow" else (*VERIFIED_KEYS, *ASSERTED_KEYS)
         _principal_problems(rule.get("principal", {}), keys, f"{path}.principal", add)
         actions = rule.get("action")
         if not isinstance(actions, list) or not actions:
