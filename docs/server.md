@@ -128,6 +128,7 @@ writer, but is not the default.
 docker compose up -d                       # 127.0.0.1:8470 on this machine only
 docker compose exec graph graph-admin token create <name> --project <value>
 GRAPH_DOMAIN=graphs.example.org docker compose --profile tls up -d   # HTTPS via Caddy
+docker compose exec graph graph-admin view --graph <graph> --host 0.0.0.0 --port 8471 --no-open
 ```
 
 The first start creates the data root and installs a default
@@ -136,7 +137,10 @@ scope, and a request without one may read. Add scopes for your projects
 (or bind tokens to projects) and apply your own policy. Maintenance runs
 in the container (`docker compose exec graph graph-admin ...`); the
 directory `GRAPH_WORKSPACE` (default `docker/workspace`) is mounted read
-only at `/workspace` for authored ontologies and policies. The `tls`
+only at `/workspace` for authored ontologies and policies. A
+[live view](live_view.md) started in the container on port 8471 is
+published to `127.0.0.1:8471` (`GRAPH_VIEW_PORT`); open the printed
+address on the host. The `tls`
 profile adds Caddy with an automatic certificate for `GRAPH_DOMAIN`; then
 80 and 443 are the only ports published beyond `127.0.0.1`. A healthcheck
 asks `/v1/health`.

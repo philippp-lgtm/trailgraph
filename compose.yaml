@@ -4,6 +4,8 @@
 #   GRAPH_DOMAIN=graphs.example.org docker compose --profile tls up -d
 #                                                          HTTPS on 443 via Caddy (ACME)
 #   docker compose exec graph graph-admin token create <name>
+#   docker compose exec graph graph-admin view --graph <graph> --host 0.0.0.0 --port 8471 --no-open
+#                                                          live view on 127.0.0.1:8471
 
 services:
   graph:
@@ -14,6 +16,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${GRAPH_PORT:-8470}:8470"
+      # graph-admin view, when one runs (docs/live_view.md#access)
+      - "127.0.0.1:${GRAPH_VIEW_PORT:-8471}:8471"
     volumes:
       - graph_data:/data
       - graph_state:/state

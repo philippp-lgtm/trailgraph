@@ -1,10 +1,11 @@
 """K/S: the container owns the data and recovers from a kill mid-write (B14, D11).
 
 Opt-in: needs Docker and ``GRAPH_CLI_DOCKER_TESTS=1`` (it builds the image).
-A compose project of its own with its own volumes and port is torn down
+A compose project of its own with its own volumes and ports is torn down
 afterwards. Writes go through the remote ``graph``; the container is killed
 while they run; after a restart ``audit verify`` in the container is clean
 and a write whose answer was lost is repeated with its key exactly once.
+The live view started in the container answers on its published port.
 """
 
 import json
@@ -32,6 +33,7 @@ pytestmark = [
 
 PROJECT = "graph_cli_container_test"
 PORT = 18471
+VIEW_PORT = 18472
 POLICY = """\
 schema: graph_cli.policy/1
 id: installation
@@ -76,7 +78,12 @@ def container(tmp_path: Path) -> Iterator[dict[str, str]]:
     workspace = tmp_path / "workspace"
     shutil.copytree(ONTOLOGIES, workspace / "ontologies")
     (workspace / "policy.yaml").write_text(POLICY)
-    env = {**os.environ, "GRAPH_PORT": str(PORT), "GRAPH_WORKSPACE": str(workspace)}
+    env = {
+        **os.environ,
+        "GRAPH_PORT": str(PORT),
+        "GRAPH_VIEW_PORT": str(VIEW_PORT),
+        "GRAPH_WORKSPACE": str(workspace),
+    }
     compose(env, "up", "-d", "--build")
     try:
         wait_healthy()
@@ -85,18 +92,39 @@ def container(tmp_path: Path) -> Iterator[dict[str, str]]:
         compose(env, "down", "-v", check=False)
 
 
+def create_graph(env: dict[str, str]) -> None:
+    ontology = "/workspace/ontologies/inventory/1.0.0"
+    created = admin(env, "graph", "create", "example_graph", "--ontology", ontology)
+    assert created["ok"], created
+
+
+def test_view_answers_on_the_published_port(container: dict[str, str]) -> None:
+    create_graph(container)
+    serve = ("--graph", "example_graph", "--host", "0.0.0.0", "--port", "8471", "--no-open")
+    view = subprocess.Popen(
+        ["docker", "compose", "-p", PROJECT, "exec", "-T", "graph", "graph-admin", "view", *serve],
+        cwd=REPO_ROOT,
+        env=container,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert view.stderr is not None
+        line = view.stderr.readline()
+        assert line.startswith("Graph view of example_graph: http://127.0.0.1:8471/?t="), line
+        url = line.split(": ", 1)[1].strip().replace(":8471/", f":{VIEW_PORT}/")
+        with urllib.request.urlopen(url, timeout=10) as answer:
+            assert answer.status == 200
+            assert b"<html" in answer.read().lower()
+    finally:
+        view.terminate()
+        view.wait(timeout=30)
+
+
 def test_kill_mid_write_recovers(
     container: dict[str, str], isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
-    created = admin(
-        container,
-        "graph",
-        "create",
-        "example_graph",
-        "--ontology",
-        "/workspace/ontologies/inventory/1.0.0",
-    )
-    assert created["ok"], created
+    create_graph(container)
     assert admin(container, "policy", "apply", "/workspace/policy.yaml", "--reason", "test")["ok"]
     token = admin(container, "token", "create", "writer", "--project", "example_project")["data"][
         "token"
