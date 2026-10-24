@@ -67,6 +67,10 @@ FIELD_COLUMNS: Final = (
 VALUE_SHAPES: Final[Mapping[str, str]] = {
     "blob": "`sha256:<hex>` of a stored file",
     "local_path": '`{"root": <name>, "path": <relative path>}`',
+    "lang_string": '`"<text>"@<tag>` or `{"lang": <tag>, "value": <text>}`; untagged: the graph'
+    " language",
+    "lang_text": '`"<text>"@<tag>` or `{"lang": <tag>, "value": <text>}`; untagged: the graph'
+    " language",
 }
 FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}

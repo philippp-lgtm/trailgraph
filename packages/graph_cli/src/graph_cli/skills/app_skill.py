@@ -357,6 +357,8 @@ grouping. For one type with field filters, one hop or a name, `find`,
   parameters) and runs nothing. Use it when a result looks wrong.
 - The query is read-only. Write with `apply` or the write commands.
 - Rows are paged like `find`: follow `page.next_offset` or the hint.
+- A language-tagged field is a map: `n.<attr>.value` is the text,
+  `n.<attr>.lang` the language tag (`WHERE n.<attr>.lang = 'en'`).
 
 {subset_table}
 
@@ -454,6 +456,10 @@ An edge in `edges` of a `create` has {edge_keys}.
   take text converted by the attribute's datatype, as `--set` does. Name
   an attribute in only one of the two. A JSON number with a fraction is
   refused: write a decimal as a string or use the text form.
+- A language-tagged field (base `lang_string` or `lang_text` in `graph
+  describe fields`) holds `{{"lang": "en", "value": "<value>"}}`; its text
+  form is `"<value>"@en` or `<value>@en`. A value without a tag is in the
+  graph language (`graph graphs --json`); a graph without one refuses it.
 - `add`, `add_text`, `remove` and `remove_text` take `{{"<attr>": [...]}}`
   for a list field: `add` appends each value not yet there, `remove` drops
   it; no read and no `expect_rev` needed. An attribute appears in only one

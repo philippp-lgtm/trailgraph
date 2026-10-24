@@ -43,7 +43,7 @@ Usage: `graph create TYPE [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype. |
+| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype; <value>@en names a language. |
 | `--set-json` | json_assignment | no | yes | attr=<json>, a typed value. |
 | `--edge` | assignment | no | yes | relation=<id>: an outgoing edge. |
 | `--valid-from` | string | no | no | Start of validity: date or RFC 3339 timestamp. |
@@ -203,7 +203,7 @@ Usage: `graph file add PATH [OPTIONS]`
 |---|---|---|---|---|
 | `--type` | term | no | no | files:File or a subclass of it. |
 | `--title` | string | no | no | Name for people; the file name without extension. |
-| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype. |
+| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype; <value>@en names a language. |
 | `--set-json` | json_assignment | no | yes | attr=<json>, a typed value. |
 | `--media-type` | string | no | no | Media type instead of the detected one. |
 | `--source-url` | string | no | no | Address the file was downloaded from. |
@@ -709,7 +709,7 @@ Usage: `graph update REF [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype. |
+| `--set` | assignment | no | yes | attr=value, coerced by the attribute's datatype; <value>@en names a language. |
 | `--set-json` | json_assignment | no | yes | attr=<json>, a typed value. |
 | `--unset` | string | no | yes | Attribute to remove. |
 | `--add` | assignment | no | yes | attr=value appended to a list attribute unless present; coerced by datatype. |

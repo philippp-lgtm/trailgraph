@@ -25,6 +25,8 @@ grouping. For one type with field filters, one hop or a name, `find`,
   parameters) and runs nothing. Use it when a result looks wrong.
 - The query is read-only. Write with `apply` or the write commands.
 - Rows are paged like `find`: follow `page.next_offset` or the hint.
+- A language-tagged field is a map: `n.<attr>.value` is the text,
+  `n.<attr>.lang` the language tag (`WHERE n.<attr>.lang = 'en'`).
 
 | Part | Supported |
 |---|---|

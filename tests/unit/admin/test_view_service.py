@@ -5,15 +5,22 @@ from pathlib import Path
 
 import pytest
 from support.admin_context import admin_context
-from support.fixtures import TOY_ONTOLOGIES
+from support.fixtures import TOY_ONTOLOGIES, compiled_model
 from support.roles import load_roles
 from support.services import ServiceEnv
+from support.snapshots import revision as stored_revision
 
 from graph_cli.catalog.activity import ActivityEvent
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli_admin.services_admin import view
-from graph_cli_admin.services_admin.view import ViewFeed, graph_json, open_view, read_event
+from graph_cli_admin.services_admin.view import (
+    ViewFeed,
+    graph_json,
+    label_of,
+    open_view,
+    read_event,
+)
 
 
 @pytest.fixture(params=TOY_ONTOLOGIES)
@@ -112,3 +119,14 @@ def test_a_denied_view_is_audited(svc: ServiceEnv) -> None:
         open_view(ctx, graph_ref=svc.name)
     assert info.value.code == "access.denied"
     assert svc.installation_events()[-1]["result"] == {"status": "denied", "code": "access.denied"}
+
+
+def test_a_language_tagged_label_is_shown_in_the_graph_language() -> None:
+    model = compiled_model("notes_and_sources", "1.2.0")
+    entry = stored_revision(
+        "g",
+        "nas:GlossaryEntry",
+        {"heading": [{"lang": "en", "value": "Control"}, {"lang": "de", "value": "Kontrolle"}]},
+    )
+    assert label_of(model, entry, "en") == "Control"
+    assert label_of(model, entry) == "Kontrolle"  # no language: the smallest tag

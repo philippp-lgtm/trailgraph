@@ -499,7 +499,10 @@ COMMON: Final = (
 )
 EXPECT: Final = ParamSpec("--expect", "integer", "Refuse unless the entity is at this revision.")
 SET: Final = ParamSpec(
-    "--set", "assignment", "attr=value, coerced by the attribute's datatype.", repeatable=True
+    "--set",
+    "assignment",
+    "attr=value, coerced by the attribute's datatype; <value>@en names a language.",
+    repeatable=True,
 )
 SET_JSON: Final = ParamSpec(
     "--set-json", "json_assignment", "attr=<json>, a typed value.", repeatable=True

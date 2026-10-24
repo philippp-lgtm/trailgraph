@@ -147,7 +147,7 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
         },
         {
           "name": "--set-json",
@@ -670,7 +670,7 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
         },
         {
           "name": "--set-json",
@@ -2594,7 +2594,7 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
         },
         {
           "name": "--set-json",

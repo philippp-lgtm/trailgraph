@@ -41,6 +41,7 @@ from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import RECORD_STATUSES, RequestMeta, Revision, TxRecord
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
+from graph_cli.query.lookup import label_text
 from graph_cli.services.models import ModelCache
 from graph_cli_admin.services_admin.context import AdminContext
 
@@ -92,7 +93,8 @@ def graph_json(source: ViewSource) -> dict[str, JsonValue]:
     snapshot = source.read.snapshot()
     revisions = snapshot.query(Query(record_status=_ALL_STATUSES, limit=sys.maxsize)).items
     known = {str(r.id) for r in revisions}
-    nodes: list[JsonValue] = [node_json(source.model, r) for r in revisions]
+    language = source.entry.language
+    nodes: list[JsonValue] = [node_json(source.model, r, language) for r in revisions]
     links: list[JsonValue] = [
         link for r in revisions for link in links_json(r) if link["target"] in known
     ]
@@ -105,18 +107,21 @@ def graph_json(source: ViewSource) -> dict[str, JsonValue]:
     }
 
 
-def label_of(model: CompiledModel, revision: Revision) -> str:
+def label_of(model: CompiledModel, revision: Revision, language: str | None = None) -> str:
+    """The main label (language-tagged: in ``language``, else the smallest tag), else
+    the alias, else type and id."""
     for attr, role in model.label_attributes(revision.type):
-        value = revision.attrs.get(attr)
-        if role == "label" and isinstance(value, str) and value:
-            return value
+        if role == "label" and (text := label_text(revision.attrs.get(attr), (language,))):
+            return text
     return revision.alias or f"{revision.type.rpartition(':')[2]} {str(revision.id)[-8:]}"
 
 
-def node_json(model: CompiledModel, revision: Revision) -> dict[str, JsonValue]:
+def node_json(
+    model: CompiledModel, revision: Revision, language: str | None = None
+) -> dict[str, JsonValue]:
     return {
         "id": str(revision.id),
-        "label": label_of(model, revision),
+        "label": label_of(model, revision, language),
         "type": revision.type,
         "alias": revision.alias,
         "status": revision.record_status,
@@ -172,7 +177,9 @@ def _end_json(
     revision = snapshot_get(entity)
     return {
         "id": str(entity),
-        "label": label_of(source.model, revision) if revision else f"unknown {str(entity)[-8:]}",
+        "label": label_of(source.model, revision, source.entry.language)
+        if revision
+        else f"unknown {str(entity)[-8:]}",
         "type": revision.type if revision else None,
     }
 
@@ -216,7 +223,7 @@ def entity_json(source: ViewSource, text: str) -> dict[str, JsonValue]:
             }
         )
     data: dict[str, JsonValue] = {
-        **node_json(source.model, revision),
+        **node_json(source.model, revision, source.entry.language),
         "rev": revision.rev,
         "attrs": _shown_attrs(source.model, revision),
         "valid_from": revision.valid_from,

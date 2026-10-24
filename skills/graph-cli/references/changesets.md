@@ -53,6 +53,10 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
   take text converted by the attribute's datatype, as `--set` does. Name
   an attribute in only one of the two. A JSON number with a fraction is
   refused: write a decimal as a string or use the text form.
+- A language-tagged field (base `lang_string` or `lang_text` in `graph
+  describe fields`) holds `{"lang": "en", "value": "<value>"}`; its text
+  form is `"<value>"@en` or `<value>@en`. A value without a tag is in the
+  graph language (`graph graphs --json`); a graph without one refuses it.
 - `add`, `add_text`, `remove` and `remove_text` take `{"<attr>": [...]}`
   for a list field: `add` appends each value not yet there, `remove` drops
   it; no read and no `expect_rev` needed. An attribute appears in only one

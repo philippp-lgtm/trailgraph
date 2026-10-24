@@ -194,3 +194,9 @@ def test_a_model_with_stored_files_names_the_file_workflow() -> None:
     assert "`files:from_file`" in with_files
     without = render(compiled_model("notes_and_sources"))[SKILL_FILE].decode()
     assert "graph file add" not in without
+
+
+def test_language_tagged_fields_name_their_value_shape() -> None:
+    files = render(compiled_model("notes_and_sources", "1.2.0"))
+    text = "\n".join(content.decode() for content in files.values())
+    assert '`"<text>"@<tag>` or `{"lang": <tag>, "value": <text>}`; untagged: the graph' in text
