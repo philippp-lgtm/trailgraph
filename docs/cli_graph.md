@@ -98,7 +98,7 @@ documents take the CURIE: what is recorded stays explicit.
 Writes take `--dry-run`, `--reason`, `--idempotency-key` and, on
 single-entity commands, `--expect REV`. `find` filters are flags without
 shell metacharacters: `--where attr=value` or `--where attr:op=value` with
-`op` in `eq ne lt le gt ge contains prefix in exists`, all AND-ed. `apply`
+`op` in `eq ne lt le gt ge contains prefix in exists lang`, all AND-ed. `apply`
 reads and checks every document first (broken input writes nothing), then
 commits one transaction per document in order and stops at the first
 failure; `data.results` reports each processed document and the exit code is
@@ -125,6 +125,43 @@ read before nor `--expect`. On an attribute that holds one value the write
 is refused with `data.structural.cardinality_many`. One op names an
 attribute in only one of `set`, `set_text`, `unset`, `add`, `add_text`,
 `remove`, `remove_text`.
+
+## Language-tagged values
+
+A field of type `lang_string` or `lang_text` holds text in a named
+language, as RDF language-tagged strings do: `{"lang": "de", "value":
+"Steuerung und Kontrolle"}`, the tag in BCP 47 form (`de`, `en`, `de-CH`,
+`zh-Hant`). Other text fields stay plain strings; `describe fields` shows
+the base type.
+
+- **Text form** (`--set`, `--add`, `--remove`, the `_text` keys of change
+  sets, `find --where`): `"text"@tag` or `text@tag`, the latter when the
+  tag's language part has two or three letters, so `user@example` stays
+  text; the quoted form also holds quotes and `@` (`"a@b"@en`).
+- **Without a tag** (text or a JSON string) a value takes the graph
+  language that `graph graphs` shows (`graph-admin graph create
+  --language`), and it is stored with it, so the stored value always names
+  its language. A graph without a language refuses an untagged value
+  (`data.structural.datatype_mismatch`). A tag is stored in canonical case
+  (`DE-ch` becomes `de-CH`).
+- **One main name per language**: a main label (`role: label`) of type
+  `lang_string` may hold several values, at most one per language
+  (`data.structural.language_repeated`); alternative and hidden names may
+  repeat a language.
+- **Comparisons use the text.** `find --where attr=text` matches the text
+  in any language, `--where 'attr=text@en'` text and language;
+  `contains`, `prefix`, `lt`..`ge` and `--sort` use the text (then the
+  tag). `--where attr:lang=de` keeps entities with a value in that
+  language; `de` also selects `de-CH`, `*` any language (RFC 4647 basic
+  filtering). `--remove attr=text` without a tag removes the text in every
+  language. A `unique` field compares text and language together; rules
+  and duplicate warnings compare the text.
+- **`lookup` and `search`** match the text and give the tag in
+  `match.lang` (null for a plain string). `--lang de` keeps only names and
+  text in that language (a plain string counts as the graph language) and
+  shows the main label in it; otherwise the label is in the graph
+  language, else in the language of the match.
+- **`graph query`** sees a map: `n.<attr>.value` and `n.<attr>.lang`.
 
 ## Earlier states
 
@@ -177,8 +214,8 @@ command repeats `--fields`. `query ... RETURN` is the projection of
 ## Names and lookup
 
 Names come from label roles in the ontology: an attribute of type `string`
-(or a datatype over it) may carry `role: label` (the main name, single, at
-most one per class), `alt_label` (synonyms, abbreviations) or
+or `lang_string` (or a datatype over one) may carry `role: label` (the main
+name, single or one per language, at most one per class), `alt_label` (synonyms, abbreviations) or
 `hidden_label` (searchable, never shown), as in SKOS. `describe` shows the
 role of each field and the JSON Schema export annotates it as
 `x-graph_cli-role`. `lookup` matches normalized text (`kernel.text`: NFKC,
@@ -233,7 +270,8 @@ had are not reported again. The warning never refuses the write.
 ## Search
 
 `graph search TEXT` answers "is there anything about this": it reads every
-field whose type is `string` or `text` (or a datatype over them), each
+field whose type is `string`, `text`, `lang_string` or `lang_text` (or a
+datatype over them; a language-tagged value by its text), each
 value of a list, on every type or the `--type` families, and `--field`
 limits it to named fields. Enum values, lifecycle states, files and edge
 values are not searched. Text is compared on a looser key than `lookup`
@@ -243,7 +281,7 @@ ignored, so "Light-Refraction" equals "light refraction". A value matches
 - `exact`: it equals the text;
 - `phrase`: it contains the text, also inside a longer word;
 - `words`: it contains each word of the text, in any order;
-- `similar` (names and `string` fields only, not `text`): at least 70% of
+- `similar` (names and short fields only, not `text` or `lang_text`): at least 70% of
   the text's letter triples occur in it, and at least half of each word's,
   so a typo or a compound still matches and a missing word does not.
 

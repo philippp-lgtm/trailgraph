@@ -32,6 +32,11 @@ without releasing and also lists the warnings. In practice:
 - **Tightening** (`required`, a cardinality, an error rule) passes only
   when every entity already satisfies it. Fill the gaps first, then
   release.
+- **Moving text to a language** (`string` to `lang_string`, `text` to
+  `lang_text`) fails while values are stored without a tag. Add a new
+  `lang_string` attribute in a minor release, write the values there
+  (untagged ones take the graph language), deprecate the old attribute,
+  then remove it in a major release.
 - **When the data cannot fit**, keep the term and narrow the new rule with
   `if`, so it applies to new entities only (minor or major depending on
   the change, but without existing errors).

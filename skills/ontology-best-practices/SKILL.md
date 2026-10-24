@@ -67,6 +67,10 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
    singular; attributes, relations, values and ids `lower_snake_case`;
    relations read as a sentence from source to target (`step_of`, not
    `steps`). Identifiers are English; the values follow the graph language.
+   When the same name or text exists in several languages, type it
+   `lang_string` (names) or `lang_text` (descriptions) and give the main
+   label `many: true`: one value per language. Codes, ids and names of no
+   language stay `string`.
 4. Subclass only if "every X is a Y" holds without exception and the
    subclass changes the structure (other attributes or relations). A
    difference in name only is an enum attribute, not a class.
