@@ -127,6 +127,14 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "The server runs another build of this program.",
     ),
+    ErrorSpec(
+        "update.available", _C.INVALID, False, "Another program build or skill is available."
+    ),
+    ErrorSpec("update.unavailable", _C.UNAVAILABLE, False, "The server hands out no program."),
+    ErrorSpec(
+        "update.unsupported_install", _C.REFUSED, False, "The program cannot replace itself."
+    ),
+    ErrorSpec("update.install_failed", _C.UNAVAILABLE, False, "The program was not installed."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),

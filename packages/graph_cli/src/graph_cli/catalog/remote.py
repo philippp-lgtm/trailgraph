@@ -28,6 +28,7 @@ from graph_cli.catalog.build import BUILD_HEADER, build_header, parse_build_head
 from graph_cli.catalog.endpoint import Endpoint
 from graph_cli.catalog.skill_claims import SKILLS_HEADER
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.error_codes import lookup_error_code
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 
 ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
@@ -227,6 +228,19 @@ def envelope_of(answer: Answer) -> Mapping[str, JsonValue]:
     if not isinstance(value, Mapping) or value.get("schema") != ENVELOPE_SCHEMA:
         raise protocol(answer.status, "the answer is not a graph_cli envelope")
     return value
+
+
+def error_of(document: Mapping[str, JsonValue]) -> GraphCliError:
+    """The error an envelope carries, raised here as if it happened here."""
+    error = document.get("error")
+    if not isinstance(error, Mapping) or lookup_error_code(str(error.get("code"))) is None:
+        return protocol(0, "the answer carries no known error")
+    details = error.get("details")
+    return GraphCliError(
+        str(error["code"]),
+        str(error.get("message", "")),
+        details=details if isinstance(details, Mapping) else None,
+    )
 
 
 def unauthorized(hint: str = APP_TOKEN_HINT) -> GraphCliError:

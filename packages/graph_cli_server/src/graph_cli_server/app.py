@@ -11,7 +11,10 @@ A request that names another build of its program than the server runs is
 refused before any route (``remote.client_outdated``; ``[server]
 client_builds = "warn"`` lets it through). The graph skills a client has
 installed come in ``Graph-Cli-Skills`` and are judged when a command selects
-a graph (``catalog.skill_claims``). No body, token or query string is ever
+a graph (``catalog.skill_claims``). ``/v1/dist/`` hands out the programs
+the server was built from (``graph_cli_server.dist``): ``graph``'s wheel to
+anyone, ``graph-admin``'s to an admin token, never refused for a build (they
+are how a client catches up). No body, token or query string is ever
 logged.
 """
 
@@ -57,6 +60,7 @@ from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
+from graph_cli_server.dist import DIST_ENV, Served, load
 from graph_cli_server.openapi import API_VERSION, openapi
 from graph_cli_server.uploads import DIGEST_RE, Uploads, link_name
 
@@ -115,6 +119,8 @@ class Settings:
     max_upload_bytes: int
     admin_api: bool = False
     client_builds: str = "exact"  # or "warn": another build of a client is let through
+    dist: bool = True  # [server] dist: hand out the programs of dist_dir
+    dist_dir: Path | None = None  # GRAPH_CLI_DIST_DIR: the wheels the image was built from
 
     @classmethod
     def load(cls, env: Mapping[str, str], cwd: Path) -> Settings:
@@ -136,6 +142,8 @@ class Settings:
             max_upload_bytes=config.max_file_bytes,
             admin_api=config.admin_api,
             client_builds=config.client_builds,
+            dist=config.dist,
+            dist_dir=Path(env[DIST_ENV]) if env.get(DIST_ENV) else None,
         )
 
 
@@ -171,6 +179,10 @@ class ServerApp:
         self.tokens = TokenStore(settings.data_root)
         self.uploads = Uploads(settings.state_root)
         self.admin = admin(self) if admin is not None else None
+        self.dist: Served | None = None
+        self.dist_problems: list[str] = []  # what is not handed out, and why; main logs it
+        if settings.dist and settings.dist_dir is not None:
+            self.dist, self.dist_problems = load(settings.dist_dir, self.builds)
 
     def __call__(
         self, environ: Mapping[str, Any], start_response: StartResponse
@@ -220,6 +232,9 @@ class ServerApp:
         if parts == ["v1", "health"]:
             self._method(method, "GET")
             return _json(200, {"ok": True, "version": __version__, "api": API_VERSION})
+        if parts[1:2] == ["dist"] and len(parts) == 3:
+            self._method(method, "GET")
+            return self._dist(environ, parts[2], name)
         token = self._authenticate(environ)
         name.append(token.name)
         outdated = self._outdated(environ)
@@ -306,7 +321,7 @@ class ServerApp:
         return GraphCliError(
             "remote.client_outdated",
             f"this {client} is build {short(build)}, the server runs build {short(ours)};"
-            f" install the {client} the server runs, then run the command again",
+            f" run {client} self update, then the command again",
             details={"program": client, "client": build, "server": ours},
         )
 
@@ -579,6 +594,47 @@ class ServerApp:
         }
         document = envelope("skills", program=PROGRAM, result=Result(data=data), warnings=warnings)
         return _json(200, dict(document))
+
+    def _dist(self, environ: Mapping[str, Any], file: str, name: list[str]) -> Response:
+        """The manifest or one of its files (B14.18); never refused for a build. The
+        ``graph-admin`` wheel needs a token with the admin scope."""
+        if self.dist is None:
+            why = (
+                "[server] dist = false"
+                if not self.settings.dist
+                else f"no wheels ({DIST_ENV} names none)"
+            )
+            error = GraphCliError(
+                "usage.unknown_command",
+                f"no such endpoint: /v1/dist/{file}; this server hands out no programs ({why})",
+            )
+            return self._error(None, error, status=404)
+        if file == "manifest":
+            return _json(200, self.dist.manifest.to_json())
+        found = self.dist.files.get(file)
+        if found is None:
+            return self._unknown(f"/v1/dist/{file}")
+        path, admin = found
+        if admin:
+            token = self._authenticate(environ)
+            name.append(token.name)
+            refused = _scope_refusal(token, ADMIN_SCOPE)
+            if refused is not None:
+                return self._error(None, refused, status=403)
+        handle = path.open("rb")
+        wrapper = environ.get("wsgi.file_wrapper")
+        chunks: Iterable[bytes] = (
+            wrapper(handle, 1024 * 1024) if wrapper is not None else _chunks(handle)
+        )
+        return Response(
+            200,
+            chunks,
+            headers=[
+                ("Content-Length", str(path.stat().st_size)),
+                ("Content-Disposition", "attachment"),
+            ],
+            content_type="application/octet-stream",
+        )
 
     # ---- errors and CORS -----------------------------------------------
 

@@ -22,7 +22,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `remote.unreachable`, `remote.unauthorized`: stop and tell the user. Never look for, set or pass a token yourself.
 - `remote.outcome_unknown`: a write was sent and its answer lost. Run exactly the command in `hint` (the same write with the same idempotency key, safe to repeat), never a changed one, then read the result.
 - `access.project_mismatch`: the token belongs to another project. Stop and tell the user; never change the project.
-- `remote.client_outdated`: this program is not the build the server runs. Stop and tell the user; never install or change the program yourself.
+- `remote.client_outdated`: this program is not the build the server runs. Stop and tell the user the command in `hint`, which installs the server's build and refreshes the skills; never install or change the program yourself.
 
 ## When an installed skill is outdated
 
@@ -91,6 +91,10 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `term.no_labels` | refused | 1 |
 | `term.no_text_fields` | refused | 1 |
 | `term.unknown` | not_found | 1 |
+| `update.available` | invalid | 1 |
+| `update.install_failed` | unavailable | 5 |
+| `update.unavailable` | unavailable | 5 |
+| `update.unsupported_install` | refused | 1 |
 | `usage.invalid_argument` | usage | 2 |
 | `usage.invalid_input` | usage | 2 |
 | `usage.missing_argument` | usage | 2 |

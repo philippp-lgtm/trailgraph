@@ -36,6 +36,7 @@ commands to the server's admin API
 | `token create NAME [--project P] [--expires DATE] [--scope S] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; `--scope admin` makes it a token of the [admin API](server.md#admin-api) (never bound to a project); warns when the policy grants an app token nothing or does not let an admin token maintain |
 | `token list` | the tokens: name, scope, project, expiry, creation time, hash prefix; never the token |
 | `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
+| `self update` | in the remote mode install the server's build of `graph-admin` when it differs (`--check` only reports); see [Self update](server.md#self-update) |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
 
 ## Auditing and releases

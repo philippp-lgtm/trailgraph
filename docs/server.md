@@ -65,6 +65,7 @@ exit code `graph` would have.
 | `PUT /v1/uploads` | stage bytes for a file parameter; answers `{upload, size}` |
 | `GET /v1/graphs/{graph}/files/{ref}` | the stored file of an entity, checked like `file path` |
 | `POST /v1/graphs/{graph}/skill` | the graph's published skill, rendered for installing |
+| `GET /v1/dist/manifest`, `GET /v1/dist/{file}` | the programs the server hands out ([Self update](#self-update)); no token needed, except for the `graph-admin` wheel |
 
 A command request names the parameters by their inventory names:
 
@@ -106,12 +107,70 @@ exit code 1); the message names both builds. With `[server] client_builds
 instead (for a rolling upgrade). Nothing is compared when either side has
 no build id: a web app or `curl` sends none, and neither does a program
 run from a checkout (`uv run graph`), which then only gets the warning
-when the version string differs. `/v1/health` is never refused.
+when the version string differs. `/v1/health` and `/v1/dist/` are never
+refused: they are how a client catches up (`graph self update`).
 
 Installing a client from a checkout with a build id: run
 `python3 scripts/build_id.py` before `uv tool install` and `python3
 scripts/build_id.py --clean` after it. The image's build stage does the
 same, so a client and a server built from the same tree match.
+
+## Self update
+
+The image keeps the wheels of `graph` and `graph-admin` it was built from,
+with `constraints.txt`, the pinned versions of their third-party
+requirements, in the directory `GRAPH_CLI_DIST_DIR` names
+([Configuration](configuration.md#environment-variables)).
+`GET /v1/dist/manifest` lists them:
+
+```json
+{"schema": "graph_cli.dist/1",
+ "programs": {"graph": {"distribution": "graph_cli", "version": "<value>",
+   "build": "sha256:<hex>", "requires": [], "access": "public",
+   "file": "<file>", "hash": "sha256:<hex>", "size": 0}},
+ "constraints": {"file": "constraints.txt", "hash": "sha256:<hex>", "size": 0}}
+```
+
+`GET /v1/dist/{file}` answers the bytes of a listed file. The `graph`
+wheel and the constraints need no token (program code, no data), so a
+machine without `graph` can install it:
+
+```sh
+uv tool install --constraints <endpoint>/v1/dist/constraints.txt <endpoint>/v1/dist/<file>
+```
+
+The `graph-admin` wheel needs a token with the admin scope (`access:
+"admin"`); it requires the `graph` wheel. A wheel of another build than the
+server runs is not handed out (the server names it on stderr at start), so
+a client never installs a build the server then refuses. `[server] dist =
+false` turns `/v1/dist/` off (404).
+
+`graph self update` brings a machine in step with the server:
+
+1. In the remote mode, when the server runs another build of `graph`, it
+   fetches the wheel and constraints into `<state>/dist/`, checks their
+   hashes and runs `uv tool install --reinstall` into the uv tool
+   environment `graph` runs from, so the launcher stays where it is. A
+   `graph` not installed with `uv tool`, or without `uv` on `PATH`, gets
+   `update.unsupported_install` with the command to run instead, and so
+   does an endpoint that is plain HTTP to another host (a program fetched
+   that way could have been changed on the way); a checkout (no build id)
+   is left as it is. Locally this step is skipped.
+2. The installed program, run as a new process, refreshes the agent skills
+   in every scope that holds a skill of this program: the project's (at
+   the pointer file found from `--dir`, default the working directory),
+   adding the skills of the pointer's graphs that are not installed yet,
+   and the user's ([Installing skills](skills.md#installing-skills)).
+   Skills edited by hand stay and are reported unless `--force`.
+3. It checks the skills it refreshed; the answer lists the program step
+   (`current`, `updated` or `skipped`), each scope's skills and what
+   changed.
+
+`--check` changes nothing: it compares the builds and dry-runs the skill
+refresh, and exits 0 only when nothing is outdated (else
+`update.available`). `remote.client_outdated` and `skills.outdated` name
+`graph self update` as their hint. `graph-admin self update` does step 1
+for `graph-admin` with the admin token; it installs no skills.
 
 ## Skill freshness
 

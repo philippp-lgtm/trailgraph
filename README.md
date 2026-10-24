@@ -47,7 +47,10 @@ uv tool install --reinstall --compile-bytecode --constraints <file> ./packages/g
 
 For a client of a `graph-server`, wrap the install in `python3
 scripts/build_id.py` and `python3 scripts/build_id.py --clean`, so the
-installed program names its build ([Builds](docs/server.md#builds)).
+installed program names its build ([Builds](docs/server.md#builds)), or
+install the server's own wheel from `<endpoint>/v1/dist/`; from then on
+`graph self update` keeps program and skills in step with the server
+([Self update](docs/server.md#self-update)).
 
 ## Quickstart
 

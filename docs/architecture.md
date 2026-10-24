@@ -60,7 +60,8 @@ routes come from the same declarations as the CLI (every command whose
 into argv for the one click program, and `cli_kit.runner.run` runs it with an
 `AppServices` per request whose `RequestScope` carries the request's actor
 (`catalog.identity.request`), pointer, `GRAPH_CLI_GRAPH` and file origins.
-`uploads` stages uploaded bytes per token, `openapi` derives the OpenAPI
+`uploads` stages uploaded bytes per token, `dist` reads the wheels the
+server hands out under `/v1/dist/` once at start, `openapi` derives the OpenAPI
 documents from the inventories, `main` serves the app with `waitress` (one
 process, a thread pool). `admin_api` serves the `graph-admin` declarations
 the same way under `/v1/admin/`, with an admin `Services` per request whose
@@ -136,6 +137,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)); `catalog.identity.request` builds the actor of a server request from its token and the client's facets |
 | `catalog.endpoint`, `catalog.remote` | the remote mode: the server endpoint, the HTTP transport (`http.client`, imported in remote mode only) and the `RemoteSession` of one command |
 | `catalog.build` | the build id an installed distribution carries (`_build_id`, written by `scripts/build_id.py`) and the `Graph-Cli-Build` header |
+| `catalog.dist` | the programs the origin hands out (`/v1/dist/` manifest), fetching a wheel and installing it as a uv tool into the environment the program runs from (`graph self update`, `graph-admin self update`) |
 | `catalog.skill_claims` | skill freshness: the claims of the installed skills' markers (both scopes), the `Graph-Cli-Skills` header, and the check a read or write runs when it selects a graph (`SkillGate`); skill 1 is checked by `app_cli.skill_check` before any read or write. The names both this module and `graph_cli.skills` rely on (marker file and schema, skill names, slot kinds) are in `kernel.skill_marker` |
 | `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
 

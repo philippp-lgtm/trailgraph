@@ -148,7 +148,9 @@ rendered there for the graph's current ontology.
 Skill 1 is always installed, graph skills named with `--graph`, and every
 graph skill installed there before is refreshed; one whose graph is gone,
 no longer visible or unpublished is reported as `unavailable` and left
-alone. Each installed directory carries the marker `.graph_cli_skill.json`
+alone. `--project-graphs` adds the skills of every graph the pointer file
+names (seen from `DIR` for `--scope project`); a graph without a published
+skill or out of reach is listed in `skipped_graphs` instead of failing. Each installed directory carries the marker `.graph_cli_skill.json`
 (program, source, file hashes); a directory without it, or with files that
 differ from it, is replaced only with `--force`. Without `--force` such a
 directory is left as it is and the other skills are still installed; the
@@ -171,6 +173,9 @@ graph skills check --scope project --dir <dir>
 Run `install` and `check` with the installed `graph` (see
 [Install](../README.md#install)), not with `uv run graph` from the
 checkout: `check` compares against the program that runs it.
+`graph self update` refreshes every scope that holds a skill of this
+program in one call, after installing the server's build in the remote
+mode ([Self update](server.md#self-update)).
 
 ## Stale skills
 
@@ -184,7 +189,8 @@ program's, a graph skill when the graph published another skill since or,
 for a generated one, when the graph's ontology pin moved.
 
 - A write (`--dry-run` included) is refused with `skills.outdated` (exit 1);
-  the hint is the `graph skills install` command that refreshes the copy.
+  the hint is `graph self update` (with `--dir` for a project's copy),
+  which refreshes the copies.
 - A read runs and warns `skills.stale`, naming the same command.
 - Meta commands (`whoami`, `describe commands`, `skills ...`) are never
   checked: they are how a stale copy is found and refreshed.

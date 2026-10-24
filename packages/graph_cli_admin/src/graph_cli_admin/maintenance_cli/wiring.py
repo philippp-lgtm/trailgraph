@@ -150,6 +150,14 @@ class Services:
             client, asserted_facets(actor), None, None, warnings, commands=ADMIN_ROUTE
         )
 
+    def state_root(self) -> Path:
+        """This host's state directory (a client keeps the wheels it fetched there)."""
+        config, _ = self.config()
+        roots, _ = resolve_roots(
+            self.env, config=config, cwd=self.cwd, data_root_flag=None, allow_flag=False
+        )
+        return roots.state_root
+
     def _path(self, value: str) -> Path:
         home = self.env.get("HOME")
         if home and (value == "~" or value.startswith("~/")):

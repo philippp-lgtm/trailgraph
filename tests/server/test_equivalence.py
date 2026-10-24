@@ -199,6 +199,7 @@ def test_local_and_remote_answers_are_equal(
         ("file", "check"),
         ("skills", "install"),  # emit covers how graph skills arrive; install writes them
         ("skills", "check"),
+        ("self", "update"),  # runs skills install and check; run_skills
     }
     for mine, theirs in zip(normalized(actual), normalized(expected), strict=True):
         assert mine == theirs, differences(mine, theirs)
@@ -296,6 +297,9 @@ def run_skills(env: dict[str, str], home: Path) -> list[str]:
     assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()
     code, document, _, _ = install("skills", "check", "--scope", "project")
     assert code == 0, document
+    code, updated, _, _ = install("self", "update", "--check")
+    assert code == 0, updated
+    assert updated["data"]["program"]["reason"] == "no_build"  # a checkout is not replaced
     return [s["status"] for s in document["data"]["skills"]]
 
 
@@ -381,4 +385,4 @@ def test_installed_skills_are_judged_the_same(isolated_env: dict[str, str], tmp_
     stale = [w for _, (_, _, _, warnings) in expected for w in warnings]
     assert {w["code"] for w in stale} == {"skills.stale"}
     refused = [hint for _, (_, code, hint, _) in expected if code == "skills.outdated"]
-    assert refused == ["graph skills install --scope project --dir <project>"] * 3
+    assert refused == ["graph self update --dir <project>"] * 3

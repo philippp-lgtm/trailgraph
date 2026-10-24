@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:6038bbdb07ce53ded55b91ab76dc3f14d13dfb575c9244c922d87c55c24f11b0"
+  inventory_hash: "sha256:637c89503507168ad32f51ac537d40a97895510609ad46f86b0e50af2a414417"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -28,9 +28,9 @@ against it and audited. The CLI is on `PATH`.
 - Run each call as a plain command that starts with `graph`: no `cd`,
   variables, loops, pipes or heredocs, which a restricted harness refuses.
   If a call is refused, run it again in that form before you give up.
-- Reads never change anything. Every write is audited.
-- `graph skills` commands install agent skills such as this one. Run them
-  only when the user asks; `graph skills check` only reads and is safe.
+- Reads never change anything. `graph skills` and `graph self update`
+  install agent skills such as this one, and the program: run them only
+  when the user asks. `graph skills check` and `--check` only read.
 
 ## Workflow
 
@@ -137,8 +137,7 @@ Every `--json` call prints one JSON object on stdout.
   fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
 - A large answer goes to a file (`output.spilled`, `details.path`; `data`
   null): ask for less, or read parts with your file tools, never `jq`.
-- On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is a command to run next,
-  or null.
+- On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is the command to run next, or null.
 - Warnings never change the exit code.
 
 ## Commands
@@ -167,6 +166,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph query` | read | Answer a read-only Cypher query: several hops, OR/NOT across relations, counts. |
 | `graph retract` | write | Withdraw an entity; needs --reason. |
 | `graph search` | read | Search names and text fields of every type; ranked suggestions, typos allowed. |
+| `graph self update` | meta | Install the server's build of this program and refresh the agent skills. |
 | `graph skills check` | meta | Check that installed agent skills equal what this program installs now. |
 | `graph skills emit` | meta | Write the agent skills of this program and named graphs into a directory. |
 | `graph skills install` | meta | Install or refresh the agent skills of this program and its graphs. |

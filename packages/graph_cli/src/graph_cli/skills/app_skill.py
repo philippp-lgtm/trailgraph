@@ -92,9 +92,9 @@ against it and audited. The CLI is on `PATH`.
 - Run each call as a plain command that starts with `graph`: no `cd`,
   variables, loops, pipes or heredocs, which a restricted harness refuses.
   If a call is refused, run it again in that form before you give up.
-- Reads never change anything. Every write is audited.
-- `graph skills` commands install agent skills such as this one. Run them
-  only when the user asks; `graph skills check` only reads and is safe.
+- Reads never change anything. `graph skills` and `graph self update`
+  install agent skills such as this one, and the program: run them only
+  when the user asks. `graph skills check` and `--check` only read.
 
 ## Workflow
 
@@ -201,8 +201,7 @@ Every `--json` call prints one JSON object on stdout.
   fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
 - A large answer goes to a file (`output.spilled`, `details.path`; `data`
   null): ask for less, or read parts with your file tools, never `jq`.
-- On failure `error` holds {error_keys}. `hint` is a command to run next,
-  or null.
+- On failure `error` holds {error_keys}. `hint` is the command to run next, or null.
 - Warnings never change the exit code.
 
 ## Commands
@@ -936,7 +935,8 @@ REMOTE_GUIDANCE: Final = (
     "- `access.project_mismatch`: the token belongs to another project. Stop and tell"
     " the user; never change the project.",
     "- `remote.client_outdated`: this program is not the build the server runs. Stop and"
-    " tell the user; never install or change the program yourself.",
+    " tell the user the command in `hint`, which installs the server's build and refreshes"
+    " the skills; never install or change the program yourself.",
     "",
 )
 

@@ -116,6 +116,23 @@ def _refresh(details: Mapping[str, JsonValue], program: str) -> str | None:
     return _install(details, program, force=False)
 
 
+def _update(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Install the server's build and refresh the skills (B14.18): the program the details
+    name (a refused client), else this one; ``--dir`` for a project's skills."""
+    named = details.get("program")
+    words = [named if isinstance(named, str) else program, "self", "update"]
+    target = details.get("dir")
+    if isinstance(target, str):
+        words += ["--dir", shlex.quote(target)]
+    return " ".join(words)
+
+
+def _manual_install(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A program ``update`` cannot replace: the install command it named, if any."""
+    command = details.get("command")
+    return command if isinstance(command, str) else None
+
+
 def _publish(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Graph skills are published by the maintainer (D15 Q2)."""
     graph = details.get("graph")
@@ -176,7 +193,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "skills.source_missing": _publish,
     "skills.source_invalid": None,
     "skills.check_failed": _refresh,
-    "skills.outdated": _refresh,
+    "skills.outdated": _update,
     "file.unreadable": None,
     "file.too_large": None,
     "file.module_missing": None,
@@ -188,7 +205,11 @@ _BASE: Final[dict[str, Hint | None]] = {
     "remote.unauthorized": None,  # the message names the token settings
     "remote.protocol": None,
     "remote.outcome_unknown": _same_key,
-    "remote.client_outdated": None,  # the message says what to install
+    "remote.client_outdated": _update,
+    "update.available": _update,
+    "update.unavailable": None,
+    "update.unsupported_install": _manual_install,
+    "update.install_failed": None,
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}

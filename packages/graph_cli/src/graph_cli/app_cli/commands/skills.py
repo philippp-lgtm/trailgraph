@@ -56,6 +56,11 @@ DIR: Final = ParamSpec(
     "--dir", "directory", "Project directory for --scope project; default: the working directory."
 )
 DRY_RUN: Final = ParamSpec("--dry-run", "flag", "Show what would be installed; write nothing.")
+PROJECT_GRAPHS: Final = ParamSpec(
+    "--project-graphs",
+    "flag",
+    "Also the skill of every graph the project's pointer file names that has one.",
+)
 OUT: Final = ParamSpec(
     "--out", "directory", "Existing directory to write one directory per skill into.", required=True
 )
@@ -165,8 +170,7 @@ def remote_graph_skill(
     import base64
     from urllib.parse import quote
 
-    from graph_cli.app_cli.remote_hooks import error_of
-    from graph_cli.catalog.remote import envelope_of, protocol
+    from graph_cli.catalog.remote import envelope_of, error_of, protocol
     from graph_cli.skills.install import rendered
 
     answer = session.client.call(
@@ -310,11 +314,14 @@ def wanted_skills(
     target: SkillTarget,
     installed: dict[str, Installed],
     graphs: Sequence[str],
+    skipped: list[dict[str, JsonValue]] | None = None,
 ) -> tuple[list[RenderedSkill], dict[str, dict[str, JsonValue]]]:
-    """Skill 1, the named graph skills and the graph skills already installed by us.
+    """Skill 1, the named graph skills and the graph skills already installed by us; with
+    ``skipped`` also those of the pointer's graphs.
 
     A named graph that cannot be installed is an error; an installed one becomes
-    ``unavailable`` (``{skill: {graph, reason}}``).
+    ``unavailable`` (``{skill: {graph, reason}}``); a pointer's graph without a skill or
+    out of reach goes to ``skipped`` (``{graph, reason}``).
     """
     wanted = [app_skill()]
     unavailable: dict[str, dict[str, JsonValue]] = {}
@@ -323,14 +330,14 @@ def wanted_skills(
         for name, found in installed.items()
         if found.kind == "graph" and (ref := installed_graph_ref(found)) is not None
     }
-    if not graphs and not refresh:
+    if not graphs and not refresh and skipped is None:
         return wanted, unavailable
     source = SkillSource(state)
     pointer = pointer_of(state, source, target)
     named = source.skills(graphs, pointer)
     wanted += named
     for name, ref in sorted(refresh.items()):
-        if name in {skill.name for skill in named}:
+        if name in {skill.name for skill in wanted}:
             continue
         try:
             wanted += source.skills([ref], pointer)
@@ -338,6 +345,16 @@ def wanted_skills(
             if exc.code not in UNAVAILABLE:
                 raise
             unavailable[name] = {"graph": ref, "reason": exc.code}
+    if skipped is not None and pointer is not None:
+        for ref in pointer.graphs:
+            try:
+                found = source.skills([ref], pointer)
+            except GraphCliError as exc:
+                if exc.code not in UNAVAILABLE:
+                    raise
+                skipped.append({"graph": ref, "reason": exc.code})
+                continue
+            wanted += [s for s in found if s.name not in {w.name for w in wanted}]
     return wanted, unavailable
 
 
@@ -348,12 +365,14 @@ def install(
     graphs: tuple[str, ...],
     force: bool,
     dry_run: bool,
+    project_graphs: bool,
 ) -> Result:
     from graph_cli.skills.install import apply_install, plan_install, refusal, scan
 
     target = target_of(state, scope, dir)
     installed = scan(target)
-    wanted, unavailable = wanted_skills(state, target, installed, graphs)
+    skipped: list[dict[str, JsonValue]] | None = [] if project_graphs else None
+    wanted, unavailable = wanted_skills(state, target, installed, graphs, skipped)
     plan = plan_install(target, installed, wanted, force=force)
     error = refusal(plan, {"graphs": list(graphs)})
     if not dry_run:
@@ -367,6 +386,7 @@ def install(
             "unavailable": [
                 {"skill": name, **details} for name, details in sorted(unavailable.items())
             ],
+            "skipped_graphs": skipped or [],
         },
         error=error,
     )
@@ -430,7 +450,7 @@ SPECS: Final = (
         surface="meta",
         action=None,
         summary="Install or refresh the agent skills of this program and its graphs.",
-        params=(SCOPE, DIR, GRAPHS, FORCE, DRY_RUN),
+        params=(SCOPE, DIR, GRAPHS, PROJECT_GRAPHS, FORCE, DRY_RUN),
         examples=(
             Example("graph skills install --scope project --dir <dir>", "Into one project."),
             Example(
@@ -438,6 +458,10 @@ SPECS: Final = (
                 "For every project of the user, with one graph skill.",
             ),
             Example("graph skills install --scope project --dry-run --json", "Show the plan."),
+            Example(
+                "graph skills install --scope project --dir <dir> --project-graphs",
+                "Skill 1 and the skills of every graph the project uses.",
+            ),
         ),
         errors=(
             *GRAPH_ERRORS,
@@ -451,10 +475,13 @@ SPECS: Final = (
         description="--scope user installs into $CLAUDE_CONFIG_DIR/skills, else"
         " ~/.claude/skills; --scope project into <dir>/.claude/skills (<dir>/.claude must"
         " exist). Skill 1 is always installed, graph skills named with --graph, and every"
-        " graph skill installed here before is refreshed. Directories without our marker"
-        " (.graph_cli_skill.json) or edited by hand are replaced only with --force; without"
-        " it they are left as they are, the other skills are still installed, and the"
-        " answer lists every skill and ends with the refusal (exit 1).",
+        " graph skill installed here before is refreshed. --project-graphs adds the graphs"
+        " of the pointer file (seen from <dir> for --scope project): a graph without a"
+        " published skill or out of reach is listed in skipped_graphs, not refused."
+        " Directories without our marker (.graph_cli_skill.json) or edited by hand are"
+        " replaced only with --force; without it they are left as they are, the other"
+        " skills are still installed, and the answer lists every skill and ends with the"
+        " refusal (exit 1).",
     ),
     CommandSpec(
         path=("skills", "check"),

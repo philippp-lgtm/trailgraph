@@ -73,6 +73,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `skills emit --out DIR` | write skill 1 and, with `--graph`, published graph skills into a directory (one directory per skill, no marker) |
 | `skills install --scope user\|project` | install or refresh the agent skills (see [Skills](skills.md#installing-skills)) |
 | `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
+| `self update` | in the remote mode install the server's build of `graph` when it differs, then refresh the agent skills of the project (`--dir`) and the user, adding the skills of the project's graphs; `--check` only reports, `--force` replaces skills edited by hand (see [Self update](server.md#self-update)) |
 
 ## Graph selection
 

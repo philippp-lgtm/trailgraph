@@ -33,3 +33,21 @@ def test_source_missing_points_at_publish() -> None:
     )
     assert hint_for("skills.source_missing", {}, program="graph") is None
     assert hint_for("skills.source_invalid", {"graph": "example_graph"}, program="graph") is None
+
+
+def test_outdated_hints_name_self_update() -> None:
+    """B14.18: a refused client and a stale skill catch up with ``self update``."""
+    details = {"scope": "project", "dir": "/tmp/a project"}
+    assert hint_for("skills.outdated", details, program="graph") == (
+        "graph self update --dir '/tmp/a project'"
+    )
+    assert hint_for("skills.outdated", {"scope": "user"}, program="graph") == "graph self update"
+    outdated = {"program": "graph-admin", "client": "x", "server": "y"}
+    assert hint_for("remote.client_outdated", outdated, program="graph-admin") == (
+        "graph-admin self update"
+    )
+    command = "uv tool install --reinstall <url>"
+    assert hint_for("update.unsupported_install", {"command": command}, program="graph") == (
+        command
+    )
+    assert hint_for("update.unsupported_install", {"command": None}, program="graph") is None

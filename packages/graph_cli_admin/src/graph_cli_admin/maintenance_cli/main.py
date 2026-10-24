@@ -45,6 +45,7 @@ def program(*, remote: bool = False) -> click.Group:
             "graph": "Create and inspect graphs.",
             "ontology": "Validate, compare and release authored ontologies.",
             "policy": "Check, show, compare, apply and explain access policies.",
+            "self": "Install the server's build of this program.",
             "skill": "Publish the graph skill that the app installs for agents, or preview it.",
             "token": "Create, list and revoke bearer tokens of the server API.",
         },

@@ -556,6 +556,25 @@ Usage: `graph search TEXT [OPTIONS]`
 | `graph search <value>` | Names and text fields of any type. |
 | `graph search <value> --type <type> --field <attr> --json` | One field of one type. |
 
+## graph self update
+
+Install the server's build of this program and refresh the agent skills.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph self update [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--check` | flag | no | no | Only report what is outdated; change nothing. Exit 0 when nothing is. |
+| `--dir` | directory | no | no | Project directory whose skills to refresh; default: the working one. |
+| `--force` | flag | no | no | Also replace skills that were edited by hand. |
+
+| Example | Summary |
+|---|---|
+| `graph self update` | Catch up with the server: program and skills. |
+| `graph self update --check --json` | Only report what is outdated. |
+
 ## graph skills check
 
 Check that installed agent skills equal what this program installs now.
@@ -606,6 +625,7 @@ Usage: `graph skills install [OPTIONS]`
 | `--scope` | choice | yes | no | user: the agent's user skills; project: <dir>/.claude/skills. One of `user`, `project`. |
 | `--dir` | directory | no | no | Project directory for --scope project; default: the working directory. |
 | `--graph` | graph_ref | no | yes | Also the skill of this graph (name or id); repeatable. |
+| `--project-graphs` | flag | no | no | Also the skill of every graph the project's pointer file names that has one. |
 | `--force` | flag | no | no | Replace skill directories that are not ours or were edited by hand. |
 | `--dry-run` | flag | no | no | Show what would be installed; write nothing. |
 
@@ -614,6 +634,7 @@ Usage: `graph skills install [OPTIONS]`
 | `graph skills install --scope project --dir <dir>` | Into one project. |
 | `graph skills install --scope user --graph <graph> --json` | For every project of the user, with one graph skill. |
 | `graph skills install --scope project --dry-run --json` | Show the plan. |
+| `graph skills install --scope project --dir <dir> --project-graphs` | Skill 1 and the skills of every graph the project uses. |
 
 ## graph supersede
 

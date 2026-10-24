@@ -49,6 +49,14 @@ prevents depends on what is verified:
   client refuses plain HTTP to another host unless told otherwise. Tokens
   are stored as hashes and never logged or audited; a request without a
   valid token is logged but reaches nothing.
+- Program updates: `graph self update` installs the wheel the server hands
+  out after checking its hash against the server's manifest. Both come
+  over the same connection, so the check catches a broken transfer, and
+  TLS is what keeps them authentic: `self update` installs nothing over
+  plain HTTP to another host. Whoever can replace the wheels in the image
+  or the server's answers runs code on every client that updates. The
+  `graph` wheel is public (program code without data); the `graph-admin`
+  wheel needs an admin token ([Self update](server.md#self-update)).
 
 Whoever can run `graph-admin` where the data lives (`docker compose exec`),
 or holds an admin token of a server with the admin API on, remains the

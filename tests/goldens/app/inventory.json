@@ -2160,6 +2160,77 @@
     },
     {
       "path": [
+        "self",
+        "update"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Install the server's build of this program and refresh the agent skills.",
+      "args": [],
+      "options": [
+        {
+          "name": "--check",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only report what is outdated; change nothing. Exit 0 when nothing is."
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory whose skills to refresh; default: the working one."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also replace skills that were edited by hand."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph self update",
+          "summary": "Catch up with the server: program and skills."
+        },
+        {
+          "command": "graph self update --check --json",
+          "summary": "Only report what is outdated."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "internal.error",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.check_failed",
+        "skills.modified",
+        "skills.not_owned",
+        "update.available",
+        "update.install_failed",
+        "update.unavailable",
+        "update.unsupported_install",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
+    },
+    {
+      "path": [
         "skills",
         "check"
       ],
@@ -2332,6 +2403,13 @@
           "summary": "Also the skill of this graph (name or id); repeatable."
         },
         {
+          "name": "--project-graphs",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also the skill of every graph the project's pointer file names that has one."
+        },
+        {
           "name": "--force",
           "type": "flag",
           "required": false,
@@ -2358,6 +2436,10 @@
         {
           "command": "graph skills install --scope project --dry-run --json",
           "summary": "Show the plan."
+        },
+        {
+          "command": "graph skills install --scope project --dir <dir> --project-graphs",
+          "summary": "Skill 1 and the skills of every graph the project uses."
         }
       ],
       "errors": [
@@ -3258,6 +3340,26 @@
     {
       "code": "term.unknown",
       "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "update.available",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "update.install_failed",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "update.unavailable",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "update.unsupported_install",
+      "category": "refused",
       "exit": 1
     },
     {

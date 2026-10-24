@@ -106,6 +106,8 @@ def main(argv: list[str] | None = None) -> None:
         f"{SERVER_PROGRAM} {__version__} listening on http://{options.host}:{port}{surfaces}",
         file=sys.stderr,
     )
+    for problem in app.dist_problems:
+        print(f"{SERVER_PROGRAM}: not handed out: {problem}", file=sys.stderr)
     sys.stderr.flush()
     try:
         server.run()

@@ -471,6 +471,7 @@ def test_remote_graph_admin_answers_as_locally(
     assert "remote.unauthorized" in scoped.stderr and "scope app" in scoped.stderr
     assert covered(expected) == {s.path for s in all_specs() if s.remote != "local"} - {
         ("describe", "commands"),  # the same code on both sides: the client's inventory
+        ("self", "update"),  # installs this program: tests/unit/catalog/test_dist.py
     }
     mine = comparable(actual, client_home, owner_home, local_home)
     theirs = comparable(expected, local_home, owner_home, client_home)

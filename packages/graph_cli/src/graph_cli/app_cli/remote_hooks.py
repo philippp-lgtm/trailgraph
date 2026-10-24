@@ -29,13 +29,12 @@ from typing import TYPE_CHECKING, Final
 
 from graph_cli.app_cli.commands.common import services
 from graph_cli.app_cli.remote import forward, new_key
-from graph_cli.catalog.remote import RemoteSession, envelope_of, protocol
+from graph_cli.catalog.remote import RemoteSession, envelope_of, error_of, protocol
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import read_documents
-from graph_cli.kernel.error_codes import lookup_error_code
 from graph_cli.kernel.errors import GraphCliError
 
 if TYPE_CHECKING:
@@ -74,19 +73,6 @@ def upload(
     if with_origin:
         reference["origin"] = dict(origin) if origin is not None else None
     return reference
-
-
-def error_of(document: Mapping[str, JsonValue]) -> GraphCliError:
-    """The error an envelope carries, raised here as if it happened here."""
-    error = document.get("error")
-    if not isinstance(error, Mapping) or lookup_error_code(str(error.get("code"))) is None:
-        return protocol(0, "the answer carries no known error")
-    details = error.get("details")
-    return GraphCliError(
-        str(error["code"]),
-        str(error.get("message", "")),
-        details=details if isinstance(details, Mapping) else None,
-    )
 
 
 # ---- apply, query --------------------------------------------------------------

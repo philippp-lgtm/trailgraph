@@ -11,7 +11,9 @@ FROM ${UV} AS uv
 
 # ---- build: wheels of the three distributions, pinned third-party requirements ----
 # Each wheel carries its build id (scripts/build_id.py): a client installed from the same
-# tree names the same one, and the server refuses another (docs/server.md).
+# tree names the same one, and the server refuses another (docs/server.md). /dist keeps
+# the client wheels and their pins (without hashes: a client on another platform resolves
+# its own wheels of them); the server hands them out under /v1/dist/.
 FROM ${PYTHON} AS build
 COPY --from=uv /uv /bin/uv
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
@@ -24,7 +26,10 @@ RUN python scripts/build_id.py \
  && uv build --package graph_cli_admin --wheel --out-dir /wheels \
  && uv build --package graph_cli_server --wheel --out-dir /wheels \
  && uv export --frozen --no-dev --no-emit-workspace --package graph_cli_server \
-      --package graph_cli_admin --format requirements-txt -o /wheels/requirements.txt
+      --package graph_cli_admin --format requirements-txt -o /wheels/requirements.txt \
+ && mkdir /dist && cp /wheels/graph_cli-*.whl /wheels/graph_cli_admin-*.whl /dist/ \
+ && uv export --frozen --no-dev --no-emit-workspace --no-hashes --no-header \
+      --package graph_cli_admin --format requirements-txt -o /dist/constraints.txt
 
 # ---- test: the whole suite on Linux (flock, the fsync path, temp dirs) ----
 FROM ${PYTHON} AS test
@@ -48,8 +53,9 @@ RUN pip install --no-cache-dir --require-hashes -r /wheels/requirements.txt \
  && rm -rf /wheels
 COPY docker/entrypoint.sh /usr/local/bin/graph-container
 COPY docker/default_policy.yaml /usr/local/share/graph_cli/default_policy.yaml
+COPY --from=build /dist /usr/local/share/graph_cli/dist
 ENV HOME=/state XDG_CONFIG_HOME=/config XDG_DATA_HOME=/data XDG_STATE_HOME=/state \
-    PYTHONUNBUFFERED=1
+    GRAPH_CLI_DIST_DIR=/usr/local/share/graph_cli/dist PYTHONUNBUFFERED=1
 USER graph
 VOLUME ["/data", "/state", "/config"]
 EXPOSE 8470

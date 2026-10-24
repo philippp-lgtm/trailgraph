@@ -35,7 +35,8 @@ limit and the read signal. The sections described elsewhere:
   `false`) makes it serve the [admin API](server.md#admin-api) too;
   `client_builds`: `"exact"` (default) refuses a client of another build,
   `"warn"` lets it through with a warning ([Builds](server.md#builds));
-  read by the server only
+  `dist` (default `true`): `false` hands out no programs
+  ([Self update](server.md#self-update)); read by the server only
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 
@@ -95,6 +96,7 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_OUTPUT` | `json` makes JSON output the default |
 | `GRAPH_CLI_SPILL_BYTES` | overrides `[output] spill_bytes`; `0` keeps every answer on stdout |
 | `GRAPH_CLI_TOKEN` | the bearer token in [remote mode](#remote-mode), before `[remote] token_file` |
+| `GRAPH_CLI_DIST_DIR` | the directory of wheels `graph-server` hands out ([Self update](server.md#self-update)); set in the image |
 | `GRAPH_CLI_ADMIN_TOKEN` | the admin token of `graph-admin` in [remote mode](#remote-mode), before `[remote] admin_token_file` |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
 

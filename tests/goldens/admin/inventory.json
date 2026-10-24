@@ -1479,6 +1479,59 @@
     },
     {
       "path": [
+        "self",
+        "update"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Install the server's build of graph-admin (remote mode).",
+      "args": [],
+      "options": [
+        {
+          "name": "--check",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only report whether the server runs another build; change nothing."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin self update",
+          "summary": "Install the build the server runs."
+        },
+        {
+          "command": "graph-admin self update --check --json",
+          "summary": "Only report it."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "update.available",
+        "update.install_failed",
+        "update.unavailable",
+        "update.unsupported_install",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
+    },
+    {
+      "path": [
         "token",
         "create"
       ],
@@ -1935,6 +1988,26 @@
       "code": "remote.unreachable",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "update.available",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "update.install_failed",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "update.unavailable",
+      "category": "unavailable",
+      "exit": 5
+    },
+    {
+      "code": "update.unsupported_install",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "usage.invalid_argument",

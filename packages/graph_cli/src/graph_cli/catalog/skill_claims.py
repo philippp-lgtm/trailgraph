@@ -236,7 +236,7 @@ def report(
         return
     scope = str(stale[0]["scope"])
     details: dict[str, JsonValue] = {"skills": [dict(s) for s in stale], "scope": scope}
-    words = ["graph", "skills", "install", "--scope", scope]
+    words = ["graph", "self", "update"]
     if scope == "project" and project_dir is not None:
         details["dir"] = str(project_dir)
         words += ["--dir", shlex.quote(str(project_dir))]
@@ -252,7 +252,7 @@ def report(
     warning = WarningRecord(
         "skills.stale",
         f"the installed skill {names} describes an older state; the answer is right, but"
-        f" the skill may mislead. Refresh it ({' '.join(words)}) and read it again",
+        f" the skill may mislead. Refresh the skills ({' '.join(words)}) and read them again",
         details,
     )
     if warning not in warnings:

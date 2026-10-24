@@ -53,7 +53,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
-    "server": frozenset({"cors_origins", "admin_api", "client_builds"}),
+    "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
@@ -92,6 +92,7 @@ class Config:
     admin_api: bool = False  # [server]: graph-server also serves the graph-admin commands
     # [server]: "exact" refuses a client of another build, "warn" lets it through
     client_builds: Literal["exact", "warn"] = "exact"
+    dist: bool = True  # [server]: graph-server hands out the programs it was built from
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -202,6 +203,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     client_builds = get("server.client_builds", str, "a string")
     if client_builds is not None and client_builds not in ("exact", "warn"):
         raise _invalid(path, "server.client_builds", "must be 'exact' or 'warn'")
+    dist = get("server.dist", bool, "a boolean")
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -226,6 +228,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         cors_origins=tuple(cors_origins or ()),
         admin_api=bool(admin_api),
         client_builds="warn" if client_builds == "warn" else "exact",
+        dist=dist if dist is not None else defaults.dist,
         mode=mode or defaults.mode,
         endpoint=endpoint,
         token_file=token_file,
