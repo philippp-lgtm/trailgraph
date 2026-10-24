@@ -5,7 +5,9 @@ Semantics follow the reference query evaluator (``kernel.query_eval``):
 - **Operands.** ``{"attr": n}`` reads ``attrs`` (missing and JSON ``null``
   are absent), ``{"self": "record_status"}`` the system field,
   ``{"const": v}`` a constant, ``{"count": {...}}`` an integer,
-  ``{"sum": {...}}`` an integer or a decimal string.
+  ``{"sum": {...}}`` an integer or a decimal string. A language-tagged
+  attribute (``lang_string``, ``lang_text``) reads as its text (a list of
+  texts for ``many``), so ``equals_string`` compares the text.
 - **Comparisons** are type-strict; an absent operand matches nothing, so
   ``ne`` on an absent value is false. A comparison with an aggregate
   (``count``, ``sum``) or a ``decimal`` attribute is numeric: decimal
@@ -37,12 +39,14 @@ from decimal import Context, Decimal, Inexact, localcontext
 from graph_cli.kernel.canonical import MAX_SAFE_INT, JsonValue, canonical_bytes
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
+from graph_cli.kernel.langtag import text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_eval import order_values, values_equal
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.expr_ast import COMPARISONS, TESTS, is_aggregate, walk
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE
+from graph_cli.ontology_layer.vocabulary import LANG_BASES
 
 
 def _bad(node: JsonValue) -> GraphCliError:
@@ -118,7 +122,7 @@ class _Evaluator:
         ((kind, arg),) = node.items()
         match kind:
             case "attr":
-                return self.entity.attrs.get(str(arg))
+                return self.attr_value(str(arg))
             case "const":
                 return arg
             case "self" if arg == "record_status":
@@ -128,6 +132,18 @@ class _Evaluator:
             case "sum" if isinstance(arg, Mapping):
                 return self.sum(arg)
         raise _bad(node)
+
+    def attr_value(self, name: str) -> JsonValue:
+        """An attribute's value; the text of a language-tagged one (a list for ``many``)."""
+        value = self.entity.attrs.get(name)
+        attribute = self.attributes.get(name)
+        if value is None or attribute is None:
+            return value
+        if self.model.value_base(attribute.kind, attribute.type) not in LANG_BASES:
+            return value
+        if isinstance(value, list | tuple):
+            return [text_of(item) for item in value]
+        return text_of(value)
 
     def ends(self, kind: str, spec: Mapping[str, JsonValue]) -> list[EntityId]:
         """The other ends of an aggregate, one per current edge, after ``where``."""

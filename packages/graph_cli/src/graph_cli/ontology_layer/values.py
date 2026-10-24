@@ -1,7 +1,13 @@
 """Value conversion and facet checks per base type.
 
-Used for authored defaults now and for ``attrs_text`` coercion (B3.16) later,
-so both follow one table.
+Used for authored defaults and for ``attrs_text`` coercion (B3.16), so both
+follow one table.
+
+Language-tagged text (``lang_string``, ``lang_text``) is ``{"lang", "value"}``
+with a well-formed tag in canonical case. Its text form is ``"text"@tag`` or
+``text@tag`` (``kernel.langtag.split_tagged_text``); an untagged text stays a
+plain string, which ``with_language`` tags with the graph language on write.
+Facets apply to the text.
 """
 
 from __future__ import annotations
@@ -13,7 +19,13 @@ from typing import Final
 from graph_cli.kernel.canonical import HASH_RE, MAX_SAFE_INT, JsonValue
 from graph_cli.kernel.clock import format_timestamp, parse_date, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
+from graph_cli.kernel.langtag import (
+    LANG_KEYS,
+    normalize_language_tag,
+    split_tagged_text,
+    tagged_parts,
+)
+from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE, LANG_BASES
 
 DECIMAL_RE: Final = re.compile(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$")
 DURATION_RE: Final = re.compile(
@@ -27,6 +39,9 @@ def coerce_text(base: str, text: str) -> JsonValue:
     """Convert text to the JSON value of a base type; ``ValueError`` if it does not fit."""
     if base in ("string", "text", "iri", "blob"):
         return text
+    if base in LANG_BASES:
+        value, tag = split_tagged_text(text)
+        return value if tag is None else {"lang": tag, "value": value}
     if base == "integer":
         if not _INT_RE.match(text) or abs(int(text)) > MAX_SAFE_INT:
             raise ValueError(f"{text!r} is not an integer")
@@ -54,7 +69,12 @@ def coerce_text(base: str, text: str) -> JsonValue:
 
 
 def check_facets(value: JsonValue, facets: Mapping[str, JsonValue]) -> str | None:
-    """A violation message, or ``None`` when ``value`` satisfies every facet."""
+    """A violation message, or ``None`` when ``value`` satisfies every facet.
+
+    A language-tagged value is judged by its text."""
+    parts = tagged_parts(value)
+    if parts is not None:
+        value = parts[0]
     if isinstance(value, str):
         minimum, maximum = facets.get("min_length"), facets.get("max_length")
         if isinstance(minimum, int) and len(value) < minimum:
@@ -73,6 +93,48 @@ def check_facets(value: JsonValue, facets: Mapping[str, JsonValue]) -> str | Non
         if isinstance(maximum, int) and value > maximum:
             return f"greater than {maximum}"
     return None
+
+
+def lang_value_problem(value: JsonValue) -> str | None:
+    """A shape problem of a language-tagged value, or ``None``.
+
+    An untagged value reaches the validator only when the graph has no language
+    (``with_language`` tags it otherwise), so the message names both ways out.
+    """
+    if isinstance(value, str) or (isinstance(value, Mapping) and set(value) == {"value"}):
+        return (
+            "needs a language tag and the graph has no default language:"
+            ' write "<text>"@<tag> or {"lang": <tag>, "value": <text>}'
+        )
+    if not isinstance(value, Mapping) or value.keys() != LANG_KEYS:
+        return 'expected {"lang": <BCP 47 tag>, "value": <text>}'
+    text, tag = value["value"], value["lang"]
+    if not isinstance(text, str):
+        return "value must be a string"
+    canonical = normalize_language_tag(tag) if isinstance(tag, str) else None
+    if canonical is None:
+        return f"lang {tag!r} is not a well-formed BCP 47 language tag"
+    if canonical != tag:
+        return f"lang {tag!r} is not in canonical case ({canonical})"
+    return None
+
+
+def with_language(value: JsonValue, language: str | None) -> JsonValue:
+    """A value of a language-tagged attribute as stored: a plain string, or an object
+    without ``lang``, gets ``language`` (when set); a well-formed ``lang`` gets canonical
+    case. Anything else is returned unchanged, for the validator to judge."""
+    if isinstance(value, str):
+        return value if language is None else {"lang": language, "value": value}
+    if not isinstance(value, Mapping):
+        return value
+    if set(value) == {"value"}:
+        return dict(value) if language is None else {"lang": language, "value": value["value"]}
+    tag = value.get("lang")
+    if value.keys() == LANG_KEYS and isinstance(tag, str):
+        canonical = normalize_language_tag(tag)
+        if canonical is not None and canonical != tag:
+            return {"lang": canonical, "value": value["value"]}
+    return value
 
 
 def blob_problem(value: JsonValue) -> str | None:

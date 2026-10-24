@@ -116,6 +116,11 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _data("structural", "float_not_allowed", "A value contains a floating point number."),
     _data(
         "structural",
+        "language_repeated",
+        "A main label holds two values in one language.",
+    ),
+    _data(
+        "structural",
         "deprecated_term",
         "The write uses a deprecated class, attribute, datatype or relation.",
         _W,

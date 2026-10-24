@@ -81,6 +81,7 @@ from graph_cli.kernel.clock import format_timestamp, parse_date, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EdgeId, EntityId, TermRef, parse_id
+from graph_cli.kernel.langtag import tagged_parts, text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
@@ -103,8 +104,10 @@ from graph_cli.ontology_layer.values import (
     DURATION_RE,
     blob_problem,
     check_facets,
+    lang_value_problem,
     local_path_problem,
 )
+from graph_cli.ontology_layer.vocabulary import LANG_BASES
 
 PROVENANCE_RELATIONS: Final = frozenset({"core:supersedes", "core:retracts"})
 _IRI_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S+$")
@@ -123,8 +126,9 @@ class _Name:
     revision: Revision
     attr: str
     role: str
-    value: str
+    value: str  # the text
     words: tuple[str, ...]
+    stored: JsonValue  # the value as stored (language-tagged or not)
 
     @property
     def key(self) -> str:
@@ -138,9 +142,10 @@ def _names(model: CompiledModel, revision: Revision | None) -> list[_Name]:
     for attr, role in model.label_attributes(revision.type):
         value = revision.attrs.get(attr)
         for item in value if isinstance(value, list) else [value]:
-            if isinstance(item, str):
-                words = tuple(search_key(item).split())
-                found.append(_Name(revision, attr, role, item, words))
+            text = text_of(item)
+            if text is not None:
+                words = tuple(search_key(text).split())
+                found.append(_Name(revision, attr, role, text, words, item))
     return found
 
 
@@ -202,6 +207,8 @@ def _check_scalar(base: str, value: JsonValue) -> str | None:
         return blob_problem(value)
     if base == "local_path":
         return local_path_problem(value)
+    if base in LANG_BASES:
+        return lang_value_problem(value)
     if base == "json":
         return None
     raise GraphCliError("internal.error", f"unknown base type {base!r}")
@@ -367,6 +374,8 @@ class _Checker:
             )
             if problem is not None:
                 self.add(problem.code, revision, path, problem.message, expected=problem.expected)
+            elif attribute.role == "label" and isinstance(value, list | tuple):
+                self.one_label_per_language(revision, path, value)
         for name, attribute in cls.attributes.items():
             if attribute.required and attribute.kind != "lifecycle" and name not in revision.attrs:
                 self.add(
@@ -375,6 +384,22 @@ class _Checker:
                     f"attrs.{name}",
                     f"required attribute {name!r} is missing",
                 )
+
+    def one_label_per_language(
+        self, revision: Revision, path: str, values: Sequence[JsonValue]
+    ) -> None:
+        """A main label on ``lang_string`` holds at most one value per language (SKOS)."""
+        tags = Counter(parts[1] for v in values if (parts := tagged_parts(v)) is not None)
+        repeated = sorted(tag for tag, count in tags.items() if count > 1)
+        if repeated:
+            self.add(
+                "data.structural.language_repeated",
+                revision,
+                path,
+                f"the main label holds one value per language; {', '.join(repeated)}"
+                " has more (put further names in an alt_label attribute)",
+                actual=list(repeated),
+            )
 
     # ---- references ----------------------------------------------------
 
@@ -544,7 +569,7 @@ class _Checker:
             entity = other.revision.id
             if entity == name.revision.id or entity in seen or other.revision.type not in family:
                 continue
-            if attribute.unique and other.attr == name.attr and other.value == name.value:
+            if attribute.unique and other.attr == name.attr and other.stored == name.stored:
                 continue  # unique_violation reports it
             seen[entity] = (other, match)
         return sorted(

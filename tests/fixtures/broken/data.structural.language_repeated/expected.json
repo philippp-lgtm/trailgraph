@@ -1,0 +1,10 @@
+{
+  "code": "data.structural.language_repeated",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "t",
+    "path": "attrs.name",
+    "type": "brk:Thing"
+  }
+}

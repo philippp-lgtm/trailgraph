@@ -1,0 +1,16 @@
+{
+  "ops": [
+    {
+      "attrs": {
+        "name": [
+          {"lang": "de", "value": "Steuerung und Kontrolle"},
+          {"lang": "de", "value": "Kontrolle"},
+          {"lang": "en", "value": "Control"}
+        ]
+      },
+      "local": "t",
+      "op": "create",
+      "type": "brk:Thing"
+    }
+  ]
+}

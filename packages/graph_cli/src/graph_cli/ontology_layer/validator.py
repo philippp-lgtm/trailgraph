@@ -38,6 +38,8 @@ from graph_cli.ontology_layer.vocabulary import (
     BASE_TYPES,
     EDGE_FIELDS,
     FACETS_BY_BASE,
+    LABEL_BASES,
+    LANG_BASES,
     NON_SCALAR_BASES,
     SYSTEM_FIELDS,
 )
@@ -100,6 +102,8 @@ def attribute_default(
             value = coerce_text(base, node.text)
     except ValueError as exc:
         return None, str(exc)
+    if base in LANG_BASES and isinstance(value, str):
+        return None, f'a {base} default needs a language tag: "<text>"@<tag>'
     violation = check_facets(value, facets)
     return (None, violation) if violation else (value, None)
 
@@ -362,27 +366,29 @@ class _Validator:
     def role(
         self, module_id: str, attribute: IrAttribute, base: str | None, kind: str | None
     ) -> None:
-        """Label roles name things: strings (not text, enums or lifecycles); the main label single.
+        """Label roles name things: strings or language-tagged strings (not text, enums or
+        lifecycles); the main label single, or one per language on ``lang_string``.
 
         An unresolved type is reported as such and not judged here.
         """
         path = attribute.path
         if attribute.lifecycle is not None or (
-            kind is not None and (kind == "enum" or base != "string")
+            kind is not None and (kind == "enum" or base not in LABEL_BASES)
         ):
             self.add(
                 "model.semantic.role_not_applicable",
                 module_id,
                 f"{path}.role",
-                f"role {attribute.role!r} needs type string or a datatype over string",
+                f"role {attribute.role!r} needs type string or lang_string, or a datatype over one",
                 actual=attribute.type or attribute.lifecycle,
             )
-        if attribute.role == "label" and attribute.many:
+        if attribute.role == "label" and attribute.many and base != "lang_string":
             self.add(
                 "model.semantic.label_not_single",
                 module_id,
                 f"{path}.many",
-                "the main label holds one value; use alt_label for further names",
+                "the main label holds one value (one per language on lang_string);"
+                " use alt_label for further names",
             )
 
     def _base(self, kind: str, type_ref: str) -> str:

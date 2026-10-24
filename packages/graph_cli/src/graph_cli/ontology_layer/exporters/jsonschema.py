@@ -6,8 +6,10 @@ revisions. Fidelity is deliberately partial: lifecycles become plain enums
 the no-float rule for ``json`` values are not expressed. The validator stays
 the authority; the export is a convenience for external tools.
 
-A ``blob`` or ``local_path`` value carries ``x-graph_cli-base``: the
-schema states the shape, not every rule (the stored blob, the path segments).
+A ``blob``, ``local_path``, ``lang_string`` or ``lang_text`` value carries
+``x-graph_cli-base``: the schema states the shape, not every rule (the
+stored blob, the path segments, the full BCP 47 grammar and canonical case
+of a tag). Facets of a language-tagged datatype apply to its ``value``.
 A label role is the annotation ``x-graph_cli-role`` on the property (draft
 2020-12 collects unknown keywords as annotations; ``$comment`` is not one).
 Validators in a strict mode, such as Ajv's, need the keyword registered.
@@ -20,7 +22,7 @@ from typing import Final
 from graph_cli.kernel.canonical import HASH_RE, MAX_SAFE_INT, JsonValue
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.ontology_layer.values import DECIMAL_RE, DURATION_RE
-from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
+from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE, LANG_BASES
 
 DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
 ROLE_KEYWORD: Final = "x-graph_cli-role"
@@ -30,6 +32,21 @@ _UUID: Final = {
     "type": "string",
     "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
 }
+
+
+def _lang(base: str) -> dict[str, JsonValue]:
+    return {
+        "type": "object",
+        "properties": {
+            "lang": {"type": "string", "pattern": "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"},
+            "value": {"type": "string"},
+        },
+        "required": ["lang", "value"],
+        "additionalProperties": False,
+        BASE_KEYWORD: base,
+    }
+
+
 _BASE: Final[dict[str, dict[str, JsonValue]]] = {
     "string": {"type": "string"},
     "text": {"type": "string"},
@@ -62,6 +79,8 @@ _BASE: Final[dict[str, dict[str, JsonValue]]] = {
         "additionalProperties": False,
         BASE_KEYWORD: "local_path",
     },
+    "lang_string": _lang("lang_string"),
+    "lang_text": _lang("lang_text"),
 }
 _FACET_KEYWORDS: Final = {
     "min": "minimum",
@@ -86,12 +105,17 @@ def _value_schema(model: CompiledModel, attribute: AttributeDef) -> dict[str, Js
         return dict(_BASE[attribute.type])
     datatype = model.datatypes[attribute.type]
     schema = dict(_BASE[datatype.base])
+    text = dict(_BASE["string"]) if datatype.base in LANG_BASES else schema
     for facet, value in sorted(datatype.facets.items()):
         if facet == "single_line":
             if value is True:
-                schema["not"] = {"pattern": "[\\r\\n]"}
+                text["not"] = {"pattern": "[\\r\\n]"}
         else:
-            schema[_FACET_KEYWORDS[facet]] = value
+            text[_FACET_KEYWORDS[facet]] = value
+    if text is not schema:
+        properties = schema["properties"]
+        assert isinstance(properties, dict)
+        schema["properties"] = {**properties, "value": text}
     return schema
 
 

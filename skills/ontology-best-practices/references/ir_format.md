@@ -98,6 +98,8 @@ datatypes:
 | --- | --- | --- |
 | `string` | text, usually one line | `min_length`, `max_length`, `pattern`, `single_line` |
 | `text` | longer text | `min_length`, `max_length`, `pattern`, `single_line` |
+| `lang_string` | text in a named language, `{"lang": <BCP 47 tag>, "value": <text>}` | `min_length`, `max_length`, `pattern`, `single_line` (on the text) |
+| `lang_text` | longer text in a named language, same shape | `min_length`, `max_length`, `pattern`, `single_line` (on the text) |
 | `integer` | a JSON integer, no floats | `min`, `max` |
 | `decimal` | a decimal string such as `"12.5"` | none |
 | `boolean` | `true` or `false` | none |
@@ -113,6 +115,13 @@ datatypes:
 `pattern` is a regular expression that must match the whole value; anchor
 it (`^...$`). `json`, `external_ref` and `local_path` are not scalars: no
 `unique`, no `default`, no facets.
+
+`lang_string` and `lang_text` hold one language per value, as RDF
+language-tagged strings: a tag such as `de`, `en` or `de-CH`, stored in
+canonical case. A value written without a tag takes the graph language
+(`graph-admin graph create --language`); a graph without one refuses it. A
+`default` needs a tag: `default: '"unknown"@en'`. `unique` compares text
+and tag together.
 
 ## Enums
 
@@ -151,7 +160,7 @@ imported class (`is_a: files:File`).
 | `unique` | no two active entities of the declaring class and its subclasses share the value; scalars only |
 | `default` | a scalar used when a create omits the value; not with `many` or `lifecycle` |
 | `mutability` | `content` (default), `immutable` (write once: cannot change or be removed once set), `operational` (housekeeping values that may change any time, such as a local path), `lifecycle` (implied by `lifecycle`; changes only through transitions) |
-| `role` | `label` (the main name, one per class, single), `alt_label` (other names, abbreviations), `hidden_label` (misspellings, never shown); on `string` attributes only; `graph lookup` searches them |
+| `role` | `label` (the main name, one per class, single; on `lang_string` it may be `many`, one value per language), `alt_label` (other names, abbreviations), `hidden_label` (misspellings, never shown); on `string` and `lang_string` attributes only; `graph lookup` searches them |
 | `renamed_from` | the old name of a renamed attribute (major) |
 
 A lifecycle attribute with a single initial state is set to it on create.

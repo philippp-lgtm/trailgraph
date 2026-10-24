@@ -32,8 +32,15 @@ BASE_TYPES: Final = frozenset(
         "external_ref",
         "blob",
         "local_path",
+        "lang_string",
+        "lang_text",
     }
 )
+# Language-tagged text {"lang": <BCP 47 tag>, "value": <text>} (rdf:langString): short
+# and long, like string and text.
+LANG_BASES: Final = frozenset({"lang_string", "lang_text"})
+# Base types a label role may name: plain and language-tagged short text.
+LABEL_BASES: Final = frozenset({"string", "lang_string"})
 # Base types whose values are not scalars: unique and facets do not apply.
 NON_SCALAR_BASES: Final = frozenset({"json", "external_ref", "local_path"})
 # Base types for attributes only, never for qualifiers (a stored file is referenced
@@ -43,6 +50,8 @@ ATTRIBUTE_ONLY_BASES: Final = frozenset({"blob", "local_path"})
 FACETS_BY_BASE: Final[dict[str, frozenset[str]]] = {
     "string": frozenset({"min_length", "max_length", "pattern", "single_line"}),
     "text": frozenset({"min_length", "max_length", "pattern", "single_line"}),
+    "lang_string": frozenset({"min_length", "max_length", "pattern", "single_line"}),
+    "lang_text": frozenset({"min_length", "max_length", "pattern", "single_line"}),
     "iri": frozenset({"min_length", "max_length", "pattern"}),
     "integer": frozenset({"min", "max"}),
 }

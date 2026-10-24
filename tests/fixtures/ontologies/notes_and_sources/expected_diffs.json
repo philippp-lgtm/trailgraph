@@ -49,6 +49,26 @@
       "level": "minor",
       "schema": "graph_cli.ontology_diff/1",
       "to": "1.1.0"
+    },
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.nas:GlossaryEntry"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.nas:Heading"
+        }
+      ],
+      "from": "1.1.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.2.0"
     }
   ],
   "ontology": "notes_and_sources",
