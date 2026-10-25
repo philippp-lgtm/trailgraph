@@ -210,6 +210,16 @@ def test_the_maintainers_decide(
     for path in ("token/list", "policy/show", "graph/list", "audit/verify"):
         read = command(app, path, installation["tokens"]["root"])
         assert (read.status, read.error["code"]) == (403, "access.denied"), (path, read.json)
+    # the gate comes first: a header or an unknown argument tells a denied caller nothing
+    keyed = call(
+        app,
+        "POST",
+        "/v1/admin/commands/token/list",
+        token=installation["tokens"]["root"],
+        body={"args": {"nothing": True}},
+        headers={"Idempotency-Key": '"k-1"'},
+    )
+    assert (keyed.status, keyed.error["code"]) == (403, "access.denied"), keyed.json
     refusals = [
         e
         for e in audit_events(installation["root"])
@@ -399,7 +409,7 @@ def test_no_request_names_a_path_on_the_server(
     options = {o["name"] for c in inventory["commands"] for o in c["options"]}
     assert "--data-root" not in options
     document = call(app, "GET", "/v1/admin/openapi.json", token=root).json
-    assert document == admin_document(__version__)  # what the golden holds
+    assert document == admin_document(__version__, dist=False)  # the golden, without dist
     paths = document["paths"]
     assert "/v1/admin/commands/ontology/release" in paths
     assert not {"/v1/admin/commands/init", "/v1/admin/commands/view"} & set(paths)

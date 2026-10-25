@@ -182,6 +182,22 @@ def test_public_routes_and_servers(surface: str) -> None:
     ]
 
 
+def test_dist_and_enroll_only_when_served(surface: str) -> None:
+    """The document describes only what the server does: ``/v1/dist/`` when it hands out
+    programs (both documents), ``/v1/enroll`` (``graph connect``'s route) in the app one."""
+    routes = {"/v1/dist/manifest", "/v1/dist/{file}", "/v1/enroll"}
+    full = DOCUMENTS[surface]()
+    expected = routes if surface == "app" else routes - {"/v1/enroll"}
+    assert routes & set(full["paths"]) == expected
+    bare = (
+        app_document(dist=False, enroll=False) if surface == "app" else admin_document(dist=False)
+    )
+    validate(bare)
+    assert not routes & set(bare["paths"])
+    own = "/v1/openapi.json" if surface == "app" else "/v1/admin/openapi.json"
+    assert own in bare["paths"]
+
+
 def app_document_with(public_url: str) -> dict[str, Any]:
     from graph_cli.app_cli.commands import all_specs
     from graph_cli.app_cli.commands.meta import inventory

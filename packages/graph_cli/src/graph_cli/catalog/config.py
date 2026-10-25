@@ -63,7 +63,8 @@ MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
 MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
 ORIGIN_RE: Final = re.compile(r"^https?://[^/\s?#]+$")  # a browser Origin: scheme://host[:port]
-PUBLIC_URL_RE: Final = re.compile(r"^https?://[^/\s?#]+(/[^\s?#]*)?$")  # no query, no fragment
+# no credentials (they would be public in every problem type), no query, no fragment
+PUBLIC_URL_RE: Final = re.compile(r"^https?://[^/\s?#@]+(/[^\s?#]*)?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,7 +211,9 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     public_url = get("server.public_url", str, "a string")
     if public_url is not None and not PUBLIC_URL_RE.match(public_url):
         raise _invalid(
-            path, "server.public_url", "must be an http(s) URL without query or fragment"
+            path,
+            "server.public_url",
+            "must be an http(s) URL without credentials, query or fragment",
         )
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)

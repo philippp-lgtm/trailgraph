@@ -166,6 +166,10 @@ def test_unknown_major() -> None:
             'format_version = 1\n[server]\npublic_url = "https://x.example/?a=1"\n',
             "server.public_url",
         ),
+        (
+            'format_version = 1\n[server]\npublic_url = "https://user:pw@x.example/"\n',
+            "server.public_url",
+        ),
         ("format_version = 1\n[storage]\nlock_timeout_s = true\n", "storage.lock_timeout_s"),
         ("format_version = 1\n[storage]\nlock_timeout_s = 0\n", "storage.lock_timeout_s"),
         ('format_version = 1\n[storage]\ndurability = "none"\n', "storage.durability"),

@@ -90,6 +90,15 @@ def test_parse_json_is_strict(text: str) -> None:
         parse_json(text)
 
 
+@pytest.mark.parametrize("text", ["[" * 200_000, "[" + "9" * 5000 + "]"])
+def test_parse_json_refuses_deep_nesting_and_long_integers(text: str) -> None:
+    """A refusal like any other, not the interpreter's own error (a server answers 400)."""
+    with pytest.raises(CanonicalError):
+        parse_json(text)
+    with pytest.raises(CanonicalError):
+        parse_canonical(text.encode())
+
+
 def test_parse_json_refuses_invalid_utf8() -> None:
     with pytest.raises(CanonicalError):
         parse_json(b'"\xff"')

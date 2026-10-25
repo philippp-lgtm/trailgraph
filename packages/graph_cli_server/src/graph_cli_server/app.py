@@ -31,7 +31,6 @@ import base64
 import binascii
 import contextlib
 import io
-import json
 import os
 import shlex
 import time
@@ -242,7 +241,7 @@ class ServerApp:
             response = self._failure(environ, response)
             vary.append("Accept")
         cors = self._cors(environ)
-        if cors:
+        if self.settings.cors_origins:  # an answer differs by Origin, also for no or another one
             vary.append("Origin")
         own_cache = any(key.lower() == "cache-control" for key, _ in response.headers)
         headers = [
@@ -288,9 +287,9 @@ class ServerApp:
             self._method(method, "GET")
             return self._dist(environ, parts[2], name)
         if parts == ["v1", "enroll"]:
-            self._method(method, "POST")
             if self.enroll is None:
                 return self._unknown(path)
+            self._method(method, "POST")
             return self.enroll.dispatch(environ)
         token = self._authenticate(environ)
         name.append(token.name)
@@ -319,6 +318,8 @@ class ServerApp:
                 inventory(all_specs(), output_schemas=True),
                 version=__version__,
                 public_url=self.settings.public_url,
+                dist=self.dist is not None,
+                enroll=self.enroll is not None,
             )
             return _json(200, document)
         if len(parts) > 2 and parts[1] == "commands":
@@ -1001,9 +1002,10 @@ def _object(value: JsonValue, what: str, keys: frozenset[str]) -> Mapping[str, J
 
 
 def _actor_header(value: str) -> JsonValue:
+    """Parsed as strictly as a body (a duplicate key refused)."""
     try:
-        decoded: JsonValue = json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+        decoded = parse_json(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+    except (binascii.Error, CanonicalError):
         raise GraphCliError(
             "usage.invalid_input",
             "Graph-Cli-Actor must be base64url of a JSON object",

@@ -173,8 +173,9 @@ def parse_json(data: bytes | str, *, floats: Callable[[str], str] | None = None)
     """Parse JSON strictly into the C.1 data model.
 
     Refuses floats, NaN/Infinity, duplicate keys, out-of-range integers,
-    lone surrogates and NUL. ``floats`` turns float literals into a string
-    (subclass) instead, for input documents whose validator reports them
+    lone surrogates, NUL and nesting deeper than the interpreter recurses.
+    ``floats`` turns float literals into a string (subclass) instead, for
+    input documents whose validator reports them
     (``kernel.changeset.FloatLiteral``).
     """
     try:
@@ -189,7 +190,16 @@ def parse_json(data: bytes | str, *, floats: Callable[[str], str] | None = None)
         raise CanonicalError("input is not valid UTF-8") from exc
     except json.JSONDecodeError as exc:
         raise CanonicalError(f"invalid JSON: {exc}") from exc
-    canonical_bytes(value)  # range, surrogate and NUL checks
+    except RecursionError:
+        raise CanonicalError("invalid JSON: nested too deeply") from None
+    except CanonicalError:
+        raise
+    except ValueError as exc:  # such as an integer with more digits than int() converts
+        raise CanonicalError(f"invalid JSON: {exc}") from None
+    try:
+        canonical_bytes(value)  # range, surrogate and NUL checks
+    except RecursionError:
+        raise CanonicalError("invalid JSON: nested too deeply") from None
     return value
 
 
@@ -227,7 +237,7 @@ def parse_canonical(data: bytes) -> JsonValue:
             encoded = json.dumps(
                 value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
             ).encode("utf-8")
-        except ValueError:  # decode, parse and lone surrogate errors: the reference names them
+        except (ValueError, RecursionError):  # the reference names the error
             pass
         else:
             if encoded == data:

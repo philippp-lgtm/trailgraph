@@ -15,8 +15,10 @@ import pytest
 from harness import CliRunner
 from support.admin import admin, init
 from support.app import create_graph
+from support.openapi import answer_validator, app_document
 from support.server import call, grant_server
 
+from graph_cli import __version__
 from graph_cli.catalog.enrollments import code_hash
 from graph_cli.storage.files.token_files import enrollments_path, tokens_path
 from graph_cli_server.admin_api import AdminApi
@@ -132,6 +134,29 @@ def test_a_code_is_checked_then_exchanged_once(
     assert verified.code == 0, verified.envelope
 
 
+def test_the_openapi_document_describes_enrollment(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.22 G4: ``POST /v1/enroll`` is in the app document, without a token; the check,
+    the exchange and a refusal fit their responses, closed."""
+    app, _ = served(installation, tmp_path)
+    secret = code(run_cli, "--project", "p1")["code"]
+    checked = call(app, "POST", "/v1/enroll", body={"code": secret, "check": True})
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": secret, "label": "laptop"})
+    refused = call(app, "POST", "/v1/enroll", body={"code": secret})
+    token = exchanged.json["data"]["token"]
+    document = call(app, "GET", "/v1/openapi.json", token=token).json
+    assert document == app_document(__version__, dist=False)
+    operation = document["paths"]["/v1/enroll"]["post"]
+    assert operation["security"] == []
+    body = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert body["additionalProperties"] is False and body["required"] == ["code"]
+    for reply, status in ((checked, "200"), (exchanged, "200"), (refused, "401")):
+        assert str(reply.status) == status, reply.json
+        validator = answer_validator(document, "/v1/enroll", "post", status)
+        assert not [e.message for e in validator.iter_errors(reply.json)], reply.json
+
+
 def test_wrong_used_revoked_and_expired_codes_get_one_answer(
     run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -216,6 +241,17 @@ def test_the_route_is_strict_about_its_body(installation: dict[str, Any], tmp_pa
     assert wrong.status == 405 and wrong.headers["Allow"] == "POST"
     off = ServerApp(Settings.load(installation["env"], tmp_path), log=io.StringIO())
     assert call(off, "POST", "/v1/enroll", body={"code": "x"}).status == 404
+    assert call(off, "GET", "/v1/enroll").status == 404  # no route, whatever the method
+
+
+def test_the_error_registry_does_not_tell_whether_the_admin_api_is_on(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """graph-server always enrolls, so the public registry always names the admin codes."""
+    settings = Settings.load(installation["env"], tmp_path)
+    app = ServerApp(settings, log=io.StringIO(), enroll=Enrollment)
+    assert app.admin is None
+    assert call(app, "GET", "/v1/errors/admin.model_invalid").status == 200
 
 
 def test_enroll_create_refuses_and_warns(run_cli: CliRunner, installation: dict[str, Any]) -> None:

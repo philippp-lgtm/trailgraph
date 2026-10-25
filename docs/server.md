@@ -138,7 +138,7 @@ exit code `graph` would have. A route called with another method answers
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/health` | `{ok, version, api}`; no token needed |
-| `GET /v1/errors`, `GET /v1/errors/{code}` | the error codes: `{errors: [...]}`, or one `{code, category, retryable, status, exit_code, summary}`; no token needed |
+| `GET /v1/errors`, `GET /v1/errors/{code}` | every error code of `graph` and `graph-admin`, whether or not the admin API is on: `{errors: [...]}`, or one `{code, category, retryable, status, exit_code, summary}`; no token needed |
 | `GET /v1/inventory` | the command inventory (`graph describe commands`) |
 | `GET /v1/openapi.json` | an OpenAPI 3.1 document generated from the inventory |
 | `POST /v1/commands/{path}` | run a command; `{path}` is the command path with `/` (`describe/types`) |
@@ -215,12 +215,14 @@ problem has. With `?render=text` an error asked for as a problem is the
 problem only.
 
 The file download carries `ETag: "sha256:<hex>"` and
-`Cache-Control: private, no-cache`: a client may keep the bytes, and a
-request with `If-None-Match` naming that tag answers 304 without them,
-after the same check and audit as a download.
+`Cache-Control: private, no-cache`: a client may keep the bytes (a
+browser too, on disk, also after its token is revoked), and a request with
+`If-None-Match` naming that tag answers 304 without them, after the same
+check and audit as a download.
 
-`GET /v1/openapi.json` describes every route above except `/v1/dist/` and
-`/v1/enroll`, with `servers` naming `[server] public_url` when it is set. A command's answer `200` is the envelope with that command's
+`GET /v1/openapi.json` describes every route above (`/v1/dist/` only while
+the server hands out programs), with `servers` naming `[server] public_url`
+when it is set. A command's answer `200` is the envelope with that command's
 `data`, the schema `graph describe commands --output-schemas` declares; for
 every status the command's declared error codes reach there is one response
 that lists them in `x-graph-cli-error-codes`, and `default` covers every
@@ -238,7 +240,8 @@ Browsers may call the API from the origins listed in `[server]
 cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
 given. A page may send `Idempotency-Key` and `If-None-Match` and read
-`ETag`, `Retry-After`, `Allow` and the `Graph-Cli-*` headers.
+`ETag`, `Retry-After`, `Allow` and the `Graph-Cli-*` headers. With origins
+listed, every answer carries `Vary: Origin`.
 
 ## Builds
 
@@ -347,7 +350,7 @@ audit and file maintenance. Off (the default), every `/v1/admin/` path is
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/admin/inventory` | the `graph-admin` inventory, as the API takes it |
-| `GET /v1/admin/openapi.json` | an OpenAPI 3.1 document of the admin API, built like the [app document](#api) |
+| `GET /v1/admin/openapi.json` | an OpenAPI 3.1 document of the admin API, `/v1/health`, `/v1/errors`, `/v1/uploads` and `/v1/dist/`, built like the [app document](#api) |
 | `POST /v1/admin/commands/{path}` | run a `graph-admin` command (`{"args": {...}, "actor": {...}}`) |
 
 An admin request acts through the entrypoint `maint` with the token's

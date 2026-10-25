@@ -4,6 +4,7 @@ The installation is prepared with the real ``graph-admin`` (policy grant,
 tokens); requests go through ``ServerApp`` without a socket.
 """
 
+import base64
 import io
 import json
 from pathlib import Path
@@ -227,8 +228,11 @@ def test_answers_match_the_openapi_document(
     the response of their status, closed (the routes that are no command included)."""
     app, _ = served
     token = installation["tokens"]["ci"]
-    document = call(app, "GET", "/v1/openapi.json", token=token).json
-    assert document == app_document(__version__)
+    served_document = call(app, "GET", "/v1/openapi.json", token=token)
+    document = served_document.json
+    # this server hands out no programs and exchanges no codes: no such routes described
+    assert document == app_document(__version__, dist=False, enroll=False)
+    assert not {"/v1/dist/manifest", "/v1/enroll"} & set(document["paths"])
 
     def check(path: str, method: str, reply: Any) -> None:
         responses = document["paths"][path][method]["responses"]
@@ -238,6 +242,7 @@ def test_answers_match_the_openapi_document(
 
     pointer = {"graphs": ["example_graph"], "default": "example_graph"}
     check("/v1/health", "get", call(app, "GET", "/v1/health"))
+    check("/v1/openapi.json", "get", served_document)
     check("/v1/uploads", "put", call(app, "PUT", "/v1/uploads", token=token, raw=b"x"))
     created = command(app, "create", token, args=LOCATION, pointer=pointer)
     assert created.status == 200, created.json
@@ -324,6 +329,15 @@ def test_file_add_with_origin_and_download(
     assert download.headers["Content-Type"] == "application/octet-stream"
     missing = call(app, "GET", "/v1/graphs/files_graph/files/deadbeefdeadbeef", token=token)
     assert missing.status == 404 and missing.error["code"] == "entity.not_found"
+    twice = base64.urlsafe_b64encode(b'{"agent": {"id": "a1"}, "agent": {"id": "a2"}}').decode()
+    duplicate = call(
+        app,
+        "GET",
+        f"/v1/graphs/files_graph/files/{entity}",
+        token=token,
+        headers={"Graph-Cli-Actor": twice.rstrip("=")},
+    )
+    assert (duplicate.status, duplicate.error["code"]) == (400, "usage.invalid_input")
 
 
 def test_graph_skill_endpoint(
@@ -360,6 +374,11 @@ def test_cors(installation: dict[str, Any], tmp_path: Path) -> None:
     reply = call(app, "GET", "/v1/health", headers=allowed)
     assert reply.headers["Vary"] == "Origin"
     assert "Access-Control-Allow-Credentials" not in reply.headers
+    # a cache must not hand an answer without CORS headers to an allowed origin
+    for headers in ({}, {"Origin": "https://evil.example"}):
+        plain = call(app, "GET", "/v1/health", headers=headers)
+        assert plain.headers["Vary"] == "Origin", headers
+        assert "Access-Control-Allow-Origin" not in plain.headers
 
 
 BUILD_A = "sha256:" + "a" * 64

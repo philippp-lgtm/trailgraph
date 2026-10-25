@@ -103,6 +103,9 @@ def test_the_body_is_parsed_strictly(served: tuple[ServerApp, str]) -> None:
     twice = raw(app, token, "find", '{"args": {"limit": 1, "limit": 2}}')
     assert twice.status == 400 and twice.error["code"] == "usage.invalid_input"
     assert "duplicate key" in twice.error["message"]
+    for body in ("[" * 200_000, '{"args": {"limit": ' + "9" * 5000 + "}}"):
+        refused = raw(app, token, "find", body)  # a refusal, not the interpreter's error
+        assert (refused.status, refused.error["code"]) == (400, "usage.invalid_input")
     both = run(app, token, "find", {"limit": 1, "--limit": 1, **GRAPH})
     assert both.status == 400 and both.error["code"] == "usage.invalid_argument"
     assert both.error["details"]["argument"] == "--limit"

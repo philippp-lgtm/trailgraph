@@ -2966,6 +2966,180 @@
         "security": []
       }
     },
+    "/v1/dist/manifest": {
+      "get": {
+        "operationId": "dist_manifest",
+        "summary": "The programs the server hands out; no token needed.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.dist/1"
+                    },
+                    "programs": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "distribution": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "build": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          },
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "access": {
+                            "type": "string",
+                            "enum": [
+                              "public",
+                              "admin"
+                            ]
+                          },
+                          "file": {
+                            "type": "string"
+                          },
+                          "hash": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          },
+                          "size": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "distribution",
+                          "version",
+                          "build",
+                          "requires",
+                          "access",
+                          "file",
+                          "hash",
+                          "size"
+                        ]
+                      }
+                    },
+                    "constraints": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "file": {
+                              "type": "string"
+                            },
+                            "hash": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            },
+                            "size": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "file",
+                            "hash",
+                            "size"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "programs",
+                    "constraints"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/dist/{file}": {
+      "parameters": [
+        {
+          "name": "file",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "dist_file",
+        "summary": "A file the manifest lists; the graph-admin wheel needs an admin token.",
+        "responses": {
+          "200": {
+            "description": "The file's bytes.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "const": "attachment"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/admin/inventory": {
       "get": {
         "operationId": "inventory",
@@ -2977,6 +3151,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/inventory"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "This document.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "openapi",
+                    "info",
+                    "paths"
+                  ],
+                  "properties": {
+                    "openapi": {
+                      "const": "3.1.0"
+                    }
+                  },
+                  "additionalProperties": true
                 }
               }
             }

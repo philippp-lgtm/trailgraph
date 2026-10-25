@@ -13,8 +13,10 @@ from typing import Any
 import pytest
 from harness import CliRunner
 from support.admin import init
+from support.openapi import answer_validator, app_document
 from support.server import call, grant_server, new_token
 
+from graph_cli import __version__
 from graph_cli_server.app import ServerApp, Settings
 
 pytestmark = pytest.mark.slow
@@ -108,6 +110,32 @@ def test_the_graph_wheel_is_public_the_admin_wheel_needs_an_admin_token(
     assert as_app.status == 403 and as_app.error["details"]["required"] == "admin"
     as_admin = call(app, "GET", f"/v1/dist/{admin.name}", token=installation["tokens"]["admin"])
     assert as_admin.status == 200 and as_admin.body == admin.read_bytes()
+
+
+def test_the_openapi_document_describes_the_dist_routes(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.22 G4: a server that hands out programs describes ``/v1/dist/``, without a
+    token for the manifest, with an optional one for a file; the answers fit."""
+    app = served(installation, tmp_path)
+    document = call(app, "GET", "/v1/openapi.json", token=installation["tokens"]["app"]).json
+    assert document == app_document(__version__, enroll=False)
+    paths = document["paths"]
+    assert paths["/v1/dist/manifest"]["get"]["security"] == []
+    assert paths["/v1/dist/{file}"]["get"]["security"] == [{}, {"bearer": []}]
+    manifest = call(app, "GET", "/v1/dist/manifest")
+    validator = answer_validator(document, "/v1/dist/manifest", "get", "200")
+    assert not [e.message for e in validator.iter_errors(manifest.json)]
+    graph = installation["wheels"]["graph"].name
+    reply = call(app, "GET", f"/v1/dist/{graph}")
+    assert reply.status == 200
+    file = paths["/v1/dist/{file}"]["get"]["responses"]["200"]
+    assert reply.headers["Content-Disposition"] == "attachment"
+    assert set(file["content"]) == {reply.headers["Content-Type"]}
+    refused = call(app, "GET", f"/v1/dist/{installation['wheels']['graph-admin'].name}")
+    assert refused.status == 401
+    validator = answer_validator(document, "/v1/dist/{file}", "get", "default")
+    assert not [e.message for e in validator.iter_errors(refused.json)]
 
 
 def test_unknown_files_and_other_methods_are_refused(

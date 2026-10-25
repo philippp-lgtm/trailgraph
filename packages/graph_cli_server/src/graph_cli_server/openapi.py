@@ -10,7 +10,9 @@ of every command as ``<operationId>_data``. Every error answer is also offered a
 problem details (``application/problem+json``, B14.22 G8); a write that takes an
 idempotency key declares the ``Idempotency-Key`` header (G7). Deterministic like the
 inventory; ``public_url`` adds ``servers`` (G9). The app surface and the admin API
-(``admin``) each get their own document.
+(``admin``) each get their own document, each with its own address; both describe
+``/v1/dist/`` when the server hands out programs (``dist``), the app document
+``/v1/enroll`` when the server exchanges enrollment codes (``enroll``, B14.21).
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Final
 
+from graph_cli.catalog.dist import MANIFEST_SCHEMA
 from graph_cli.cli_kit.argv import api_name
 from graph_cli.cli_kit.output_schemas import (
     ANY,
@@ -28,7 +31,11 @@ from graph_cli.cli_kit.output_schemas import (
     OPEN,
     STRING,
     Schema,
+    array,
+    enum,
+    nullable,
     obj,
+    one_of,
 )
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.error_codes import ErrorCategory
@@ -124,6 +131,65 @@ GRAPH_SKILL: Final[Schema] = obj(
         ),
     }
 )
+# ``catalog.dist.Manifest`` (B14.18): the programs ``/v1/dist/`` hands out.
+_FILE_KEYS: Final[dict[str, Schema]] = {"file": STRING, "hash": _DIGEST, "size": INTEGER}
+MANIFEST: Final[Schema] = obj(
+    {
+        "schema": {"const": MANIFEST_SCHEMA},
+        "programs": obj(
+            extra=obj(
+                {
+                    "distribution": STRING,
+                    "version": STRING,
+                    "build": _DIGEST,
+                    "requires": array(STRING),
+                    "access": enum("public", "admin"),
+                    **_FILE_KEYS,
+                }
+            )
+        ),
+        "constraints": nullable(obj(_FILE_KEYS)),
+    }
+)
+# ``POST /v1/enroll`` (``graph_cli_server.enroll``): the body, and the answer with
+# ``check`` (what the code is for) or without (the new token, once).
+_SCOPE: Final[Schema] = enum("app", "admin")
+ENROLL_BODY: Final[Schema] = {
+    **obj({"code": STRING}, {"label": nullable(STRING), "check": BOOLEAN}),
+    "additionalProperties": False,
+    "description": "At most 4 KiB.",
+}
+ENROLLED: Final[Schema] = one_of(
+    obj(
+        {
+            "enrollment": obj(
+                {
+                    "id": STRING,
+                    "project": STRING,
+                    "scope": _SCOPE,
+                    "expires_at": STRING,
+                    "graphs": array(STRING),
+                }
+            )
+        }
+    ),
+    obj(
+        {
+            "token": STRING,
+            "name": STRING,
+            "project": STRING,
+            "scope": _SCOPE,
+            "graphs": array(STRING),
+        }
+    ),
+)
+# The answer of the openapi.json routes: this document, read with an OpenAPI tool.
+DOCUMENT: Final[Schema] = {
+    "type": "object",
+    "required": ["openapi", "info", "paths"],
+    "properties": {"openapi": {"const": "3.1.0"}},
+    "additionalProperties": True,
+}
 _SERVED: Final = ("server", "hooked")
 
 
@@ -134,8 +200,11 @@ def openapi(
     commands: str = "/v1/commands/",
     admin: bool = False,
     public_url: str | None = None,
+    dist: bool = False,
+    enroll: bool = False,
 ) -> dict[str, JsonValue]:
-    """``admin``: the admin API's document (its commands under ``commands``)."""
+    """``admin``: the admin API's document (its commands under ``commands``). ``dist`` and
+    ``enroll``: the server serves those routes (the document describes only what it does)."""
     schemas = {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
     categories = {
         req_str(entry, "code"): ErrorCategory(req_str(entry, "category"))
@@ -164,10 +233,33 @@ def openapi(
             ),
         },
     }
+    if dist:
+        paths["/v1/dist/manifest"] = {
+            "get": _public(
+                _operation(
+                    "dist_manifest",
+                    "The programs the server hands out; no token needed.",
+                    _json(MANIFEST),
+                )
+            )
+        }
+        file = _operation(
+            "dist_file",
+            "A file the manifest lists; the graph-admin wheel needs an admin token.",
+            _bytes(dist=True),
+        )
+        paths["/v1/dist/{file}"] = {
+            "parameters": _in_path("file"),
+            "get": {**file, "security": [{}, {"bearer": []}]},
+        }
     inventory_answer = _json(_ref("inventory"))
+    document_answer = _json(DOCUMENT)
     if admin:
         paths["/v1/admin/inventory"] = {
             "get": _operation("inventory", "The admin inventory.", inventory_answer)
+        }
+        paths["/v1/admin/openapi.json"] = {
+            "get": _operation("openapi", "This document.", document_answer)
         }
         paths["/v1/uploads"] = upload
     else:
@@ -176,6 +268,9 @@ def openapi(
             {
                 "/v1/inventory": {
                     "get": _operation("inventory", "The command inventory.", inventory_answer)
+                },
+                "/v1/openapi.json": {
+                    "get": _operation("openapi", "This document.", document_answer)
                 },
                 "/v1/uploads": upload,
                 "/v1/graphs/{graph}/files/{ref}": {
@@ -197,6 +292,25 @@ def openapi(
                 },
             }
         )
+    if enroll and not admin:
+        _add(schemas, "enroll_data", ENROLLED)
+        paths["/v1/enroll"] = {
+            "post": _public(
+                _operation(
+                    "enroll",
+                    "Exchange an enrollment code for a token, or check it; no token needed.",
+                    _json(_answer(schemas, "enroll_data")),
+                    errors=_responses(
+                        {
+                            400: ["usage.invalid_input", "usage.invalid_argument"],
+                            401: ["remote.unauthorized"],
+                            503: ["backend.lock_timeout"],
+                        }
+                    ),
+                    body=dict(ENROLL_BODY),
+                )
+            )
+        }
     for value in req_list(inventory, "commands"):
         command = as_object(value, "command")
         if command.get("remote") not in _SERVED:
@@ -294,6 +408,11 @@ def _errors(codes: list[str], categories: Mapping[str, ErrorCategory]) -> dict[s
             continue
         for status in reachable(code, categories[code]):
             by_status.setdefault(status, []).append(code)
+    return _responses(by_status)
+
+
+def _responses(by_status: Mapping[int, list[str]]) -> dict[str, JsonValue]:
+    """One error response per status, naming its codes."""
     responses: dict[str, JsonValue] = {}
     for status, listed in sorted(by_status.items()):
         headers: dict[str, JsonValue] = {_EXIT_HEADER: _header_ref(_EXIT_HEADER)}
@@ -354,8 +473,15 @@ def _in_path(*names: str) -> list[JsonValue]:
     ]
 
 
-def _bytes() -> dict[str, JsonValue]:
-    """The file download (``app.ServerApp._file``): the bytes, their hash and media type."""
+def _bytes(*, dist: bool = False) -> dict[str, JsonValue]:
+    """The file download (``app.ServerApp._file``): the bytes, their hash and media type;
+    ``dist``: a file of ``/v1/dist/`` (``app.ServerApp._dist``), an attachment."""
+    if dist:
+        return {
+            "description": "The file's bytes.",
+            "headers": {"Content-Disposition": {"schema": {"const": "attachment"}}},
+            "content": {"application/octet-stream": {}},
+        }
     return {
         "description": "The stored bytes.",
         "headers": {

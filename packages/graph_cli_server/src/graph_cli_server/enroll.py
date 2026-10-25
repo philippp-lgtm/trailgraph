@@ -26,7 +26,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.storage.files.token_files import enrollments_path, read_tokens_file
 from graph_cli_admin.maintenance_cli.wiring import AdminRequest, Services
-from graph_cli_admin.services_admin import enroll
+from graph_cli_admin.services_admin import enroll, error_codes
 from graph_cli_server.app import SERVER_PROGRAM, Response, _json, _object, _read_json
 
 if TYPE_CHECKING:
@@ -50,6 +50,9 @@ _NOBODY: Final = ActorContext(
 
 class Enrollment:
     def __init__(self, server: ServerApp) -> None:
+        # graph-server always enrolls, so the public registry (GET /v1/errors) names the
+        # admin codes whether or not the admin API is on, and does not tell which
+        error_codes.register()
         self.server = server
 
     def dispatch(self, environ: Mapping[str, Any]) -> Response:

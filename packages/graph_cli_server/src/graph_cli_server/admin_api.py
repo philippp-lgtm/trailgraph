@@ -133,6 +133,7 @@ class AdminApi:
                 commands=COMMANDS,
                 admin=True,
                 public_url=server.settings.public_url,
+                dist=server.dist is not None,
             )
             return _json(200, document)
         if len(parts) > 1 and parts[0] == "commands":
@@ -174,10 +175,11 @@ class AdminApi:
                 raise GraphCliError(
                     "usage.invalid_input", "actor must be an object", details={"argument": "actor"}
                 )
+            actor, warnings = request_actor(asserted, token=token, client=CLIENT)
+            # the gate first: a caller it denies learns nothing of the arguments, audited
+            self._gate(command, AdminRequest(actor, warnings))
             if idempotency_key is not None:
                 args = with_header_key(spec, inventory_args(spec, args), idempotency_key)
-            actor, warnings = request_actor(asserted, token=token, client=CLIENT)
-            self._gate(command, AdminRequest(actor, warnings))
             with uploads.request_dir(token.name) as directory:
                 stage = self.server.stager(token, directory, staged)
                 argv = to_argv(spec, args, stage, directories=True)

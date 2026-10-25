@@ -19,11 +19,16 @@ from support.output_schemas import closed
 VERSION = "0.0.0"
 
 
-def app_document(version: str = VERSION) -> dict[str, Any]:
-    return openapi(app_inventory(app_specs(), output_schemas=True), version=version)
+def app_document(
+    version: str = VERSION, *, dist: bool = True, enroll: bool = True
+) -> dict[str, Any]:
+    """The goldens describe every route; a served document only those its server serves."""
+    return openapi(
+        app_inventory(app_specs(), output_schemas=True), version=version, dist=dist, enroll=enroll
+    )
 
 
-def admin_document(version: str = VERSION) -> dict[str, Any]:
+def admin_document(version: str = VERSION, *, dist: bool = True) -> dict[str, Any]:
     error_codes.register()  # as AdminApi does
     hints.register()
     declared = tuple(served(spec) for spec in admin_specs())
@@ -32,6 +37,7 @@ def admin_document(version: str = VERSION) -> dict[str, Any]:
         version=version,
         commands=COMMANDS,
         admin=True,
+        dist=dist,
     )
 
 
