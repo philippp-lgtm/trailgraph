@@ -451,10 +451,11 @@ as `graph` does.
 ## Container
 
 The repository's `Dockerfile` and `compose.yaml` run the server in a
-container that owns the data. The image holds the three distributions,
-runs as a user without a login, and keeps data, state and config in the
-named volumes `graph_data` (`/data`), `graph_state` (`/state`) and
-`graph_config` (`/config`). On macOS a named volume lives in the Docker
+container that owns the data. The image holds the three distributions
+(without pip: nothing in it installs at run time), runs as a user without
+a login, and keeps data, state and config in the named volumes
+`graph_data` (`/data`), `graph_state` (`/state`) and `graph_config`
+(`/config`). On macOS a named volume lives in the Docker
 VM's Linux file system, so locks and `fsync` behave as on Linux; a bind
 mount of an existing data root works when the container is its only
 writer, but is not the default.

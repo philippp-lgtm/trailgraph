@@ -43,6 +43,8 @@ RUN uv sync --frozen --all-packages
 RUN uv run pytest -q -p no:cacheprovider
 
 # ---- runtime: wheels only, a user without a login, data in volumes ----
+# pip goes after the install: nothing runs it here, and its vendored packages
+# (urllib3, msgpack, setuptools) carry the image's only fixable CVEs.
 FROM ${PYTHON} AS runtime
 RUN useradd --system --uid 10001 --home-dir /state --shell /usr/sbin/nologin graph \
  && mkdir /data /state /config /workspace \
@@ -50,6 +52,7 @@ RUN useradd --system --uid 10001 --home-dir /state --shell /usr/sbin/nologin gra
 COPY --from=build /wheels /wheels
 RUN pip install --no-cache-dir --require-hashes -r /wheels/requirements.txt \
  && pip install --no-cache-dir --no-deps /wheels/*.whl \
+ && pip uninstall --yes pip \
  && rm -rf /wheels
 COPY docker/entrypoint.sh /usr/local/bin/graph-container
 COPY docker/default_policy.yaml /usr/local/share/graph_cli/default_policy.yaml
