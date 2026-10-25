@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, INTEGER, STRING, array, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -14,6 +15,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     GRAPH_OPTION,
     admin_context,
 )
+from graph_cli_admin.maintenance_cli.output_schemas import STRINGS
 from graph_cli_admin.services_admin import files, graphs
 
 
@@ -29,6 +31,26 @@ def gc(
         admin_context(state, data_root), graph_ref=graph_ref, reason=reason, dry_run=dry_run
     )
     return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
+
+
+VERIFY_OUTPUT: Final = obj(  # services_admin.files.verify
+    {
+        "graph_id": STRING,
+        "rehash": BOOLEAN,
+        "stored": obj({"files": INTEGER, "bytes": INTEGER}),
+        "counts": ref("finding_counts"),
+        "findings": array(ref("finding")),
+    }
+)
+GC_OUTPUT: Final = obj(  # services_admin.files.gc; audit.events.blob_list
+    {
+        "graph_id": STRING,
+        "blobs_removed": array(obj({"hash": STRING, "size": INTEGER})),
+        "staging_removed": STRINGS,
+        "dry_run": BOOLEAN,
+        "removed": BOOLEAN,
+    }
+)
 
 
 SPECS: Final = (
@@ -52,6 +74,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "access.denied", "admin.integrity_errors"),
         handler=verify,
+        output=VERIFY_OUTPUT,
         description="Exits 1 (admin.integrity_errors) on a missing or, with --rehash, damaged"
         " file; orphans and staging leftovers are info findings (files gc removes them).",
     ),
@@ -78,6 +101,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, *CHANGE_ERRORS),
         handler=gc,
+        output=GC_OUTPUT,
         description="Files that any revision ever named stay, history included. The removal"
         " is audited (maint.repair); nothing to remove writes nothing.",
     ),

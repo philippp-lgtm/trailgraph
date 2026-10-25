@@ -15,6 +15,7 @@ from typing import Final
 import graph_cli_admin
 from graph_cli.catalog.dist import Installer, program_step
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -58,6 +59,9 @@ def update(state: CommandState, check: bool) -> Result:
     return Result(data=data, error=error)
 
 
+OUTPUT: Final = obj({"check": BOOLEAN, "program": ref("program_step"), "changed": BOOLEAN})
+
+
 SPECS: Final = (
     CommandSpec(
         path=("self", "update"),
@@ -81,6 +85,7 @@ SPECS: Final = (
             "update.install_failed",
         ),
         handler=update,
+        output=OUTPUT,
         remote="client",
         description='Only with mode = "remote": the wheel comes from the server\'s'
         " /v1/dist/ with the admin token and replaces the uv tool environment graph-admin"

@@ -131,8 +131,9 @@ gets a throwaway `HOME` and XDG directories, no `GRAPH_CLI_*` variables and no
 installed skills.
 
 Every envelope the suite sees is checked against the declared schemas
-(`tests/support/output_schemas.py`, a pytest plugin): in-process renders and
-the stdout of every `run_cli` subprocess. The envelope must match the
+(`tests/support/output_schemas.py`, a pytest plugin): in-process renders, the
+stdout of every `run_cli` subprocess and every answer `support.server.call`
+gets, as the server sent it. The envelope must match the
 `envelope` definition and `data` the `output` of its command, with every
 object closed (`unevaluatedProperties: false` unless the schema says
 `additionalProperties` itself), so a key the code adds without declaring it

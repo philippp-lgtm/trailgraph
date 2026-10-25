@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 from harness import CliRunner
+from jsonschema import Draft202012Validator
 from support.admin import admin, parse
 from support.fixtures import GOLDENS, assert_golden
 from support.trees import tree_hash
@@ -106,6 +107,20 @@ def test_inventory_golden_and_examples(run_cli: CliRunner) -> None:
             assert not [w for w in words if w in text], text
             assert not [p for p in prefixes if f"{p}:" in text], text
             assert not re.search(r"[/\\]|\.(yaml|toml|json)\b", text), text  # no paths
+
+
+def test_inventory_with_output_schemas_describes_every_answer(run_cli: CliRunner) -> None:
+    """B11.10: a consumer checks an answer with the published (open) schema and $defs."""
+    plain = admin(run_cli, "describe", "commands").data
+    typed = admin(run_cli, "describe", "commands", "--output-schemas").data
+    defs = typed.pop("$defs")
+    assert {"envelope", "inventory", "policy_document", "release"} <= set(defs)
+    outputs = {tuple(c["path"]): c.pop("output") for c in typed["commands"]}
+    assert all(outputs.values())
+    assert typed == plain
+    init = admin(run_cli, "init")
+    Draft202012Validator({**outputs[("init",)], "$defs": defs}).validate(init.data)
+    Draft202012Validator({**defs["envelope"], "$defs": defs}).validate(init.envelope)
 
 
 def test_help_names_positional_arguments(run_cli: CliRunner) -> None:

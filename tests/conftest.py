@@ -45,7 +45,7 @@ def isolated_env(tmp_path: Path) -> dict[str, str]:
 @pytest.fixture
 def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
     """Run an installed console script (``graph``, ``graph-admin``) in the isolated env."""
-    from support.output_schemas import check_stdout  # the plugin, loaded after this file
+    from support.output_schemas import check_text  # the plugin, loaded after this file
 
     def run(
         program: str,
@@ -65,7 +65,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
             cwd=cwd or tmp_path,
             timeout=60,
         )
-        check_stdout(program, completed.stdout)
+        check_text(program, completed.stdout)
         return completed
 
     return run

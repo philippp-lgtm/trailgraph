@@ -125,7 +125,15 @@
       "action": null,
       "summary": "Describe every command of this program (graph_cli.inventory/1).",
       "args": [],
-      "options": [],
+      "options": [
+        {
+          "name": "--output-schemas",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Add the JSON Schema of every command's data and their shared $defs."
+        }
+      ],
       "examples": [
         {
           "command": "graph-admin describe commands --json",
@@ -134,6 +142,10 @@
         {
           "command": "graph-admin describe commands",
           "summary": "The inventory as text."
+        },
+        {
+          "command": "graph-admin describe commands --output-schemas --json",
+          "summary": "The inventory with the schema of every answer."
         }
       ],
       "errors": [

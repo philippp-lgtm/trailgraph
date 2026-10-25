@@ -177,6 +177,8 @@ ADD_OUTPUT: Final = obj(  # services.files.FileAddResult.to_json
         "existing": BOOLEAN,
     }
 )
+# ``path`` is null in the server's answer (the bytes are at GET /v1/graphs/{graph}/files/
+# {ref}); the remote client downloads them and answers its own path.
 PATH_OUTPUT: Final = obj(
     {
         "id": STRING,
@@ -185,7 +187,7 @@ PATH_OUTPUT: Final = obj(
         "hash": STRING,
         "size": INTEGER,
         "media_type": NULLABLE_STRING,
-        "path": STRING,
+        "path": NULLABLE_STRING,
         "origin": nullable(ref("file_origin")),
     }
 )

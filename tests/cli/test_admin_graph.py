@@ -176,4 +176,9 @@ def test_diff_against_a_graph(run_cli: CliRunner, root: Path) -> None:
         "1.1.0",
         "minor",
     )
-    assert outcome.envelope["graph"]["name"] == "example_graph"
+    graph = outcome.envelope["graph"]  # B9.2: the same block as every other command
+    assert (graph["name"], graph["ontology"], graph["seq"]) == (
+        "example_graph",
+        {"bundle": "inventory", "version": "1.0.0"},
+        None,
+    )

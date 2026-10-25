@@ -6,6 +6,7 @@ from typing import Final
 
 from graph_cli.catalog.tokens import APP_SCOPE, SCOPES
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, array, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -14,6 +15,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     ROOT_ERRORS,
     admin_context,
 )
+from graph_cli_admin.maintenance_cli.output_schemas import TOKEN
 from graph_cli_admin.services_admin import tokens
 
 NAME: Final = ParamSpec(
@@ -49,6 +51,12 @@ def list_command(state: CommandState, data_root: str | None) -> Result:
 def revoke(state: CommandState, name: str, reason: str | None, data_root: str | None) -> Result:
     outcome = tokens.revoke(admin_context(state, data_root), name=name, reason=reason)
     return Result(data=outcome.data)
+
+
+# services_admin.tokens: the secret only in the answer of create
+CREATE_OUTPUT: Final = obj({**TOKEN, "token": STRING})
+LIST_OUTPUT: Final = obj({"tokens": array(ref("token"))})
+REVOKE_OUTPUT: Final = obj({"name": STRING, "revoked": BOOLEAN, "hash_prefix": STRING})
 
 
 SPECS: Final = (
@@ -91,6 +99,7 @@ SPECS: Final = (
         ),
         errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.token_exists"),
         handler=create,
+        output=CREATE_OUTPUT,
         description="Only a hash of the token is stored. The installed policy must grant"
         " the server entrypoint (or this token) a level; create warns when it grants nothing."
         " An admin token acts as a maintainer and must be one of the policy's maintainers;"
@@ -109,6 +118,7 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=list_command,
+        output=LIST_OUTPUT,
     ),
     CommandSpec(
         path=("token", "revoke"),
@@ -123,5 +133,6 @@ SPECS: Final = (
         ),
         errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.token_not_found"),
         handler=revoke,
+        output=REVOKE_OUTPUT,
     ),
 )

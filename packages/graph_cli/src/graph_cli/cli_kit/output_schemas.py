@@ -1,12 +1,13 @@
-"""Schemas of answers (contracts B9.3, B11.10): the envelope's parts and helpers to declare
-a command's ``data``.
+"""Schemas of answers (contracts B9.3, B11.10): the envelope's parts, the inventory and
+helpers to declare a command's ``data``.
 
 A command declares the JSON Schema (2020-12) of its ``data`` in ``CommandSpec.output``.
 Shapes used by more than one command are definitions with one home each, next to what
-produces them: the envelope's parts here, the app's shapes in ``app_cli.output_schemas``;
-a declaration points to them with ``ref``. A program merges its definitions with
-``merge_defs``; the inventory carries them as ``$defs`` (``describe commands
---output-schemas``).
+produces them: the envelope's parts and the inventory (both programs answer them) here,
+the app's shapes in ``app_cli.output_schemas``, the maintenance shapes in
+``graph_cli_admin.maintenance_cli.output_schemas``; a declaration points to them with
+``ref``. A program merges its definitions with ``merge_defs``; the inventory carries them
+as ``$defs`` (``describe commands --output-schemas``).
 
 Published schemas are open: a consumer ignores keys it does not know (V.4) and shapes grow
 additively within /1 (B9.3). The tests close every object that does not say
@@ -84,11 +85,16 @@ def merge_defs(*parts: Mapping[str, Schema]) -> dict[str, Schema]:
 
 
 def _graph() -> Schema:
-    """The envelope's ``graph`` (B9.2): ``services.read.graph_json`` and its admin twin;
-    ``graph-admin ontology diff --graph`` names only the graph."""
+    """The envelope's ``graph`` (B9.2): ``services.read.graph_json`` and its admin twin
+    ``services_admin.graphs.envelope_graph``."""
     return obj(
-        {"id": STRING, "name": STRING, "state": STRING},
-        {"ontology": obj({"bundle": STRING, "version": STRING}), "seq": nullable(INTEGER)},
+        {
+            "id": STRING,
+            "name": STRING,
+            "state": STRING,
+            "ontology": obj({"bundle": STRING, "version": STRING}),
+            "seq": nullable(INTEGER),
+        }
     )
 
 
@@ -106,6 +112,53 @@ def _envelope() -> Schema:
             "warnings": array(ref("warning")),
             "error": nullable(ref("error")),
         }
+    )
+
+
+def _param() -> Schema:
+    """``cli_kit.spec.ParamSpec.to_json``."""
+    return obj(
+        {
+            "name": STRING,
+            "type": STRING,
+            "required": BOOLEAN,
+            "repeatable": BOOLEAN,
+            "summary": STRING,
+        },
+        {"choices": array(STRING), "default": ANY},
+    )
+
+
+def _inventory() -> Schema:
+    """``cli_kit.inventory.build_inventory`` (B11.2, B11.3), of either program."""
+    command = obj(
+        {
+            "path": array(STRING),
+            "kind": enum("read", "write", "meta"),
+            "surface": STRING,
+            "action": nullable(STRING),
+            "summary": STRING,
+            "args": array(ref("param")),
+            "options": array(ref("param")),
+            "examples": array(obj({"command": STRING, "summary": STRING})),
+            "errors": array(STRING),
+            "exit_codes": array(INTEGER),
+            "limits": obj(extra=ANY),
+        },
+        {"remote": enum("server", "hooked", "client", "local"), "output": OPEN},
+    )
+    return obj(
+        {
+            "schema": {"const": "graph_cli.inventory/1"},
+            "program": STRING,
+            "program_version": STRING,
+            "surface": STRING,
+            "global_options": array(ref("param")),
+            "commands": array(command),
+            "actions": array(STRING),
+            "error_codes": array(obj({"code": STRING, "category": STRING, "exit": INTEGER})),
+        },
+        {"$defs": obj(extra=OPEN)},
     )
 
 
@@ -143,4 +196,6 @@ DEFS: Final[dict[str, Schema]] = {
         },
         {"expected": ANY, "actual": ANY, "rule_id": STRING, "hint": STRING},
     ),
+    "param": _param(),
+    "inventory": _inventory(),
 }

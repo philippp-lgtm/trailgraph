@@ -4,14 +4,25 @@ publish|render``."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, get_args
 
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.meta import inventory
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.ports.catalog import GraphState
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -19,6 +30,12 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     ROOT_ERRORS,
     admin_context,
     path,
+)
+from graph_cli_admin.maintenance_cli.output_schemas import (
+    NULLABLE_STRING,
+    RETURNED_FILES,
+    SKILL_KIND,
+    STRINGS,
 )
 from graph_cli_admin.services_admin import graphs, skill, sources
 from graph_cli_admin.services_admin.check import check
@@ -185,6 +202,130 @@ def push(
     )
 
 
+# services_admin.graphs.describe: a graph's manifest
+_MANIFEST: Final = {
+    "id": STRING,
+    "name": STRING,
+    "title": NULLABLE_STRING,
+    "language": NULLABLE_STRING,
+    "state": enum(*get_args(GraphState)),
+    "created_at": STRING,
+    "ontology": ref("ontology_pin"),
+    "alias_prefixes": obj(extra=STRING),
+    "extensions": STRINGS,
+    "store": obj({"backend": STRING, "format_version": INTEGER}),
+}
+CREATE_OUTPUT: Final = obj(_MANIFEST)
+LIST_OUTPUT: Final = obj(  # services_admin.graphs.list_graphs
+    {
+        "items": array(
+            obj(
+                {
+                    "id": STRING,
+                    "name": STRING,
+                    "title": NULLABLE_STRING,
+                    "language": NULLABLE_STRING,
+                    "state": enum(*get_args(GraphState)),
+                    "ontology": ref("ontology_ref"),
+                }
+            )
+        )
+    }
+)
+SHOW_OUTPUT: Final = obj(  # services_admin.graphs.show
+    {
+        **_MANIFEST,
+        "seq": INTEGER,
+        "releases": STRINGS,
+        "skill": nullable(ref("skill_summary")),
+    }
+)
+CHECK_OUTPUT: Final = obj(  # services_admin.check.check
+    {
+        "graph_id": STRING,
+        "ontology": ref("ontology_ref"),
+        "pinned": BOOLEAN,
+        "counts": ref("finding_counts"),
+        "codes": obj(extra=INTEGER),
+        "findings": array(ref("finding")),
+    }
+)
+REINDEX_OUTPUT: Final = obj(  # services_admin.reindex.reindex
+    {"graph_id": STRING, "seq": INTEGER, "dry_run": BOOLEAN, "rebuilt": BOOLEAN}
+)
+# ``path`` is null in the admin API's answer, which returns the files instead; the remote
+# client writes them and answers its own path.
+PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
+    {
+        "graph_id": STRING,
+        "path": NULLABLE_STRING,
+        "ontology": obj(
+            {
+                "bundle": STRING,
+                "version": STRING,
+                "artifact_hash": STRING,
+                "modules": STRINGS,
+                "pinned": BOOLEAN,
+            }
+        ),
+        "skill": nullable(ref("source_skill")),
+        "files": STRINGS,
+    },
+    {"pulled": RETURNED_FILES},
+)
+PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
+    {
+        "graph_id": STRING,
+        "ontology": ref("release"),
+        "skill": nullable(
+            obj(
+                {
+                    "skill": STRING,
+                    "from": nullable(ref("skill_summary")),
+                    "to": nullable(ref("skill_summary")),
+                    "files": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        ),
+        "unchanged": BOOLEAN,
+        "dry_run": BOOLEAN,
+        "source": obj(  # services_admin.sources.base_document: the workspace's new base
+            {
+                "schema": {"const": sources.SOURCE_SCHEMA},
+                "graph": obj({"id": STRING, "name": STRING}),
+                "ontology": ref("ontology_pin"),
+                "skill": nullable(ref("source_skill")),
+            }
+        ),
+    }
+)
+PUBLISH_OUTPUT: Final = obj(  # services_admin.skill.publish
+    {
+        "graph_id": STRING,
+        "skill": STRING,
+        "from": nullable(ref("skill_summary")),
+        "to": ref("skill_summary"),
+        "files": STRINGS,
+        "published": BOOLEAN,
+        "dry_run": BOOLEAN,
+    }
+)
+RENDER_OUTPUT: Final = obj(  # services_admin.skill.render; ``path`` as for pull
+    {
+        "graph_id": STRING,
+        "skill": STRING,
+        "kind": SKILL_KIND,
+        "hash": STRING,
+        "model": ref("ontology_pin"),
+        "path": NULLABLE_STRING,
+        "files": STRINGS,
+        "problems": array(obj({"rule": STRING, "path": STRING, "message": STRING})),
+    },
+    {"rendered": RETURNED_FILES},
+)
+
+
 SPECS: Final = (
     CommandSpec(
         path=("graph", "create"),
@@ -228,6 +369,7 @@ SPECS: Final = (
             "admin.graph_name_taken",
         ),
         handler=create,
+        output=CREATE_OUTPUT,
         remote="hooked",
     ),
     CommandSpec(
@@ -246,6 +388,7 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=list_command,
+        output=LIST_OUTPUT,
         description="A project admin (an admin token bound to a project) sees only the graphs"
         " it maintains.",
     ),
@@ -262,6 +405,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "access.denied"),
         handler=show,
+        output=SHOW_OUTPUT,
     ),
     CommandSpec(
         path=("graph", "check"),
@@ -291,6 +435,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "access.denied", "admin.model_invalid", "admin.data_errors"),
         handler=check_command,
+        output=CHECK_OUTPUT,
         description="Runs all data checks, including rules with when: batch and the in"
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. With --ontology, checks the data under an"
@@ -318,6 +463,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "backend.corrupt", "backend.unavailable"),
         handler=reindex_command,
+        output=REINDEX_OUTPUT,
         description="The tx log is not changed. Use it when graph-admin audit verify reports"
         " derived files that differ from the log, or when reads warn storage.index_stale. A"
         " damaged tx log is backend.corrupt (repair first). Reads during the rebuild may miss"
@@ -363,6 +509,7 @@ SPECS: Final = (
             "skills.source_invalid",
         ),
         handler=pull,
+        output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
         " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
@@ -409,6 +556,7 @@ SPECS: Final = (
             "admin.skill_invalid",
         ),
         handler=push,
+        output=PUSH_OUTPUT,
         description="The graph must still have the ontology release and skill DIR was pulled"
         " from (or already what DIR holds), else admin.source_conflict. The highest"
         " ontology/<version>/ is released and pinned when it differs (maint.ontology_release,"
@@ -440,6 +588,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.skill_invalid"),
         handler=publish,
+        output=PUBLISH_OUTPUT,
         description="DIR is a skill directory named graph-<graph> (underscores become dashes)."
         " A SKILL.md with block markers (<!-- graph_cli:block <name> -->) is a template: the"
         " app renders it with the graph's live model at every install (kind generated); it is"
@@ -480,6 +629,7 @@ SPECS: Final = (
             "admin.skill_render_exists",
         ),
         handler=render,
+        output=RENDER_OUTPUT,
         description="Renders against the graph's current ontology pin with this checkout's"
         " program and runs the checks of publish; changes nothing in the data root. Problems"
         " publish would refuse are reported (exit 1) next to the written preview.",

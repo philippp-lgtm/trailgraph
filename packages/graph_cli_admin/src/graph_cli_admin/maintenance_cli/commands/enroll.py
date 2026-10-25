@@ -6,6 +6,7 @@ from typing import Final
 
 from graph_cli.catalog.tokens import APP_SCOPE, SCOPES
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, array, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -14,6 +15,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     ROOT_ERRORS,
     admin_context,
 )
+from graph_cli_admin.maintenance_cli.output_schemas import ENROLLMENT
 from graph_cli_admin.services_admin import enroll
 
 REASON: Final = ParamSpec("--reason", "string", "Why; recorded in the audit.")
@@ -44,6 +46,12 @@ def list_command(state: CommandState, data_root: str | None) -> Result:
 def revoke(state: CommandState, id: str, reason: str | None, data_root: str | None) -> Result:
     outcome = enroll.revoke(admin_context(state, data_root), enrollment_id=id, reason=reason)
     return Result(data=outcome.data)
+
+
+# services_admin.enroll: the code only in the answer of create
+CREATE_OUTPUT: Final = obj({**ENROLLMENT, "code": STRING})
+LIST_OUTPUT: Final = obj({"enrollments": array(ref("enrollment"))})
+REVOKE_OUTPUT: Final = obj({"id": STRING, "revoked": BOOLEAN, "hash_prefix": STRING})
 
 
 SPECS: Final = (
@@ -85,6 +93,7 @@ SPECS: Final = (
         ),
         errors=(*ROOT_ERRORS, *CHANGE_ERRORS),
         handler=create,
+        output=CREATE_OUTPUT,
         description="The code is shown only once and works once: graph connect <endpoint>"
         " --code <code> exchanges it for a token bound to the project and sets up the"
         " client's folder. Only a hash of the code is stored. create warns when the installed"
@@ -103,6 +112,7 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=list_command,
+        output=LIST_OUTPUT,
     ),
     CommandSpec(
         path=("enroll", "revoke"),
@@ -123,5 +133,6 @@ SPECS: Final = (
         ),
         errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.enrollment_not_found"),
         handler=revoke,
+        output=REVOKE_OUTPUT,
     ),
 )

@@ -11,6 +11,7 @@ import click
 
 from graph_cli.catalog.activity import ActivityListener
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, obj
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -107,6 +108,9 @@ def view_command(
     )
 
 
+OUTPUT: Final = obj({"graph_id": STRING, "address": STRING, "stopped": BOOLEAN})
+
+
 SPECS: Final = (
     CommandSpec(
         path=("view",),
@@ -135,6 +139,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "admin.view_port_unavailable"),
         handler=view_command,
+        output=OUTPUT,
         description="Serves a read-only page on 127.0.0.1 (or --host) until Ctrl+C and prints"
         " its address on stderr; the address carries a token, keep it to yourself. There is"
         " no JSON mode."

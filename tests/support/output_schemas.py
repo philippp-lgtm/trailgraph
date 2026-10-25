@@ -2,7 +2,9 @@
 
 A pytest plugin, registered in ``conftest.py``. In-process runs (the server in tests,
 ``cli_kit.runner.run``) render through ``envelope``, which is wrapped for the whole
-session; subprocess runs are checked by ``run_cli`` on their stdout (``check_stdout``).
+session; subprocess runs are checked by ``run_cli`` on their stdout, in-process server
+calls by ``support.server.call`` on the body as sent, after the server's own additions
+(``check_text``).
 The envelope is checked against ``cli_kit.output_schemas``' definition, ``data`` against
 the schema its command declares.
 
@@ -59,11 +61,12 @@ def _programs() -> dict[str, tuple[Any, dict[str, Any]]]:
     from graph_cli.cli_kit.output_schemas import DEFS as KIT_DEFS
     from graph_cli.cli_kit.output_schemas import ref
     from graph_cli_admin.maintenance_cli.commands import all_specs as admin_specs
+    from graph_cli_admin.maintenance_cli.output_schemas import DEFS as ADMIN_DEFS
 
     programs: dict[str, tuple[Any, dict[str, Any]]] = {}
     for program, specs, defs in (
         ("graph", app_specs(), APP_DEFS),
-        ("graph-admin", admin_specs(), KIT_DEFS),
+        ("graph-admin", admin_specs(), ADMIN_DEFS),
     ):
         commands = {
             " ".join(spec.path): validator(spec.output, defs)
@@ -99,12 +102,12 @@ def record(program: str, document: JsonValue) -> None:
     FAILURES.extend(f"{program}: {problem}" for problem in check(program, document)[:5])
 
 
-def check_stdout(program: str, stdout: str) -> None:
-    """A subprocess's stdout, when it is one JSON envelope."""
-    if not stdout.startswith("{"):
+def check_text(program: str, text: str) -> None:
+    """A subprocess's stdout or an HTTP answer's body, when it is one JSON envelope."""
+    if not text.startswith("{"):
         return
     try:
-        document = json.loads(stdout)
+        document = json.loads(text)
     except ValueError:
         return
     if isinstance(document, dict) and document.get("schema") == "graph_cli.envelope/1":

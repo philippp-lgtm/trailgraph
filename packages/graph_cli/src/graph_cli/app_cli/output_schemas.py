@@ -14,7 +14,6 @@ from graph_cli.cli_kit.output_schemas import (
     ANY,
     BOOLEAN,
     INTEGER,
-    OPEN,
     STRING,
     Schema,
     array,
@@ -195,53 +194,6 @@ def _lifecycle() -> Schema:
     )
 
 
-def _param() -> Schema:
-    """``cli_kit.spec.ParamSpec.to_json``."""
-    return obj(
-        {
-            "name": STRING,
-            "type": STRING,
-            "required": BOOLEAN,
-            "repeatable": BOOLEAN,
-            "summary": STRING,
-        },
-        {"choices": STRINGS, "default": ANY},
-    )
-
-
-def _inventory() -> Schema:
-    """``cli_kit.inventory.build_inventory`` (B11.2, B11.3)."""
-    command = obj(
-        {
-            "path": STRINGS,
-            "kind": enum("read", "write", "meta"),
-            "surface": STRING,
-            "action": NULLABLE_STRING,
-            "summary": STRING,
-            "args": array(ref("param")),
-            "options": array(ref("param")),
-            "examples": array(obj({"command": STRING, "summary": STRING})),
-            "errors": STRINGS,
-            "exit_codes": array(INTEGER),
-            "limits": obj(extra=ANY),
-        },
-        {"remote": enum("server", "hooked", "client", "local"), "output": OPEN},
-    )
-    return obj(
-        {
-            "schema": {"const": "graph_cli.inventory/1"},
-            "program": STRING,
-            "program_version": STRING,
-            "surface": STRING,
-            "global_options": array(ref("param")),
-            "commands": array(command),
-            "actions": STRINGS,
-            "error_codes": array(obj({"code": STRING, "category": STRING, "exit": INTEGER})),
-        },
-        {"$defs": obj(extra=OPEN)},
-    )
-
-
 DEFS: Final[dict[str, Schema]] = kit.merge_defs(
     kit.DEFS,
     {
@@ -265,8 +217,6 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         "ontology_ref": obj({"bundle": STRING, "version": STRING}),
         "field": _field(),
         "lifecycle": _lifecycle(),
-        "param": _param(),
-        "inventory": _inventory(),
     },
 )
 

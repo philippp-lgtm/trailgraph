@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, get_args
 
+from graph_cli.catalog.resolve import RootSource
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, enum, nullable, obj
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli_admin.maintenance_cli.commands.common import DATA_ROOT, ROOT_ERRORS, admin_context
@@ -14,6 +16,17 @@ from graph_cli_admin.services_admin.init import init
 def init_command(state: CommandState, device_name: str | None, data_root: str | None) -> Result:
     ctx = admin_context(state, data_root)
     return Result(data=init(ctx, device_name=device_name))
+
+
+OUTPUT: Final = obj(  # services_admin.init.init
+    {
+        "data_root": STRING,
+        "root_source": enum(*get_args(RootSource)),
+        "config_file": STRING,
+        "device_id": nullable(STRING),
+        "created": obj({"data_root": BOOLEAN, "config": BOOLEAN}),
+    }
+)
 
 
 SPECS: Final = (
@@ -40,6 +53,7 @@ SPECS: Final = (
         ),
         errors=ROOT_ERRORS,
         handler=init_command,
+        output=OUTPUT,
         remote="local",
     ),
 )

@@ -11,6 +11,7 @@ from wsgiref.util import setup_testing_defaults
 from harness import CliRunner
 
 from support.admin import admin
+from support.output_schemas import check_text
 from support.policies import write_policy
 
 # The app (tests prepare data with it) and the server may write; one token is bound
@@ -94,6 +95,9 @@ def call(
     close = getattr(chunks, "close", None)
     if close is not None:
         close()
+    for prefix, program in (("/v1/commands/", "graph"), ("/v1/admin/commands/", "graph-admin")):
+        if path.startswith(prefix):  # the answer as sent, after the server's own additions
+            check_text(program, content.decode(errors="replace"))
     return Reply(started["status"], started["headers"], content)
 
 

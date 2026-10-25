@@ -433,6 +433,30 @@ def test_an_ontology_is_created_and_released_through_uploads(
     assert command(app, "audit/verify", root).status == 200
 
 
+def test_render_and_pull_answer_their_files_instead_of_a_server_path(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.15: the answer as sent (``call`` checks it against the declared schema) names no
+    place on the server; the client writes the returned files itself."""
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    empty = {"files": {}, "name": "out"}
+    rendered = command(
+        app,
+        "graph/skill/render",
+        root,
+        args={"ref": "example_graph", "dir": upload_tree(app, root, GRAPH_SKILL), "--out": empty},
+    )
+    assert rendered.status == 200, rendered.json
+    data = rendered.json["data"]
+    assert data["path"] is None and "SKILL.md" in data["rendered"], data
+    assert sorted(data["rendered"]) == data["files"]
+    pulled = command(app, "graph/pull", root, args={"ref": "example_graph", "dir": empty})
+    assert pulled.status == 200, pulled.json
+    data = pulled.json["data"]
+    assert data["path"] is None and sorted(data["pulled"]) == data["files"], data
+
+
 def test_a_hand_edited_scope_is_found(run_cli: CliRunner, installation: dict[str, Any]) -> None:
     file = installation["root"] / "tokens" / "tokens.json"
     document = json.loads(file.read_text())

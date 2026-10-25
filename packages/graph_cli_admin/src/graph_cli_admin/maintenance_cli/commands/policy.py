@@ -6,8 +6,19 @@ from pathlib import Path
 from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.actions import ACCESS_LEVELS
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -16,6 +27,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     admin_context,
     path,
 )
+from graph_cli_admin.maintenance_cli.output_schemas import LAYER, NULLABLE_STRING, STRINGS
 from graph_cli_admin.services_admin import policy
 
 FILE: Final = ParamSpec("file", "file", "The authored policy.", required=True, positional=True)
@@ -72,6 +84,74 @@ def explain(
     return Result(data=outcome.data, warnings=outcome.warnings)
 
 
+# services_admin.policy: ``graph`` names the graph of a graph layer
+CHECK_OUTPUT: Final = obj(
+    {
+        "file": STRING,
+        "layer": LAYER,
+        "graph": NULLABLE_STRING,
+        "hash": STRING,
+        "rules": INTEGER,
+        "document": ref("policy_document"),
+    }
+)
+SHOW_OUTPUT: Final = obj(  # without an installed document, the one in effect
+    {
+        "layer": LAYER,
+        "graph": NULLABLE_STRING,
+        "installed": BOOLEAN,
+        "hash": NULLABLE_STRING,
+        "document": nullable(ref("policy_document")),
+    }
+)
+DIFF_OUTPUT: Final = obj(
+    {
+        "layer": LAYER,
+        "graph": NULLABLE_STRING,
+        "from": NULLABLE_STRING,
+        "installed": BOOLEAN,
+        "to": STRING,
+        "changed": BOOLEAN,
+        "rules": obj({"added": STRINGS, "removed": STRINGS, "changed": STRINGS}),
+        "keys_changed": STRINGS,
+    }
+)
+APPLY_OUTPUT: Final = obj(
+    {
+        "layer": LAYER,
+        "graph": NULLABLE_STRING,
+        "from": NULLABLE_STRING,
+        "to": STRING,
+        "applied": BOOLEAN,
+    }
+)
+_DECISION: Final = obj(  # services_admin.policy._decision_json
+    {
+        "action": STRING,
+        "effect": enum("allow", "deny"),
+        "rule": STRING,
+        "code": NULLABLE_STRING,
+        "obligations": nullable(
+            obj({"require_reason": BOOLEAN}, {"max_batch": INTEGER})  # kernel.authz.Obligations
+        ),
+    }
+)
+EXPLAIN_OUTPUT: Final = obj(
+    {
+        "graph": STRING,
+        "project": NULLABLE_STRING,
+        "token": NULLABLE_STRING,
+        "scope": NULLABLE_STRING,
+        "policy_hash": STRING,
+        "level": enum(*ACCESS_LEVELS),
+        "withheld": STRINGS,
+        "maintains": BOOLEAN,
+        "resource": STRING,
+        "decisions": array(_DECISION),
+    }
+)
+
+
 SPECS: Final = (
     CommandSpec(
         path=("policy", "check"),
@@ -89,6 +169,7 @@ SPECS: Final = (
         ),
         errors=SOURCE_ERRORS,
         handler=check,
+        output=CHECK_OUTPUT,
         description="The file's id says its layer: installation (one per installation) or"
         " graph (needs --graph).",
         remote="hooked",
@@ -106,6 +187,7 @@ SPECS: Final = (
         ),
         errors=GRAPH_ERRORS,
         handler=show,
+        output=SHOW_OUTPUT,
     ),
     CommandSpec(
         path=("policy", "diff"),
@@ -123,6 +205,7 @@ SPECS: Final = (
         ),
         errors=SOURCE_ERRORS,
         handler=diff,
+        output=DIFF_OUTPUT,
         remote="hooked",
     ),
     CommandSpec(
@@ -151,6 +234,7 @@ SPECS: Final = (
         ),
         errors=(*SOURCE_ERRORS, *CHANGE_ERRORS, "admin.policy_lockout"),
         handler=apply,
+        output=APPLY_OUTPUT,
         description="Refused when it would stop you from changing policies again. Applying"
         " the installed policy again changes nothing.",
         remote="hooked",
@@ -198,6 +282,7 @@ SPECS: Final = (
         ),
         errors=(*SOURCE_ERRORS, "admin.token_not_found"),
         handler=explain,
+        output=EXPLAIN_OUTPUT,
         description="Records nothing.",
         remote="hooked",
     ),

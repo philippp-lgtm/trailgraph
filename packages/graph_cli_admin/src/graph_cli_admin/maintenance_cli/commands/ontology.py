@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
+from typing import Final, get_args
 
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import STRING, array, enum, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.ontology_layer.diff import BumpCheck
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
     GRAPH_ERRORS,
     admin_context,
 )
+from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
 from graph_cli_admin.services_admin import graphs, ontology
 from graph_cli_admin.services_admin.release import release
 
@@ -56,7 +59,7 @@ def diff_command(
             graph=entry.id,
         )
         old = ontology.pinned_model(ctx.catalog, entry)
-        graph = {"id": str(entry.id), "name": entry.name, "state": entry.state}
+        graph = graphs.envelope_graph(entry)
     else:
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
@@ -76,6 +79,19 @@ def release_command(
     )
 
 
+VALIDATE_OUTPUT: Final = obj(  # services_admin.ontology.summary
+    {
+        "bundle": STRING,
+        "version": STRING,
+        "artifact_hash": STRING,
+        "modules": STRINGS,
+        "findings": array(ref("finding")),
+    }
+)
+DIFF_OUTPUT: Final = obj({**DIFF, "bump": enum(*get_args(BumpCheck))})
+RELEASE_OUTPUT: Final = obj({"graph_id": STRING, **RELEASE}, RELEASE_OPTIONAL)
+
+
 SPECS: Final = (
     CommandSpec(
         path=("ontology", "validate"),
@@ -93,6 +109,7 @@ SPECS: Final = (
         ),
         errors=("admin.model_invalid",),
         handler=validate,
+        output=VALIDATE_OUTPUT,
         remote="client",
     ),
     CommandSpec(
@@ -122,6 +139,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "access.denied", "usage.missing_argument", "admin.model_invalid"),
         handler=diff_command,
+        output=DIFF_OUTPUT,
         description="Reports whether the declared version bump suffices; release enforces it."
         " With --graph, authorized maint.graph_configure on the graph.",
         remote="hooked",
@@ -162,6 +180,7 @@ SPECS: Final = (
             "admin.migration_required",
         ),
         handler=release_command,
+        output=RELEASE_OUTPUT,
         description="The version bump must cover the changes against the pinned release;"
         " re-running a release that is already pinned changes nothing.",
         remote="hooked",

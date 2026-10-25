@@ -7,7 +7,8 @@ commands to the server's admin API
 (see [Output and exit codes](cli_graph.md#output-and-exit-codes)).
 `graph-admin --help` and `graph-admin <command> --help` show every option;
 `graph-admin describe commands --json` lists every command as data
-(`graph_cli.inventory/1` with `surface: "maint"`).
+(`graph_cli.inventory/1` with `surface: "maint"`); `--output-schemas` adds the
+schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 
 ## Commands
 
