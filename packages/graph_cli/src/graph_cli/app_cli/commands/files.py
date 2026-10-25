@@ -26,7 +26,18 @@ from graph_cli.app_cli.commands.write import (
     parse_texts,
     usage,
 )
+from graph_cli.app_cli.output_schemas import NULLABLE_STRING, WRITE_RESULT
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -147,6 +158,56 @@ def check(
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
+_FILE_ENTITY: Final = obj(
+    {"id": NULLABLE_STRING, "alias": NULLABLE_STRING, "type": STRING, "rev": INTEGER}
+)
+ADD_OUTPUT: Final = obj(  # services.files.FileAddResult.to_json
+    {
+        **WRITE_RESULT,
+        "entity": _FILE_ENTITY,
+        "file": obj(
+            {
+                "hash": STRING,
+                "size": INTEGER,
+                "media_type": NULLABLE_STRING,
+                "file_name": NULLABLE_STRING,
+                "origin": nullable(obj({"root": STRING, "path": STRING})),
+            }
+        ),
+        "existing": BOOLEAN,
+    }
+)
+PATH_OUTPUT: Final = obj(
+    {
+        "id": STRING,
+        "alias": NULLABLE_STRING,
+        "type": STRING,
+        "hash": STRING,
+        "size": INTEGER,
+        "media_type": NULLABLE_STRING,
+        "path": STRING,
+        "origin": nullable(ref("file_origin")),
+    }
+)
+# services.files.CHECK_STATUSES; reads do not load the file service at startup
+CHECK_STATUSES: Final = ("same", "changed", "missing", "root_unknown", "no_origin")
+CHECK_OUTPUT: Final = obj(
+    {
+        "items": array(
+            obj(
+                {
+                    "id": STRING,
+                    "alias": NULLABLE_STRING,
+                    "status": enum(*CHECK_STATUSES),
+                    "origin": nullable(ref("file_origin")),
+                    "hash": NULLABLE_STRING,
+                }
+            )
+        ),
+        "counts": obj(dict.fromkeys(CHECK_STATUSES, INTEGER)),
+    }
+)
+
 FILE_REF: Final = ParamSpec(
     "ref",
     "entity_ref",
@@ -188,6 +249,7 @@ SPECS: Final = (
         ),
         errors=(*WRITE_ERRORS, *FILE_ERRORS),
         handler=add,
+        output=ADD_OUTPUT,
         remote="hooked",
     ),
     CommandSpec(
@@ -218,6 +280,7 @@ SPECS: Final = (
             "backend.corrupt",
         ),
         handler=path,
+        output=PATH_OUTPUT,
         remote="hooked",
     ),
     CommandSpec(
@@ -250,6 +313,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "entity.not_found", "entity.ambiguous_ref", "file.module_missing"),
         handler=check,
+        output=CHECK_OUTPUT,
         remote="hooked",
         limits={"limit": MAX_LIMIT},
     ),

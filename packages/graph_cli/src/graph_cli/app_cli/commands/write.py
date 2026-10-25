@@ -15,6 +15,7 @@ from typing import Final
 from graph_cli.app_cli.commands.common import GRAPH, context
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -529,6 +530,7 @@ def _spec(
         examples=examples,
         errors=errors,
         handler=handler,  # type: ignore[arg-type]
+        output=ref("write_result"),
     )
 
 

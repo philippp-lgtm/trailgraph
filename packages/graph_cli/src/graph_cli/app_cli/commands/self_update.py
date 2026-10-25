@@ -24,6 +24,7 @@ from graph_cli.catalog.dist import Installer, program_step, run_program
 from graph_cli.catalog.remote import error_of
 from graph_cli.catalog.wiring import AppServices
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, array, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -157,6 +158,15 @@ def update(state: CommandState, check: bool, dir: str | None, force: bool) -> Re
     return Result(data=data, error=errors[0] if errors else None)
 
 
+OUTPUT: Final = obj(
+    {
+        "check": BOOLEAN,
+        "program": ref("program_step"),
+        "skills": array(ref("skill_refresh")),
+        "changed": BOOLEAN,
+    }
+)
+
 SPECS: Final = (
     CommandSpec(
         path=("self", "update"),
@@ -184,6 +194,7 @@ SPECS: Final = (
             "skills.check_failed",
         ),
         handler=update,
+        output=OUTPUT,
         remote="client",
         description="In the remote mode the program is replaced by the server's build when"
         " the builds differ (a program installed with uv tool only; a checkout is left as"

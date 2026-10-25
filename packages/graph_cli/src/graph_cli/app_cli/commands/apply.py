@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Final
 from graph_cli.app_cli.commands.common import GRAPH, context
 from graph_cli.app_cli.commands.write import EXPECT_ERRORS, usage
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import BOOLEAN, INTEGER, STRING, array, obj, one_of, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -169,6 +170,26 @@ APPLY_ERRORS: Final = (
     "access.batch_too_large",
 )
 
+APPLY_OUTPUT: Final = obj(  # B3.9: one result per committed document, then the failed one
+    {
+        "dry_run": BOOLEAN,
+        "documents": INTEGER,
+        "applied": INTEGER,
+        "results": array(
+            one_of(
+                obj({"index": INTEGER, "ok": {"const": True}, "result": ref("write_result")}),
+                obj(
+                    {
+                        "index": INTEGER,
+                        "ok": {"const": False},
+                        "error": obj({"code": STRING, "message": STRING}),
+                    }
+                ),
+            )
+        ),
+    }
+)
+
 APPLY: Final = CommandSpec(
     path=("apply",),
     kind="write",
@@ -211,6 +232,7 @@ APPLY: Final = CommandSpec(
     ),
     errors=APPLY_ERRORS,
     handler=apply,
+    output=APPLY_OUTPUT,
     remote="hooked",
 )
 

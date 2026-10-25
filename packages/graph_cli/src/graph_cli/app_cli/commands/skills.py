@@ -20,9 +20,20 @@ from typing import TYPE_CHECKING, Final, Literal
 
 from graph_cli import __version__
 from graph_cli.app_cli.commands.common import PROGRAM, services
+from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS
 from graph_cli.catalog.pointer import PointerFile
 from graph_cli.catalog.wiring import AppContext
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -423,6 +434,51 @@ def check_command(state: CommandState, scope: str, dir: str | None) -> Result:
     return Result(data=data, error=error)
 
 
+_KIND: Final = enum("app", "graph")
+SKILL_STATUS: Final = enum(  # skills.install.STATUSES, which loads only when it is needed
+    "fresh", "stale", "modified", "unexpected", "foreign", "missing", "unavailable"
+)
+EMIT_OUTPUT: Final = obj(
+    {
+        "out": STRING,
+        "program": ref("program"),
+        "skills": array(
+            obj(
+                {
+                    "skill": STRING,
+                    "kind": _KIND,
+                    "action": enum("create", "replace"),
+                    "files": STRINGS,
+                }
+            )
+        ),
+    }
+)
+INSTALL_OUTPUT: Final = obj(
+    {
+        "target": ref("skill_target"),
+        "dry_run": BOOLEAN,
+        "program": ref("program"),
+        "skills": array(ref("skill_step")),
+        "unavailable": array(ref("skill_unavailable")),
+        "skipped_graphs": array(ref("graph_reason")),
+    }
+)
+CHECK_OUTPUT: Final = obj(
+    {
+        "target": ref("skill_target"),
+        "program": obj({"name": STRING, "version": STRING, "executable": NULLABLE_STRING}),
+        "skills": array(
+            obj(  # skills.install.SkillStatus.to_json; unavailable ones say why
+                {"skill": STRING, "kind": nullable(_KIND), "status": SKILL_STATUS},
+                {"graph": STRING, "reason": STRING},
+            )
+        ),
+        "ok_count": INTEGER,
+        "counts": ref("skill_counts"),
+    }
+)
+
 SPECS: Final = (
     CommandSpec(
         path=("skills", "emit"),
@@ -440,6 +496,7 @@ SPECS: Final = (
         ),
         errors=(*GRAPH_ERRORS, "skills.not_owned", "skills.target_invalid"),
         handler=emit,
+        output=EMIT_OUTPUT,
         remote="client",
         description="One directory per skill, without an install marker. Install skills"
         " for an agent with `graph skills install` instead.",
@@ -471,6 +528,7 @@ SPECS: Final = (
             "skills.target_invalid",
         ),
         handler=install,
+        output=INSTALL_OUTPUT,
         remote="client",
         description="--scope user installs into $CLAUDE_CONFIG_DIR/skills, else"
         " ~/.claude/skills; --scope project into <dir>/.claude/skills (<dir>/.claude must"
@@ -506,6 +564,7 @@ SPECS: Final = (
             "remote.client_outdated",
         ),
         handler=check_command,
+        output=CHECK_OUTPUT,
         remote="client",
         description="Statuses: fresh, stale (installed unchanged, but the program, the"
         " published graph skill or, for a generated one, the graph's ontology changed since),"

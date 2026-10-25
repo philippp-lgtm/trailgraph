@@ -130,6 +130,19 @@ gets a throwaway `HOME` and XDG directories, no `GRAPH_CLI_*` variables and no
 `CLAUDE_CONFIG_DIR`, so tests never touch real user config, data, state or
 installed skills.
 
+Every envelope the suite sees is checked against the declared schemas
+(`tests/support/output_schemas.py`, a pytest plugin): in-process renders and
+the stdout of every `run_cli` subprocess. The envelope must match the
+`envelope` definition and `data` the `output` of its command, with every
+object closed (`unevaluatedProperties: false` unless the schema says
+`additionalProperties` itself), so a key the code adds without declaring it
+fails the test that saw it. A new command declares `output` on its
+`CommandSpec` (a unit test refuses one without); a new key of an answer goes
+into the schema in the same change. Build objects with
+`cli_kit.output_schemas.obj` (required and optional keys, `extra=` for maps)
+and never extend them with `allOf`. A test whose envelopes come from a stub
+server marks itself `@pytest.mark.unchecked_output("<reason>")`.
+
 ### Fixtures
 
 `tests/fixtures/` holds two unrelated toy ontologies (`notes_and_sources`,

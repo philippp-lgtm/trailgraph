@@ -46,6 +46,15 @@ from graph_cli.catalog.resolve import config_path
 from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE
 from graph_cli.catalog.wiring import AppServices
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -334,6 +343,24 @@ def _refused(reason: str, message: str, file: Path | None) -> GraphCliError:
     return GraphCliError("connect.refused", message, details=details)
 
 
+OUTPUT: Final = obj(
+    {
+        "endpoint": STRING,
+        "project": STRING,
+        "scope": enum("app", "admin"),
+        "token": obj({"name": STRING, "file": STRING}),
+        "config": obj({"file": STRING, "action": enum("created", "updated", "unchanged")}),
+        "pointer": obj(
+            {"file": STRING, "action": enum("created", "kept"), "graphs": array(STRING)}
+        ),
+        "program": nullable(ref("program_step")),
+        "skills": array(ref("skill_refresh")),
+    },
+    {  # the installed program's self update, when it answered with data
+        "self_update": obj({"program": nullable(ref("program_step")), "changed": nullable(BOOLEAN)})
+    },
+)
+
 SPECS: Final = (
     CommandSpec(
         path=("connect",),
@@ -392,6 +419,7 @@ SPECS: Final = (
             "skills.check_failed",
         ),
         handler=connect,
+        output=OUTPUT,
         remote="client",
         description="The code works once, for its project. connect checks the config, the"
         " folder's pointer and the token store before it uses the code, then installs the"

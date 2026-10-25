@@ -15,7 +15,20 @@ from typing import Final
 
 from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
+from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS
 from graph_cli.cli_kit.envelope import Result
+from graph_cli.cli_kit.output_schemas import (
+    ANY,
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    enum,
+    nullable,
+    obj,
+    one_of,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
@@ -542,6 +555,124 @@ REF: Final = ParamSpec(
     "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True
 )
 
+_FOUND: Final = {  # what lookup and search show of an entity
+    "id": STRING,
+    "alias": NULLABLE_STRING,
+    "type": STRING,
+    "record_status": STRING,
+    "label": NULLABLE_STRING,
+}
+_MATCH: Final = {  # query.lookup.Match.to_json; search adds score and excerpt for value
+    "attr": STRING,
+    "role": enum("label", "alt_label", "hidden_label"),
+    "kind": STRING,
+    "lang": NULLABLE_STRING,
+}
+GET_OUTPUT: Final = obj(
+    {
+        "entity": ref("entity"),
+        "current_rev": INTEGER,
+        "superseded_by": STRINGS,
+        "retracted_by": STRINGS,
+    }
+)
+HISTORY_OUTPUT: Final = obj(
+    {
+        "id": STRING,
+        "current_rev": INTEGER,
+        "items": array(
+            obj(
+                {
+                    "rev": INTEGER,
+                    "tx_seq": INTEGER,
+                    "recorded_at": STRING,
+                    "record_status": STRING,
+                    "command": NULLABLE_STRING,
+                    "reason": NULLABLE_STRING,
+                    "own_session": BOOLEAN,
+                    "changed": nullable(  # temporal_knowledge.history.changed_names
+                        obj(
+                            {
+                                "record": STRINGS,
+                                "attrs": STRINGS,
+                                "edges": obj(
+                                    {"added": STRINGS, "removed": STRINGS, "changed": STRINGS}
+                                ),
+                            }
+                        )
+                    ),
+                }
+            )
+        ),
+    }
+)
+FIND_OUTPUT: Final = obj({"items": array(ref("entity"))})
+LOOKUP_OUTPUT: Final = obj(
+    {
+        "items": array(
+            obj({"text": STRING, **_FOUND, "match": obj({**_MATCH, "value": NULLABLE_STRING})})
+        ),
+        "texts": array(obj({"text": STRING, "total": INTEGER, "exact": INTEGER})),
+    }
+)
+SEARCH_OUTPUT: Final = obj(
+    {
+        "items": array(
+            obj(
+                {
+                    **_FOUND,
+                    "match": obj({**_MATCH, "score": INTEGER, "excerpt": NULLABLE_STRING}),
+                    "fields": STRINGS,
+                }
+            )
+        )
+    }
+)
+NEIGHBORS_OUTPUT: Final = obj(
+    {
+        "start": STRING,
+        "items": array(
+            obj({"direction": enum("out", "in"), "edge": ref("edge"), "entity": ref("entity")})
+        ),
+    }
+)
+QUERY_OUTPUT: Final = one_of(
+    # B9.7: a cell is an entity as get shows it, an edge with its source, a list, a map or
+    # a plain value
+    obj({"columns": STRINGS, "items": array(obj(extra=ANY))}),
+    obj(
+        {
+            "plan": obj(  # --explain: query.cypher.resolve.ResolvedQuery.explain
+                {
+                    "clauses": array(
+                        obj(
+                            {
+                                "clause": STRING,
+                                "text": STRING,
+                                "variables": obj(
+                                    extra=obj({"kind": STRING, "types": nullable(STRINGS)})
+                                ),
+                            }
+                        )
+                    ),
+                    "columns": STRINGS,
+                    "parameters": obj(extra=ANY),
+                    "fields": array(
+                        obj(
+                            {
+                                "variable": NULLABLE_STRING,
+                                "field": STRING,
+                                "datatypes": STRINGS,
+                                "many": BOOLEAN,
+                            }
+                        )
+                    ),
+                }
+            )
+        }
+    ),
+)
+
 SPECS: Final = (
     CommandSpec(
         path=("get",),
@@ -571,6 +702,7 @@ SPECS: Final = (
         ),
         errors=(*REF_ERRORS, "entity.revision_not_found"),
         handler=get,
+        output=GET_OUTPUT,
     ),
     CommandSpec(
         path=("history",),
@@ -597,6 +729,7 @@ SPECS: Final = (
         ),
         errors=REF_ERRORS,
         handler=history,
+        output=HISTORY_OUTPUT,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
@@ -657,6 +790,7 @@ SPECS: Final = (
         ),
         errors=(*REF_ERRORS, "term.unknown", "query.ambiguous_term"),
         handler=find,
+        output=FIND_OUTPUT,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
@@ -732,6 +866,7 @@ SPECS: Final = (
             "term.no_labels",
         ),
         handler=lookup,
+        output=LOOKUP_OUTPUT,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
@@ -782,6 +917,7 @@ SPECS: Final = (
             "term.no_text_fields",
         ),
         handler=search,
+        output=SEARCH_OUTPUT,
         limits={"limit": MAX_LIMIT},
     ),
     CommandSpec(
@@ -814,6 +950,7 @@ SPECS: Final = (
         ),
         errors=(*REF_ERRORS, "term.unknown", "query.ambiguous_term"),
         handler=neighbors,
+        output=NEIGHBORS_OUTPUT,
         limits={"depth": 3},
     ),
     CommandSpec(
@@ -872,6 +1009,7 @@ SPECS: Final = (
         ),
         errors=QUERY_ERRORS,
         handler=query,
+        output=QUERY_OUTPUT,
         remote="hooked",
         limits={"limit": MAX_LIMIT},
     ),

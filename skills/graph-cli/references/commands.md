@@ -88,12 +88,17 @@ Describe every command of this program (graph_cli.inventory/1).
 
 Kind: meta. Surface: meta. Action: none. Exit codes: 0, 2, 5, 6.
 
-Usage: `graph describe commands`
+Usage: `graph describe commands [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--output-schemas` | flag | no | no | Add the JSON Schema of every command's data and their shared $defs. |
 
 | Example | Summary |
 |---|---|
 | `graph describe commands --json` | The command inventory. |
 | `graph describe commands` | The inventory as text. |
+| `graph describe commands --output-schemas --json` | The inventory with the schema of every answer. |
 
 ## graph describe fields
 

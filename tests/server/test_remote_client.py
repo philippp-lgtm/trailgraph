@@ -148,6 +148,7 @@ def test_token_file_spill_and_maintenance_refusal(
         assert "GRAPH_CLI_ADMIN_TOKEN" in listed.error["message"]
 
 
+@pytest.mark.unchecked_output("the stub server answers whoami with a stub")
 def test_another_server_version_warns(
     run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
@@ -188,6 +189,7 @@ def test_a_lost_write_answer_names_its_key(
     assert given.error["details"]["idempotency_key"] == "k-1"
 
 
+@pytest.mark.unchecked_output("the stub server answers whoami with a stub")
 def test_a_read_is_retried_once(
     run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:

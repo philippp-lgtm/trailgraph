@@ -2,7 +2,8 @@
 
 CLIs are tested as subprocesses, the way a user or console AI runs them. Every
 run gets a throwaway home and XDG directories, so tests never read or write the
-real user config, data or state.
+real user config, data or state. Every envelope a test sees is checked against the
+declared output schemas (``support.output_schemas``).
 """
 
 import os
@@ -12,6 +13,8 @@ from pathlib import Path
 
 import pytest
 from harness import BIN_DIR, CliRunner
+
+pytest_plugins = ["support.output_schemas"]
 
 
 @pytest.fixture
@@ -42,6 +45,7 @@ def isolated_env(tmp_path: Path) -> dict[str, str]:
 @pytest.fixture
 def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
     """Run an installed console script (``graph``, ``graph-admin``) in the isolated env."""
+    from support.output_schemas import check_stdout  # the plugin, loaded after this file
 
     def run(
         program: str,
@@ -52,7 +56,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
     ) -> subprocess.CompletedProcess[str]:
         executable = BIN_DIR / program
         assert executable.exists(), f"console script not installed: {executable}"
-        return subprocess.run(
+        completed = subprocess.run(
             [str(executable), *args],
             input=input,
             capture_output=True,
@@ -61,5 +65,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
             cwd=cwd or tmp_path,
             timeout=60,
         )
+        check_stdout(program, completed.stdout)
+        return completed
 
     return run

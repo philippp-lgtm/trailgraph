@@ -3,14 +3,17 @@
 A pure function of the declarations and the package version: sorted by
 path, no timestamps, paths or ids. It is the only input of skill
 generators, so it lists every command an agent can run and nothing else.
+On request it carries the schema of every command's ``data`` and the shared
+definitions they point to (B11.10); skill generators do not read them.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
+from graph_cli.cli_kit.output_schemas import ANY, Schema
 from graph_cli.cli_kit.spec import SERVED, CommandSpec, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.error_codes import ErrorCategory, lookup_error_code
@@ -46,7 +49,9 @@ def _exit(code: str) -> int:
     return exit_code_for(found.category)
 
 
-def _command(spec: CommandSpec, remote: bool, remote_errors: Sequence[str]) -> dict[str, JsonValue]:
+def _command(
+    spec: CommandSpec, remote: bool, remote_errors: Sequence[str], output: bool
+) -> dict[str, JsonValue]:
     codes = _codes(spec, remote, remote_errors)
     command: dict[str, JsonValue] = {
         "path": list(spec.path),
@@ -63,6 +68,8 @@ def _command(spec: CommandSpec, remote: bool, remote_errors: Sequence[str]) -> d
     }
     if remote:
         command["remote"] = spec.remote
+    if output:
+        command["output"] = spec.output if spec.output is not None else ANY
     return command
 
 
@@ -75,23 +82,29 @@ def build_inventory(
     global_options: Sequence[ParamSpec] = (),
     remote: bool = False,
     remote_errors: Sequence[str] = REMOTE_ERRORS,
+    output_defs: Mapping[str, Schema] | None = None,
 ) -> dict[str, JsonValue]:
     """``remote`` adds each command's ``remote`` value and, to every command the server
-    runs, the ``remote_errors`` a client can meet (B14)."""
+    runs, the ``remote_errors`` a client can meet (B14). ``output_defs`` adds each
+    command's ``output`` and the definitions as ``$defs`` (B11.10)."""
     ordered = sorted(specs, key=lambda s: s.path)
     codes = sorted({c for spec in ordered for c in _codes(spec, remote, remote_errors)})
-    return {
+    output = output_defs is not None
+    inventory: dict[str, JsonValue] = {
         "schema": INVENTORY_SCHEMA,
         "program": program,
         "program_version": version,
         "surface": surface,
         "global_options": [p.to_json() for p in global_options],
-        "commands": [_command(spec, remote, remote_errors) for spec in ordered],
+        "commands": [_command(spec, remote, remote_errors, output) for spec in ordered],
         "actions": sorted({spec.action for spec in ordered if spec.action is not None}),
         "error_codes": [
             {"code": code, "category": _category(code), "exit": _exit(code)} for code in codes
         ],
     }
+    if output_defs is not None:
+        inventory["$defs"] = dict(sorted(output_defs.items()))
+    return inventory
 
 
 def _category(code: str) -> str:

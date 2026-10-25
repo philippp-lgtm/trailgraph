@@ -84,7 +84,12 @@ skill render` and `graph pull` into their directories.
 Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
 those of `graph-admin` in `graph_cli_admin.maintenance_cli.commands`
 (`cli_kit.spec.CommandSpec`); for each program the click tree and the
-inventory are built from the same declarations. Query planning (`graph_cli.query.plan`) turns `find`
+inventory are built from the same declarations. A declaration also names the
+JSON Schema of its answer's `data` (`output`); shapes several commands share
+are definitions with one home each, next to what produces them:
+`cli_kit.output_schemas` (the envelope's parts and the helpers to write
+schemas) and `app_cli.output_schemas` (entity, write result, actor, model
+parts, inventory). Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer

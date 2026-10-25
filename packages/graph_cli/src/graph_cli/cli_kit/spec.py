@@ -1,7 +1,8 @@
 """Commands declared as data (contracts B11.1, B11.3, B9.12).
 
 A ``CommandSpec`` names a command's path, kind, surface, action, summary,
-parameters, examples and the error codes it may raise. ``build_click``
+parameters, examples, the error codes it may raise and the schema of its
+answer's ``data`` (``cli_kit.output_schemas``). ``build_click``
 generates the click tree from the declarations and ``inventory`` describes
 the same declarations, so help, parsing and the inventory cannot drift.
 Every command gets ``--json``; ``--help`` shows the summary and the examples.
@@ -101,6 +102,8 @@ class CommandSpec:
     limits: Mapping[str, JsonValue] = field(default=EMPTY)
     description: str | None = None
     remote: Remote = "server"
+    # B9.3: the JSON Schema (2020-12) of the answer's ``data``, ``$ref``s into shared ``$defs``
+    output: Mapping[str, JsonValue] | None = None
 
 
 def _click_type(param: ParamSpec) -> click.ParamType[Any]:

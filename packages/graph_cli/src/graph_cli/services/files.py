@@ -132,6 +132,7 @@ class FileAddResult:
                 "idempotent_replay": False,
                 "id": self.entity["id"],
                 "version": self.entity["rev"],
+                "entity_count": 0,
                 "entities": [],
                 "findings": [],
             }

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from harness import CliRunner
+from jsonschema import Draft202012Validator
 from support.admin import data_root, init
 from support.app import app, create_graph
 from support.fixtures import GOLDENS, TOY_ONTOLOGIES, assert_golden
@@ -166,6 +167,20 @@ def test_describe_goldens(run_cli: CliRunner, root: Path, ontology: str) -> None
     assert unknown.error["details"]["did_you_mean"][0] == cls
     for command in (["types"], ["relations"], ["fields", cls], ["lifecycle", cls]):
         assert app(run_cli, "describe", *command, "--graph", "example_graph").code == 0
+
+
+def test_inventory_with_output_schemas_describes_every_answer(run_cli: CliRunner) -> None:
+    """B11.10: a consumer checks an answer with the published (open) schema and $defs."""
+    plain = app(run_cli, "describe", "commands").data
+    typed = app(run_cli, "describe", "commands", "--output-schemas").data
+    defs = typed.pop("$defs")
+    assert {"envelope", "entity", "write_result"} <= set(defs)
+    outputs = {tuple(c["path"]): c.pop("output") for c in typed["commands"]}
+    assert all(outputs.values())
+    assert typed == plain
+    whoami = app(run_cli, "whoami")
+    Draft202012Validator({**outputs[("whoami",)], "$defs": defs}).validate(whoami.data)
+    Draft202012Validator({**defs["envelope"], "$defs": defs}).validate(whoami.envelope)
 
 
 def test_inventory_golden_and_leaks(run_cli: CliRunner) -> None:

@@ -10,7 +10,12 @@ and every error code are generated from the command declarations:
 and [`skills/graph-cli/references/errors.md`](../skills/graph-cli/references/errors.md).
 The change set documents of `apply` are described in
 [`skills/graph-cli/references/changesets.md`](../skills/graph-cli/references/changesets.md).
-The same data comes as JSON from `graph describe commands --json`.
+The same data comes as JSON from `graph describe commands --json`; with
+`--output-schemas` every command also carries the JSON Schema (2020-12) of its
+answer's `data` and the inventory the shared definitions they point to
+(`$defs`): validate `data` with `{...output, "$defs": $defs}`. The schemas
+are open: new keys may appear within `graph_cli.envelope/1`, so ignore keys
+you do not know.
 
 With `[runtime] mode = "remote"` in `config.toml`, `graph` keeps no data on
 the machine and sends every command to a `graph-server`; answers, text and

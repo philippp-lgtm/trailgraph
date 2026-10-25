@@ -11,8 +11,19 @@ from graph_cli.app_cli.commands.common import (
     PROGRAM,
     context,
 )
+from graph_cli.app_cli.output_schemas import DEFS, NULLABLE_STRING, STRINGS, model_document
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.inventory import build_inventory
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    Schema,
+    array,
+    enum,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
@@ -23,6 +34,119 @@ from graph_cli.services.read import GraphRead
 
 TYPE_ARG: Final = ParamSpec(
     "type", "term", "Type CURIE or unique local name.", required=True, positional=True
+)
+_OBLIGATIONS: Final = obj(  # access_control.effective.write_obligations
+    extra=obj(optional={"require_reason": BOOLEAN, "max_batch": INTEGER})
+)
+WHOAMI_OUTPUT: Final = obj(
+    {
+        "actor": ref("actor"),
+        "permissions": obj(
+            {
+                "policy": STRING,
+                "policy_hash": STRING,
+                "scope": NULLABLE_STRING,
+                "allowed": STRINGS,
+                "obligations": _OBLIGATIONS,
+                "graphs": array(
+                    obj(
+                        {
+                            "graph": STRING,
+                            "level": enum("none", "read", "write"),
+                            "withheld": STRINGS,
+                            "types": obj(extra=STRING),
+                            "obligations": _OBLIGATIONS,
+                        }
+                    )
+                ),
+            }
+        ),
+    }
+)
+GRAPHS_OUTPUT: Final = obj(
+    {
+        "items": array(
+            obj(
+                {
+                    "id": STRING,
+                    "name": STRING,
+                    "state": STRING,
+                    "ontology": ref("ontology_ref"),
+                    "title": NULLABLE_STRING,
+                    "language": NULLABLE_STRING,
+                }
+            )
+        ),
+        "hidden_count": INTEGER,
+    }
+)
+_DOC: Final = {"summary": STRING, "deprecated": BOOLEAN}
+_RELATION_OUT: Final = obj(
+    {
+        "curie": STRING,
+        "range": STRINGS,
+        "cardinality": STRING,
+        "inverse_label": NULLABLE_STRING,
+        "qualifiers": STRINGS,
+        **_DOC,
+    }
+)
+_RELATION_IN: Final = obj(
+    {
+        "curie": STRING,
+        "from": STRINGS,
+        "cardinality": STRING,
+        "inverse_label": NULLABLE_STRING,
+        **_DOC,
+    }
+)
+_TYPE: Final = obj(
+    {
+        "curie": STRING,
+        "abstract": BOOLEAN,
+        "extends": NULLABLE_STRING,
+        "ancestors": STRINGS,
+        "subtypes": STRINGS,
+        "alias_prefix": NULLABLE_STRING,
+        "summary": STRING,
+        "description": NULLABLE_STRING,
+        "deprecated": BOOLEAN,
+        "fields": array(ref("field")),
+        "lifecycles": array(ref("lifecycle")),
+        "relations_out": array(_RELATION_OUT),
+        "relations_in": array(_RELATION_IN),
+        "rules": array(obj({"id": STRING, "severity": STRING, "when": STRING, **_DOC})),
+    }
+)
+_RELATION: Final = obj(
+    {
+        "curie": STRING,
+        "domain": STRINGS,
+        "range": STRINGS,
+        "cardinality": obj({"out": STRING, "in": STRING}),
+        "characteristics": STRINGS,
+        "inverse_label": NULLABLE_STRING,
+        "qualifiers": STRINGS,
+        **_DOC,
+    }
+)
+_PROPERTIES: Final = {  # absent with --compact
+    "properties": array(obj({"name": STRING, "base": STRING, "many": BOOLEAN}))
+}
+_SCHEMA: Final = model_document(
+    {
+        "labels": array(
+            obj(
+                {"label": STRING, "type": STRING, "abstract": BOOLEAN, "supertypes": STRINGS},
+                _PROPERTIES,
+            )
+        ),
+        "relationships": array(
+            obj({"pattern": STRING, "relation": STRING, "type": STRING}, _PROPERTIES)
+        ),
+        "node_fields": STRINGS,
+        "relationship_fields": STRINGS,
+    }
 )
 GRAPH_ERRORS: Final = (
     "graph.not_selected",
@@ -51,13 +175,16 @@ def graphs(state: CommandState) -> Result:
     return Result(data={"items": items, "hidden_count": hidden})
 
 
-def describe_commands(state: CommandState) -> Result:
+def describe_commands(state: CommandState, output_schemas: bool) -> Result:
     from graph_cli.app_cli.commands import all_specs
 
-    return Result(data=inventory(all_specs()))
+    return Result(data=inventory(all_specs(), output_schemas=output_schemas))
 
 
-def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:
+def inventory(
+    specs: tuple[CommandSpec, ...], *, output_schemas: bool = False
+) -> dict[str, JsonValue]:
+    """The app inventory; ``output_schemas`` adds the schemas of the answers (B11.10)."""
     return build_inventory(
         specs,
         program=PROGRAM,
@@ -65,6 +192,7 @@ def inventory(specs: tuple[CommandSpec, ...]) -> dict[str, JsonValue]:
         surface="app",
         global_options=GLOBAL_OPTIONS,
         remote=True,
+        output_defs=DEFS if output_schemas else None,
     )
 
 
@@ -147,6 +275,7 @@ def _describe(
     *,
     with_type: bool,
     examples: tuple[Example, ...],
+    output: Schema,
     options: tuple[ParamSpec, ...] = (),
 ) -> CommandSpec:
     params = (TYPE_ARG, *options, GRAPH) if with_type else (*options, GRAPH)
@@ -161,6 +290,7 @@ def _describe(
         examples=examples,
         errors=errors,
         handler=handler,  # type: ignore[arg-type]
+        output=output,
     )
 
 
@@ -178,6 +308,7 @@ SPECS: Final = (
         ),
         errors=("config.invalid", "backend.unavailable"),
         handler=whoami,
+        output=WHOAMI_OUTPUT,
     ),
     CommandSpec(
         path=("graphs",),
@@ -195,6 +326,7 @@ SPECS: Final = (
         ),
         errors=("config.invalid", "config.forbidden_key", "access.denied"),
         handler=graphs,
+        output=GRAPHS_OUTPUT,
     ),
     CommandSpec(
         path=("describe", "commands"),
@@ -202,20 +334,38 @@ SPECS: Final = (
         surface="meta",
         action=None,
         summary="Describe every command of this program (graph_cli.inventory/1).",
-        params=(),
+        params=(
+            ParamSpec(
+                "--output-schemas",
+                "flag",
+                "Add the JSON Schema of every command's data and their shared $defs.",
+            ),
+        ),
         examples=(
             Example("graph describe commands --json", "The command inventory."),
             Example("graph describe commands", "The inventory as text."),
+            Example(
+                "graph describe commands --output-schemas --json",
+                "The inventory with the schema of every answer.",
+            ),
         ),
         errors=(),
         handler=describe_commands,
         remote="client",
+        output=ref("inventory"),
     ),
     _describe(
         "types",
         "List the types of the selected graph's ontology.",
         describe_types,
         with_type=False,
+        output=model_document(
+            {
+                "types": array(
+                    obj({"curie": STRING, "abstract": BOOLEAN, "extends": NULLABLE_STRING, **_DOC})
+                )
+            }
+        ),
         examples=(
             Example("graph describe types", "All types with summaries."),
             Example("graph describe types --graph <graph> --json", "Types of one graph."),
@@ -226,6 +376,7 @@ SPECS: Final = (
         "Describe one type: fields, lifecycles, relations and rules.",
         describe_type,
         with_type=True,
+        output=model_document({"type": _TYPE}),
         examples=(
             Example("graph describe type <type>", "Everything about one type."),
             Example("graph describe type <type> --json", "The type as graph_cli.model/1."),
@@ -236,6 +387,7 @@ SPECS: Final = (
         "List the relations of the selected graph's ontology.",
         describe_relations,
         with_type=False,
+        output=model_document({"relations": array(_RELATION)}),
         examples=(
             Example("graph describe relations", "All relations."),
             Example("graph describe relations --json", "Relations as JSON."),
@@ -246,6 +398,7 @@ SPECS: Final = (
         "Show the model as graph query sees it: labels, relationship patterns, properties.",
         describe_schema,
         with_type=False,
+        output=_SCHEMA,
         examples=(
             Example("graph describe schema", "Patterns and labels to write a query with."),
             Example("graph describe schema --json", "The schema as graph_cli.model/1."),
@@ -260,6 +413,7 @@ SPECS: Final = (
         "List the fields of one type with datatypes and limits.",
         describe_fields,
         with_type=True,
+        output=model_document({"type": STRING, "fields": array(ref("field"))}),
         examples=(
             Example("graph describe fields <type>", "Fields of one type."),
             Example("graph describe fields <type> --json", "Fields as JSON."),
@@ -270,6 +424,7 @@ SPECS: Final = (
         "Show the lifecycles of a type, or one lifecycle by name.",
         describe_lifecycle,
         with_type=True,
+        output=model_document({"lifecycles": array(ref("lifecycle"))}, {"type": STRING}),
         examples=(
             Example("graph describe lifecycle <type>", "States and transitions of a type."),
             Example("graph describe lifecycle <type> --json", "Lifecycles as JSON."),
