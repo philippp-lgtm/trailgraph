@@ -11,3 +11,20 @@
   that transaction; just before a change is its `tx_seq` minus one. A
   time works too, with an offset (`2030-01-01T12:00:00Z`). Such answers
   carry the warning `temporal.as_of_read`.
+
+## What the history holds, so entities do not
+
+- A graph holds its subject: the things, their fields and relations. Put
+  each fact into the field or relation the model has for it, and never
+  repeat in a text field what a field or an edge already says.
+- How you worked is not data: what you read and how (a page image, a text
+  extraction), what you checked or left unchanged, a doubt, what is still
+  to do. Say it in `--reason` (or `reason` of a change set), which the
+  history keeps with the revision, and to the user. A gap you notice is
+  closed (create the missing entity) or reported, not written into an
+  entity.
+- Who wrote a revision and when is in the history; write it into a field
+  only when the model has one for it.
+- Where the line runs depends on the graph: in a graph about documents,
+  what a document says (a mark, a margin note, an error in it) is subject
+  matter, how you read it is not. The graph's own skill names the line.

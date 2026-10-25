@@ -22,6 +22,8 @@ deliberate choice in the README next to the ontology.
       replaced) is left to retract and supersede.
 - [ ] No derived values are stored; no relations hide in strings; no
       catch-all relation.
+- [ ] No catch-all note and no author or change-log attribute: each fact
+      has its field, the work on the data is the history.
 - [ ] Every relation has `domain`, `range`, an `inverse_label` and the
       cardinality the domain really has.
 - [ ] Facts about a link are qualifiers; links with their own life are

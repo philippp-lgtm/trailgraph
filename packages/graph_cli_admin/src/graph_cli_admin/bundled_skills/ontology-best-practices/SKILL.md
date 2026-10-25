@@ -101,7 +101,10 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
     ([versioning](references/versioning_and_release.md)).
 13. Provenance is modeled, not hidden in text: where a fact came from is
     an edge (`core:source`, `files:from_file` with a page), how sure it is
-    belongs to a claim (`provenance:Claim`).
+    belongs to a claim (`provenance:Claim`). The model describes the
+    subject, not the work on the data: who wrote a revision, when, and how
+    a value was read is the history (`graph history`, the `reason` of the
+    write), never an attribute such as an author or a catch-all note.
 14. Split into several graphs by purpose or visibility, not by size. One
     graph per purpose keeps skills and permissions simple.
 

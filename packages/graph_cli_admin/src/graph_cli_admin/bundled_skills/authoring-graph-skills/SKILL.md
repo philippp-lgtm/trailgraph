@@ -85,8 +85,10 @@ The blocks already say what the model says. Write what it cannot:
    field takes in practice, when to create versus update, what to look up
    before writing (an existing entity with a similar name), what needs the
    user's consent (state changes, retractions), language and wording of
-   values. One rule per bullet, imperative, with the reason when it is not
-   obvious.
+   values. Name where the line between subject matter and the work on the
+   data runs in this graph, with an example of each (the `graph-cli`
+   skill says the work goes into `--reason`, not into entities). One rule
+   per bullet, imperative, with the reason when it is not obvious.
 3. **Recipes**: the three to six questions agents ask most, each as one
    `graph` command (`graph find`, `graph lookup`, `graph neighbors`,
    `graph query`), and one write as `graph apply` or `graph create`. More
