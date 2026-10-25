@@ -553,7 +553,7 @@ class FileMaintenanceSession:
             raise _unavailable("reindex failed", exc) from exc
         self.recover()
         try:
-            store.update_index(state.end.seq)
+            store.rebuild_index(state.end.seq)
         except INDEX_ERRORS as exc:
             raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
 
@@ -626,7 +626,9 @@ class Verifier:
     def _index(self, view: GraphView, spans: Sequence[TxSpan]) -> None:
         """The index, if present, holds exactly the state at its seq (disposable, B4.1)."""
         layout = self.store.layout
-        difference = index_difference(layout.index, self.store.graph_id, view, spans)
+        difference = index_difference(
+            layout.index, self.store.graph_id, view, spans, self.store.txlog
+        )
         if difference is not None:
             target = {"path": str(layout.index.relative_to(layout.root))}
             self.add(INDEX_INCONSISTENT, target, difference)

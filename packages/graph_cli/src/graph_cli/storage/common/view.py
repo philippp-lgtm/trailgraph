@@ -10,8 +10,9 @@ greater seq, which every older ``ViewAt`` filters out.
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta, TxRecord, revision_meta
@@ -21,6 +22,36 @@ def alias_parts(alias: str) -> tuple[str, int]:
     """``ITEM-0007`` -> ``("ITEM", 7)``; the grammar (``ALIAS_RE``) allows one hyphen."""
     prefix, _, number = alias.rpartition("-")
     return prefix, int(number)
+
+
+class StateView(Protocol):
+    """The graph at ``seq`` as snapshots and commit checks read it: a ``ViewAt`` or a
+    writer's view over the index (``storage.files.store.WriterView``)."""
+
+    @property
+    def seq(self) -> int: ...
+
+    def current(self, entity: EntityId) -> Revision | None: ...
+
+    def get_many(self, entities: Sequence[EntityId]) -> Mapping[EntityId, Revision]: ...
+
+    def revision(self, entity: EntityId, rev: int) -> Revision | None: ...
+
+    def history(self, entity: EntityId) -> Sequence[RevisionMeta]: ...
+
+    def tx(self, seq: int) -> TxRecord: ...
+
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterable[Revision]: ...
+
+    def incoming(
+        self, entity: EntityId, rel: TermRef | None = None
+    ) -> Sequence[tuple[EntityId, EdgeRecord]]: ...
+
+    def resolve_alias(self, alias: str) -> tuple[EntityId, bool] | None: ...
+
+    def alias_bound(self, alias: str) -> bool: ...
+
+    def match_suffix(self, hex_suffix: str, *, limit: int = 10) -> Sequence[EntityId]: ...
 
 
 @dataclass(frozen=True, slots=True)

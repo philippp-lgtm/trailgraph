@@ -27,7 +27,7 @@ from graph_cli.kernel.records import (
     tx_to_json,
 )
 from graph_cli.storage.common.chain import CHAIN_KEYS, ChainLink, seal
-from graph_cli.storage.common.view import ViewAt
+from graph_cli.storage.common.view import StateView
 
 
 def _violation(rule: str, message: str, **details: JsonValue) -> GraphCliError:
@@ -63,7 +63,7 @@ def check_tx(
     *,
     graph_id: GraphId,
     head: Head,
-    view: ViewAt,
+    view: StateView,
     blob_exists: Callable[[str], bool],
 ) -> None:
     """Structural preconditions of a commit against the state at ``head`` (D6)."""
@@ -149,7 +149,7 @@ def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision 
         raise _violation("edge_ids", "edge ids repeat within a revision", entity=entity)
 
 
-def _check_aliases(tx: AuthorizedTx, touched: dict[EntityId, Revision], view: ViewAt) -> None:
+def _check_aliases(tx: AuthorizedTx, touched: dict[EntityId, Revision], view: StateView) -> None:
     allocated: dict[EntityId, str] = {}
     seen: set[str] = set()
     for entity, alias in tx.alias_allocations:

@@ -101,12 +101,18 @@ def test_index_answers_like_the_replay_at_every_seq(
     assert index_seq(env) == 20
     for seq in (12, 19, 20):
         assert_same_answers(reader_of(env), reader_of(env, use_index=False), seq)
-    assert index_difference(store.layout.index, env.graph_id, *spans_of(env)) is None
+    assert difference(env) is None
 
 
 def spans_of(env: StoreEnv) -> tuple[GraphView, list[TxSpan]]:
     store = reader_of(env)
     return store._cache.spans_through(store.head().seq)
+
+
+def difference(env: StoreEnv) -> str | None:
+    """What `verify` reports about the index of ``env``."""
+    store = store_of(env)
+    return index_difference(store.layout.index, env.graph_id, *spans_of(env), store.txlog)
 
 
 def test_reads_use_the_index_without_replaying(tmp_path: Path) -> None:
@@ -197,7 +203,7 @@ def test_a_damaged_row_falls_back_to_the_replay(tmp_path: Path) -> None:
     expected = reader_of(env, use_index=False).snapshot().query(EVERYTHING).items
     assert snapshot.query(EVERYTHING).items == expected
     assert snapshot._index is None
-    assert index_difference(store_of(env).layout.index, env.graph_id, *spans_of(env))
+    assert difference(env)
 
 
 def test_reads_write_nothing_with_an_index(tmp_path: Path) -> None:

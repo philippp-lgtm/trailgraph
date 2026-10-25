@@ -169,6 +169,22 @@ def test_more_head_inconsistencies(tmp_path: Path) -> None:
     assert verify(maintenance, env.graph_id) == [finding_codes.HEAD_INCONSISTENT]
 
 
+def test_more_index_inconsistencies(tmp_path: Path) -> None:
+    """The writer-side meta of format 2: the log digest and the last full replay."""
+    env, store, maintenance = setup(tmp_path)
+    original = store.layout.index.read_bytes()
+    for sql in (
+        "UPDATE meta SET value = '[[\"000000000001.jsonl\",3,\"00\"]]' WHERE key = 'log_digest'",
+        "UPDATE meta SET value = '0' WHERE key = 'full_verified_seq'",
+        "UPDATE meta SET value = '999' WHERE key = 'full_verified_seq'",
+        "INSERT INTO idempotency VALUES ('test:9', 'key-9', 1)",
+    ):
+        store.layout.index.write_bytes(original)
+        with sqlite3.connect(store.layout.index) as db:
+            db.execute(sql)
+        assert verify(maintenance, env.graph_id) == [finding_codes.INDEX_INCONSISTENT], sql
+
+
 def test_more_pin_mismatches(tmp_path: Path) -> None:
     env, store, maintenance = setup(tmp_path)
     manifest = store.layout.manifest.read_text()

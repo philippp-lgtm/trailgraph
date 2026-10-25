@@ -14,10 +14,18 @@ suffixes, ``tx``) read the disposable index plus the txs after it
 replay the tx log into a view that is cached per store instance and
 extended incrementally (plan D5). Reads never write anything; writers
 update the index after the checkpoint.
+
+Writers read the index too, once the SHA-256 digest of the log up to the
+index position matches the one recorded with it; they verify only the txs
+after it (``WriterView``, plan "Incremental writer checks"). Without a
+usable index, when the digest differs, and at least every
+``FULL_CHECK_EVERY`` txs they replay and verify the whole log and rebuild
+the index from it.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -67,13 +75,18 @@ from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Durability, OsSyncer, Syncer, ensure_dir, write_temp
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.index import (
+    FULL_CHECK_EVERY,
     INDEX_ERRORS,
+    INDEX_FORMAT,
     IndexedView,
+    IndexMeta,
     IndexReader,
     IndexUnusable,
     ScanView,
     TxSpan,
-    update_index,
+    extend_index,
+    log_digest,
+    rebuild_index,
 )
 from graph_cli.storage.files.layout import (
     AUDIT_SEGMENT_PREFIX,
@@ -151,6 +164,16 @@ class LogState:
         return EMPTY_HEAD
 
 
+@dataclass(slots=True)
+class WriterIndex:
+    """An index a writer checked: its meta, the view over it, the txs after it."""
+
+    reader: IndexReader
+    meta: IndexMeta
+    view: IndexedView
+    after: list[tuple[TxRecord, TxSpan]]  # the verified txs after the index
+
+
 class _ViewCache:
     """The replay view of this store instance, extended as the log grows (plan D5)."""
 
@@ -212,9 +235,11 @@ class FileStore:
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         oplog: OpLog | None = None,
         use_index: bool = True,
+        full_check_every: int = FULL_CHECK_EVERY,
     ) -> None:
         self.layout = GraphLayout(graph_dir)
         self.use_index = use_index
+        self.full_check_every = full_check_every
         self.oplog = oplog
         self.graph_id = graph_id
         self.stream = graph_stream(str(graph_id))
@@ -295,12 +320,59 @@ class FileStore:
     def note_commit(self, record: TxRecord, span: TxSpan) -> None:
         self._cache.committed(record, span)
 
-    def update_index(self, seq: int) -> None:
-        """Bring the index to ``seq`` (W.15); the caller holds the graph lock."""
+    def rebuild_index(self, seq: int) -> IndexMeta | None:
+        """Build the index for ``seq`` from the full replay (W.15); the caller holds the
+        graph lock and ``seq`` is the end of the log."""
         view, spans = self._cache.spans_through(seq)
-        update_index(
-            self.layout, self.graph_id, view, spans, syncer=self.syncer, faults=self.faults
+        if view.seq != seq:
+            raise IndexUnusable(f"the log ends at seq {view.seq}, not {seq}")
+        return rebuild_index(
+            self.layout,
+            self.graph_id,
+            view,
+            spans,
+            self.txlog,
+            syncer=self.syncer,
+            faults=self.faults,
         )
+
+    def writer_index(self, state: LogState) -> tuple[WriterIndex | None, str | None]:
+        """The index a writer may read at the end of the log, or ``None`` to replay.
+
+        The second value says why an existing index failed its log digest (a warning
+        for the result); the other reasons to replay are normal and silent.
+        """
+        if not self.use_index:
+            return None, None
+        try:
+            reader = IndexReader.open(self.layout.index)
+        except IndexUnusable:
+            return None, None
+        if reader is None:
+            return None, None
+        try:
+            meta = reader.meta
+            if meta.format != INDEX_FORMAT or meta.full_verified_seq is None:
+                raise IndexUnusable(f"the index format is not {INDEX_FORMAT}")
+            if state.end.seq - meta.full_verified_seq >= self.full_check_every:
+                raise IndexUnusable("a full check of the log is due")
+            tail = self._index_tail(meta, state, state.end.seq)
+            assert tail is not None  # the end is never before the index seq
+            try:
+                if log_digest(self.txlog, meta.position, ()) != meta.digest:
+                    reader.close()
+                    return None, "the log digest of the index does not match the tx log"
+            except OSError as exc:
+                raise _unavailable("cannot read the tx log", exc) from exc
+        except IndexUnusable:
+            reader.close()
+            return None, None
+        except BaseException:
+            reader.close()
+            raise
+        txs = [tx for tx, _ in tail]
+        view = IndexedView(reader, state.end.seq, txs, self.txlog, check_content=True)
+        return WriterIndex(reader, meta, view, list(tail)), None
 
     def _open_index(self) -> tuple[IndexReader | None, str | None]:
         """The index file, or why an existing one cannot be used; a missing one is normal."""
@@ -313,7 +385,16 @@ class FileStore:
 
     def _bind_index(self, reader: IndexReader, state: LogState, seq: int) -> IndexedView | None:
         """The index plus the txs after it, as of ``seq``; ``None`` for a seq before it."""
-        meta = reader.meta
+        tail = self._index_tail(reader.meta, state, seq)
+        if tail is None:
+            return None
+        return IndexedView(reader, seq, [tx for tx, _ in tail if tx.seq <= seq], self.txlog)
+
+    def _index_tail(
+        self, meta: IndexMeta, state: LogState, seq: int
+    ) -> list[tuple[TxRecord, TxSpan]] | None:
+        """The verified txs after the index and where they lie, after checking that the
+        index binds to this log; ``None`` for a ``seq`` before the index."""
         if meta.graph_id != str(self.graph_id):
             raise IndexUnusable("the index belongs to another graph")
         if meta.seq > state.end.seq:
@@ -322,6 +403,8 @@ class FileStore:
             return None  # an earlier state (--as-of): the replay answers it
         mismatch = IndexUnusable("the index does not match the tx log")
         base = state.base_seq
+        # the scan records of the txs after the checkpoint (recovery may have moved it)
+        after = state.scan.records[len(state.scan.records) - len(state.tail) :]
         if meta.seq >= base:
             if meta.seq == base:
                 checkpoint = state.checkpoint
@@ -332,11 +415,12 @@ class FileStore:
                     raise mismatch
             else:
                 at = meta.seq - base - 1
-                if (state.tail[at].hash, state.scan.records[at].end) != (
+                if (state.tail[at].hash, after[at].end) != (
                     meta.link.hash,
                     meta.position,
                 ):
                     raise mismatch
+            records = after[meta.seq - base :]
             tail = state.tail[meta.seq - base :]
         else:  # the index is behind the checkpoint (an older writer, a failed update)
             try:
@@ -345,8 +429,9 @@ class FileStore:
                 raise _unavailable("cannot read the tx log", exc) from exc
             if not scan.records or scan.end.seq < seq:
                 raise mismatch
-            tail = tuple(parse_tx(record.document) for record in scan.records)
-        return IndexedView(reader, seq, [tx for tx in tail if tx.seq <= seq], self.txlog)
+            records = scan.records
+            tail = tuple(parse_tx(record.document) for record in records)
+        return [(tx, TxSpan(r.start, r.end)) for tx, r in zip(tail, records, strict=True)]
 
     def _require_layout(self) -> None:
         if not self.layout.txlog.is_dir() or not self.layout.audit.is_dir():
@@ -542,6 +627,132 @@ class FileSnapshot:
         return self._scan(lambda view: run_neighbors(view, q))
 
 
+class WriterView:
+    """What a write session reads at the head: the checked index plus the txs after it,
+    or the replay view of the whole log.
+
+    It starts on the index when ``FileStore.writer_index`` accepts one, and moves to
+    the replay for good when the index answers ``IndexUnusable`` (``fell_back`` says
+    why). Point reads of earlier revisions use the revision files, as snapshots do.
+    """
+
+    def __init__(self, store: FileStore, seq: int, index: WriterIndex | None) -> None:
+        self._store = store
+        self.seq = seq
+        self.index = index
+        self.fell_back: str | None = None
+        self._overlay: dict[EntityId, list[Revision]] = {}
+        if index is not None:
+            for tx, _ in index.after:
+                self._note(tx)
+
+    def _note(self, tx: TxRecord) -> None:
+        for revision in tx.revisions:
+            self._overlay.setdefault(revision.id, []).append(revision)
+
+    def close(self) -> None:
+        if self.index is not None:
+            self.index.reader.close()
+
+    def add(self, record: TxRecord, span: TxSpan) -> None:
+        """This session committed ``record`` at ``span``."""
+        self.seq = record.seq
+        self._store.note_commit(record, span)
+        if self.index is not None:
+            self.index.view.add(record)
+            self._note(record)
+
+    def _replay(self) -> ViewAt:
+        return self._store.view_at(self.seq)
+
+    def _read(self, read: Callable[[IndexedView], T], replay: Callable[[ViewAt], T]) -> T:
+        if self.index is not None:
+            try:
+                return read(self.index.view)
+            except IndexUnusable as exc:
+                self._fall_back(str(exc))
+        return replay(self._replay())
+
+    def _fall_back(self, reason: str) -> None:
+        assert self.index is not None
+        self.index.reader.close()
+        self.index = None
+        self.fell_back = reason
+
+    def confirm(self, entities: Iterable[EntityId]) -> None:
+        """Check the index rows the commit checks rely on against their tx lines."""
+        if self.index is None:
+            return
+        try:
+            for entity in entities:
+                self.index.view.confirm(entity)
+        except IndexUnusable as exc:
+            self._fall_back(str(exc))
+
+    # what commit checks, services and the checkpoint read
+
+    def current(self, entity: EntityId) -> Revision | None:
+        return self._read(lambda v: v.current(entity), lambda v: v.current(entity))
+
+    def get_many(self, entities: Sequence[EntityId]) -> Mapping[EntityId, Revision]:
+        return self._read(lambda v: v.get_many(entities), lambda v: v.get_many(entities))
+
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterable[Revision]:
+        return self._read(
+            lambda v: list(v.current_revisions(types)), lambda v: list(v.current_revisions(types))
+        )
+
+    def incoming(
+        self, entity: EntityId, rel: TermRef | None = None
+    ) -> Sequence[tuple[EntityId, EdgeRecord]]:
+        return self._read(lambda v: v.incoming(entity, rel), lambda v: v.incoming(entity, rel))
+
+    def resolve_alias(self, alias: str) -> tuple[EntityId, bool] | None:
+        return self._read(lambda v: v.resolve_alias(alias), lambda v: v.resolve_alias(alias))
+
+    def alias_bound(self, alias: str) -> bool:
+        return self._read(lambda v: v.alias_bound(alias), lambda v: v.alias_bound(alias))
+
+    def alias_counters(self) -> dict[str, int]:
+        return self._read(lambda v: v.alias_counters(), lambda v: v.alias_counters())
+
+    def lookup_idempotency(self, key: str, principal_id: str) -> TxRecord | None:
+        return self._read(
+            lambda v: v.lookup_idempotency(key, principal_id),
+            lambda v: v.lookup_idempotency(key, principal_id),
+        )
+
+    def match_suffix(self, hex_suffix: str, *, limit: int = 10) -> Sequence[EntityId]:
+        return self._read(
+            lambda v: v.match_suffix(hex_suffix, limit=limit),
+            lambda v: v.match_suffix(hex_suffix, limit=limit),
+        )
+
+    def tx(self, seq: int) -> TxRecord:
+        return self._read(lambda v: v.tx(seq), lambda v: v.tx(seq))
+
+    def revision(self, entity: EntityId, rev: int) -> Revision | None:
+        if self.index is None:
+            return self._replay().revision(entity, rev)
+        for revision in self._overlay.get(entity, ()):
+            if revision.rev == rev:
+                return revision
+        found = self._store.read_revision(entity, rev)
+        return found if found is not None and found.tx_seq <= self.seq else None
+
+    def history(self, entity: EntityId) -> list[RevisionMeta]:
+        if self.index is None:
+            return self._replay().history(entity)
+        metas: dict[int, RevisionMeta] = {}
+        for rev in self._store.revision_numbers(entity):
+            revision = self._store.read_revision(entity, rev)
+            if revision is not None and revision.tx_seq <= self.seq:
+                metas[rev] = revision_meta(revision)
+        for revision in self._overlay.get(entity, ()):
+            metas[revision.rev] = revision_meta(revision)
+        return [metas[rev] for rev in sorted(metas)]
+
+
 class FileSession:
     """``WriteSession`` of FileStore; exists only while the graph lock is held."""
 
@@ -563,13 +774,27 @@ class FileSession:
         self._audit_link = audit.end
         self._audit_position = audit.position
         self._pending: list[TxRecord] = []
-        self._view_seq = state.end.seq
-        store.view_at(self._view_seq)
+        index, self._index_warning = store.writer_index(state)
+        self._writer = WriterView(store, state.end.seq, index)
+        if index is None:
+            store.view_at(state.end.seq)  # verify the whole log before anything is written
+        # what the next index update starts from: an index and the txs after it
+        self._index_base = index.meta if index is not None else None
+        self._index_txs = list(index.after) if index is not None else []
 
     # ---- session state -------------------------------------------------
 
     def close(self) -> None:
+        if self._open and self._index_doubt() is not None and self._store.use_index:
+            # the index failed a check and no commit rebuilt it
+            with contextlib.suppress(*INDEX_ERRORS, GraphCliError):
+                self._store.rebuild_index(self._end.seq)
+        self._writer.close()
         self._open = False
+
+    def _index_doubt(self) -> str | None:
+        """Why the index failed a check in this session, until it is rebuilt."""
+        return self._index_warning or self._writer.fell_back
 
     def _check_usable(self) -> None:
         if not self._open:
@@ -579,8 +804,8 @@ class FileSession:
                 "backend.unavailable", "an earlier failure left this session unusable"
             )
 
-    def _view(self) -> ViewAt:
-        return self._store.view_at(self._view_seq)
+    def _view(self) -> WriterView:
+        return self._writer
 
     def snapshot(self) -> ViewSnapshot:
         self._check_usable()
@@ -667,6 +892,7 @@ class FileSession:
             session_token=self._token,
             used_events=self._used,
         )
+        self._writer.confirm(_relied_on(tx))
         check_tx(
             tx,
             graph_id=store.graph_id,
@@ -691,8 +917,9 @@ class FileSession:
         self._position = pending.end
         self._head = Head(record.seq, record.tx_id, record.hash, record.recorded_at)
         self._pending.append(record)
-        store.note_commit(record, TxSpan(pending.start, pending.end))
-        self._view_seq = record.seq
+        span = TxSpan(pending.start, pending.end)
+        self._writer.add(record, span)
+        self._index_txs.append((record, span))
         warnings: list[WarningRecord] = []
         try:
             fire(store.faults, CrashPoint.TX_AFTER_SYNC)
@@ -720,20 +947,39 @@ class FileSession:
             self._write_head()
 
     def _update_index(self) -> list[WarningRecord]:
-        """Best effort (W.15): a failure leaves the old index, which readers still bind."""
+        """Best effort (W.15): a failure leaves the old index, which readers still bind.
+
+        On the checked index only this session's txs (and those after the index) are
+        applied; after a full replay the index is rebuilt from it.
+        """
         store = self._store
         if not store.use_index:
             return []
+        doubt = self._index_doubt()
+        if doubt is not None:
+            self._index_base = None  # rebuild from the replay
         try:
-            store.update_index(self._end.seq)
-        except INDEX_ERRORS as exc:
-            return [
-                WarningRecord(
-                    "storage.materialization_deferred",
-                    f"the tx is committed; the index is not updated yet: {exc}",
+            if self._index_base is None:
+                self._index_base = store.rebuild_index(self._end.seq)
+            else:
+                self._index_base = extend_index(
+                    store.layout,
+                    store.graph_id,
+                    self._index_base,
+                    self._index_txs,
+                    store.txlog,
+                    syncer=store.syncer,
+                    faults=store.faults,
                 )
-            ]
-        return []
+        except INDEX_ERRORS as exc:
+            message = f"the tx is committed; the index is not updated yet: {exc}"
+            return [WarningRecord("storage.materialization_deferred", message)]
+        self._index_txs = []
+        if doubt is None:
+            return []
+        self._index_warning = self._writer.fell_back = None
+        message = f"{doubt}; the index was rebuilt from the tx log"
+        return [WarningRecord(_INDEX_STALE, message)]
 
     def _write_head(self) -> None:
         store = self._store
@@ -749,6 +995,14 @@ class FileSession:
             alias_counters=self._view().alias_counters(),
         )
         write_head(store, checkpoint)
+
+
+def _relied_on(tx: AuthorizedTx) -> list[EntityId]:
+    """The entities whose current revision ``check_tx`` compares against."""
+    entities = {revision.id for revision in tx.revisions}
+    entities.update(edge.target for revision in tx.revisions for edge in revision.edges)
+    entities.update(entity for entity, _ in tx.alias_allocations)
+    return sorted(entities)
 
 
 def materialize(store: FileStore, txs: Sequence[TxRecord]) -> list[str]:

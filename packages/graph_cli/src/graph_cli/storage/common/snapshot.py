@@ -9,13 +9,13 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.query_eval import run_neighbors, run_query
 from graph_cli.kernel.records import EdgeRecord, Revision, RevisionMeta, TxRecord
-from graph_cli.storage.common.view import ViewAt
+from graph_cli.storage.common.view import StateView
 
 
 class ViewSnapshot:
-    """Every read answered from one ``ViewAt``; isolated by construction."""
+    """Every read answered from one view; isolated by construction."""
 
-    def __init__(self, view: ViewAt, warnings: tuple[WarningRecord, ...] = ()) -> None:
+    def __init__(self, view: StateView, warnings: tuple[WarningRecord, ...] = ()) -> None:
         self._view = view
         self._warnings = warnings
 

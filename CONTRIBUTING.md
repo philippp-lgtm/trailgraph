@@ -132,6 +132,9 @@ ontologies. Storage tests use minimal audit bodies
 (`tests/support/audit_events.py`). Write service tests run on both backends
 through `tests/support/services.py` (an in-memory catalog, a builder with
 test clock and seeded ids, and a factory for valid creates of any class).
+`uv run python scripts/bench_store.py` (not part of the suite) times reads
+and writes of `FileStore` on a generated graph, with and without the
+writer's full replay.
 
 ### Test harness
 

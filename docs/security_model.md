@@ -19,7 +19,12 @@ head kept outside the data root. Reads trust the derived files (revision
 files, the checkpoint, the index) and check the transaction log only
 after them, so an edited derived file changes what reads return until
 `graph-admin audit verify` reports it and `graph-admin graph reindex`
-rebuilds it (see [Storage](storage.md#filestore)). Reads are not audited, so a read under
+rebuilds it (see [Storage](storage.md#filestore)). Writers trust the index
+only after its SHA-256 digest of the transaction log matches and check
+what they copy from it, so an edited log is found by the next writer; an
+index edited consistently with its digest is found by `audit verify` and
+replaced by the full replay a writer runs at least every 200
+transactions. Reads are not audited, so a read under
 another policy leaves no trace in the audit; the opt-in
 [access log](audit.md#access-log) records reads, but it is not chained
 and can be edited.
