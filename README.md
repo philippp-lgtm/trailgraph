@@ -9,7 +9,8 @@ strict split between usage and maintenance, and a server:
   JSON document.
 - `graph-admin` (distribution `graph_cli_admin`): the maintenance CLI. Not on
   `PATH`; run from the repository checkout. Creates graphs, versions
-  ontologies, installs policies and skills, verifies the audit trail.
+  ontologies, installs policies and skills, verifies the audit trail and
+  serves a [live view](docs/live_view.md) of a graph in the browser.
 - `graph-server` (distribution `graph_cli_server`): the command surface of
   `graph` over HTTP with bearer tokens, for agents in containers, other
   machines and web apps; `graph` in remote mode is its client. Runs from
@@ -21,9 +22,10 @@ Access is decided by policies per principal, project and graph, and agents
 get generated skills that describe the CLI and each graph.
 
 Status: foundation. Both CLIs, the server, the ontology layer, the file
-store, audit, access control, stored files and the agent skills work;
-storage is local to the machine that owns the data (POSIX file systems
-only).
+store, audit, access control, stored files, the live view and the agent
+skills work; storage is local to the machine that owns the data (POSIX
+file systems only). To use one graph from several machines, run
+`graph-server` where the data lives and `graph` in remote mode elsewhere.
 
 ## Install
 
