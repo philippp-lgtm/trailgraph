@@ -2636,7 +2636,21 @@
               "type": "string"
             }
           },
-          "default": {}
+          "default": {},
+          "pairs": {
+            "type": "string",
+            "enum": [
+              "map",
+              "multimap"
+            ]
+          },
+          "pair_values": {
+            "type": "string",
+            "enum": [
+              "text",
+              "json"
+            ]
+          }
         },
         "required": [
           "name",
@@ -3998,21 +4012,41 @@
                         ],
                         "description": "Path of the input, or - for stdin."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate every document without writing."
                       },
-                      "--summary": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "summary": {
                         "type": "boolean",
                         "description": "Per document only counts, seq and findings: entities is null, entity_count stays."
                       },
-                      "--idempotency-key": {
+                      "--summary": {
+                        "type": "boolean",
+                        "description": "The inventory name of summary; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe; single document only, else idempotency_key in each document."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -4317,50 +4351,206 @@
                         "type": "string",
                         "description": "Type CURIE."
                       },
-                      "--set": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
                         "description": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
                       },
-                      "--set-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of set; never both.",
+                        "deprecated": true
+                      },
+                      "set_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
                         "description": "attr=<json>, a typed value."
                       },
-                      "--edge": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--set-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
+                        "description": "The inventory name of set_json; never both.",
+                        "deprecated": true
+                      },
+                      "edge": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
                         "description": "relation=<id>: an outgoing edge."
                       },
-                      "--valid-from": {
+                      "--edge": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of edge; never both.",
+                        "deprecated": true
+                      },
+                      "valid_from": {
                         "type": "string",
                         "description": "Start of validity: date or RFC 3339 timestamp."
                       },
-                      "--valid-to": {
+                      "--valid-from": {
+                        "type": "string",
+                        "description": "The inventory name of valid_from; never both.",
+                        "deprecated": true
+                      },
+                      "valid_to": {
                         "type": "string",
                         "description": "End of validity: date or RFC 3339 timestamp."
                       },
-                      "--graph": {
+                      "--valid-to": {
+                        "type": "string",
+                        "description": "The inventory name of valid_to; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -4637,9 +4827,14 @@
                         "type": "string",
                         "description": "Type CURIE or unique local name."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -4916,9 +5111,14 @@
                         "type": "string",
                         "description": "Type CURIE or unique local name."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -5189,9 +5389,14 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -5460,13 +5665,23 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--compact": {
+                      "compact": {
                         "type": "boolean",
                         "description": "Only labels and relationship patterns, no properties."
                       },
-                      "--graph": {
+                      "--compact": {
+                        "type": "boolean",
+                        "description": "The inventory name of compact; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -5741,9 +5956,14 @@
                         "type": "string",
                         "description": "Type CURIE or unique local name."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -6014,9 +6234,14 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -6341,59 +6566,185 @@
                         ],
                         "description": "The file to store."
                       },
-                      "--type": {
+                      "type": {
                         "type": "string",
                         "description": "files:File or a subclass of it."
                       },
-                      "--title": {
+                      "--type": {
+                        "type": "string",
+                        "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "title": {
                         "type": "string",
                         "description": "Name for people; the file name without extension."
                       },
-                      "--set": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--title": {
+                        "type": "string",
+                        "description": "The inventory name of title; never both.",
+                        "deprecated": true
+                      },
+                      "set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
                         "description": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
                       },
-                      "--set-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of set; never both.",
+                        "deprecated": true
+                      },
+                      "set_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
                         "description": "attr=<json>, a typed value."
                       },
-                      "--media-type": {
+                      "--set-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
+                        "description": "The inventory name of set_json; never both.",
+                        "deprecated": true
+                      },
+                      "media_type": {
                         "type": "string",
                         "description": "Media type instead of the detected one."
                       },
-                      "--source-url": {
+                      "--media-type": {
+                        "type": "string",
+                        "description": "The inventory name of media_type; never both.",
+                        "deprecated": true
+                      },
+                      "source_url": {
                         "type": "string",
                         "description": "Address the file was downloaded from."
                       },
-                      "--retrieved-at": {
+                      "--source-url": {
+                        "type": "string",
+                        "description": "The inventory name of source_url; never both.",
+                        "deprecated": true
+                      },
+                      "retrieved_at": {
                         "type": "string",
                         "description": "Date of the download, YYYY-MM-DD."
                       },
-                      "--no-origin": {
+                      "--retrieved-at": {
+                        "type": "string",
+                        "description": "The inventory name of retrieved_at; never both.",
+                        "deprecated": true
+                      },
+                      "no_origin": {
                         "type": "boolean",
                         "description": "Do not record where the file came from."
                       },
-                      "--graph": {
+                      "--no-origin": {
+                        "type": "boolean",
+                        "description": "The inventory name of no_origin; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -6674,17 +7025,32 @@
                         },
                         "description": "Files to check; all active files with an origin when omitted."
                       },
-                      "--limit": {
+                      "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many files."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -6965,13 +7331,23 @@
                         "type": "string",
                         "description": "A files:File entity: full id, alias or trailing hex of the id."
                       },
-                      "--origin": {
+                      "origin": {
                         "type": "boolean",
                         "description": "The origin on this machine instead of the stored copy."
                       },
-                      "--graph": {
+                      "--origin": {
+                        "type": "boolean",
+                        "description": "The inventory name of origin; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -7247,67 +7623,224 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--type": {
+                      "type": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Type CURIE or unique local name, subtypes included."
                       },
-                      "--where": {
+                      "--type": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
+                        "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "where": {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "description": "field=value or field:op=value as an object; op defaults to eq.",
+                              "additionalProperties": false,
+                              "required": [
+                                "field",
+                                "value"
+                              ],
+                              "properties": {
+                                "field": {
+                                  "type": "string",
+                                  "pattern": "^[^=:]+$"
+                                },
+                                "op": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "pattern": "^[a-z]+$"
+                                },
+                                "value": {
+                                  "description": "exists takes a boolean, in a non-empty array without , in its items.",
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean",
+                                    "array"
+                                  ],
+                                  "items": {
+                                    "type": [
+                                      "string",
+                                      "number",
+                                      "boolean"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        },
                         "description": "attr=value or attr:op=value (ne lt le gt ge contains prefix in exists lang)."
                       },
-                      "--rel": {
+                      "--where": {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "description": "field=value or field:op=value as an object; op defaults to eq.",
+                              "additionalProperties": false,
+                              "required": [
+                                "field",
+                                "value"
+                              ],
+                              "properties": {
+                                "field": {
+                                  "type": "string",
+                                  "pattern": "^[^=:]+$"
+                                },
+                                "op": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "pattern": "^[a-z]+$"
+                                },
+                                "value": {
+                                  "description": "exists takes a boolean, in a non-empty array without , in its items.",
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean",
+                                    "array"
+                                  ],
+                                  "items": {
+                                    "type": [
+                                      "string",
+                                      "number",
+                                      "boolean"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "description": "The inventory name of where; never both.",
+                        "deprecated": true
+                      },
+                      "rel": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Outgoing relation, optionally =<id>[,<id>...]."
                       },
-                      "--in-rel": {
+                      "--rel": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of rel; never both.",
+                        "deprecated": true
+                      },
+                      "in_rel": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Incoming relation, optionally =<id>[,<id>...]."
                       },
-                      "--include-inactive": {
+                      "--in-rel": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of in_rel; never both.",
+                        "deprecated": true
+                      },
+                      "include_inactive": {
                         "type": "boolean",
                         "description": "Include superseded and retracted entities."
                       },
-                      "--sort": {
+                      "--include-inactive": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_inactive; never both.",
+                        "deprecated": true
+                      },
+                      "sort": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Field to sort by, optionally :desc."
                       },
-                      "--fields": {
+                      "--sort": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of sort; never both.",
+                        "deprecated": true
+                      },
+                      "fields": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
                       },
-                      "--limit": {
+                      "--fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many results."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -7584,24 +8117,47 @@
                         "type": "string",
                         "description": "Full id, alias or trailing hex of the id."
                       },
-                      "--rev": {
+                      "rev": {
                         "type": "integer",
                         "description": "Show this earlier revision instead of the current one."
                       },
-                      "--fields": {
+                      "--rev": {
+                        "type": "integer",
+                        "description": "The inventory name of rev; never both.",
+                        "deprecated": true
+                      },
+                      "fields": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
                       },
-                      "--graph": {
+                      "--fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8124,21 +8680,41 @@
                         "type": "string",
                         "description": "Full id, alias or trailing hex of the id."
                       },
-                      "--limit": {
+                      "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many revisions."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8452,43 +9028,149 @@
                         "type": "string",
                         "description": "Target id, alias or id suffix."
                       },
-                      "--qualifier": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "qualifier": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
                         "description": "qualifier=value on the edge."
                       },
-                      "--qualifier-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--qualifier": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of qualifier; never both.",
+                        "deprecated": true
+                      },
+                      "qualifier_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
                         "description": "qualifier=<json> on the edge."
                       },
-                      "--target-rev": {
+                      "--qualifier-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
+                        "description": "The inventory name of qualifier_json; never both.",
+                        "deprecated": true
+                      },
+                      "target_rev": {
                         "type": "integer",
                         "description": "The target revision the edge refers to."
                       },
-                      "--expect": {
+                      "--target-rev": {
+                        "type": "integer",
+                        "description": "The inventory name of target_rev; never both.",
+                        "deprecated": true
+                      },
+                      "expect": {
                         "type": "integer",
                         "description": "Refuse unless the entity is at this revision."
                       },
-                      "--graph": {
+                      "--expect": {
+                        "type": "integer",
+                        "description": "The inventory name of expect; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8772,14 +9454,22 @@
                         },
                         "description": "The names to look for, one per argument."
                       },
-                      "--type": {
+                      "type": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Type CURIE or unique local name, subtypes included."
                       },
-                      "--match": {
+                      "--type": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "match": {
                         "type": "string",
                         "enum": [
                           "exact",
@@ -8787,33 +9477,77 @@
                         ],
                         "description": "Whole name, or names that start with the text."
                       },
-                      "--ignore-accents": {
+                      "--match": {
+                        "type": "string",
+                        "enum": [
+                          "exact",
+                          "prefix"
+                        ],
+                        "description": "The inventory name of match; never both.",
+                        "deprecated": true
+                      },
+                      "ignore_accents": {
                         "type": "boolean",
                         "description": "Also match with accents and other combining marks ignored."
                       },
-                      "--include-inactive": {
+                      "--ignore-accents": {
+                        "type": "boolean",
+                        "description": "The inventory name of ignore_accents; never both.",
+                        "deprecated": true
+                      },
+                      "include_inactive": {
                         "type": "boolean",
                         "description": "Include superseded and retracted entities."
                       },
-                      "--lang": {
+                      "--include-inactive": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_inactive; never both.",
+                        "deprecated": true
+                      },
+                      "lang": {
                         "type": "string",
                         "description": "Only names in this language (a BCP 47 tag or range such as de, or *); also picks the shown label."
                       },
-                      "--limit": {
+                      "--lang": {
+                        "type": "string",
+                        "description": "The inventory name of lang; never both.",
+                        "deprecated": true
+                      },
+                      "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many results."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -9093,14 +9827,22 @@
                         "type": "string",
                         "description": "Full id, alias or trailing hex of the id."
                       },
-                      "--rel": {
+                      "rel": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Only these relations."
                       },
-                      "--direction": {
+                      "--rel": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of rel; never both.",
+                        "deprecated": true
+                      },
+                      "direction": {
                         "type": "string",
                         "enum": [
                           "out",
@@ -9109,24 +9851,57 @@
                         ],
                         "description": "Edge direction."
                       },
-                      "--depth": {
+                      "--direction": {
+                        "type": "string",
+                        "enum": [
+                          "out",
+                          "in",
+                          "both"
+                        ],
+                        "description": "The inventory name of direction; never both.",
+                        "deprecated": true
+                      },
+                      "depth": {
                         "type": "integer",
                         "description": "Hops, 1 to 3."
                       },
-                      "--fields": {
+                      "--depth": {
+                        "type": "integer",
+                        "description": "The inventory name of depth; never both.",
+                        "deprecated": true
+                      },
+                      "fields": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
                       },
-                      "--graph": {
+                      "--fields": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -9410,7 +10185,7 @@
                         "type": "string",
                         "description": "The query, or - to read it from stdin."
                       },
-                      "--file": {
+                      "file": {
                         "type": "object",
                         "properties": {
                           "upload": {
@@ -9433,36 +10208,122 @@
                         ],
                         "description": "Read the query from this file."
                       },
-                      "--param": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
+                      "--file": {
+                        "type": "object",
+                        "properties": {
+                          "upload": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          }
                         },
+                        "required": [
+                          "upload",
+                          "name"
+                        ],
+                        "description": "The inventory name of file; never both.",
+                        "deprecated": true
+                      },
+                      "param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
                         "description": "name=value binds $name; the value is JSON when it parses, else text."
                       },
-                      "--include-inactive": {
+                      "--param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
+                        "description": "The inventory name of param; never both.",
+                        "deprecated": true
+                      },
+                      "include_inactive": {
                         "type": "boolean",
                         "description": "Include superseded and retracted entities."
                       },
-                      "--explain": {
+                      "--include-inactive": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_inactive; never both.",
+                        "deprecated": true
+                      },
+                      "explain": {
                         "type": "boolean",
                         "description": "Show the resolved query; run nothing."
                       },
-                      "--limit": {
+                      "--explain": {
+                        "type": "boolean",
+                        "description": "The inventory name of explain; never both.",
+                        "deprecated": true
+                      },
+                      "limit": {
                         "type": "integer",
                         "description": "Rows per page, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many rows."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -9766,29 +10627,59 @@
                         "type": "string",
                         "description": "Full id, alias or trailing hex of the id."
                       },
-                      "--by": {
+                      "by": {
                         "type": "string",
                         "description": "The entity that retracts it."
                       },
-                      "--expect": {
+                      "--by": {
+                        "type": "string",
+                        "description": "The inventory name of by; never both.",
+                        "deprecated": true
+                      },
+                      "expect": {
                         "type": "integer",
                         "description": "Refuse unless the entity is at this revision."
                       },
-                      "--graph": {
+                      "--expect": {
+                        "type": "integer",
+                        "description": "The inventory name of expect; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -10067,43 +10958,89 @@
                         "type": "string",
                         "description": "The words to look for."
                       },
-                      "--type": {
+                      "type": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Type CURIE or unique local name, subtypes included."
                       },
-                      "--field": {
+                      "--type": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "field": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Only this text field."
                       },
-                      "--include-inactive": {
+                      "--field": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of field; never both.",
+                        "deprecated": true
+                      },
+                      "include_inactive": {
                         "type": "boolean",
                         "description": "Include superseded and retracted entities."
                       },
-                      "--lang": {
+                      "--include-inactive": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_inactive; never both.",
+                        "deprecated": true
+                      },
+                      "lang": {
                         "type": "string",
                         "description": "Only text in this language (a BCP 47 tag or range such as de, or *); also picks the shown label."
                       },
-                      "--limit": {
+                      "--lang": {
+                        "type": "string",
+                        "description": "The inventory name of lang; never both.",
+                        "deprecated": true
+                      },
+                      "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
                       },
-                      "--offset": {
+                      "--limit": {
+                        "type": "integer",
+                        "description": "The inventory name of limit; never both.",
+                        "deprecated": true
+                      },
+                      "offset": {
                         "type": "integer",
                         "description": "Skip this many results."
                       },
-                      "--graph": {
+                      "--offset": {
+                        "type": "integer",
+                        "description": "The inventory name of offset; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--as-of": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "as_of": {
                         "type": "string",
                         "description": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+                      },
+                      "--as-of": {
+                        "type": "string",
+                        "description": "The inventory name of as_of; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -10415,21 +11352,41 @@
                         },
                         "description": "Entities it replaces."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -10740,29 +11697,59 @@
                         "type": "string",
                         "description": "Target state."
                       },
-                      "--attr": {
+                      "attr": {
                         "type": "string",
                         "description": "Lifecycle attribute, if the type has several."
                       },
-                      "--expect": {
+                      "--attr": {
+                        "type": "string",
+                        "description": "The inventory name of attr; never both.",
+                        "deprecated": true
+                      },
+                      "expect": {
                         "type": "integer",
                         "description": "Refuse unless the entity is at this revision."
                       },
-                      "--graph": {
+                      "--expect": {
+                        "type": "integer",
+                        "description": "The inventory name of expect; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -11077,29 +12064,59 @@
                         "type": "string",
                         "description": "Target id, alias or id suffix."
                       },
-                      "--edge-id": {
+                      "edge_id": {
                         "type": "string",
                         "description": "The edge id instead of REL and TARGET."
                       },
-                      "--expect": {
+                      "--edge-id": {
+                        "type": "string",
+                        "description": "The inventory name of edge_id; never both.",
+                        "deprecated": true
+                      },
+                      "expect": {
                         "type": "integer",
                         "description": "Refuse unless the entity is at this revision."
                       },
-                      "--graph": {
+                      "--expect": {
+                        "type": "integer",
+                        "description": "The inventory name of expect; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -11405,74 +12422,359 @@
                         "type": "string",
                         "description": "Full id, alias or trailing hex of the id."
                       },
-                      "--set": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
                         "description": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
                       },
-                      "--set-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--set": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number",
+                                "boolean"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of set; never both.",
+                        "deprecated": true
+                      },
+                      "set_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
                         "description": "attr=<json>, a typed value."
                       },
-                      "--unset": {
+                      "--set-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ],
+                        "description": "The inventory name of set_json; never both.",
+                        "deprecated": true
+                      },
+                      "unset": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
                         "description": "Attribute to remove."
                       },
-                      "--add": {
+                      "--unset": {
                         "type": "array",
                         "items": {
                           "type": "string"
                         },
+                        "description": "The inventory name of unset; never both.",
+                        "deprecated": true
+                      },
+                      "add": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
                         "description": "attr=value appended to a list attribute unless present; coerced by datatype."
                       },
-                      "--add-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--add": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of add; never both.",
+                        "deprecated": true
+                      },
+                      "add_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          }
+                        ],
                         "description": "attr=<json>, one typed value to add."
                       },
-                      "--remove": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--add-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of add_json; never both.",
+                        "deprecated": true
+                      },
+                      "remove": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
                         "description": "attr=value dropped from a list attribute; coerced by datatype."
                       },
-                      "--remove-json": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
+                      "--remove": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of remove; never both.",
+                        "deprecated": true
+                      },
+                      "remove_json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          }
+                        ],
                         "description": "attr=<json>, one typed value to remove."
                       },
-                      "--expect": {
+                      "--remove-json": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of remove_json; never both.",
+                        "deprecated": true
+                      },
+                      "expect": {
                         "type": "integer",
                         "description": "Refuse unless the entity is at this revision."
                       },
-                      "--graph": {
+                      "--expect": {
+                        "type": "integer",
+                        "description": "The inventory name of expect; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
                       },
-                      "--dry-run": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the result without writing."
                       },
-                      "--reason": {
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why this change is made (required for supersede, retract)."
                       },
-                      "--idempotency-key": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "idempotency_key": {
                         "type": "string",
                         "description": "Key that makes a retry safe."
+                      },
+                      "--idempotency-key": {
+                        "type": "string",
+                        "description": "The inventory name of idempotency_key; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [

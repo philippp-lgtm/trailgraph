@@ -145,13 +145,40 @@ exit code `graph` would have.
 | `GET /v1/dist/manifest`, `GET /v1/dist/{file}` | the programs the server hands out ([Self update](#self-update)); no token needed, except for the `graph-admin` wheel |
 | `POST /v1/enroll` | an enrollment code exchanged for a token ([Enrollment](#enrollment)); no token needed |
 
-A command request names the parameters by their inventory names:
+A command request names each parameter by its API name, the option without
+leading dashes and with `_` for `-` (`--dry-run` is `dry_run`, `--set-json`
+is `set_json`, an argument such as `type` keeps its name):
 
 ```json
-{"args": {"type": "<type>", "--set": ["<attr>=<value>"], "--dry-run": true},
+{"args": {"type": "<type>", "set": {"<attr>": "<value>"}, "dry_run": true},
  "actor": {"agent": {"id": "<value>", "type": "<value>"}, "project": "example_project"},
  "pointer": {"graphs": ["example_graph"], "default": "example_graph"}}
 ```
+
+A value is what the option takes on the command line: a string, an integer,
+`true` for a flag (`false` and `null` mean not given), a list for a
+repeatable option. The options that take `<name>=<value>` pairs and
+`--where` also take a structured form, turned into exactly the command line
+it stands for, so the answer is the same:
+
+| Parameters | Structured form | Command line |
+| --- | --- | --- |
+| `set`, `qualifier` | `{"<attr>": "<value>", "<attr>": 2}` | `--set <attr>=<value> --set <attr>=2` |
+| `set_json`, `qualifier_json`, `param` | `{"<attr>": <json>}` | `--set-json <attr>=<json>` |
+| `add`, `remove`, `edge` | `{"<attr>": ["<value>", "<value>"]}` | `--add <attr>=<value> --add <attr>=<value>` |
+| `add_json`, `remove_json` | `{"<attr>": [<json>, <json>]}` | `--add-json <attr>=<json>` per value |
+| `where` | `[{"field": "<attr>", "op": "ge", "value": 2}]` | `--where <attr>:ge=2` |
+
+A text pair takes a string, a number (written as given, `1.10` stays
+`1.10`) or a boolean (`true`, `false`); an object, array or `null` belongs
+in the `_json` option, which writes any JSON value as JSON (a string stays
+a string: `"12"`). A name holds no `=`. In a filter, `op` defaults to `eq`,
+`exists` takes `true` or `false`, and `in` a non-empty list whose items hold
+no `,`; the field holds neither `=` nor `:`. `--rel` and `--in-rel` take
+their command-line text only. The inventory names (`"--set"`,
+`"--dry-run"`) are still accepted; one parameter under both names is
+refused. The body is strict JSON: a key given twice is refused
+(`usage.invalid_input`).
 
 A file parameter (`apply`, `query --file`, `file add`) takes an upload:
 `{"upload": "sha256:<hex>", "name": "<file>"}`, for `file add` also the
@@ -171,8 +198,10 @@ that lists them in `x-graph-cli-error-codes`, and `default` covers every
 other error answer (such as a malformed body). Schemas shared by several
 commands are in `components.schemas` under their names in the inventory's
 `$defs`; a command's `data` is `<operationId>_data`, the operation id being
-the command path joined with `_` (`describe_types_data`). The document is
-open like the inventory: a client ignores keys it does not know.
+the command path joined with `_` (`describe_types_data`). A request body
+lists the API names with their structured forms; the inventory names are
+marked `deprecated`. The document is open like the inventory: a client
+ignores keys it does not know.
 
 Browsers may call the API from the origins listed in `[server]
 cors_origins` ([Configuration](configuration.md#configtoml)); a browser

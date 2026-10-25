@@ -2,11 +2,12 @@
 
 A pure function of a ``graph_cli.inventory/1`` document with output schemas
 (``describe commands --output-schemas``, B11.10): one operation per command the server
-runs, its parameters as the ``args`` object of the request, the envelope with the
-command's ``data`` as the answer, and one response per status its error codes reach
-(B14.5). ``components.schemas`` holds the inventory's ``$defs`` under their names and the
-``data`` of every command as ``<operationId>_data``. Deterministic like the inventory. The
-app surface and the admin API (``admin``) each get their own document.
+runs, its parameters as the ``args`` object of the request (canonical names with the
+structured forms, the inventory names ``deprecated``), the envelope with the command's
+``data`` as the answer, and one response per status its error codes reach (B14.5).
+``components.schemas`` holds the inventory's ``$defs`` under their names and the ``data``
+of every command as ``<operationId>_data``. Deterministic like the inventory. The app
+surface and the admin API (``admin``) each get their own document.
 """
 
 from __future__ import annotations
@@ -15,7 +16,9 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Final
 
+from graph_cli.cli_kit.argv import api_name
 from graph_cli.cli_kit.output_schemas import (
+    ANY,
     BOOLEAN,
     INTEGER,
     NULL,
@@ -51,6 +54,24 @@ _DIRECTORY: Final[Schema] = obj(
         "name": STRING,
     }
 )
+# The structured forms of B14.22 G6 (``cli_kit.argv``).
+_SCALAR: Final[Schema] = {"type": ["string", "number", "boolean"]}
+_PAIR_NAME: Final[Schema] = {"type": "string", "pattern": "^[^=]+$"}
+_FILTER: Final[Schema] = {
+    "type": "object",
+    "description": "field=value or field:op=value as an object; op defaults to eq.",
+    "additionalProperties": False,
+    "required": ["field", "value"],
+    "properties": {
+        "field": {"type": "string", "pattern": "^[^=:]+$"},
+        "op": {"type": ["string", "null"], "pattern": "^[a-z]+$"},
+        "value": {
+            "description": "exists takes a boolean, in a non-empty array without , in its items.",
+            "type": ["string", "number", "boolean", "array"],
+            "items": {"type": ["string", "number", "boolean"]},
+        },
+    },
+}
 # The routes that are no command (``app.ServerApp._dispatch``).
 HEALTH: Final[Schema] = obj({"ok": {"const": True}, "version": STRING, "api": STRING})
 UPLOADED: Final[Schema] = obj({"upload": _DIGEST, "size": INTEGER})
@@ -278,29 +299,61 @@ def _components(schema: JsonValue) -> JsonValue:
 
 
 def _args_schema(params: list[Mapping[str, JsonValue]], admin: bool) -> dict[str, JsonValue]:
+    """``args`` by canonical name (B14.22 G5); the inventory name of an option is the same
+    parameter, ``deprecated``, and a required one may come under either."""
     properties: dict[str, JsonValue] = {}
     required: list[JsonValue] = []
+    either: list[JsonValue] = []
     for param in params:
         name = str(param["name"])
-        schema = _value_schema(param)
-        if param.get("repeatable"):
-            schema = {"type": "array", "items": schema}
+        canonical = api_name(name)
+        schema = _param_schema(param)
         schema["description"] = param.get("summary")
-        properties[name] = schema
+        properties[canonical] = schema
+        if canonical != name:
+            properties[name] = {
+                **schema,
+                "description": f"The inventory name of {canonical}; never both.",
+                "deprecated": True,
+            }
         if param.get("required"):
-            required.append(name)
-    body: dict[str, JsonValue] = {
-        "args": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": properties,
-            "required": required,
-        },
-        "actor": {"type": "object"},
+            if canonical == name:
+                required.append(name)
+            else:
+                either.append({"anyOf": [{"required": [canonical]}, {"required": [name]}]})
+    args: dict[str, JsonValue] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": required,
     }
+    if either:
+        args["allOf"] = either
+    body: dict[str, JsonValue] = {"args": args, "actor": {"type": "object"}}
     if not admin:
         body.update(pointer={"type": "object"}, graph_env={"type": ["string", "null"]})
     return {"type": "object", "additionalProperties": False, "properties": body}
+
+
+def _param_schema(param: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The CLI form of a parameter, and its structured form where it has one (G6)."""
+    schema = _value_schema(param)
+    if param.get("type") == "filter":
+        schema = {"oneOf": [schema, _FILTER]}
+    if param.get("repeatable"):
+        schema = {"type": "array", "items": schema}
+    pairs = param.get("pairs")
+    if pairs is not None:
+        value: Schema = ANY if param.get("pair_values") == "json" else _SCALAR
+        if pairs == "multimap":
+            value = {"type": "array", "items": value}
+        structured: Schema = {
+            "type": "object",
+            "propertyNames": _PAIR_NAME,
+            "additionalProperties": value,
+        }
+        schema = {"oneOf": [schema, structured]}
+    return schema
 
 
 def _value_schema(param: Mapping[str, JsonValue]) -> dict[str, JsonValue]:

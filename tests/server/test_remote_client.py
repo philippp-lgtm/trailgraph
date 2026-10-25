@@ -47,9 +47,11 @@ def stub(behaviour: Behaviour) -> Iterator[list[str]]:
     seen: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
+        request_body = b""
+
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0"))
-            self.rfile.read(length)
+            self.request_body = self.rfile.read(length)
             seen.append(self.path)
             behaviour(self, len(seen))
 
@@ -187,6 +189,28 @@ def test_a_lost_write_answer_names_its_key(
         env = client_env(isolated_env, tmp_path / "client", port_of(seen), "gct_x")
         given = remote(run_cli, env, "create", "inv:Location", "--idempotency-key", "k-1")
     assert given.error["details"]["idempotency_key"] == "k-1"
+
+
+def test_the_client_sends_canonical_names(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    bodies: list[Any] = []
+
+    def record(handler: BaseHTTPRequestHandler, number: int) -> None:
+        bodies.append(json.loads(handler.request_body))  # type: ignore[attr-defined]
+        hang_up(handler)
+
+    with stub(record) as seen:
+        env = client_env(isolated_env, tmp_path / "client", port_of(seen), "gct_x")
+        args = ("inv:Location", "--set", "name=Shelf", "--graph", "example_graph")
+        outcome = remote(run_cli, env, "create", *args, "--idempotency-key", "k-1")
+    assert bodies[0]["args"] == {  # B14.22 G5; the hint stays the command line
+        "type": "inv:Location",
+        "set": ["name=Shelf"],
+        "graph": "example_graph",
+        "idempotency_key": "k-1",
+    }
+    assert outcome.error["hint"] == f"graph create {' '.join(args)} --idempotency-key k-1"
 
 
 @pytest.mark.unchecked_output("the stub server answers whoami with a stub")

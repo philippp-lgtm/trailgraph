@@ -50,13 +50,14 @@ from graph_cli.catalog.resolve import config_path, resolve_roots
 from graph_cli.catalog.skill_claims import SkillClaim, parse_claims_header
 from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE, TokenRecord, TokenStore
 from graph_cli.catalog.wiring import PROGRAM, AppServices, RequestScope
-from graph_cli.cli_kit.argv import to_argv
+from graph_cli.cli_kit.argv import inventory_args, to_argv
 from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
 from graph_cli.cli_kit.runner import Completed, Invocation, run
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
 from graph_cli.kernel.actor import ClientInfo, Entrypoint
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
+from graph_cli.kernel.changeset import FloatLiteral, float_numbers
 from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -368,13 +369,14 @@ class ServerApp:
         """Run one command for a request; every error becomes an envelope. ``claims`` are
         the graph skills the client has installed (B14.17)."""
         command = " ".join(spec.path)
-        args = body.get("args", {})
+        given = body.get("args", {})
         staged: list[Staged] = []
         try:
-            if not isinstance(args, Mapping):
+            if not isinstance(given, Mapping):
                 raise GraphCliError(
                     "usage.invalid_input", "args must be an object", details={"argument": "args"}
                 )
+            args = inventory_args(spec, given)
             for name in STDIN_ARGS.get(spec.path, ()):
                 if args.get(name) == STDIN:
                     raise GraphCliError(
@@ -537,7 +539,7 @@ class ServerApp:
         self, environ: Mapping[str, Any], graph: str, ref: str, token: TokenRecord
     ) -> Response:
         """``file path`` for the request's actor, then the stored bytes (B14.2)."""
-        body: dict[str, JsonValue] = {"args": {"ref": ref, "--graph": graph}}
+        body: dict[str, JsonValue] = {"args": {"ref": ref, "graph": graph}}
         header = environ.get(ACTOR_HEADER)
         if header:
             body["actor"] = _actor_header(str(header))
@@ -844,12 +846,18 @@ def _read_json(environ: Mapping[str, Any]) -> JsonValue:
         )
     data = environ["wsgi.input"].read(length) if length else b"{}"
     try:
-        value: JsonValue = json.loads(data)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = parse_json(data, floats=FloatLiteral)
+    except CanonicalError as exc:
         raise GraphCliError(
-            "usage.invalid_input", f"the body is not JSON: {exc}", details={"argument": "body"}
+            "usage.invalid_input",
+            f"the body is not valid JSON: {exc}",
+            details={"argument": "body"},
         ) from None
-    return value
+    # B14.22 G6: a number with a fraction reaches a command as written (``1.10``); elsewhere
+    # it stays a number, which the readers refuse by its type as before
+    if isinstance(value, Mapping):
+        return {key: item if key == "args" else float_numbers(item) for key, item in value.items()}
+    return float_numbers(value)  # type: ignore[no-any-return]
 
 
 def _object(value: JsonValue, what: str, keys: frozenset[str]) -> Mapping[str, JsonValue]:

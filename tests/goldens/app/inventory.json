@@ -241,21 +241,27 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language.",
+          "pairs": "map",
+          "pair_values": "text"
         },
         {
           "name": "--set-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=<json>, a typed value."
+          "summary": "attr=<json>, a typed value.",
+          "pairs": "map",
+          "pair_values": "json"
         },
         {
           "name": "--edge",
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "relation=<id>: an outgoing edge."
+          "summary": "relation=<id>: an outgoing edge.",
+          "pairs": "multimap",
+          "pair_values": "text"
         },
         {
           "name": "--valid-from",
@@ -821,14 +827,18 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language.",
+          "pairs": "map",
+          "pair_values": "text"
         },
         {
           "name": "--set-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=<json>, a typed value."
+          "summary": "attr=<json>, a typed value.",
+          "pairs": "map",
+          "pair_values": "json"
         },
         {
           "name": "--media-type",
@@ -1530,14 +1540,18 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "qualifier=value on the edge."
+          "summary": "qualifier=value on the edge.",
+          "pairs": "map",
+          "pair_values": "text"
         },
         {
           "name": "--qualifier-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "qualifier=<json> on the edge."
+          "summary": "qualifier=<json> on the edge.",
+          "pairs": "map",
+          "pair_values": "json"
         },
         {
           "name": "--target-rev",
@@ -1916,7 +1930,9 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "name=value binds $name; the value is JSON when it parses, else text."
+          "summary": "name=value binds $name; the value is JSON when it parses, else text.",
+          "pairs": "map",
+          "pair_values": "json"
         },
         {
           "name": "--include-inactive",
@@ -2952,14 +2968,18 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language."
+          "summary": "attr=value, coerced by the attribute's datatype; <value>@en names a language.",
+          "pairs": "map",
+          "pair_values": "text"
         },
         {
           "name": "--set-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=<json>, a typed value."
+          "summary": "attr=<json>, a typed value.",
+          "pairs": "map",
+          "pair_values": "json"
         },
         {
           "name": "--unset",
@@ -2973,28 +2993,36 @@
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value appended to a list attribute unless present; coerced by datatype."
+          "summary": "attr=value appended to a list attribute unless present; coerced by datatype.",
+          "pairs": "multimap",
+          "pair_values": "text"
         },
         {
           "name": "--add-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=<json>, one typed value to add."
+          "summary": "attr=<json>, one typed value to add.",
+          "pairs": "multimap",
+          "pair_values": "json"
         },
         {
           "name": "--remove",
           "type": "assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=value dropped from a list attribute; coerced by datatype."
+          "summary": "attr=value dropped from a list attribute; coerced by datatype.",
+          "pairs": "multimap",
+          "pair_values": "text"
         },
         {
           "name": "--remove-json",
           "type": "json_assignment",
           "required": false,
           "repeatable": true,
-          "summary": "attr=<json>, one typed value to remove."
+          "summary": "attr=<json>, one typed value to remove.",
+          "pairs": "multimap",
+          "pair_values": "json"
         },
         {
           "name": "--expect",

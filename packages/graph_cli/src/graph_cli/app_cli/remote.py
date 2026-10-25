@@ -3,7 +3,7 @@
 The click tree is the same as locally, so argv is parsed here and usage
 errors need no server. Every command the server runs (``remote`` is
 ``server`` or ``hooked``) gets a handler that sends its parsed parameters
-by inventory name and returns the server's answer as it came
+by its canonical API name and returns the server's answer as it came
 (``Result.forwarded``); ``client`` commands keep their own handler. A
 write (not ``--dry-run``) always carries an idempotency key: the given one
 or a generated ``r-<32 hex>``, so a write whose answer was lost can be run
@@ -20,7 +20,7 @@ from typing import Any, Final
 
 from graph_cli.app_cli.commands.common import PROGRAM, services
 from graph_cli.catalog.remote import RemoteSession, Write
-from graph_cli.cli_kit.argv import END_OF_OPTIONS, request_args, to_argv
+from graph_cli.cli_kit.argv import END_OF_OPTIONS, api_args, request_args, to_argv
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
@@ -65,7 +65,7 @@ def forward(
     """Run ``spec`` on the server; ``key`` generates an idempotency key for a write."""
     write = write_of(spec, args, generate=key)
     document, stdout, stderr = session.command(
-        spec.path, args, text=not state.json_mode, write=write
+        spec.path, api_args(args), text=not state.json_mode, write=write
     )
     return Result(forwarded=Forwarded(document, stdout, stderr))
 

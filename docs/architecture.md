@@ -57,7 +57,8 @@ The cross-cutting packages have their own documents:
 (`graph-server serve`). `app` is a small WSGI application: its command
 routes come from the same declarations as the CLI (every command whose
 `remote` is not `client`), `cli_kit.argv` turns a request's JSON parameters
-into argv for the one click program, and `cli_kit.runner.run` runs it with an
+(by API or inventory name, structured forms included) into the argv of their
+command-line form for the one click program, and `cli_kit.runner.run` runs it with an
 `AppServices` per request whose `RequestScope` carries the request's actor
 (`catalog.identity.request`), pointer, `GRAPH_CLI_GRAPH` and file origins.
 `uploads` stages uploaded bytes per token, `dist` reads the wheels the
@@ -71,8 +72,8 @@ plugs it in only with `[server] admin_api`, so the app routes never load
 maintenance code. Operating it: [Server](server.md).
 
 The remote mode of `graph` is the other half: `app_cli.remote` gives every
-command the server runs a handler that sends its parsed parameters
-(`cli_kit.argv.request_args`) and returns the server's answer as
+command the server runs a handler that sends its parsed parameters by API
+name (`cli_kit.argv.request_args`, `api_args`) and returns the server's answer as
 `Result.forwarded`, which `cli_kit.runner` writes as it came;
 `app_cli.remote_hooks` adds the client work of the hooked commands
 (uploads, downloads, origins), and the skills commands take graph skills

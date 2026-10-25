@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import ClassVar, Final
+from typing import Any, ClassVar, Final
 
 from graph_cli.kernel.actions import Action
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, hash_value, parse_json
@@ -90,6 +90,18 @@ class FloatLiteral(str):
     """
 
     __slots__ = ()
+
+
+def float_numbers(value: JsonValue) -> Any:
+    """``value`` with every ``FloatLiteral`` a Python float again, for a reader that refuses
+    a float by its JSON type (a request body outside its ``args``)."""
+    if isinstance(value, FloatLiteral):
+        return float(value)
+    if isinstance(value, Mapping):
+        return {key: float_numbers(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [float_numbers(item) for item in value]
+    return value
 
 
 def contains_float(value: JsonValue) -> bool:

@@ -978,6 +978,8 @@ SPECS: Final = (
                 "assignment",
                 "name=value binds $name; the value is JSON when it parses, else text.",
                 repeatable=True,
+                pairs="map",
+                pair_values="json",
             ),
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec("--explain", "flag", "Show the resolved query; run nothing."),

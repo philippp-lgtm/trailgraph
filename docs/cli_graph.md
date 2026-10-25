@@ -15,7 +15,9 @@ The same data comes as JSON from `graph describe commands --json`; with
 answer's `data` and the inventory the shared definitions they point to
 (`$defs`): validate `data` with `{...output, "$defs": $defs}`. The schemas
 are open: new keys may appear within `graph_cli.envelope/1`, so ignore keys
-you do not know.
+you do not know. A parameter that takes `<name>=<value>` pairs names the
+shape of its structured form over the server API in `pairs` (`map`,
+`multimap`) and `pair_values` (`text`, `json`); see [Server](server.md#api).
 
 With `[runtime] mode = "remote"` in `config.toml`, `graph` keeps no data on
 the machine and sends every command to a `graph-server`; answers, text and

@@ -505,9 +505,10 @@ SET: Final = ParamSpec(
     "assignment",
     "attr=value, coerced by the attribute's datatype; <value>@en names a language.",
     repeatable=True,
+    pairs="map",
 )
 SET_JSON: Final = ParamSpec(
-    "--set-json", "json_assignment", "attr=<json>, a typed value.", repeatable=True
+    "--set-json", "json_assignment", "attr=<json>, a typed value.", repeatable=True, pairs="map"
 )
 
 
@@ -542,7 +543,13 @@ CREATE: Final = _spec(
         ParamSpec("type", "term", "Type CURIE.", required=True, positional=True),
         SET,
         SET_JSON,
-        ParamSpec("--edge", "assignment", "relation=<id>: an outgoing edge.", repeatable=True),
+        ParamSpec(
+            "--edge",
+            "assignment",
+            "relation=<id>: an outgoing edge.",
+            repeatable=True,
+            pairs="multimap",
+        ),
         ParamSpec("--valid-from", "string", "Start of validity: date or RFC 3339 timestamp."),
         ParamSpec("--valid-to", "string", "End of validity: date or RFC 3339 timestamp."),
     ),
@@ -569,21 +576,28 @@ UPDATE: Final = _spec(
             "assignment",
             "attr=value appended to a list attribute unless present; coerced by datatype.",
             repeatable=True,
+            pairs="multimap",
         ),
         ParamSpec(
-            "--add-json", "json_assignment", "attr=<json>, one typed value to add.", repeatable=True
+            "--add-json",
+            "json_assignment",
+            "attr=<json>, one typed value to add.",
+            repeatable=True,
+            pairs="multimap",
         ),
         ParamSpec(
             "--remove",
             "assignment",
             "attr=value dropped from a list attribute; coerced by datatype.",
             repeatable=True,
+            pairs="multimap",
         ),
         ParamSpec(
             "--remove-json",
             "json_assignment",
             "attr=<json>, one typed value to remove.",
             repeatable=True,
+            pairs="multimap",
         ),
         EXPECT,
     ),
@@ -610,9 +624,19 @@ LINK: Final = _spec(
         ParamSpec(
             "target", "entity_ref", "Target id, alias or id suffix.", required=True, positional=True
         ),
-        ParamSpec("--qualifier", "assignment", "qualifier=value on the edge.", repeatable=True),
         ParamSpec(
-            "--qualifier-json", "json_assignment", "qualifier=<json> on the edge.", repeatable=True
+            "--qualifier",
+            "assignment",
+            "qualifier=value on the edge.",
+            repeatable=True,
+            pairs="map",
+        ),
+        ParamSpec(
+            "--qualifier-json",
+            "json_assignment",
+            "qualifier=<json> on the edge.",
+            repeatable=True,
+            pairs="map",
         ),
         ParamSpec("--target-rev", "integer", "The target revision the edge refers to."),
         EXPECT,

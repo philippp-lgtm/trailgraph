@@ -38,7 +38,7 @@ from typing import Any, Final
 from graph_cli.app_cli.remote import command_line
 from graph_cli.app_cli.remote_hooks import upload
 from graph_cli.catalog.remote import RemoteSession, Write, protocol
-from graph_cli.cli_kit.argv import request_args
+from graph_cli.cli_kit.argv import api_args, request_args
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import SERVED, CommandSpec
@@ -95,14 +95,14 @@ def _handler(spec: CommandSpec) -> Callable[..., Result]:
             write = Write(None, command_line(spec, args))
         if out is not None:
             args[OUT] = {"files": {}, "name": str(values["out"])}
-            document, _, _ = session.command(spec.path, args, text=False, write=write)
+            document, _, _ = session.command(spec.path, api_args(args), text=False, write=write)
             return Result(forwarded=Forwarded(_write_rendered(document, out, values)))
         if target is not None:
             args[DIR] = {"files": {}, "name": str(values["target"])}
-            document, _, _ = session.command(spec.path, args, text=False, write=None)
+            document, _, _ = session.command(spec.path, api_args(args), text=False, write=None)
             return Result(forwarded=Forwarded(_write_pulled(document, target, values)))
         document, stdout, stderr = session.command(
-            spec.path, args, text=not state.json_mode, write=write
+            spec.path, api_args(args), text=not state.json_mode, write=write
         )
         if spec.path == PUSH and not dry_run:
             _record_base(document, Path(str(values["source"])))

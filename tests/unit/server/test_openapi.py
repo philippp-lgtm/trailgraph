@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate
 from support.fixtures import GOLDENS, assert_golden
 from support.openapi import admin_document, app_document
@@ -111,3 +112,35 @@ def test_a_failed_answer_carries_the_error_and_a_successful_one_none() -> None:
     create = app_document()["paths"]["/v1/commands/create"]["post"]["responses"]["200"]
     ok = create["content"]["application/json"]["schema"]["properties"]
     assert ok["ok"] == {"const": True} and ok["error"] == {"type": "null"}
+
+
+def request_validator(document: dict[str, Any], path: str) -> Draft202012Validator:
+    body = document["paths"][path]["post"]["requestBody"]
+    return Draft202012Validator(body["content"]["application/json"]["schema"])
+
+
+def test_request_bodies_take_canonical_names_and_structured_forms() -> None:
+    """B14.22 G5, G6: what ``cli_kit.argv.to_argv`` accepts, the document describes."""
+    app = app_document()
+    create = request_validator(app, "/v1/commands/create")
+    item = {"type": "inv:Item", "set": {"label": "Drill", "quantity": 2}, "dry_run": True}
+    assert create.is_valid({"args": {**item, "edge": {"inv:located_in": ["a"]}}})
+    assert create.is_valid({"args": {"type": "inv:Item", "--set": ["label=Drill"]}})
+    assert not create.is_valid({"args": {"type": "inv:Item", "set": {"label": {"a": 1}}}})
+    assert not create.is_valid({"args": {"type": "inv:Item", "edge": {"inv:located_in": "a"}}})
+    assert not create.is_valid({"args": {"set": {"label": "Drill"}}})
+    properties = app["paths"]["/v1/commands/create"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]["properties"]["args"]["properties"]
+    assert properties["--set"]["deprecated"] is True and "deprecated" not in properties["set"]
+    find = request_validator(app, "/v1/commands/find")
+    where = [{"field": "quantity", "op": "ge", "value": 2}, "label=Drill"]
+    assert find.is_valid({"args": {"where": where}})
+    assert not find.is_valid({"args": {"where": [{"field": "a:b", "value": "x"}]}})
+    query = request_validator(app, "/v1/commands/query")
+    assert query.is_valid({"args": {"text": "RETURN $n", "param": {"n": {"any": ["json"]}}}})
+    # a required option under either name, as the server takes it
+    verify = request_validator(admin_document(), "/v1/admin/commands/files/verify")
+    assert verify.is_valid({"args": {"graph": "example_graph"}})
+    assert verify.is_valid({"args": {"--graph": "example_graph"}})
+    assert not verify.is_valid({"args": {}})

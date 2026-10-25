@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Final
 from graph_cli.app_cli.commands.common import services
 from graph_cli.app_cli.remote import forward, new_key
 from graph_cli.catalog.remote import RemoteSession, envelope_of, error_of, protocol
+from graph_cli.cli_kit.argv import api_args
 from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec
@@ -152,7 +153,7 @@ def file_path_hook(
     session: RemoteSession, spec: CommandSpec, state: CommandState, args: dict[str, JsonValue]
 ) -> Result:
     origin = args.pop("--origin", False) is True
-    document, _, _ = session.command(spec.path, args, text=False, write=None)
+    document, _, _ = session.command(spec.path, api_args(args), text=False, write=None)
     data = document.get("data")
     if document.get("ok") is not True or not isinstance(data, Mapping):
         return Result(forwarded=Forwarded(document))
@@ -265,7 +266,7 @@ def file_check_hook(
 ) -> Result:
     from graph_cli.services.files import CHECK_STATUSES, hash_file
 
-    document, _, _ = session.command(spec.path, args, text=False, write=None)
+    document, _, _ = session.command(spec.path, api_args(args), text=False, write=None)
     data = document.get("data")
     if document.get("ok") is not True or not isinstance(data, Mapping):
         return Result(forwarded=Forwarded(document))

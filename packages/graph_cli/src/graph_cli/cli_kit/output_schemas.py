@@ -125,7 +125,12 @@ def _param() -> Schema:
             "repeatable": BOOLEAN,
             "summary": STRING,
         },
-        {"choices": array(STRING), "default": ANY},
+        {
+            "choices": array(STRING),
+            "default": ANY,
+            "pairs": enum("map", "multimap"),
+            "pair_values": enum("text", "json"),
+        },
     )
 
 

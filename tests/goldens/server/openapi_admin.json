@@ -1680,7 +1680,21 @@
               "type": "string"
             }
           },
-          "default": {}
+          "default": {},
+          "pairs": {
+            "type": "string",
+            "enum": [
+              "map",
+              "multimap"
+            ]
+          },
+          "pair_values": {
+            "type": "string",
+            "enum": [
+              "text",
+              "json"
+            ]
+          }
         },
         "required": [
           "name",
@@ -3523,11 +3537,16 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--project": {
+                      "project": {
                         "type": "string",
                         "description": "The project the token is bound to: it acts for it, verified."
                       },
-                      "--scope": {
+                      "--project": {
+                        "type": "string",
+                        "description": "The inventory name of project; never both.",
+                        "deprecated": true
+                      },
+                      "scope": {
                         "type": "string",
                         "enum": [
                           "app",
@@ -3535,17 +3554,50 @@
                         ],
                         "description": "app: a token for the graph commands; admin: a project admin's token."
                       },
-                      "--expires-in": {
+                      "--scope": {
+                        "type": "string",
+                        "enum": [
+                          "app",
+                          "admin"
+                        ],
+                        "description": "The inventory name of scope; never both.",
+                        "deprecated": true
+                      },
+                      "expires_in": {
                         "type": "string",
                         "description": "How long the code works: <n>m or <n>h, at most 24h; default 15m."
                       },
-                      "--reason": {
+                      "--expires-in": {
+                        "type": "string",
+                        "description": "The inventory name of expires_in; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why; recorded in the audit."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
                       }
                     },
-                    "required": [
-                      "--project"
+                    "required": [],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "project"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--project"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -4039,9 +4091,14 @@
                         "type": "string",
                         "description": "The code's id from enroll list."
                       },
-                      "--reason": {
+                      "reason": {
                         "type": "string",
                         "description": "Why; recorded in the audit."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -4301,21 +4358,50 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id."
                       },
-                      "--reason": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why the files are removed; recorded in the audit event."
                       },
-                      "--dry-run": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Show what would be removed without removing it."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
                       }
                     },
-                    "required": [
-                      "--graph"
+                    "required": [],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "graph"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--graph"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -4570,17 +4656,41 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id."
                       },
-                      "--rehash": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "rehash": {
                         "type": "boolean",
                         "description": "Read every stored file and compare its hash."
+                      },
+                      "--rehash": {
+                        "type": "boolean",
+                        "description": "The inventory name of rehash; never both.",
+                        "deprecated": true
                       }
                     },
-                    "required": [
-                      "--graph"
+                    "required": [],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "graph"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--graph"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -4840,7 +4950,7 @@
                         "type": "string",
                         "description": "Graph name or id."
                       },
-                      "--ontology": {
+                      "ontology": {
                         "type": "object",
                         "properties": {
                           "files": {
@@ -4861,9 +4971,36 @@
                         ],
                         "description": "Check against this authored ontology instead of the pinned release."
                       },
-                      "--module": {
+                      "--ontology": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "The inventory name of ontology; never both.",
+                        "deprecated": true
+                      },
+                      "module": {
                         "type": "string",
                         "description": "Main module id, if the --ontology directory holds several."
+                      },
+                      "--module": {
+                        "type": "string",
+                        "description": "The inventory name of module; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -5111,7 +5248,7 @@
                         "type": "string",
                         "description": "Name of the new graph."
                       },
-                      "--ontology": {
+                      "ontology": {
                         "type": "object",
                         "properties": {
                           "files": {
@@ -5132,22 +5269,74 @@
                         ],
                         "description": "Directory with the authored ontology; becomes the first release."
                       },
-                      "--module": {
+                      "--ontology": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "The inventory name of ontology; never both.",
+                        "deprecated": true
+                      },
+                      "module": {
                         "type": "string",
                         "description": "Main module id, if the directory holds several."
                       },
-                      "--title": {
+                      "--module": {
+                        "type": "string",
+                        "description": "The inventory name of module; never both.",
+                        "deprecated": true
+                      },
+                      "title": {
                         "type": "string",
                         "description": "Human-readable title."
                       },
-                      "--language": {
+                      "--title": {
+                        "type": "string",
+                        "description": "The inventory name of title; never both.",
+                        "deprecated": true
+                      },
+                      "language": {
                         "type": "string",
                         "description": "BCP 47 default language of the values (e.g. en, de-CH); fixed after create."
+                      },
+                      "--language": {
+                        "type": "string",
+                        "description": "The inventory name of language; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
-                      "name",
-                      "--ontology"
+                      "name"
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "ontology"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--ontology"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -5382,9 +5571,14 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--all": {
+                      "all": {
                         "type": "boolean",
                         "description": "Include archived graphs."
+                      },
+                      "--all": {
+                        "type": "boolean",
+                        "description": "The inventory name of all; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -5669,13 +5863,23 @@
                         ],
                         "description": "Workspace directory; created if missing."
                       },
-                      "--version": {
+                      "version": {
                         "type": "string",
                         "description": "Pull this installed release instead of the pin."
                       },
-                      "--force": {
+                      "--version": {
+                        "type": "string",
+                        "description": "The inventory name of version; never both.",
+                        "deprecated": true
+                      },
+                      "force": {
                         "type": "boolean",
                         "description": "Replace the version directory, skill directory and base file if they exist."
+                      },
+                      "--force": {
+                        "type": "boolean",
+                        "description": "The inventory name of force; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -5985,13 +6189,23 @@
                         ],
                         "description": "A directory written by graph pull."
                       },
-                      "--reason": {
+                      "reason": {
                         "type": "string",
                         "description": "Why it changes; recorded in every audit event."
                       },
-                      "--dry-run": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Run every check and show the change without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -6257,13 +6471,23 @@
                         "type": "string",
                         "description": "Graph name or id."
                       },
-                      "--reason": {
+                      "reason": {
                         "type": "string",
                         "description": "Why it is rebuilt; recorded in the audit event."
                       },
-                      "--dry-run": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Show the seq it would rebuild from without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -6810,13 +7034,23 @@
                         ],
                         "description": "A skill directory named graph-<graph>, or a template."
                       },
-                      "--reason": {
+                      "reason": {
                         "type": "string",
                         "description": "Why the skill changes; recorded in the audit event."
                       },
-                      "--dry-run": {
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
                         "type": "boolean",
                         "description": "Validate and show the change without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -7103,7 +7337,7 @@
                         ],
                         "description": "A skill directory named graph-<graph>, or a template."
                       },
-                      "--out": {
+                      "out": {
                         "type": "object",
                         "properties": {
                           "files": {
@@ -7124,15 +7358,57 @@
                         ],
                         "description": "Existing directory; the skill is written to OUT/graph-<graph>/."
                       },
-                      "--force": {
+                      "--out": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "The inventory name of out; never both.",
+                        "deprecated": true
+                      },
+                      "force": {
                         "type": "boolean",
                         "description": "Replace OUT/graph-<graph>/ if it exists."
+                      },
+                      "--force": {
+                        "type": "boolean",
+                        "description": "The inventory name of force; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
                       "ref",
-                      "dir",
-                      "--out"
+                      "dir"
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "out"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--out"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -7409,11 +7685,16 @@
                         ],
                         "description": "Directory with the authored ontology."
                       },
-                      "--module": {
+                      "module": {
                         "type": "string",
                         "description": "Main module id (the file <module>.yaml); needed if SOURCE holds several."
                       },
-                      "--against": {
+                      "--module": {
+                        "type": "string",
+                        "description": "The inventory name of module; never both.",
+                        "deprecated": true
+                      },
+                      "against": {
                         "type": "object",
                         "properties": {
                           "files": {
@@ -7434,9 +7715,36 @@
                         ],
                         "description": "Older authored version to compare with."
                       },
-                      "--graph": {
+                      "--against": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "The inventory name of against; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
                         "type": "string",
                         "description": "Compare with the release this graph is pinned to."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -7726,9 +8034,14 @@
                         ],
                         "description": "Directory with the authored ontology."
                       },
-                      "--module": {
+                      "module": {
                         "type": "string",
                         "description": "Main module id (the file <module>.yaml); needed if SOURCE holds several."
+                      },
+                      "--module": {
+                        "type": "string",
+                        "description": "The inventory name of module; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8015,18 +8328,43 @@
                         ],
                         "description": "The authored policy."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "The graph of a graph policy (name or id)."
                       },
-                      "--reason": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why the policy changes; recorded in the audit."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
-                      "file",
-                      "--reason"
+                      "file"
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "reason"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--reason"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -8304,9 +8642,14 @@
                         ],
                         "description": "The authored policy."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "The graph of a graph policy (name or id)."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8588,9 +8931,14 @@
                         ],
                         "description": "The authored policy."
                       },
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "The graph of a graph policy (name or id)."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -8850,25 +9198,73 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "Graph name or id."
                       },
-                      "--project": {
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "project": {
                         "type": "string",
                         "description": "The project of the caller; without it: no project."
                       },
-                      "--token": {
+                      "--project": {
+                        "type": "string",
+                        "description": "The inventory name of project; never both.",
+                        "deprecated": true
+                      },
+                      "token": {
                         "type": "string",
                         "description": "The name of a token (never the token): a server request with it instead, its project verified; for an admin token the project admin's actions."
                       },
-                      "--action": {
+                      "--token": {
+                        "type": "string",
+                        "description": "The inventory name of token; never both.",
+                        "deprecated": true
+                      },
+                      "action": {
                         "type": "string",
                         "description": "One action, e.g. write.create; without it: every app action."
                       },
-                      "--type": {
+                      "--action": {
+                        "type": "string",
+                        "description": "The inventory name of action; never both.",
+                        "deprecated": true
+                      },
+                      "type": {
                         "type": "string",
                         "description": "Decide on a type of the graph, e.g. files:File."
+                      },
+                      "--type": {
+                        "type": "string",
+                        "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "file": {
+                        "type": "object",
+                        "properties": {
+                          "upload": {
+                            "type": "string",
+                            "pattern": "^sha256:[0-9a-f]{64}$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "upload",
+                          "name"
+                        ],
+                        "description": "Explain an authored policy instead of the installed one."
                       },
                       "--file": {
                         "type": "object",
@@ -8891,11 +9287,26 @@
                           "upload",
                           "name"
                         ],
-                        "description": "Explain an authored policy instead of the installed one."
+                        "description": "The inventory name of file; never both.",
+                        "deprecated": true
                       }
                     },
-                    "required": [
-                      "--graph"
+                    "required": [],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "graph"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--graph"
+                            ]
+                          }
+                        ]
+                      }
                     ]
                   },
                   "actor": {
@@ -9148,9 +9559,14 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "--graph": {
+                      "graph": {
                         "type": "string",
                         "description": "The graph of a graph policy (name or id)."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": []
@@ -9395,15 +9811,25 @@
                         "type": "string",
                         "description": "Token name: lowercase letters, digits, _ . -"
                       },
-                      "--project": {
+                      "project": {
                         "type": "string",
                         "description": "Bind the token to a project: requests then act for it, verified; an admin token then maintains only the graphs the project's scope says maintain for."
                       },
-                      "--expires": {
+                      "--project": {
+                        "type": "string",
+                        "description": "The inventory name of project; never both.",
+                        "deprecated": true
+                      },
+                      "expires": {
                         "type": "string",
                         "description": "Last valid day, YYYY-MM-DD (UTC)."
                       },
-                      "--scope": {
+                      "--expires": {
+                        "type": "string",
+                        "description": "The inventory name of expires; never both.",
+                        "deprecated": true
+                      },
+                      "scope": {
                         "type": "string",
                         "enum": [
                           "app",
@@ -9411,9 +9837,23 @@
                         ],
                         "description": "app: the graph commands of the API; admin: the graph-admin commands."
                       },
-                      "--reason": {
+                      "--scope": {
+                        "type": "string",
+                        "enum": [
+                          "app",
+                          "admin"
+                        ],
+                        "description": "The inventory name of scope; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
                         "type": "string",
                         "description": "Why; recorded in the audit."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [
@@ -9911,9 +10351,14 @@
                         "type": "string",
                         "description": "Token name: lowercase letters, digits, _ . -"
                       },
-                      "--reason": {
+                      "reason": {
                         "type": "string",
                         "description": "Why; recorded in the audit."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
                       }
                     },
                     "required": [

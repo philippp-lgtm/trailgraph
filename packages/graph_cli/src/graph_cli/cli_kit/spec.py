@@ -44,6 +44,12 @@ Kind = Literal["read", "write", "meta"]
 Remote = Literal["server", "hooked", "client", "local"]
 SERVED: Final = ("server", "hooked")  # the remote values the server runs
 Surface = Literal["model", "retrieve", "act", "trace", "meta"]
+# B14.22 G6: the structured form of a pair parameter (``name=value`` repeated). ``map``: a
+# name at most once, ``{name: value}``; ``multimap``: a name may repeat, ``{name: [value]}``.
+Pairs = Literal["map", "multimap"]
+# How a structured pair value becomes the text after ``=``: ``text`` takes a string, number
+# or boolean; ``json`` takes any JSON value and writes it as JSON.
+PairValues = Literal["text", "json"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,11 +64,20 @@ class ParamSpec:
     default: JsonValue = None
     keyword: str | None = None  # the handler's keyword when the name would clash
     must_exist: bool = False  # a file or directory that must exist (a usage error otherwise)
+    pairs: Pairs | None = None
+    pair_values: PairValues | None = None  # default: json for json_assignment, else text
 
     @property
     def dest(self) -> str:
         """The handler's keyword argument."""
         return self.keyword or self.name.lstrip("-").replace("-", "_")
+
+    @property
+    def pair_encoding(self) -> PairValues:
+        """How a structured value of this pair parameter becomes text (B14.22 G6)."""
+        if self.pair_values is not None:
+            return self.pair_values
+        return "json" if self.type == "json_assignment" else "text"
 
     def to_json(self) -> dict[str, JsonValue]:
         data: dict[str, JsonValue] = {
@@ -76,6 +91,9 @@ class ParamSpec:
             data["choices"] = list(self.choices)
         if self.default is not None:
             data["default"] = self.default
+        if self.pairs is not None:
+            data["pairs"] = self.pairs
+            data["pair_values"] = self.pair_encoding
         return data
 
 
