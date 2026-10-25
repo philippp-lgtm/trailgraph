@@ -195,3 +195,16 @@ def test_stale_sockets_are_removed(directory: Path) -> None:
         assert live.path.exists()
     finally:
         live.close()
+
+
+def test_a_socket_that_cannot_be_protected_is_not_left_behind(
+    directory: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(path: object, mode: int) -> None:
+        if str(path).endswith(".sock"):
+            raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr("graph_cli.catalog.activity.os.chmod", refuse)
+    with pytest.raises(OSError):
+        ActivityListener.open(directory)
+    assert list(directory.iterdir()) == []

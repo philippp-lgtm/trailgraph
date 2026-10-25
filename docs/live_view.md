@@ -34,8 +34,10 @@ server's `config.toml` needs `signal_reads` and the view must run next to
 it, with the same state directory (in the container: `docker compose
 exec`).
 
-A Unix socket path is limited to about 100 bytes; with a
-very long state directory the view starts without reads and says so.
+The view binds its socket in `<state>/graph_cli/activity/`. A Unix socket
+path is limited to about 100 bytes, and some shared mounts refuse socket
+files; then the view starts without reads and says why. In a container
+whose state is such a mount, put that one directory on a `tmpfs`.
 
 ### Trail
 
@@ -53,7 +55,9 @@ The server listens on `127.0.0.1` and answers only requests that
 carry the random token in the printed address, so keep the address to
 yourself. `--host` binds another address, for a view inside a container
 whose port is published to `127.0.0.1` on the host; requests must then still
-name `127.0.0.1` or `localhost` (any port) and carry the token. The graph itself carries labels, types, aliases and record
+name `127.0.0.1` or `localhost` (any port) and carry the token. The printed
+address names the port inside the container: open the published port with
+the same token. The graph itself carries labels, types, aliases and record
 status only.
 
 ## Using the view

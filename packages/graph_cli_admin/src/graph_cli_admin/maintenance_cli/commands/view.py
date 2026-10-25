@@ -54,10 +54,12 @@ def view_command(
     source = view.open_view(ctx, graph_ref=graph_ref)
     state.warnings += source.warnings
     listener: ActivityListener | None = None
+    no_reads = ""  # why the activity socket cannot be bound
     if ctx.config.signal_reads:
         try:
             listener = ActivityListener.open(source.activity_dir)
         except OSError as exc:
+            no_reads = f"{exc.strerror or exc} in {source.activity_dir}"
             state.warnings.append(
                 WarningRecord(
                     "admin.view_reads_unavailable",
@@ -91,8 +93,10 @@ def view_command(
                 " to 127.0.0.1 only.",
                 err=True,
             )
-        if ctx.config.signal_reads and listener is None:
-            click.echo("Reads are not shown: the activity socket cannot be bound.", err=True)
+        if no_reads:  # the warnings print only when the view stops
+            click.echo(
+                f"Reads are not shown: the activity socket cannot be bound ({no_reads}).", err=True
+            )
         click.echo("Press Ctrl+C to stop.", err=True)
         if not no_open:
             webbrowser.open(server.url)

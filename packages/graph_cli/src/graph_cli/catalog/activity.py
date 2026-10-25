@@ -187,9 +187,14 @@ class ActivityListener:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, RECEIVE_BUFFER)
             sock.bind(str(path))
-            os.chmod(path, 0o600)
         except OSError:
             sock.close()
+            raise
+        try:
+            os.chmod(path, 0o600)  # fails on some shared mounts (virtiofs: EINVAL)
+        except OSError:
+            sock.close()
+            path.unlink(missing_ok=True)
             raise
         return cls(sock, path)
 
