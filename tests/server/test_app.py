@@ -15,8 +15,10 @@ from support.admin import admin, init
 from support.app import create_graph
 from support.files import synthetic_pdf
 from support.fixtures import FIXTURES
+from support.openapi import answer_validator, app_document
 from support.server import actor_header, call, grant_server, new_token
 
+from graph_cli import __version__
 from graph_cli.kernel.canonical import hash_bytes
 from graph_cli.kernel.ports.catalog import skill_hash
 from graph_cli.skills.tree import read_tree
@@ -213,6 +215,41 @@ def test_inventory_and_openapi(
     assert not [p for p in paths if p.startswith("/v1/commands/skills")]
     schema = paths["/v1/commands/create"]["post"]["requestBody"]["content"]["application/json"]
     assert schema["schema"]["properties"]["args"]["required"] == ["type"]
+
+
+def test_answers_match_the_openapi_document(
+    run_cli: CliRunner, served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """B14.22 G4: the served document is the one the goldens hold, and real answers fit
+    the response of their status, closed (the routes that are no command included)."""
+    app, _ = served
+    token = installation["tokens"]["ci"]
+    document = call(app, "GET", "/v1/openapi.json", token=token).json
+    assert document == app_document(__version__)
+
+    def check(path: str, method: str, reply: Any) -> None:
+        responses = document["paths"][path][method]["responses"]
+        status = str(reply.status) if str(reply.status) in responses else "default"
+        validator = answer_validator(document, path, method, status)
+        assert not [e.message for e in validator.iter_errors(reply.json)], (path, reply.json)
+
+    pointer = {"graphs": ["example_graph"], "default": "example_graph"}
+    check("/v1/health", "get", call(app, "GET", "/v1/health"))
+    check("/v1/uploads", "put", call(app, "PUT", "/v1/uploads", token=token, raw=b"x"))
+    created = command(app, "create", token, args=LOCATION, pointer=pointer)
+    assert created.status == 200, created.json
+    check("/v1/commands/create", "post", created)
+    missing = command(app, "get", token, args={"ref": "deadbeefdeadbeef"}, pointer=pointer)
+    assert missing.status == 404, missing.json
+    check("/v1/commands/get", "post", missing)
+    malformed = command(app, "get", token, args={})
+    assert malformed.error["code"] == "usage.missing_argument"  # undeclared: under 400
+    check("/v1/commands/get", "post", malformed)
+    published = admin(run_cli, "graph", "skill", "publish", "example_graph", str(GRAPH_SKILL))
+    assert published.code == 0, published.envelope
+    skill = call(app, "POST", "/v1/graphs/example_graph/skill", token=token, body={})
+    assert skill.status == 200, skill.json
+    check("/v1/graphs/{graph}/skill", "post", skill)
 
 
 def test_upload_then_apply(

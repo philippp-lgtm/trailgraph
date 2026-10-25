@@ -97,13 +97,23 @@ placeholders outside `<graph> <type> <id> <attr> <value> <relation>
 <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
 skill names no graph type.
 
+The OpenAPI documents of the server are generated from the inventories with
+output schemas and kept as goldens (`tests/goldens/server/`), so every API
+change shows as a diff. A change to a command the server runs (its
+parameters, errors or `output`) or to a shared definition changes them;
+regenerate and review:
+
+```sh
+GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/unit/server/test_openapi.py
+```
+
 ## Tests
 
 | Kind | Where | What |
 | --- | --- | --- |
 | unit | `tests/unit/` | modules in isolation |
 | contract | `tests/contract/` | the storage ports and the write service on every backend and both toy ontologies; the seeds |
-| golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts |
+| golden | `tests/goldens/` | frozen on-disk formats and compiled artifacts; the OpenAPI documents of the server (`tests/unit/server/test_openapi.py` also runs `openapi-spec-validator` on them) |
 | crash | `tests/crash/` | `kill -9` of a child process at every named fault point, for storage commits and for the write service with a retry; interrupted maintenance operations |
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |

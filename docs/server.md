@@ -163,6 +163,17 @@ exist on the server: upload the input instead. Over the API `file path`
 answers `path: null`; the bytes come from the file endpoint. `?render=text`
 answers `{envelope, stdout, stderr}`, the text `graph` would print.
 
+`GET /v1/openapi.json` describes every route above except `/v1/dist/` and
+`/v1/enroll`. A command's answer `200` is the envelope with that command's
+`data`, the schema `graph describe commands --output-schemas` declares; for
+every status the command's declared error codes reach there is one response
+that lists them in `x-graph-cli-error-codes`, and `default` covers every
+other error answer (such as a malformed body). Schemas shared by several
+commands are in `components.schemas` under their names in the inventory's
+`$defs`; a command's `data` is `<operationId>_data`, the operation id being
+the command path joined with `_` (`describe_types_data`). The document is
+open like the inventory: a client ignores keys it does not know.
+
 Browsers may call the API from the origins listed in `[server]
 cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
@@ -275,7 +286,7 @@ audit and file maintenance. Off (the default), every `/v1/admin/` path is
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/admin/inventory` | the `graph-admin` inventory, as the API takes it |
-| `GET /v1/admin/openapi.json` | an OpenAPI 3.1 document of the admin API |
+| `GET /v1/admin/openapi.json` | an OpenAPI 3.1 document of the admin API, built like the [app document](#api) |
 | `POST /v1/admin/commands/{path}` | run a `graph-admin` command (`{"args": {...}, "actor": {...}}`) |
 
 An admin request acts through the entrypoint `maint` with the token's

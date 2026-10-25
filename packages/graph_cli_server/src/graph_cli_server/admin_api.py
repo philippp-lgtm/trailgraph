@@ -127,7 +127,10 @@ class AdminApi:
         if parts == ["openapi.json"]:
             server._method(method, "GET")
             document = openapi(
-                inventory(self.declared), version=__version__, commands=COMMANDS, admin=True
+                inventory(self.declared, output_schemas=True),
+                version=__version__,
+                commands=COMMANDS,
+                admin=True,
             )
             return _json(200, document)
         if len(parts) > 1 and parts[0] == "commands":

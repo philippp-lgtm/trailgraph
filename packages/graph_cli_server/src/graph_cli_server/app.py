@@ -62,6 +62,7 @@ from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
 from graph_cli_server.dist import DIST_ENV, Served, load
+from graph_cli_server.http_status import status_for
 from graph_cli_server.openapi import API_VERSION, openapi
 from graph_cli_server.uploads import DIGEST_RE, Uploads, link_name
 
@@ -71,16 +72,6 @@ CLIENT: Final = ClientInfo(SERVER_PROGRAM, __version__, Entrypoint.SERVER)
 VERSION_HEADER: Final = "Graph-Cli-Version"
 EXIT_HEADER: Final = "Graph-Cli-Exit-Code"
 ACTOR_HEADER: Final = "HTTP_GRAPH_CLI_ACTOR"
-STATUS_BY_CATEGORY: Final[Mapping[ErrorCategory, int]] = {
-    ErrorCategory.USAGE: 400,
-    ErrorCategory.DENIED: 403,
-    ErrorCategory.NOT_FOUND: 404,
-    ErrorCategory.CONFLICT: 409,
-    ErrorCategory.REFUSED: 422,
-    ErrorCategory.INVALID: 422,
-    ErrorCategory.UNAVAILABLE: 503,
-    ErrorCategory.INTERNAL: 500,
-}
 CORS_METHODS: Final = "GET, POST, PUT"
 CORS_HEADERS: Final = (
     "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Skills,"
@@ -273,7 +264,8 @@ class ServerApp:
             return _json(200, self._inventory())
         if parts == ["v1", "openapi.json"]:
             self._method(method, "GET")
-            return _json(200, openapi(self._inventory(), version=__version__))
+            document = openapi(inventory(all_specs(), output_schemas=True), version=__version__)
+            return _json(200, document)
         if len(parts) > 2 and parts[1] == "commands":
             spec = self.specs.get("/".join(parts[2:]))
             if spec is None:
@@ -757,10 +749,7 @@ def status_of(document: Mapping[str, JsonValue]) -> tuple[int, int]:
     if not isinstance(error, Mapping):
         return 200, EXIT_OK
     category = ErrorCategory(str(error.get("category")))
-    status = STATUS_BY_CATEGORY[category]
-    if error.get("code") == "remote.unauthorized":
-        status = 401
-    return status, exit_code_for(category)
+    return status_for(str(error.get("code")), category), exit_code_for(category)
 
 
 def _without_server_path(outcome: Outcome) -> Outcome:

@@ -23,9 +23,11 @@ from support.admin import admin, init
 from support.app import create_graph
 from support.equivalence import differences, home_env, normalized
 from support.fixtures import FIXTURES, ONTOLOGIES
+from support.openapi import admin_document
 from support.serve import client_env, graph_server
 from support.server import SERVER_POLICY, call, grant_server, new_token
 
+from graph_cli import __version__
 from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_server.admin_api import AdminApi
 from graph_cli_server.app import ServerApp, Settings
@@ -367,7 +369,9 @@ def test_no_request_names_a_path_on_the_server(
     inventory = call(app, "GET", "/v1/admin/inventory", token=root).json
     options = {o["name"] for c in inventory["commands"] for o in c["options"]}
     assert "--data-root" not in options
-    paths = call(app, "GET", "/v1/admin/openapi.json", token=root).json["paths"]
+    document = call(app, "GET", "/v1/admin/openapi.json", token=root).json
+    assert document == admin_document(__version__)  # what the golden holds
+    paths = document["paths"]
     assert "/v1/admin/commands/ontology/release" in paths
     assert not {"/v1/admin/commands/init", "/v1/admin/commands/view"} & set(paths)
     assert "/v1/admin/commands/ontology/validate" not in paths

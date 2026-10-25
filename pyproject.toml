@@ -12,6 +12,7 @@ dev = [
     "import-linter>=2.1",
     "jsonschema>=4.23",
     "mypy>=1.11",
+    "openapi-spec-validator>=0.9",
     "pytest>=8.3",
     "ruff>=0.6",
     "types-pyyaml>=6.0",
@@ -92,6 +93,7 @@ name = "Only the server's admin API and enrollment import the maintenance distri
 type = "forbidden"
 source_modules = [
     "graph_cli_server.app",
+    "graph_cli_server.http_status",
     "graph_cli_server.openapi",
     "graph_cli_server.uploads",
 ]
