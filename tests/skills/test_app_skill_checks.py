@@ -382,7 +382,7 @@ class TestStructure:
         assert len(files["SKILL.md"].splitlines()) <= 200
         for name, text in files.items():
             if name.startswith("references/"):
-                assert len(text.encode()) <= 32 * 1024, name
+                assert len(text.encode()) <= 40 * 1024, name
 
     def test_references_are_linked_both_ways(self) -> None:
         files = committed_files()

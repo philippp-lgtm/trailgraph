@@ -28,8 +28,9 @@ environment variable and the configured file roots.
 
 In remote mode (``[runtime] mode = "remote"``) there is no local context:
 ``remote`` builds the command's ``RemoteSession`` instead, with the token
-(``GRAPH_CLI_TOKEN``, else ``[remote] token_file``), the asserted facets of
-this process and the pointer as seen from the working directory (B14.10).
+(``GRAPH_CLI_TOKEN``, else the one stored for the pointer's project, else
+``[remote] token_file``), the asserted facets of this process and the
+pointer as seen from the working directory (B14.10, B14.21).
 """
 
 from __future__ import annotations
@@ -76,6 +77,7 @@ from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
 if TYPE_CHECKING:
+    from graph_cli.catalog.endpoint import Endpoint
     from graph_cli.catalog.remote import RemoteSession
     from graph_cli.services.files import FileService, Origins
     from graph_cli.services.write import WriteService
@@ -345,7 +347,7 @@ class AppServices:
             )
         client = RemoteClient(
             endpoint,
-            self._token(config),
+            self._token(config, endpoint, pointer),
             timeout_s=config.remote_timeout_s,
             version=__version__,
             program=PROGRAM,
@@ -366,17 +368,20 @@ class AppServices:
             warnings,
         )
 
-    def _token(self, config: Config) -> str:
-        """``GRAPH_CLI_TOKEN``, else the token file, which nobody else may read."""
-        from graph_cli.catalog.remote import read_token
+    def _token(self, config: Config, endpoint: Endpoint, pointer: PointerFile | None) -> str:
+        """``GRAPH_CLI_TOKEN``, else the token ``graph connect`` stored for this server and
+        the pointer's project, else the token file; nobody else may read a token file."""
+        from graph_cli.catalog.remote import APP_TOKEN_FILE, project_token_path, read_token
 
         file = self.path(config.token_file) if config.token_file is not None else None
+        project = pointer.project if pointer is not None else None
         return read_token(
             self.env.get(TOKEN_ENV),
             file,
             config=config.path,
             key="remote.token_file",
             hint="set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token",
+            project_file=project_token_path(config.path, endpoint, project, APP_TOKEN_FILE),
         )
 
     def spill_config(self) -> Config:

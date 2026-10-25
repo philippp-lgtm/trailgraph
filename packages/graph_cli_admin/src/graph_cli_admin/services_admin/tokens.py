@@ -119,9 +119,9 @@ def create(
         )
         registry.replace_tokens(tokens_document([*records, record]), receipt)
     if scope == ADMIN_SCOPE:
-        warnings = () if _maintains(ctx, record) else (_not_maintainer(record),)
+        warnings = () if maintains_any(ctx, record) else (_not_maintainer(record),)
     else:
-        warnings = () if _granted(ctx, record) else (_not_granted(name),)
+        warnings = () if granted(ctx, record) else (_not_granted(name),)
     data: dict[str, JsonValue] = {**_listed(record, today), "token": secret}
     text = f"Token {name} created. It is shown only now; keep it secret:\n{secret}\n"
     return Outcome(data, warnings, text)
@@ -183,7 +183,8 @@ def server_actor(record: TokenRecord, version: str) -> ActorContext:
     )
 
 
-def _granted(ctx: AdminContext, record: TokenRecord) -> bool:
+def granted(ctx: AdminContext, record: TokenRecord) -> bool:
+    """Whether the installed policy grants a request with this token a level on any graph."""
     actor = server_actor(record, ctx.actor.client.version)
     graphs = ctx.catalog.list_graphs()
     if not graphs:
@@ -192,7 +193,8 @@ def _granted(ctx: AdminContext, record: TokenRecord) -> bool:
     return any(graph_level(actor, g.id, ctx.policy.current(g.id)) != "none" for g in graphs)
 
 
-def _maintains(ctx: AdminContext, record: TokenRecord) -> bool:
+def maintains_any(ctx: AdminContext, record: TokenRecord) -> bool:
+    """Whether an admin token may maintain: a project admin any graph, else the installation."""
     actor = server_actor(record, ctx.actor.client.version)
     if record.project is not None:
         return any(

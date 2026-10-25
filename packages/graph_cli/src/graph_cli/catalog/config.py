@@ -3,8 +3,9 @@
 Reading follows V.3/V.4: an unknown ``format_version`` is
 ``format.unsupported_version``, unknown keys are warnings
 (``config.unknown_key``), any other defect is ``config.invalid`` naming the
-key. A missing file is the default configuration. Only ``graph-admin init``
-writes the file, and only when it does not exist yet.
+key. A missing file is the default configuration. ``graph-admin init``
+writes the file only when it does not exist yet; ``graph connect`` creates
+it or sets only ``[runtime] mode`` and ``endpoint`` in it (``remote_config``).
 """
 
 from __future__ import annotations
@@ -269,6 +270,65 @@ def format_new_config(
     if data_root is not None:
         tables.append(("paths", [("data_root", data_root)]))
     return dumps(tables).encode()
+
+
+_RUNTIME_HEADER: Final = re.compile(r"^\s*\[\s*runtime\s*\]\s*(#.*)?$")
+_ANY_HEADER: Final = re.compile(r"^\s*\[")
+_RUNTIME_KEY: Final = re.compile(r"^\s*(mode|endpoint)\s*=")
+
+
+def remote_config(data: bytes | None, *, path: Path, endpoint: str, device_id: str) -> bytes:
+    """The config file with ``[runtime] mode = "remote"`` and ``endpoint`` (``graph connect``,
+    B14.21). Without a file: a new one with ``device_id``. An existing file is edited in place,
+    its other lines and comments kept, and the edit is checked by reading the file again:
+    when it would change anything else, ``config.invalid`` asks for the edit by hand."""
+    if data is None:
+        tables: list[TomlTable] = [
+            (None, [("format_version", CONFIG_FORMAT)]),
+            ("device", [("id", device_id)]),
+            ("runtime", [("mode", "remote"), ("endpoint", endpoint)]),
+        ]
+        return dumps(tables).encode()
+    try:
+        text = data.decode()
+        before = tomllib.loads(text)
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise _invalid(path, "", f"is not valid TOML: {exc}") from None
+    runtime = before.get("runtime", {})
+    if not isinstance(runtime, dict):
+        raise _invalid(path, "runtime", "must be a table")
+    wanted = {
+        "mode": dumps([(None, [("mode", "remote")])]),
+        "endpoint": dumps([(None, [("endpoint", endpoint)])]),
+    }
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, line in enumerate(lines) if _RUNTIME_HEADER.match(line)), None)
+    if start is None:
+        lines.append(("" if not lines or lines[-1].endswith("\n") else "\n") + "\n[runtime]\n")
+        lines += [wanted["mode"], wanted["endpoint"]]
+    else:
+        end = next(
+            (i for i in range(start + 1, len(lines)) if _ANY_HEADER.match(lines[i])), len(lines)
+        )
+        missing = dict(wanted)
+        for index in range(start + 1, end):
+            found = _RUNTIME_KEY.match(lines[index])
+            if found is not None and found.group(1) in missing:
+                lines[index] = missing.pop(found.group(1))
+        lines[start + 1 : start + 1] = list(missing.values())
+    edited = "".join(lines)
+    expected = {**before, "runtime": {**runtime, "mode": "remote", "endpoint": endpoint}}
+    try:
+        if tomllib.loads(edited) == expected:
+            return edited.encode()
+    except tomllib.TOMLDecodeError:
+        pass
+    raise _invalid(
+        path,
+        "runtime",
+        f'cannot be edited safely; set mode = "remote" and endpoint = "{endpoint}" in its'
+        " [runtime] table by hand",
+    )
 
 
 def _has_type(value: object, kind: type | tuple[type, ...]) -> bool:

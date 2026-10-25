@@ -15,10 +15,11 @@ always the server's own (B14.15).
 
 A host whose config says ``mode = "remote"`` keeps no data: the commands
 the server runs go to its admin API (``remote`` builds the command's
-``RemoteSession`` with ``GRAPH_CLI_ADMIN_TOKEN``, else ``[remote]
-admin_token_file``); every other command that opens the data root is
-refused there (``admin.remote_mode``, B14.13), so no second writer appears
-by accident.
+``RemoteSession`` with ``GRAPH_CLI_ADMIN_TOKEN``, else the admin token
+``graph connect`` stored for the project of the pointer found from the
+working directory, else ``[remote] admin_token_file``); every other command
+that opens the data root is refused there (``admin.remote_mode``, B14.13),
+so no second writer appears by accident.
 """
 
 from __future__ import annotations
@@ -111,7 +112,14 @@ class Services:
         import graph_cli_admin
         from graph_cli.catalog.build import read_build
         from graph_cli.catalog.endpoint import parse_endpoint
-        from graph_cli.catalog.remote import RemoteClient, RemoteSession, read_token
+        from graph_cli.catalog.pointer import find_pointer
+        from graph_cli.catalog.remote import (
+            ADMIN_TOKEN_FILE,
+            RemoteClient,
+            RemoteSession,
+            project_token_path,
+            read_token,
+        )
         from graph_cli.catalog.wiring import asserted_facets
 
         config, config_warnings = self.config()
@@ -129,12 +137,16 @@ class Services:
                 )
             )
         file = config.admin_token_file
+        pointer, pointer_warnings = find_pointer(self.cwd)
+        warnings += pointer_warnings
+        project = pointer.project if pointer is not None else None
         token = read_token(
             self.env.get(ADMIN_TOKEN_ENV),
             self._path(file) if file is not None else None,
             config=config.path,
             key="remote.admin_token_file",
             hint=TOKEN_HINT,
+            project_file=project_token_path(config.path, endpoint, project, ADMIN_TOKEN_FILE),
         )
         client = RemoteClient(
             endpoint,

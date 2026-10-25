@@ -378,14 +378,35 @@ def _is_size(value: JsonValue) -> bool:
 
 
 def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
-    """B14.11: a token event names the token and a 16-hex prefix of its hash; a created
-    token also its project and expiry (each possibly null), an admin token its scope."""
+    """B14.11, B14.21: a token event names the token and a 16-hex prefix of its hash; a
+    created token also its project and expiry (each possibly null), an admin token its
+    scope. An enrollment event names the code by id and hash prefix instead; a created
+    code also its project, scope and expiry. An exchange creates a token and names the
+    enrollment it used: both."""
     created = "maint.token_create" in actions
+    entries = change if isinstance(change, Mapping) else {}
+    token, enrollment = entries.get("token"), entries.get("enrollment")
+    problems = []
+    if (token is not None or enrollment is None) and not _is_token_change(token, created):
+        shown = "name, hash_prefix, project, expires[, scope]" if created else "name, hash_prefix"
+        problems.append(f"a token event needs change.token{{{shown}}}")
+    if enrollment is not None and not _is_enrollment_change(enrollment, created and token is None):
+        shown = (
+            "id, hash_prefix, project, scope, expires_at"
+            if created and token is None
+            else "id, hash_prefix"
+        )
+        problems.append(f"an enrollment event needs change.enrollment{{{shown}}}")
+    if token is not None and enrollment is not None and not created:
+        problems.append("only an exchange (maint.token_create) names a token and an enrollment")
+    return problems
+
+
+def _is_token_change(token: JsonValue, created: bool) -> bool:
     keys = {"name", "hash_prefix", *(("project", "expires") if created else ())}
-    token = change.get("token") if isinstance(change, Mapping) else None
     if created and isinstance(token, Mapping) and "scope" in token:
         keys.add("scope")
-    if not (
+    return (
         isinstance(token, Mapping)
         and set(token) == keys
         and token.get("scope", "admin") == "admin"
@@ -393,10 +414,18 @@ def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
         and isinstance(token["hash_prefix"], str)
         and _TOKEN_PREFIX_RE.match(token["hash_prefix"]) is not None
         and all(token.get(k) is None or isinstance(token[k], str) for k in ("project", "expires"))
-    ):
-        shown = "name, hash_prefix, project, expires[, scope]" if created else "name, hash_prefix"
-        return [f"a token event needs change.token{{{shown}}}"]
-    return []
+    )
+
+
+def _is_enrollment_change(enrollment: JsonValue, created: bool) -> bool:
+    keys = {"id", "hash_prefix", *(("project", "scope", "expires_at") if created else ())}
+    return (
+        isinstance(enrollment, Mapping)
+        and set(enrollment) == keys
+        and all(isinstance(enrollment[k], str) for k in keys)
+        and _TOKEN_PREFIX_RE.match(str(enrollment["hash_prefix"])) is not None
+        and enrollment.get("scope", "app") in ("app", "admin")
+    )
 
 
 def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:

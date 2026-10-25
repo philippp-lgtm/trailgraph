@@ -14,7 +14,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.index` | the disposable index: building and updating it, binding it to the tx log, the read view over it |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
-| `storage.files.token_files` | the token file `tokens/tokens.json` of the server API, read lock-free, replaced by one rename under the registry lock |
+| `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 

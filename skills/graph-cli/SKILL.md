@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:637c89503507168ad32f51ac537d40a97895510609ad46f86b0e50af2a414417"
+  inventory_hash: "sha256:7175b94f0d18d052da3c38dac99f4a01a2989e2da8abeb758cf1dd8e8d073710"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.1.0.dev0"
@@ -28,7 +28,7 @@ against it and audited. The CLI is on `PATH`.
 - Run each call as a plain command that starts with `graph`: no `cd`,
   variables, loops, pipes or heredocs, which a restricted harness refuses.
   If a call is refused, run it again in that form before you give up.
-- Reads never change anything. `graph skills` and `graph self update`
+- Reads never change anything. `graph skills`, `self update` and `connect`
   install agent skills such as this one, and the program: run them only
   when the user asks. `graph skills check` and `--check` only read.
 
@@ -38,10 +38,9 @@ against it and audited. The CLI is on `PATH`.
    one with `--graph <graph>` on every command. A project may preset a
    default; use it unless the user names another graph.
 2. Learn the model: `graph describe types --json`, then
-   `graph describe type <type> --json`: fields with datatype, enum
-   `values`, `limits` and `role`; relations with their `qualifiers` (values
-   on the edge); lifecycles with states, transitions and the `guards` a
-   dry run checks.
+   `graph describe type <type> --json`: fields with datatype, enum `values`,
+   `limits` and `role`; relations with their `qualifiers` (values on the edge);
+   lifecycles with states, transitions and the `guards` a dry run checks.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is
@@ -145,6 +144,7 @@ Every `--json` call prints one JSON object on stdout.
 | Command | Kind | Summary |
 |---|---|---|
 | `graph apply` | write | Apply change set documents (JSON or JSONL) from a file or stdin. |
+| `graph connect` | meta | Set up this machine and a folder for a server, from a one-time enrollment code. |
 | `graph create` | write | Create one entity of a type. |
 | `graph describe commands` | meta | Describe every command of this program (graph_cli.inventory/1). |
 | `graph describe fields` | read | List the fields of one type with datatypes and limits. |

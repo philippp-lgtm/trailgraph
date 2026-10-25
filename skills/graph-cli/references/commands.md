@@ -29,6 +29,30 @@ Usage: `graph apply FILE [OPTIONS]`
 | `graph apply <file> --dry-run --json` | Check a file without writing. |
 | `graph apply <file> --summary --json` | Apply a large file, findings without the list. |
 
+## graph connect
+
+Set up this machine and a folder for a server, from a one-time enrollment code.
+
+Kind: meta. Surface: meta. Action: none. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph connect ENDPOINT [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `endpoint` | string | yes | no | The server's URL: https://, or http:// to this machine. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--code` | string | yes | no | The one-time code the maintainer gave you. |
+| `--dir` | directory | no | no | The folder to set up; default: the working one. |
+| `--label` | string | no | no | The new token is named after the project and this label; default: the host name. |
+| `--force` | flag | no | no | Replace another endpoint in config.toml, and a stored token. |
+
+| Example | Summary |
+|---|---|
+| `graph connect <value> --code <value>` | Set up the working folder. |
+| `graph connect <value> --code <value> --dir <value>` | Another folder. |
+
 ## graph create
 
 Create one entity of a type.

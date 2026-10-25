@@ -6,7 +6,16 @@ from graph_cli.cli_kit.spec import CommandSpec
 
 
 def all_specs() -> tuple[CommandSpec, ...]:
-    from graph_cli.app_cli.commands import apply, files, meta, read, self_update, skills, write
+    from graph_cli.app_cli.commands import (
+        apply,
+        connect,
+        files,
+        meta,
+        read,
+        self_update,
+        skills,
+        write,
+    )
 
     return (
         *meta.SPECS,
@@ -16,4 +25,5 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *files.SPECS,
         *skills.SPECS,
         *self_update.SPECS,
+        *connect.SPECS,
     )

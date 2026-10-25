@@ -384,6 +384,111 @@ def check_tokens(
     return findings
 
 
+ENROLLMENTS_FILE: Final = "tokens/enrollments.json"
+
+
+def check_enrollments(
+    events: Iterable[Mapping[str, JsonValue]],
+    installed: Mapping[str, Mapping[str, JsonValue]] | None,
+) -> list[Finding]:
+    """The enrollment file against the installation stream's enrollment events (B14.21).
+
+    Replaying in seq order: ``maint.token_create`` with ``change.enrollment`` alone lists a
+    code; ``maint.token_revoke`` with it, or an exchange (``maint.token_create`` with
+    ``change.token`` too), removes it. ``installed`` maps each id in the file to
+    ``{hash_prefix, project, scope, expires_at}``; ``None`` when the file cannot be read.
+    A listed code that is not live, or differs, was added by hand or survived an
+    interrupted exchange or revoke (``enrollment_mismatch``); so is an exchange of a code
+    that was not live, of another project or scope, or after the code expired. A live
+    code missing from the file is an interrupted create.
+    """
+    live: dict[str, tuple[JsonValue, Mapping[str, JsonValue]]] = {}
+    findings = []
+    for event in events:
+        change = event.get("change")
+        entry = change.get("enrollment") if _ok(event) and isinstance(change, Mapping) else None
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("id"), str):
+            continue
+        assert isinstance(change, Mapping)
+        enrollment_id = str(entry["id"])
+        if event.get("actions") == [TOKEN_CREATE] and "token" not in change:
+            live[enrollment_id] = (event.get("seq"), entry)
+        elif event.get("actions") == [TOKEN_REVOKE]:
+            live.pop(enrollment_id, None)
+        elif event.get("actions") == [TOKEN_CREATE]:
+            found = live.pop(enrollment_id, None)
+            problem = _exchange_problem(event, change, found[1] if found else None)
+            if problem is not None:
+                findings.append(
+                    _finding(
+                        codes.ENROLLMENT_MISMATCH,
+                        {"stream": INSTALLATION_STREAM, "seq": event.get("seq")},
+                        f"the exchange of enrollment {enrollment_id} {problem}",
+                    )
+                )
+    where: dict[str, JsonValue] = {"stream": INSTALLATION_STREAM, "path": ENROLLMENTS_FILE}
+    if installed is None:
+        return [
+            *findings,
+            _finding(
+                codes.ENROLLMENT_MISMATCH,
+                where,
+                "the enrollment file cannot be read as an enrollment document",
+                actual="unreadable",
+            ),
+        ]
+    keys = ("hash_prefix", "project", "scope", "expires_at")
+    for enrollment_id, item in sorted(installed.items()):
+        actual = {key: item.get(key) for key in keys}
+        found = live.get(enrollment_id)
+        expected = {key: found[1].get(key) for key in keys} if found is not None else None
+        if expected != actual:
+            findings.append(
+                _finding(
+                    codes.ENROLLMENT_MISMATCH,
+                    {**where, "id": enrollment_id},
+                    f"enrollment {enrollment_id} in the enrollment file differs from its events"
+                    " (added by hand, or an exchange or revoke was interrupted: revoke it"
+                    " again)",
+                    expected=expected,
+                    actual=actual,
+                )
+            )
+    for enrollment_id, (seq, _) in sorted(live.items()):
+        if enrollment_id not in installed:
+            findings.append(
+                _finding(
+                    codes.INTENT_WITHOUT_EFFECT,
+                    {"stream": INSTALLATION_STREAM, "seq": seq},
+                    f"enrollment {enrollment_id} was created without reaching the enrollment"
+                    " file (an interrupted create)",
+                )
+            )
+    return findings
+
+
+def _exchange_problem(
+    event: Mapping[str, JsonValue],
+    change: Mapping[str, JsonValue],
+    code: Mapping[str, JsonValue] | None,
+) -> str | None:
+    """Why an exchange event does not follow from its code: the code was not live, or the
+    token it created has another project or scope, or it came after the code expired."""
+    if code is None:
+        return "used a code that was not live (never created, used or revoked before)"
+    token = change.get("token")
+    if not isinstance(token, Mapping):
+        return "names no token"
+    if token.get("project") != code.get("project") or (token.get("scope") or "app") != (
+        code.get("scope") or "app"
+    ):
+        return "created a token of another project or scope than the code's"
+    ts, expires = event.get("ts"), code.get("expires_at")
+    if isinstance(ts, str) and isinstance(expires, str) and ts >= expires:
+        return "came after the code expired"
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class InstallationChange:
     """One installation policy intent of the installation stream (B5.15).

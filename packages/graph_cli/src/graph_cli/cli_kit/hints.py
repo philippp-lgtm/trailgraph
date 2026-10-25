@@ -210,6 +210,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "update.unavailable": None,
     "update.unsupported_install": _manual_install,
     "update.install_failed": None,
+    "connect.refused": None,  # the message says what to change; a hint would echo the code
     "internal.error": None,
 }
 _registered: dict[str, Hint | None] = {}

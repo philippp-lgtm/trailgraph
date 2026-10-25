@@ -255,6 +255,14 @@ class RegistrySession(Protocol):
         """Replace the token file; ``receipt`` is its installation event (B14.11)."""
         ...
 
+    def read_enrollments(self) -> bytes | None:
+        """The enrollment file as stored, under the registry lock (B14.21)."""
+        ...
+
+    def replace_enrollments(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Replace the enrollment file; ``receipt`` is its installation event (B14.21)."""
+        ...
+
     def read_installation_policy(self) -> bytes | None:
         """The installed installation policy as stored; ``None`` without one (B6.14)."""
         ...

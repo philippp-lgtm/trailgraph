@@ -135,6 +135,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "update.unsupported_install", _C.REFUSED, False, "The program cannot replace itself."
     ),
     ErrorSpec("update.install_failed", _C.UNAVAILABLE, False, "The program was not installed."),
+    ErrorSpec("connect.refused", _C.REFUSED, False, "This machine or folder is set up otherwise."),
     ErrorSpec("internal.error", _C.INTERNAL, False, "Internal error."),
     # Warnings never change the exit code.
     ErrorSpec("actor.facet_malformed", _C.WARNING, False, "An identity value was ignored."),

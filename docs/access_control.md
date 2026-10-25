@@ -22,7 +22,12 @@ Requests to the server API have the entrypoint `server`. Their verified
 principal is the bearer token (`token:<name>`); agent, session, device and
 project are asserted by the client in the request. A token bound to a
 project verifies the project: a request naming another project is refused
-(`access.project_mismatch`).
+(`access.project_mismatch`). A token fetched with an enrollment code
+(`graph connect`, [Enrollment](server.md#enrollment)) is always bound to
+the code's project. The exchange itself is no policy decision: the
+maintainer authorized it by creating the code (`maint.token_create`), and
+its event names the enrollment as principal (`enrollment:<id>`, source
+`enrollment`) and decision rule.
 
 Requests to the admin API (`graph-admin` commands over HTTP, an admin
 token) have the entrypoint `maint` and the principal `token:<name>`: the

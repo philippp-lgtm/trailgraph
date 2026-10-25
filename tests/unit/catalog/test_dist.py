@@ -1,4 +1,4 @@
-"""The client side of the origin's programs: ``catalog.dist`` (contracts B14.18).
+"""The client side of the origin's programs: ``catalog.dist`` (contracts B14.18, B14.21).
 
 A fake transport answers the ``/v1/dist/`` routes and a fake installer
 plays ``uv tool install``: it writes the build file the real install would
@@ -17,6 +17,7 @@ import pytest
 from graph_cli.catalog.dist import (
     Installer,
     Manifest,
+    bootstrap,
     parse_manifest,
     program_step,
     tool_env,
@@ -292,3 +293,80 @@ def test_nothing_is_installed_over_plain_http_beyond_loopback(package: Path) -> 
     assert caught.value.code == "update.unsupported_install"
     assert "plain HTTP" in caught.value.message
     assert found.calls == [] and fake.seen == ["/v1/dist/manifest"] * 2
+
+
+@dataclass(frozen=True)
+class FreshInstaller(Installer):
+    """A machine where the program runs from no uv tool (``uvx``): ``uv tool dir --bin``
+    names ``bin_dir``, and an install puts the launcher there."""
+
+    bin_dir: Path = Path()
+    exit_code: int = 0
+    calls: list[tuple[list[str], dict[str, str]]] = field(default_factory=list)
+
+    def uv(self) -> str | None:
+        return "/opt/uv/bin/uv"
+
+    def run(
+        self, argv: Sequence[str], extra: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append((list(argv), dict(extra)))
+        if argv[1:4] == ["tool", "dir", "--bin"]:
+            return subprocess.CompletedProcess(list(argv), 0, f"{self.bin_dir}\n", "")
+        if self.exit_code == 0:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+            program = Path(argv[-3] if "--with" in argv else argv[-1]).name.split("-")[0]
+            launcher = {"graph_cli": "graph", "graph_cli_admin": "graph-admin"}[program]
+            (self.bin_dir / launcher).write_text("")
+        return subprocess.CompletedProcess(list(argv), self.exit_code, "", "error: boom\n")
+
+
+def test_connect_installs_the_program_where_uv_puts_tools(tmp_path: Path) -> None:
+    """Run by uvx (no receipt): uv's default tool directories, the launcher from uv."""
+    found = FreshInstaller({"PATH": "/opt/uv/bin"}, prefix=tmp_path / "uvx", bin_dir=tmp_path / "b")
+    step, launcher = bootstrap(
+        client(),  # type: ignore[arg-type]
+        "graph",
+        state_root=tmp_path / "state",
+        installer=found,
+    )
+    assert step == {"name": "graph", "build": NEW, "server": NEW, "action": "installed"}
+    assert launcher == tmp_path / "b" / "graph"
+    (install, _), (where, _) = found.calls
+    assert install[:5] == ["/opt/uv/bin/uv", "tool", "install", "--reinstall", "--compile-bytecode"]
+    assert where == ["/opt/uv/bin/uv", "tool", "dir", "--bin"]
+    assert all(extra == {} for _, extra in found.calls)
+
+
+def test_connect_installs_graph_admin_next_to_the_running_tool(
+    package: Path, tmp_path: Path
+) -> None:
+    found = FreshInstaller(
+        {"PATH": "/opt/uv/bin"}, prefix=package.parents[2], bin_dir=tmp_path / "bin"
+    )
+    step, launcher = bootstrap(
+        client(),  # type: ignore[arg-type]
+        "graph-admin",
+        state_root=tmp_path / "state",
+        installer=found,
+    )
+    assert step["action"] == "installed" and launcher == tmp_path / "bin" / "graph-admin"
+    ((argv, extra),) = found.calls
+    assert argv[-2] == "--with" and extra == {
+        "UV_TOOL_DIR": str(tmp_path / "tools"),
+        "UV_TOOL_BIN_DIR": str(tmp_path / "bin"),
+    }
+
+
+def test_connect_reports_a_failed_install(tmp_path: Path) -> None:
+    found = FreshInstaller(
+        {"PATH": "/opt/uv/bin"}, prefix=tmp_path / "uvx", bin_dir=tmp_path / "b", exit_code=2
+    )
+    with pytest.raises(GraphCliError) as caught:
+        bootstrap(
+            client(),  # type: ignore[arg-type]
+            "graph",
+            state_root=tmp_path / "state",
+            installer=found,
+        )
+    assert caught.value.code == "update.install_failed" and "exit 2" in caught.value.message

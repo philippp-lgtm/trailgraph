@@ -200,6 +200,7 @@ def test_local_and_remote_answers_are_equal(
         ("skills", "install"),  # emit covers how graph skills arrive; install writes them
         ("skills", "check"),
         ("self", "update"),  # runs skills install and check; run_skills
+        ("connect",),  # sets up a client from a code: tests/cli/test_app_connect.py
     }
     for mine, theirs in zip(normalized(actual), normalized(expected), strict=True):
         assert mine == theirs, differences(mine, theirs)

@@ -298,6 +298,19 @@ def program_step(
         return {**step, "action": "current"}
     if check:
         return {**step, "action": "outdated"}
+    check_transport(client, program)
+    env = tool_env(installer.prefix)
+    if env is None or installer.uv() is None:
+        raise unsupported(client, program, manifest, uv_missing=env is not None)
+    done = install(client, manifest, program, state_root=state_root, installer=installer, env=env)
+    installed = read_build(package_init)
+    if done.returncode != 0 or installed != wheel.build:
+        raise install_failed(program, wheel, done, installed)
+    return {**step, "action": "updated", "build": installed, "previous": current}
+
+
+def check_transport(client: RemoteClient, program: str) -> None:
+    """No program from plain HTTP to another host: the hash comes over the same link."""
     endpoint = client.endpoint
     if endpoint.plain_http and not endpoint.loopback:
         raise GraphCliError(
@@ -306,9 +319,25 @@ def program_step(
             " changed on the way, so it is not installed; use an https endpoint",
             details={"program": program, "command": None, "uv_missing": False},
         )
-    env, uv = tool_env(installer.prefix), installer.uv()
-    if env is None or uv is None:
-        raise unsupported(client, program, manifest, uv_missing=env is not None)
+
+
+def install(
+    client: RemoteClient,
+    manifest: Manifest,
+    program: str,
+    *,
+    state_root: Path,
+    installer: Installer,
+    env: ToolEnv | None,
+) -> subprocess.CompletedProcess[str]:
+    """Fetch ``program``'s wheel, the wheels it needs and the constraints, each hash
+    checked, and run ``uv tool install --reinstall``: into ``env`` (where this process runs
+    from), else into uv's default tool directories."""
+    check_transport(client, program)
+    uv = installer.uv()
+    if uv is None:
+        raise unsupported(client, program, manifest, uv_missing=True)
+    wheel = manifest.programs[program]
     directory = state_root / DIST_DIR
     wheels = [fetch_file(client, wheel.dist, directory)]
     for name in wheel.requires:
@@ -326,25 +355,78 @@ def program_step(
     argv.append(str(wheels[0]))
     for path in wheels[1:]:
         argv += ["--with", str(path)]
+    return installer.run(argv, tool_dirs(env))
+
+
+def tool_dirs(env: ToolEnv | None) -> dict[str, str]:
+    """The environment that makes uv install where ``env`` is; nothing for uv's defaults."""
+    if env is None:
+        return {}
     extra = {"UV_TOOL_DIR": str(env.tool_dir)}
     if env.bin_dir is not None:
         extra["UV_TOOL_BIN_DIR"] = str(env.bin_dir)
-    done = installer.run(argv, extra)
-    installed = read_build(package_init)
-    if done.returncode != 0 or installed != wheel.build:
-        output = (done.stderr or done.stdout or "").strip().splitlines()[-5:]
+    return extra
+
+
+def install_failed(
+    program: str,
+    wheel: Wheel,
+    done: subprocess.CompletedProcess[str],
+    installed: str | None,
+) -> GraphCliError:
+    output = (done.stderr or done.stdout or "").strip().splitlines()[-5:]
+    return GraphCliError(
+        "update.install_failed",
+        f"uv tool install did not install build {short(wheel.build or '')} of {program}"
+        f" (exit {done.returncode}): {' / '.join(output) or 'no output'}",
+        details={
+            "program": program,
+            "exit_code": done.returncode,
+            "installed": installed,
+            "expected": wheel.build,
+        },
+    )
+
+
+def bootstrap(
+    client: RemoteClient,
+    program: str,
+    *,
+    state_root: Path,
+    installer: Installer,
+) -> tuple[dict[str, JsonValue], Path]:
+    """Install ``program`` from the origin for ``graph connect``, also when this process is
+    no uv tool (run by ``uvx``, or installed by pip): into the tool directories this process
+    runs from when it is one, else uv's defaults. Answers the step and the launcher; the
+    launcher's own ``self update`` then compares the build it installed with the server's."""
+    manifest = fetch_manifest(client)
+    wheel = manifest.programs.get(program)
+    if wheel is None or wheel.build is None:
         raise GraphCliError(
-            "update.install_failed",
-            f"uv tool install did not install build {short(wheel.build)} of {program}"
-            f" (exit {done.returncode}): {' / '.join(output) or 'no output'}",
-            details={
-                "program": program,
-                "exit_code": done.returncode,
-                "installed": installed,
-                "expected": wheel.build,
-            },
+            "update.unavailable",
+            f"the server at {client.endpoint.display} hands out no {program}",
+            details={"program": program, "endpoint": client.endpoint.display},
         )
-    return {**step, "action": "updated", "build": installed, "previous": current}
+    env = tool_env(installer.prefix)
+    done = install(client, manifest, program, state_root=state_root, installer=installer, env=env)
+    if done.returncode != 0:
+        raise install_failed(program, wheel, done, None)
+    bin_dir = env.bin_dir if env is not None else None
+    if bin_dir is None:
+        uv = installer.uv()
+        found = installer.run([uv or "uv", "tool", "dir", "--bin"], tool_dirs(env))
+        text = found.stdout.strip() if found.returncode == 0 else ""
+        bin_dir = Path(text) if text else None
+    launcher = bin_dir / program if bin_dir is not None else None
+    if launcher is None or not launcher.exists():
+        raise install_failed(program, wheel, done, None)
+    step: dict[str, JsonValue] = {
+        "name": program,
+        "build": wheel.build,
+        "server": wheel.build,
+        "action": "installed",
+    }
+    return step, launcher
 
 
 def unsupported(

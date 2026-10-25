@@ -44,6 +44,10 @@ def _token_list(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} token list"
 
 
+def _enroll_list(details: Mapping[str, JsonValue], program: str) -> str | None:
+    return f"{program} enroll list"
+
+
 ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.model_invalid": None,
     "admin.version_bump_insufficient": None,
@@ -61,6 +65,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.remote_mode": None,  # the message says where to run it
     "admin.token_exists": _token_list,
     "admin.token_not_found": _token_list,
+    "admin.enrollment_not_found": _enroll_list,
 }
 
 

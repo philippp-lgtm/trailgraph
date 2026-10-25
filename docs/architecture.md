@@ -140,6 +140,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.dist` | the programs the origin hands out (`/v1/dist/` manifest), fetching a wheel and installing it as a uv tool into the environment the program runs from (`graph self update`, `graph-admin self update`) |
 | `catalog.skill_claims` | skill freshness: the claims of the installed skills' markers (both scopes), the `Graph-Cli-Skills` header, and the check a read or write runs when it selects a graph (`SkillGate`); skill 1 is checked by `app_cli.skill_check` before any read or write. The names both this module and `graph_cli.skills` rely on (marker file and schema, skill names, slot kinds) are in `kernel.skill_marker` |
 | `catalog.tokens` | bearer tokens of the server API: the `graph_cli.tokens/1` document, hashing, and the server's lock-free, cached store |
+| `catalog.enrollments` | enrollment codes: the `graph_cli.enrollments/1` document, codes, lifetimes, the constant-time lookup and default token names |
 
 `catalog.identity` builds the one `ActorContext` per invocation. Only
 `catalog` and the admin wiring may read the process environment.

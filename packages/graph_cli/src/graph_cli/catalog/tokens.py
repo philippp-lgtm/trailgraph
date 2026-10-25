@@ -35,9 +35,9 @@ from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 
 TOKENS_SCHEMA: Final = "graph_cli.tokens/1"
 TOKEN_PREFIX: Final = "gct_"
-TOKEN_NAME_RE: Final = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
-_HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
-_DATE_RE: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TOKEN_NAME_RE: Final = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")
+_HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}\Z")
+_DATE_RE: Final = re.compile(r"^\d{4}-\d{2}-\d{2}\Z")
 _KEYS: Final = frozenset({"name", "hash", "project", "expires", "created_at", "scope"})
 PREFIX_HEX: Final = 16
 APP_SCOPE: Final = "app"

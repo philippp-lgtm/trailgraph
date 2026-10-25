@@ -98,6 +98,25 @@ scope, is
 was interrupted: revoke it again); a created token missing from the file is
 an interrupted create (`intent_without_effect`, info).
 
+Enrollment codes live in `tokens/enrollments.json` as SHA-256 hashes, by
+id, until they are used or revoked. `enroll create` appends
+`maint.token_create` with `change.enrollment{id, hash_prefix, project,
+scope, expires_at}`, `enroll revoke` `maint.token_revoke` with
+`change.enrollment{id, hash_prefix}`, each before the file is replaced. An
+exchange appends one `maint.token_create` whose actor is the enrollment
+(principal `enrollment:<id>`, project verified, decision rule
+`enrollment:<id>`) with both `change.token` and `change.enrollment{id,
+hash_prefix}`, then removes the code and only then adds the token, so an
+interrupted exchange never leaves a code that works twice. `audit verify`
+replays these events against the file: a listed code they do not create,
+that they removed, or that differs is `integrity.audit.enrollment_mismatch`
+(revoke it again), and so is an exchange of a code that was not live, of
+another project or scope than the code's, or after the code expired; a
+created code missing from the file is an interrupted create
+(`intent_without_effect`, info). The token of an exchange is replayed with
+the other tokens. The server reads the same events before an exchange: a
+code they used or revoked is refused even while the file still lists it.
+
 ## Policy verification
 
 Every decision records the policy hash. `audit verify` walks the policy

@@ -8,6 +8,7 @@ from graph_cli.cli_kit.spec import CommandSpec
 def all_specs() -> tuple[CommandSpec, ...]:
     from graph_cli_admin.maintenance_cli.commands import (
         audit,
+        enroll,
         files,
         graph,
         init,
@@ -28,6 +29,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *files.SPECS,
         *policy.SPECS,
         *token.SPECS,
+        *enroll.SPECS,
         *view.SPECS,
         *self_update.SPECS,
     )

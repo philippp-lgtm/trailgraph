@@ -16,7 +16,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import opt_int, opt_str, req_obj, req_str
 
-ASSERTED_VALUE_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+ASSERTED_VALUE_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 
 _FACET_KEYS: Final = ("id", "name", "type", "parent", "source")
 _FACETS: Final = ("principal", "agent", "session", "device", "project")

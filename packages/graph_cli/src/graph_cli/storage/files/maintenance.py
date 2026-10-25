@@ -98,7 +98,12 @@ from graph_cli.storage.files.releases import (
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
-from graph_cli.storage.files.token_files import read_tokens_file, tokens_path, write_tokens_file
+from graph_cli.storage.files.token_files import (
+    enrollments_path,
+    read_tokens_file,
+    tokens_path,
+    write_tokens_file,
+)
 from graph_cli.storage.finding_codes import (
     BLOB_MISSING,
     HEAD_INCONSISTENT,
@@ -223,16 +228,34 @@ class FileRegistrySession:
     def replace_tokens(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
         """Replace the token file; ``receipt`` is its installation event (B14.11)."""
         self._check_open()
-        if receipt.stream != INSTALLATION_STREAM or receipt.event_id in self._used:
-            raise GraphCliError(
-                "internal.error",
-                "a token change needs its own installation event",
-                details={"rule": "receipt_stream"},
-            )
-        self._used.add(receipt.event_id)
+        self._use(receipt, "tokens")
         write_tokens_file(
             tokens_path(self._maintenance.data_root), document, self._maintenance.syncer
         )
+
+    def read_enrollments(self) -> bytes | None:
+        """The enrollment file as stored, read under the registry lock (B14.21)."""
+        self._check_open()
+        return read_tokens_file(enrollments_path(self._maintenance.data_root))
+
+    def replace_enrollments(self, document: Mapping[str, JsonValue], receipt: AuditReceipt) -> None:
+        """Replace the enrollment file; ``receipt`` is its installation event (B14.21). An
+        exchange changes both token files after one event."""
+        self._check_open()
+        self._use(receipt, "enrollments")
+        write_tokens_file(
+            enrollments_path(self._maintenance.data_root), document, self._maintenance.syncer
+        )
+
+    def _use(self, receipt: AuditReceipt, file: str) -> None:
+        """Each file change needs an installation event of its own."""
+        if receipt.stream != INSTALLATION_STREAM or (file, receipt.event_id) in self._used:
+            raise GraphCliError(
+                "internal.error",
+                f"a {file} change needs its own installation event",
+                details={"rule": "receipt_stream"},
+            )
+        self._used.add((file, receipt.event_id))
 
     def replace_installation_policy(
         self, document: Mapping[str, JsonValue], receipt: AuditReceipt

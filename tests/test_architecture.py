@@ -44,7 +44,7 @@ POSITIVE_CONTROLS = {
         "graph_cli/query/cypher/__init__.py",
         "import graph_cli.query.plan\n",
     ),
-    "Only the server's admin API imports the maintenance distribution": (
+    "Only the server's admin API and enrollment import the maintenance distribution": (
         "graph_cli_server/openapi.py",
         "import graph_cli_admin.maintenance_cli.hints\n",
     ),

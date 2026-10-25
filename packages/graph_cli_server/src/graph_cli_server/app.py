@@ -14,8 +14,9 @@ installed come in ``Graph-Cli-Skills`` and are judged when a command selects
 a graph (``catalog.skill_claims``). ``/v1/dist/`` hands out the programs
 the server was built from (``graph_cli_server.dist``): ``graph``'s wheel to
 anyone, ``graph-admin``'s to an admin token, never refused for a build (they
-are how a client catches up). No body, token or query string is ever
-logged.
+are how a client catches up). ``/v1/enroll`` exchanges an enrollment code
+for a token (``graph_cli_server.enroll``), also before any token and build
+check. No body, token or query string is ever logged.
 """
 
 from __future__ import annotations
@@ -107,6 +108,13 @@ class AdminRoutes(Protocol):
     ) -> Response: ...
 
 
+class EnrollRoutes(Protocol):
+    """``POST /v1/enroll`` (``graph_cli_server.enroll``): an enrollment code exchanged for a
+    token, without a bearer token. Plugged in by ``main``, like the admin API."""
+
+    def dispatch(self, environ: Mapping[str, Any]) -> Response: ...
+
+
 @dataclass(frozen=True)
 class Settings:
     """What the server reads once at start: the environment, roots and limits."""
@@ -164,6 +172,7 @@ class ServerApp:
         clock: Clock | None = None,
         admin: Callable[[ServerApp], AdminRoutes] | None = None,
         builds: Mapping[str, str | None] | None = None,
+        enroll: Callable[[ServerApp], EnrollRoutes] | None = None,
     ) -> None:
         self.settings = settings
         # Program to the build id the server runs (the admin API adds graph-admin's);
@@ -179,6 +188,7 @@ class ServerApp:
         self.tokens = TokenStore(settings.data_root)
         self.uploads = Uploads(settings.state_root)
         self.admin = admin(self) if admin is not None else None
+        self.enroll = enroll(self) if enroll is not None else None
         self.dist: Served | None = None
         self.dist_problems: list[str] = []  # what is not handed out, and why; main logs it
         if settings.dist and settings.dist_dir is not None:
@@ -235,6 +245,11 @@ class ServerApp:
         if parts[1:2] == ["dist"] and len(parts) == 3:
             self._method(method, "GET")
             return self._dist(environ, parts[2], name)
+        if parts == ["v1", "enroll"]:
+            self._method(method, "POST")
+            if self.enroll is None:
+                return self._unknown(path)
+            return self.enroll.dispatch(environ)
         token = self._authenticate(environ)
         name.append(token.name)
         outdated = self._outdated(environ)

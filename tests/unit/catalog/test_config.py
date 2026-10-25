@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from graph_cli.catalog.config import Config, format_new_config, load_config, parse_config
+from graph_cli.catalog.config import (
+    Config,
+    format_new_config,
+    load_config,
+    parse_config,
+    remote_config,
+)
 from graph_cli.kernel.errors import GraphCliError
 
 PATH = Path("/cfg/graph_cli/config.toml")
@@ -196,3 +202,43 @@ def test_new_config_round_trips() -> None:
     assert warnings == ()
     minimal, _ = parse_config(format_new_config(device_id="dev-1"), path=PATH)
     assert (minimal.device_name, minimal.data_root) == (None, None)
+
+
+# ---- graph connect: the remote mode written into the file (B14.21) ----------------------
+
+ENDPOINT = "https://graphs.example.org"
+
+
+def test_a_new_config_gets_the_remote_mode_and_a_device() -> None:
+    data = remote_config(None, path=PATH, endpoint=ENDPOINT, device_id="dev-1")
+    config, warnings = parse_config(data, path=PATH)
+    assert (config.mode, config.endpoint, config.device_id) == ("remote", ENDPOINT, "dev-1")
+    assert warnings == ()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'format_version = 1\n# mine\n[device]\nid = "d"\n',
+        'format_version = 1\n[runtime]\nmode = "local" # was\n\n[paths]\ndata_root = "/d"\n',
+        'format_version = 1\n[runtime]\nendpoint = "https://old.example.org"\nmode = "remote"',
+    ],
+)
+def test_an_existing_config_keeps_everything_else(text: str) -> None:
+    import tomllib
+
+    edited = remote_config(text.encode(), path=PATH, endpoint=ENDPOINT, device_id="unused")
+    before, after = tomllib.loads(text), tomllib.loads(edited.decode())
+    assert after.pop("runtime") == {"mode": "remote", "endpoint": ENDPOINT}
+    before.pop("runtime", None)
+    assert after == before
+    for line in text.splitlines():
+        if line.startswith("#") or line.startswith("["):
+            assert line in edited.decode()
+
+
+def test_a_config_that_cannot_be_edited_safely_is_refused() -> None:
+    for text in ('format_version = 1\nruntime.mode = "local"\n', "runtime = 1\n", "x = [\n"):
+        with pytest.raises(GraphCliError) as caught:
+            remote_config(text.encode(), path=PATH, endpoint=ENDPOINT, device_id="d")
+        assert caught.value.code == "config.invalid"

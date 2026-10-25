@@ -351,6 +351,24 @@ def token_change(
     return {"token": token}
 
 
+def enrollment_change(
+    enrollment_id: str,
+    digest: str,
+    *,
+    project: str | None = None,
+    scope: str | None = None,
+    expires_at: str | None = None,
+) -> dict[str, JsonValue]:
+    """``enrollment`` of a ``change`` (B14.21): the code by id and a prefix of its hash, never
+    the code; a created code also names its project, scope and expiry. Alone in the change
+    of ``maint.token_create`` (a code created) or ``maint.token_revoke`` (revoked), next to
+    ``token`` in an exchange's ``maint.token_create`` (the code used)."""
+    entry: dict[str, JsonValue] = {"id": enrollment_id, "hash_prefix": digest[:TOKEN_HASH_PREFIX]}
+    if project is not None:
+        entry.update(project=project, scope=scope, expires_at=expires_at)
+    return entry
+
+
 def anchor(receipt: Anchorable) -> dict[str, JsonValue]:
     """``{graph_id, seq, hash}`` of an appended graph-stream event (B5.11)."""
     graph_id = receipt.stream.removeprefix("graph:")

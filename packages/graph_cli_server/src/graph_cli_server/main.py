@@ -6,6 +6,8 @@ environment through ``catalog.wiring``), then serves the WSGI app with
 ``--host`` names another address, which needs ``--allow-plain-http``: TLS
 belongs to a reverse proxy. With ``[server] admin_api = true`` it also
 serves the ``graph-admin`` commands (``graph_cli_server.admin_api``, B14.15).
+Enrollment codes are always exchanged (``graph_cli_server.enroll``, B14.21):
+without a code a maintainer created, the route answers nothing but 401.
 The address it listens on is printed to stderr, then one line per request.
 """
 
@@ -84,7 +86,9 @@ def main(argv: list[str] | None = None) -> None:
         from graph_cli_server.admin_api import AdminApi
 
         admin = AdminApi
-    app = ServerApp(settings, log=sys.stderr, admin=admin)
+    from graph_cli_server.enroll import Enrollment
+
+    app = ServerApp(settings, log=sys.stderr, admin=admin, enroll=Enrollment)
     server = create_server(
         app,
         host=options.host,

@@ -74,6 +74,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `skills install --scope user\|project` | install or refresh the agent skills (see [Skills](skills.md#installing-skills)) |
 | `skills check --scope user\|project` | compare installed skills with what this program installs now; exit 1 unless all are fresh |
 | `self update` | in the remote mode install the server's build of `graph` when it differs, then refresh the agent skills of the project (`--dir`) and the user, adding the skills of the project's graphs; `--check` only reports, `--force` replaces skills edited by hand (see [Self update](server.md#self-update)) |
+| `connect ENDPOINT --code CODE` | set up this machine and a folder (`--dir`) for a server from a one-time enrollment code: the project's token, the remote mode in `config.toml`, a pointer, the program and the project's graph skills; `--label` labels the token, `--force` replaces another endpoint or a stored token (see [Enrollment](server.md#enrollment)) |
 
 ## Graph selection
 

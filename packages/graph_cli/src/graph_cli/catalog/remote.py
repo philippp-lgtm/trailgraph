@@ -11,12 +11,18 @@ this program's build (``catalog.build``); every answer that is no error is
 compared with the server's version and build (``remote.version_differs``).
 The graph skills installed for this process's agent go along in
 ``Graph-Cli-Skills`` (``catalog.skill_claims``), so the server can judge them.
+The token comes from the environment, else from the file ``graph connect``
+stored for this server and the pointer's project
+(``<config dir>/tokens/<server>/<project>/``), else from the configured
+token file (B14.21).
 """
 
 from __future__ import annotations
 
 import http.client
 import json
+import os
+import re
 import shutil
 import ssl
 from collections.abc import Mapping, Sequence
@@ -27,6 +33,7 @@ from typing import BinaryIO, Final
 from graph_cli.catalog.build import BUILD_HEADER, build_header, parse_build_header, short
 from graph_cli.catalog.endpoint import Endpoint
 from graph_cli.catalog.skill_claims import SKILLS_HEADER
+from graph_cli.kernel.actor import is_valid_asserted_value
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.error_codes import lookup_error_code
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -38,6 +45,9 @@ APP_TOKEN_HINT: Final = (
     "set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token"
 )
 COMMANDS_ROUTE: Final = "/v1/commands/"
+TOKENS_DIR: Final = "tokens"  # below the config directory: one directory per project
+APP_TOKEN_FILE: Final = "token"
+ADMIN_TOKEN_FILE: Final = "admin_token"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +77,7 @@ class RemoteClient:
     def __init__(
         self,
         endpoint: Endpoint,
-        token: str,
+        token: str | None,
         *,
         timeout_s: float,
         version: str,
@@ -78,7 +88,7 @@ class RemoteClient:
         skills: str | None = None,
     ) -> None:
         self.endpoint = endpoint
-        self._token = token
+        self._token = token  # None: a request that needs none (enrollment, the public wheel)
         self.timeout_s = timeout_s
         self.version = version
         self.program = program  # graph or graph-admin: whose build the server compares
@@ -134,7 +144,7 @@ class RemoteClient:
                     raise self._unreachable(exc) from None
             finally:
                 connection.close()
-            if response.status == 401:
+            if response.status == 401 and self._token is not None:
                 raise unauthorized(self.token_hint)
             answer = Answer(response.status, found, data)
             self._note_version(answer)
@@ -197,11 +207,12 @@ class RemoteClient:
         length: int | None,
     ) -> dict[str, str]:
         headers = {
-            "Authorization": f"Bearer {self._token}",
             VERSION_HEADER: self.version,
             "Accept": "application/json",
             **(extra or {}),
         }
+        if self._token is not None:
+            headers["Authorization"] = f"Bearer {self._token}"
         if self.build is not None:
             headers[BUILD_HEADER] = build_header(self.program, self.build)
         if self.skills is not None:
@@ -250,30 +261,84 @@ def unauthorized(hint: str = APP_TOKEN_HINT) -> GraphCliError:
     )
 
 
-def read_token(given: str | None, file: Path | None, *, config: Path, key: str, hint: str) -> str:
-    """The token of the environment variable, else of the token file, which nobody else
-    may read; ``remote.unauthorized`` without one. ``key`` names the file's config key."""
+def project_token_path(
+    config: Path, endpoint: Endpoint, project: str | None, file: str
+) -> Path | None:
+    """``<config dir>/tokens/<server>/<project>/<file>``: the token ``graph connect`` stored
+    for this server and the project of the pointer (B14.21), so a token is never sent to
+    another server; ``None`` without a project (or with one that is no project name, so it
+    can never leave the directory)."""
+    if project is None or not is_valid_asserted_value(project):
+        return None
+    return config.parent / TOKENS_DIR / endpoint_key(endpoint) / project / file
+
+
+def endpoint_key(endpoint: Endpoint) -> str:
+    """The server's directory name: host, port and path prefix, one path segment."""
+    text = f"{endpoint.host}_{endpoint.port}{endpoint.path}"
+    return re.sub(r"[^A-Za-z0-9.-]+", "_", text).strip("._") or "server"
+
+
+def read_token(
+    given: str | None,
+    file: Path | None,
+    *,
+    config: Path,
+    key: str,
+    hint: str,
+    project_file: Path | None = None,
+) -> str:
+    """The token of the environment variable, else of the project's token file when it
+    exists, else of the configured token file; each file nobody else may read.
+    ``remote.unauthorized`` without one. ``key`` names the configured file's key."""
     if given and given.strip():
         return given.strip()
-    if file is None:
+    if project_file is not None and (project_file.exists() or project_file.is_symlink()):
+        token = _token_text(project_file, shown=str(project_file), details={})
+    elif file is not None:
+        token = _token_text(
+            file, shown=f"{config}: {key} {file}", details={"file": str(config), "key": key}
+        )
+    else:
         raise unauthorized(hint)
+    if not token:
+        raise unauthorized(hint)
+    return token
+
+
+def _token_text(file: Path, *, shown: str, details: dict[str, JsonValue]) -> str:
     try:
         if file.stat().st_mode & 0o077:
             raise GraphCliError(
                 "config.invalid",
-                f"{config}: {key} {file} may be read by others; chmod 600 {file}",
-                details={"file": str(config), "key": key},
+                f"{shown} may be read by others; chmod 600 {file}",
+                details=details or {"file": str(file)},
             )
-        token = file.read_text().strip()
+        return file.read_text().strip()
     except OSError as exc:
         raise GraphCliError(
             "config.invalid",
-            f"{config}: {key} cannot be read: {exc.strerror or exc}",
-            details={"file": str(config), "key": key},
+            f"{shown} cannot be read: {exc.strerror or exc}",
+            details=details or {"file": str(file)},
         ) from exc
-    if not token:
-        raise unauthorized(hint)
-    return token
+
+
+def write_token_file(path: Path, token: str) -> None:
+    """Store a token where ``project_token_path`` finds it: directories 0700, the file 0600,
+    written to a temp file and renamed."""
+    for directory in (path.parent.parent.parent, path.parent.parent, path.parent):
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(directory, 0o700)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temp.unlink(missing_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(temp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(token + "\n")
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def protocol(status: int, why: str) -> GraphCliError:

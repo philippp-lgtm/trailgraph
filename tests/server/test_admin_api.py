@@ -38,6 +38,8 @@ V110 = ONTOLOGIES / "inventory" / "1.1.0"
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
+CODE = re.compile(r"gce_[a-z2-7]{26}")
+ENROLLMENT_ID = re.compile(r"(?<![0-9a-f-])[0-9a-f]{12}(?![0-9a-f-])")
 
 
 @pytest.fixture
@@ -536,6 +538,10 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("token", "create", "agent"),
         ("token", "list"),
         ("token", "revoke", "agent", "--reason", "done"),
+        ("enroll", "create", "--project", "example_project", "--reason", "a laptop"),
+        ("enroll", "create", "--project", "example_project", "--scope", "admin"),
+        ("enroll", "list"),
+        ("enroll", "revoke", "0123456789ab"),
         ("files", "verify", "--graph", "example_graph"),
         ("files", "gc", "--graph", "example_graph", "--dry-run"),
         ("audit", "anchor"),
@@ -562,6 +568,7 @@ def comparable(outcomes: list[Any], *homes: Path) -> Any:
     for home in homes:
         text = text.replace(str(home), "<home>")
     text = HASH_PREFIX.sub("<hash prefix>", SECRET.sub("<token>", text))
+    text = ENROLLMENT_ID.sub("<enrollment>", CODE.sub("<code>", text))
     return normalized(json.loads(text))
 
 

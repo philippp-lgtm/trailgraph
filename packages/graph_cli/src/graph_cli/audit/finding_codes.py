@@ -39,6 +39,7 @@ POLICY_HASH_MISMATCH: Final = "integrity.audit.policy_hash_mismatch"
 POLICY_FALLBACK: Final = "integrity.audit.policy_fallback"
 POLICY_HASH_UNCHECKED: Final = "integrity.audit.policy_hash_unchecked"
 TOKEN_MISMATCH: Final = "integrity.audit.token_mismatch"
+ENROLLMENT_MISMATCH: Final = "integrity.audit.enrollment_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -94,5 +95,10 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     ),
     _integrity(
         "token_mismatch", Severity.ERROR, "The token file differs from the recorded token events."
+    ),
+    _integrity(
+        "enrollment_mismatch",
+        Severity.ERROR,
+        "The enrollment file differs from the recorded enrollment events.",
     ),
 )

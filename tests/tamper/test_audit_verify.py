@@ -205,6 +205,7 @@ SCENARIOS: dict[str, Callable[[Scene], None]] = {
 # (tests/tamper/test_token_verify.py).
 MAINT_SCENARIO_CODES = {
     finding_codes.TOKEN_MISMATCH,
+    finding_codes.ENROLLMENT_MISMATCH,
     finding_codes.PIN_MISMATCH,
     finding_codes.POLICY_MISMATCH,
     finding_codes.POLICY_HASH_MISMATCH,

@@ -53,6 +53,20 @@ prevents depends on what is verified:
   grant to the project (`principal: {project: P}`) reaches it; without a
   binding the client asserts the project, the scope stays a guardrail and
   no project grant or `maintain` level applies.
+- Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
+  secrets too, but narrow ones: one use, at most 24 hours, always bound to
+  a project, so a code never yields an unbound token (a maintainer's). Who
+  holds a code gets that project's token, app or project admin as the
+  maintainer chose; hand it over like a password, out of band, and revoke
+  it (`enroll revoke`) when unsure. The holder picks only a label: the
+  token is named `<project>.<label>` and never takes a name a policy rule
+  grants something to. The exchange needs no token, answers the same for
+  every code it refuses, takes no lock for a wrong code and never logs a
+  code; it is audited under the enrollment's id. Revoking a maintainer's
+  token leaves the codes it created valid (`enroll list`). `graph connect`
+  checks the client's folder before it spends the code and keeps the token
+  outside the folder, which may be in git, per server, so a token is never
+  sent to another server.
 - Agent, session and device are still asserted by the client: deny rules
   on them stop well-behaved clients only.
 - The transport: the server speaks plain HTTP on `127.0.0.1`; beyond the

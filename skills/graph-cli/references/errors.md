@@ -50,6 +50,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `conflict.idempotency_key_reuse` | conflict | 4 |
 | `conflict.seq_mismatch` | conflict | 4 |
 | `conflict.version_mismatch` | conflict | 4 |
+| `connect.refused` | refused | 1 |
 | `entity.ambiguous_ref` | refused | 1 |
 | `entity.not_found` | not_found | 1 |
 | `entity.revision_not_found` | not_found | 1 |

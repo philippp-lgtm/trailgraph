@@ -67,10 +67,17 @@ def program_of(app: AppServices) -> list[str]:
 
 
 def refresh(
-    app: AppServices, scope: str, project: Path | None, *, check: bool, force: bool
+    app: AppServices,
+    scope: str,
+    project: Path | None,
+    *,
+    check: bool,
+    force: bool,
+    command: list[str] | None = None,
 ) -> tuple[dict[str, JsonValue], GraphCliError | None]:
-    """One scope through the installed program: ``skills install`` (a dry run for
-    ``check``), then ``skills check``; the first error either answers."""
+    """One scope through the installed program (``command``, default ``program_of``):
+    ``skills install`` (a dry run for ``check``), then ``skills check``; the first error
+    either answers."""
     words = ["skills", "install", "--scope", scope]
     if project is not None:
         words += ["--dir", str(project), "--project-graphs"]
@@ -78,7 +85,7 @@ def refresh(
         words.append("--force")
     if check:
         words.append("--dry-run")
-    command = program_of(app)
+    command = command or program_of(app)
     installed, _ = run_program([*command, *words], app.env, app.cwd)
     item: dict[str, JsonValue] = {"scope": scope, "dir": str(project) if project else None}
     data = installed.get("data")

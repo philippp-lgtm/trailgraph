@@ -92,7 +92,7 @@ against it and audited. The CLI is on `PATH`.
 - Run each call as a plain command that starts with `graph`: no `cd`,
   variables, loops, pipes or heredocs, which a restricted harness refuses.
   If a call is refused, run it again in that form before you give up.
-- Reads never change anything. `graph skills` and `graph self update`
+- Reads never change anything. `graph skills`, `self update` and `connect`
   install agent skills such as this one, and the program: run them only
   when the user asks. `graph skills check` and `--check` only read.
 
@@ -102,10 +102,9 @@ against it and audited. The CLI is on `PATH`.
    one with `--graph <graph>` on every command. A project may preset a
    default; use it unless the user names another graph.
 2. Learn the model: `graph describe types --json`, then
-   `graph describe type <type> --json`: fields with datatype, enum
-   `values`, `limits` and `role`; relations with their `qualifiers` (values
-   on the edge); lifecycles with states, transitions and the `guards` a
-   dry run checks.
+   `graph describe type <type> --json`: fields with datatype, enum `values`,
+   `limits` and `role`; relations with their `qualifiers` (values on the edge);
+   lifecycles with states, transitions and the `guards` a dry run checks.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is

@@ -253,3 +253,75 @@ def test_reindex_intents_name_the_seq() -> None:
     for change in ({"reindex": {"seq": -1}}, {"reindex": {"seq": True}}, {"reindex": {}}):
         with pytest.raises(GraphCliError):
             Stream().maint("maint.reindex", change)  # type: ignore[arg-type]
+
+
+# ---- enrollment codes replayed against their file (B14.21) ------------------------------
+
+
+def _enrollment_events(*steps: tuple[str, dict[str, JsonValue], str]) -> list[Event]:
+    return [
+        {"seq": seq, "ts": ts, "actions": [action], "result": {"status": "ok"}, "change": change}
+        for seq, (action, change, ts) in enumerate(steps, start=1)
+    ]
+
+
+CODE: dict[str, JsonValue] = {
+    "id": "0123456789ab",
+    "hash_prefix": "sha256:0123456789abcdef",
+    "project": "p1",
+    "scope": "app",
+    "expires_at": "2026-10-25T12:15:00.000Z",
+}
+USED: dict[str, JsonValue] = {"id": "0123456789ab", "hash_prefix": "sha256:0123456789abcdef"}
+
+
+def _token(project: str = "p1", **extra: JsonValue) -> dict[str, JsonValue]:
+    return {
+        "name": "p1.a",
+        "hash_prefix": "sha256:fedcba9876543210",
+        "project": project,
+        "expires": None,
+        **extra,
+    }
+
+
+def test_an_exchange_must_follow_from_its_code() -> None:
+    from graph_cli.audit.verify import check_enrollments
+
+    created = ("maint.token_create", {"enrollment": CODE}, "2026-10-25T12:00:00.000Z")
+    good = (
+        "maint.token_create",
+        {"token": _token(), "enrollment": USED},
+        "2026-10-25T12:01:00.000Z",
+    )
+    assert check_enrollments(_enrollment_events(created, good), {}) == []
+    for steps in (
+        (good,),  # a code never created
+        (created, good, good),  # used twice
+        (
+            created,
+            (
+                "maint.token_create",
+                {"token": _token("p2"), "enrollment": USED},
+                "2026-10-25T12:01:00.000Z",
+            ),
+        ),
+        (
+            created,
+            (
+                "maint.token_create",
+                {"token": _token(scope="admin"), "enrollment": USED},
+                "2026-10-25T12:01:00.000Z",
+            ),
+        ),
+        (
+            created,
+            (
+                "maint.token_create",
+                {"token": _token(), "enrollment": USED},
+                "2026-10-25T12:15:00.000Z",
+            ),
+        ),
+    ):
+        found = check_enrollments(_enrollment_events(*steps), {})
+        assert [f.code for f in found] == [codes.ENROLLMENT_MISMATCH], steps

@@ -38,6 +38,9 @@ commands to the server's admin API
 | `token create NAME [--project P] [--expires DATE] [--scope S] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; `--scope admin` makes it a token of the [admin API](server.md#admin-api), with `--project` a [project admin](access_control.md#project-admins); warns when the policy grants an app token nothing or does not let an admin token maintain (a project admin: no graph) |
 | `token list` | the tokens: name, scope, project, expiry, creation time, hash prefix; never the token |
 | `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
+| `enroll create --project P [--scope app\|admin] [--expires-in D] [--reason R]` | a one-time code a client exchanges (`graph connect`) for a token bound to `P`; shown once, valid 15 minutes or `D` (`<n>m`, `<n>h`, at most 24h), audited as `maint.token_create`; see [Enrollment](server.md#enrollment) |
+| `enroll list` | the codes not used yet: id, project, scope, expiry, creation time, hash prefix; never the code |
+| `enroll revoke ID [--reason R]` | revoke an unused code, audited as `maint.token_revoke` |
 | `self update` | in the remote mode install the server's build of `graph-admin` when it differs (`--check` only reports); see [Self update](server.md#self-update) |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
 

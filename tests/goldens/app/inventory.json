@@ -134,6 +134,92 @@
     },
     {
       "path": [
+        "connect"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Set up this machine and a folder for a server, from a one-time enrollment code.",
+      "args": [
+        {
+          "name": "endpoint",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The server's URL: https://, or http:// to this machine."
+        }
+      ],
+      "options": [
+        {
+          "name": "--code",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The one-time code the maintainer gave you."
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "The folder to set up; default: the working one."
+        },
+        {
+          "name": "--label",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "The new token is named after the project and this label; default: the host name."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace another endpoint in config.toml, and a stored token."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph connect <value> --code <value>",
+          "summary": "Set up the working folder."
+        },
+        {
+          "command": "graph connect <value> --code <value> --dir <value>",
+          "summary": "Another folder."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "connect.refused",
+        "internal.error",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.check_failed",
+        "skills.modified",
+        "skills.not_owned",
+        "skills.target_invalid",
+        "update.install_failed",
+        "update.unavailable",
+        "update.unsupported_install",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
+    },
+    {
+      "path": [
         "create"
       ],
       "kind": "write",
@@ -3136,6 +3222,11 @@
       "code": "conflict.version_mismatch",
       "category": "conflict",
       "exit": 4
+    },
+    {
+      "code": "connect.refused",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "entity.ambiguous_ref",

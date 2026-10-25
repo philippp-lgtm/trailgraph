@@ -152,6 +152,216 @@
     },
     {
       "path": [
+        "enroll",
+        "create"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_create",
+      "summary": "Create a one-time code that a client exchanges for a token of a project.",
+      "args": [],
+      "options": [
+        {
+          "name": "--project",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The project the token is bound to: it acts for it, verified."
+        },
+        {
+          "name": "--scope",
+          "type": "choice",
+          "required": false,
+          "repeatable": false,
+          "summary": "app: a token for the graph commands; admin: a project admin's token.",
+          "choices": [
+            "app",
+            "admin"
+          ],
+          "default": "app"
+        },
+        {
+          "name": "--expires-in",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "How long the code works: <n>m or <n>h, at most 24h; default 15m."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin enroll create --project <value>",
+          "summary": "A code for one client."
+        },
+        {
+          "command": "graph-admin enroll create --project <value> --scope admin --expires-in <value> --json",
+          "summary": "A code for a project admin, valid longer."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "enroll",
+        "list"
+      ],
+      "kind": "read",
+      "surface": "meta",
+      "action": null,
+      "summary": "List the codes not used yet: id, project, scope, expiry, a hash prefix.",
+      "args": [],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin enroll list",
+          "summary": "Every unused code."
+        },
+        {
+          "command": "graph-admin enroll list --json",
+          "summary": "The codes as JSON."
+        }
+      ],
+      "errors": [
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "enroll",
+        "revoke"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_revoke",
+      "summary": "Revoke an unused code; it can no longer be exchanged.",
+      "args": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The code's id from enroll list."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin enroll revoke <value>",
+          "summary": "Revoke one code."
+        },
+        {
+          "command": "graph-admin enroll revoke <value> --reason <value> --json",
+          "summary": "With a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.enrollment_not_found",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
         "files",
         "gc"
       ],
@@ -2050,6 +2260,11 @@
     {
       "code": "admin.data_errors",
       "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "admin.enrollment_not_found",
+      "category": "not_found",
       "exit": 1
     },
     {

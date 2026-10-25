@@ -11,6 +11,7 @@ XDG; macOS uses the same paths.
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
 | Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
 | State (operational log, access log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+| Tokens of a client, per server and project | `tokens/<server>/<project>/token` and `admin_token` next to `config.toml`; `<server>` is host, port and path of the endpoint (directories 0700, files 0600) |
 
 Keep the data root on a local file system (see [Storage](storage.md)).
 
@@ -61,13 +62,27 @@ timeout_s = 60
 # allow_plain_http = true                 # http:// to another host: the token travels in clear
 ```
 
-The token comes from `GRAPH_CLI_TOKEN`, else from `token_file`, which must
-not be readable by group or others. `graph-admin` sends its commands to the
+The token comes from `GRAPH_CLI_TOKEN`, else from the token stored for the
+configured endpoint and the project of the pointer that applies
+(`<config dir>/tokens/<server>/<project>/token`, written by `graph
+connect`), else from `token_file`. A token file must not
+be readable by group or others. `graph-admin` sends its commands to the
 server's [admin API](server.md#admin-api) with an admin token from
-`GRAPH_CLI_ADMIN_TOKEN`, else from `admin_token_file` (the same rule); what
-only runs where the data lives (`init`, `view`, `--data-root`) is refused
-(`admin.remote_mode`). What changes for each command:
+`GRAPH_CLI_ADMIN_TOKEN`, else `<config dir>/tokens/<server>/<project>/admin_token`,
+else `admin_token_file` (the same rules); what only runs where the data
+lives (`init`, `view`, `--data-root`) is refused (`admin.remote_mode`).
+Tokens per project let one machine work for several projects, each folder
+with its own token, while the folder itself (whose pointer may be in git)
+holds none; keyed by the server too, a token is never sent to another
+server after the endpoint changes. What changes for each command:
 [Server](server.md#remote-mode-of-graph).
+
+`graph connect <endpoint> --code <code>` sets this up from an enrollment
+code ([Server](server.md#enrollment)): it stores the token per project,
+writes `mode` and `endpoint` into `config.toml` (a new file gets a device
+id; in an existing one only those two keys change, and another endpoint or
+the local mode is replaced only with `--force`) and writes a pointer into
+the folder when it has none.
 
 ## Project pointer
 

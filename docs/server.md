@@ -48,6 +48,83 @@ Every token has a scope: `app` (the default) reaches the `graph` commands,
 upload. A token used on the other surface is refused with 403 and
 `remote.unauthorized`, before any command runs.
 
+## Enrollment
+
+Instead of passing a token to a client, a maintainer can hand out a
+one-time code, and the client fetches its own token with it. The code is
+bound to a project, so whatever it yields is a token of that project: the
+maintainer's own token never leaves where it is.
+
+```sh
+graph-admin enroll create --project <value>                 # an app token's code, 15 minutes
+graph-admin enroll create --project <value> --scope admin --expires-in 2h   # a project admin's
+graph-admin enroll list                                     # codes not used yet
+graph-admin enroll revoke <id>
+```
+
+`enroll create` needs `maint.token_create` (whoever may create tokens),
+locally or over the [admin API](#admin-api). The code (`gce_` and 26
+characters) is shown once and works once, for at most 24 hours (`--expires-in
+<n>m|<n>h`, default 15 minutes); the data root keeps its hash. `create`
+warns when the installed policy would give a token of the project nothing.
+
+On the client, one command sets up the machine and a folder:
+
+```sh
+graph connect <endpoint> --code <code> [--dir <folder>] [--label <label>]
+uvx --from <endpoint>/v1/dist/<file> graph connect <endpoint> --code <code>   # without graph yet
+```
+
+`<file>` is the `graph` wheel the [manifest](#self-update) names. `connect`
+first asks the server what the code is for (that uses nothing) and checks
+everything here that could stand in the way: `config.toml` with another
+endpoint or the local mode (`--force` replaces it: it changes where every
+`graph` command of this user goes), a pointer in the folder that names
+another project or none, a token stored for the project before (`--force`
+replaces it; revoke the old one), a project whose token would reach no
+graph. Any of these is `connect.refused` and the code stays unused. Then it:
+
+1. exchanges the code for a token named `<project>.<label>`, the label
+   `--label`, default the host name (`<host>-admin` for an admin code;
+   the client picks only the label, so
+   it can never take a name a policy rule grants something to; a name that
+   is taken or named by the policy is refused and the code stays unused),
+   and stores it in `<config dir>/tokens/<server>/<project>/`
+   ([Configuration](configuration.md#remote-mode));
+2. writes the remote mode and the endpoint into `config.toml`;
+3. writes `.graph_cli.toml` into the folder, unless one applies there
+   already: the project, the graphs the token can use, the default when it
+   is one;
+4. installs `graph` from the server as a uv tool when it runs as none
+   (under `uvx`, for example) and the server's build otherwise
+   ([Self update](#self-update)); a checkout is left as it is;
+5. installs the graph skills of the pointer's graphs into the folder's
+   `.claude/skills/` (creating `.claude`) and runs the installed `graph
+   self update`.
+
+An admin code (`--scope admin`) stores `admin_token` instead and sets up
+`graph-admin` (with the admin token, the `graph-admin` wheel), with the
+graphs the project maintains in the pointer: `graph-admin graph pull|push`
+then work in that folder for the project's graphs. It installs no skills
+and no app token; a project admin who also uses `graph` there gets a
+second, app code.
+
+The exchange is `POST /v1/enroll` with `{code, label?, check?}` (at most 4
+KiB, no token, never refused for a build): with `check: true` it answers
+`{enrollment: {id, project, scope, expires_at, graphs}}`, else `{token,
+name, project, scope, graphs}`. An unknown, used, revoked or expired code
+is `remote.unauthorized` (401), one answer for all of them, and so is a
+code the audit says was used or revoked already (an exchange or revoke cut
+short before the file changed). The exchange is audited as
+`maint.token_create` by the enrollment itself (principal `enrollment:<id>`,
+decision `enrollment:<id>`); see [Audit](audit.md).
+
+A code does not depend on who created it: revoking the creator's token
+leaves its codes valid, and the tokens they yield have no expiry. When a
+maintainer token is revoked, also check `enroll list` and revoke what it
+created. The code travels on the command line (`--code`), so it can show in
+`ps` and the shell history; it is worthless once used or expired.
+
 ## API
 
 Every path starts with `/v1/`; every answer is the `graph` envelope, and
@@ -66,6 +143,7 @@ exit code `graph` would have.
 | `GET /v1/graphs/{graph}/files/{ref}` | the stored file of an entity, checked like `file path` |
 | `POST /v1/graphs/{graph}/skill` | the graph's published skill, rendered for installing |
 | `GET /v1/dist/manifest`, `GET /v1/dist/{file}` | the programs the server hands out ([Self update](#self-update)); no token needed, except for the `graph-admin` wheel |
+| `POST /v1/enroll` | an enrollment code exchanged for a token ([Enrollment](#enrollment)); no token needed |
 
 A command request names the parameters by their inventory names:
 
@@ -266,8 +344,9 @@ device and the pointer's project and graphs are sent with each request.
 ## Remote mode of `graph-admin`
 
 On the same machine `graph-admin` sends its commands to the admin API,
-with the admin token from `GRAPH_CLI_ADMIN_TOKEN` or `[remote]
-admin_token_file` ([Configuration](configuration.md#remote-mode)). It
+with the admin token from `GRAPH_CLI_ADMIN_TOKEN`, the project's stored
+`admin_token` or `[remote] admin_token_file`
+([Configuration](configuration.md#remote-mode)). It
 parses the command line itself and prints the server's answer as its own,
 as `graph` does.
 
@@ -334,8 +413,9 @@ Moving an existing data root into the container:
    the server reads (`[audit]`, `[files]`, `[server]`) go into
    `/config/graph_cli/config.toml` in the container.
 3. Start the container and run `graph-admin audit verify` in it.
-4. Create the tokens and switch the clients to the
-   [remote mode](#remote-mode-of-graph).
+4. Create the tokens, or enrollment codes, and switch the clients to the
+   [remote mode](#remote-mode-of-graph) (with a code: `graph connect`,
+   [Enrollment](#enrollment)).
 
 `docker build --target test .` runs the whole test suite on Linux in the
 image.

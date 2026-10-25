@@ -25,6 +25,7 @@ from typing import Final, Protocol
 
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
+from graph_cli.storage.files.tomlw import TomlValue, dumps
 
 POINTER_NAME: Final = ".graph_cli.toml"
 POINTER_FORMAT: Final = 1
@@ -103,6 +104,19 @@ def parse_pointer(data: bytes, *, path: Path) -> tuple[PointerFile, tuple[Warnin
     if default is not None and (not isinstance(default, str) or default not in graphs):
         raise _invalid(path, "default", "must be one of 'graphs'")
     return PointerFile(path, project, tuple(graphs), default), warnings
+
+
+def format_pointer(project: str, graphs: Sequence[str]) -> bytes:
+    """The pointer ``graph connect`` writes: the project and its graphs, the default when
+    there is only one."""
+    items: list[tuple[str, TomlValue]] = [
+        ("format_version", POINTER_FORMAT),
+        ("project", project),
+        ("graphs", tuple(graphs)),
+    ]
+    if len(graphs) == 1:
+        items.append(("default", graphs[0]))
+    return dumps([(None, items)]).encode()
 
 
 REQUEST_POINTER: Final = "<request>"

@@ -497,3 +497,46 @@ def test_policy_changes_route_by_layer(world: World) -> None:
                     change=bad,
                 )
             assert "change.policy" in caught.value.message
+
+
+def test_enrollment_changes_name_the_code_by_id(world: World) -> None:
+    """B14.21: a code created or revoked names ``change.enrollment``; an exchange names the
+    token it created and the enrollment it used."""
+    digest = "sha256:" + "c" * 64
+    created = events.enrollment_change(
+        "0123456789ab", digest, project="p1", scope="app", expires_at="2026-10-25T12:00:00.000Z"
+    )
+    used = events.enrollment_change("0123456789ab", digest)
+    token = events.token_change("p1.laptop", digest, created=True, project="p1")
+    good = [
+        ("maint.token_create", {"enrollment": created}),
+        ("maint.token_revoke", {"enrollment": used}),
+        ("maint.token_create", {**token, "enrollment": used}),
+    ]
+    bad = [
+        ("maint.token_create", {"enrollment": used}),  # a created code names its project
+        ("maint.token_revoke", {"enrollment": created}),
+        (
+            "maint.token_revoke",
+            {**events.token_change("x", digest, created=False), "enrollment": used},
+        ),
+        ("maint.token_create", {"enrollment": {**created, "scope": "root"}}),
+        ("maint.token_create", {}),
+    ]
+
+    def append(action: str, change: dict[str, object]) -> object:
+        return events.maintenance(
+            actor=maint_actor(),
+            decisions=[allow(action, "installation")],
+            request=REQUEST,
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            env=ENV,
+            change=change,  # type: ignore[arg-type]
+        )
+
+    for action, change in good:
+        assert append(action, change).stream == INSTALLATION_STREAM  # type: ignore[attr-defined]
+    for action, change in bad:
+        with pytest.raises(GraphCliError):
+            append(action, change)
