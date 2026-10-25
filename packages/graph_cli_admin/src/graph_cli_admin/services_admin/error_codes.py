@@ -30,6 +30,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.source_conflict", _C.CONFLICT, False, "The graph changed since it was pulled."
     ),
+    ErrorSpec("admin.workspace_conflict", _C.REFUSED, False, "A folder of the workspace is taken."),
     ErrorSpec(
         "admin.policy_lockout", _C.REFUSED, False, "The policy would lock out its maintainer."
     ),

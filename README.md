@@ -8,9 +8,12 @@ strict split between usage and maintenance, and a server:
   alike: every command prints one envelope as text or, with `--json`, as one
   JSON document.
 - `graph-admin` (distribution `graph_cli_admin`): the maintenance CLI. Not on
-  `PATH`; run from the repository checkout. Creates graphs, versions
-  ontologies, installs policies and skills, verifies the audit trail and
-  serves a [live view](docs/live_view.md) of a graph in the browser.
+  `PATH`; run from the repository checkout, or installed from a server on a
+  machine in remote mode. Creates graphs, versions ontologies, installs
+  policies and skills, verifies the audit trail and serves a
+  [live view](docs/live_view.md) of a graph in the browser; `graph-admin
+  workspace sync <dir>` sets up a folder to maintain graphs from, with
+  skills for agents ([Maintainer workspaces](docs/cli_graph_admin.md#maintainer-workspaces)).
 - `graph-server` (distribution `graph_cli_server`): the command surface of
   `graph` over HTTP with bearer tokens, for agents in containers, other
   machines and web apps; `graph` in remote mode is its client. Runs from

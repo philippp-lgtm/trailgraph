@@ -47,7 +47,9 @@ def program(*, remote: bool = False) -> click.Group:
             "policy": "Check, show, compare, apply and explain access policies.",
             "self": "Install the server's build of this program.",
             "skill": "Publish the graph skill that the app installs for agents, or preview it.",
+            "skills": "Install and check the admin skills of this program for an agent.",
             "token": "Create, list and revoke bearer tokens of the server API.",
+            "workspace": "Set up a maintainer workspace with one folder per graph.",
         },
     )
 

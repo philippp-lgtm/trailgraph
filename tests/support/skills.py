@@ -18,6 +18,8 @@ from support.app import app
 from support.fixtures import UPDATE_GOLDENS
 
 SKILL_DIR = REPO_ROOT / "skills" / SKILL_NAME
+# The hand-written admin skills that ship with graph-admin.
+ADMIN_SKILLS_DIR = REPO_ROOT / "packages/graph_cli_admin/src/graph_cli_admin/bundled_skills"
 
 
 def live_inventory(run_cli: CliRunner) -> dict[str, Any]:

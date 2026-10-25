@@ -1,9 +1,12 @@
 """Installing skills into a skill directory and checking them (D15 Q3-Q5, Q8).
 
 A target is an agent configuration directory (``<dir>/.claude`` or the
-user's); skills live in its ``skills/``. ``scan`` reads what is there:
-directories with our marker, and unmarked ``graph-cli`` and ``graph-*``
-directories (foreign); anything else is not ours and ignored.
+user's); skills live in its ``skills/``. ``scan`` reads what is there for
+one owner: ``graph`` owns skill 1 and the graph skills, ``graph-admin`` the
+admin skills (marker kind ``admin``). An owner sees the directories whose
+marker names one of its kinds, and those with its names that carry no
+readable marker (foreign or broken); anything else is not its own and
+ignored, so neither program reports or replaces the other's skills.
 
 ``plan_install`` decides per skill (create, replace, unchanged, refused)
 before anything is written; ``apply_install`` then replaces each skill
@@ -22,7 +25,7 @@ from __future__ import annotations
 import os
 import secrets
 import shutil
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal
@@ -145,6 +148,22 @@ class Installed:
         return "graph" if self.name.startswith(GRAPH_SKILL_PREFIX) else None
 
 
+@dataclass(frozen=True, slots=True)
+class Owner:
+    """The skills one program installs: the marker kinds it writes, and the names that
+    are its own even without a marker (a foreign directory there would clash)."""
+
+    kinds: Collection[SkillKind]
+    clashes: Callable[[str], bool]
+
+
+def _clashes(name: str) -> bool:
+    return name == APP_SKILL or name.startswith(GRAPH_SKILL_PREFIX)
+
+
+APP_OWNER: Final = Owner(("app", "graph"), _clashes)
+
+
 def require_target(target: SkillTarget) -> None:
     """``skills.target_invalid`` unless the configuration directory exists (D15 Q3)."""
     details = {**target.details(), "path": str(target.config_dir)}
@@ -163,26 +182,30 @@ def require_target(target: SkillTarget) -> None:
         )
 
 
-def scan(target: SkillTarget) -> dict[str, Installed]:
-    """Our skill directories and the foreign ones that would clash with ours, by name."""
+def scan(target: SkillTarget, owner: Owner = APP_OWNER) -> dict[str, Installed]:
+    """The owner's skill directories and the foreign ones that would clash with its
+    names, by name."""
     found: dict[str, Installed] = {}
     try:
         names = sorted(os.listdir(target.skills)) if target.skills.is_dir() else []
         for name in names:
             path = target.skills / name
             if path.is_symlink() or not path.is_dir():
-                if _clashes(name):
+                if owner.clashes(name):
                     found[name] = Installed(name, is_dir=False)
                 continue
             marker_data = _read(path / MARKER_FILE)
+            marker = decode_marker(marker_data) if marker_data is not None else None
             legacy = (path / LEGACY_MARKER_FILE).is_file()
-            if marker_data is None and not legacy and not _clashes(name):
-                continue
+            if marker is not None and marker.kind not in owner.kinds:
+                continue  # another program's skill
+            if marker is None and not owner.clashes(name):
+                continue  # no readable marker and none of the owner's names
             files, problems = read_tree(path)
             found[name] = Installed(
                 name,
                 is_dir=True,
-                marker=decode_marker(marker_data) if marker_data is not None else None,
+                marker=marker,
                 marker_data=marker_data,
                 legacy=legacy,
                 files={k: v for k, v in files.items() if k not in MARKER_FILES},
@@ -410,10 +433,6 @@ def _as_status(integrity: Integrity) -> Status:
     if integrity == "foreign":
         return "foreign"
     return "modified" if integrity == "modified" else "unexpected"
-
-
-def _clashes(name: str) -> bool:
-    return name == APP_SKILL or name.startswith(GRAPH_SKILL_PREFIX)
 
 
 def _read(path: Path) -> bytes | None:

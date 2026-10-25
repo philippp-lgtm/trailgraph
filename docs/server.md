@@ -323,7 +323,8 @@ false` turns `/v1/dist/` off (404).
 refresh, and exits 0 only when nothing is outdated (else
 `update.available`). `remote.client_outdated` and `skills.outdated` name
 `graph self update` as their hint. `graph-admin self update` does step 1
-for `graph-admin` with the admin token; it installs no skills.
+for `graph-admin` with the admin token; it installs no skills (its admin
+skills are refreshed by `graph-admin workspace sync` or `skills install`).
 
 ## Skill freshness
 
@@ -437,8 +438,10 @@ as `graph` does.
 - `graph pull` writes the files the server answers into `DIR`, with the
   checks it makes locally; `graph push` uploads only the base file,
   `ontology/` and `skill/` of `DIR` and writes the new base into it.
-- `describe commands` and `ontology validate` run here; `init`, `view` and
-  `--data-root` are refused (`admin.remote_mode`).
+- `describe commands`, `ontology validate` and `skills install|check` run
+  here; `workspace sync` runs here and reaches the graphs through `graph
+  list` and `graph pull`; `init`, `view` and `--data-root` are refused
+  (`admin.remote_mode`).
 - The server compares its build of `graph-admin` with this one, as for
   `graph` ([Builds](#builds)).
 - Writes are never retried. A lost answer is `remote.outcome_unknown`:

@@ -229,3 +229,46 @@ def test_a_crash_between_swaps_leaves_each_skill_old_or_new(
     }
     assert install_all(target, app_skill("two"), graph_skill("h")) == ["unchanged", "replace"]
     assert not (target.config_dir / STAGING_DIR).exists()
+
+
+def admin_skill(text: str = "a") -> RenderedSkill:
+    files = {"SKILL.md": f"---\nname: maintaining-example\n---\n{text}\n".encode()}
+    return rendered(
+        "maintaining-example", "admin", files, program={"name": "graph-admin"}, source={}
+    )
+
+
+ADMIN = install.Owner(("admin",), lambda name: name == "maintaining-example")
+
+
+def test_each_owner_sees_only_its_own_skills(target: SkillTarget) -> None:
+    """graph never reports or replaces graph-admin's skills, nor graph-admin graph's."""
+    install_all(target, app_skill(), graph_skill())
+    apply_install(plan_install(target, scan(target, ADMIN), [admin_skill()], force=False))
+    put(target.skills / "unrelated", {"SKILL.md": b"x"})
+    assert sorted(scan(target)) == ["graph-cli", "graph-example"]
+    assert sorted(scan(target, ADMIN)) == ["maintaining-example"]
+    assert [s.status for s in check(scan(target, ADMIN), [admin_skill()])] == ["fresh"]
+    assert {s.name: s.status for s in check(scan(target), [app_skill()])} == {
+        "graph-cli": "fresh",
+        "graph-example": "unavailable",
+    }
+
+
+def test_an_owner_reports_a_foreign_directory_under_its_name(target: SkillTarget) -> None:
+    put(target.skills / "maintaining-example", {"SKILL.md": b"x"})
+    put(target.skills / "graph-other", {"SKILL.md": b"y"})
+    assert [(n, i.integrity) for n, i in scan(target, ADMIN).items()] == [
+        ("maintaining-example", "foreign")
+    ]
+    plan = plan_install(target, scan(target, ADMIN), [admin_skill()], force=False)
+    assert [s.action for s in plan.steps] == ["refused"]
+    assert "graph-other" in scan(target) and "maintaining-example" not in scan(target)
+
+
+def test_a_marker_of_an_unknown_kind_belongs_to_nobody(target: SkillTarget) -> None:
+    """A newer program's kind: neither owner claims it unless it carries one of its names."""
+    put(target.skills / "future-skill", {"SKILL.md": b"x"})
+    marker = target.skills / "future-skill" / MARKER_FILE
+    marker.write_text('{"schema": "graph_cli.skill_install/1", "kind": "other"}')
+    assert "future-skill" not in scan(target) and "future-skill" not in scan(target, ADMIN)

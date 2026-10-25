@@ -1,9 +1,12 @@
 # `graph-admin`: the maintenance CLI
 
 `graph-admin` is run from the repository checkout (`uv run graph-admin ...`)
-and is not installed on `PATH`. On a machine in remote mode it sends its
-commands to the server's admin API
-([Server](server.md#remote-mode-of-graph-admin)). Output and exit codes are those of `graph`
+and is not installed on `PATH`. On a machine in remote mode it is installed
+from the server's `/v1/dist/` ([Self update](server.md#self-update)) and
+sends its commands to the server's admin API
+([Server](server.md#remote-mode-of-graph-admin)). An agent maintains graphs
+from a [maintainer workspace](#maintainer-workspaces) with the admin
+skills that ship with `graph-admin`. Output and exit codes are those of `graph`
 (see [Output and exit codes](cli_graph.md#output-and-exit-codes)).
 `graph-admin --help` and `graph-admin <command> --help` show every option;
 `graph-admin describe commands --json` lists every command as data
@@ -22,6 +25,7 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
 | `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one) and its published skill, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
 | `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`) |
+| `workspace sync DIR` | set up or refresh a [maintainer workspace](#maintainer-workspaces): the admin skills in `DIR/.claude/skills/`, `DIR/CLAUDE.md` when there is none, and a pull of every graph that has no folder yet (`--dry-run`, `--force` for the skills) |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
@@ -43,6 +47,8 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `enroll list` | the codes not used yet: id, project, scope, expiry, creation time, hash prefix; never the code |
 | `enroll revoke ID [--reason R]` | revoke an unused code, audited as `maint.token_revoke` |
 | `self update` | in the remote mode install the server's build of `graph-admin` when it differs (`--check` only reports); see [Self update](server.md#self-update) |
+| `skills install --scope user\|project` | install or refresh the [admin skills](skills.md#admin-skills) for an agent (`--dir`, `--force`, `--dry-run`); runs here, also in the remote mode |
+| `skills check --scope user\|project` | report each admin skill as `fresh`, `stale`, `modified`, `unexpected`, `foreign`, `missing` or `unavailable` (`--dir`); exit 1 unless all are fresh |
 | `view --graph REF` | serve a live view of the graph in the browser until Ctrl+C (`--port`, `--host`, `--no-open`); no JSON mode (see [Live view](live_view.md)) |
 
 ## Workspaces: pull and push
@@ -81,6 +87,40 @@ Pull is authorized as `maint.graph_configure` on the graph; push as that
 and, for a release, `maint.ontology_release` and `maint.ontology_pin`. Every
 change is audited as by the single commands, with the push's `--reason`.
 
+## Maintainer workspaces
+
+`workspace sync DIR` turns a directory into a place an agent maintains
+graphs from, on the machine with the data or on any machine in the remote
+mode:
+
+```
+DIR/CLAUDE.md                    written when missing, never replaced: points at the skills
+DIR/.claude/skills/<skill>/      the admin skills (as `skills install --scope project --dir DIR`)
+DIR/<graph>_<id suffix>/         one folder per graph, as `graph pull` writes it
+```
+
+The suffix is the last six hex digits of the graph's id (the random end of
+a UUIDv7), so graphs of one name from two installations never share a
+folder. A folder belongs to a graph by its `.graph_cli_source.json`, not by
+its name: a renamed folder is still found. Each run installs or refreshes
+the skills and pulls every graph without a folder (archived ones are left
+out), through `graph list` and `graph pull` with their authorization and
+checks; the answer lists each graph with its `action`:
+
+| Action | Meaning |
+| --- | --- |
+| `pull` | would be pulled (`--dry-run`) |
+| `pulled` | pulled into its new folder |
+| `present` | its folder holds the release the graph has pinned |
+| `behind` | the graph has another release pinned than its folder was pulled from; pull it again with `graph pull --force` once the folder's edits are pushed |
+| `conflict` | the folder name is taken by something that is not a pull of this graph; left as it is, the command ends with `admin.workspace_conflict` (exit 1) after doing the rest |
+| `failed` | its pull was refused; `error` names the code, the command ends with that error |
+
+A folder is never replaced or deleted. New graphs are drafted outside the
+graph folders, created with `graph create`, and get their folder at the
+next sync. The workflow for agents is the `maintaining-graphs` skill
+([Admin skills](skills.md#admin-skills)).
+
 ## Auditing and releases
 
 Every change is audited: an intent in the graph's stream, the effect, then
@@ -91,8 +131,9 @@ version (`check_graph`, the check `graph check --ontology` runs without
 releasing), otherwise the refusal lists them. Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 
-Related guides: [Ontology authoring](../skills/ontology-best-practices/SKILL.md)
+Related guides: [Ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md)
 (the `graph_cli.ir/1` format, modeling, versioning),
+[Admin skills](skills.md#admin-skills) (the skills for maintainers),
 [Access control](access_control.md) (policies),
 [Skills](skills.md#graph-skills) (publishing graph skills),
 [Files](files.md#backups) (verifying stored files after a restore).

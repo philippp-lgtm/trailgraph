@@ -40,6 +40,7 @@ V110 = ONTOLOGIES / "inventory" / "1.1.0"
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
+FOLDER = re.compile(r"\b(example_graph|second)_[0-9a-f]{6}\b")  # workspace sync: id ends
 CODE = re.compile(r"gce_[a-z2-7]{26}")
 ENROLLMENT_ID = re.compile(r"(?<![0-9a-f-])[0-9a-f]{12}(?![0-9a-f-])")
 
@@ -549,6 +550,7 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     preview.mkdir()
     workspace = cwd / "workspace"
     shutil.rmtree(workspace, ignore_errors=True)
+    shutil.rmtree(cwd / "admin_ws", ignore_errors=True)
     (cwd / "policy.yaml").write_text(POLICY)
 
     def run(*args: str, text: bool = False) -> None:
@@ -624,6 +626,12 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     run("graph", "push", "second", "workspace")
     seen.append(sorted(str(p.relative_to(workspace)) for p in workspace.rglob("*")))
     seen.append([json.loads((workspace / ".graph_cli_source.json").read_text())])
+    run("workspace", "sync", "admin_ws", "--dry-run")
+    run("workspace", "sync", "admin_ws")
+    run("workspace", "sync", "admin_ws")
+    run("skills", "install", "--scope", "project", "--dir", "admin_ws", "--dry-run")
+    run("skills", "check", "--scope", "project", "--dir", "admin_ws")
+    seen.append(sorted(str(p.relative_to(cwd)) for p in (cwd / "admin_ws").rglob("*")))
     run("audit", "verify")
     run("graph", "list", text=True)
     run("token", "list", text=True)
@@ -635,6 +643,7 @@ def comparable(outcomes: list[Any], *homes: Path) -> Any:
     for home in homes:
         text = text.replace(str(home), "<home>")
     text = HASH_PREFIX.sub("<hash prefix>", SECRET.sub("<token>", text))
+    text = FOLDER.sub(r"\1_<suffix>", text)
     text = ENROLLMENT_ID.sub("<enrollment>", CODE.sub("<code>", text))
     return normalized(json.loads(text))
 

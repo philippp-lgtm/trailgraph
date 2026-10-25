@@ -61,6 +61,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.skill_render_exists": _render_force,
     "admin.source_exists": _pull_force,
     "admin.source_conflict": None,  # the message says to pull into another directory
+    "admin.workspace_conflict": None,  # details.folders names the folders to move away
     "admin.view_port_unavailable": _view_any_port,
     "admin.remote_mode": None,  # the message says where to run it
     "admin.token_exists": _token_list,

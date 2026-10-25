@@ -16,14 +16,17 @@ def all_specs() -> tuple[CommandSpec, ...]:
         ontology,
         policy,
         self_update,
+        skills,
         token,
         view,
+        workspace,
     )
 
     return (
         *meta.SPECS,
         *init.SPECS,
         *graph.SPECS,
+        *workspace.SPECS,
         *ontology.SPECS,
         *audit.SPECS,
         *files.SPECS,
@@ -32,4 +35,5 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *enroll.SPECS,
         *view.SPECS,
         *self_update.SPECS,
+        *skills.SPECS,
     )

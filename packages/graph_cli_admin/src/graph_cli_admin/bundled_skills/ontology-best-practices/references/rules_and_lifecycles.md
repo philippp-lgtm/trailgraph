@@ -26,7 +26,7 @@ Two consequences:
   such as before a release.
 - **A write rule judges an entity when it is written.** A rule added in a
   release does not look at existing entities until they are written
-  again; `graph check` or a major release checks them all.
+  again; `graph-admin graph check` or a major release checks them all.
 
 ## Error or warning
 

@@ -80,7 +80,9 @@ name (`cli_kit.argv.request_args`, `api_args`) and returns the server's answer a
 (uploads, downloads, origins), and the skills commands take graph skills
 from the server. `maintenance_cli.remote` does the same for `graph-admin`:
 it uploads file and directory parameters and writes the files of `graph
-skill render` and `graph pull` into their directories.
+skill render` and `graph pull` into their directories. `workspace sync`
+runs on the client and calls the handlers of `graph list` and `graph pull`
+the mode selects, so it needs no route of its own.
 
 ## CLIs
 
@@ -94,7 +96,10 @@ are definitions with one home each, next to what produces them:
 helpers to write schemas), `app_cli.output_schemas` (entity, write result,
 actor, model parts) and `graph_cli_admin.maintenance_cli.output_schemas`
 (ontology pin, diff and release, finding counts, policy document, token,
-enrollment). Query planning (`graph_cli.query.plan`) turns `find`
+enrollment). The admin skills are package data of `graph_cli_admin`
+(`bundled_skills/`), read by `maintenance_cli.admin_skills` and installed
+with `graph_cli.skills.install`, whose scan sees only one owner's skills
+(`Owner`: marker kinds and names). Query planning (`graph_cli.query.plan`) turns `find`
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer

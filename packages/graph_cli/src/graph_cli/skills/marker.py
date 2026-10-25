@@ -26,8 +26,8 @@ from graph_cli.kernel.json_access import JsonShapeError, as_object, req_obj, req
 from graph_cli.kernel.skill_marker import MARKER_SCHEMA
 from graph_cli.skills.tree import SkillFiles
 
-SkillKind = Literal["app", "graph"]
-KINDS: Final = ("app", "graph")
+SkillKind = Literal["app", "graph", "admin"]  # admin: a skill graph-admin installs
+KINDS: Final[tuple[SkillKind, ...]] = ("app", "graph", "admin")
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,15 +63,13 @@ def decode_marker(data: bytes) -> Marker | None:
         doc = as_object(parse_json(data), "marker")
         if doc.get("schema") != MARKER_SCHEMA:
             return None
-        kind = req_str(doc, "kind")
+        kind = next((k for k in KINDS if k == req_str(doc, "kind")), None)
         files = req_obj(doc, "files")
-        if kind not in KINDS or not all(
-            isinstance(v, str) and HASH_RE.match(v) for v in files.values()
-        ):
+        if kind is None or not all(isinstance(v, str) and HASH_RE.match(v) for v in files.values()):
             return None
         return Marker(
             skill=req_str(doc, "skill"),
-            kind="app" if kind == "app" else "graph",
+            kind=kind,
             program=req_obj(doc, "program"),
             source=req_obj(doc, "source"),
             files={name: str(value) for name, value in files.items()},

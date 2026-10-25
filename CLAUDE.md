@@ -51,7 +51,8 @@ user-specific content as examples. Prefer neutral placeholders (e.g.
 - Directory names are always lowercase.
 - No spaces in directory names.
 - Use `_` as the word separator instead of `-` (e.g. `data_models`).
-- Exception: skill directories under `skills/` use `-` as the word separator
-  (e.g. `skills/example-skill/`). The Agent Skills specification allows only
+- Exception: skill directories (under `skills/` and the bundled admin skills
+  of `graph_cli_admin`) use `-` as the word separator (e.g.
+  `skills/example-skill/`). The Agent Skills specification allows only
   lowercase letters, digits and hyphens in a skill `name`, and the `name` must
   match its directory name.

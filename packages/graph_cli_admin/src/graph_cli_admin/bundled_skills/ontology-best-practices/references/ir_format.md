@@ -13,9 +13,10 @@ findings; start from it. Judgment about what to model is in
 - A released version is never edited: copy the directory to the next
   version and change the copy. Releasing a version again with other
   content is refused.
-- Commands: `graph-admin ontology validate <dir>`, `ontology diff <dir>
-  --graph <graph>` (or `--against <old dir>`), `ontology release <graph>
-  <dir>`, `graph create <graph> --ontology <dir>`.
+- Commands: `graph-admin ontology validate <dir>`, `graph-admin ontology
+  diff <dir> --graph <graph>` (or `--against <old dir>`), `graph-admin
+  ontology release <graph> <dir>`, `graph-admin graph create <graph>
+  --ontology <dir>`.
 
 ## YAML rules
 

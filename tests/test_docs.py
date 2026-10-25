@@ -3,7 +3,7 @@ the command overviews of `graph` and `graph-admin` name exactly the commands eac
 with options those commands take.
 
 Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md,
-docs/ and the hand-written `ontology-best-practices` skill). Links inside
+docs/ and the hand-written admin skills that ship with graph-admin). Links inside
 code blocks are ignored. Anchors follow GitHub's heading slugs. The command
 overviews are compared with the inventory goldens, which `tests/cli/test_app_meta.py`
 and `tests/cli/test_admin_init.py` keep equal to `describe commands` of each program.
@@ -18,9 +18,9 @@ from typing import Any
 import pytest
 from harness import REPO_ROOT
 from support.fixtures import GOLDENS
+from support.skills import ADMIN_SKILLS_DIR
 
 DOCS_DIR = REPO_ROOT / "docs"
-ONTOLOGY_SKILL = REPO_ROOT / "skills" / "ontology-best-practices"
 INDEX = DOCS_DIR / "README.md"
 
 CODE_BLOCK = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
@@ -39,7 +39,7 @@ def _documents() -> list[Path]:
         REPO_ROOT / "README.md",
         REPO_ROOT / "CONTRIBUTING.md",
         *sorted(DOCS_DIR.glob("*.md")),
-        *sorted(ONTOLOGY_SKILL.rglob("*.md")),
+        *sorted(ADMIN_SKILLS_DIR.rglob("*.md")),
     ]
 
 

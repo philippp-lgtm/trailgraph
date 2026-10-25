@@ -170,6 +170,27 @@ class Services:
         )
         return roots.state_root
 
+    def skill_dirs(self, scope: str, directory: str | None) -> tuple[Path, Path | None]:
+        """``(agent configuration directory, project directory)``, as for ``graph skills``:
+        ``project`` is ``<dir>/.claude`` (``<dir>`` defaults to the working directory),
+        ``user`` is ``$CLAUDE_CONFIG_DIR``, else ``$HOME/.claude``."""
+        from graph_cli.catalog.wiring import CLAUDE_CONFIG_ENV
+
+        if scope == "project":
+            project = self._path(directory) if directory is not None else self.cwd.resolve()
+            return project / ".claude", project
+        configured = self.env.get(CLAUDE_CONFIG_ENV)
+        if configured:
+            return self._path(configured), None
+        home = self.env.get("HOME")
+        if not home:
+            raise GraphCliError(
+                "skills.target_invalid",
+                "HOME is not set; the user skill directory is unknown",
+                details={"scope": "user", "cause": "no_home"},
+            )
+        return self._path(home) / ".claude", None
+
     def _path(self, value: str) -> Path:
         home = self.env.get("HOME")
         if home and (value == "~" or value.startswith("~/")):

@@ -9,7 +9,8 @@ This skill is for whoever authors the ontology of a graph: what kinds of
 entities a graph holds, their attributes, relations, states and rules.
 Reading and writing the data of a graph is the `graph-cli` skill and the
 graph's own skill; this one changes what a graph can hold. Ontologies are
-authored by maintainers with `graph-admin` from a checkout of graph_cli.
+authored by maintainers with `graph-admin`, in a maintainer workspace or a
+checkout of graph_cli; the `maintaining-graphs` skill rolls them out.
 
 Rules use MUST, SHOULD and MAY. Where this skill and the requirements of a
 concrete graph disagree, the graph wins; record why.

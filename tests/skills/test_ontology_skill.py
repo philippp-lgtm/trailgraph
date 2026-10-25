@@ -15,7 +15,7 @@ import re
 
 import pytest
 import yaml
-from harness import REPO_ROOT
+from support.skills import ADMIN_SKILLS_DIR
 
 from graph_cli.kernel.yaml_strict import load_strict
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
@@ -34,7 +34,7 @@ from graph_cli.ontology_layer.vocabulary import (
     SYSTEM_FIELDS,
 )
 
-SKILL_DIR = REPO_ROOT / "skills" / "ontology-best-practices"
+SKILL_DIR = ADMIN_SKILLS_DIR / "ontology-best-practices"
 FORMAT = SKILL_DIR / "references" / "ir_format.md"
 
 YAML_BLOCK = re.compile(r"^```yaml\n(.*?)^```", re.MULTILINE | re.DOTALL)

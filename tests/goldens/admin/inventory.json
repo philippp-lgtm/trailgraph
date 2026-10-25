@@ -1948,6 +1948,141 @@
     },
     {
       "path": [
+        "skills",
+        "check"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Check that installed admin skills equal what this program installs now.",
+      "args": [],
+      "options": [
+        {
+          "name": "--scope",
+          "type": "choice",
+          "required": true,
+          "repeatable": false,
+          "summary": "user: the agent's user skills; project: <dir>/.claude/skills.",
+          "choices": [
+            "user",
+            "project"
+          ]
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory for --scope project; default: the working directory."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin skills check --scope project --dir <dir>",
+          "summary": "Check one folder."
+        },
+        {
+          "command": "graph-admin skills check --scope user --json",
+          "summary": "Per-skill status as JSON."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "skills.check_failed",
+        "skills.target_invalid",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
+    },
+    {
+      "path": [
+        "skills",
+        "install"
+      ],
+      "kind": "meta",
+      "surface": "meta",
+      "action": null,
+      "summary": "Install or refresh the admin skills of this program for an agent.",
+      "args": [],
+      "options": [
+        {
+          "name": "--scope",
+          "type": "choice",
+          "required": true,
+          "repeatable": false,
+          "summary": "user: the agent's user skills; project: <dir>/.claude/skills.",
+          "choices": [
+            "user",
+            "project"
+          ]
+        },
+        {
+          "name": "--dir",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Project directory for --scope project; default: the working directory."
+        },
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace skill directories that are not ours or were edited by hand."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be installed; write nothing."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin skills install --scope project --dir <dir>",
+          "summary": "Into one folder."
+        },
+        {
+          "command": "graph-admin skills install --scope user --json",
+          "summary": "For every project."
+        },
+        {
+          "command": "graph-admin skills install --scope project --dry-run --json",
+          "summary": "Show the plan."
+        }
+      ],
+      "errors": [
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "skills.modified",
+        "skills.not_owned",
+        "skills.target_invalid",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
+    },
+    {
+      "path": [
         "token",
         "create"
       ],
@@ -2249,6 +2384,81 @@
       ],
       "limits": {},
       "remote": "local"
+    },
+    {
+      "path": [
+        "workspace",
+        "sync"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": null,
+      "summary": "Set up or refresh a maintainer workspace in DIR: admin skills, one folder per graph.",
+      "args": [
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "Workspace directory; created if missing."
+        }
+      ],
+      "options": [
+        {
+          "name": "--force",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Replace admin skill directories that are not ours or were edited by hand."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be installed and pulled; write nothing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin workspace sync <dir>",
+          "summary": "Set up a workspace, or refresh it."
+        },
+        {
+          "command": "graph-admin workspace sync . --dry-run --json",
+          "summary": "Show the plan."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.source_exists",
+        "admin.workspace_conflict",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "skills.modified",
+        "skills.not_owned",
+        "skills.target_invalid",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "client"
     }
   ],
   "actions": [
@@ -2355,6 +2565,11 @@
       "exit": 5
     },
     {
+      "code": "admin.workspace_conflict",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "audit.unavailable",
       "category": "unavailable",
       "exit": 5
@@ -2430,8 +2645,28 @@
       "exit": 5
     },
     {
+      "code": "skills.check_failed",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "skills.modified",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "skills.not_owned",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "skills.source_invalid",
       "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "skills.target_invalid",
+      "category": "refused",
       "exit": 1
     },
     {

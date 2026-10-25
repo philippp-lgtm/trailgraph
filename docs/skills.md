@@ -5,8 +5,8 @@ graph_cli gives coding agents two kinds of skills (Agent Skills format:
 `references/`): the `graph-cli` skill for the CLI itself, and one graph
 skill per graph that says what the graph holds. `graph skills install`
 puts both into a project or the user's skill directory. Maintainers have
-a third, [`ontology-best-practices`](#the-ontology-best-practices-skill),
-for authoring ontologies.
+the [admin skills](#admin-skills) that ship with `graph-admin`, for
+authoring ontologies and graph skills and for rolling them out.
 
 ## The `graph-cli` skill
 
@@ -113,24 +113,43 @@ machine, the remote mode), `graph-admin graph pull` writes the published
 template into a workspace and `graph-admin graph push` publishes it again
 ([Workspaces](cli_graph_admin.md#workspaces-pull-and-push)).
 
-## The `ontology-best-practices` skill
+## Admin skills
 
-`skills/ontology-best-practices/` is the maintainer skill for authoring
-the ontology of a graph: when a graph pays off, the workflow from
-competency questions to release, modeling choices, names and summaries,
-rules and lifecycles, change levels, and a review checklist.
-`references/ir_format.md` is the reference of the `graph_cli.ir/1` format.
-The skill is hand-written; `tests/skills/test_ontology_skill.py` compiles
-its YAML examples and checks that the format reference names every key the
-parser accepts.
+Three hand-written skills for maintainers ship inside `graph-admin`
+(`packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/`), so every
+install of it, the wheel a server hands out included, carries the version
+that fits it:
 
-It is not part of `graph skills install`, because it belongs with
-`graph-admin` and the checkout. Make it available to an agent working in
-the checkout with a link (`.claude/` is not tracked):
+| Skill | For |
+| --- | --- |
+| [`ontology-best-practices`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md) | authoring an ontology: when a graph pays off, competency questions to release, modeling choices, names and summaries, rules and lifecycles, change levels, a review checklist; `references/ir_format.md` is the reference of the `graph_cli.ir/1` format |
+| [`maintaining-graphs`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/maintaining-graphs/SKILL.md) | the maintainer workflow with `graph-admin`: the workspace, new ontology versions, new graphs, publishing graph skills, checks and the audit |
+| [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md) | the curated text of a graph skill template: blocks, description, rules and recipes, what publishing checks, the preview loop |
+
+`graph-admin skills install --scope project|user` copies them into an
+agent skill directory with the installer of `graph skills install` (the
+same targets, marker, staged swap and statuses; marker kind `admin`), and
+`graph-admin skills check` reports them; [`graph-admin workspace
+sync`](cli_graph_admin.md#maintainer-workspaces) installs them into a
+maintainer workspace. Their names never start with `graph-`: `graph`
+judges, refreshes and reports only `graph-cli` and `graph-*`, and
+`graph-admin` only its own, so both kinds share one skill directory.
+Nothing refuses a command because an admin skill is stale; `skills check`
+says so, and `skills install` or `workspace sync` refreshes them after
+`graph-admin self update`.
+
+`tests/skills/test_ontology_skill.py` compiles the YAML examples of
+`ontology-best-practices` and checks that its format reference names every
+key the parser accepts; `tests/skills/test_admin_skills.py` checks that
+every `graph-admin` and `graph` command line in the admin skills names a
+real command and only its options. In the checkout, link them for an agent
+working there (`.claude/` is not tracked):
 
 ```sh
 mkdir -p .claude/skills
-ln -s ../../skills/ontology-best-practices .claude/skills/ontology-best-practices
+for s in packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/*/; do
+  ln -s "../../$s" ".claude/skills/$(basename "$s")"
+done
 ```
 
 ## Installing skills

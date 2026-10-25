@@ -39,7 +39,7 @@ reader looks for it:
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
 | `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md` | maintainers | operating graphs, policies, what is protected and what is not |
-| `skills/ontology-best-practices/` | maintainers authoring ontologies (agents and people) | the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow |
+| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates) |
 | `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
 
 Rules:
@@ -62,10 +62,10 @@ Update the documentation in the same change as the code:
 | Change | Update |
 | --- | --- |
 | a `graph` command or option | regenerate the skill; `docs/cli_graph.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
-| a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
+| a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change; the admin skills that name it (`maintaining-graphs`; command lines are checked) |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
-| a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `skills/ontology-best-practices/references/` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
+| a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |

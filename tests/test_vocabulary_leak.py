@@ -5,9 +5,10 @@ names (classes, datatypes, enums, lifecycles) and every compound snake_case
 name (relations, attributes, enum values, states with an underscore). Plain
 English single words (``about``, ``name``, ``draft``) are excluded to avoid
 false positives. Python sources are scanned as identifiers and non-docstring
-string constants; other source files as text. Names the standard modules
-define (``core``, ``provenance``, ``files``) are package data and generic; they
-are not denied even when a fixture uses them too.
+string constants; other source files as text, except the admin skills
+(documentation shipped as package data). Names the standard modules define
+(``core``, ``provenance``, ``files``) are package data and generic; they are
+not denied even when a fixture uses them too.
 """
 
 import ast
@@ -21,6 +22,9 @@ from graph_cli.ontology_layer.compiler import compile_bundle
 
 BUILTIN_MODULES = ("core", "provenance", "files")
 SRC_ROOTS = [REPO_ROOT / "packages" / name / "src" for name in ("graph_cli", "graph_cli_admin")]
+# The admin skills are documentation shipped as package data: their modeling examples
+# may share words with the fixtures.
+DOCUMENTATION = REPO_ROOT / "packages/graph_cli_admin/src/graph_cli_admin/bundled_skills"
 
 
 def builtin_names() -> set[str]:
@@ -98,7 +102,7 @@ def find_leaks(words: set[str], prefixes: set[str]) -> dict[str, list[str]]:
     leaks: dict[str, list[str]] = {}
     for root in SRC_ROOTS:
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
-            if path.suffix == ".pyc":
+            if path.suffix == ".pyc" or path.is_relative_to(DOCUMENTATION):
                 continue
             if path.suffix == ".py":
                 texts = _python_tokens(ast.parse(path.read_text()))

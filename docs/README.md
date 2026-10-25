@@ -27,9 +27,10 @@ Start with the [project README](../README.md) (install, quickstart).
 - [Live view](live_view.md): `graph-admin view`
 - [Server](server.md): `graph-server`, the HTTP API that owns the data,
   tokens, the remote mode of `graph`, the container
-- [Ontology authoring](../skills/ontology-best-practices/SKILL.md): the
-  maintainer skill with the `graph_cli.ir/1` format reference, modeling
-  guidance, versioning and the release workflow
+- [Ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md):
+  the maintainer skill with the `graph_cli.ir/1` format reference, modeling
+  guidance, versioning and the release workflow; the other admin skills in
+  [Skills](skills.md#admin-skills)
 
 ## Internals
 
