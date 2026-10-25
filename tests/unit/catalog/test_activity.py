@@ -113,7 +113,18 @@ def test_large_reads_are_split_and_capped() -> None:
     assert sent == [str(i) for i in ids[: len(sent)]]
     assert 250 < len(sent) < 1000
     assert len({d["call"] for d in documents}) == 1
-    assert all(d["edges"] == [] for d in documents)  # entities first, the edge did not fit
+    assert documents[0]["edges"] == [str(edge(1))]  # in turn with the entities: it fits
+
+
+def test_a_cut_read_keeps_entities_and_edges_in_turn() -> None:
+    ids = [entity(n) for n in range(1, 1001)]
+    edges = [edge(n) for n in range(1, 1001)]
+    documents = [json.loads(d) for d in encode_reads(signal(ids, edges))]
+    sent = [i for d in documents for i in d["ids"]]
+    walked = [e for d in documents for e in d["edges"]]
+    assert sent == [str(i) for i in ids[: len(sent)]]
+    assert walked == [str(e) for e in edges[: len(walked)]]
+    assert abs(len(sent) - len(walked)) <= 1 and len(sent) > 100
 
 
 def test_edges_follow_the_entities_in_the_same_call() -> None:

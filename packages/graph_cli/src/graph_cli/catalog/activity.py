@@ -14,8 +14,9 @@ session that groups one agent's reads) and what, never labels, attributes,
 arguments or query text. Actor and session are cut to ``MAX_TEXT``
 characters. Datagrams stay below macOS ``net.local.dgram.maxdgram`` (2048
 bytes); a read of many entities is split into datagrams with the same
-``call``, entities before edges, and whatever does not fit into
-``MAX_DATAGRAMS`` datagrams is dropped. ``decode`` still reads version 1
+``call``, entities and edges taking turns (so a cut read still draws a
+walk, not only dots), and whatever does not fit into ``MAX_DATAGRAMS``
+datagrams is dropped. ``decode`` still reads version 1
 (``ids`` only) from senders of an earlier release.
 """
 
@@ -62,8 +63,8 @@ class ActivityEvent:
 
 
 def encode_reads(signal: ReadSignal, call: str | None = None) -> list[bytes]:
-    """The datagrams for one read: unique ids in first-seen order, entities before
-    edges, split by size; every datagram carries the same ``call``."""
+    """The datagrams for one read: unique ids in first-seen order, an entity and an edge
+    in turn, split by size; every datagram carries the same ``call``."""
     header: dict[str, JsonValue] = {
         "v": PAYLOAD_VERSION,
         "graph": str(signal.graph),
@@ -73,8 +74,10 @@ def encode_reads(signal: ReadSignal, call: str | None = None) -> list[bytes]:
         "actor": signal.actor.label()[:MAX_TEXT],
         "session": _session(signal),
     }
-    items = [("ids", text) for text in dict.fromkeys(str(i) for i in signal.entities)]
-    items += [("edges", text) for text in dict.fromkeys(str(e) for e in signal.edges)]
+    entities = [("ids", text) for text in dict.fromkeys(str(i) for i in signal.entities)]
+    edges = [("edges", text) for text in dict.fromkeys(str(e) for e in signal.edges)]
+    items = [item for pair in zip(entities, edges, strict=False) for item in pair]
+    items += entities[len(edges) :] + edges[len(entities) :]
     datagrams: list[bytes] = []
     chunk: list[tuple[str, str]] = []
     for item in items:

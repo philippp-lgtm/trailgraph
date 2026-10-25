@@ -31,7 +31,8 @@ and relationships in the rows and then every node and relationship its
 all matched rows, not only the page shown; what `WHERE` filtered out and
 the patterns inside a `WHERE` predicate do not count. The signal carries
 no labels, values, arguments or query text. A read of several hundred
-entities is cut: entities come before edges, the rest is dropped.
+entities and edges is cut: they take turns, so a cut read still draws a
+walk, and the rest is dropped.
 
 On the page a read is a walk: a pulse runs along each walked edge, in
 the order the read names them, from the end it reached first; the
