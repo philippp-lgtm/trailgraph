@@ -573,16 +573,24 @@ def test_signals_name_command_actor_and_walked_edges(svc: ServiceEnv, roles: Rol
     rows, _ = reader.query(
         view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=2)
     )
+    everything, _ = reader.query(
+        view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=500)
+    )
     reader.query(view, reader.parse_query("MATCH (n) RETURN n.alias AS alias"), QuerySpec())
-    neighbors, query, scalars = activity.received
+    neighbors, query, _, scalars = activity.received
     assert (neighbors.command, neighbors.actor) == ("get", svc.actor)  # the request's command
     assert [str(e) for e in neighbors.edges] == walked and walked
-    items = rows["items"]
-    assert isinstance(items, list) and len(items) == 2
-    assert [str(e) for e in query.edges] == [row["r"]["edge_id"] for row in items]  # type: ignore[index, call-overload]
-    ends = {str(i) for row in items for i in (row["a"]["id"], row["b"]["id"])}  # type: ignore[index, call-overload]
-    assert {str(i) for i in query.entities} == ends
-    assert (scalars.entities, scalars.edges) == ([], [])  # values only: nothing lights up
+    items, every = rows["items"], everything["items"]
+    assert isinstance(items, list) and len(items) == 2 and isinstance(every, list)
+    # the shown rows first, then every edge and end the matches walked, beyond the page
+    shown_edges = [row["r"]["edge_id"] for row in items]  # type: ignore[index, call-overload]
+    assert [str(e) for e in query.edges][:2] == shown_edges
+    assert {str(e) for e in query.edges} == {row["r"]["edge_id"] for row in every}  # type: ignore[index, call-overload]
+    ends = [str(i) for row in every for i in (row["a"]["id"], row["b"]["id"])]  # type: ignore[index, call-overload]
+    assert {str(i) for i in query.entities} == set(ends)
+    # values only: the entities the match read light up all the same
+    active = {str(r.id) for r in svc.all_revisions() if r.record_status == "active"}
+    assert {str(i) for i in scalars.entities} == active and scalars.edges == []
 
 
 def test_failed_and_denied_reads_signal_nothing(svc: ServiceEnv) -> None:

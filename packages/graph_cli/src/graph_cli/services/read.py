@@ -683,7 +683,11 @@ class ReadService:
             {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
             for row in shown
         ]
-        self._signal(view, entities_in(shown), edges_in(shown))
+        # What the rows show first, then what the matches went through: a query that
+        # returns only values or counts lights up the entities it read too.
+        entities = dict.fromkeys([*entities_in(shown), *result.touched])
+        edges = dict.fromkeys([*edges_in(shown), *result.walked])
+        self._signal(view, list(entities), list(edges))
         data: dict[str, JsonValue] = {"columns": list(result.columns), "items": items}
         return data, Page(len(result.rows), len(shown), spec.limit, spec.offset)
 

@@ -279,3 +279,38 @@ def test_budget_ends_runaway_matches() -> None:
     assert error.details == {"clause": "MATCH", "budget": 250, "line": 1, "column": 1}
     assert "add labels" in error.message
     assert len(rows("MATCH (a), (b)", budget=250)) == 64
+
+
+# What the matches touched (the read signal of live views)
+
+
+def touched(text: str) -> tuple[list[str], list[str]]:
+    result = execute(resolve(parse(text), NAS, {}), NAS, GRAPH)
+    return [NAMES[i] for i in result.touched], [str(e) for e in result.walked]
+
+
+def edge_id(rel: str, target: str) -> str:
+    return str(edge(rel, target).edge_id)
+
+
+def test_values_and_counts_name_the_nodes_and_edges_matched() -> None:
+    text = "MATCH (n:Note)-[:about]->(:Topic {label: 'storage'}) RETURN count(n) AS c"
+    assert touched(text) == (["note_b", "storage"], [edge_id("nas:about", "storage")])
+    assert touched("MATCH (n:Note) WHERE n.kind = 'idea' RETURN n.title") == (["note_a"], [])
+
+
+def test_paths_name_every_step_in_walk_order() -> None:
+    text = "MATCH (t:Topic {label: 'graphs'})-[:broader*1..2]->(u) RETURN u.label"
+    assert touched(text) == (
+        ["graphs", "storage", "data"],
+        [edge_id("nas:broader", "storage"), edge_id("nas:broader", "data")],
+    )
+
+
+def test_predicates_and_missing_optional_matches_touch_nothing_more() -> None:
+    assert touched("MATCH (n:Note) WHERE NOT (n)-[:cites]->() RETURN n.title") == (
+        ["note_alone"],
+        [],
+    )
+    text = "MATCH (n:Note {title: 'Delta'}) OPTIONAL MATCH (n)-[:cites]->(b) RETURN b"
+    assert touched(text) == (["note_alone"], [])

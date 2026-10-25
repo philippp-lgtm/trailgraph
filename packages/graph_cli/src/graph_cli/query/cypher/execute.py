@@ -13,6 +13,10 @@ entities. From there it extends right and left along the chain. Rows come
 in a deterministic order: scans by id, edges by the other end's id and
 edge id.
 
+The result also names what the matches touched: every node a ``MATCH`` row
+bound or passed through and every relationship it walked, also when
+``RETURN`` keeps only values or counts (the read signal of live views).
+
 Work is bounded: every candidate node and edge counts against the budget
 (default 100 000); above it the query ends with ``query.too_large``.
 """
@@ -25,7 +29,7 @@ from decimal import Decimal
 from typing import Final
 
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import EntityId, TermRef, parse_id
+from graph_cli.kernel.ids import EdgeId, EntityId, TermRef, parse_id
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Query as StoreQuery
 from graph_cli.kernel.records import RECORD_STATUSES, Revision
@@ -73,10 +77,12 @@ _LOOKUP_FIELDS: Final = ("id", "alias")
 
 @dataclass(frozen=True, slots=True)
 class _Partial:
-    """A row being extended by one MATCH: its bindings and the relationships used."""
+    """A row being extended by one MATCH: its bindings, the relationships used and,
+    in walk order, the relationships it went along."""
 
     row: dict[str, Value]
     used: frozenset[tuple[EntityId, object]]
+    walked: tuple[Rel, ...] = ()
 
 
 class Executor:
@@ -100,6 +106,8 @@ class Executor:
         self.scans: dict[tuple[str, ...] | None, tuple[Revision, ...]] = {}
         self.clause_pos = Pos(1, 1, 0)
         self.clause_name = "MATCH"
+        self.touched: dict[EntityId, None] = {}
+        self.walked: dict[EdgeId, None] = {}
 
     # Budget
 
@@ -238,7 +246,9 @@ class Executor:
         for rel, other in self.edges(node, pattern, direction):
             if not self.rel_matches(pattern, rel, partial):
                 continue
-            extended = _Partial(partial.row, partial.used | {(rel.source, rel.edge.edge_id)})
+            extended = _Partial(
+                partial.row, partial.used | {(rel.source, rel.edge.edge_id)}, partial.walked
+            )
             yield from self.paths(other, pattern, direction, extended, [*path, rel], low, high)
 
     # Patterns
@@ -327,7 +337,7 @@ class Executor:
         direction = pattern.direction if step == 1 else _reverse(pattern.direction)
         next_pattern = part.nodes[index + step]
         for value, other, used in self.steps(node, pattern, direction, partial):
-            moved = _Partial(partial.row, used)
+            moved = _Partial(partial.row, used, (*partial.walked, *_rels(value)))
             if not self.node_matches(next_pattern, other, moved):
                 continue
             if step == -1 and isinstance(value, list):
@@ -344,16 +354,29 @@ class Executor:
             partials = [_Partial(dict(row), frozenset())]
             for part in clause.patterns:
                 partials = [found for p in partials for found in self.part(part, p, hints)]
-            matched = [
-                p.row
+            kept = [
+                p
                 for p in partials
                 if clause.where is None or self.evaluator.condition(clause.where, p.row)
             ]
+            for p in kept:
+                self.touch(p)
+            matched = [p.row for p in kept]
             if not matched and clause.optional:
                 matched = [{**row, **{v: None for v in new if v not in row}}]
             self.spend(len(matched))
             result += matched
         return result
+
+    def touch(self, partial: _Partial) -> None:
+        """Note a kept MATCH row: its bound nodes, the relationships it walked and their ends."""
+        for value in partial.row.values():
+            if isinstance(value, Node):
+                self.touched.setdefault(value.id)
+        for rel in partial.walked:
+            self.touched.setdefault(rel.source)
+            self.touched.setdefault(rel.target)
+            self.walked.setdefault(rel.edge.edge_id)
 
     def exists(self, part: PatternPart, row: Row) -> bool | None:
         """A pattern predicate: at least one binding; null when a bound end is null."""
@@ -492,7 +515,16 @@ class Executor:
 def _bind(partial: _Partial, variable: str | None, value: Value) -> _Partial:
     if variable is None or variable in partial.row:
         return partial
-    return _Partial({**partial.row, variable: value}, partial.used)
+    return _Partial({**partial.row, variable: value}, partial.used, partial.walked)
+
+
+def _rels(value: Value) -> tuple[Rel, ...]:
+    """The relationships of one step: a relationship, or a variable-length path."""
+    if isinstance(value, Rel):
+        return (value,)
+    if isinstance(value, list):
+        return tuple(v for v in value if isinstance(v, Rel))
+    return ()
 
 
 def _reverse(direction: Direction) -> Direction:
@@ -523,8 +555,13 @@ def _pattern_variables(parts: Sequence[PatternPart]) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class Result:
+    """The rows of ``RETURN``; ``touched`` and ``walked`` are the nodes and relationships
+    the matches went through, first seen first, whatever ``RETURN`` keeps of them."""
+
     columns: tuple[str, ...]
     rows: tuple[tuple[Value, ...], ...]
+    touched: tuple[EntityId, ...] = ()
+    walked: tuple[EdgeId, ...] = ()
 
 
 def execute(
@@ -548,7 +585,12 @@ def execute(
         else:
             rows = executor.project(clause.projection, rows, clause.pos, "RETURN")
     columns = resolved.columns
-    return Result(columns, tuple(tuple(row[c] for c in columns) for row in rows))
+    return Result(
+        columns,
+        tuple(tuple(row[c] for c in columns) for row in rows),
+        tuple(executor.touched),
+        tuple(executor.walked),
+    )
 
 
 def _count(value: Expr | None) -> int:

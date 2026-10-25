@@ -214,7 +214,10 @@ def test_returned_entities_reach_a_listening_view(
             outcome = app(run_cli, "query", text, env=env)
             assert outcome.code == 0, outcome.envelope
             (event,) = listener.receive(2.0)
-            assert event.ids == (outcome.data["items"][0]["n"]["id"],)
+            # the returned entity first, then every one the match read before LIMIT
+            assert event.ids[0] == outcome.data["items"][0]["n"]["id"]
+            everything = app(run_cli, "query", f"MATCH (n:{label(cls)}) RETURN n", env=ENV)
+            assert set(event.ids) == {item["n"]["id"] for item in everything.data["items"]}
         finally:
             listener.close()
 

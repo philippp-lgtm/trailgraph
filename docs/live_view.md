@@ -7,9 +7,10 @@ activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`).
 ## Activity
 
 Entities light up briefly when something touches them: green
-when created (also by `graph file add`), blue when changed, yellow when
-read. Writes show up by themselves, from any process, once committed.
-Reads show up only when `config.toml` has
+when created (also by `graph file add`), blue when changed, and in the
+color of the reading session when read. Writes show up by themselves,
+from any process, once committed. Reads show up only when `config.toml`
+has
 
 ```toml
 [activity]
@@ -23,11 +24,21 @@ is stored, a read never fails or waits because of it, and without a
 running view nothing is sent. A signal names the command, the reader
 (the agent if the harness names one, else the principal, as for writes)
 and its session, the ids of the entities returned and the ids of the
-edges walked: those `neighbors` followed and the relationships in
-`query` rows. A `query` that returns only values (`RETURN n.name`)
-lights nothing up. The signal carries no labels, values, arguments or
-query text. A read of several hundred entities is cut: entities come
-before edges, the rest is dropped.
+edges walked: those `neighbors` followed, and for `query` the entities
+and relationships in the rows and then every node and relationship its
+`MATCH` rows went through, so a query that returns only values or counts
+(`RETURN n.name`, `count(n)`) lights up what it read too. That covers
+all matched rows, not only the page shown; what `WHERE` filtered out and
+the patterns inside a `WHERE` predicate do not count. The signal carries
+no labels, values, arguments or query text. A read of several hundred
+entities is cut: entities come before edges, the rest is dropped.
+
+On the page a read is a walk: a pulse runs along each walked edge, in
+the order the read names them, from the end it reached first; the
+entities and edges it touched glow and fade within a second or two, and
+reads in quick succession add up, so a busy agent flickers through the
+graph while the rest of it steps back. Each session gets its own
+color. With reduced motion the walk lights up at once, without pulses.
 
 Behind a [server](server.md) the reads happen in the server, so the
 server's `config.toml` needs `signal_reads` and the view must run next to
