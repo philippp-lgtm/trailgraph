@@ -54,7 +54,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes"}),
     "activity": frozenset({"signal_reads"}),
-    "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist"}),
+    "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist", "public_url"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
@@ -63,6 +63,7 @@ MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
 MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
 ORIGIN_RE: Final = re.compile(r"^https?://[^/\s?#]+$")  # a browser Origin: scheme://host[:port]
+PUBLIC_URL_RE: Final = re.compile(r"^https?://[^/\s?#]+(/[^\s?#]*)?$")  # no query, no fragment
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +95,7 @@ class Config:
     # [server]: "exact" refuses a client of another build, "warn" lets it through
     client_builds: Literal["exact", "warn"] = "exact"
     dist: bool = True  # [server]: graph-server hands out the programs it was built from
+    public_url: str | None = None  # [server]: the URL clients use, without a trailing /
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -205,6 +207,11 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     if client_builds is not None and client_builds not in ("exact", "warn"):
         raise _invalid(path, "server.client_builds", "must be 'exact' or 'warn'")
     dist = get("server.dist", bool, "a boolean")
+    public_url = get("server.public_url", str, "a string")
+    if public_url is not None and not PUBLIC_URL_RE.match(public_url):
+        raise _invalid(
+            path, "server.public_url", "must be an http(s) URL without query or fragment"
+        )
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -230,6 +237,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         admin_api=bool(admin_api),
         client_builds="warn" if client_builds == "warn" else "exact",
         dist=dist if dist is not None else defaults.dist,
+        public_url=public_url.rstrip("/") if public_url is not None else None,
         mode=mode or defaults.mode,
         endpoint=endpoint,
         token_file=token_file,

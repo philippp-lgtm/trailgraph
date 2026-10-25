@@ -6,8 +6,11 @@ runs, its parameters as the ``args`` object of the request (canonical names with
 structured forms, the inventory names ``deprecated``), the envelope with the command's
 ``data`` as the answer, and one response per status its error codes reach (B14.5).
 ``components.schemas`` holds the inventory's ``$defs`` under their names and the ``data``
-of every command as ``<operationId>_data``. Deterministic like the inventory. The app
-surface and the admin API (``admin``) each get their own document.
+of every command as ``<operationId>_data``. Every error answer is also offered as
+problem details (``application/problem+json``, B14.22 G8); a write that takes an
+idempotency key declares the ``Idempotency-Key`` header (G7). Deterministic like the
+inventory; ``public_url`` adds ``servers`` (G9). The app surface and the admin API
+(``admin``) each get their own document.
 """
 
 from __future__ import annotations
@@ -31,13 +34,19 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_obj, req_str
 from graph_cli_server.http_status import reachable
+from graph_cli_server.problems import PROBLEM_TYPE
 
 API_VERSION: Final = "graph_cli.api/1"
 _DEFS: Final = "#/$defs/"
 _SCHEMAS: Final = "#/components/schemas/"
 # Every error answer: the envelope with ``error`` set (``data`` only for a partial result).
 _FAILED: Final = "failed_envelope"
+_PROBLEM: Final = "problem"
+_ERROR_TYPE: Final = "error_type"
 _EXIT_HEADER: Final = "Graph-Cli-Exit-Code"
+_RETRY_HEADER: Final = "Retry-After"
+_KEY_HEADER: Final = "Idempotency-Key"
+_KEY_OPTION: Final = "--idempotency-key"
 # The remote client's own codes (B14.10): a client meets them, no server answers them.
 _CLIENT_SIDE: Final = frozenset({"remote.unreachable", "remote.protocol", "remote.outcome_unknown"})
 _DIGEST: Final[Schema] = {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
@@ -74,6 +83,33 @@ _FILTER: Final[Schema] = {
 }
 # The routes that are no command (``app.ServerApp._dispatch``).
 HEALTH: Final[Schema] = obj({"ok": {"const": True}, "version": STRING, "api": STRING})
+ERROR_TYPE: Final[Schema] = obj(
+    {
+        "code": STRING,
+        "category": STRING,
+        "retryable": BOOLEAN,
+        "status": INTEGER,
+        "exit_code": INTEGER,
+        "summary": STRING,
+    }
+)
+# RFC 9457 problem details of a failed envelope (``problems.problem``).
+PROBLEM: Final[Schema] = obj(
+    {
+        "type": {"type": "string", "format": "uri-reference"},
+        "title": STRING,
+        "status": INTEGER,
+        "detail": STRING,
+        "code": STRING,
+        "category": STRING,
+        "retryable": BOOLEAN,
+        "hint": {"anyOf": [STRING, NULL]},
+        "details": OPEN,
+        "exit_code": INTEGER,
+        "warnings": {"type": "array", "items": {"$ref": _SCHEMAS + "warning"}},
+    },
+    {"data": ANY},
+)
 UPLOADED: Final[Schema] = obj({"upload": _DIGEST, "size": INTEGER})
 GRAPH_SKILL: Final[Schema] = obj(
     {
@@ -97,6 +133,7 @@ def openapi(
     version: str,
     commands: str = "/v1/commands/",
     admin: bool = False,
+    public_url: str | None = None,
 ) -> dict[str, JsonValue]:
     """``admin``: the admin API's document (its commands under ``commands``)."""
     schemas = {name: _components(schema) for name, schema in req_obj(inventory, "$defs").items()}
@@ -105,10 +142,26 @@ def openapi(
         for entry in (as_object(e, "error_code") for e in req_list(inventory, "error_codes"))
     }
     _add(schemas, _FAILED, _failed(as_object(schemas["envelope"], "envelope")))
+    _add(schemas, _PROBLEM, dict(PROBLEM))
+    _add(schemas, _ERROR_TYPE, dict(ERROR_TYPE))
     upload = {"put": _operation("upload", "Stage bytes for a file parameter.", _json(UPLOADED))}
+    listed = obj({"errors": {"type": "array", "items": _ref(_ERROR_TYPE)}})
     paths: dict[str, JsonValue] = {
         "/v1/health": {
-            "get": _operation("health", "Liveness and version; no token needed.", _json(HEALTH))
+            "get": _public(
+                _operation("health", "Liveness and version; no token needed.", _json(HEALTH))
+            )
+        },
+        "/v1/errors": {
+            "get": _public(
+                _operation("errors", "The error codes problem types point to.", _json(listed))
+            )
+        },
+        "/v1/errors/{code}": {
+            "parameters": _in_path("code"),
+            "get": _public(
+                _operation("error", "One error code of the registry.", _json(_ref(_ERROR_TYPE)))
+            ),
         },
     }
     inventory_answer = _json(_ref("inventory"))
@@ -128,7 +181,10 @@ def openapi(
                 "/v1/graphs/{graph}/files/{ref}": {
                     "parameters": _in_path("graph", "ref"),
                     "get": _operation(
-                        "file_bytes", "The stored file of an entity, as file path.", _bytes()
+                        "file_bytes",
+                        "The stored file of an entity, as file path.",
+                        _bytes(),
+                        unchanged=True,
                     ),
                 },
                 "/v1/graphs/{graph}/skill": {
@@ -161,26 +217,37 @@ def openapi(
             errors=_errors(codes, categories),
             body=_args_schema(params, admin),
         )
+        if any(p.get("name") == _KEY_OPTION for p in params):
+            operation["parameters"] = [_key_header()]
         operation["x-graph-cli-kind"] = command.get("kind")
         operation["x-graph-cli-remote"] = command.get("remote")
         paths[commands + "/".join(path)] = {"post": operation}
     title = "graph_cli server admin API" if admin else "graph_cli server API"
-    return {
+    document: dict[str, JsonValue] = {
         "openapi": "3.1.0",
         "info": {"title": title, "version": version, "x-api": API_VERSION},
-        "components": {
+    }
+    if public_url is not None:
+        document["servers"] = [{"url": public_url}]
+    document.update(
+        components={
             "securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}},
             "headers": {
                 _EXIT_HEADER: {
                     "description": "The exit code the program would have (B9.4).",
                     "schema": dict(INTEGER),
-                }
+                },
+                _RETRY_HEADER: {
+                    "description": "Seconds to wait before a retry; on a retryable error only.",
+                    "schema": dict(INTEGER),
+                },
             },
             "schemas": dict(sorted(schemas.items())),
         },
-        "security": [{"bearer": []}],
-        "paths": paths,
-    }
+        security=[{"bearer": []}],
+        paths=paths,
+    )
+    return document
 
 
 def _operation(
@@ -190,13 +257,21 @@ def _operation(
     *,
     errors: dict[str, JsonValue] | None = None,
     body: dict[str, JsonValue] | None = None,
+    unchanged: bool = False,
 ) -> dict[str, JsonValue]:
     """``errors``: one response per status the declared codes reach; ``default`` is every
-    other error answer (a code no command declares, such as a malformed body)."""
-    responses: dict[str, JsonValue] = {"200": answer, **(errors or {})}
+    other error answer (a code no command declares, such as a malformed body).
+    ``unchanged``: a ``304`` for a matching ``If-None-Match``."""
+    responses: dict[str, JsonValue] = {"200": answer}
+    if unchanged:
+        responses["304"] = {
+            "description": "Not Modified: If-None-Match names the ETag of the stored bytes.",
+            "headers": {"ETag": {"schema": dict(STRING)}},
+        }
+    responses.update(errors or {})
     responses["default"] = {
-        "description": "The envelope with the error.",
-        "content": {"application/json": {"schema": _ref(_FAILED)}},
+        "description": "The envelope with the error, or problem details on request.",
+        "content": _error_content(),
     }
     operation: dict[str, JsonValue] = {
         "operationId": operation_id,
@@ -221,13 +296,46 @@ def _errors(codes: list[str], categories: Mapping[str, ErrorCategory]) -> dict[s
             by_status.setdefault(status, []).append(code)
     responses: dict[str, JsonValue] = {}
     for status, listed in sorted(by_status.items()):
+        headers: dict[str, JsonValue] = {_EXIT_HEADER: _header_ref(_EXIT_HEADER)}
+        if status == 503:
+            headers[_RETRY_HEADER] = _header_ref(_RETRY_HEADER)
         responses[str(status)] = {
             "description": f"{HTTPStatus(status).phrase}: {', '.join(listed)}.",
-            "headers": {_EXIT_HEADER: {"$ref": f"#/components/headers/{_EXIT_HEADER}"}},
-            "content": {"application/json": {"schema": _ref(_FAILED)}},
+            "headers": headers,
+            "content": _error_content(),
             "x-graph-cli-error-codes": list(listed),
         }
     return responses
+
+
+def _error_content() -> dict[str, JsonValue]:
+    """An error answer: the envelope, or problem details when ``Accept`` names them."""
+    return {
+        "application/json": {"schema": _ref(_FAILED)},
+        PROBLEM_TYPE: {"schema": _ref(_PROBLEM)},
+    }
+
+
+def _header_ref(name: str) -> dict[str, JsonValue]:
+    return {"$ref": f"#/components/headers/{name}"}
+
+
+def _key_header() -> dict[str, JsonValue]:
+    return {
+        "name": _KEY_HEADER,
+        "in": "header",
+        "required": False,
+        "description": (
+            'The idempotency key as an RFC 9651 String ("<key>"), instead of'
+            " idempotency_key in args; both must name the same key."
+        ),
+        "schema": {"type": "string", "pattern": '^"[A-Za-z0-9._:-]{1,128}"$'},
+    }
+
+
+def _public(operation: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """An operation that needs no token."""
+    return {**operation, "security": []}
 
 
 def _json(schema: Schema, *, exit_code: bool = False) -> dict[str, JsonValue]:
@@ -236,7 +344,7 @@ def _json(schema: Schema, *, exit_code: bool = False) -> dict[str, JsonValue]:
         "content": {"application/json": {"schema": dict(schema)}},
     }
     if exit_code:
-        response["headers"] = {_EXIT_HEADER: {"$ref": f"#/components/headers/{_EXIT_HEADER}"}}
+        response["headers"] = {_EXIT_HEADER: _header_ref(_EXIT_HEADER)}
     return response
 
 
@@ -251,6 +359,7 @@ def _bytes() -> dict[str, JsonValue]:
     return {
         "description": "The stored bytes.",
         "headers": {
+            "ETag": {"description": "The content hash, quoted.", "schema": dict(STRING)},
             "Graph-Cli-Content-Hash": {"schema": dict(_DIGEST)},
             "Graph-Cli-Media-Type": {
                 "description": "Empty when the entity names none.",

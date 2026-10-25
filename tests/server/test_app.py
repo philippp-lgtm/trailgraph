@@ -157,7 +157,10 @@ def test_usage_errors_unknown_routes_and_methods(
     for path in ("/v1/commands/describe/commands", "/v1/commands/skills/install", "/other"):
         assert call(app, "POST", path, token=token, body={}).status == 404
     wrong = call(app, "GET", "/v1/commands/whoami", token=token)
-    assert wrong.status == 400 and wrong.error["code"] == "usage.invalid_argument"
+    assert wrong.status == 405 and wrong.error["code"] == "usage.invalid_argument"
+    assert wrong.headers["Allow"] == "POST"  # B14.22 G10, RFC 9110 15.5.6
+    health = call(app, "POST", "/v1/health")
+    assert health.status == 405 and health.headers["Allow"] == "GET"
     plain = command(app, "apply", token, args={"file": "/etc/hosts"})
     assert plain.status == 400 and plain.error["details"]["argument"] == "file"
 
@@ -475,3 +478,223 @@ def test_installed_graph_skills_are_judged_from_the_header(
     )
     assert read.status == 200
     assert [w["code"] for w in read.json["warnings"]] == ["skills.stale"]
+
+
+# ---- HTTP conventions (B14.22 G7-G10) -----------------------------------------------
+
+POINTER = {"graphs": ["example_graph"], "default": "example_graph"}
+PROBLEM = {"Accept": "application/problem+json"}
+
+
+def keyed(app: ServerApp, path: str, token: str, key: str, **body: Any) -> Any:
+    return call(
+        app,
+        "POST",
+        f"/v1/commands/{path}",
+        token=token,
+        body={"pointer": POINTER, **body},
+        headers={"Idempotency-Key": key},
+    )
+
+
+def test_idempotency_key_header(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """G7: the header is the key of ``--idempotency-key``; a repeat replays."""
+    app, _ = served
+    token = installation["tokens"]["ci"]
+    first = keyed(app, "create", token, '"k-1"', args=LOCATION)
+    assert first.status == 200, first.json
+    again = keyed(app, "create", token, '"k-1"', args=LOCATION)
+    assert again.status == 200 and again.json["data"]["idempotent_replay"] is True
+    assert again.json["data"]["id"] == first.json["data"]["id"]
+    both = keyed(app, "create", token, ' "k-1"\t', args={**LOCATION, "idempotency_key": "k-1"})
+    assert both.status == 200 and both.json["data"]["idempotent_replay"] is True
+    other = {"type": "inv:Location", "set": {"name": "Other", "code": "S2"}}
+    reused = keyed(app, "create", token, '"k-1"', args=other)
+    assert (reused.status, reused.error["code"]) == (409, "conflict.idempotency_key_reuse")
+    refused = {
+        "unquoted": keyed(app, "create", token, "k-2", args=LOCATION),
+        "malformed": keyed(app, "create", token, '"k 2"', args=LOCATION),
+        "empty": keyed(app, "create", token, '""', args=LOCATION),
+        "with parameters": keyed(app, "create", token, '"k-2";a=1', args=LOCATION),
+        "two keys": keyed(app, "create", token, '"k-2"', args={**LOCATION, "idempotency_key": "x"}),
+        "a read": keyed(app, "find", token, '"k-2"', args={"type": ["inv:Location"]}),
+    }
+    for why, reply in refused.items():
+        assert reply.status == 400, why
+        assert reply.error["code"] == "usage.invalid_argument", why
+        assert reply.error["details"] == {"argument": "Idempotency-Key"}, why
+    found = command(app, "find", token, args={"type": ["inv:Location"]}, pointer=POINTER)
+    assert found.status == 200, found.json
+    assert len(found.json["data"]["items"]) == 1  # created once, the reuse refused
+
+
+def test_problem_details_on_request(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """G8, G9: every error answer is problem details when ``Accept`` asks for them, the
+    errors before a command included; otherwise the envelope."""
+    app, _ = served
+    token = installation["tokens"]["ci"]
+    document = app_document(__version__)
+    missing = {"args": {"ref": "deadbeefdeadbeef"}, "pointer": POINTER}
+    plain = command(app, "get", token, **missing)
+    assert plain.headers["Content-Type"] == "application/json" and plain.error
+    assert plain.headers["Vary"] == "Accept"
+    reply = call(app, "POST", "/v1/commands/get", token=token, body=missing, headers=PROBLEM)
+    assert reply.status == 404
+    assert reply.headers["Content-Type"] == "application/problem+json"
+    assert reply.headers["Graph-Cli-Exit-Code"] == plain.headers["Graph-Cli-Exit-Code"]
+    found = reply.json
+    error = plain.error
+    assert found == {
+        "type": "about:blank",
+        "title": "Not Found",
+        "status": 404,
+        "detail": error["message"],
+        "code": "entity.not_found",
+        "category": "not_found",
+        "retryable": False,
+        "hint": error["hint"],
+        "details": error["details"],
+        "exit_code": int(plain.headers["Graph-Cli-Exit-Code"]),
+        "warnings": [],
+    }
+    validator = answer_validator(
+        document, "/v1/commands/get", "post", "404", "application/problem+json"
+    )
+    assert not [e.message for e in validator.iter_errors(found)]
+    before = {
+        401: call(app, "POST", "/v1/commands/whoami", body={}, headers=PROBLEM),
+        404: call(app, "GET", "/v1/nothing", token=token, headers=PROBLEM),
+        405: call(app, "GET", "/v1/commands/whoami", token=token, headers=PROBLEM),
+        400: call(app, "POST", "/v1/commands/whoami", token=token, raw=b"{", headers=PROBLEM),
+    }
+    for status, answer in before.items():
+        assert answer.status == status and answer.json["status"] == status
+        assert answer.headers["Content-Type"] == "application/problem+json"
+    assert before[401].headers["WWW-Authenticate"] == "Bearer"
+    assert before[405].headers["Allow"] == "POST"
+    text = call(
+        app,
+        "POST",
+        "/v1/commands/get",
+        token=token,
+        body=missing,
+        query="render=text",
+        headers=PROBLEM,
+    )
+    assert text.json["code"] == "entity.not_found"  # the problem, not the rendered text
+    for accept in ("application/problem+json;q=0", "*/*", "application/json"):
+        kept = call(app, "POST", "/v1/commands/whoami", body={}, headers={"Accept": accept})
+        assert kept.headers["Content-Type"] == "application/json", accept
+    ok = call(app, "POST", "/v1/commands/whoami", token=token, body={}, headers=PROBLEM)
+    assert ok.status == 200 and ok.json["ok"] is True and "Vary" not in ok.headers
+    # with [server] public_url the type names the registry entry
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(
+        config.read_text() + '\n[server]\npublic_url = "https://graph.example.org/"\n'
+    )
+    public = ServerApp(Settings.load(installation["env"], tmp_path), log=io.StringIO())
+    typed = call(public, "POST", "/v1/commands/get", token=token, body=missing, headers=PROBLEM)
+    assert typed.json["type"] == "https://graph.example.org/v1/errors/entity.not_found"
+    assert typed.json["title"] == "The entity does not exist."
+    served_document = call(public, "GET", "/v1/openapi.json", token=token).json
+    assert served_document["servers"] == [{"url": "https://graph.example.org"}]
+
+
+def test_error_registry(served: tuple[ServerApp, io.StringIO]) -> None:
+    """G9: ``GET /v1/errors`` needs no token, like health."""
+    app, _ = served
+    document = app_document(__version__)
+    listed = call(app, "GET", "/v1/errors")
+    assert listed.status == 200
+    codes = {entry["code"]: entry for entry in listed.json["errors"]}
+    assert codes["backend.lock_timeout"] == {
+        "code": "backend.lock_timeout",
+        "category": "unavailable",
+        "retryable": True,
+        "status": 503,
+        "exit_code": codes["backend.lock_timeout"]["exit_code"],
+        "summary": "The graph lock was not acquired.",
+    }
+    assert codes["remote.unauthorized"]["status"] == 401
+    assert "entity.superseded" not in codes  # a warning is no problem type
+    one = call(app, "GET", "/v1/errors/entity.not_found")
+    assert one.json == {**codes["entity.not_found"]}
+    for path, reply in (("/v1/errors", listed), ("/v1/errors/{code}", one)):
+        validator = answer_validator(document, path, "get", "200")
+        assert not [e.message for e in validator.iter_errors(reply.json)]
+    assert call(app, "GET", "/v1/errors/entity.superseded").status == 404
+    assert call(app, "GET", "/v1/errors/nothing").error["code"] == "usage.unknown_command"
+    assert call(app, "POST", "/v1/errors").status == 405
+
+
+def test_a_retryable_503_says_when_to_retry(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any], monkeypatch: Any
+) -> None:
+    """G10: ``Retry-After`` on a retryable 503 only."""
+    from graph_cli.kernel.errors import GraphCliError
+
+    app, _ = served
+    raised: list[GraphCliError] = []
+
+    def dispatch(*_: Any) -> Any:
+        raise raised[-1]
+
+    monkeypatch.setattr(app, "_dispatch", dispatch)
+    raised.append(GraphCliError("backend.lock_timeout", "the graph lock was not acquired"))
+    busy = call(app, "GET", "/v1/health", headers=PROBLEM)
+    assert busy.status == 503 and busy.headers["Retry-After"] == "2"
+    assert busy.json["retryable"] is True
+    raised.append(GraphCliError("backend.corrupt", "damaged"))
+    corrupt = call(app, "GET", "/v1/health")
+    assert corrupt.status == 503 and "Retry-After" not in corrupt.headers
+
+
+def test_file_download_validators(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    """G10: the download names its content hash as ETag and answers If-None-Match with 304,
+    after the same authorization."""
+    app, _ = served
+    token = installation["tokens"]["ci"]
+    content = synthetic_pdf()
+    uploaded = call(app, "PUT", "/v1/uploads", token=token, raw=content).json
+    reference = {"upload": uploaded["upload"], "name": "report.pdf"}
+    added = command(app, "file/add", token, args={"path": reference, "graph": "files_graph"})
+    entity = added.json["data"]["entity"]["id"]
+    route = f"/v1/graphs/files_graph/files/{entity}"
+    first = call(app, "GET", route, token=token)
+    tag = f'"{hash_bytes(content)}"'
+    assert first.status == 200 and first.headers["ETag"] == tag
+    assert first.headers["Cache-Control"] == "private, no-cache"
+    for header in (tag, f"W/{tag}", f'"sha256:{"0" * 64}", {tag}', "*"):
+        same = call(app, "GET", route, token=token, headers={"If-None-Match": header})
+        assert same.status == 304 and same.body == b"", header
+        assert same.headers["ETag"] == tag
+    changed = call(app, "GET", route, token=token, headers={"If-None-Match": '"other"'})
+    assert changed.status == 200 and changed.body == content
+    stranger = installation["tokens"]["stranger"]
+    hidden = call(app, "GET", route, token=stranger, headers={"If-None-Match": tag})
+    assert hidden.status in (403, 404) and "ETag" not in hidden.headers
+    assert hidden.headers["Cache-Control"] == "no-store"
+
+
+def test_cors_names_the_http_headers(installation: dict[str, Any], tmp_path: Path) -> None:
+    """G10: a browser may send the key and conditional requests and read the headers."""
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(
+        config.read_text() + '\n[server]\ncors_origins = ["https://app.example.org"]\n'
+    )
+    app = ServerApp(Settings.load(installation["env"], tmp_path), log=io.StringIO())
+    allowed = {"Origin": "https://app.example.org"}
+    preflight = call(app, "OPTIONS", "/v1/commands/create", headers=allowed)
+    for name in ("Idempotency-Key", "If-None-Match"):
+        assert name in preflight.headers["Access-Control-Allow-Headers"]
+    refused = call(app, "POST", "/v1/commands/whoami", body={}, headers=allowed)
+    exposed = refused.headers["Access-Control-Expose-Headers"]
+    for name in ("ETag", "Retry-After", "Allow", "Graph-Cli-Content-Hash", "Graph-Cli-Media-Type"):
+        assert name in exposed
+    assert refused.headers["Vary"] == "Accept, Origin"

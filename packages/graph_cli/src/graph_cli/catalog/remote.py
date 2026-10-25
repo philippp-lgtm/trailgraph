@@ -45,6 +45,7 @@ APP_TOKEN_HINT: Final = (
     "set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token"
 )
 COMMANDS_ROUTE: Final = "/v1/commands/"
+KEY_HEADER: Final = "Idempotency-Key"  # an RFC 9651 String, B14.22 G7
 TOKENS_DIR: Final = "tokens"  # below the config directory: one directory per project
 APP_TOKEN_FILE: Final = "token"
 ADMIN_TOKEN_FILE: Final = "admin_token"
@@ -387,13 +388,16 @@ class RemoteSession:
         *,
         text: bool,
         write: Write | None,
+        idempotency_key: str | None = None,
     ) -> tuple[Mapping[str, JsonValue], str | None, str | None]:
         """``(envelope, stdout, stderr)`` of a command run by the server; the text only
         with ``text`` and when the server rendered it (a refusal before the command, such
-        as a token of the other scope, comes as a bare envelope)."""
+        as a token of the other scope, comes as a bare envelope). ``idempotency_key``
+        goes in the ``Idempotency-Key`` header."""
         body = self.body(args=dict(args))
         route = self.commands + "/".join(path) + ("?render=text" if text else "")
-        answer = self.client.call("POST", route, body=body, write=write)
+        headers = {KEY_HEADER: f'"{idempotency_key}"'} if idempotency_key is not None else None
+        answer = self.client.call("POST", route, body=body, headers=headers, write=write)
         if not text:
             return envelope_of(answer), None, None
         value = answer.json()

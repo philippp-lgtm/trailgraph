@@ -45,6 +45,7 @@ signal_reads = true
 [server]
 cors_origins = ["https://app.example.org", "http://localhost:5173"]
 client_builds = "warn"
+public_url = "https://graph.example.org/api/"
 [remote]
 token_file = "~/.config/graph_cli/token"
 allow_plain_http = false
@@ -83,6 +84,7 @@ def test_every_key() -> None:
         endpoint="https://graphs.example.org/api/",
         cors_origins=("https://app.example.org", "http://localhost:5173"),
         client_builds="warn",
+        public_url="https://graph.example.org/api",
         token_file="~/.config/graph_cli/token",
         remote_timeout_s=30.0,
     )
@@ -159,6 +161,11 @@ def test_unknown_major() -> None:
         ),
         ('format_version = 1\n[runtime]\nmode = "cloud"\n', "runtime.mode"),
         ('format_version = 1\n[server]\nclient_builds = "any"\n', "server.client_builds"),
+        ('format_version = 1\n[server]\npublic_url = "graph.example.org"\n', "server.public_url"),
+        (
+            'format_version = 1\n[server]\npublic_url = "https://x.example/?a=1"\n',
+            "server.public_url",
+        ),
         ("format_version = 1\n[storage]\nlock_timeout_s = true\n", "storage.lock_timeout_s"),
         ("format_version = 1\n[storage]\nlock_timeout_s = 0\n", "storage.lock_timeout_s"),
         ('format_version = 1\n[storage]\ndurability = "none"\n', "storage.durability"),

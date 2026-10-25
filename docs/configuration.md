@@ -37,7 +37,11 @@ limit and the read signal. The sections described elsewhere:
   `client_builds`: `"exact"` (default) refuses a client of another build,
   `"warn"` lets it through with a warning ([Builds](server.md#builds));
   `dist` (default `true`): `false` hands out no programs
-  ([Self update](server.md#self-update)); read by the server only
+  ([Self update](server.md#self-update)); `public_url`, the `http(s)` URL
+  clients reach the server at (such as the domain of a proxy in front of
+  it, without query): the base of the problem types and the `servers` of
+  the OpenAPI documents ([API](server.md#api)), unset by default; read by
+  the server only
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 

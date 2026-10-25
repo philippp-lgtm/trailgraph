@@ -95,6 +95,7 @@ source_modules = [
     "graph_cli_server.app",
     "graph_cli_server.http_status",
     "graph_cli_server.openapi",
+    "graph_cli_server.problems",
     "graph_cli_server.uploads",
 ]
 forbidden_modules = ["graph_cli_admin"]

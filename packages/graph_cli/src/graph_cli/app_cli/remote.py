@@ -7,7 +7,8 @@ by its canonical API name and returns the server's answer as it came
 (``Result.forwarded``); ``client`` commands keep their own handler. A
 write (not ``--dry-run``) always carries an idempotency key: the given one
 or a generated ``r-<32 hex>``, so a write whose answer was lost can be run
-again safely (``remote.outcome_unknown`` names the key and the command).
+again safely (``remote.outcome_unknown`` names the key and the command). The
+key travels in the ``Idempotency-Key`` header, not in ``args`` (B14.22 G7).
 Hooked commands add work around the call (``app_cli.remote_hooks``).
 """
 
@@ -25,6 +26,7 @@ from graph_cli.cli_kit.envelope import Forwarded, Result
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.changeset import IDEMPOTENCY_KEY_RE
 
 KEY_OPTION: Final = "--idempotency-key"
 Hook = Callable[[RemoteSession, CommandSpec, CommandState, dict[str, JsonValue]], Result]
@@ -64,8 +66,14 @@ def forward(
 ) -> Result:
     """Run ``spec`` on the server; ``key`` generates an idempotency key for a write."""
     write = write_of(spec, args, generate=key)
+    header = None
+    given = args.get(KEY_OPTION)
+    # a malformed key stays in args, so the server refuses it exactly as the CLI does
+    if isinstance(given, str) and IDEMPOTENCY_KEY_RE.fullmatch(given):
+        header = given
+        del args[KEY_OPTION]
     document, stdout, stderr = session.command(
-        spec.path, api_args(args), text=not state.json_mode, write=write
+        spec.path, api_args(args), text=not state.json_mode, write=write, idempotency_key=header
     )
     return Result(forwarded=Forwarded(document, stdout, stderr))
 

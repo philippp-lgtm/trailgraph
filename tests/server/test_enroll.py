@@ -212,7 +212,8 @@ def test_the_route_is_strict_about_its_body(installation: dict[str, Any], tmp_pa
         assert reply.status == 400, reply.json
     large = call(app, "POST", "/v1/enroll", raw=b" " * 5000)
     assert large.status == 400
-    assert call(app, "GET", "/v1/enroll").status == 400
+    wrong = call(app, "GET", "/v1/enroll")
+    assert wrong.status == 405 and wrong.headers["Allow"] == "POST"
     off = ServerApp(Settings.load(installation["env"], tmp_path), log=io.StringIO())
     assert call(off, "POST", "/v1/enroll", body={"code": "x"}).status == 404
 

@@ -139,6 +139,35 @@ def test_token_scopes_keep_the_surfaces_apart(installation: dict[str, Any], tmp_
     assert command(app, "view", tokens["root"]).status == 404
 
 
+def test_admin_commands_take_no_idempotency_key_and_answer_problems(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.22 G7, G8 on the admin API: no admin command takes a key, so the header is
+    refused; an error is problem details on request."""
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    keyed = call(
+        app,
+        "POST",
+        "/v1/admin/commands/token/list",
+        token=root,
+        body={},
+        headers={"Idempotency-Key": '"k-1"'},
+    )
+    assert (keyed.status, keyed.error["code"]) == (400, "usage.invalid_argument")
+    assert keyed.error["details"] == {"argument": "Idempotency-Key"}
+    problem = call(
+        app,
+        "GET",
+        "/v1/admin/commands/token/list",
+        token=root,
+        headers={"Accept": "application/problem+json"},
+    )
+    assert problem.status == 405 and problem.headers["Allow"] == "POST"
+    assert problem.headers["Content-Type"] == "application/problem+json"
+    assert problem.json["code"] == "usage.invalid_argument"
+
+
 def test_a_request_acts_as_its_token_through_maint(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:

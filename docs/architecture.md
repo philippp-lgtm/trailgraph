@@ -64,7 +64,8 @@ command-line form for the one click program, and `cli_kit.runner.run` runs it wi
 `uploads` stages uploaded bytes per token, `dist` reads the wheels the
 server hands out under `/v1/dist/` once at start, `openapi` derives the OpenAPI
 documents from the inventories with output schemas, `http_status` maps an
-error to its HTTP status for the routes and the documents, `main` serves the app with `waitress` (one
+error to its HTTP status for the routes and the documents, `problems` turns a
+failed envelope into RFC 9457 problem details and answers the error registry, `main` serves the app with `waitress` (one
 process, a thread pool). `admin_api` serves the `graph-admin` declarations
 the same way under `/v1/admin/`, with an admin `Services` per request whose
 `AdminRequest` carries the request's actor (entrypoint `maint`); `main`

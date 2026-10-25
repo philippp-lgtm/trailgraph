@@ -44,7 +44,7 @@ from graph_cli import __version__
 from graph_cli.catalog.build import read_build
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.tokens import TokenRecord
-from graph_cli.cli_kit.argv import to_argv
+from graph_cli.cli_kit.argv import inventory_args, to_argv
 from graph_cli.cli_kit.envelope import envelope
 from graph_cli.cli_kit.runner import Completed, Invocation, run
 from graph_cli.cli_kit.spec import SERVED, CommandSpec
@@ -70,6 +70,7 @@ from graph_cli_server.app import (
     _read_json,
     answer,
     status_of,
+    with_header_key,
 )
 from graph_cli_server.openapi import openapi
 
@@ -131,6 +132,7 @@ class AdminApi:
                 version=__version__,
                 commands=COMMANDS,
                 admin=True,
+                public_url=server.settings.public_url,
             )
             return _json(200, document)
         if len(parts) > 1 and parts[0] == "commands":
@@ -144,13 +146,20 @@ class AdminApi:
                 body = _object(_read_json(environ), "body", _BODY_KEYS)
             except GraphCliError as exc:
                 return _failed(command, exc)
-            return answer(self.run_command(spec, body, token), render)
+            key = environ.get("HTTP_IDEMPOTENCY_KEY")
+            outcome = self.run_command(spec, body, token, None if key is None else str(key))
+            return answer(outcome, render)
         return server._unknown("/v1/admin/" + "/".join(parts))
 
     def run_command(
-        self, spec: CommandSpec, body: Mapping[str, JsonValue], token: TokenRecord
+        self,
+        spec: CommandSpec,
+        body: Mapping[str, JsonValue],
+        token: TokenRecord,
+        idempotency_key: str | None = None,
     ) -> Outcome:
-        """Run one admin command for a request; every error becomes an envelope."""
+        """Run one admin command for a request; every error becomes an envelope. No admin
+        command takes an idempotency key, so ``idempotency_key`` (the header) is refused."""
         command = " ".join(spec.path)
         args = body.get("args", {})
         staged: list[Staged] = []
@@ -165,6 +174,8 @@ class AdminApi:
                 raise GraphCliError(
                     "usage.invalid_input", "actor must be an object", details={"argument": "actor"}
                 )
+            if idempotency_key is not None:
+                args = with_header_key(spec, inventory_args(spec, args), idempotency_key)
             actor, warnings = request_actor(asserted, token=token, client=CLIENT)
             self._gate(command, AdminRequest(actor, warnings))
             with uploads.request_dir(token.name) as directory:

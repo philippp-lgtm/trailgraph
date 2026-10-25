@@ -131,11 +131,14 @@ Every path starts with `/v1/`; every answer is the `graph` envelope, and
 the HTTP status follows its error category (200 ok, 400 usage, 401 no
 valid token, 403 denied, 404 not found, 409 conflict, 422 refused or
 invalid, 503 unavailable, 500 internal). `Graph-Cli-Exit-Code` carries the
-exit code `graph` would have.
+exit code `graph` would have. A route called with another method answers
+405 with `Allow`; a retryable 503 (such as `backend.lock_timeout`) carries
+`Retry-After` in seconds.
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /v1/health` | `{ok, version, api}`; no token needed |
+| `GET /v1/errors`, `GET /v1/errors/{code}` | the error codes: `{errors: [...]}`, or one `{code, category, retryable, status, exit_code, summary}`; no token needed |
 | `GET /v1/inventory` | the command inventory (`graph describe commands`) |
 | `GET /v1/openapi.json` | an OpenAPI 3.1 document generated from the inventory |
 | `POST /v1/commands/{path}` | run a command; `{path}` is the command path with `/` (`describe/types`) |
@@ -190,8 +193,34 @@ exist on the server: upload the input instead. Over the API `file path`
 answers `path: null`; the bytes come from the file endpoint. `?render=text`
 answers `{envelope, stdout, stderr}`, the text `graph` would print.
 
+A write that takes `--idempotency-key` also takes the key as the header
+`Idempotency-Key: "<key>"` (a quoted string, as the IETF draft of that
+name says). Repeating the write with the same key and content answers the
+first result again (`idempotent_replay: true`); the same key with other
+content is `conflict.idempotency_key_reuse` (409; the draft says 422). The
+header on a command without that option, or with another key in `args`,
+is `usage.invalid_argument`. A key is optional.
+
+An error answer is RFC 9457 problem details (`application/problem+json`)
+when the request's `Accept` names that type, on every route, including a
+missing token, an unknown route and a refused build; otherwise it stays
+the envelope. The problem
+has `type`, `title`, `status`, `detail` (the error's message) and the
+envelope's `code`, `category`, `retryable`, `hint`, `details`,
+`warnings`, the `exit_code`, and `data` for a partial result. `type` is
+`<public_url>/v1/errors/<code>` and `title` the code's summary when
+`[server] public_url` is set ([Configuration](configuration.md#configtoml)),
+else `about:blank` and the status phrase. Match on `code`, which every
+problem has. With `?render=text` an error asked for as a problem is the
+problem only.
+
+The file download carries `ETag: "sha256:<hex>"` and
+`Cache-Control: private, no-cache`: a client may keep the bytes, and a
+request with `If-None-Match` naming that tag answers 304 without them,
+after the same check and audit as a download.
+
 `GET /v1/openapi.json` describes every route above except `/v1/dist/` and
-`/v1/enroll`. A command's answer `200` is the envelope with that command's
+`/v1/enroll`, with `servers` naming `[server] public_url` when it is set. A command's answer `200` is the envelope with that command's
 `data`, the schema `graph describe commands --output-schemas` declares; for
 every status the command's declared error codes reach there is one response
 that lists them in `x-graph-cli-error-codes`, and `default` covers every
@@ -200,13 +229,16 @@ commands are in `components.schemas` under their names in the inventory's
 `$defs`; a command's `data` is `<operationId>_data`, the operation id being
 the command path joined with `_` (`describe_types_data`). A request body
 lists the API names with their structured forms; the inventory names are
-marked `deprecated`. The document is open like the inventory: a client
-ignores keys it does not know.
+marked `deprecated`. Every error response also offers
+`application/problem+json` (the `problem` schema), and a write that takes
+an idempotency key declares the `Idempotency-Key` header. The document is
+open like the inventory: a client ignores keys it does not know.
 
 Browsers may call the API from the origins listed in `[server]
 cors_origins` ([Configuration](configuration.md#configtoml)); a browser
 never sends the token on its own, so a page can only use a token it was
-given.
+given. A page may send `Idempotency-Key` and `If-None-Match` and read
+`ETag`, `Retry-After`, `Allow` and the `Graph-Cli-*` headers.
 
 ## Builds
 
@@ -338,6 +370,10 @@ reindex`, `graph skill publish|render`, `ontology release|diff`, `files
 verify`) and `graph list`, and sees only the graphs it maintains; every
 other command is refused with `access.ceiling`.
 
+Answers, errors and problem details follow the [app API](#api). No
+`graph-admin` command takes an idempotency key, so `Idempotency-Key` is
+refused there.
+
 The API never takes a path: `--data-root` is not part of it, a file
 parameter (a policy) takes an upload, and a directory parameter (an
 ontology, a skill) takes `{"files": {"<relative path>": "sha256:<hex>"},
@@ -359,8 +395,9 @@ same envelope, text and exit code as locally. Its own warnings come
 first; large JSON answers go to a file on this machine. Agent, session,
 device and the pointer's project and graphs are sent with each request.
 
-- A write always carries an idempotency key: the given
-  `--idempotency-key`, else a generated one. If the connection breaks
+- A write always carries an idempotency key, in the `Idempotency-Key`
+  header: the given `--idempotency-key`, else a generated one. If the
+  connection breaks
   after a write was sent, `remote.outcome_unknown` names the key and the
   command to run again with it, which is safe. Reads are retried once;
   writes never.

@@ -1,4 +1,4 @@
-"""U: the OpenAPI documents of the server API (contracts B14.2, B14.5, B14.22 G4).
+"""U: the OpenAPI documents of the server API (contracts B14.2, B14.5, B14.22 G4-G10).
 
 Both documents pass the OpenAPI 3.1 validator, every reference resolves, every command
 answers the envelope with its declared ``data`` and lists each code it declares under
@@ -80,9 +80,12 @@ def test_a_command_answers_its_data_and_lists_every_code_by_status(surface: str)
         for status, response in responses.items():
             if status == "200":
                 continue
-            assert response["content"]["application/json"]["schema"] == {
-                "$ref": "#/components/schemas/failed_envelope"
+            assert response["content"] == {  # B14.22 G8: problem details on request
+                "application/json": {"schema": {"$ref": "#/components/schemas/failed_envelope"}},
+                "application/problem+json": {"schema": {"$ref": "#/components/schemas/problem"}},
             }
+            if status == "503":
+                assert "Retry-After" in response["headers"], path
             if status == "default":
                 assert "x-graph-cli-error-codes" not in response, path
                 continue
@@ -144,3 +147,48 @@ def test_request_bodies_take_canonical_names_and_structured_forms() -> None:
     assert verify.is_valid({"args": {"graph": "example_graph"}})
     assert verify.is_valid({"args": {"--graph": "example_graph"}})
     assert not verify.is_valid({"args": {}})
+
+
+def test_writes_with_a_key_declare_the_header(surface: str) -> None:
+    """B14.22 G7: exactly the commands that take ``--idempotency-key`` take the header."""
+    from graph_cli.app_cli.commands import all_specs
+
+    document = DOCUMENTS[surface]()
+    takes = {
+        "/".join(spec.path)
+        for spec in all_specs()
+        if any(param.name == "--idempotency-key" for param in spec.params)
+    }
+    found: set[str] = set()
+    for path, operation in commands(document):
+        for param in operation.get("parameters", []):
+            assert param["name"] == "Idempotency-Key" and param["in"] == "header"
+            assert param["required"] is False
+            found.add(path.split("/commands/", 1)[1])
+    assert found == (takes if surface == "app" else set())
+    assert surface == "admin" or {"create", "apply", "update"} <= found
+
+
+def test_public_routes_and_servers(surface: str) -> None:
+    """Health and the error registry need no token; ``public_url`` gives ``servers``."""
+    document = DOCUMENTS[surface]()
+    for path in ("/v1/health", "/v1/errors", "/v1/errors/{code}"):
+        assert document["paths"][path]["get"]["security"] == [], path
+    assert "servers" not in document
+    problem = document["components"]["schemas"]["problem"]
+    assert {"type", "title", "status", "detail", "code", "exit_code"} <= set(problem["required"])
+    assert app_document_with("https://graph.example.org")["servers"] == [
+        {"url": "https://graph.example.org"}
+    ]
+
+
+def app_document_with(public_url: str) -> dict[str, Any]:
+    from graph_cli.app_cli.commands import all_specs
+    from graph_cli.app_cli.commands.meta import inventory
+    from graph_cli_server.openapi import openapi
+
+    found = openapi(
+        inventory(all_specs(), output_schemas=True), version="0.0.0", public_url=public_url
+    )
+    validate(found)
+    return found

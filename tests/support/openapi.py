@@ -36,10 +36,14 @@ def admin_document(version: str = VERSION) -> dict[str, Any]:
 
 
 def answer_validator(
-    document: dict[str, Any], path: str, method: str, status: str
+    document: dict[str, Any],
+    path: str,
+    method: str,
+    status: str,
+    media: str = "application/json",
 ) -> Draft202012Validator:
-    """The JSON schema of one response, closed like the suite's checks; its references
-    resolve against the document's components."""
+    """The JSON schema of one response in one media type, closed like the suite's checks;
+    its references resolve against the document's components."""
     response = document["paths"][path][method]["responses"][status]
-    schema = response["content"]["application/json"]["schema"]
+    schema = response["content"][media]["schema"]
     return Draft202012Validator(closed({**schema, "components": document["components"]}))

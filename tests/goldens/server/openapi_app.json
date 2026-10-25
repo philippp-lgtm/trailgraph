@@ -18,6 +18,12 @@
         "schema": {
           "type": "integer"
         }
+      },
+      "Retry-After": {
+        "description": "Seconds to wait before a retry; on a retryable error only.",
+        "schema": {
+          "type": "integer"
+        }
       }
     },
     "schemas": {
@@ -1082,6 +1088,37 @@
           "message",
           "hint",
           "details"
+        ]
+      },
+      "error_type": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "category",
+          "retryable",
+          "status",
+          "exit_code",
+          "summary"
         ]
       },
       "facet": {
@@ -2660,6 +2697,70 @@
           "summary"
         ]
       },
+      "problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/warning"
+            }
+          },
+          "data": {}
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "code",
+          "category",
+          "retryable",
+          "hint",
+          "details",
+          "exit_code",
+          "warnings"
+        ]
+      },
       "program": {
         "type": "object",
         "properties": {
@@ -3466,16 +3567,111 @@
             }
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             }
           }
+        },
+        "security": []
+      }
+    },
+    "/v1/errors": {
+      "get": {
+        "operationId": "errors",
+        "summary": "The error codes problem types point to.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/error_type"
+                      }
+                    }
+                  },
+                  "required": [
+                    "errors"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/errors/{code}": {
+      "parameters": [
+        {
+          "name": "code",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
         }
+      ],
+      "get": {
+        "operationId": "error",
+        "summary": "One error code of the registry.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error_type"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "security": []
       }
     },
     "/v1/inventory": {
@@ -3494,11 +3690,16 @@
             }
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -3535,11 +3736,16 @@
             }
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -3573,6 +3779,12 @@
           "200": {
             "description": "The stored bytes.",
             "headers": {
+              "ETag": {
+                "description": "The content hash, quoted.",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "Graph-Cli-Content-Hash": {
                 "schema": {
                   "type": "string",
@@ -3590,12 +3802,27 @@
               "application/octet-stream": {}
             }
           },
+          "304": {
+            "description": "Not Modified: If-None-Match names the ETag of the stored bytes.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -3696,11 +3923,16 @@
             }
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -3807,6 +4039,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -3828,6 +4065,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -3845,6 +4087,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -3868,6 +4115,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -3886,6 +4138,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -3906,6 +4163,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -3934,6 +4196,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -3945,12 +4212,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -3967,11 +4242,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -4070,6 +4350,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "hooked"
       }
@@ -4173,6 +4465,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4192,6 +4489,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4209,6 +4511,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4231,6 +4538,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4250,6 +4562,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4267,6 +4584,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4293,6 +4615,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4304,12 +4631,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4325,11 +4660,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -4574,6 +4914,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -4677,6 +5029,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4696,6 +5053,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4713,6 +5075,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4734,6 +5101,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4752,6 +5124,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4773,6 +5150,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4784,12 +5166,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -4801,11 +5191,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -4961,6 +5356,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4980,6 +5380,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -4997,6 +5402,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5018,6 +5428,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5036,6 +5451,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5057,6 +5477,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5068,12 +5493,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5085,11 +5518,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -5245,6 +5683,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5264,6 +5707,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5281,6 +5729,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5302,6 +5755,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5319,6 +5777,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5339,6 +5802,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5350,12 +5818,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5367,11 +5843,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -5521,6 +6002,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5540,6 +6026,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5557,6 +6048,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5578,6 +6074,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5595,6 +6096,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5615,6 +6121,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5626,12 +6137,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5643,11 +6162,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -5806,6 +6330,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5825,6 +6354,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5842,6 +6376,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5863,6 +6402,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5881,6 +6425,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5902,6 +6451,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -5913,12 +6467,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -5930,11 +6492,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -6090,6 +6657,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6109,6 +6681,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6126,6 +6703,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6147,6 +6729,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6164,6 +6751,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6184,6 +6776,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6195,12 +6792,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6212,11 +6817,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -6366,6 +6976,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6386,6 +7001,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6403,6 +7023,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6425,6 +7050,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6444,6 +7074,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6461,6 +7096,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6489,6 +7129,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6500,12 +7145,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6521,11 +7174,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -6768,6 +7426,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "hooked"
       }
@@ -6871,6 +7541,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6890,6 +7565,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6907,6 +7587,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6928,6 +7613,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6946,6 +7636,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6968,6 +7663,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -6979,12 +7679,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -6996,11 +7704,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -7175,6 +7888,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7194,6 +7912,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7211,6 +7934,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7232,6 +7960,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7252,6 +7985,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7276,6 +8014,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7287,12 +8030,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7305,11 +8056,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -7474,6 +8230,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7493,6 +8254,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7510,6 +8276,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7531,6 +8302,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7550,6 +8326,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7573,6 +8354,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7584,12 +8370,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -7601,11 +8395,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -7965,6 +8764,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -7984,6 +8788,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8001,6 +8810,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8022,6 +8836,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8041,6 +8860,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8063,6 +8887,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8074,12 +8903,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8091,11 +8928,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -8284,6 +9126,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8302,6 +9149,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8319,6 +9171,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8340,6 +9197,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8358,6 +9220,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8369,12 +9236,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8385,11 +9260,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -8529,6 +9409,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8548,6 +9433,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8565,6 +9455,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8586,6 +9481,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8604,6 +9504,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8626,6 +9531,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8637,12 +9547,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8654,11 +9572,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -8841,6 +9764,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8860,6 +9788,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8877,6 +9810,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8899,6 +9837,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8918,6 +9861,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8936,6 +9884,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8962,6 +9915,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -8973,12 +9931,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -8994,11 +9960,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -9196,6 +10167,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -9299,6 +10282,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9318,6 +10306,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9335,6 +10328,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9356,6 +10354,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9374,6 +10377,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9397,6 +10405,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9408,12 +10421,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9425,11 +10446,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -9674,6 +10700,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9693,6 +10724,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9710,6 +10746,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9731,6 +10772,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9750,6 +10796,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9773,6 +10824,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -9784,12 +10840,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -9801,11 +10865,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -10028,6 +11097,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10050,6 +11124,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10067,6 +11146,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10088,6 +11172,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10106,6 +11195,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10131,6 +11225,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10142,12 +11241,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10159,11 +11266,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -10448,6 +11560,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10467,6 +11584,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10484,6 +11606,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10506,6 +11633,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10525,6 +11657,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10543,6 +11680,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10569,6 +11711,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10580,12 +11727,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10601,11 +11756,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -10703,6 +11863,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -10806,6 +11978,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10825,6 +12002,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10842,6 +12024,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10863,6 +12050,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10881,6 +12073,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10904,6 +12101,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -10915,12 +12117,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -10932,11 +12142,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -11167,6 +12382,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11186,6 +12406,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11203,6 +12428,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11225,6 +12455,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11244,6 +12479,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11261,6 +12501,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11287,6 +12532,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11298,12 +12548,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11319,11 +12577,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -11411,6 +12674,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -11514,6 +12789,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11533,6 +12813,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11550,6 +12835,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11572,6 +12862,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11591,6 +12886,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11609,6 +12909,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11635,6 +12940,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11646,12 +12956,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11667,11 +12985,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -11774,6 +13097,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -11877,6 +13212,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11896,6 +13236,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11913,6 +13258,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11935,6 +13285,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11954,6 +13309,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -11972,6 +13332,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -11998,6 +13363,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12009,12 +13379,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -12030,11 +13408,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -12140,6 +13523,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -12243,6 +13638,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12262,6 +13662,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12279,6 +13684,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -12301,6 +13711,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12320,6 +13735,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12338,6 +13758,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -12364,6 +13789,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12375,12 +13805,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -12396,11 +13834,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }
@@ -12798,6 +14241,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "The idempotency key as an RFC 9651 String (\"<key>\"), instead of idempotency_key in args; both must name the same key.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[A-Za-z0-9._:-]{1,128}\"$"
+            }
+          }
+        ],
         "x-graph-cli-kind": "write",
         "x-graph-cli-remote": "server"
       }
@@ -12901,6 +14356,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12919,6 +14379,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12936,6 +14401,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -12956,6 +14426,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12974,6 +14449,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
               }
             },
             "x-graph-cli-error-codes": [
@@ -12985,12 +14465,20 @@
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             },
@@ -13000,11 +14488,16 @@
             ]
           },
           "default": {
-            "description": "The envelope with the error.",
+            "description": "The envelope with the error, or problem details on request.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
                 }
               }
             }

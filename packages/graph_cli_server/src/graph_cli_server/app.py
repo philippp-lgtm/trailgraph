@@ -17,6 +17,12 @@ anyone, ``graph-admin``'s to an admin token, never refused for a build (they
 are how a client catches up). ``/v1/enroll`` exchanges an enrollment code
 for a token (``graph_cli_server.enroll``), also before any token and build
 check. No body, token or query string is ever logged.
+
+HTTP conventions (B14.22 G7-G10): a write command takes its idempotency key also as
+the ``Idempotency-Key`` header; an error answer is RFC 9457 problem details when
+``Accept`` asks for them (``graph_cli_server.problems``) and ``GET /v1/errors`` lists
+the error codes; a wrong method is 405 with ``Allow``, a retryable 503 carries
+``Retry-After``, and the file download an ``ETag`` it answers ``If-None-Match`` with.
 """
 
 from __future__ import annotations
@@ -51,13 +57,13 @@ from graph_cli.catalog.skill_claims import SkillClaim, parse_claims_header
 from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE, TokenRecord, TokenStore
 from graph_cli.catalog.wiring import PROGRAM, AppServices, RequestScope
 from graph_cli.cli_kit.argv import inventory_args, to_argv
-from graph_cli.cli_kit.envelope import Result, envelope, render_json, render_text
+from graph_cli.cli_kit.envelope import ENVELOPE_SCHEMA, Result, envelope, render_json, render_text
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
 from graph_cli.cli_kit.runner import Completed, Invocation, run
 from graph_cli.cli_kit.spec import CommandSpec, ParamSpec
 from graph_cli.kernel.actor import ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
-from graph_cli.kernel.changeset import FloatLiteral, float_numbers
+from graph_cli.kernel.changeset import IDEMPOTENCY_KEY_RE, FloatLiteral, float_numbers
 from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
@@ -65,6 +71,13 @@ from graph_cli.kernel.timing import Timings
 from graph_cli_server.dist import DIST_ENV, Served, load
 from graph_cli_server.http_status import status_for
 from graph_cli_server.openapi import API_VERSION, openapi
+from graph_cli_server.problems import (
+    PROBLEM_TYPE,
+    lookup,
+    problem,
+    registry,
+    wants_problem,
+)
 from graph_cli_server.uploads import DIGEST_RE, Uploads, link_name
 
 SERVER_PROGRAM: Final = "graph-server"
@@ -73,10 +86,17 @@ CLIENT: Final = ClientInfo(SERVER_PROGRAM, __version__, Entrypoint.SERVER)
 VERSION_HEADER: Final = "Graph-Cli-Version"
 EXIT_HEADER: Final = "Graph-Cli-Exit-Code"
 ACTOR_HEADER: Final = "HTTP_GRAPH_CLI_ACTOR"
+KEY_HEADER: Final = "Idempotency-Key"  # draft-ietf-httpapi-idempotency-key-header, B14.22 G7
+KEY_OPTION: Final = "--idempotency-key"
+RETRY_AFTER: Final = "2"  # seconds; the request already waited the lock timeout
 CORS_METHODS: Final = "GET, POST, PUT"
 CORS_HEADERS: Final = (
     "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Skills,"
-    " Graph-Cli-Actor"
+    f" Graph-Cli-Actor, {KEY_HEADER}, If-None-Match"
+)
+CORS_EXPOSED: Final = (
+    f"{VERSION_HEADER}, {BUILD_HEADER}, {EXIT_HEADER}, ETag, Retry-After, Allow,"
+    " Graph-Cli-Content-Hash, Graph-Cli-Media-Type"
 )
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
 _SKILL_KEYS: Final = frozenset({"actor", "graph_env"})
@@ -121,6 +141,7 @@ class Settings:
     client_builds: str = "exact"  # or "warn": another build of a client is let through
     dist: bool = True  # [server] dist: hand out the programs of dist_dir
     dist_dir: Path | None = None  # GRAPH_CLI_DIST_DIR: the wheels the image was built from
+    public_url: str | None = None  # [server] public_url: base of problem types, OpenAPI servers
 
     @classmethod
     def load(cls, env: Mapping[str, str], cwd: Path) -> Settings:
@@ -144,6 +165,7 @@ class Settings:
             client_builds=config.client_builds,
             dist=config.dist,
             dist_dir=Path(env[DIST_ENV]) if env.get(DIST_ENV) else None,
+            public_url=config.public_url,
         )
 
 
@@ -153,6 +175,19 @@ class Response:
     body: Iterable[bytes]
     headers: list[tuple[str, str]] = field(default_factory=list)
     content_type: str = "application/json"
+    failed: Mapping[str, JsonValue] | None = None  # the envelope of an error answer
+
+
+class MethodNotAllowed(GraphCliError):
+    """A route called with another method than its own: 405 with ``Allow`` (B14.2)."""
+
+    def __init__(self, method: str, allowed: str) -> None:
+        super().__init__(
+            "usage.invalid_argument",
+            f"method {method} is not allowed here; use {allowed}",
+            details={"argument": "method", "expected": allowed},
+        )
+        self.allowed = allowed
 
 
 class ServerApp:
@@ -195,18 +230,30 @@ class ServerApp:
         name: list[str] = []
         try:
             response = self._dispatch(environ, method, path, name)
+        except MethodNotAllowed as exc:
+            response = self._error(None, exc, status=405)
+            response.headers.append(("Allow", exc.allowed))
         except GraphCliError as exc:
             response = self._error(None, exc)
         except Exception:  # a request never takes the server down or leaks a trace
             response = self._error(None, GraphCliError("internal.error", "unexpected error"))
+        vary: list[str] = []
+        if response.failed is not None:
+            response = self._failure(environ, response)
+            vary.append("Accept")
+        cors = self._cors(environ)
+        if cors:
+            vary.append("Origin")
+        own_cache = any(key.lower() == "cache-control" for key, _ in response.headers)
         headers = [
             ("Content-Type", response.content_type),
             (VERSION_HEADER, __version__),
             *self._build_header(environ),
-            ("Cache-Control", "no-store"),
+            *([] if own_cache else [("Cache-Control", "no-store")]),
             ("X-Content-Type-Options", "nosniff"),
             *response.headers,
-            *self._cors(environ),
+            *cors,
+            *([("Vary", ", ".join(vary))] if vary else []),
         ]
         reason = HTTPStatus(response.status).phrase
         start_response(f"{response.status} {reason}", headers)
@@ -234,6 +281,9 @@ class ServerApp:
         if parts == ["v1", "health"]:
             self._method(method, "GET")
             return _json(200, {"ok": True, "version": __version__, "api": API_VERSION})
+        if parts[1:2] == ["errors"] and len(parts) <= 3:
+            self._method(method, "GET")
+            return self._errors(path, parts[2:])
         if parts[1:2] == ["dist"] and len(parts) == 3:
             self._method(method, "GET")
             return self._dist(environ, parts[2], name)
@@ -265,7 +315,11 @@ class ServerApp:
             return _json(200, self._inventory())
         if parts == ["v1", "openapi.json"]:
             self._method(method, "GET")
-            document = openapi(inventory(all_specs(), output_schemas=True), version=__version__)
+            document = openapi(
+                inventory(all_specs(), output_schemas=True),
+                version=__version__,
+                public_url=self.settings.public_url,
+            )
             return _json(200, document)
         if len(parts) > 2 and parts[1] == "commands":
             spec = self.specs.get("/".join(parts[2:]))
@@ -284,11 +338,7 @@ class ServerApp:
 
     def _method(self, method: str, allowed: str) -> None:
         if method != allowed:
-            raise GraphCliError(
-                "usage.invalid_argument",
-                f"method {method} is not allowed here; use {allowed}",
-                details={"argument": "method", "expected": allowed},
-            )
+            raise MethodNotAllowed(method, allowed)
 
     def _unknown(self, path: str) -> Response:
         error = GraphCliError("usage.unknown_command", f"no such endpoint: {path}")
@@ -343,6 +393,13 @@ class ServerApp:
     def _inventory(self) -> dict[str, JsonValue]:
         return inventory(all_specs())
 
+    def _errors(self, path: str, code: list[str]) -> Response:
+        """The error registry, or one code of it (B14.22 G9); no token, like health."""
+        if not code:
+            return _json(200, {"errors": registry()})
+        found = lookup(code[0])
+        return self._unknown(path) if found is None else _json(200, found)
+
     # ---- commands ------------------------------------------------------
 
     def _command(
@@ -354,7 +411,8 @@ class ServerApp:
         except GraphCliError as exc:
             return self._error(command, exc)
         claims = parse_claims_header(environ.get("HTTP_GRAPH_CLI_SKILLS"))
-        outcome = self.run_command(spec, body, token, claims)
+        key = environ.get("HTTP_IDEMPOTENCY_KEY")
+        outcome = self.run_command(spec, body, token, claims, None if key is None else str(key))
         if spec.path == ("file", "path"):
             outcome = _without_server_path(outcome)
         return answer(outcome, render)
@@ -365,9 +423,11 @@ class ServerApp:
         body: Mapping[str, JsonValue],
         token: TokenRecord,
         claims: tuple[SkillClaim, ...] = (),
+        idempotency_key: str | None = None,
     ) -> Outcome:
         """Run one command for a request; every error becomes an envelope. ``claims`` are
-        the graph skills the client has installed (B14.17)."""
+        the graph skills the client has installed (B14.17), ``idempotency_key`` the value
+        of the ``Idempotency-Key`` header."""
         command = " ".join(spec.path)
         given = body.get("args", {})
         staged: list[Staged] = []
@@ -377,6 +437,8 @@ class ServerApp:
                     "usage.invalid_input", "args must be an object", details={"argument": "args"}
                 )
             args = inventory_args(spec, given)
+            if idempotency_key is not None:
+                args = with_header_key(spec, args, idempotency_key)
             for name in STDIN_ARGS.get(spec.path, ()):
                 if args.get(name) == STDIN:
                     raise GraphCliError(
@@ -548,6 +610,11 @@ class ServerApp:
             return _json(outcome.status, dict(outcome.document), exit_code=outcome.exit_code)
         data = outcome.document["data"]
         assert isinstance(data, Mapping)
+        tag = f'"{data.get("hash")}"'
+        # the browser may keep the bytes, but asks every time (the read is authorized)
+        cached = [("ETag", tag), ("Cache-Control", "private, no-cache")]
+        if _matches(environ.get("HTTP_IF_NONE_MATCH"), tag):
+            return Response(304, [b""], headers=cached, content_type="application/octet-stream")
         stored = Path(str(data["path"]))
         handle = stored.open("rb")
         wrapper = environ.get("wsgi.file_wrapper")
@@ -563,6 +630,7 @@ class ServerApp:
                 ("Graph-Cli-Content-Hash", str(data.get("hash"))),
                 ("Graph-Cli-Media-Type", str(data.get("media_type") or "")),
                 (EXIT_HEADER, str(EXIT_OK)),
+                *cached,
             ],
             content_type="application/octet-stream",
         )
@@ -660,14 +728,32 @@ class ServerApp:
         response.headers += headers
         return response
 
+    def _failure(self, environ: Mapping[str, Any], response: Response) -> Response:
+        """An error answer as the request takes it: ``Retry-After`` on a retryable 503,
+        problem details when ``Accept`` asks for them (B14.22 G8, G10)."""
+        document = response.failed
+        assert document is not None
+        error = document.get("error")
+        assert isinstance(error, Mapping)
+        if response.status == 503 and error.get("retryable") is True:
+            response.headers.append(("Retry-After", RETRY_AFTER))
+        if not wants_problem(environ.get("HTTP_ACCEPT")):
+            return response
+        _, exit_code = status_of(document)
+        found = problem(document, response.status, exit_code, self.settings.public_url)
+        body = render_json(found).encode()
+        headers = [h for h in response.headers if h[0] != "Content-Length"]
+        headers.append(("Content-Length", str(len(body))))
+        return Response(response.status, [body], headers, PROBLEM_TYPE, document)
+
     def _cors(self, environ: Mapping[str, Any]) -> list[tuple[str, str]]:
+        """The CORS headers of an allowed origin; ``Vary: Origin`` is added by the caller."""
         origin = environ.get("HTTP_ORIGIN")
         if not origin or origin not in self.settings.cors_origins:
             return []
         return [
             ("Access-Control-Allow-Origin", str(origin)),
-            ("Vary", "Origin"),
-            ("Access-Control-Expose-Headers", f"{VERSION_HEADER}, {BUILD_HEADER}, {EXIT_HEADER}"),
+            ("Access-Control-Expose-Headers", CORS_EXPOSED),
         ]
 
     def _preflight(self, environ: Mapping[str, Any]) -> Response:
@@ -722,7 +808,8 @@ def _scope_refusal(token: TokenRecord, scope: str) -> GraphCliError | None:
 
 
 def answer(outcome: Outcome, render: str) -> Response:
-    """A command's HTTP answer: the envelope, or with ``render=text`` also its text."""
+    """A command's HTTP answer: the envelope, or with ``render=text`` also its text (an
+    error asked for as problem details is the problem only)."""
     if render == "text":
         stdout, stderr = render_text(outcome.document, text=outcome.text)
         payload: dict[str, JsonValue] = {
@@ -730,8 +817,45 @@ def answer(outcome: Outcome, render: str) -> Response:
             "stdout": stdout,
             "stderr": stderr,
         }
-        return _json(outcome.status, payload, exit_code=outcome.exit_code)
+        response = _json(outcome.status, payload, exit_code=outcome.exit_code)
+        if outcome.document.get("ok") is False:
+            response.failed = outcome.document
+        return response
     return _json(outcome.status, dict(outcome.document), exit_code=outcome.exit_code)
+
+
+def with_header_key(
+    spec: CommandSpec, args: Mapping[str, JsonValue], header: str
+) -> dict[str, JsonValue]:
+    """``args`` with the key of an ``Idempotency-Key`` header (B14.22 G7): an RFC 9651
+    String such as ``"<key>"``. A command without the option, or another key in
+    ``args``, is ``usage.invalid_argument``."""
+    text = header.strip(" \t")
+    key = text[1:-1] if len(text) > 2 and text[0] == text[-1] == '"' else ""
+    if not IDEMPOTENCY_KEY_RE.fullmatch(key):
+        raise _bad_key(
+            f'{KEY_HEADER} must be a quoted key ("<key>") of 1 to 128 characters of'
+            " A-Z a-z 0-9 . _ : -"
+        )
+    if not any(param.name == KEY_OPTION for param in spec.params):
+        raise _bad_key(
+            f"{' '.join(spec.path)} takes no idempotency key; send {KEY_HEADER} with a write"
+        )
+    given = args.get(KEY_OPTION)
+    if given not in (None, False) and given != key:
+        raise _bad_key(f"{KEY_HEADER} and args name different keys; send the key once")
+    return {**args, KEY_OPTION: key}
+
+
+def _bad_key(message: str) -> GraphCliError:
+    return GraphCliError("usage.invalid_argument", message, details={"argument": KEY_HEADER})
+
+
+def _matches(header: object, tag: str) -> bool:
+    """Whether ``If-None-Match`` names ``tag`` (weak comparison, RFC 9110 13.1.2)."""
+    if not isinstance(header, str):
+        return False
+    return any(item.strip() in ("*", tag, "W/" + tag) for item in header.split(","))
 
 
 def _is_relative(value: str) -> bool:
@@ -812,7 +936,8 @@ def _json(
     headers = [("Content-Length", str(len(body)))]
     if exit_code is not None:
         headers.append((EXIT_HEADER, str(exit_code)))
-    return Response(status, [body], headers=headers)
+    failed = document if document.get("schema") == ENVELOPE_SCHEMA and not document["ok"] else None
+    return Response(status, [body], headers=headers, failed=failed)
 
 
 def _path(environ: Mapping[str, Any]) -> str:
