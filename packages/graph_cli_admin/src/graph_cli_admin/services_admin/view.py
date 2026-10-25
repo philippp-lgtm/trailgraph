@@ -15,6 +15,11 @@
   audit log, is the source: an intent precedes its commit (W.12).
 - ``read_event`` turns an activity datagram for this graph into a ``read``
   event; ids the page does not know are the page's to ignore.
+- ``ActivityTrail`` numbers these events as steps and keeps the last
+  ``TRAIL_STEPS`` in memory, so a page can draw where agents went: one step
+  per read command (its datagrams merged by ``call``) and one per written
+  revision, each with command, actor and session. Nothing is stored; the
+  trail starts empty with the view.
 
 A node's label is the value of the first ``label`` role attribute, else the
 alias, else the type's local name and the last 8 hex digits of the id; a
@@ -24,12 +29,15 @@ hidden label is never shown.
 from __future__ import annotations
 
 import sys
+import threading
+from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Final
 
-from graph_cli.catalog.activity import ActivityEvent, activity_dir
+from graph_cli.catalog.activity import MAX_TEXT, ActivityEvent, activity_dir
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
@@ -46,6 +54,7 @@ from graph_cli.services.models import ModelCache
 from graph_cli_admin.services_admin.context import AdminContext
 
 PAGE: Final = 1000  # txs per changes_since call
+TRAIL_STEPS: Final = 500
 # Shown in the browser itself; any other media type is only offered as a download.
 INLINE_MEDIA_TYPES: Final = frozenset(
     {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -157,7 +166,7 @@ def _shown_attrs(model: CompiledModel, revision: Revision) -> dict[str, JsonValu
 
 def _actor_json(actor: ActorContext) -> dict[str, JsonValue]:
     """Who wrote, facet by facet, with how sure the harness is about each."""
-    data: dict[str, JsonValue] = {"label": actor_label(actor)}
+    data: dict[str, JsonValue] = {"label": actor.label()}
     for name in ("principal", "agent", "session"):
         facet = getattr(actor, name)
         if facet.id or facet.name or facet.type:
@@ -283,15 +292,6 @@ def open_blob(source: ViewSource, text: str) -> BlobStream:
     )
 
 
-def actor_label(actor: ActorContext) -> str:
-    """Who wrote: the agent if the harness named one, else the principal."""
-    for facet in (actor.agent, actor.principal):
-        for value in (facet.name, facet.id, facet.type):
-            if value:
-                return value
-    return actor.client.entrypoint.value
-
-
 def tx_events(model: CompiledModel, tx: TxRecord) -> list[dict[str, JsonValue]]:
     """One event per revision of a committed tx, in id order."""
     events: list[dict[str, JsonValue]] = []
@@ -302,7 +302,9 @@ def tx_events(model: CompiledModel, tx: TxRecord) -> list[dict[str, JsonValue]]:
                 "kind": "created" if revision.rev == 1 else "updated",
                 "seq": tx.seq,
                 "ts": format_timestamp(tx.recorded_at),
-                "actor": actor_label(tx.actor),
+                "command": tx.request.command,
+                "actor": tx.actor.label()[:MAX_TEXT],
+                "session": _session(tx.actor),
                 "node": node_json(model, revision),
                 "links": links,
             }
@@ -310,11 +312,127 @@ def tx_events(model: CompiledModel, tx: TxRecord) -> list[dict[str, JsonValue]]:
     return events
 
 
-def read_event(source: ViewSource, event: ActivityEvent) -> dict[str, JsonValue] | None:
+def _session(actor: ActorContext) -> str | None:
+    """The session as a read datagram carries it, so reads and writes group alike."""
+    key = actor.session_key()
+    return None if key is None else key[:MAX_TEXT]
+
+
+def read_event(
+    source: ViewSource, event: ActivityEvent, received: datetime
+) -> dict[str, JsonValue] | None:
+    """A datagram for this graph as a ``read`` event, stamped when the view received it.
+    A version 1 datagram has no command, call, actor or session (null)."""
     if event.graph != str(source.entry.id):
         return None
     ids: list[JsonValue] = list(event.ids)
-    return {"kind": "read", "ids": ids}
+    edges: list[JsonValue] = list(event.edges)
+    return {
+        "kind": "read",
+        "ts": format_timestamp(received),
+        "command": event.command,
+        "call": event.call,
+        "actor": event.actor,
+        "session": event.session,
+        "ids": ids,
+        "edges": edges,
+    }
+
+
+@dataclass(slots=True)
+class TrailStep:
+    """One step of the trail: a read command or a written revision."""
+
+    step: int
+    kind: str
+    ts: str | None
+    command: str | None
+    actor: str | None
+    session: str | None
+    seq: int | None
+    ids: list[str]
+    edges: list[str]
+
+    def to_json(self) -> dict[str, JsonValue]:
+        data: dict[str, JsonValue] = {
+            "step": self.step,
+            "kind": self.kind,
+            "ts": self.ts,
+            "command": self.command,
+            "actor": self.actor,
+            "session": self.session,
+            "ids": list(self.ids),
+            "edges": list(self.edges),
+        }
+        if self.seq is not None:
+            data["seq"] = self.seq
+        return data
+
+
+class ActivityTrail:
+    """The last ``limit`` steps of activity the view saw, oldest first.
+
+    ``add`` numbers an event as a step and returns it with ``step`` set: a
+    ``read`` event whose ``call`` is already in the trail continues that
+    step (its new ids and edges are added), any other event is a new step.
+    A write step names the written entity and its ``seq``. Called from the
+    feed thread, read from request threads.
+    """
+
+    def __init__(self, limit: int = TRAIL_STEPS) -> None:
+        self.limit = limit
+        self._lock = threading.Lock()
+        self._steps: OrderedDict[str, TrailStep] = OrderedDict()
+        self._last = 0
+
+    def add(self, event: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        kind = str(event["kind"])
+        call = event.get("call") if kind == "read" else None
+        with self._lock:
+            step = self._steps.get(f"call:{call}") if isinstance(call, str) else None
+            if step is None:
+                self._last += 1
+                step = _trail_step(self._last, kind, event)
+                key = f"call:{call}" if isinstance(call, str) else f"step:{self._last}"
+                self._steps[key] = step
+                while len(self._steps) > self.limit:
+                    self._steps.popitem(last=False)
+            else:
+                step.ids += [i for i in _texts(event.get("ids")) if i not in step.ids]
+                step.edges += [e for e in _texts(event.get("edges")) if e not in step.edges]
+            return {**event, "step": step.step}
+
+    def to_json(self) -> dict[str, JsonValue]:
+        with self._lock:
+            steps: list[JsonValue] = [step.to_json() for step in self._steps.values()]
+        return {"limit": self.limit, "steps": steps}
+
+
+def _trail_step(number: int, kind: str, event: dict[str, JsonValue]) -> TrailStep:
+    node, seq = event.get("node"), event.get("seq")
+    if kind == "read":
+        ids = list(dict.fromkeys(_texts(event.get("ids"))))
+    else:
+        ids = [str(node["id"])] if isinstance(node, dict) else []
+    return TrailStep(
+        step=number,
+        kind=kind,
+        ts=_text(event.get("ts")),
+        command=_text(event.get("command")),
+        actor=_text(event.get("actor")),
+        session=_text(event.get("session")),
+        seq=seq if isinstance(seq, int) else None,
+        ids=ids,
+        edges=list(dict.fromkeys(_texts(event.get("edges")))),
+    )
+
+
+def _text(value: JsonValue | None) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _texts(value: JsonValue | None) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 class ViewFeed:

@@ -562,6 +562,29 @@ def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None
     ]
 
 
+def test_signals_name_command_actor_and_walked_edges(svc: ServiceEnv, roles: Roles) -> None:
+    activity = RecordingActivity()
+    reader = svc.make_reader(activity=activity)
+    view = open_view(svc, reader)
+    rel = roles.term("required_relation")
+    source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
+    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
+    walked = [item["edge"]["edge_id"] for item in near["items"]]  # type: ignore[index, union-attr]
+    rows, _ = reader.query(
+        view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=2)
+    )
+    reader.query(view, reader.parse_query("MATCH (n) RETURN n.alias AS alias"), QuerySpec())
+    neighbors, query, scalars = activity.received
+    assert (neighbors.command, neighbors.actor) == ("get", svc.actor)  # the request's command
+    assert [str(e) for e in neighbors.edges] == walked and walked
+    items = rows["items"]
+    assert isinstance(items, list) and len(items) == 2
+    assert [str(e) for e in query.edges] == [row["r"]["edge_id"] for row in items]  # type: ignore[index, call-overload]
+    ends = {str(i) for row in items for i in (row["a"]["id"], row["b"]["id"])}  # type: ignore[index, call-overload]
+    assert {str(i) for i in query.entities} == ends
+    assert (scalars.entities, scalars.edges) == ([], [])  # values only: nothing lights up
+
+
 def test_failed_and_denied_reads_signal_nothing(svc: ServiceEnv) -> None:
     activity = RecordingActivity()
     reader = svc.make_reader(activity=activity)

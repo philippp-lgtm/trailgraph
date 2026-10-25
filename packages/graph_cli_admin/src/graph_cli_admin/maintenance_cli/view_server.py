@@ -11,10 +11,12 @@ security policy and no referrer.
 Routes: ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
 one entity in full (attributes, edges, history with the writing agents),
 ``/blob?id=`` the stored file of a file entity (PDFs and images inline,
-anything else as a download), ``/events`` Server-Sent Events. One feed
-thread polls the store and the activity socket and hands each event to a
-bounded queue per client: a slow client loses events, the feed never waits.
-A failing poll becomes an ``error`` event and the feed goes on.
+anything else as a download), ``/events`` Server-Sent Events, ``/trail``
+the recent steps of activity (``ActivityTrail``). One feed thread polls the
+store and the activity socket, numbers each write and read as a trail step
+and hands it to a bounded queue per client: a slow client loses events, the
+feed never waits; ``/trail`` gives a page the steps it missed. A failing
+poll becomes an ``error`` event and the feed goes on.
 """
 
 from __future__ import annotations
@@ -31,8 +33,10 @@ from urllib.parse import parse_qs, urlsplit
 
 from graph_cli.catalog.activity import ActivityListener
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_admin.services_admin.view import (
+    ActivityTrail,
     ViewFeed,
     ViewSource,
     entity_json,
@@ -101,6 +105,7 @@ class ViewServer:
         listener: ActivityListener | None = None,
         signal_reads: bool = False,
         poll_s: float = POLL_S,
+        clock: Clock | None = None,
     ) -> None:
         self.source = source
         self.page = page
@@ -109,6 +114,8 @@ class ViewServer:
         self.poll_s = poll_s
         self.token = secrets.token_urlsafe(24)
         self.hub = Hub()
+        self.trail = ActivityTrail()
+        self.clock = clock if clock is not None else SystemClock()
         self.feed = ViewFeed(source, source.read.head().seq)
         self._stop = threading.Event()
         self.host = host
@@ -156,7 +163,7 @@ class ViewServer:
         while not self._stop.is_set():
             try:
                 for event in self.feed.poll():
-                    self.hub.publish(event)
+                    self.hub.publish(self.trail.add(event))
             except GraphCliError as exc:
                 self.hub.publish({"kind": "error", "code": exc.code, "message": exc.message})
             if self.listener is None:
@@ -167,10 +174,11 @@ class ViewServer:
             except OSError:
                 self._stop.wait(self.poll_s)
                 continue
+            now = self.clock.now()
             for activity in received:
-                read = read_event(self.source, activity)
+                read = read_event(self.source, activity, now)
                 if read is not None:
-                    self.hub.publish(read)
+                    self.hub.publish(self.trail.add(read))
 
 
 def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
@@ -195,6 +203,9 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
                 ),
                 "/blob": lambda: self._blob(entity),
                 "/events": self._events,
+                "/trail": lambda: self._send(
+                    200, json.dumps(server.trail.to_json()).encode(), "application/json"
+                ),
             }
             route = routes.get(url.path)
             if route is None:

@@ -6,11 +6,17 @@ viewer, a stale socket or a full buffer drops the signal, and every
 ``OSError`` is swallowed. The app never creates the directory (B12.4); the
 viewer creates it with mode 0700.
 
-A datagram is canonical JSON ``{"v": 1, "graph": <id>, "kind": "read",
-"ids": [<entity ids>]}``: ids only, never labels, attributes, query text or
-the actor. Datagrams stay below macOS ``net.local.dgram.maxdgram`` (2048
-bytes); a read of many entities is split, and ids beyond
-``MAX_DATAGRAMS`` datagrams are dropped.
+A datagram is canonical JSON ``{"v": 2, "graph": <id>, "kind": "read",
+"command": <command name>, "call": <random hex>, "actor": <label>,
+"session": <session id or null>, "ids": [<entity ids>], "edges": [<edge
+ids>]}``: who read (the label ``graph-admin view`` shows for writes and the
+session that groups one agent's reads) and what, never labels, attributes,
+arguments or query text. Actor and session are cut to ``MAX_TEXT``
+characters. Datagrams stay below macOS ``net.local.dgram.maxdgram`` (2048
+bytes); a read of many entities is split into datagrams with the same
+``call``, entities before edges, and whatever does not fit into
+``MAX_DATAGRAMS`` datagrams is dropped. ``decode`` still reads version 1
+(``ids`` only) from senders of an earlier release.
 """
 
 from __future__ import annotations
@@ -18,19 +24,21 @@ from __future__ import annotations
 import os
 import secrets
 import socket
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, canonical_bytes, parse_json
-from graph_cli.kernel.ids import EntityId, GraphId
+from graph_cli.kernel.ports.activity import ReadSignal
 
 ACTIVITY_DIR: Final = "activity"
 SOCKET_SUFFIX: Final = ".sock"
-PAYLOAD_VERSION: Final = 1
+PAYLOAD_VERSION: Final = 2
+READ_VERSIONS: Final = frozenset({1, PAYLOAD_VERSION})
 MAX_DATAGRAM_BYTES: Final = 1800
 MAX_DATAGRAMS: Final = 8
+MAX_TEXT: Final = 128
+CALL_BYTES: Final = 4
 RECEIVE_BYTES: Final = 4096
 RECEIVE_BUFFER: Final = 256 * 1024  # macOS defaults to 4096 (net.local.dgram.recvspace)
 
@@ -41,49 +49,87 @@ def activity_dir(state_root: Path) -> Path:
 
 @dataclass(frozen=True, slots=True)
 class ActivityEvent:
+    """One received datagram; a version 1 datagram has ids only."""
+
     graph: str
     kind: str
     ids: tuple[str, ...]
+    edges: tuple[str, ...] = ()
+    command: str | None = None
+    call: str | None = None
+    actor: str | None = None
+    session: str | None = None
 
 
-def encode_reads(graph: GraphId, ids: Sequence[EntityId]) -> list[bytes]:
-    """The datagrams for one read: unique ids in first-seen order, split by size."""
-    texts = list(dict.fromkeys(str(i) for i in ids))
+def encode_reads(signal: ReadSignal, call: str | None = None) -> list[bytes]:
+    """The datagrams for one read: unique ids in first-seen order, entities before
+    edges, split by size; every datagram carries the same ``call``."""
+    header: dict[str, JsonValue] = {
+        "v": PAYLOAD_VERSION,
+        "graph": str(signal.graph),
+        "kind": "read",
+        "command": signal.command,
+        "call": call if call is not None else secrets.token_hex(CALL_BYTES),
+        "actor": signal.actor.label()[:MAX_TEXT],
+        "session": _session(signal),
+    }
+    items = [("ids", text) for text in dict.fromkeys(str(i) for i in signal.entities)]
+    items += [("edges", text) for text in dict.fromkeys(str(e) for e in signal.edges)]
     datagrams: list[bytes] = []
-    chunk: list[str] = []
-    for text in texts:
-        if chunk and len(_payload(graph, [*chunk, text])) > MAX_DATAGRAM_BYTES:
-            datagrams.append(_payload(graph, chunk))
+    chunk: list[tuple[str, str]] = []
+    for item in items:
+        if chunk and len(_payload(header, [*chunk, item])) > MAX_DATAGRAM_BYTES:
+            datagrams.append(_payload(header, chunk))
             if len(datagrams) == MAX_DATAGRAMS:
                 return datagrams
             chunk = []
-        chunk.append(text)
+        chunk.append(item)
     if chunk:
-        datagrams.append(_payload(graph, chunk))
+        datagrams.append(_payload(header, chunk))
     return datagrams
 
 
-def _payload(graph: GraphId, ids: list[str]) -> bytes:
-    ids_json: list[JsonValue] = list(ids)
-    return canonical_bytes(
-        {"v": PAYLOAD_VERSION, "graph": str(graph), "kind": "read", "ids": ids_json}
-    )
+def _session(signal: ReadSignal) -> str | None:
+    key = signal.actor.session_key()
+    return None if key is None else key[:MAX_TEXT]
+
+
+def _payload(header: dict[str, JsonValue], chunk: list[tuple[str, str]]) -> bytes:
+    ids: list[JsonValue] = [text for key, text in chunk if key == "ids"]
+    edges: list[JsonValue] = [text for key, text in chunk if key == "edges"]
+    return canonical_bytes({**header, "ids": ids, "edges": edges})
 
 
 def decode(data: bytes) -> ActivityEvent | None:
-    """One datagram, or ``None`` for anything that is not a version 1 payload."""
+    """One datagram, or ``None`` for anything that is not a version 1 or 2 payload."""
     try:
         document = parse_json(data)
     except CanonicalError:
         return None
-    if not isinstance(document, dict) or document.get("v") != PAYLOAD_VERSION:
+    if not isinstance(document, dict):
         return None
-    graph, kind, ids = document.get("graph"), document.get("kind"), document.get("ids")
-    if not isinstance(graph, str) or kind != "read" or not isinstance(ids, list):
+    version = document.get("v")
+    if isinstance(version, bool) or version not in READ_VERSIONS:
         return None
-    if not all(isinstance(i, str) for i in ids):
+    graph, ids = document.get("graph"), _texts(document.get("ids"))
+    if not isinstance(graph, str) or document.get("kind") != "read" or ids is None:
         return None
-    return ActivityEvent(graph, kind, tuple(str(i) for i in ids))
+    if version == 1:
+        return ActivityEvent(graph, "read", ids)
+    edges = _texts(document.get("edges"))
+    command, call, actor = document.get("command"), document.get("call"), document.get("actor")
+    session = document.get("session")
+    if edges is None or not isinstance(command, str) or not isinstance(call, str):
+        return None
+    if not isinstance(actor, str) or not (session is None or isinstance(session, str)):
+        return None
+    return ActivityEvent(graph, "read", ids, edges, command, call, actor, session)
+
+
+def _texts(value: JsonValue | None) -> tuple[str, ...] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    return tuple(str(item) for item in value)
 
 
 class SocketActivity:
@@ -92,8 +138,8 @@ class SocketActivity:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
 
-    def reads(self, graph: GraphId, ids: Sequence[EntityId]) -> None:
-        if not ids:
+    def reads(self, signal: ReadSignal) -> None:
+        if not signal.entities and not signal.edges:
             return
         try:
             targets = sorted(
@@ -109,7 +155,7 @@ class SocketActivity:
             return
         with sender:
             sender.setblocking(False)
-            datagrams = encode_reads(graph, ids)
+            datagrams = encode_reads(signal)
             for target in targets:
                 for datagram in datagrams:
                     try:

@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from support.services import ServiceEnv
 
 from graph_cli.catalog.activity import ActivityListener, SocketActivity
 from graph_cli.kernel.canonical import hash_value
+from graph_cli.kernel.ports.activity import ReadSignal
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
 from graph_cli_admin.maintenance_cli.commands.view import page
@@ -117,9 +119,51 @@ def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: Servic
     assert {e["kind"] for e in created} == {"created"}
     entity = created[0]["node"]["id"]
     assert server.listener is not None
-    SocketActivity(server.listener.path.parent).reads(svc.entry.id, [svc.txs()[-1].revisions[0].id])
+    revision = svc.txs()[-1].revisions[0].id
+    signal = ReadSignal(svc.entry.id, "get", svc.actor, [revision])
+    SocketActivity(server.listener.path.parent).reads(signal)
     (read,) = events(stream, 1)
-    assert read == {"kind": "read", "ids": [entity]}
+    assert isinstance(read.pop("call"), str) and isinstance(read.pop("ts"), str)
+    assert read == {
+        "kind": "read",
+        "command": "get",
+        "actor": "tester",
+        "session": svc.actor.session_key(),
+        "ids": [entity],
+        "edges": [],
+        "step": len(created) + 1,
+    }
+    assert [e["step"] for e in created] == list(range(1, len(created) + 1))
+
+
+def trail(server: ViewServer, count: int) -> list[dict[str, Any]]:
+    """The trail once it has ``count`` steps (or after 5 s)."""
+    deadline = time.monotonic() + 5
+    while True:
+        steps: list[dict[str, Any]] = json.loads(get(server, f"/trail?t={server.token}").read())[
+            "steps"
+        ]
+        if len(steps) >= count or time.monotonic() > deadline:
+            return steps
+        time.sleep(0.05)
+
+
+def test_the_trail_has_the_steps_the_page_missed(server: ViewServer, svc: ServiceEnv) -> None:
+    assert get(server, "/trail?t=wrong").status == 403
+    assert json.loads(get(server, f"/trail?t={server.token}").read()) == {
+        "limit": 500,
+        "steps": [],
+    }
+    svc.create(load_roles(svc.ontology).term("lifecycle_type"))
+    written = [str(r.id) for r in svc.txs()[-1].revisions]
+    trail(server, len(written))  # the feed saw the commit
+    assert server.listener is not None
+    signal = ReadSignal(svc.entry.id, "find", svc.actor, [svc.txs()[-1].revisions[0].id])
+    SocketActivity(server.listener.path.parent).reads(signal)
+    steps = trail(server, len(written) + 1)
+    assert [s["kind"] for s in steps] == ["created"] * len(written) + ["read"]
+    assert sorted(i for s in steps[:-1] for i in s["ids"]) == sorted(written)
+    assert (steps[-1]["command"], steps[-1]["ids"]) == ("find", [written[0]])
 
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"

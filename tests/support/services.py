@@ -23,7 +23,7 @@ from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.changeset import ChangeSet, parse_changeset, read_documents
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
-from graph_cli.kernel.ports.activity import NULL_ACTIVITY
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ReadSignal
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
@@ -368,10 +368,15 @@ def pin_for(ontology: str, version: str | None = None) -> OntologyPin:
 
 
 class RecordingActivity:
-    """An activity sink that keeps every signal: ``(graph id, [entity ids])``."""
+    """An activity sink that keeps every signal: ``received`` in full, ``signals`` as
+    ``(graph id, [entity ids])``."""
 
     def __init__(self) -> None:
-        self.signals: list[tuple[str, list[str]]] = []
+        self.received: list[ReadSignal] = []
 
-    def reads(self, graph: GraphId, ids: Sequence[EntityId]) -> None:
-        self.signals.append((str(graph), [str(i) for i in ids]))
+    def reads(self, signal: ReadSignal) -> None:
+        self.received.append(signal)
+
+    @property
+    def signals(self) -> list[tuple[str, list[str]]]:
+        return [(str(s.graph), [str(i) for i in s.entities]) for s in self.received]

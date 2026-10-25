@@ -104,6 +104,19 @@ class ActorContext:
             data["pid"] = self.pid
         return data
 
+    def label(self) -> str:
+        """Who acts, in one word: the agent if the harness named one, else the principal,
+        else the entrypoint."""
+        for facet in (self.agent, self.principal):
+            for value in (facet.name, facet.id, facet.type):
+                if value:
+                    return value
+        return self.client.entrypoint.value
+
+    def session_key(self) -> str | None:
+        """The session one agent's commands share: its id, else its name."""
+        return self.session.id or self.session.name
+
     @classmethod
     def from_json(cls, data: Mapping[str, JsonValue]) -> ActorContext:
         """Parse a persisted actor. Shape errors raise ``JsonShapeError``."""

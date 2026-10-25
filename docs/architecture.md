@@ -145,7 +145,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
-| `catalog.activity` | the read signal for `graph-admin view`: Unix datagrams to the viewer sockets in the state directory, fire and forget |
+| `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
 | `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |

@@ -1,6 +1,7 @@
 """The live graph view's data on seeded file graphs of both fixtures (graph view plan, step 3)."""
 
 import dataclasses
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -11,10 +12,12 @@ from support.services import ServiceEnv
 from support.snapshots import revision as stored_revision
 
 from graph_cli.catalog.activity import ActivityEvent
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli_admin.services_admin import view
 from graph_cli_admin.services_admin.view import (
+    ActivityTrail,
     ViewFeed,
     graph_json,
     label_of,
@@ -75,6 +78,9 @@ def test_the_feed_turns_commits_into_events(
     (tx,) = svc.txs()[-1:]
     assert [e["node"]["id"] for e in events] == sorted(str(r.id) for r in tx.revisions)  # type: ignore[index, call-overload]
     assert {(e["kind"], e["seq"], e["actor"]) for e in events} == {("created", tx.seq, "tester")}
+    assert {(e["command"], e["session"]) for e in events} == {
+        (tx.request.command, tx.actor.session_key())
+    }
     (created,) = [e for e in events if e["node"]["type"] == cls]  # type: ignore[index, call-overload]
     entity = created["node"]["id"]  # type: ignore[index, call-overload]
     revision = next(r for r in tx.revisions if str(r.id) == entity)
@@ -91,17 +97,85 @@ def test_the_feed_turns_commits_into_events(
     assert feed.seq == svc.head_seq() and feed.poll() == []
 
 
+RECEIVED = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+def read(
+    ids: tuple[str, ...], call: str | None = "c1", edges: tuple[str, ...] = ()
+) -> dict[str, JsonValue]:
+    return {
+        "kind": "read",
+        "ts": "2026-01-02T03:04:05.000Z",
+        "command": "neighbors",
+        "call": call,
+        "actor": "example_agent",
+        "session": "session-1",
+        "ids": list(ids),
+        "edges": list(edges),
+    }
+
+
 def test_reads_of_this_graph_only(svc: ServiceEnv) -> None:
     source = source_of(svc)
     ids = ("0192f3c0-0000-7000-8000-000000000001",)
-    assert read_event(source, ActivityEvent(str(svc.entry.id), "read", ids)) == {
-        "kind": "read",
-        "ids": list(ids),
-    }
-    assert (
-        read_event(source, ActivityEvent("0192f3c0-0000-7000-8000-0000000000ff", "read", ids))
-        is None
+    event = ActivityEvent(
+        str(svc.entry.id), "read", ids, ("e1",), "neighbors", "c1", "example_agent", "session-1"
     )
+    assert read_event(source, event, RECEIVED) == read(ids, edges=("e1",))
+    old = ActivityEvent(str(svc.entry.id), "read", ids)  # version 1: ids only
+    assert read_event(source, old, RECEIVED) == {
+        **read(ids, call=None),
+        "command": None,
+        "actor": None,
+        "session": None,
+    }
+    other = dataclasses.replace(event, graph="0192f3c0-0000-7000-8000-0000000000ff")
+    assert read_event(source, other, RECEIVED) is None
+
+
+def test_the_trail_merges_the_datagrams_of_one_read() -> None:
+    trail = ActivityTrail()
+    assert trail.add(read(("a", "b"), edges=("e1",)))["step"] == 1
+    assert trail.add(read(("b", "c"), edges=("e2",)))["step"] == 1  # same call
+    write: dict[str, JsonValue] = {
+        "kind": "created",
+        "seq": 7,
+        "ts": "2026-01-02T03:04:06.000Z",
+        "command": "apply",
+        "actor": "example_agent",
+        "session": "session-1",
+        "node": {"id": "d"},
+        "links": [],
+    }
+    assert trail.add(write)["step"] == 2
+    assert trail.add(read(("a",), call=None))["step"] == 3  # version 1: always a new step
+    steps = trail.to_json()["steps"]
+    assert isinstance(steps, list)
+    assert [(s["step"], s["kind"], s["ids"], s["edges"]) for s in steps] == [  # type: ignore[index, call-overload]
+        (1, "read", ["a", "b", "c"], ["e1", "e2"]),
+        (2, "created", ["d"], []),
+        (3, "read", ["a"], []),
+    ]
+    assert steps[0] == {  # type: ignore[comparison-overlap]
+        "step": 1,
+        "kind": "read",
+        "ts": "2026-01-02T03:04:05.000Z",
+        "command": "neighbors",
+        "actor": "example_agent",
+        "session": "session-1",
+        "ids": ["a", "b", "c"],
+        "edges": ["e1", "e2"],
+    }
+    assert steps[1]["seq"] == 7  # type: ignore[index, call-overload]
+
+
+def test_the_trail_keeps_the_last_steps() -> None:
+    trail = ActivityTrail(limit=2)
+    for n in range(1, 5):
+        trail.add(read((str(n),), call=f"c{n}"))
+    steps = trail.to_json()["steps"]
+    assert [s["step"] for s in steps] == [3, 4]  # type: ignore[index, union-attr]
+    assert trail.add(read(("x",), call="c1"))["step"] == 5  # c1 left the trail
 
 
 def test_a_denied_view_is_audited(svc: ServiceEnv) -> None:

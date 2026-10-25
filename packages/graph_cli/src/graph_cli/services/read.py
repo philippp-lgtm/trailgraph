@@ -13,9 +13,10 @@ an archived graph with ``graph.archived_read``. ``as_of`` reads the snapshot
 at the seq it names (B8.8): it needs ``read.history`` besides the read's own
 action, a backend with ``snapshot_at_seq``, and every answer carries
 ``temporal.as_of_read``; the model stays the current pin. A successful ``get``,
-``history``, ``find``, ``lookup``, ``search``, ``neighbors`` or ``query`` hands the ids it
-returns to the activity sink (a transient signal for ``graph-admin view``,
-no log).
+``history``, ``find``, ``lookup``, ``search``, ``neighbors`` or ``query`` hands the
+entities it returns, and the edges ``neighbors`` walked or ``query`` rows hold, to the
+activity sink with the command and actor that opened the graph (a transient signal for
+``graph-admin view``, no log).
 ``history`` shows of a tx's actor only whether it is the caller's own
 session: who wrote a revision is audit content (B8.15).
 The command's timings get the phases ``authorize``, ``audit`` (a denial),
@@ -28,7 +29,7 @@ other command starts without it.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Concatenate
 
@@ -47,8 +48,8 @@ from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TermRef
-from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink
+from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
+from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
@@ -96,12 +97,14 @@ ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work aroun
 
 @dataclass(frozen=True, slots=True)
 class GraphRead:
-    """One graph opened for reading: model and one snapshot."""
+    """One graph opened for reading by one actor and command: model and one snapshot."""
 
     entry: GraphEntry
     model: CompiledModel
     snapshot: Snapshot
     warnings: tuple[WarningRecord, ...]
+    actor: ActorContext
+    command: str
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)
@@ -202,24 +205,36 @@ def value_json(value: Value) -> JsonValue:
 def entities_in(rows: Sequence[Sequence[Value]]) -> list[EntityId]:
     """The entities rows show (nodes, and both ends of relationships), first seen first."""
     found: dict[EntityId, None] = {}
-
-    def walk(value: Value) -> None:
+    for value in _graph_values(rows):
         if isinstance(value, Node):
             found.setdefault(value.id)
-        elif isinstance(value, Rel):
+        else:
             found.setdefault(value.source)
             found.setdefault(value.target)
+    return list(found)
+
+
+def edges_in(rows: Sequence[Sequence[Value]]) -> list[EdgeId]:
+    """The edges rows show as relationships, first seen first."""
+    return list(dict.fromkeys(v.edge.edge_id for v in _graph_values(rows) if isinstance(v, Rel)))
+
+
+def _graph_values(rows: Sequence[Sequence[Value]]) -> Iterator[Node | Rel]:
+    """Every node and relationship in rows, also inside lists and maps, in order."""
+
+    def walk(value: Value) -> Iterator[Node | Rel]:
+        if isinstance(value, Node | Rel):
+            yield value
         elif isinstance(value, list):
             for item in value:
-                walk(item)
+                yield from walk(item)
         elif isinstance(value, dict):
             for item in value.values():
-                walk(item)
+                yield from walk(item)
 
     for row in rows:
         for value in row:
-            walk(value)
-    return list(found)
+            yield from walk(value)
 
 
 def _query[**P, R](
@@ -331,6 +346,12 @@ class ReadService:
             )
         return error
 
+    def _signal(
+        self, view: GraphRead, entities: Sequence[EntityId], edges: Sequence[EdgeId] = ()
+    ) -> None:
+        """Tell running views what this read returned (``[activity] signal_reads``)."""
+        self.activity.reads(ReadSignal(view.entry.id, view.command, view.actor, entities, edges))
+
     # ---- reads ---------------------------------------------------------
 
     def open(
@@ -358,7 +379,8 @@ class ReadService:
             if as_of is not None:
                 snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
                 warnings += (warning,)
-        return GraphRead(entry, model, snapshot, (*warnings, *snapshot.warnings))
+        warnings = (*warnings, *snapshot.warnings)
+        return GraphRead(entry, model, snapshot, warnings, actor, request.command)
 
     def skill(
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
@@ -438,7 +460,7 @@ class ReadService:
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
         }
-        self.activity.reads(view.entry.id, [entity])
+        self._signal(view, [entity])
         return data, warnings
 
     @_query
@@ -479,7 +501,7 @@ class ReadService:
             "current_rev": metas[-1].rev,
             "items": items,
         }
-        self.activity.reads(view.entry.id, [entity])
+        self._signal(view, [entity])
         return data, Page(len(metas), len(shown), limit, offset), list(warnings)
 
     @_query
@@ -521,7 +543,7 @@ class ReadService:
         query: Query = plan_find(view.model, spec)
         page = view.snapshot.query(query)
         data: dict[str, JsonValue] = {"items": [entity_json(r, shown) for r in page.items]}
-        self.activity.reads(view.entry.id, [r.id for r in page.items])
+        self._signal(view, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
     @_query
@@ -568,7 +590,7 @@ class ReadService:
             shown_ids += [revision.id for _, revision, _ in shown]
             total += len(found)
             more += plan.offset + len(shown) < len(found)
-        self.activity.reads(view.entry.id, shown_ids)
+        self._signal(view, shown_ids)
         page = Page(total, len(items), spec.limit, spec.offset, more=bool(more))
         return {"items": items, "texts": counts}, page
 
@@ -595,7 +617,7 @@ class ReadService:
             }
             for _, revision, match in shown
         ]
-        self.activity.reads(view.entry.id, [revision.id for _, revision, _ in shown])
+        self._signal(view, [revision.id for _, revision, _ in shown])
         return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
 
     @_query
@@ -625,7 +647,8 @@ class ReadService:
             }
             for neighbor, edge, revision in found
         ]
-        self.activity.reads(view.entry.id, [start, *(neighbor for neighbor, _, _ in found)])
+        entities = [start, *(neighbor for neighbor, _, _ in found)]
+        self._signal(view, entities, [edge.edge_id for _, edge, _ in found])
         return {"start": str(start), "items": items}, list(warnings)
 
     def parse_query(self, text: str) -> CypherQuery:
@@ -660,7 +683,7 @@ class ReadService:
             {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
             for row in shown
         ]
-        self.activity.reads(view.entry.id, entities_in(shown))
+        self._signal(view, entities_in(shown), edges_in(shown))
         data: dict[str, JsonValue] = {"columns": list(result.columns), "items": items}
         return data, Page(len(result.rows), len(shown), spec.limit, spec.offset)
 
