@@ -111,6 +111,7 @@ class Services:
     def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
         import graph_cli_admin
         from graph_cli.catalog.build import read_build
+        from graph_cli.catalog.compat import cached_compat
         from graph_cli.catalog.endpoint import parse_endpoint
         from graph_cli.catalog.pointer import find_pointer
         from graph_cli.catalog.remote import (
@@ -121,6 +122,7 @@ class Services:
             read_token,
         )
         from graph_cli.catalog.wiring import asserted_facets
+        from graph_cli_admin.maintenance_cli.admin_skills import admin_compat
 
         config, config_warnings = self.config()
         endpoint = parse_endpoint(config.endpoint or "")
@@ -148,13 +150,19 @@ class Services:
             hint=TOKEN_HINT,
             project_file=project_token_path(config.path, endpoint, project, ADMIN_TOKEN_FILE),
         )
+        build = read_build(graph_cli_admin.__file__)
+        try:
+            state_root: Path | None = self.state_root()
+        except GraphCliError:
+            state_root = None  # no cache: computed for this command only
         client = RemoteClient(
             endpoint,
             token,
             timeout_s=config.remote_timeout_s,
             version=__version__,
             program=PROGRAM,
-            build=read_build(graph_cli_admin.__file__),
+            build=build,
+            compat=cached_compat(state_root, PROGRAM, build, admin_compat),
             warnings=warnings,
             token_hint=TOKEN_HINT,
         )

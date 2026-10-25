@@ -6,7 +6,8 @@ that fits it. ``graph-admin skills install`` and ``workspace sync`` copy them
 with the installer of ``graph skills install`` (``graph_cli.skills.install``),
 marked with kind ``admin``. Their names never start with ``graph-``: ``graph``
 judges and refreshes only ``graph-cli`` and ``graph-*``, so neither program
-touches the other's skills.
+touches the other's skills. They are graph-admin's agent guidance, so they
+go into its compatibility id (``admin_compat``, contracts B14.16).
 """
 
 from __future__ import annotations
@@ -63,3 +64,14 @@ def admin_skills() -> list[RenderedSkill]:
             )
         )
     return found
+
+
+def admin_compat() -> str:
+    """graph-admin's compatibility id (B14.16): its inventory with answer schemas and the
+    admin skills it installs."""
+    from graph_cli.catalog.compat import compat_id
+    from graph_cli_admin.maintenance_cli.commands import all_specs
+    from graph_cli_admin.maintenance_cli.commands.meta import inventory
+
+    guidance = {skill.name: skill.files for skill in admin_skills()}
+    return compat_id(inventory(all_specs(), output_schemas=True), guidance)

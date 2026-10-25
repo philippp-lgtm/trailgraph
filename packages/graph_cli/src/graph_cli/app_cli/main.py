@@ -18,6 +18,7 @@ import click
 from graph_cli import __version__
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.common import GLOBAL_OPTIONS
+from graph_cli.app_cli.commands.skills import app_compat
 from graph_cli.app_cli.skill_check import guarded
 from graph_cli.catalog import wiring
 from graph_cli.cli_kit.runner import Invocation, run
@@ -62,7 +63,9 @@ def main() -> None:
     timings = Timings.since_import()
     env = wiring.process_env()
     json_mode, debug = wiring.output_mode(env)
-    services = wiring.AppServices(env, Path.cwd(), wiring.process_executable(), timings)
+    services = wiring.AppServices(
+        env, Path.cwd(), wiring.process_executable(), timings, compat=app_compat
+    )
     cli = program(remote=services.remote_mode())
     timings.until_now("startup")
     code = run(

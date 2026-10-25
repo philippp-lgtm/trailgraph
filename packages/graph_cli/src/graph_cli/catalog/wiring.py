@@ -30,7 +30,9 @@ In remote mode (``[runtime] mode = "remote"``) there is no local context:
 ``remote`` builds the command's ``RemoteSession`` instead, with the token
 (``GRAPH_CLI_TOKEN``, else the one stored for the pointer's project, else
 ``[remote] token_file``), the asserted facets of this process and the
-pointer as seen from the working directory (B14.10, B14.21).
+pointer as seen from the working directory (B14.10, B14.21). Its requests
+carry this program's build and compatibility id (``catalog.compat``,
+computed by ``compat`` once per build).
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ import contextlib
 import functools
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
@@ -226,6 +228,7 @@ class AppServices:
     executable: str | None = None  # the running program's own path (sys.argv[0]), F6
     timings: Timings = field(default_factory=Timings)
     request: RequestScope | None = None  # set by the server, one per request
+    compat: Callable[[], str] | None = None  # this program's compatibility id (B14.16)
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _remote: RemoteSession | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
@@ -327,6 +330,7 @@ class AppServices:
     def _connect(self, warnings: list[WarningRecord]) -> RemoteSession:
         import graph_cli
         from graph_cli.catalog.build import read_build
+        from graph_cli.catalog.compat import cached_compat
         from graph_cli.catalog.endpoint import parse_endpoint
         from graph_cli.catalog.remote import RemoteClient, RemoteSession
 
@@ -345,13 +349,22 @@ class AppServices:
                     {"endpoint": endpoint.display},
                 )
             )
+        build = read_build(graph_cli.__file__)
+        compat = None
+        if self.compat is not None:
+            try:
+                state_root: Path | None = self.remote_roots()[1].state_root
+            except GraphCliError:
+                state_root = None  # no cache: computed for this command only
+            compat = cached_compat(state_root, PROGRAM, build, self.compat)
         client = RemoteClient(
             endpoint,
             self._token(config, endpoint, pointer),
             timeout_s=config.remote_timeout_s,
             version=__version__,
             program=PROGRAM,
-            build=read_build(graph_cli.__file__),
+            build=build,
+            compat=compat,
             warnings=warnings,
             skills=claims_header(self.skill_claims()[0]),
         )

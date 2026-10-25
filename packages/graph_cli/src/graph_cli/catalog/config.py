@@ -93,8 +93,9 @@ class Config:
     remote_timeout_s: float = 60.0  # [remote] timeout_s
     cors_origins: tuple[str, ...] = ()  # [server]: browser origins allowed to call graph-server
     admin_api: bool = False  # [server]: graph-server also serves the graph-admin commands
-    # [server]: "exact" refuses a client of another build, "warn" lets it through
-    client_builds: Literal["exact", "warn"] = "exact"
+    # [server]: "compatible" refuses a client of another build whose compatibility id differs,
+    # "exact" every client of another build, "warn" none
+    client_builds: Literal["compatible", "exact", "warn"] = "compatible"
     dist: bool = True  # [server]: graph-server hands out the programs it was built from
     public_url: str | None = None  # [server]: the URL clients use, without a trailing /
 
@@ -205,8 +206,8 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         raise _invalid(path, "server.cors_origins", "must be origins like https://example.org")
     admin_api = get("server.admin_api", bool, "a boolean")
     client_builds = get("server.client_builds", str, "a string")
-    if client_builds is not None and client_builds not in ("exact", "warn"):
-        raise _invalid(path, "server.client_builds", "must be 'exact' or 'warn'")
+    if client_builds is not None and client_builds not in ("compatible", "exact", "warn"):
+        raise _invalid(path, "server.client_builds", "must be 'compatible', 'exact' or 'warn'")
     dist = get("server.dist", bool, "a boolean")
     public_url = get("server.public_url", str, "a string")
     if public_url is not None and not PUBLIC_URL_RE.match(public_url):
@@ -238,7 +239,7 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
         admin_api=bool(admin_api),
-        client_builds="warn" if client_builds == "warn" else "exact",
+        client_builds=client_builds or defaults.client_builds,
         dist=dist if dist is not None else defaults.dist,
         public_url=public_url.rstrip("/") if public_url is not None else None,
         mode=mode or defaults.mode,

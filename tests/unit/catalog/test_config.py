@@ -108,6 +108,10 @@ def test_file_defaults() -> None:
     assert (config.file_roots, config.max_file_bytes) == ({}, 100 * 1024 * 1024)
     assert config.signal_reads is False
     assert config.access_log is False
+    assert config.client_builds == "compatible"
+    for mode in ("compatible", "exact", "warn"):
+        body = f'format_version = 1\n[server]\nclient_builds = "{mode}"\n'.encode()
+        assert parse_config(body, path=PATH)[0].client_builds == mode
 
 
 def test_integer_timeout() -> None:

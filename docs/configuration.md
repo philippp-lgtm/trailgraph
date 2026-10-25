@@ -34,8 +34,10 @@ limit and the read signal. The sections described elsewhere:
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
   `false`) makes it serve the [admin API](server.md#admin-api) too;
-  `client_builds`: `"exact"` (default) refuses a client of another build,
-  `"warn"` lets it through with a warning ([Builds](server.md#builds));
+  `client_builds`: `"compatible"` (default) refuses a client of another
+  build only when its commands, answers or skills differ, `"exact"` every
+  client of another build, `"warn"` none: it gets a warning
+  ([Builds](server.md#builds));
   `dist` (default `true`): `false` hands out no programs
   ([Self update](server.md#self-update)); `public_url`, the `http(s)` URL
   clients reach the server at (such as the domain of a proxy in front of

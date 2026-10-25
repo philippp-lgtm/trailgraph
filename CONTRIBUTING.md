@@ -107,6 +107,16 @@ regenerate and review:
 GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest tests/unit/server/test_openapi.py
 ```
 
+A client of another build keeps working against the server as long as its
+compatibility id is the same ([Builds](docs/server.md#builds)). The id
+follows the inventory and the agent skills by itself; `WIRE_LEVEL` in
+`graph_cli.catalog.compat` is set by hand. Raise it when the request or
+answer format changes so that an older client misreads a newer server or
+the other way round, or when a fix in code that runs on the client (the
+remote client, hooked commands, text output, skill install, self update)
+must reach every client now. `tests/server/test_wire_level.py` pins the
+headers and envelope keys per level and fails until the change is judged.
+
 ## Tests
 
 | Kind | Where | What |

@@ -23,6 +23,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `remote.outcome_unknown`: a write was sent and its answer lost. Run exactly the command in `hint` (the same write with the same idempotency key, safe to repeat), never a changed one, then read the result.
 - `access.project_mismatch`: the token belongs to another project. Stop and tell the user; never change the project.
 - `remote.client_outdated`: this program is not the build the server runs. Stop and tell the user the command in `hint`, which installs the server's build and refreshes the skills; never install or change the program yourself.
+- `remote.version_differs` (a warning): the server runs another build. With `details.compatible: true` the commands and this skill are the same: finish the task, then tell the user once that `graph self update` installs the server's build.
 
 ## When an installed skill is outdated
 

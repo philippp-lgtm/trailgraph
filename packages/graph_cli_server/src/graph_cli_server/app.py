@@ -8,8 +8,10 @@ program, run by ``cli_kit.runner.run`` with one ``AppServices`` per request
 answer is the envelope; the HTTP status follows the error category. A
 request without a valid bearer token reaches no service and is only logged.
 A request that names another build of its program than the server runs is
-refused before any route (``remote.client_outdated``; ``[server]
-client_builds = "warn"`` lets it through). The graph skills a client has
+refused before any route (``remote.client_outdated``) unless it also names
+the server's compatibility id of that program (``catalog.compat``; with
+``[server] client_builds = "exact"`` it is refused anyway, with ``"warn"``
+never). The graph skills a client has
 installed come in ``Graph-Cli-Skills`` and are judged when a command selects
 a graph (``catalog.skill_claims``). ``/v1/dist/`` hands out the programs
 the server was built from (``graph_cli_server.dist``): ``graph``'s wheel to
@@ -46,8 +48,16 @@ import graph_cli
 from graph_cli import __version__
 from graph_cli.app_cli.commands import all_specs
 from graph_cli.app_cli.commands.meta import inventory
+from graph_cli.app_cli.commands.skills import app_compat
 from graph_cli.app_cli.main import program
-from graph_cli.catalog.build import BUILD_HEADER, parse_build_header, read_build, short
+from graph_cli.catalog.build import (
+    BUILD_HEADER,
+    build_header,
+    parse_build_header,
+    read_build,
+    short,
+)
+from graph_cli.catalog.compat import COMPAT_HEADER
 from graph_cli.catalog.config import load_config
 from graph_cli.catalog.identity.request import request_actor
 from graph_cli.catalog.pointer import PointerFile, request_pointer
@@ -90,11 +100,11 @@ KEY_OPTION: Final = "--idempotency-key"
 RETRY_AFTER: Final = "2"  # seconds; the request already waited the lock timeout
 CORS_METHODS: Final = "GET, POST, PUT"
 CORS_HEADERS: Final = (
-    "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Skills,"
-    f" Graph-Cli-Actor, {KEY_HEADER}, If-None-Match"
+    "Authorization, Content-Type, Graph-Cli-Version, Graph-Cli-Build, Graph-Cli-Compat,"
+    f" Graph-Cli-Skills, Graph-Cli-Actor, {KEY_HEADER}, If-None-Match"
 )
 CORS_EXPOSED: Final = (
-    f"{VERSION_HEADER}, {BUILD_HEADER}, {EXIT_HEADER}, ETag, Retry-After, Allow,"
+    f"{VERSION_HEADER}, {BUILD_HEADER}, {COMPAT_HEADER}, {EXIT_HEADER}, ETag, Retry-After, Allow,"
     " Graph-Cli-Content-Hash, Graph-Cli-Media-Type"
 )
 _BODY_KEYS: Final = frozenset({"args", "actor", "pointer", "graph_env"})
@@ -137,7 +147,9 @@ class Settings:
     cors_origins: frozenset[str]
     max_upload_bytes: int
     admin_api: bool = False
-    client_builds: str = "exact"  # or "warn": another build of a client is let through
+    # "exact": another build of a client is refused; "warn": let through; "compatible":
+    # refused when its compatibility id differs too
+    client_builds: str = "compatible"
     dist: bool = True  # [server] dist: hand out the programs of dist_dir
     dist_dir: Path | None = None  # GRAPH_CLI_DIST_DIR: the wheels the image was built from
     public_url: str | None = None  # [server] public_url: base of problem types, OpenAPI servers
@@ -198,6 +210,7 @@ class ServerApp:
         clock: Clock | None = None,
         admin: Callable[[ServerApp], AdminRoutes] | None = None,
         builds: Mapping[str, str | None] | None = None,
+        compats: Mapping[str, str | None] | None = None,
         enroll: Callable[[ServerApp], EnrollRoutes] | None = None,
     ) -> None:
         self.settings = settings
@@ -205,6 +218,9 @@ class ServerApp:
         # None: unknown, so nothing is compared. ``builds`` replaces them in tests.
         self.builds: dict[str, str | None] = {PROGRAM: read_build(graph_cli.__file__)}
         self.builds.update(builds or {})
+        # Program to its compatibility id, computed for a known build (``compats`` in tests).
+        self.compats: dict[str, str | None] = dict(compats or {})
+        self.add_compat(PROGRAM, app_compat)
         self.log = log
         self.clock = clock or SystemClock()
         self.program: click.Group = program()
@@ -367,29 +383,49 @@ class ServerApp:
             )
         return found
 
+    def add_compat(self, program: str, compute: Callable[[], str]) -> None:
+        """The compatibility id of ``program`` (B14.16), once, when its build is known."""
+        if program not in self.compats:
+            self.compats[program] = compute() if self.builds.get(program) is not None else None
+
     def _outdated(self, environ: Mapping[str, Any]) -> GraphCliError | None:
         """``remote.client_outdated`` for a client that names another build of its program
-        than the server runs; nothing when either build is unknown or in ``warn`` mode."""
+        than the server runs, and in ``compatible`` mode not the server's compatibility id
+        of it either; nothing when either build is unknown or in ``warn`` mode."""
         named = parse_build_header(environ.get("HTTP_GRAPH_CLI_BUILD"))
-        if named is None or self.settings.client_builds == "warn":
+        mode = self.settings.client_builds
+        if named is None or mode == "warn":
             return None
         client, build = named
         ours = self.builds.get(client)
         if ours is None or ours == build:
             return None
+        claimed = parse_build_header(environ.get("HTTP_GRAPH_CLI_COMPAT"))
+        theirs = claimed[1] if claimed is not None and claimed[0] == client else None
+        compat = self.compats.get(client)
+        if mode == "compatible" and compat is not None and theirs == compat:
+            return None
+        details: dict[str, JsonValue] = {"program": client, "client": build, "server": ours}
+        if compat is not None and theirs is not None:
+            details |= {"client_compat": theirs, "server_compat": compat}
         return GraphCliError(
             "remote.client_outdated",
             f"this {client} is build {short(build)}, the server runs build {short(ours)};"
             f" run {client} self update, then the command again",
-            details={"program": client, "client": build, "server": ours},
+            details=details,
         )
 
     def _build_header(self, environ: Mapping[str, Any]) -> list[tuple[str, str]]:
-        """The server's build of the program the request named (default ``graph``)."""
+        """The server's build and compatibility id of the program the request named
+        (default ``graph``)."""
         named = parse_build_header(environ.get("HTTP_GRAPH_CLI_BUILD"))
         client = named[0] if named is not None and named[0] in self.builds else PROGRAM
         ours = self.builds.get(client)
-        return [] if ours is None else [(BUILD_HEADER, f"{client} {ours}")]
+        if ours is None:
+            return []
+        compat = self.compats.get(client)
+        found = [(BUILD_HEADER, build_header(client, ours))]
+        return found if compat is None else [*found, (COMPAT_HEADER, build_header(client, compat))]
 
     def _inventory(self) -> dict[str, JsonValue]:
         return inventory(all_specs())

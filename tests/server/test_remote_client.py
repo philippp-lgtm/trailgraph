@@ -305,3 +305,39 @@ def test_the_client_names_its_build_and_compares_the_servers() -> None:
         replies.append((200, f"graph {b}"))
         client(None, alone).call("POST", "/v1/commands/whoami", body=b"{}")
     assert sent[-1] is None and alone == []  # no build to claim, the versions are equal
+
+
+def test_the_client_names_its_compatibility_and_says_whether_the_servers_is_the_same() -> None:
+    """Plan client_compatibility C4: the warning says whether only the build differs."""
+    from graph_cli.catalog.endpoint import parse_endpoint
+    from graph_cli.catalog.remote import Answer, RemoteClient
+    from graph_cli.kernel.errors import WarningRecord
+
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    c, d = "sha256:" + "c" * 64, "sha256:" + "d" * 64
+    endpoint = parse_endpoint("http://127.0.0.1:1")
+    assert not isinstance(endpoint, str)
+    client = RemoteClient(
+        endpoint, "gct_x", timeout_s=5, version="0.1.0.dev0", program="graph", build=a, compat=c
+    )
+    headers = client._headers(None, None, None)
+    assert headers["Graph-Cli-Build"] == f"graph {a}"
+    assert headers["Graph-Cli-Compat"] == f"graph {c}"
+
+    def warning(compat: str | None) -> WarningRecord | None:
+        found = {"graph-cli-version": "0.1.0.dev0", "graph-cli-build": f"graph {b}"}
+        if compat is not None:
+            found["graph-cli-compat"] = compat
+        return client.version_warning(Answer(200, found, b"{}"))
+
+    same = warning(f"graph {c}")
+    assert same is not None and same.details["compatible"] is True
+    assert "its commands and skills are the same; graph self update installs" in same.message
+    for other in (f"graph {d}", f"graph-admin {c}", None):
+        found = warning(other)
+        assert found is not None and found.details["compatible"] is False, other
+        assert found.message.endswith("commands and answers may differ")
+    without = RemoteClient(
+        endpoint, "gct_x", timeout_s=5, version="0.1.0.dev0", program="graph", build=None
+    )
+    assert "Graph-Cli-Compat" not in without._headers(None, None, None)

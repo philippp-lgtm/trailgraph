@@ -7,8 +7,10 @@ for a write (it may have been applied; the idempotency key makes running
 it again safe) and one retry for a read. 401 is ``remote.unauthorized``;
 an answer that is not the API's is ``remote.protocol``. The token goes into
 the ``Authorization`` header only, never into an error. Every request names
-this program's build (``catalog.build``); every answer that is no error is
-compared with the server's version and build (``remote.version_differs``).
+this program's build (``catalog.build``) and compatibility id
+(``catalog.compat``); every answer that is no error is compared with the
+server's version and build (``remote.version_differs``, which says whether
+the server's compatibility id is this program's).
 The graph skills installed for this process's agent go along in
 ``Graph-Cli-Skills`` (``catalog.skill_claims``), so the server can judge them.
 The token comes from the environment, else from the file ``graph connect``
@@ -31,6 +33,7 @@ from pathlib import Path
 from typing import BinaryIO, Final
 
 from graph_cli.catalog.build import BUILD_HEADER, build_header, parse_build_header, short
+from graph_cli.catalog.compat import COMPAT_HEADER
 from graph_cli.catalog.endpoint import Endpoint
 from graph_cli.catalog.skill_claims import SKILLS_HEADER
 from graph_cli.kernel.actor import is_valid_asserted_value
@@ -84,6 +87,7 @@ class RemoteClient:
         version: str,
         program: str,
         build: str | None = None,
+        compat: str | None = None,
         warnings: list[WarningRecord] | None = None,
         token_hint: str = APP_TOKEN_HINT,
         skills: str | None = None,
@@ -94,6 +98,7 @@ class RemoteClient:
         self.version = version
         self.program = program  # graph or graph-admin: whose build the server compares
         self.build = build  # None: no build id to claim (an editable install)
+        self.compat = compat  # None: no compatibility id to claim (B14.16)
         self.warnings = warnings  # the running command's warnings; None: not noted
         self.token_hint = token_hint  # where this program's token comes from
         self.skills = skills  # the Graph-Cli-Skills value; None: no graph skill installed
@@ -163,15 +168,28 @@ class RemoteClient:
         if self.build is not None and theirs is not None:
             if theirs == self.build:
                 return None
+            compat = parse_build_header(answer.headers.get(COMPAT_HEADER.lower()))
+            compatible = (
+                self.compat is not None
+                and compat is not None
+                and compat == (self.program, self.compat)
+            )
+            effect = (
+                f"its commands and skills are the same; {self.program} self update installs"
+                " the server's build"
+                if compatible
+                else "commands and answers may differ"
+            )
             return WarningRecord(
                 "remote.version_differs",
                 f"the server runs build {short(theirs)} of {self.program}, this is build"
-                f" {short(self.build)}; commands and answers may differ",
+                f" {short(self.build)}; {effect}",
                 {
                     "client": self.version,
                     "server": server,
                     "client_build": self.build,
                     "server_build": theirs,
+                    "compatible": compatible,
                 },
             )
         if server is None or server == self.version:
@@ -216,6 +234,8 @@ class RemoteClient:
             headers["Authorization"] = f"Bearer {self._token}"
         if self.build is not None:
             headers[BUILD_HEADER] = build_header(self.program, self.build)
+        if self.compat is not None:
+            headers[COMPAT_HEADER] = build_header(self.program, self.compat)
         if self.skills is not None:
             headers[SKILLS_HEADER] = self.skills
         if isinstance(body, bytes):

@@ -28,6 +28,7 @@ from support.serve import client_env, graph_server
 from support.server import SERVER_POLICY, call, grant_server, new_token
 
 from graph_cli import __version__
+from graph_cli_admin.maintenance_cli.admin_skills import admin_compat
 from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_server.admin_api import AdminApi
 from graph_cli_server.app import ServerApp, Settings
@@ -119,6 +120,22 @@ def test_graph_admin_is_compared_with_the_servers_graph_admin(
     refused = token_list(f"graph-admin {a}")
     assert refused.error["code"] == "remote.client_outdated"
     assert refused.error["details"]["program"] == "graph-admin"
+    # graph-admin's compatibility id is the admin API's own (C3), named in every answer
+    compat = app.compats["graph-admin"]
+    assert compat == admin_compat() and compat != app.compats["graph"]
+    assert same.headers["Graph-Cli-Compat"] == f"graph-admin {compat}"
+    compatible = call(
+        app,
+        "POST",
+        "/v1/admin/commands/token/list",
+        token=root,
+        body={},
+        headers={
+            "Graph-Cli-Build": f"graph-admin {a}",
+            "Graph-Cli-Compat": f"graph-admin {compat}",
+        },
+    )
+    assert compatible.status == 200
 
 
 def test_token_scopes_keep_the_surfaces_apart(installation: dict[str, Any], tmp_path: Path) -> None:

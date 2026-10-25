@@ -171,3 +171,9 @@ directory in its folder and push.
 | `admin.data_errors` | the data breaks the new version; fix the entities in `details.findings` |
 | `access.denied` | not allowed for this token; stop and tell the user |
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |
+| `remote.client_outdated` | this graph-admin is not the build the server runs; stop and tell the user to run `graph-admin self update` |
+
+The warning `remote.version_differs` means the server runs another build.
+With `details.compatible: true` the commands and these skills are the
+same: finish the task, then tell the user once that
+`graph-admin self update` installs the server's build.

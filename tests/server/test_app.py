@@ -20,6 +20,7 @@ from support.openapi import answer_validator, app_document
 from support.server import actor_header, call, grant_server, new_token
 
 from graph_cli import __version__
+from graph_cli.app_cli.commands.skills import app_compat
 from graph_cli.kernel.canonical import hash_bytes
 from graph_cli.kernel.ports.catalog import skill_hash
 from graph_cli.skills.tree import read_tree
@@ -454,6 +455,81 @@ def test_warn_mode_lets_another_build_through(installation: dict[str, Any], tmp_
     assert reply.headers["Graph-Cli-Build"] == f"graph {BUILD_A}"  # the client warns
 
 
+COMPAT_A = "sha256:" + "c" * 64
+COMPAT_B = "sha256:" + "d" * 64
+
+
+def test_another_build_of_the_same_compatibility_runs(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """Plan client_compatibility C4: refused only when the surface differs too."""
+    settings = Settings.load(installation["env"], tmp_path)
+    assert settings.client_builds == "compatible"  # the default
+    app = ServerApp(
+        settings, log=io.StringIO(), builds={"graph": BUILD_A}, compats={"graph": COMPAT_A}
+    )
+
+    def whoami(build: str, compat: str | None) -> Any:
+        headers = {"Graph-Cli-Build": build}
+        if compat is not None:
+            headers["Graph-Cli-Compat"] = compat
+        token = installation["tokens"]["ci"]
+        return call(app, "POST", "/v1/commands/whoami", token=token, body={}, headers=headers)
+
+    same = whoami(f"graph {BUILD_B}", f"graph {COMPAT_A}")
+    assert same.status == 200
+    assert same.headers["Graph-Cli-Build"] == f"graph {BUILD_A}"
+    assert same.headers["Graph-Cli-Compat"] == f"graph {COMPAT_A}"  # the client warns
+    refused = whoami(f"graph {BUILD_B}", f"graph {COMPAT_B}")
+    assert refused.error["code"] == "remote.client_outdated"
+    assert refused.error["details"] == {
+        "program": "graph",
+        "client": BUILD_B,
+        "server": BUILD_A,
+        "client_compat": COMPAT_B,
+        "server_compat": COMPAT_A,
+    }
+    # a client without a compatibility id (installed before it existed) is compared by build,
+    # and one of another program's counts as none
+    for compat in (None, f"graph-admin {COMPAT_A}", "graph unknown"):
+        reply = whoami(f"graph {BUILD_B}", compat)
+        assert reply.error["code"] == "remote.client_outdated", compat
+        assert "client_compat" not in reply.error["details"]
+    assert whoami(f"graph {BUILD_A}", f"graph {COMPAT_B}").status == 200  # the same build
+
+
+def test_exact_mode_refuses_another_build_of_the_same_compatibility(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + '\n[server]\nclient_builds = "exact"\n')
+    settings = Settings.load(installation["env"], tmp_path)
+    app = ServerApp(
+        settings, log=io.StringIO(), builds={"graph": BUILD_A}, compats={"graph": COMPAT_A}
+    )
+    reply = call(
+        app,
+        "POST",
+        "/v1/commands/whoami",
+        token=installation["tokens"]["ci"],
+        body={},
+        headers={"Graph-Cli-Build": f"graph {BUILD_B}", "Graph-Cli-Compat": f"graph {COMPAT_A}"},
+    )
+    assert reply.error["code"] == "remote.client_outdated"
+
+
+def test_the_server_computes_its_own_compatibility_id(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """C3: for a known build only; a server of unknown build names neither."""
+    settings = Settings.load(installation["env"], tmp_path)
+    known = ServerApp(settings, log=io.StringIO(), builds={"graph": BUILD_A})
+    assert known.compats["graph"] == app_compat()
+    assert ServerApp(settings, log=io.StringIO(), builds={"graph": None}).compats == {"graph": None}
+    health = call(known, "GET", "/v1/health")
+    assert health.headers["Graph-Cli-Compat"] == f"graph {app_compat()}"
+
+
 def test_installed_graph_skills_are_judged_from_the_header(
     run_cli: CliRunner, served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:
@@ -710,10 +786,17 @@ def test_cors_names_the_http_headers(installation: dict[str, Any], tmp_path: Pat
     app = ServerApp(Settings.load(installation["env"], tmp_path), log=io.StringIO())
     allowed = {"Origin": "https://app.example.org"}
     preflight = call(app, "OPTIONS", "/v1/commands/create", headers=allowed)
-    for name in ("Idempotency-Key", "If-None-Match"):
+    for name in ("Idempotency-Key", "If-None-Match", "Graph-Cli-Compat"):
         assert name in preflight.headers["Access-Control-Allow-Headers"]
     refused = call(app, "POST", "/v1/commands/whoami", body={}, headers=allowed)
     exposed = refused.headers["Access-Control-Expose-Headers"]
-    for name in ("ETag", "Retry-After", "Allow", "Graph-Cli-Content-Hash", "Graph-Cli-Media-Type"):
+    for name in (
+        "ETag",
+        "Retry-After",
+        "Allow",
+        "Graph-Cli-Content-Hash",
+        "Graph-Cli-Media-Type",
+        "Graph-Cli-Compat",
+    ):
         assert name in exposed
     assert refused.headers["Vary"] == "Accept, Origin"

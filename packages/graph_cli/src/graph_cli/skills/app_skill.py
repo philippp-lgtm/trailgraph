@@ -953,6 +953,9 @@ REMOTE_GUIDANCE: Final = (
     "- `remote.client_outdated`: this program is not the build the server runs. Stop and"
     " tell the user the command in `hint`, which installs the server's build and refreshes"
     " the skills; never install or change the program yourself.",
+    "- `remote.version_differs` (a warning): the server runs another build. With"
+    " `details.compatible: true` the commands and this skill are the same: finish the task,"
+    " then tell the user once that `graph self update` installs the server's build.",
     "",
 )
 

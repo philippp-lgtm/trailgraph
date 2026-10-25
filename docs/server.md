@@ -253,15 +253,36 @@ whatever their version says. The client names its program and build in
 `Graph-Cli-Build: <program> sha256:<hex>`; every answer carries the
 server's build of that program in the same header.
 
-After the token, before any route, the server compares the two: another
-build of the same program is refused with `remote.client_outdated` (422,
-exit code 1); the message names both builds. With `[server] client_builds
-= "warn"` the request runs, and the client warns `remote.version_differs`
-instead (for a rolling upgrade). Nothing is compared when either side has
-no build id: a web app or `curl` sends none, and neither does a program
-run from a checkout (`uv run graph`), which then only gets the warning
-when the version string differs. `/v1/health` and `/v1/dist/` are never
-refused: they are how a client catches up (`graph self update`).
+Most changes to the sources never reach a client: storage, services and
+the live view run on the server. So an installed build also carries a
+compatibility id, a hash over what a client brings to the server: its
+command inventory with the schemas of the answers, the agent skills it
+installs (the `graph-cli` skill for `graph`, the admin skills for
+`graph-admin`) and the wire level, a number raised when the request or
+answer format changes or a fix on the client side must reach every
+client. Two builds with the same compatibility id parse the same
+commands, read the same answers and tell the agent the same. The client
+sends it in `Graph-Cli-Compat: <program> sha256:<hex>`, and every answer
+carries the server's in the same header.
+
+After the token, before any route, the server compares them. With
+`[server] client_builds = "compatible"` (the default) another build of the
+same program is refused with `remote.client_outdated` (422, exit code 1)
+only when its compatibility id differs too, or when it sends none (a
+client installed before compatibility ids); the message names both
+builds. A client of another build with the same compatibility id runs and
+warns `remote.version_differs` with `details.compatible: true`: `graph
+self update` installs the server's build when it suits. `"exact"`
+refuses every other build, `"warn"` none (the client warns instead, for a
+rolling upgrade). Nothing is compared when either side has no build id: a
+web app or `curl` sends none, and neither does a program run from a
+checkout (`uv run graph`), which then only gets the warning when the
+version string differs. `/v1/health` and `/v1/dist/` are never refused:
+they are how a client catches up (`graph self update`).
+
+A client computes its compatibility id on its first remote command after
+an install and keeps it under the state directory
+(`compat/<program>/<build>`); the server computes its own at start.
 
 Installing a client from a checkout with a build id: run
 `python3 scripts/build_id.py` before `uv tool install` and `python3

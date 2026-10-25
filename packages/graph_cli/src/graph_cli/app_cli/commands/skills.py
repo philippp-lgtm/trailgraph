@@ -109,6 +109,17 @@ def app_skill() -> RenderedSkill:
     return sources.app_skill(app_inventory(), program_block())
 
 
+def app_compat() -> str:
+    """This program's compatibility id (B14.16): its inventory with answer schemas and
+    skill 1 as it installs it."""
+    from graph_cli.app_cli.commands import all_specs
+    from graph_cli.app_cli.commands.meta import inventory
+    from graph_cli.catalog.compat import compat_id
+
+    skill = app_skill()
+    return compat_id(inventory(all_specs(), output_schemas=True), {skill.name: skill.files})
+
+
 def graph_skill(ctx: AppContext, entry: GraphEntry, warnings: list[WarningRecord]) -> RenderedSkill:
     """The published skill of ``entry``; ``skills.source_missing`` when there is none. A
     template (kind ``generated``) is rendered with the model of the graph's current pin."""

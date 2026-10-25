@@ -54,6 +54,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.skills.tree import read_tree
 from graph_cli_admin.maintenance_cli import hints
+from graph_cli_admin.maintenance_cli.admin_skills import admin_compat
 from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_admin.maintenance_cli.commands.common import DATA_ROOT
 from graph_cli_admin.maintenance_cli.commands.meta import inventory
@@ -112,6 +113,7 @@ class AdminApi:
         hints.register()
         self.server = server
         server.builds.setdefault(PROGRAM, read_build(graph_cli_admin.__file__))
+        server.add_compat(PROGRAM, admin_compat)
         self.program: click.Group = program()
         self.declared = tuple(served(spec) for spec in all_specs())
         self.specs: dict[str, CommandSpec] = {
