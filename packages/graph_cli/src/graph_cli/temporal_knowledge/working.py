@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import OpEffect
@@ -132,15 +132,25 @@ class WorkingState:
 
     # ---- Universe of the reference evaluator ---------------------------
 
+    def _base_revisions(self, types: frozenset[TermRef]) -> dict[EntityId, Revision]:
+        """Current base revisions of ``types`` (every type when empty), read once each."""
+        found = self._cache.get("base:")  # every type, when read already
+        if found is None:
+            key = "base:" + ",".join(sorted(types))
+            found = self._cache.get(key)
+            if found is None:
+                query = replace(_ALL, types=tuple(sorted(types)))
+                found = {r.id: r for r in self.base.query(query).items}
+                self._cache[key] = found
+        assert isinstance(found, dict)
+        return found
+
     def current(self, entity: EntityId) -> Revision | None:
         return self.get(entity)
 
     def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterator[Revision]:
-        base = self._cache.get("base")
-        if base is None:
-            base = {r.id: r for r in self.base.query(_ALL).items}
-            self._cache["base"] = base
-        assert isinstance(base, dict)
-        merged: dict[EntityId, Revision] = {**base, **self.revisions}
+        """The base reads only ``types`` (the hint of B13.5); the changed revisions of
+        every type are merged in, callers still filter."""
+        merged: dict[EntityId, Revision] = {**self._base_revisions(types), **self.revisions}
         for entity in sorted(merged):
             yield merged[entity]

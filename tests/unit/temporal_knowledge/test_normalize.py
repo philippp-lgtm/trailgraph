@@ -456,6 +456,32 @@ def test_working_state_reads_overlay_the_base() -> None:
     assert ws.seq == 1 and ws.touched == {a, DESK.id}
 
 
+def test_a_typed_query_reads_only_those_types_of_the_base() -> None:
+    """B13.5: the type hint reaches the base, so a large graph is not decoded whole."""
+
+    class Recording(DictSnapshot):
+        def __init__(self, *revisions: Any) -> None:
+            super().__init__(*revisions)
+            self.asked: list[tuple[TermRef, ...]] = []
+
+        def query(self, q: Query) -> Any:
+            self.asked.append(q.types)
+            return super().query(q)
+
+    base = Recording(ROOM, DESK)
+    ws = run(
+        {"op": "create", "type": "inv:Location", "local": "b", "attrs": {"name": "B", "code": "B"}},
+        base=base,
+    )
+    items = (TermRef("inv:Item"),)
+    assert [r.id for r in ws.query(Query(types=items)).items] == [DESK.id]
+    assert [r.id for r in ws.query(Query(types=items)).items] == [DESK.id]  # read once
+    locations = ws.query(Query(types=(TermRef("inv:Location"),))).items
+    assert {r.id for r in locations} == {ROOM.id, ws.locals["b"]}
+    assert len(ws.query(Query()).items) == 3
+    assert base.asked == [items, (TermRef("inv:Location"),), ()]
+
+
 def test_normalize_is_deterministic() -> None:
     ops = (
         {"op": "create", "type": "inv:Item", "local": "a", "attrs": {"name": "A"}},
