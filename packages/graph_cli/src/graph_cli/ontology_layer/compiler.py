@@ -163,6 +163,7 @@ class _Compiler:
                 out=Bound(rel.out.min, rel.out.max),
                 into=Bound(rel.into.min, rel.into.max),
                 characteristics=rel.characteristics,
+                on_target_inactive=rel.on_target_inactive,
                 inverse_label=rel.inverse_label,
                 qualifiers=dict(sorted(qualifiers.items())),
                 renamed_from=rel.renamed_from,

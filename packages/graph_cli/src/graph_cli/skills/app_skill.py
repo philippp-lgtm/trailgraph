@@ -159,6 +159,7 @@ when `graph whoami` lists `require_reason`. Details: [references/history.md](ref
   Nothing is deleted: `graph supersede <id> <id>` when a newer entity (the
   first id) replaces older ones, `graph retract` when one is withdrawn,
   `graph unlink` for a wrong edge. States change with `graph transition`.
+  On `data.referential.target_referenced` read [references/errors.md](references/errors.md).
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file in the working
   directory, dry-run it with `graph apply <file> --dry-run --json`, then
@@ -201,7 +202,6 @@ Every `--json` call prints one JSON object on stdout.
 - A large answer goes to a file (`output.spilled`, `details.path`; `data`
   null): ask for less, or read parts with your file tools, never `jq`.
 - On failure `error` holds {error_keys}. `hint` is the command to run next, or null.
-- Warnings never change the exit code.
 
 ## Commands
 
@@ -215,7 +215,7 @@ equals `graph find --graph <graph>`):
 ## Exit codes
 
 `0` is success; any other exit code follows `error.category`, listed in
-[references/errors.md](references/errors.md).
+[references/errors.md](references/errors.md). Warnings never change it.
 
 ## References
 
@@ -973,6 +973,23 @@ SKILL_GUIDANCE: Final = (
 )
 
 
+# A relation with on_target_inactive keeps its targets active.
+TARGET_GUIDANCE: Final = (
+    "## When a retract or supersede is refused",
+    "",
+    "- `data.referential.target_referenced` (in `error.details.findings` of `write.invalid`):"
+    " active entities still point at the entity over a relation that keeps its targets"
+    " active; `actual.sources` lists them (at most 20 of `actual.count`). Decide for each:"
+    " relink it (on a supersede, to the replacing entity) or retract it when it is withdrawn"
+    " too; ask the user when it is not clear. Then put those writes and the refused one into"
+    " one `graph apply` change set and dry-run it. Never retract an entity only to get the"
+    " write through.",
+    "- The same code as a warning in `data.findings`: the write went through; tell the user"
+    " which entities still point at the entity.",
+    "",
+)
+
+
 def _errors_file(codes: Sequence[JsonObject]) -> str:
     categories = sorted(
         {req_str(e, "category") for e in codes}, key=lambda c: (_exit_of(codes, c), c)
@@ -995,6 +1012,7 @@ def _errors_file(codes: Sequence[JsonObject]) -> str:
         "",
         *REMOTE_GUIDANCE,
         *SKILL_GUIDANCE,
+        *TARGET_GUIDANCE,
         "## Codes",
         "",
         *table(

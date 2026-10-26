@@ -184,6 +184,7 @@ relations:
 | `range` | class or list of classes an edge may point to; omitted: any class |
 | `cardinality` | `out`: edges per source, `in`: edges per target, each `{min, max}`; `max` omitted is unbounded |
 | `characteristics` | list of `acyclic` (no cycles; checked on write), `symmetric`, `transitive` (both declarative: recorded and exported, not computed by queries) |
+| `on_target_inactive` | what a write meets that retracts or supersedes a target while active entities still point at it over the relation: `allow` (default), `warn`, `refuse`; see [rules_and_lifecycles.md](rules_and_lifecycles.md#edges-to-inactive-targets) |
 | `inverse_label` | name for reading the relation backwards (`has_step`); unique across the bundle |
 | `qualifiers` | name to `{type, required, many}` plus documentation; values on the edge; not `blob` or `local_path` |
 | `renamed_from` | the old name of a renamed relation (major) |

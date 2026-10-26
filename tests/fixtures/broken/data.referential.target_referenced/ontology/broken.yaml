@@ -1,0 +1,22 @@
+# Own module: the toy ontologies have no relation that refuses an inactive target.
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: broken
+  version: 1.0.0
+  summary: Folders that nest; a folder needs the folder it lies in.
+
+classes:
+  Folder:
+    summary: A folder.
+    attributes:
+      name: {summary: Name relative to the parent folder., type: string, required: true}
+
+relations:
+  inside:
+    summary: The folder lies directly in the other folder.
+    domain: Folder
+    range: Folder
+    cardinality: {out: {max: 1}}
+    on_target_inactive: refuse
+    inverse_label: contains

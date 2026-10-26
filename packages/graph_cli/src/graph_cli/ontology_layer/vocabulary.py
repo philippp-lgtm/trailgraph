@@ -62,6 +62,9 @@ MUTABILITY_CLASSES: Final = ("immutable", "lifecycle", "content", "operational")
 MUTABILITY_RANK: Final[dict[str, int]] = {"operational": 0, "content": 1, "immutable": 2}
 
 CHARACTERISTICS: Final = ("acyclic", "symmetric", "transitive")
+# What a write that makes an edge's target inactive (retract, supersede) meets, per relation;
+# the first is the default.
+TARGET_INACTIVE_POLICIES: Final = ("allow", "warn", "refuse")
 SEVERITIES: Final = ("error", "warning")
 RULE_TIMINGS: Final = ("write", "batch")
 MAPPING_KINDS: Final = ("exact", "close", "related", "broad", "narrow")

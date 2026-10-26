@@ -77,6 +77,12 @@ occurrence.
 - A tree is a relation from child to parent with `cardinality: {out:
   {max: 1}}` and `acyclic`. A child points only to its parent, not to the
   root: there is then one place to change when it moves.
+- Give that relation `on_target_inactive: refuse` when a child makes no
+  sense without its parent: a parent then cannot be retracted or
+  superseded while children point at it
+  ([rules](rules_and_lifecycles.md#edges-to-inactive-targets)).
+- Store each node's own segment (a name, a relative path), never a value
+  built from its ancestors: renaming a parent then changes nothing below.
 - Values given once at a node apply to the nodes below it unless they
   override them. Do not copy them down; resolve them when reading.
 - Load a tree in one `graph apply` change set when rules sum or count

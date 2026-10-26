@@ -348,3 +348,95 @@ def test_two_concrete_classes_with_one_prefix_are_reported_at_the_later_one() ->
     assert _prefix_findings(text) == [
         ("model.semantic.duplicate_display_prefix", "classes.Other.display_prefix", "ex:Thing")
     ]
+
+
+_POLICIES = """\
+format: graph_cli.ir/1
+module:
+  id: example_module
+  prefix: ex
+  version: 1.0.0
+  summary: Folders that nest.
+classes:
+  Folder:
+    summary: A folder.
+    attributes:
+      name: {summary: Name., type: string}
+relations:
+  inside:
+    summary: The folder lies in the other folder.
+    domain: Folder
+    range: Folder
+    on_target_inactive: refuse
+  watched_by:
+    summary: The other folder watches this one.
+    domain: Folder
+    range: Folder
+    on_target_inactive: warn
+  copied_from:
+    summary: The folder was copied from the other one.
+    domain: Folder
+    range: Folder
+"""
+
+
+def _compile(text: str) -> tuple[CompiledModel | None, list[tuple[str, str]]]:
+    outcome = compile_bundle(
+        "example_module", LayeredSource(MappingSource({"example_module": text.encode()}))
+    )
+    return outcome.model, [(f.code, f.target["path"]) for f in outcome.findings]
+
+
+def test_target_policies_compile_and_round_trip() -> None:
+    model, findings = _compile(_POLICIES)
+    assert model is not None and findings == []
+    policies = {name: r.on_target_inactive for name, r in model.relations.items()}
+    assert policies["ex:inside"] == "refuse"
+    assert policies["ex:watched_by"] == "warn"
+    assert policies["ex:copied_from"] == "allow"
+    assert policies["core:supersedes"] == "allow"
+    relations = model.to_json()["relations"]
+    assert relations["ex:inside"]["on_target_inactive"] == "refuse"  # type: ignore[call-overload,index]
+    assert "on_target_inactive" not in relations["ex:copied_from"]  # type: ignore[call-overload,operator]
+    document = model.to_json()
+    assert load_compiled(pretty_bytes(document), expected_hash=hash_value(document)) == model
+
+
+def test_explicit_allow_compiles_to_the_bytes_of_no_policy() -> None:
+    # The default is never written, so a model that names it keeps the hash of one that does not.
+    explicit = _POLICIES + "    on_target_inactive: allow\n"
+    plain, _ = _compile(_POLICIES)
+    named, findings = _compile(explicit)
+    assert plain is not None and named is not None and findings == []
+    assert named.artifact_hash == plain.artifact_hash
+
+
+def test_unknown_target_policy_is_an_invalid_value() -> None:
+    _, findings = _compile(
+        _POLICIES.replace("on_target_inactive: warn", "on_target_inactive: cascade")
+    )
+    assert findings == [
+        ("model.structural.invalid_value", "relations.watched_by.on_target_inactive")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "unknown"),
+    [
+        ("on_target_inactive", "cascade", "on_target_inactive 'cascade'"),
+        ("on_delete", "refuse", "the key 'on_delete'"),
+    ],
+)
+def test_unknown_relation_key_or_policy_is_an_unsupported_version(
+    key: str, value: str, unknown: str
+) -> None:
+    # A model released for a newer graph: a stale program refuses it instead of skipping a check.
+    model, _ = _compile(_POLICIES)
+    assert model is not None
+    document = model.to_json()
+    document["relations"]["ex:copied_from"][key] = value  # type: ignore[call-overload,index]
+    with pytest.raises(GraphCliError) as info:
+        load_compiled(pretty_bytes(document), expected_hash=hash_value(document))
+    assert info.value.code == "format.unsupported_version"
+    assert info.value.details == {"owner": "relation ex:copied_from", "unknown": unknown}
+    assert "update graph" in info.value.message

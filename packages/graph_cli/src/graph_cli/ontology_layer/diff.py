@@ -388,6 +388,15 @@ class _Differ:
             self.add(f"{path}.characteristics.{item}", "remove_characteristic", "minor")
         for item in sorted(set(new.characteristics) - set(old.characteristics)):
             self.add(f"{path}.characteristics.{item}", "add_characteristic", "major")
+        if old.on_target_inactive != new.on_target_inactive:
+            # Only refuse is an error check; reaching it is major, every other move only
+            # changes warnings or loosens.
+            self.add(
+                f"{path}.on_target_inactive",
+                "change_on_target_inactive",
+                "major" if new.on_target_inactive == "refuse" else "minor",
+                **{"from": old.on_target_inactive, "to": new.on_target_inactive},
+            )
         if old.inverse_label != new.inverse_label:
             self.add(
                 path,

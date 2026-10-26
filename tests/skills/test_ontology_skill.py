@@ -32,6 +32,7 @@ from graph_cli.ontology_layer.vocabulary import (
     RULE_TIMINGS,
     SEVERITIES,
     SYSTEM_FIELDS,
+    TARGET_INACTIVE_POLICIES,
 )
 
 SKILL_DIR = ADMIN_SKILLS_DIR / "ontology-best-practices"
@@ -171,6 +172,7 @@ def test_the_format_reference_names_the_whole_vocabulary() -> None:
         *ALL_FACETS,
         *MUTABILITY_CLASSES,
         *CHARACTERISTICS,
+        *TARGET_INACTIVE_POLICIES,
         *LABEL_ROLES,
         *MAPPING_KINDS,
         *SEVERITIES,

@@ -96,6 +96,7 @@ _RELATION_IN: Final = obj(
         "curie": STRING,
         "from": STRINGS,
         "cardinality": STRING,
+        "on_target_inactive": STRING,
         "inverse_label": NULLABLE_STRING,
         **_DOC,
     }
@@ -125,6 +126,7 @@ _RELATION: Final = obj(
         "range": STRINGS,
         "cardinality": obj({"out": STRING, "in": STRING}),
         "characteristics": STRINGS,
+        "on_target_inactive": STRING,
         "inverse_label": NULLABLE_STRING,
         "qualifiers": STRINGS,
         **_DOC,
