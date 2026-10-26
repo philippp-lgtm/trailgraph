@@ -215,6 +215,34 @@ def test_the_list_leaves_out_unreadable_graphs_without_an_audit_event(svc: Servi
     assert len(svc.installation_events()) == before
 
 
+def test_a_repeated_denial_is_audited_once_per_window(svc: ServiceEnv) -> None:
+    deny_all = PolicySet(
+        "sha256:" + "1" * 64,
+        ({"schema": "graph_cli.policy/1", "id": "none", "rules": [], "obligations": []},),
+    )
+
+    class Policy:
+        def current(self, graph: object) -> PolicySet:
+            return deny_all
+
+    now = [100.0]
+    ctx = dataclasses.replace(admin_context(svc.root), policy=Policy())
+    graphs = ViewGraphs(ctx, monotonic=lambda: now[0])
+    before = len(svc.installation_events())
+
+    def refused() -> str:
+        with pytest.raises(GraphCliError) as info:
+            graphs.get(svc.name)
+        return info.value.code
+
+    assert [refused(), refused()] == ["access.denied", "access.denied"]
+    assert len(svc.installation_events()) == before + 1  # a retrying page: one event
+    now[0] += view.DENIAL_AUDIT_S
+    assert refused() == "access.denied"
+    assert len(svc.installation_events()) == before + 2
+    assert graphs.opened() == []
+
+
 def test_a_graph_opens_once_and_again_when_its_manifest_changes(svc: ServiceEnv) -> None:
     graphs = ViewGraphs(admin_context(svc.root))
     opened = graphs.get(svc.name)

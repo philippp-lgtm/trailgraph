@@ -5,10 +5,15 @@
 - ``ViewGraphs`` serves every graph of the data root: ``listing`` names
   those the caller may read (``read.get``, decided without an audit
   event per graph), ``get`` resolves and authorizes a graph on every
-  request and opens it on first use, with its own feed and trail. Up to
-  ``MAX_OPEN`` graphs stay open; the least recently used one is closed
-  (``on_close``). A graph whose ontology pin moved is opened again, its
-  feed and trail kept.
+  request and opens it on first use, with its own feed and trail. A
+  denial is audited once per graph and ``DENIAL_AUDIT_S``; repeats in
+  that time are refused alike without an event, so a retrying page or
+  client cannot flood the installation audit log. Up to ``MAX_OPEN``
+  graphs stay open: beyond that the least recently used graph that no
+  client watches (``watched``) and that is not the default is closed
+  (``on_close``); when every open graph is watched, more stay open. A
+  graph whose ontology pin moved is opened again, its feed and trail
+  kept. Warnings of a graph opened later go to ``on_warning`` once.
 - ``graph_json`` is the whole graph at one snapshot: every entity as a node
   (label, type, alias, record status) and every edge between two of them
   as a link. Attributes other than the label stay out.
@@ -37,6 +42,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -63,6 +69,7 @@ from graph_cli_admin.services_admin.context import AdminContext
 PAGE: Final = 1000  # txs per changes_since call
 TRAIL_STEPS: Final = 500
 MAX_OPEN: Final = 8  # graphs a view keeps open, each with its model, feed and trail
+DENIAL_AUDIT_S: Final = 60.0  # a refused graph's denial is audited at most once in this time
 # Shown in the browser itself; any other media type is only offered as a download.
 INLINE_MEDIA_TYPES: Final = frozenset(
     {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -478,13 +485,23 @@ class ViewGraphs:
     threads and the feed thread."""
 
     def __init__(
-        self, ctx: AdminContext, *, default: str | None = None, limit: int = MAX_OPEN
+        self,
+        ctx: AdminContext,
+        *,
+        default: str | None = None,
+        limit: int = MAX_OPEN,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.ctx = ctx
         self.limit = limit
+        self.monotonic = monotonic
         self.on_close: Callable[[str], None] = lambda _graph: None
+        self.watched: Callable[[str], bool] = lambda _graph: False  # a client watches it
+        self.on_warning: Callable[[str, WarningRecord], None] = lambda _graph, _warning: None
         self._lock = threading.Lock()
         self._open: OrderedDict[str, GraphView] = OrderedDict()
+        self._denied: dict[str, float] = {}  # graph id -> when its last denial was audited
+        self._warned: set[tuple[str, str]] = set()  # (graph id, code) passed to on_warning
         self.default: str | None = None  # the id of the graph a request without one gets
         if default is not None:
             self.default = str(self.get(default).source.entry.id)
@@ -520,9 +537,8 @@ class ViewGraphs:
                 )
             ref = self.default
         entry = self.ctx.resolve(ref, "view")
-        meta = RequestMeta.of("view", {"graph": str(entry.id)})
-        self.ctx.authorize([("read.get", f"graph:{entry.id}")], request=meta, graph=entry.id)
         key = str(entry.id)
+        self._authorize(entry)
         with self._lock:
             found = self._open.get(key)
             if found is not None and found.source.entry == entry:
@@ -531,18 +547,59 @@ class ViewGraphs:
         source = open_view(self.ctx, graph_ref=key)
         closed: list[str] = []
         with self._lock:
+            warnings = [w for w in source.warnings if (key, w.code) not in self._warned]
+            self._warned.update((key, w.code) for w in warnings)
             found = self._open.get(key)
             if found is not None:  # the pin moved, or the name: same feed and trail
+                # Two stores, not one: until the second, the feed thread may poll with the
+                # old source. Both read the same store; only labels of the new model wait.
                 found.source = found.feed.source = source
                 self._open.move_to_end(key)
-                return found
-            view = GraphView(source, ViewFeed(source, source.read.head().seq), ActivityTrail())
-            self._open[key] = view
-            while len(self._open) > self.limit:
-                closed.append(self._open.popitem(last=False)[0])
+                view = found
+            else:
+                view = GraphView(source, ViewFeed(source, source.read.head().seq), ActivityTrail())
+                self._open[key] = view
+                closed = self._close_unused(keep=key)
+        for warning in warnings:
+            self.on_warning(entry.name, warning)
         for graph in closed:
             self.on_close(graph)
         return view
+
+    def _authorize(self, entry: GraphEntry) -> None:
+        """``read.get`` on the graph; a denial is audited at most once per graph and
+        ``DENIAL_AUDIT_S``, a repeat in that time is refused without an event."""
+        resource = f"graph:{entry.id}"
+        decision = self.ctx.decide("read.get", resource, graph=entry.id)
+        if decision.effect != "deny":
+            return
+        key, now = str(entry.id), self.monotonic()
+        with self._lock:
+            last = self._denied.get(key)
+            first = last is None or now - last >= DENIAL_AUDIT_S
+            if first:
+                self._denied[key] = now
+        if first:  # audits the denial and raises it; passes if the policy just changed
+            meta = RequestMeta.of("view", {"graph": key})
+            self.ctx.authorize([("read.get", resource)], request=meta, graph=entry.id)
+            return
+        raise GraphCliError(
+            decision.code or "access.denied",
+            f"{decision.action} on {decision.resource} is not permitted",
+        )
+
+    def _close_unused(self, *, keep: str) -> list[str]:
+        """Above ``limit``, the least recently used graphs no client watches, never
+        ``keep`` or the default; a watched graph is never closed. Under the lock."""
+        closed: list[str] = []
+        for graph in list(self._open):
+            if len(self._open) <= self.limit:
+                break
+            if graph in (keep, self.default) or self.watched(graph):
+                continue
+            del self._open[graph]
+            closed.append(graph)
+        return closed
 
     def opened(self) -> list[GraphView]:
         with self._lock:

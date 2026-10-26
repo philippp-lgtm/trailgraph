@@ -783,7 +783,9 @@ function connect(gen) {
   source.onerror = () => {
     if (gen !== generation) return;
     if (source.readyState !== EventSource.CLOSED) { setStatus("reconnecting", false); return; }
-    // Refused for good (an unknown graph, a denial): the graph route says why.
+    // Refused for good (an unknown graph, a denial; the browser does not retry after an
+    // error status): stay closed, and let the graph route say why, once.
+    source.close();
     loadGraph(gen).then(() => setStatus("not live, reload the page", false))
       .catch(error => { if (gen === generation) failGraph(error); });
   };

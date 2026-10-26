@@ -84,6 +84,10 @@ def view_command(
     if first is not None:
         state.warnings += first.warnings
     of = f" of {first.entry.name}" if first is not None else ""
+    # A graph opened later warns now, once: the envelope's warnings print only at the stop.
+    graphs.on_warning = lambda graph, warning: click.echo(
+        f"Warning for {graph} ({warning.code}): {warning.message}", err=True
+    )
     listener: ActivityListener | None = None
     no_reads = ""  # why the activity socket cannot be bound
     if ctx.config.signal_reads:

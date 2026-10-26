@@ -25,9 +25,11 @@ One feed thread polls the store of every open graph and the activity
 socket, numbers each write and read as a step of that graph's trail and
 hands it to a bounded queue per client of that graph: a slow client loses
 events, the feed never waits; ``/trail`` gives a page the steps it missed.
-A failing poll becomes an ``error`` event and the feed goes on. When a
-graph is closed (``MAX_OPEN``), its clients' streams end; the browser
-reconnects and opens it again.
+A failing poll becomes an ``error`` event and the feed goes on. A graph
+that clients watch is never closed (``MAX_OPEN``); a stream that lost the
+race with closing its graph ends at once and the browser reconnects. A
+stream is authorized when it connects. Any other exception in a route is
+a 500 with a fixed message, and one line on stderr.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ import contextlib
 import json
 import queue
 import secrets
+import sys
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -103,12 +106,22 @@ class Hub:
             if not clients:
                 self._clients.pop(graph, None)
 
+    def watched(self, graph: str) -> bool:
+        with self._lock:
+            return bool(self._clients.get(graph))
+
     def publish(self, graph: str, event: Event | None) -> None:
         with self._lock:
             clients = list(self._clients.get(graph, ()))
         for client in clients:
-            with contextlib.suppress(queue.Full):  # too slow: it reloads on reconnect
+            try:
                 client.put_nowait(event)
+            except queue.Full:  # too slow: it reloads on reconnect
+                if event is None:  # but the stop must arrive: it takes the oldest's place
+                    with contextlib.suppress(queue.Empty):
+                        client.get_nowait()
+                    with contextlib.suppress(queue.Full):
+                        client.put_nowait(None)
 
     def close(self, graph: str) -> None:
         self.publish(graph, None)
@@ -118,6 +131,14 @@ class Hub:
             graphs = list(self._clients)
         for graph in graphs:
             self.close(graph)
+
+
+class _HTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """A client that went away is no error; anything else is one line, no traceback."""
+        exc = sys.exception()
+        if not isinstance(exc, ConnectionError):
+            print(f"graph-admin view: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 class ViewServer:
@@ -142,10 +163,11 @@ class ViewServer:
         self.token = token if token is not None else secrets.token_urlsafe(24)
         self.hub = Hub()
         graphs.on_close = self.hub.close
+        graphs.watched = self.hub.watched
         self.clock = clock if clock is not None else SystemClock()
         self._stop = threading.Event()
         self.host = host
-        self._http = ThreadingHTTPServer((host, port), _handler(self))
+        self._http = _HTTPServer((host, port), _handler(self))
         self._http.daemon_threads = True
         self._threads: list[threading.Thread] = []
 
@@ -225,6 +247,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
         protocol_version = "HTTP/1.1"
         server_version = "graph-admin-view"
         sys_version = ""
+        started = False  # the status line of this request's answer is sent
 
         def do_GET(self) -> None:
             url = urlsplit(self.path)
@@ -253,6 +276,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             if route is None:
                 self._send(404, b"not found\n", "text/plain; charset=utf-8")
                 return
+            self.started = False
             try:
                 route()
             except GraphCliError as exc:
@@ -261,6 +285,19 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
                 )
                 body = json.dumps({"code": exc.code, "message": exc.message}).encode()
                 self._send(status, body, "application/json")
+            except Exception as exc:  # a broken graph: no traceback, no path to the browser
+                print(f"graph-admin view: {url.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                if self.started:  # the answer is under way: only the connection can end
+                    self.close_connection = True
+                    return
+                body = json.dumps(
+                    {"code": "internal.error", "message": "the view could not answer"}
+                ).encode()
+                self._send(500, body, "application/json")
+
+        def send_response(self, code: int, message: str | None = None) -> None:
+            self.started = True
+            super().send_response(code, message)
 
         def _json(self, data: dict[str, JsonValue]) -> None:
             self._send(200, json.dumps(data).encode(), "application/json")
@@ -313,6 +350,9 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             graph = str(view.source.entry.id)
             client = server.hub.subscribe(graph)
             try:
+                if server.graphs.find(graph) is not view:  # closed before it was watched
+                    self.close_connection = True
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 for name, value in SECURITY_HEADERS:

@@ -149,12 +149,16 @@ class AdminContext:
             raise GraphCliError(first.code, f"{first.action} on {first.resource} is not permitted")
         return decisions
 
+    def decide(self, action: str, resource: str, *, graph: GraphId | None = None) -> Decision:
+        """What ``authorize`` would decide for the pair, without auditing a denial."""
+        policy = self.policy.current(graph)
+        ctx = AuthzContext(op_count=1, has_reason=False, dry_run=False)
+        return authorize(self.actor, action, resource, ctx, policy)
+
     def allows(self, action: str, resource: str, *, graph: GraphId | None = None) -> bool:
         """Whether ``authorize`` would permit the pair; nothing is audited, so a listing
         can leave out what the caller may not see without recording a denial per entry."""
-        policy = self.policy.current(graph)
-        ctx = AuthzContext(op_count=1, has_reason=False, dry_run=False)
-        return authorize(self.actor, action, resource, ctx, policy).effect != "deny"
+        return self.decide(action, resource, graph=graph).effect != "deny"
 
     def intent(
         self,

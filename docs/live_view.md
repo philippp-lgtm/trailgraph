@@ -20,8 +20,11 @@ up without a restart. The toggle at the top folds the side bar to a
 narrow strip and back; the browser remembers the choice.
 
 The view opens a graph when the page first asks for it, not at start,
-and keeps up to eight open; opening a ninth closes the one used least
-recently, and a page showing that one reconnects and opens it again.
+and keeps up to eight open. Beyond that it closes the graph used least
+recently that no page is showing and that `--graph` did not name; a
+graph a page shows stays open, so with more graphs shown at once more
+stay open. Warnings about a graph opened later (for example an ontology
+pin the program cannot read) print on stderr once.
 
 ## Activity
 
@@ -92,6 +95,15 @@ name `127.0.0.1` or `localhost` (any port or none) and carry the token. The prin
 address names the port inside the container: open the published port with
 the same token. The graph itself carries labels, types, aliases and record
 status only.
+
+Each request for a graph checks `read.get` on it again, so a read
+revoked in the policy takes effect with the next request; an open
+activity stream was checked when it connected and runs on until it
+reconnects. A refused request is audited like any denial, but at most
+once per graph and minute: repeats in that time are refused the same way
+without an event, so a page or client that keeps retrying cannot flood
+the audit log. After a refusal or an unknown graph the page stops
+reconnecting and says why.
 
 `--token-file <file>` reads the token from a file instead (surrounding
 whitespace stripped, at least 32 characters); the view refuses to start

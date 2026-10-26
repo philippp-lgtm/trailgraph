@@ -23,7 +23,7 @@ from graph_cli.kernel.ports.activity import ReadSignal
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
 from graph_cli_admin.maintenance_cli.commands.view import page
-from graph_cli_admin.maintenance_cli.view_server import ViewServer
+from graph_cli_admin.maintenance_cli.view_server import Hub, ViewServer
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.view import ViewGraphs
 
@@ -409,16 +409,68 @@ def test_each_stream_has_the_events_of_its_graph_only(two: tuple[ServiceEnv, Ser
             listener.close()
 
 
-def test_a_closed_graph_ends_its_streams(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+def opened(server: ViewServer) -> list[str]:
+    return [v.source.entry.name for v in server.graphs.opened()]
+
+
+def test_only_a_graph_nobody_watches_is_closed(two: tuple[ServiceEnv, ServiceEnv]) -> None:
     first, second = two
-    running = ViewServer(ViewGraphs(admin_context(first.root), limit=1), page=page())
+    running = ViewServer(ViewGraphs(admin_context(first.root), limit=1), page=page(), poll_s=0.05)
     running.start()
     try:
         token = running.token
+        assert get(running, f"/graph?graph={first.name}&t={token}").status == 200
+        assert get(running, f"/graph?graph={second.name}&t={token}").status == 200
+        assert opened(running) == [second.name]  # nobody watched the first one
         stream = get(running, f"/events?graph={first.name}&t={token}")
         assert stream.fp.readline() == b": connected\n"
         assert get(running, f"/graph?graph={second.name}&t={token}").status == 200
-        assert stream.read().strip() == b""  # ended, not timed out: the page reconnects
-        assert [v.source.entry.name for v in running.graphs.opened()] == [second.name]
+        # both stay open, above the limit, rather than closing a watched graph
+        assert sorted(opened(running)) == sorted([first.name, second.name])
+        first.create(load_roles(first.ontology).term("lifecycle_type"))
+        written = first.txs()[-1].revisions
+        assert [e["kind"] for e in events(stream, len(written))] == ["created"] * len(written)
     finally:
         running.stop()
+
+
+def test_the_default_graph_stays_open(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+    first, second = two
+    running = ViewServer(
+        ViewGraphs(admin_context(first.root), default=first.name, limit=1), page=page()
+    )
+    running.start()
+    try:
+        assert get(running, f"/graph?graph={second.name}&t={running.token}").status == 200
+        assert opened(running) == [first.name, second.name]
+    finally:
+        running.stop()
+
+
+def test_a_broken_graph_is_a_500_without_details(
+    server: ViewServer, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(source: object) -> None:
+        raise FileNotFoundError("/data/root/graphs/x/data/head.json")
+
+    monkeypatch.setattr("graph_cli_admin.maintenance_cli.view_server.graph_json", broken)
+    response = get(server, f"/graph?t={server.token}")
+    body = response.read()
+    assert response.status == 500
+    assert json.loads(body) == {"code": "internal.error", "message": "the view could not answer"}
+    assert get(server, f"/trail?t={server.token}").status == 200  # the server goes on
+    lines = capsys.readouterr().err.splitlines()
+    assert lines == [
+        "graph-admin view: /graph: FileNotFoundError: /data/root/graphs/x/data/head.json"
+    ]
+
+
+def test_the_stop_reaches_a_client_with_a_full_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("graph_cli_admin.maintenance_cli.view_server.CLIENT_QUEUE", 2)
+    hub = Hub()
+    client = hub.subscribe("g")
+    for n in range(3):
+        hub.publish("g", {"n": n})  # the third is lost: too slow
+    assert hub.watched("g") and not hub.watched("other")
+    hub.close("g")
+    assert [client.get_nowait(), client.get_nowait()] == [{"n": 1}, None]
