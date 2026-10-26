@@ -2,11 +2,13 @@ name: build
 
 # The container image of graph-server (Dockerfile target runtime), on a release tag only.
 #   tag vX.Y.Z:  the tag equals the version of the three distributions, the tagged commit is
-#                on main, the suite passes on the tagged tree (target test); then
+#                on main, the image tag does not exist yet, the suite passes on the tagged tree
+#                (target test) and the linux/amd64 runtime image passes the smoke test; then
 #                ghcr.io/<owner>/<repository>:vX.Y.Z is pushed with GITHUB_TOKEN and its
 #                digest goes to the job summary (deployments pin <tag>@sha256:<digest>)
 # Releases: CONTRIBUTING.md, "CI and releases". Runs on CI_RUNS_ON like check.yml; on a runner
-# of another architecture, the linux/amd64 image needs amd64 emulation (binfmt) in its Docker.
+# of another architecture, the linux/amd64 image needs amd64 emulation (binfmt) in the kernel of
+# the runner's Docker host.
 on:
   push:
     tags: ['v*']
@@ -66,7 +68,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # A pushed tag is never moved: a second run for the same version would overwrite the
+      # image under the tag with another digest.
+      - name: Refuse an existing image tag
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "::error::$IMAGE exists already; release the next version instead" >&2; exit 1
+          fi
+
+      - name: Runtime image (linux/amd64)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: graph-server:release
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          provenance: false
+
+      - name: Smoke test
+        run: scripts/smoke_image.sh graph-server:release
+
+      # The same build again (from the cache, same labels), now pushed.
+      - name: Push
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -75,7 +106,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.image }}
-          # Links the package to this repository (visibility and access follow it).
+          # source links the package to this repository (visibility and access follow it).
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

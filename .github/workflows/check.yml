@@ -6,7 +6,8 @@ name: check
 #          the runtime image: it builds, starts, answers /v1/health and its data root verifies
 # Both jobs only need Docker on the runner (no job containers, no `services:`), so they also run on
 # a self-hosted runner: the repository variable CI_RUNS_ON holds the JSON runs-on value, e.g.
-# ["self-hosted","linux"]; unset means ubuntu-24.04.
+# ["self-hosted","linux"]; unset means ubuntu-24.04. A pull request from a fork always runs on
+# ubuntu-24.04: never hand a self-hosted runner code from outside the repository.
 on:
   pull_request:
   push:
@@ -15,16 +16,21 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request supersedes a running check.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # In the uv image of the Dockerfile's uv and Python versions, as the runner's user.
+      # In the uv image of the Dockerfile's uv and Python versions (tags, as there), as the runner's user.
       - name: Lint, format, types, import contracts
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/src" -w /src \
@@ -37,7 +43,7 @@ jobs:
               uv run lint-imports'
 
   test:
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,15 +72,4 @@ jobs:
           provenance: false
 
       - name: Smoke test
-        run: |
-          docker run -d --name graph-server graph-server:ci
-          for _ in $(seq 30); do
-            state=$(docker inspect -f '{{.State.Health.Status}}' graph-server)
-            [ "$state" = healthy ] && break
-            sleep 2
-          done
-          docker exec graph-server python -c \
-            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8470/v1/health', timeout=4).read().decode())"
-          docker exec graph-server graph-admin audit verify
-          [ "$(docker inspect -f '{{.State.Health.Status}}' graph-server)" = healthy ] \
-            || { docker logs graph-server; exit 1; }
+        run: scripts/smoke_image.sh graph-server:ci

@@ -31,19 +31,25 @@ uv run graph-server serve --port 0
 
 `.github/workflows/check.yml` runs on every pull request and every push to
 `main`: the lint commands above, the suite in the image (`docker build
---target test .`) and a smoke test of the runtime image (it starts, answers
-`/v1/health`, and `graph-admin audit verify` in it is clean).
+--target test .`) and `scripts/smoke_image.sh` on the runtime image (it
+starts, answers `/v1/health`, and `graph-admin audit verify` in it is
+clean). The repository variable `CI_RUNS_ON` (a JSON `runs-on` value) moves
+the jobs to a self-hosted runner; pull requests from forks always run on a
+hosted one.
 
-A release is a tag `vX.Y.Z` on a commit of `main` whose checks are green.
-The three distributions carry that version (`version` in each
+A release is a tag `vX.Y.Z` on a commit of `main`. Before tagging, check
+that the `check` run of that commit is green; the release workflow does not
+look it up. The three distributions carry the version (`version` in each
 `packages/*/pyproject.toml` and `__version__` in each package, then `uv
-lock` and the goldens, which name it), bumped in a pull request before the
-tag. The version is part of skill 1, so a client of the previous release
-has to update. `.github/workflows/build.yml` refuses a tag that differs
-from it or is not on `main`, runs the suite on the tagged tree and pushes
-the runtime image as `ghcr.io/<owner>/<repository>:vX.Y.Z`; the job summary
-names its digest, which deployments pin (`<tag>@sha256:<digest>`). A pushed
-tag is never moved; fix forward with the next version.
+lock`, the goldens and the generated skill, which name it), bumped in a
+pull request before the tag. The version is part of skill 1, so a client
+of the previous release has to update. `.github/workflows/build.yml`
+refuses a tag that differs from that version, is not on `main` or names an
+image that exists already; it runs the suite on the tagged tree and the
+smoke test on the `linux/amd64` image, then pushes it as
+`ghcr.io/<owner>/<repository>:vX.Y.Z`. The job summary names its digest,
+which deployments pin (`<tag>@sha256:<digest>`). A pushed tag is never
+moved; fix forward with the next version.
 
 ## Documentation
 
