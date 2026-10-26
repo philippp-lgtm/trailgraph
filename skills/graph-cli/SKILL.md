@@ -95,6 +95,7 @@ when `graph whoami` lists `require_reason`. Details: [references/history.md](ref
   Nothing is deleted: `graph supersede <id> <id>` when a newer entity (the
   first id) replaces older ones, `graph retract` when one is withdrawn,
   `graph unlink` for a wrong edge. States change with `graph transition`.
+  On `data.referential.target_referenced` read [references/errors.md](references/errors.md).
 - Prefer the single-operation commands. `graph apply` takes change set
   documents for batches: write the document to a file in the working
   directory, dry-run it with `graph apply <file> --dry-run --json`, then
@@ -137,7 +138,6 @@ Every `--json` call prints one JSON object on stdout.
 - A large answer goes to a file (`output.spilled`, `details.path`; `data`
   null): ask for less, or read parts with your file tools, never `jq`.
 - On failure `error` holds `code`, `category`, `retryable`, `message`, `hint`, `details`. `hint` is the command to run next, or null.
-- Warnings never change the exit code.
 
 ## Commands
 
@@ -187,7 +187,7 @@ equals `graph find --graph <graph>`):
 ## Exit codes
 
 `0` is success; any other exit code follows `error.category`, listed in
-[references/errors.md](references/errors.md).
+[references/errors.md](references/errors.md). Warnings never change it.
 
 ## References
 

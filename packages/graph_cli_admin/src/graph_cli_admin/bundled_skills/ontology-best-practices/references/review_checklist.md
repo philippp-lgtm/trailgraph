@@ -26,6 +26,9 @@ deliberate choice in the README next to the ontology.
       has its field, the work on the data is the history.
 - [ ] Every relation has `domain`, `range`, an `inverse_label` and the
       cardinality the domain really has.
+- [ ] Every relation has a decided `on_target_inactive`: `refuse` where a
+      source makes no sense without its target, `allow` for history and
+      provenance.
 - [ ] Facts about a link are qualifiers; links with their own life are
       classes.
 

@@ -338,6 +338,9 @@
                     "type": "string"
                   }
                 },
+                "on_target_inactive": {
+                  "type": "string"
+                },
                 "inverse_label": {
                   "anyOf": [
                     {
@@ -367,6 +370,7 @@
                 "range",
                 "cardinality",
                 "characteristics",
+                "on_target_inactive",
                 "inverse_label",
                 "qualifiers",
                 "summary",
@@ -707,6 +711,9 @@
                     "cardinality": {
                       "type": "string"
                     },
+                    "on_target_inactive": {
+                      "type": "string"
+                    },
                     "inverse_label": {
                       "anyOf": [
                         {
@@ -728,6 +735,7 @@
                     "curie",
                     "from",
                     "cardinality",
+                    "on_target_inactive",
                     "inverse_label",
                     "summary",
                     "deprecated"

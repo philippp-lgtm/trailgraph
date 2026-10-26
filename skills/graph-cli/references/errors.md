@@ -30,6 +30,11 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `skills.outdated`: this skill, or the skill of the graph, was installed for an older program or an older state of the graph, so the write was refused. Stop and tell the user the command in `hint`, which refreshes the installed skills; never change skill files yourself. After the refresh, read the skills again before repeating the write.
 - `skills.stale` (a warning on a read): the same, but the answer is right. Finish the read and tell the user.
 
+## When a retract or supersede is refused
+
+- `data.referential.target_referenced` (in `error.details.findings` of `write.invalid`): active entities still point at the entity over a relation that keeps its targets active; `actual.sources` lists them (at most 20 of `actual.count`). Decide for each: relink it (on a supersede, to the replacing entity) or retract it when it is withdrawn too; ask the user when it is not clear. Then put those writes and the refused one into one `graph apply` change set and dry-run it. Never retract an entity only to get the write through.
+- The same code as a warning in `data.findings`: the write went through; tell the user which entities still point at the entity.
+
 ## Codes
 
 | Error code | Error category | Exit |

@@ -11,6 +11,7 @@ conditions is in [ir_format.md](ir_format.md#conditions).
 | `unique`, `acyclic`, `immutable` | touched entities | every entity |
 | `domain`, `range`, `out` cardinality, qualifiers | edges of touched entities | every edge |
 | `in` cardinality | no | every entity |
+| edges to an inactive target (`on_target_inactive`) | edges the write adds, and the edges pointing at an entity it retracts or supersedes | every edge of an active entity |
 | lifecycle: initial state, allowed transition, guards | the transitioned entity | state names only |
 | rules with `when: write` | touched entities, and for rules with `count` or `sum` also the entities one edge away | every entity |
 | rules with `when: batch` | no | every entity |
@@ -62,6 +63,36 @@ error rule later is major and needs every existing entity to satisfy it.
   naming the attribute (`maximum_value: {attr: total}`).
 - **No derived storage.** If a rule checks that a stored total equals a
   sum, ask first whether the total must be stored at all.
+
+## Edges to inactive targets
+
+`graph retract` and `graph supersede` make an entity inactive; edges that
+point at it stay. A relation's `on_target_inactive` decides what a write
+meets that leaves an active entity pointing at an inactive one:
+
+| Value | Retract or supersede of a target that active entities point at | New edge to an inactive target | Batch check |
+| --- | --- | --- | --- |
+| `allow` (default) | passes | warning | warning |
+| `warn` | warning `data.referential.target_referenced` | warning | warning |
+| `refuse` | refused: error `data.referential.target_referenced` | error | error |
+
+Choose per relation:
+
+- **`refuse`** when the source makes no sense without its target: a part
+  and its whole, a folder and the folder it lies in, a step and its plan.
+  The target stays active until every source is relinked or retracted.
+- **`warn`** when the link should be looked at but may stay: an
+  assignment, a reference to a document that was replaced.
+- **`allow`** for history and provenance: a link to something that was
+  later withdrawn is still a true record (`derived_from`, `based_on`).
+
+The judgement is on the result of the whole change set: relinking or
+retracting the sources together with the target passes. Nothing is
+retracted or relinked automatically; the agent decides for each source.
+This replaces the rule idiom "count the active targets" on the source
+class, which reports at the source and names no reason. Moving a relation
+to `refuse` is major: a major release runs the batch check, so edges left
+pointing at inactive targets must be fixed before.
 
 ## Guards
 

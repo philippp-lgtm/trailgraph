@@ -222,6 +222,7 @@
           "inv:Item"
         ],
         "inverse_label": "has_part",
+        "on_target_inactive": "allow",
         "summary": "The item is a component of a larger item."
       }
     ],

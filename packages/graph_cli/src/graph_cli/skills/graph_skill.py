@@ -426,8 +426,17 @@ def _cardinality(cardinality: JsonObject) -> str:
     return f"out {out}" if into == "0..n" else f"out {out}, in {into}"
 
 
+_POLICY_NOTES: Final = {
+    "refuse": "retracting or superseding a target is refused while active edges point at it",
+    "warn": "retracting or superseding a target warns while active edges point at it",
+}
+
+
 def _relation_notes(relation: JsonObject) -> str:
     notes = list(_strings(relation.get("characteristics")))
+    policy = opt_str(relation, "on_target_inactive")
+    if policy in _POLICY_NOTES:
+        notes.append(_POLICY_NOTES[policy])
     qualifiers = _strings(relation.get("qualifiers"))
     if qualifiers:
         notes.append(f"qualifiers {_codes(qualifiers)}")

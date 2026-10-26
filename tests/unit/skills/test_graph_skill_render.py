@@ -6,6 +6,7 @@ renderer or the describe documents (research 06, test_p27 pattern).
 """
 
 import re
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -92,6 +93,26 @@ def test_deprecated_terms_are_marked() -> None:
     assert reference.count("Deprecated. ") == 7  # Item twice, its field, located_in 3x, the rule
     plain = render(compiled_model("inventory"))[MODEL_FILE].decode()
     assert "Deprecated" not in plain
+
+
+def test_target_policies_are_noted_on_their_relations() -> None:
+    model = compiled_model("inventory")
+    relations = dict(model.relations)
+    relations["inv:part_of"] = replace(relations["inv:part_of"], on_target_inactive="refuse")
+    relations["inv:located_in"] = replace(relations["inv:located_in"], on_target_inactive="warn")
+    files = render(replace(model, relations=relations))
+    skill, reference = files[SKILL_FILE].decode(), files[MODEL_FILE].decode()
+    refused = "retracting or superseding a target is refused while active edges point at it"
+    warned = "retracting or superseding a target warns while active edges point at it"
+    for text in (skill, reference):
+
+        def notes(curie: str, text: str = text) -> str:
+            rows = [line for line in text.splitlines() if line.startswith(f"| `{curie}` | ")]
+            return "\n".join(rows)
+
+        assert refused in notes("inv:part_of")
+        assert warned in notes("inv:located_in")
+        assert "retracting" not in notes("inv:within")
 
 
 # ---- independent completeness check -----------------------------------------------------

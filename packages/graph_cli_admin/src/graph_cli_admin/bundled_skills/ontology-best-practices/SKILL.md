@@ -92,7 +92,10 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
     warning rule reports, an error rule refuses. `batch` rules and
     incoming cardinality are checked only by `graph-admin graph check`
     and a major release, never on a write
-    ([rules](references/rules_and_lifecycles.md#when-checks-run)).
+    ([rules](references/rules_and_lifecycles.md#when-checks-run)). Whether
+    a target may be retracted while active entities point at it is
+    `on_target_inactive` on the relation, not a rule
+    ([edges to inactive targets](references/rules_and_lifecycles.md#edges-to-inactive-targets)).
 11. Term names are stable. A released name is renamed only with
     `renamed_from` in a major version; prefer deprecating and adding.
 12. Changes are additive by default (new optional attribute, new class,
