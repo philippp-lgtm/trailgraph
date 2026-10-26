@@ -5,7 +5,8 @@ name: build
 #                on main, the suite passes on the tagged tree (target test); then
 #                ghcr.io/<owner>/<repository>:vX.Y.Z is pushed with GITHUB_TOKEN and its
 #                digest goes to the job summary (deployments pin <tag>@sha256:<digest>)
-# Releases: CONTRIBUTING.md, "Releases".
+# Releases: CONTRIBUTING.md, "CI and releases". Runs on CI_RUNS_ON like check.yml; on a runner
+# of another architecture, the linux/amd64 image needs amd64 emulation (binfmt) in its Docker.
 on:
   push:
     tags: ['v*']
@@ -15,7 +16,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 40
     permissions:
       contents: read
