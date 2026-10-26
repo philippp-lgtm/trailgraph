@@ -8,9 +8,11 @@ still name ``127.0.0.1`` or ``localhost``, with any port or none: a
 published port may differ from the bound one. No CORS headers; every response is
 ``no-store`` with a strict content security policy and no referrer.
 
-Routes: ``/health`` ``ok`` without token or ``Host`` check, for the probes
-of a container platform (they name the pod's address; it touches no
-graph), ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
+Routes: ``/health`` ``ok`` without token, for the probes of a container
+platform; bound to another address also without the ``Host`` check (a
+probe names the pod's address), on ``127.0.0.1`` under it, so a page of
+another site cannot probe it by DNS rebinding; it touches no graph.
+``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
 one entity in full (attributes, edges, history with the writing agents),
 ``/blob?id=`` the stored file of a file entity (PDFs and images inline,
 anything else as a download), ``/events`` Server-Sent Events, ``/trail``
@@ -194,10 +196,10 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             url = urlsplit(self.path)
-            if url.path == "/health":
+            if url.path == "/health" and (server.host != HOST or self._local_host()):
                 self._send(200, b"ok\n", "text/plain; charset=utf-8")
                 return
-            if not self._allowed(url.query):
+            if not self._local_host() or not self._token(url.query):
                 self._send(403, b"forbidden\n", "text/plain; charset=utf-8")
                 return
             entity = parse_qs(url.query).get("id", [""])[0]
@@ -253,13 +255,13 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
 
         do_PUT = do_DELETE = do_PATCH = do_POST
 
-        def _allowed(self, query: str) -> bool:
+        def _local_host(self) -> bool:
             host = self.headers.get("Host", "")
             if server.host == HOST:
-                if host not in (f"{HOST}:{server.port}", f"localhost:{server.port}"):
-                    return False
-            elif (host.rpartition(":")[0] if ":" in host else host) not in (HOST, "localhost"):
-                return False
+                return host in (f"{HOST}:{server.port}", f"localhost:{server.port}")
+            return (host.rpartition(":")[0] if ":" in host else host) in (HOST, "localhost")
+
+        def _token(self, query: str) -> bool:
             given = parse_qs(query).get("t", [""])[0]
             return secrets.compare_digest(given.encode(), server.token.encode())
 

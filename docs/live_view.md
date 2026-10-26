@@ -77,8 +77,10 @@ status only.
 whitespace stripped, at least 32 characters); the view refuses to start
 with a file it cannot read, an empty one or a shorter token, and the
 printed address then leaves the token out. `GET /health` answers `ok`
-without token and whatever `Host` it names, for probes; it reads no
-graph.
+without token, for probes; it reads no graph. Bound with `--host` to
+another address it answers whatever `Host` a request names (a probe
+names the pod's address); on `127.0.0.1` the `Host` must still name
+`127.0.0.1` or `localhost` with the port, as for every other request.
 
 ## Behind a reverse proxy
 

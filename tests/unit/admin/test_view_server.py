@@ -74,6 +74,14 @@ def test_only_token_and_local_host_get_in(server: ViewServer) -> None:
     assert get(server, "/graph?t=wrong").status == 403
     assert get(server, f"/graph?t={token}", host="evil.example:80").status == 403
     assert get(server, f"/graph?t={token}", host=f"localhost:{server.port}").status == 200
+    # bound to 127.0.0.1 the Host names this port: no portless or other-port name
+    assert get(server, f"/graph?t={token}", host="localhost").status == 403
+    assert get(server, f"/graph?t={token}", host="127.0.0.1").status == 403
+    assert get(server, f"/graph?t={token}", host=f"localhost:{server.port + 1}").status == 403
+    # /health needs no token, but on 127.0.0.1 the Host check (DNS rebinding)
+    assert get(server, "/health").status == 200
+    assert get(server, "/health", host="evil.example:80").status == 403
+    assert get(server, "/health", host="localhost").status == 403
     assert get(server, f"/nothing?t={token}").status == 404
     conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
     conn.request("POST", f"/graph?t={token}", body=b"{}")
@@ -105,8 +113,8 @@ def test_another_bind_address_keeps_token_and_host_checks(svc: ServiceEnv) -> No
 
 
 def test_health_needs_neither_token_nor_a_local_host(svc: ServiceEnv) -> None:
-    """A probe of a container platform names the pod's address and has no token;
-    every other route still checks both."""
+    """Bound to another address, a probe of a container platform names the pod's
+    address and has no token; every other route still checks both."""
     token = "x" * 32
     running = ViewServer(
         open_view(admin_context(svc.root), graph_ref=svc.name),

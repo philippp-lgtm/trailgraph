@@ -129,12 +129,14 @@ def test_a_bad_token_file_is_refused(
 ) -> None:
     init(run_cli, isolated_env)
     create_graph(run_cli, "example_graph", "notes_and_sources")
-    short, empty = tmp_path / "short", tmp_path / "empty"
+    short, empty, binary = tmp_path / "short", tmp_path / "empty", tmp_path / "binary"
     short.write_text("s3cr3t-but-short\n")
     empty.write_text(" \n")
+    binary.write_bytes(b"s3cr3t" + bytes(range(128, 192)))
     for file, why in (
         (short, "shorter than 32 characters"),
         (empty, "is empty"),
+        (binary, "is not UTF-8"),
         (tmp_path / "missing", "cannot be read"),
         (tmp_path, "cannot be read"),
     ):
@@ -144,3 +146,4 @@ def test_a_bad_token_file_is_refused(
         assert refused.returncode == 2, refused.stderr
         assert "usage.invalid_argument" in refused.stderr and why in refused.stderr
         assert "s3cr3t" not in refused.stderr + refused.stdout
+        assert "0x" not in refused.stderr and "position" not in refused.stderr

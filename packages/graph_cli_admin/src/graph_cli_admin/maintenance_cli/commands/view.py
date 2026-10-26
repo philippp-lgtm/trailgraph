@@ -44,8 +44,10 @@ def read_token_file(path: str) -> str:
 
     try:
         token = Path(path).read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise refused(f"cannot be read: {getattr(exc, 'strerror', None) or exc}") from None
+    except UnicodeDecodeError:
+        raise refused("is not UTF-8") from None  # the error would quote the file's bytes
+    except OSError as exc:
+        raise refused(f"cannot be read: {exc.strerror or exc}") from None
     if not token:
         raise refused("is empty")
     if len(token) < MIN_TOKEN:
