@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>graph view</title>
 <style>
+/* Light unless .theme-dark, which readColors() sets: html[data-theme="dark"|"light"] (set by
+   a host page, e.g. a portal around the view) wins over the device's prefers-color-scheme. */
 .viz-root {
   color-scheme: light;
   --surface-1: #fcfcfb;
@@ -24,36 +26,35 @@
   --read-4: #7d55e6;
   --read-5: #e0592a;
 }
-@media (prefers-color-scheme: dark) {
-  .viz-root {
-    color-scheme: dark;
-    --surface-1: #1a1a19;
-    --surface-2: #232321;
-    --border: #3a3936;
-    --text-primary: #f0efec;
-    --text-secondary: #c3c2b7;
-    --text-muted: #8f8e86;
-    --node: #c3c2b7;
-    --node-inactive: #5c5b56;
-    --link: #44433f;
-    --created: #008300;
-    --updated: #3987e5;
-    --read: #f0b429;
-    --read-2: #e45cc0;
-    --read-3: #2cc4d6;
-    --read-4: #9c7bff;
-    --read-5: #f07a4a;
-  }
+.viz-root.theme-dark {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --surface-2: #232321;
+  --border: #3a3936;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --node: #c3c2b7;
+  --node-inactive: #5c5b56;
+  --link: #44433f;
+  --created: #008300;
+  --updated: #3987e5;
+  --read: #f0b429;
+  --read-2: #e45cc0;
+  --read-3: #2cc4d6;
+  --read-4: #9c7bff;
+  --read-5: #f07a4a;
 }
 * { box-sizing: border-box; }
+/* body may get a padding from a host page (a bar above the view): #layout fills what is left. */
 html, body { margin: 0; height: 100%; }
 body {
   font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--surface-1);
   color: var(--text-primary);
-  display: flex;
   overflow: hidden;
 }
+#layout { display: flex; height: 100%; position: relative; overflow: hidden; }
 #stage { position: relative; flex: 1; min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 canvas.dragging { cursor: grabbing; }
@@ -153,9 +154,32 @@ button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 2px
 #empty p { margin: 0 0 12px; }
 body.no-graph #empty { display: grid; }
 body.no-graph canvas, body.no-graph #panel { display: none; }
+#panel > section:first-child { display: flex; gap: 8px; align-items: flex-start; }
+#panel .heading { flex: 1; min-width: 0; }
+#panel_toggle { display: none; flex: none; }
+/* Narrow screens: the side bar and the panel float over the canvas instead of taking its width.
+   The side bar keeps its 44 px strip in the flow and opens over the canvas; the panel is a
+   bottom sheet that shows its first section until it is opened. */
+@media (max-width: 720px) {
+  #sidebar { position: relative; z-index: 3; }
+  #sidebar:not(.collapsed) {
+    width: min(280px, 85%); margin-right: calc(44px - min(280px, 85%));
+    box-shadow: 0 4px 20px rgb(0 0 0 / 0.25);
+  }
+  #panel {
+    position: absolute; left: 44px; right: 0; bottom: 0; z-index: 2; width: auto;
+    max-height: 60%; overflow-y: auto; border-left: 0; border-top: 1px solid var(--border);
+    border-radius: 10px 10px 0 0; box-shadow: 0 -4px 20px rgb(0 0 0 / 0.18);
+  }
+  #panel > * { flex: none; }
+  #panel #detail { max-height: none; }
+  #panel.minimized > :not(:first-child) { display: none; }
+  #panel_toggle { display: block; }
+}
 </style>
 </head>
 <body class="viz-root no-graph">
+<div id="layout">
 <nav id="sidebar" aria-labelledby="graphs_heading">
   <div class="head">
     <button id="sidebar_toggle" type="button" aria-expanded="true" aria-controls="graph_list"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg></button>
@@ -181,9 +205,12 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
 </div>
 <aside id="panel">
   <section>
-    <h1 id="title">graph view</h1>
-    <div id="counts" class="muted"></div>
-    <div id="status">connecting</div>
+    <div class="heading">
+      <h1 id="title">graph view</h1>
+      <div id="counts" class="muted"></div>
+      <div id="status">connecting</div>
+    </div>
+    <button id="panel_toggle" type="button" aria-expanded="true" aria-controls="panel">Hide details</button>
   </section>
   <section>
     <ul class="legend">
@@ -203,6 +230,7 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
   <h2>Activity</h2>
   <ul id="events" aria-live="polite"></ul>
 </aside>
+</div>
 <script>
 "use strict";
 const token = new URLSearchParams(location.search).get("t") || "";
@@ -260,10 +288,16 @@ let sessions = new Map(); // session -> color name, in order of appearance
 let ambient = 0;         // 0..1: how much the rest of the graph steps back while reads glow
 let lastFrame = performance.now();
 const dark = matchMedia("(prefers-color-scheme: dark)");
+let isDark = false;      // the theme in effect: data-theme on <html>, else the device
 const LABEL_ALL = 80;    // up to this many visible nodes every label shows
 const MIN_ZOOM = 0.02;   // far enough out for a few thousand nodes
 
+// Applies the theme and reads the colors the canvas draws with. A host page may call it
+// after it changed data-theme; the view also does, on that change and on the device's.
 function readColors() {
+  const theme = document.documentElement.getAttribute("data-theme");
+  isDark = theme === "dark" || (theme !== "light" && dark.matches);
+  document.body.classList.toggle("theme-dark", isDark);
   const style = getComputedStyle(document.body);
   for (const name of ["node", "node-inactive", "link", "created", "updated", ...SESSION_COLORS, "text-primary", "text-secondary", "surface-1"]) {
     colors[name] = style.getPropertyValue("--" + name).trim();
@@ -271,6 +305,7 @@ function readColors() {
 }
 readColors();
 dark.addEventListener("change", readColors);
+new MutationObserver(readColors).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
 
 // ---- data ------------------------------------------------------------
 
@@ -585,6 +620,7 @@ function selectedSource() {
 
 function select(target) {
   selected = target;
+  if (target && narrow.matches) setPanel(true);
   showSelection();
 }
 
@@ -762,7 +798,22 @@ addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
   if (document.getElementById("preview").style.display === "flex") closePreview();
   else if (selected) select(null);
+  else if (narrow.matches && !sidebar.classList.contains("collapsed")) { setSidebar(false, false); sidebarToggle.focus(); }
+  else if (narrow.matches && !panel.classList.contains("minimized")) setPanel(false);
 });
+
+// ---- narrow screens --------------------------------------------------
+
+const narrow = matchMedia("(max-width: 720px)");
+const panel = document.getElementById("panel");
+const panelToggle = document.getElementById("panel_toggle");
+
+function setPanel(open) {
+  panel.classList.toggle("minimized", !open);
+  panelToggle.setAttribute("aria-expanded", String(open));
+  panelToggle.textContent = open ? "Hide details" : "Details";
+}
+panelToggle.addEventListener("click", () => setPanel(panel.classList.contains("minimized")));
 
 function setStatus(text, live) {
   statusLine.textContent = text;
@@ -801,6 +852,7 @@ const emptyShow = document.getElementById("empty_show");
 const SIDEBAR_KEY = "graph-view.sidebar";
 const LIST_REFRESH_MS = 60000;
 
+// ``remember``: a choice on a wide screen; a narrow one always starts with the side bar folded.
 function setSidebar(open, remember) {
   sidebar.classList.toggle("collapsed", !open);
   sidebarToggle.setAttribute("aria-expanded", String(open));
@@ -809,9 +861,18 @@ function setSidebar(open, remember) {
   sidebarToggle.title = label;
   graphListBox.hidden = !open;
   emptyShow.hidden = open;
-  if (remember) {
+  if (remember && !narrow.matches) {
     try { localStorage.setItem(SIDEBAR_KEY, open ? "open" : "collapsed"); } catch (error) { /* storage off */ }
   }
+}
+
+function storedSidebar() {
+  try { return localStorage.getItem(SIDEBAR_KEY); } catch (error) { return null; }
+}
+
+function fitToScreen() {
+  setSidebar(!narrow.matches && storedSidebar() !== "collapsed", false);
+  setPanel(!narrow.matches);
 }
 
 function isCurrent(graph) {
@@ -936,6 +997,7 @@ function choose(name) {
   const params = new URLSearchParams(location.search);
   params.set("graph", name);
   history.pushState(null, "", "?" + params);
+  if (narrow.matches) setSidebar(false, false);  // the list covered the canvas
   showGraph(name);
 }
 
@@ -1080,7 +1142,7 @@ function segment(ax, ay, bx, by) {
 // Glowing edges and the pulses on their way, added up on a dark background.
 function drawWalks(now) {
   ctx.save();
-  ctx.globalCompositeOperation = dark.matches ? "lighter" : "source-over";
+  ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
   for (const [id, glow] of litLinks) {
     const link = links.get(id);
     const a = nodes.get(link.source), b = nodes.get(link.target);
@@ -1119,14 +1181,14 @@ function drawGlows() {
     if (!visible(node)) continue;
     const [x, y] = toScreen(node);
     const strength = Math.min(1, node.glow.e), color = colors[node.glow.color];
-    ctx.globalCompositeOperation = dark.matches ? "lighter" : "source-over";
+    ctx.globalCompositeOperation = isDark ? "lighter" : "source-over";
     halo(x, y, node.r * 0.6, node.r + 6 + 16 * strength, color, strength);
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = rgba(color, 0.35 + 0.65 * strength);
     ctx.beginPath();
     ctx.arc(x, y, node.r, 0, 2 * Math.PI);
     ctx.fill();
-    if (node.glow.e > 1 && dark.matches) {
+    if (node.glow.e > 1 && isDark) {
       ctx.fillStyle = rgba("#ffffff", 0.8 * (node.glow.e - 1));
       ctx.beginPath();
       ctx.arc(x, y, node.r * 0.5, 0, 2 * Math.PI);
@@ -1372,9 +1434,8 @@ document.getElementById("search").addEventListener("keydown", event => {
 addEventListener("resize", resize);
 new ResizeObserver(resize).observe(canvas);
 
-let storedSidebar = null;
-try { storedSidebar = localStorage.getItem(SIDEBAR_KEY); } catch (error) { /* storage off */ }
-setSidebar(storedSidebar !== "collapsed", false);
+narrow.addEventListener("change", fitToScreen);
+fitToScreen();
 resize();
 // A graph named in the URL opens at once; else the list says which one --graph named.
 if (new URLSearchParams(location.search).get("graph")) {

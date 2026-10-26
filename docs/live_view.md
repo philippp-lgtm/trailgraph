@@ -148,6 +148,16 @@ Point liveness and readiness probes at `/health` on the view's port.
 The view's page and answers are not encrypted; keep its port inside the
 pod or cluster network and let the proxy terminate TLS.
 
+A proxy that wraps the page in its own frame (a bar above it, a shared
+light or dark mode) can rely on two things. The page follows
+`data-theme="dark"` or `data-theme="light"` on its `<html>` element and
+switches when the attribute changes; without it, the page follows the
+device setting. And it fills the height its `<body>` leaves, so a
+`padding-top` on `body` for a bar keeps everything in view without
+scrolling. A page may also call the global `readColors()` after changing
+the theme some other way; it applies the theme and re-reads the colors
+the graph is drawn with.
+
 ## Using the view
 
 Clicking a node loads that entity on demand: its attributes
@@ -164,3 +174,9 @@ alias or type does not contain the text (Enter opens the first match);
 checkbox per type hides whole types. Attribute values are not searched.
 "scale nodes by number of connections" enlarges nodes in proportion to
 their edge count, relative to the most connected visible node.
+
+On a narrow screen (720 pixels or less, such as a phone) the list of
+graphs starts folded and opens over the graph; picking a graph or Escape
+folds it again. The panel becomes a sheet at the bottom that shows the
+graph's name and counts; "Details" opens it, and clicking a node opens
+it with that entity.
