@@ -91,3 +91,56 @@ def test_json_mode_and_a_taken_port_are_refused(
         busy = run_cli("graph-admin", "view", "--graph", "example_graph", "--port", port)
     assert busy.returncode != 0 and "admin.view_port_unavailable" in busy.stderr
     assert "--port 0" in busy.stderr
+
+
+def test_a_token_file_gives_the_token_and_stays_out_of_the_address(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    token = "T" * 40
+    token_file = tmp_path / "view_token"
+    token_file.write_text(f"  {token}\n")
+    serve = ("--graph", "example_graph", "--no-open", "--token-file", str(token_file))
+    proc = subprocess.Popen(
+        [str(BIN_DIR / "graph-admin"), "view", *serve],
+        env=isolated_env,
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stderr is not None
+        line = proc.stderr.readline()
+        found = re.search(r"http://127\.0\.0\.1:(\d+)/ ", line)
+        assert found and "--token-file" in line and token not in line, line
+        conn = http.client.HTTPConnection("127.0.0.1", int(found.group(1)), timeout=5)
+        conn.request("GET", f"/graph?t={token}")
+        assert conn.getresponse().status == 200
+    finally:
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=10)
+    assert proc.returncode == 0 and token not in out + err, err
+
+
+def test_a_bad_token_file_is_refused(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    short, empty = tmp_path / "short", tmp_path / "empty"
+    short.write_text("s3cr3t-but-short\n")
+    empty.write_text(" \n")
+    for file, why in (
+        (short, "shorter than 32 characters"),
+        (empty, "is empty"),
+        (tmp_path / "missing", "cannot be read"),
+        (tmp_path, "cannot be read"),
+    ):
+        refused = run_cli(
+            "graph-admin", "view", "--graph", "example_graph", "--token-file", str(file)
+        )
+        assert refused.returncode == 2, refused.stderr
+        assert "usage.invalid_argument" in refused.stderr and why in refused.stderr
+        assert "s3cr3t" not in refused.stderr + refused.stdout

@@ -419,6 +419,9 @@ server. `graph` still parses the command line itself, so usage errors and
 same envelope, text and exit code as locally. Its own warnings come
 first; large JSON answers go to a file on this machine. Agent, session,
 device and the pointer's project and graphs are sent with each request.
+Every request, also of `graph-admin`, `graph connect` and `self update`,
+names the client in `User-Agent: graph-cli/<version>`, so a reverse
+proxy that refuses requests without one lets it through.
 
 - A write always carries an idempotency key, in the `Idempotency-Key`
   header: the given `--idempotency-key`, else a generated one. If the
@@ -501,7 +504,8 @@ admin token there, name it among the policy's `maintainers` if the policy
 has them, and use `graph-admin` in remote mode. A
 [live view](live_view.md) started in the container on port 8471 is
 published to `127.0.0.1:8471` (`GRAPH_VIEW_PORT`); open the printed
-address on the host. The `tls`
+address on the host. To serve it to other machines, see
+[Behind a reverse proxy](live_view.md#behind-a-reverse-proxy). The `tls`
 profile adds Caddy with an automatic certificate for `GRAPH_DOMAIN`; then
 80 and 443 are the only ports published beyond `127.0.0.1`. A healthcheck
 asks `/v1/health`.

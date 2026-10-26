@@ -116,7 +116,7 @@ wheels = [
 
 [[package]]
 name = "graph-cli"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/graph_cli" }
 dependencies = [
     { name = "click" },
@@ -131,7 +131,7 @@ requires-dist = [
 
 [[package]]
 name = "graph-cli-admin"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/graph_cli_admin" }
 dependencies = [
     { name = "click" },
@@ -146,7 +146,7 @@ requires-dist = [
 
 [[package]]
 name = "graph-cli-server"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/graph_cli_server" }
 dependencies = [
     { name = "graph-cli" },

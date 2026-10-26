@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.1.0",
+  "program_version": "0.2.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -2349,6 +2349,13 @@
           "summary": "Print the address only; open no browser."
         },
         {
+          "name": "--token-file",
+          "type": "file",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read the page's token from this file (32 characters or more) instead of a random one per start; the printed address leaves it out."
+        },
+        {
           "name": "--data-root",
           "type": "directory",
           "required": false,
@@ -2364,6 +2371,10 @@
         {
           "command": "graph-admin view --graph <graph> --port <value> --no-open",
           "summary": "Serve on a fixed port without opening a browser."
+        },
+        {
+          "command": "graph-admin view --graph <graph> --host 0.0.0.0 --port <value> --no-open --token-file <file>",
+          "summary": "Serve in a container behind a proxy that adds the token."
         }
       ],
       "errors": [

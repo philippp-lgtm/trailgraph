@@ -1,22 +1,26 @@
 """The local HTTP server of ``graph-admin view`` (graph view plan, "Server").
 
 Stdlib only. It binds ``127.0.0.1`` and answers nothing but GET requests
-that carry the token (``?t=``) and a ``Host`` of ``127.0.0.1:<port>`` or
-``localhost:<port>`` (DNS rebinding). Bound to another address (``--host``,
-in a container), the ``Host`` must still name ``127.0.0.1`` or
-``localhost``, with any port: a published port may differ from the bound
-one. No CORS headers; every response is ``no-store`` with a strict content
-security policy and no referrer.
+that carry the token (``?t=``, random per start unless given) and a
+``Host`` of ``127.0.0.1:<port>`` or ``localhost:<port>`` (DNS rebinding).
+Bound to another address (``--host``, in a container), the ``Host`` must
+still name ``127.0.0.1`` or ``localhost``, with any port or none: a
+published port may differ from the bound one. No CORS headers; every response is
+``no-store`` with a strict content security policy and no referrer.
 
-Routes: ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
+Routes: ``/health`` ``ok`` without token or ``Host`` check, for the probes
+of a container platform (they name the pod's address; it touches no
+graph), ``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
 one entity in full (attributes, edges, history with the writing agents),
 ``/blob?id=`` the stored file of a file entity (PDFs and images inline,
 anything else as a download), ``/events`` Server-Sent Events, ``/trail``
-the recent steps of activity (``ActivityTrail``). One feed thread polls the
-store and the activity socket, numbers each write and read as a trail step
-and hands it to a bounded queue per client: a slow client loses events, the
-feed never waits; ``/trail`` gives a page the steps it missed. A failing
-poll becomes an ``error`` event and the feed goes on.
+the recent steps of activity (``ActivityTrail``). The page asks for every
+route by a relative URL, so a proxy may serve it below a path prefix.
+One feed thread polls the store and the activity socket, numbers each
+write and read as a trail step and hands it to a bounded queue per
+client: a slow client loses events, the feed never waits; ``/trail``
+gives a page the steps it missed. A failing poll becomes an ``error``
+event and the feed goes on.
 """
 
 from __future__ import annotations
@@ -106,13 +110,14 @@ class ViewServer:
         signal_reads: bool = False,
         poll_s: float = POLL_S,
         clock: Clock | None = None,
+        token: str | None = None,
     ) -> None:
         self.source = source
         self.page = page
         self.listener = listener
         self.signal_reads = signal_reads
         self.poll_s = poll_s
-        self.token = secrets.token_urlsafe(24)
+        self.token = token if token is not None else secrets.token_urlsafe(24)
         self.hub = Hub()
         self.trail = ActivityTrail()
         self.clock = clock if clock is not None else SystemClock()
@@ -189,6 +194,9 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             url = urlsplit(self.path)
+            if url.path == "/health":
+                self._send(200, b"ok\n", "text/plain; charset=utf-8")
+                return
             if not self._allowed(url.query):
                 self._send(403, b"forbidden\n", "text/plain; charset=utf-8")
                 return
@@ -250,7 +258,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             if server.host == HOST:
                 if host not in (f"{HOST}:{server.port}", f"localhost:{server.port}"):
                     return False
-            elif host.rpartition(":")[0] not in (HOST, "localhost"):
+            elif (host.rpartition(":")[0] if ":" in host else host) not in (HOST, "localhost"):
                 return False
             given = parse_qs(query).get("t", [""])[0]
             return secrets.compare_digest(given.encode(), server.token.encode())

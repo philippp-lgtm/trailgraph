@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import webbrowser
 from importlib.resources import files
+from pathlib import Path
 from typing import Final
 
 import click
@@ -24,9 +25,32 @@ from graph_cli_admin.maintenance_cli.commands.common import (
 from graph_cli_admin.maintenance_cli.view_server import ViewServer
 from graph_cli_admin.services_admin import view
 
+MIN_TOKEN: Final = 32  # characters; a random token of 24 bytes has 32
+
 
 def page() -> bytes:
     return files("graph_cli_admin.maintenance_cli").joinpath("static", "view.html").read_bytes()
+
+
+def read_token_file(path: str) -> str:
+    """The token of ``--token-file``, stripped; never named in an error."""
+
+    def refused(why: str) -> GraphCliError:
+        return GraphCliError(
+            "usage.invalid_argument",
+            f"--token-file {path}: {why}",
+            details={"argument": "--token-file"},
+        )
+
+    try:
+        token = Path(path).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise refused(f"cannot be read: {getattr(exc, 'strerror', None) or exc}") from None
+    if not token:
+        raise refused("is empty")
+    if len(token) < MIN_TOKEN:
+        raise refused(f"the token is shorter than {MIN_TOKEN} characters")
+    return token
 
 
 def view_command(
@@ -35,6 +59,7 @@ def view_command(
     port: int,
     host: str,
     no_open: bool,
+    token_file: str | None,
     data_root: str | None,
 ) -> Result:
     if click.get_current_context().params.get("json_mode") or state.invocation.json_default:
@@ -50,6 +75,7 @@ def view_command(
             f"--port {port}: not a port (0 to 65535)",
             details={"argument": "--port", "actual": port},
         )
+    token = read_token_file(token_file) if token_file is not None else None
     ctx = admin_context(state, data_root)
     source = view.open_view(ctx, graph_ref=graph_ref)
     state.warnings += source.warnings
@@ -75,6 +101,7 @@ def view_command(
             host=host,
             listener=listener,
             signal_reads=ctx.config.signal_reads,
+            token=token,
         )
     except OSError as exc:
         if listener is not None:
@@ -86,11 +113,18 @@ def view_command(
         ) from exc
     try:
         server.start()
-        click.echo(f"Graph view of {source.entry.name}: {server.url}", err=True)
+        if token is None:
+            click.echo(f"Graph view of {source.entry.name}: {server.url}", err=True)
+        else:
+            click.echo(
+                f"Graph view of {source.entry.name}: {server.address}"
+                " (add ?t= with the token of --token-file)",
+                err=True,
+            )
         if host != "127.0.0.1":
             click.echo(
                 f"Bound to {host}: the page and its token travel in clear; publish the port"
-                " to 127.0.0.1 only.",
+                " to 127.0.0.1 only, or put a proxy in front.",
                 err=True,
             )
         if no_reads:  # the warnings print only when the view stops
@@ -132,6 +166,12 @@ SPECS: Final = (
                 default="127.0.0.1",
             ),
             ParamSpec("--no-open", "flag", "Print the address only; open no browser."),
+            ParamSpec(
+                "--token-file",
+                "file",
+                "Read the page's token from this file (32 characters or more) instead of"
+                " a random one per start; the printed address leaves it out.",
+            ),
             DATA_ROOT,
         ),
         examples=(
@@ -140,13 +180,18 @@ SPECS: Final = (
                 "graph-admin view --graph <graph> --port <value> --no-open",
                 "Serve on a fixed port without opening a browser.",
             ),
+            Example(
+                "graph-admin view --graph <graph> --host 0.0.0.0 --port <value> --no-open"
+                " --token-file <file>",
+                "Serve in a container behind a proxy that adds the token.",
+            ),
         ),
         errors=(*GRAPH_ERRORS, "admin.view_port_unavailable"),
         handler=view_command,
         output=OUTPUT,
         description="Serves a read-only page on 127.0.0.1 (or --host) until Ctrl+C and prints"
         " its address on stderr; the address carries a token, keep it to yourself. There is"
-        " no JSON mode."
+        " no JSON mode. GET /health answers ok without the token, for probes."
         " Writes show up by themselves (green: new, blue: changed). Reads (yellow) show only"
         " when the app sends them: [activity] signal_reads = true in config.toml.",
         remote="local",

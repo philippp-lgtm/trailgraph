@@ -31,6 +31,7 @@ WIRES: dict[int, dict[str, Any]] = {
             "Graph-Cli-Compat",
             "Graph-Cli-Skills",
             "Graph-Cli-Version",
+            "User-Agent",
         ],
         "accepted_headers": [
             "Authorization",

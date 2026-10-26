@@ -220,6 +220,33 @@ def test_the_client_sends_canonical_names(
 
 
 @pytest.mark.unchecked_output("the stub server answers whoami with a stub")
+def test_every_request_names_its_user_agent(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """A reverse proxy with bot rules refuses a request without a ``User-Agent``."""
+    from graph_cli import __version__
+    from graph_cli.catalog.endpoint import parse_endpoint
+    from graph_cli.catalog.remote import RemoteClient
+
+    agents: list[str | None] = []
+
+    def record(handler: BaseHTTPRequestHandler, number: int) -> None:
+        agents.append(handler.headers.get("User-Agent"))
+        answer(handler, json.dumps(ENVELOPE).encode())
+
+    with stub(record) as seen:
+        env = client_env(isolated_env, tmp_path / "client", port_of(seen), "gct_x")
+        assert remote(run_cli, env, "whoami").code == 0
+        run_cli("graph-admin", "graph", "list", "--json", env={**env, "GRAPH_CLI_ADMIN_TOKEN": "x"})
+    assert seen == ["/v1/commands/whoami", "/v1/admin/commands/graph/list"]
+    assert agents == [f"graph-cli/{__version__}"] * 2
+    endpoint = parse_endpoint("http://127.0.0.1:1")
+    assert not isinstance(endpoint, str)
+    client = RemoteClient(endpoint, None, timeout_s=1, version="9.9.9", program="graph")
+    assert client._headers(None, None, None)["User-Agent"] == "graph-cli/9.9.9"
+
+
+@pytest.mark.unchecked_output("the stub server answers whoami with a stub")
 def test_a_read_is_retried_once(
     run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
