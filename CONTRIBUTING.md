@@ -27,6 +27,24 @@ uv run graph-admin --help
 uv run graph-server serve --port 0
 ```
 
+## CI and releases
+
+`.github/workflows/check.yml` runs on every pull request and every push to
+`main`: the lint commands above, the suite in the image (`docker build
+--target test .`) and a smoke test of the runtime image (it starts, answers
+`/v1/health`, and `graph-admin audit verify` in it is clean).
+
+A release is a tag `vX.Y.Z` on a commit of `main` whose checks are green.
+The three distributions carry that version (`version` in each
+`packages/*/pyproject.toml` and `__version__` in each package, then `uv
+lock` and the goldens, which name it), bumped in a pull request before the
+tag. The version is part of skill 1, so a client of the previous release
+has to update. `.github/workflows/build.yml` refuses a tag that differs
+from it or is not on `main`, runs the suite on the tagged tree and pushes
+the runtime image as `ghcr.io/<owner>/<repository>:vX.Y.Z`; the job summary
+names its digest, which deployments pin (`<tag>@sha256:<digest>`). A pushed
+tag is never moved; fix forward with the next version.
+
 ## Documentation
 
 Documentation is split by reader and purpose. Put new text where its

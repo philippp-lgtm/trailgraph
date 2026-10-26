@@ -523,4 +523,5 @@ Moving an existing data root into the container:
    [Enrollment](#enrollment)).
 
 `docker build --target test .` runs the whole test suite on Linux in the
-image.
+image. Each release publishes the runtime image to the GitHub container
+registry of the repository ([CI and releases](../CONTRIBUTING.md#ci-and-releases)).
