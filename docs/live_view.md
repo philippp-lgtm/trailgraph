@@ -2,7 +2,8 @@
 
 `graph-admin view --graph <graph>` prints an address on stderr and opens
 it: the whole graph as dots and lines, with labels, and a list of recent
-activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`).
+activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`,
+`--token-file`).
 
 ## Activity
 
@@ -67,10 +68,51 @@ The server listens on `127.0.0.1` and answers only requests that
 carry the random token in the printed address, so keep the address to
 yourself. `--host` binds another address, for a view inside a container
 whose port is published to `127.0.0.1` on the host; requests must then still
-name `127.0.0.1` or `localhost` (any port) and carry the token. The printed
+name `127.0.0.1` or `localhost` (any port or none) and carry the token. The printed
 address names the port inside the container: open the published port with
 the same token. The graph itself carries labels, types, aliases and record
 status only.
+
+`--token-file <file>` reads the token from a file instead (surrounding
+whitespace stripped, at least 32 characters); the view refuses to start
+with a file it cannot read, an empty one or a shorter token, and the
+printed address then leaves the token out. `GET /health` answers `ok`
+without token, for probes; it reads no graph. Bound with `--host` to
+another address it answers whatever `Host` a request names (a probe
+names the pod's address); on `127.0.0.1` the `Host` must still name
+`127.0.0.1` or `localhost` with the port, as for every other request.
+
+## Behind a reverse proxy
+
+To reach the view from elsewhere, run it next to the
+[server](server.md) and put an authenticating reverse proxy in front.
+On a container platform the view is a second container in the server's
+pod (a sidecar) with the same data root and state directory, so writes
+and, with `signal_reads` in the server's `config.toml`, reads show up
+(see [Activity](#activity)):
+
+```sh
+graph-admin view --graph <graph> --host 0.0.0.0 --port <port> --no-open --token-file <file>
+```
+
+The token file comes from a secret that only the view and the proxy
+see. The proxy
+
+- authenticates the user and forwards only `GET` requests;
+- sends `Host: localhost` or `127.0.0.1` (with any port or none), not
+  the public name, else the view answers 403;
+- adds the token as the query parameter `t`, replacing any `t` the
+  browser sent (the page then sends an empty one, which the view
+  ignores), so the token never reaches the browser;
+- may serve the view below a path prefix (`/<prefix>/` to the view's
+  `/`): the page asks for every route by a relative URL. Redirect
+  `/<prefix>` to `/<prefix>/`, or those URLs miss the prefix;
+- keeps `/events` streaming: no response buffering, and an idle timeout
+  above the 15 seconds between heartbeats.
+
+Point liveness and readiness probes at `/health` on the view's port.
+The view's page and answers are not encrypted; keep its port inside the
+pod or cluster network and let the proxy terminate TLS.
 
 ## Using the view
 

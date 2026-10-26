@@ -7,10 +7,12 @@ for a write (it may have been applied; the idempotency key makes running
 it again safe) and one retry for a read. 401 is ``remote.unauthorized``;
 an answer that is not the API's is ``remote.protocol``. The token goes into
 the ``Authorization`` header only, never into an error. Every request names
-this program's build (``catalog.build``) and compatibility id
-(``catalog.compat``); every answer that is no error is compared with the
-server's version and build (``remote.version_differs``, which says whether
-the server's compatibility id is this program's).
+itself in ``User-Agent: graph-cli/<version>`` (reverse proxies with bot
+rules refuse a request without one), this program's build
+(``catalog.build``) and compatibility id (``catalog.compat``); every
+answer that is no error is compared with the server's version and build
+(``remote.version_differs``, which says whether the server's
+compatibility id is this program's).
 The graph skills installed for this process's agent go along in
 ``Graph-Cli-Skills`` (``catalog.skill_claims``), so the server can judge them.
 The token comes from the environment, else from the file ``graph connect``
@@ -43,6 +45,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 
 ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
 VERSION_HEADER: Final = "Graph-Cli-Version"
+USER_AGENT: Final = "graph-cli"  # with the version; no generic HTTP library name
 CHUNK: Final = 1024 * 1024
 APP_TOKEN_HINT: Final = (
     "set GRAPH_CLI_TOKEN or [remote] token_file, and ask the maintainer for a token"
@@ -226,6 +229,7 @@ class RemoteClient:
         length: int | None,
     ) -> dict[str, str]:
         headers = {
+            "User-Agent": f"{USER_AGENT}/{self.version}",
             VERSION_HEADER: self.version,
             "Accept": "application/json",
             **(extra or {}),

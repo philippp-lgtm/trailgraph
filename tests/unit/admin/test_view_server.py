@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -73,6 +74,14 @@ def test_only_token_and_local_host_get_in(server: ViewServer) -> None:
     assert get(server, "/graph?t=wrong").status == 403
     assert get(server, f"/graph?t={token}", host="evil.example:80").status == 403
     assert get(server, f"/graph?t={token}", host=f"localhost:{server.port}").status == 200
+    # bound to 127.0.0.1 the Host names this port: no portless or other-port name
+    assert get(server, f"/graph?t={token}", host="localhost").status == 403
+    assert get(server, f"/graph?t={token}", host="127.0.0.1").status == 403
+    assert get(server, f"/graph?t={token}", host=f"localhost:{server.port + 1}").status == 403
+    # /health needs no token, but on 127.0.0.1 the Host check (DNS rebinding)
+    assert get(server, "/health").status == 200
+    assert get(server, "/health", host="evil.example:80").status == 403
+    assert get(server, "/health", host="localhost").status == 403
     assert get(server, f"/nothing?t={token}").status == 404
     conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
     conn.request("POST", f"/graph?t={token}", body=b"{}")
@@ -96,10 +105,50 @@ def test_another_bind_address_keeps_token_and_host_checks(svc: ServiceEnv) -> No
         token = running.token
         assert get(running, f"/graph?t={token}", host="localhost:18080").status == 200
         assert get(running, f"/graph?t={token}", host="127.0.0.1:8080").status == 200
+        assert get(running, f"/graph?t={token}", host="localhost").status == 200  # a proxy
         assert get(running, f"/graph?t={token}", host="evil.example:8080").status == 403
         assert get(running, "/graph?t=wrong", host="127.0.0.1:8080").status == 403
     finally:
         running.stop()
+
+
+def test_health_needs_neither_token_nor_a_local_host(svc: ServiceEnv) -> None:
+    """Bound to another address, a probe of a container platform names the pod's
+    address and has no token; every other route still checks both."""
+    token = "x" * 32
+    running = ViewServer(
+        open_view(admin_context(svc.root), graph_ref=svc.name),
+        page=page(),
+        host="0.0.0.0",
+        token=token,
+    )
+    running.start()
+    try:
+        assert running.token == token and running.url.endswith(f"/?t={token}")
+        health = get(running, "/health", host="10.42.0.7:8080")
+        assert health.status == 200 and health.read() == b"ok\n"
+        assert health.getheader("Content-Type") == "text/plain; charset=utf-8"
+        assert health.getheader("Cache-Control") == "no-store"
+        assert "default-src 'none'" in str(health.getheader("Content-Security-Policy"))
+        assert get(running, "/health/", host="10.42.0.7:8080").status == 403
+        assert get(running, f"/graph?t={token}", host="10.42.0.7:8080").status == 403
+        assert get(running, "/graph?t=wrong", host="localhost:8080").status == 403
+        assert get(running, f"/?t={token}", host="localhost:8080").status == 200
+        # the page sends its own empty token; a proxy that adds the real one gets in
+        assert get(running, f"/graph?t=&t={token}", host="localhost:8080").status == 200
+        conn = http.client.HTTPConnection("127.0.0.1", running.port, timeout=5)
+        conn.request("POST", "/health", body=b"{}")
+        assert conn.getresponse().status == 405
+    finally:
+        running.stop()
+
+
+def test_the_page_asks_for_every_route_by_a_relative_url() -> None:
+    """Behind a proxy the page lives below a path prefix: no request may start at ``/``."""
+    html = page().decode()
+    assert re.findall(r"""(?:fetch|EventSource|url)\(\s*[`"'](/[^`"']*)""", html) == []
+    for route in ("graph?t=", "events?t=", '"entity"', '"blob"'):
+        assert route in html, route
 
 
 def test_graph_json(server: ViewServer, svc: ServiceEnv) -> None:

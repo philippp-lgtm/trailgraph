@@ -385,7 +385,7 @@ function rgba(hex, a) {
 async function loadGraph() {
   loading = true;
   try {
-    const response = await fetch("/graph?t=" + encodeURIComponent(token), {cache: "no-store"});
+    const response = await fetch("graph?t=" + encodeURIComponent(token), {cache: "no-store"});
     if (!response.ok) throw new Error("HTTP " + response.status);
     const data = await response.json();
     const old = nodes;
@@ -594,7 +594,7 @@ function fileSection(d) {
     actions.append(preview);
   }
   const open = el("a", "button", info.inline ? "Open in tab" : "Download");
-  open.href = url("/blob", d.id);
+  open.href = url("blob", d.id);
   open.target = "_blank";
   open.rel = "noopener";
   actions.append(open);
@@ -640,7 +640,7 @@ function renderLink(link, source) {
 }
 
 async function fetchEntity(id) {
-  const response = await fetch(url("/entity", id), {cache: "no-store"});
+  const response = await fetch(url("entity", id), {cache: "no-store"});
   if (!response.ok) throw new Error("HTTP " + response.status);
   return response.json();
 }
@@ -654,7 +654,7 @@ function openPreview(d) {
   const body = document.getElementById("preview_body");
   const media = d.file.media_type || "";
   const node = media.startsWith("image/") ? document.createElement("img") : document.createElement("iframe");
-  node.src = url("/blob", d.id);
+  node.src = url("blob", d.id);
   if (node.tagName === "IMG") node.alt = d.label;
   else node.title = d.label;
   body.replaceChildren(node);
@@ -697,7 +697,7 @@ function setStatus(text, live) {
 }
 
 function connect() {
-  const source = new EventSource("/events?t=" + encodeURIComponent(token));
+  const source = new EventSource("events?t=" + encodeURIComponent(token));
   source.onopen = () => {
     setStatus("live", true);
     loadGraph().catch(error => setStatus(`cannot load the graph: ${error.message}`, false));
