@@ -5,9 +5,11 @@ The runtime reads only this form. Every documented key is always present;
 ``max`` = unbounded, ``default`` = none, ``description``, ``renamed_from``,
 ``display_prefix``, ``role`` = no label role). A document without ``role``
 (written before label roles) reads as ``null``. ``artifact_hash`` is the C.2
-hash of the JSON document. An expression node kind this program does not
-know (a model released for a newer ``graph``) is refused with
-``format.unsupported_version``.
+hash of the JSON document. A relation's ``on_target_inactive`` is written
+only when it is not the default ``allow`` and reads as ``allow`` when absent.
+An expression node kind, a relation key or an ``on_target_inactive`` value
+this program does not know (a model released for a newer ``graph``) is
+refused with ``format.unsupported_version``.
 """
 
 from __future__ import annotations
@@ -32,7 +34,11 @@ from graph_cli.kernel.json_access import (
     str_list,
 )
 from graph_cli.ontology_layer.expr_ast import unknown_nodes
-from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA, LABEL_ROLES
+from graph_cli.ontology_layer.vocabulary import (
+    COMPILED_SCHEMA,
+    LABEL_ROLES,
+    TARGET_INACTIVE_POLICIES,
+)
 
 AttributeKind = Literal["base", "datatype", "enum", "lifecycle"]
 
@@ -185,6 +191,7 @@ class RelationDef:
     out: Bound
     into: Bound
     characteristics: tuple[str, ...]
+    on_target_inactive: str  # one of TARGET_INACTIVE_POLICIES
     inverse_label: str | None
     qualifiers: Mapping[str, QualifierDef]
     renamed_from: str | None
@@ -337,6 +344,12 @@ def _class_json(c: ClassDef) -> dict[str, JsonValue]:
 
 
 def _relation_json(r: RelationDef) -> dict[str, JsonValue]:
+    # The default policy is left out, so models that never name one keep their bytes and hash.
+    policy: dict[str, JsonValue] = (
+        {}
+        if r.on_target_inactive == TARGET_INACTIVE_POLICIES[0]
+        else {"on_target_inactive": r.on_target_inactive}
+    )
     return {
         "domain": list(r.domain),
         "range": list(r.range),
@@ -345,6 +358,7 @@ def _relation_json(r: RelationDef) -> dict[str, JsonValue]:
             "in": {"min": r.into.min, "max": r.into.max},
         },
         "characteristics": list(r.characteristics),
+        **policy,
         "inverse_label": r.inverse_label,
         "qualifiers": {
             k: {
@@ -417,6 +431,47 @@ def _mappings(data: JsonObject, path: str) -> dict[str, tuple[str, ...]]:
 
 def _bound(data: JsonObject, path: str) -> Bound:
     return Bound(req_int(data, "min", path), opt_int(data, "max", path))
+
+
+_RELATION_KEYS = frozenset(
+    {
+        "domain",
+        "range",
+        "cardinality",
+        "characteristics",
+        "on_target_inactive",
+        "inverse_label",
+        "qualifiers",
+        "renamed_from",
+        "mappings",
+        "summary",
+        "description",
+        "deprecated",
+        "annotations",
+    }
+)
+
+
+def _newer(owner: str, what: str) -> GraphCliError:
+    return GraphCliError(
+        "format.unsupported_version",
+        f"{owner} uses {what}, which this graph program does not know; the ontology was "
+        "released for a newer graph, update graph",
+        details={"owner": owner, "unknown": what},
+    )
+
+
+def _target_policy(data: JsonObject, relation: str) -> str:
+    """``on_target_inactive``; absent is the default. Unknown keys and values are refused."""
+    unknown = sorted(data.keys() - _RELATION_KEYS)
+    if unknown:
+        raise _newer(f"relation {relation}", f"the key {unknown[0]!r}")
+    policy = opt_str(data, "on_target_inactive", f"{relation}.")
+    if policy is None:
+        return TARGET_INACTIVE_POLICIES[0]
+    if policy not in TARGET_INACTIVE_POLICIES:
+        raise _newer(f"relation {relation}", f"on_target_inactive {policy!r}")
+    return policy
 
 
 def _expr(data: JsonObject, owner: str) -> JsonValue:
@@ -527,6 +582,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
             out=_bound(req_obj(cardinality, "out"), f"{k}.cardinality.out."),
             into=_bound(req_obj(cardinality, "in"), f"{k}.cardinality.in."),
             characteristics=str_list(v, "characteristics", f"{k}."),
+            on_target_inactive=_target_policy(v, k),
             inverse_label=opt_str(v, "inverse_label", f"{k}."),
             qualifiers=qualifiers,
             renamed_from=opt_str(v, "renamed_from", f"{k}."),

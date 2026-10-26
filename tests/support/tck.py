@@ -312,7 +312,7 @@ def model(world: World) -> CompiledModel:
     qualifiers = {key: QualifierDef("json", "base", False, False, "") for key in sorted(world.keys)}
     relations = {
         f"{PREFIX}:{t}": RelationDef(
-            (), (), Bound(0, None), Bound(0, None), (), None, qualifiers, None, {}, _DOC
+            (), (), Bound(0, None), Bound(0, None), (), "allow", None, qualifiers, None, {}, _DOC
         )
         for t in sorted(world.types)
     }

@@ -34,6 +34,7 @@ from graph_cli.ontology_layer.vocabulary import (
     PREFIX_RE,
     RULE_TIMINGS,
     SEVERITIES,
+    TARGET_INACTIVE_POLICIES,
     TYPE_NAME_RE,
 )
 
@@ -154,6 +155,7 @@ class IrRelation:
     out: Bounds
     into: Bounds
     characteristics: tuple[str, ...]
+    on_target_inactive: str  # one of TARGET_INACTIVE_POLICIES
     inverse_label: str | None
     qualifiers: dict[str, IrQualifier]
     renamed_from: str | None
@@ -518,6 +520,7 @@ class _Parser:
                 "range",
                 "cardinality",
                 "characteristics",
+                "on_target_inactive",
                 "inverse_label",
                 "qualifiers",
                 "renamed_from",
@@ -539,6 +542,15 @@ class _Parser:
                 )
                 characteristics = None
                 break
+        on_target_inactive = (
+            self.r.choice(
+                data["on_target_inactive"],
+                join(path, "on_target_inactive"),
+                TARGET_INACTIVE_POLICIES,
+            )
+            if "on_target_inactive" in data
+            else TARGET_INACTIVE_POLICIES[0]
+        )
         qualifiers: dict[str, IrQualifier] = {}
         for q_name, q_node in (
             self.r.entries(data.get("qualifiers"), join(path, "qualifiers")) or {}
@@ -565,7 +577,12 @@ class _Parser:
             )
         domain = self.r.names(data.get("domain"), join(path, "domain"))
         range_ = self.r.names(data.get("range"), join(path, "range"))
-        if domain is None or range_ is None or characteristics is None:
+        if (
+            domain is None
+            or range_ is None
+            or characteristics is None
+            or on_target_inactive is None
+        ):
             return None
         return IrRelation(
             name=name,
@@ -574,6 +591,7 @@ class _Parser:
             out=self._bounds(cardinality.get("out"), join(path, "cardinality.out")),
             into=self._bounds(cardinality.get("in"), join(path, "cardinality.in")),
             characteristics=tuple(sorted(set(characteristics))),
+            on_target_inactive=on_target_inactive,
             inverse_label=self.r.name(
                 data.get("inverse_label"), join(path, "inverse_label"), LOWER_NAME_RE
             ),
