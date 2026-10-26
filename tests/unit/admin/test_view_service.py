@@ -19,6 +19,7 @@ from graph_cli_admin.services_admin import view
 from graph_cli_admin.services_admin.view import (
     ActivityTrail,
     ViewFeed,
+    ViewGraphs,
     graph_json,
     label_of,
     open_view,
@@ -193,6 +194,37 @@ def test_a_denied_view_is_audited(svc: ServiceEnv) -> None:
         open_view(ctx, graph_ref=svc.name)
     assert info.value.code == "access.denied"
     assert svc.installation_events()[-1]["result"] == {"status": "denied", "code": "access.denied"}
+
+
+def test_the_list_leaves_out_unreadable_graphs_without_an_audit_event(svc: ServiceEnv) -> None:
+    deny_all = PolicySet(
+        "sha256:" + "1" * 64,
+        ({"schema": "graph_cli.policy/1", "id": "none", "rules": [], "obligations": []},),
+    )
+
+    class Policy:
+        def current(self, graph: object) -> PolicySet:
+            return deny_all
+
+    assert [g["name"] for g in ViewGraphs(admin_context(svc.root)).listing()["graphs"]] == [  # type: ignore[index, union-attr]
+        svc.name
+    ]
+    before = len(svc.installation_events())
+    ctx = dataclasses.replace(admin_context(svc.root), policy=Policy())
+    assert ViewGraphs(ctx).listing() == {"default": None, "graphs": []}
+    assert len(svc.installation_events()) == before
+
+
+def test_a_graph_opens_once_and_again_when_its_manifest_changes(svc: ServiceEnv) -> None:
+    graphs = ViewGraphs(admin_context(svc.root))
+    opened = graphs.get(svc.name)
+    assert graphs.get(str(svc.entry.id)) is opened and graphs.opened() == [opened]
+    source = opened.source
+    svc.set_entry(title="Another purpose")
+    again = graphs.get(svc.name)
+    assert again is opened and again.source is not source  # same feed and trail
+    assert again.feed.source is again.source and again.source.entry.title == "Another purpose"
+    assert graphs.find(str(svc.entry.id)) is opened and graphs.find("other") is None
 
 
 def test_a_language_tagged_label_is_shown_in_the_graph_language() -> None:

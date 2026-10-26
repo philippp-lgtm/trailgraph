@@ -1,9 +1,27 @@
 # Live view
 
-`graph-admin view --graph <graph>` prints an address on stderr and opens
-it: the whole graph as dots and lines, with labels, and a list of recent
-activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`,
-`--token-file`).
+`graph-admin view` prints an address on stderr and opens it: a side bar
+with the graphs of the data root and, for the graph picked there, the
+whole graph as dots and lines, with labels, and a list of recent
+activity. `--graph <graph>` opens the page on that graph; without it the
+page opens on none. It serves until Ctrl+C (`--port`, `--host`,
+`--no-open`, `--token-file`).
+
+## Switching graphs
+
+The side bar lists every graph you may read (`read.get`), archived ones
+marked, with name and title; a graph you may not read is left out, and
+listing it is not audited as a denial. Click a graph to show it. The
+address names the shown graph as `graph=<name>`, so a reload, a bookmark
+or Back and Forward keep it, and an address with `graph=` opens on that
+graph directly (a name or an id). The list refreshes when the window gets
+the focus and every minute, so a graph created while the view runs shows
+up without a restart. The toggle at the top folds the side bar to a
+narrow strip and back; the browser remembers the choice.
+
+The view opens a graph when the page first asks for it, not at start,
+and keeps up to eight open; opening a ninth closes the one used least
+recently, and a page showing that one reconnects and opens it again.
 
 ## Activity
 
@@ -54,12 +72,14 @@ whose state is such a mount, put that one directory on a `tmpfs`.
 
 ### Trail
 
-The view numbers what it sees as steps: one per read command and one per
-written entity, each with time, command, reader and session, the entity
-ids and, for reads, the edge ids. It keeps the last 500 steps in memory,
-so the steps of one session show where an agent went; they are gone
-when the view stops. The page gets each step live and can fetch the
-recent ones at `/trail` with the same token, for example after a
+The view numbers what it sees in a graph as steps: one per read command
+and one per written entity, each with time, command, reader and session,
+the entity ids and, for reads, the edge ids. It keeps the last 500 steps
+per open graph in memory, so the steps of one session show where an
+agent went; they start when the graph is opened and are gone when it is
+closed or the view stops. The page gets the steps of the shown graph
+live, and only those, and can fetch the recent ones at
+`/trail?graph=<graph>` with the same token, for example after a
 reconnect.
 
 ## Access
@@ -92,13 +112,15 @@ and, with `signal_reads` in the server's `config.toml`, reads show up
 (see [Activity](#activity)):
 
 ```sh
-graph-admin view --graph <graph> --host 0.0.0.0 --port <port> --no-open --token-file <file>
+graph-admin view --host 0.0.0.0 --port <port> --no-open --token-file <file>
 ```
 
 The token file comes from a secret that only the view and the proxy
 see. The proxy
 
-- authenticates the user and forwards only `GET` requests;
+- authenticates the user and forwards only `GET` requests, to the routes
+  `/` (the page), `/graphs`, `/graph`, `/entity`, `/blob`, `/events` and
+  `/trail`, with their query parameters (`graph`, `id`);
 - sends `Host: localhost` or `127.0.0.1` (with any port or none), not
   the public name, else the view answers 403;
 - adds the token as the query parameter `t`, replacing any `t` the

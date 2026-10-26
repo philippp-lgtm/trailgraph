@@ -1,5 +1,6 @@
 """The local server of graph-admin view (graph view plan, step 4)."""
 
+import dataclasses
 import http.client
 import json
 import re
@@ -11,6 +12,8 @@ from typing import Any
 import pytest
 from support.activity import short_dir
 from support.admin_context import admin_context
+from support.clock import StepClock
+from support.ids import SeededIdProvider
 from support.roles import load_roles
 from support.services import ServiceEnv
 
@@ -21,7 +24,8 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
 from graph_cli_admin.maintenance_cli.commands.view import page
 from graph_cli_admin.maintenance_cli.view_server import ViewServer
-from graph_cli_admin.services_admin.view import open_view
+from graph_cli_admin.services_admin.context import AdminContext
+from graph_cli_admin.services_admin.view import ViewGraphs
 
 
 @pytest.fixture
@@ -36,7 +40,7 @@ def server(svc: ServiceEnv) -> Iterator[ViewServer]:
     with short_dir() as directory:
         listener = ActivityListener.open(directory)
         running = ViewServer(
-            open_view(admin_context(svc.root), graph_ref=svc.name),
+            ViewGraphs(admin_context(svc.root), default=svc.name),
             page=page(),
             listener=listener,
             signal_reads=True,
@@ -98,7 +102,7 @@ def test_another_bind_address_keeps_token_and_host_checks(svc: ServiceEnv) -> No
     """B14.13: bound for a container (``--host``), any port of 127.0.0.1 or localhost
     passes (a published port may differ), any other name does not."""
     running = ViewServer(
-        open_view(admin_context(svc.root), graph_ref=svc.name), page=page(), host="0.0.0.0"
+        ViewGraphs(admin_context(svc.root), default=svc.name), page=page(), host="0.0.0.0"
     )
     running.start()
     try:
@@ -117,7 +121,7 @@ def test_health_needs_neither_token_nor_a_local_host(svc: ServiceEnv) -> None:
     address and has no token; every other route still checks both."""
     token = "x" * 32
     running = ViewServer(
-        open_view(admin_context(svc.root), graph_ref=svc.name),
+        ViewGraphs(admin_context(svc.root), default=svc.name),
         page=page(),
         host="0.0.0.0",
         token=token,
@@ -146,8 +150,8 @@ def test_health_needs_neither_token_nor_a_local_host(svc: ServiceEnv) -> None:
 def test_the_page_asks_for_every_route_by_a_relative_url() -> None:
     """Behind a proxy the page lives below a path prefix: no request may start at ``/``."""
     html = page().decode()
-    assert re.findall(r"""(?:fetch|EventSource|url)\(\s*[`"'](/[^`"']*)""", html) == []
-    for route in ("graph?t=", "events?t=", '"entity"', '"blob"'):
+    assert re.findall(r"""(?:fetch|EventSource|url|api)\(\s*[`"'](/[^`"']*)""", html) == []
+    for route in ('"graphs?t="', 'api("graph")', 'api("events")', '"entity"', '"blob"'):
         assert route in html, route
 
 
@@ -185,13 +189,12 @@ def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: Servic
     assert [e["step"] for e in created] == list(range(1, len(created) + 1))
 
 
-def trail(server: ViewServer, count: int) -> list[dict[str, Any]]:
-    """The trail once it has ``count`` steps (or after 5 s)."""
+def trail(server: ViewServer, count: int, graph: str = "") -> list[dict[str, Any]]:
+    """The trail (of ``graph``, else the default) once it has ``count`` steps (or after 5 s)."""
     deadline = time.monotonic() + 5
+    path = f"/trail?graph={graph}&t={server.token}"
     while True:
-        steps: list[dict[str, Any]] = json.loads(get(server, f"/trail?t={server.token}").read())[
-            "steps"
-        ]
+        steps: list[dict[str, Any]] = json.loads(get(server, path).read())["steps"]
         if len(steps) >= count or time.monotonic() > deadline:
             return steps
         time.sleep(0.05)
@@ -233,7 +236,7 @@ def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
         )
     )
     running = ViewServer(
-        open_view(admin_context(env.root), graph_ref=env.name), page=page(), poll_s=0.05
+        ViewGraphs(admin_context(env.root), default=env.name), page=page(), poll_s=0.05
     )
     running.start()
     try:
@@ -290,3 +293,132 @@ def test_a_blob_only_for_files(server: ViewServer, svc: ServiceEnv) -> None:
     response = get(server, f"/blob?id={svc.all_revisions()[0].id}&t={server.token}")
     assert response.status == 400
     assert json.loads(response.read())["code"] == "usage.invalid_argument"
+
+
+@pytest.fixture
+def two(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ServiceEnv, ServiceEnv]:
+    """Two graphs of different ontologies in one data root."""
+    first = ServiceEnv("files", "notes_and_sources", tmp_path / "root")
+    assert first.apply_seed().error is None
+
+    def other_ids(root: Path) -> AdminContext:  # another graph id than the first one's
+        return dataclasses.replace(admin_context(root), ids=SeededIdProvider(StepClock(), 77))
+
+    monkeypatch.setattr("support.services.admin_context", other_ids)
+    second = ServiceEnv("files", "inventory", tmp_path / "root", name="second_graph")
+    assert second.apply_seed().error is None
+    return first, second
+
+
+def answer(server: ViewServer, path: str) -> tuple[int, Any]:
+    response = get(server, path)
+    return response.status, json.loads(response.read())
+
+
+def test_the_graphs_to_switch_between(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+    first, second = two
+    running = ViewServer(ViewGraphs(admin_context(first.root)), page=page(), poll_s=0.05)
+    running.start()
+    try:
+        token = running.token
+        assert get(running, "/graphs").status == 403
+        status, listing = answer(running, f"/graphs?t={token}")
+        assert status == 200
+        assert listing == {
+            "default": None,
+            "graphs": [
+                {
+                    "id": str(env.entry.id),
+                    "name": env.name,
+                    "title": None,
+                    "language": None,
+                    "state": "active",
+                }
+                for env in (first, second)
+            ],
+            "signal_reads": False,
+        }
+        assert running.graphs.opened() == []  # listed, not opened
+        # without --graph a route of one graph needs ?graph=
+        status, error = answer(running, f"/graph?t={token}")
+        assert status == 400 and error["code"] == "usage.invalid_argument"
+        status, error = answer(running, f"/graph?graph=nothing&t={token}")
+        assert status == 404 and error["code"] == "graph.not_found"
+        for env in (first, second):
+            for ref in (env.name, str(env.entry.id)):
+                status, data = answer(running, f"/graph?graph={ref}&t={token}")
+                assert status == 200 and data["graph"]["id"] == str(env.entry.id)
+                assert len(data["nodes"]) == len(env.all_revisions())
+        assert len(running.graphs.opened()) == 2
+    finally:
+        running.stop()
+
+
+def test_the_graph_of_graph_option_is_the_default(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+    first, second = two
+    running = ViewServer(
+        ViewGraphs(admin_context(first.root), default=second.name), page=page(), poll_s=0.05
+    )
+    running.start()
+    try:
+        token = running.token
+        assert answer(running, f"/graphs?t={token}")[1]["default"] == second.name
+        assert answer(running, f"/graph?t={token}")[1]["graph"]["name"] == second.name
+        named = answer(running, f"/graph?graph={first.name}&t={token}")[1]
+        assert named["graph"]["name"] == first.name
+    finally:
+        running.stop()
+
+
+def test_each_stream_has_the_events_of_its_graph_only(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+    first, second = two
+    with short_dir() as directory:
+        listener = ActivityListener.open(directory)
+        running = ViewServer(
+            ViewGraphs(admin_context(first.root)),
+            page=page(),
+            listener=listener,
+            signal_reads=True,
+            poll_s=0.05,
+        )
+        running.start()
+        try:
+            token = running.token
+            stream = get(running, f"/events?graph={second.name}&t={token}")
+            assert stream.fp.readline() == b": connected\n"
+            assert get(running, f"/graph?graph={first.name}&t={token}").status == 200
+            activity = SocketActivity(directory)
+            for env in (first, second):
+                env.create(load_roles(env.ontology).term("lifecycle_type"))
+                read = env.txs()[-1].revisions[0].id
+                activity.reads(ReadSignal(env.entry.id, "get", env.actor, [read]))
+            written = second.txs()[-1].revisions
+            # the feed polls the stores and the socket in turn: a read may come first
+            got = events(stream, len(written) + 1)
+            (read,) = [e for e in got if e["kind"] == "read"]
+            types = {e["node"]["type"] for e in got if e["kind"] == "created"}
+            assert len(got) - 1 == len(written) and read["ids"] == [str(written[0].id)]
+            assert types <= set(second.model.classes)
+            assert not types <= set(first.model.classes)
+            for env in (first, second):
+                count = len(env.txs()[-1].revisions) + 1
+                kinds = [s["kind"] for s in trail(running, count, env.name)]
+                assert sorted(kinds) == ["created"] * (count - 1) + ["read"]
+        finally:
+            running.stop()
+            listener.close()
+
+
+def test_a_closed_graph_ends_its_streams(two: tuple[ServiceEnv, ServiceEnv]) -> None:
+    first, second = two
+    running = ViewServer(ViewGraphs(admin_context(first.root), limit=1), page=page())
+    running.start()
+    try:
+        token = running.token
+        stream = get(running, f"/events?graph={first.name}&t={token}")
+        assert stream.fp.readline() == b": connected\n"
+        assert get(running, f"/graph?graph={second.name}&t={token}").status == 200
+        assert stream.read().strip() == b""  # ended, not timed out: the page reconnects
+        assert [v.source.entry.name for v in running.graphs.opened()] == [second.name]
+    finally:
+        running.stop()

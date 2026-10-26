@@ -2,6 +2,13 @@
 
 - ``open_view`` resolves the graph and authorizes ``read.get`` on it; the
   view is a read, so it writes no audit event.
+- ``ViewGraphs`` serves every graph of the data root: ``listing`` names
+  those the caller may read (``read.get``, decided without an audit
+  event per graph), ``get`` resolves and authorizes a graph on every
+  request and opens it on first use, with its own feed and trail. Up to
+  ``MAX_OPEN`` graphs stay open; the least recently used one is closed
+  (``on_close``). A graph whose ontology pin moved is opened again, its
+  feed and trail kept.
 - ``graph_json`` is the whole graph at one snapshot: every entity as a node
   (label, type, alias, record status) and every edge between two of them
   as a link. Attributes other than the label stay out.
@@ -55,6 +62,7 @@ from graph_cli_admin.services_admin.context import AdminContext
 
 PAGE: Final = 1000  # txs per changes_since call
 TRAIL_STEPS: Final = 500
+MAX_OPEN: Final = 8  # graphs a view keeps open, each with its model, feed and trail
 # Shown in the browser itself; any other media type is only offered as a download.
 INLINE_MEDIA_TYPES: Final = frozenset(
     {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -453,3 +461,94 @@ class ViewFeed:
                 self.seq = tx.seq
             if len(txs) < PAGE:
                 return events
+
+
+@dataclass(slots=True)
+class GraphView:
+    """One graph as the view serves it: what it reads, the changes it has not
+    sent yet and the steps it saw."""
+
+    source: ViewSource
+    feed: ViewFeed
+    trail: ActivityTrail
+
+
+class ViewGraphs:
+    """The graphs of the data root, opened on first use; called from request
+    threads and the feed thread."""
+
+    def __init__(
+        self, ctx: AdminContext, *, default: str | None = None, limit: int = MAX_OPEN
+    ) -> None:
+        self.ctx = ctx
+        self.limit = limit
+        self.on_close: Callable[[str], None] = lambda _graph: None
+        self._lock = threading.Lock()
+        self._open: OrderedDict[str, GraphView] = OrderedDict()
+        self.default: str | None = None  # the id of the graph a request without one gets
+        if default is not None:
+            self.default = str(self.get(default).source.entry.id)
+
+    def listing(self) -> dict[str, JsonValue]:
+        """The graphs the caller may read, by name; archived ones too, marked."""
+        entries = [
+            m.entry
+            for m in self.ctx.manifests(include_archived=True, skip_unreadable=True)
+            if self.ctx.allows("read.get", f"graph:{m.entry.id}", graph=m.entry.id)
+        ]
+        graphs: list[JsonValue] = [
+            {
+                "id": str(e.id),
+                "name": e.name,
+                "title": e.title,
+                "language": e.language,
+                "state": e.state,
+            }
+            for e in entries
+        ]
+        default = next((e.name for e in entries if str(e.id) == self.default), None)
+        return {"default": default, "graphs": graphs}
+
+    def get(self, ref: str | None) -> GraphView:
+        """The graph ``ref`` names (name or id), else the default graph."""
+        if not ref:
+            if self.default is None:
+                raise GraphCliError(
+                    "usage.invalid_argument",
+                    "name a graph: ?graph=<name or id>",
+                    details={"argument": "graph"},
+                )
+            ref = self.default
+        entry = self.ctx.resolve(ref, "view")
+        meta = RequestMeta.of("view", {"graph": str(entry.id)})
+        self.ctx.authorize([("read.get", f"graph:{entry.id}")], request=meta, graph=entry.id)
+        key = str(entry.id)
+        with self._lock:
+            found = self._open.get(key)
+            if found is not None and found.source.entry == entry:
+                self._open.move_to_end(key)
+                return found
+        source = open_view(self.ctx, graph_ref=key)
+        closed: list[str] = []
+        with self._lock:
+            found = self._open.get(key)
+            if found is not None:  # the pin moved, or the name: same feed and trail
+                found.source = found.feed.source = source
+                self._open.move_to_end(key)
+                return found
+            view = GraphView(source, ViewFeed(source, source.read.head().seq), ActivityTrail())
+            self._open[key] = view
+            while len(self._open) > self.limit:
+                closed.append(self._open.popitem(last=False)[0])
+        for graph in closed:
+            self.on_close(graph)
+        return view
+
+    def opened(self) -> list[GraphView]:
+        with self._lock:
+            return list(self._open.values())
+
+    def find(self, graph: str) -> GraphView | None:
+        """An open graph by id, without resolving it again."""
+        with self._lock:
+            return self._open.get(graph)

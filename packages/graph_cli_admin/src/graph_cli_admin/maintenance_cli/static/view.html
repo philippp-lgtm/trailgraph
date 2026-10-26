@@ -128,18 +128,58 @@ button:hover, a.button:hover { background: var(--surface-2); }
 #preview iframe, #preview img { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 #preview img { object-fit: contain; }
 h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12px 14px 0; text-transform: uppercase; letter-spacing: 0.04em; }
+button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 2px solid var(--updated); outline-offset: 1px; }
+#sidebar {
+  width: 240px; flex: none; border-right: 1px solid var(--border);
+  background: var(--surface-2); display: flex; flex-direction: column; min-height: 0;
+}
+#sidebar.collapsed { width: 44px; }
+#sidebar .head { display: flex; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
+#sidebar .head h2 { margin: 0; }
+#sidebar.collapsed .head h2, #sidebar.collapsed #graphs_status { display: none; }
+#sidebar_toggle { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; flex: none; }
+#sidebar_toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+#graph_list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; display: grid; align-content: start; gap: 2px; }
+#graph_list[hidden] { display: none; }
+#graph_list button { width: 100%; text-align: left; background: none; border-color: transparent; padding: 6px 8px; }
+#graph_list button:hover { background: var(--surface-1); }
+#graph_list button[aria-current="true"] { background: var(--surface-1); border-color: var(--border); }
+#graph_list .name { display: flex; gap: 6px; align-items: baseline; font-weight: 600; word-break: break-word; }
+#graph_list .state { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+#graph_list .title { color: var(--text-secondary); font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+#graphs_status { padding: 0 14px 12px; }
+#empty { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; }
+#empty h1 { font-size: 17px; margin: 0 0 6px; }
+#empty p { margin: 0 0 12px; }
+body.no-graph #empty { display: grid; }
+body.no-graph canvas, body.no-graph #panel { display: none; }
 </style>
 </head>
-<body class="viz-root">
+<body class="viz-root no-graph">
+<nav id="sidebar" aria-labelledby="graphs_heading">
+  <div class="head">
+    <button id="sidebar_toggle" type="button" aria-expanded="true" aria-controls="graph_list"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg></button>
+    <h2 id="graphs_heading">Graphs</h2>
+  </div>
+  <ul id="graph_list"></ul>
+  <div id="graphs_status" class="muted hint"></div>
+</nav>
 <div id="stage">
   <canvas id="canvas" aria-label="Graph: entities as dots, edges as lines"></canvas>
+  <div id="empty" role="status">
+    <div>
+      <h1 id="empty_title">No graph selected</h1>
+      <p id="empty_text" class="secondary">Pick a graph from the list on the left.</p>
+      <button id="empty_show" type="button" hidden>Show the list of graphs</button>
+    </div>
+  </div>
   <div id="tooltip" role="tooltip"></div>
   <div id="preview" role="dialog" aria-label="File preview">
     <div class="bar"><span class="name" id="preview_name"></span><button id="preview_close" type="button">Close</button></div>
     <div id="preview_body" style="display:flex;flex:1;min-height:0"></div>
   </div>
 </div>
-<aside>
+<aside id="panel">
   <section>
     <h1 id="title">graph view</h1>
     <div id="counts" class="muted"></div>
@@ -191,6 +231,13 @@ const MAX_EVENTS = 30;
 const RADIUS = 5;
 const MAX_RADIUS = 18;   // radius of the most connected node when scaling by connections
 
+let current = null;      // the shown graph as the URL names it (name or id), or null
+let currentId = null;    // its id, once loaded
+let generation = 0;      // bumped on every switch: answers for an older graph are dropped
+let stream = null;       // the EventSource of the shown graph
+let graphList = [];      // the graphs of the side bar: {id, name, title, language, state}
+let listed = false;      // the list has been loaded once
+let defaultGraph = null; // the graph of --graph, shown when the URL names none
 let nodes = new Map();   // id -> {id, label, type, alias, status, x, y, vx, vy, flash, fixed}
 let links = new Map();   // edge id -> {id, source, target, rel}
 let seq = -1;            // the seq of the loaded graph; events at or below it are in it already
@@ -382,12 +429,36 @@ function rgba(hex, a) {
   return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${Math.max(0, Math.min(1, a))})`;
 }
 
-async function loadGraph() {
-  loading = true;
+// The query of a route of the shown graph; every route is relative, so a proxy may serve
+// the page below a path prefix.
+function api(path, extra) {
+  const params = new URLSearchParams(extra || {});
+  if (current) params.set("graph", current);
+  params.set("t", token);
+  return `${path}?${params}`;
+}
+
+async function problem(response) {
   try {
-    const response = await fetch("graph?t=" + encodeURIComponent(token), {cache: "no-store"});
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const data = await response.json();
+    const body = await response.json();
+    if (body && body.message) return body.message;
+  } catch (error) { /* not JSON */ }
+  return "HTTP " + response.status;
+}
+
+async function loadGraph(gen) {
+  loading = true;
+  let data;
+  try {
+    const response = await fetch(api("graph"), {cache: "no-store"});
+    if (!response.ok) throw new Error(await problem(response));
+    data = await response.json();
+  } catch (error) {
+    if (gen === generation) loading = false;
+    throw error;
+  }
+  if (gen !== generation) return;
+  try {
     const old = nodes;
     nodes = new Map();
     links = new Map();
@@ -406,6 +477,8 @@ async function loadGraph() {
     }
     for (const link of data.links) links.set(link.id, link);
     seq = data.seq;
+    currentId = data.graph.id;
+    renderGraphs();
     document.title = data.graph.name + " · graph view";
     document.getElementById("title").textContent = data.graph.name;
     document.getElementById("reads").textContent = data.signal_reads ? "" : "(off: [activity] signal_reads)";
@@ -488,7 +561,7 @@ function when(ts) {
 }
 
 function url(path, id) {
-  return `${path}?id=${encodeURIComponent(id)}&t=${encodeURIComponent(token)}`;
+  return api(path, {id});
 }
 
 function size(bytes) {
@@ -641,7 +714,7 @@ function renderLink(link, source) {
 
 async function fetchEntity(id) {
   const response = await fetch(url("entity", id), {cache: "no-store"});
-  if (!response.ok) throw new Error("HTTP " + response.status);
+  if (!response.ok) throw new Error(await problem(response));
   return response.json();
 }
 
@@ -696,15 +769,183 @@ function setStatus(text, live) {
   statusLine.classList.toggle("live", live);
 }
 
-function connect() {
-  const source = new EventSource("events?t=" + encodeURIComponent(token));
+// The stream of the shown graph only: the view sends each graph's events to its own clients.
+// Every (re)connect loads the graph again; events up to its seq are in it already.
+function connect(gen) {
+  const source = new EventSource(api("events"));
+  stream = source;
   source.onopen = () => {
+    if (gen !== generation) return;
     setStatus("live", true);
-    loadGraph().catch(error => setStatus(`cannot load the graph: ${error.message}`, false));
+    loadGraph(gen).catch(error => { if (gen === generation) failGraph(error); });
   };
-  source.onmessage = message => handle(JSON.parse(message.data));
-  source.onerror = () => setStatus("reconnecting", false);
+  source.onmessage = message => { if (gen === generation) handle(JSON.parse(message.data)); };
+  source.onerror = () => {
+    if (gen !== generation) return;
+    if (source.readyState !== EventSource.CLOSED) { setStatus("reconnecting", false); return; }
+    // Refused for good (an unknown graph, a denial): the graph route says why.
+    loadGraph(gen).then(() => setStatus("not live, reload the page", false))
+      .catch(error => { if (gen === generation) failGraph(error); });
+  };
 }
+
+// ---- graphs ----------------------------------------------------------
+
+const sidebar = document.getElementById("sidebar");
+const sidebarToggle = document.getElementById("sidebar_toggle");
+const graphListBox = document.getElementById("graph_list");
+const graphsStatus = document.getElementById("graphs_status");
+const emptyShow = document.getElementById("empty_show");
+const SIDEBAR_KEY = "graph-view.sidebar";
+const LIST_REFRESH_MS = 60000;
+
+function setSidebar(open, remember) {
+  sidebar.classList.toggle("collapsed", !open);
+  sidebarToggle.setAttribute("aria-expanded", String(open));
+  const label = open ? "Hide the list of graphs" : "Show the list of graphs";
+  sidebarToggle.setAttribute("aria-label", label);
+  sidebarToggle.title = label;
+  graphListBox.hidden = !open;
+  emptyShow.hidden = open;
+  if (remember) {
+    try { localStorage.setItem(SIDEBAR_KEY, open ? "open" : "collapsed"); } catch (error) { /* storage off */ }
+  }
+}
+
+function isCurrent(graph) {
+  return current !== null && (graph.name === current || graph.id === current || graph.id === currentId);
+}
+
+let renderedList = "";    // the list the side bar shows, as JSON: rebuilt only when it changed
+
+function renderGraphs() {
+  graphsStatus.textContent = listed && !graphList.length ? "No graphs to show." : "";
+  const key = JSON.stringify(graphList);
+  if (key === renderedList) {  // keep the buttons, so a click in progress or the focus stays
+    for (const button of graphListBox.querySelectorAll("button")) {
+      const graph = graphList.find(g => g.name === button.dataset.graph);
+      if (graph && isCurrent(graph)) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    }
+    return;
+  }
+  renderedList = key;
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.graph : null;
+  graphListBox.replaceChildren();
+  for (const graph of graphList) {
+    const item = el("li");
+    const button = el("button");
+    button.type = "button";
+    button.dataset.graph = graph.name;
+    if (isCurrent(graph)) button.setAttribute("aria-current", "true");
+    const name = el("span", "name", graph.name);
+    if (graph.state !== "active") name.append(el("span", "state", graph.state));
+    button.append(name);
+    if (graph.title) button.append(el("span", "title", graph.title));
+    button.title = graph.title ? `${graph.name}: ${graph.title}` : graph.name;
+    button.addEventListener("click", () => choose(graph.name));
+    item.append(button);
+    graphListBox.append(item);
+    if (focused === graph.name) button.focus();
+  }
+}
+
+async function loadGraphs() {
+  try {
+    const response = await fetch("graphs?t=" + encodeURIComponent(token), {cache: "no-store"});
+    if (!response.ok) throw new Error(await problem(response));
+    const data = await response.json();
+    graphList = data.graphs;
+    defaultGraph = data.default;
+    listed = true;
+    renderGraphs();
+    if (!current) showEmpty();
+  } catch (error) {
+    graphsStatus.textContent = `cannot list the graphs: ${error.message}`;
+  }
+}
+
+function resetGraph() {
+  nodes = new Map();
+  links = new Map();
+  seq = -1;
+  pending = [];
+  loading = false;
+  lit = new Set();
+  litLinks = new Map();
+  pulses = [];
+  sparks = [];
+  sessions = new Map();
+  ambient = 0;
+  hover = null;
+  hoverLink = null;
+  showTooltip(null);
+  selected = null;
+  detail.hidden = true;
+  closePreview();
+  hiddenTypes = new Set();
+  query = "";
+  document.getElementById("search").value = "";
+  autoFit = true;
+  view = {x: 0, y: 0, k: 1};
+  alpha = 1;
+  currentId = null;
+  eventList.replaceChildren();
+  for (const id of ["types", "counts", "matches", "reads"]) document.getElementById(id).replaceChildren();
+  document.getElementById("title").textContent = current || "graph view";
+}
+
+function showEmpty(title, text) {
+  document.body.classList.add("no-graph");
+  document.getElementById("empty_title").textContent = title || "No graph selected";
+  document.getElementById("empty_text").textContent = text
+    || (listed && !graphList.length ? "There is no graph you may read." : "Pick a graph from the list on the left.");
+}
+
+function failGraph(error) {
+  if (stream) { stream.close(); stream = null; }
+  setStatus("not live", false);
+  showEmpty(`Cannot show ${current}`, error.message);
+}
+
+// Shows graph ``name`` (as the URL names it), or none.
+function showGraph(name) {
+  generation++;
+  if (stream) { stream.close(); stream = null; }
+  current = name || null;
+  resetGraph();
+  renderGraphs();
+  if (!current) {
+    document.title = "graph view";
+    setStatus("no graph selected", false);
+    showEmpty();
+    return;
+  }
+  document.body.classList.remove("no-graph");
+  document.title = current + " · graph view";
+  setStatus("connecting", false);
+  resize();
+  connect(generation);
+}
+
+// A graph picked in the side bar: a new history entry, so Back returns to the previous one.
+function choose(name) {
+  if (name === current) return;
+  const params = new URLSearchParams(location.search);
+  params.set("graph", name);
+  history.pushState(null, "", "?" + params);
+  showGraph(name);
+}
+
+function wantedGraph() {
+  return new URLSearchParams(location.search).get("graph") || defaultGraph;
+}
+
+sidebarToggle.addEventListener("click", () => setSidebar(sidebar.classList.contains("collapsed"), true));
+emptyShow.addEventListener("click", () => { setSidebar(true, true); sidebarToggle.focus(); });
+addEventListener("popstate", () => showGraph(wantedGraph()));
+addEventListener("focus", loadGraphs);
+setInterval(() => { if (!document.hidden) loadGraphs(); }, LIST_REFRESH_MS);
 
 // ---- layout ----------------------------------------------------------
 
@@ -1127,9 +1368,20 @@ document.getElementById("search").addEventListener("keydown", event => {
   if (first) select({kind: "node", id: first.id});
 });
 addEventListener("resize", resize);
+new ResizeObserver(resize).observe(canvas);
 
+let storedSidebar = null;
+try { storedSidebar = localStorage.getItem(SIDEBAR_KEY); } catch (error) { /* storage off */ }
+setSidebar(storedSidebar !== "collapsed", false);
 resize();
-connect();
+// A graph named in the URL opens at once; else the list says which one --graph named.
+if (new URLSearchParams(location.search).get("graph")) {
+  showGraph(wantedGraph());
+  loadGraphs();
+} else {
+  showGraph(null);
+  loadGraphs().then(() => { if (!current && defaultGraph) showGraph(defaultGraph); });
+}
 requestAnimationFrame(frame);
 </script>
 </body>
