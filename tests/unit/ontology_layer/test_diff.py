@@ -246,3 +246,34 @@ def test_sum_rules_classify_like_other_rules(old: str, new: str, kind: str, leve
     report = classify(before, after)
     assert [(c.path, c.kind, c.level) for c in report.changes] == [("rules.smp.r1", kind, level)]
     assert report.level == level
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "level"),
+    [
+        (None, "warn", "minor"),
+        (None, "refuse", "major"),
+        ("warn", "refuse", "major"),
+        ("refuse", "warn", "minor"),
+        ("refuse", None, "minor"),
+        ("warn", None, "minor"),
+    ],
+)
+def test_target_policy_changes_are_major_only_towards_refuse(
+    old: str | None, new: str | None, level: str
+) -> None:
+    def body(policy: str | None) -> str:
+        line = "  link: {summary: Link., domain: Thing, range: Thing}\n"
+        if policy is None:
+            return BODY
+        return BODY.replace(line, line.replace("}", f", on_target_inactive: {policy}}}"))
+
+    report = classify(model(body(old), "1.0.0"), model(body(new), "2.0.0"))
+    assert [c.to_json() for c in report.changes] == [
+        {
+            "path": "relations.smp:link.on_target_inactive",
+            "kind": "change_on_target_inactive",
+            "level": level,
+            "detail": {"from": old or "allow", "to": new or "allow"},
+        }
+    ]
