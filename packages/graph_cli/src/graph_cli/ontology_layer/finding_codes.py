@@ -132,6 +132,11 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _data("referential", "cardinality_out", "Too few or too many outgoing edges."),
     _data("referential", "qualifier_unknown", "The relation has no such qualifier."),
     _data("referential", "target_not_active", "The edge target is superseded or retracted.", _W),
+    _data(
+        "referential",
+        "target_referenced",
+        "Active edges still point at an entity that goes inactive.",
+    ),
     _data("referential", "edge_missing", "No single edge matches the unlink."),
     _data("referential", "blob_missing", "A file hash names no stored file."),
     _data("referential", "cardinality_in", "Too few or too many incoming edges.", when="batch"),

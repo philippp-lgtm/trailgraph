@@ -18,6 +18,11 @@ from here.
   the post-state of touched active entities; lifecycle, mutability and
   unlink judgements from the recorded op effects. ``target_not_active`` is
   reported only for edges added by the request.
+- **Inactive targets** (write path): a touched entity that goes inactive
+  (retract, supersede) while active sources in the post-state still point at
+  it over a relation with ``on_target_inactive`` ``warn`` or ``refuse`` gets
+  one ``target_referenced`` per relation, an error under ``refuse``.
+  ``target_not_active`` is an error on a ``refuse`` relation, on both paths.
 - **Neighbours** (write path): a write rule with an aggregate (``count``,
   ``sum``) also runs on the untouched active neighbours of touched
   entities: an entity at the other end of an edge of a touched entity, in
@@ -97,6 +102,7 @@ from graph_cli.ontology_layer.model import (
     DatatypeDef,
     EnumDef,
     LifecycleDef,
+    RelationDef,
     TermDoc,
 )
 from graph_cli.ontology_layer.values import (
@@ -114,6 +120,7 @@ _IRI_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S+$")
 _ALL: Final = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 _ACTIVE: Final = frozenset({"active"})
 _MAX_CANDIDATES: Final = 5
+_MAX_SOURCES: Final = 20  # source ids a target_referenced finding lists
 
 
 _DIGITS: Final = re.compile(r"\d+")
@@ -475,7 +482,7 @@ class _Checker:
                 revision,
                 path,
                 f"target {edge.target} is {target.record_status}",
-                severity=Severity.WARNING,
+                severity=_target_severity(relation),
             )
         return True
 
@@ -788,6 +795,7 @@ def validate_write(
         checker.new_names(revision, checkable[revision.id][1], before.get(revision.id))
         checker.rules(revision, frozenset({"write"}))
     _neighbours(checker, before, after, touched)
+    _retired_targets(checker, before, after, touched)
     checker.cycles(rev for rev, _ in checkable.values())
     for effect in effects:
         if effect.entity in checkable:
@@ -832,6 +840,56 @@ def _neighbours(
         if cls is None or cls.abstract:
             continue
         checker.rules(revision, frozenset({"write"}), frozenset(links[entity]))
+
+
+def _target_severity(relation: RelationDef) -> Severity:
+    """How an active edge to an inactive target is reported under the relation's policy."""
+    return Severity.ERROR if relation.on_target_inactive == "refuse" else Severity.WARNING
+
+
+def _retired_targets(
+    checker: _Checker, before: Snapshot, after: Snapshot, touched: Sequence[EntityId]
+) -> None:
+    """Touched entities that go inactive while active sources still point at them.
+
+    Only relations whose ``on_target_inactive`` is ``warn`` or ``refuse`` count. The
+    after-state decides, so a change set that relinks or retracts the sources passes.
+    """
+    guarded = sorted(
+        (name, relation)
+        for name, relation in checker.model.relations.items()
+        if relation.on_target_inactive != "allow" and name not in PROVENANCE_RELATIONS
+    )
+    if not guarded:
+        return
+    for entity in touched:
+        previous, revision = before.get(entity), after.get(entity)
+        if previous is None or revision is None:
+            continue
+        if previous.record_status != "active" or revision.record_status == "active":
+            continue
+        for name, relation in guarded:
+            sources = sorted(
+                {
+                    str(source)
+                    for source, _ in after.incoming(entity, TermRef(name))
+                    if (current := after.get(source)) is not None
+                    and current.record_status == "active"
+                }
+            )
+            if not sources:
+                continue
+            count = len(sources)
+            checker.add(
+                "data.referential.target_referenced",
+                revision,
+                f"incoming.{name}",
+                f"{count} active {'entity points' if count == 1 else 'entities point'} here"
+                f" over {name}; relink or retract {'it' if count == 1 else 'them'} in the"
+                " same change set",
+                severity=_target_severity(relation),
+                actual={"count": count, "sources": list(sources[:_MAX_SOURCES])},
+            )
 
 
 def _deprecated(

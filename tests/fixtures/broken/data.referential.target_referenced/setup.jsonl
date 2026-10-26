@@ -1,0 +1,1 @@
+{"ops": [{"attrs": {"name": "root"}, "local": "root", "op": "create", "type": "broken:Folder"}, {"attrs": {"name": "child"}, "edges": [{"rel": "broken:inside", "target": "@root"}], "local": "child", "op": "create", "type": "broken:Folder"}]}

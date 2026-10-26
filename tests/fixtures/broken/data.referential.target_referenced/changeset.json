@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "id": "@root",
+      "op": "retract"
+    }
+  ],
+  "reason": "withdrawn"
+}
