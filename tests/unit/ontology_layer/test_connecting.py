@@ -1,4 +1,4 @@
-"""``connecting``: the relations that connect two types (modules for agents, M6)."""
+"""``connecting``: the relations that connect two types."""
 
 from dataclasses import replace
 from typing import Any
@@ -107,3 +107,19 @@ def test_the_answer_is_deterministic() -> None:
     first = connecting(MODEL, "ppl:Person", "org:Department")
     reordered = replace(MODEL, relations=dict(reversed(MODEL.relations.items())))
     assert connecting(reordered, "ppl:Person", "org:Department") == first
+
+
+def test_deprecated_relations_and_abstract_intermediates_are_skipped() -> None:
+    model = with_relations()
+    deprecated = replace(
+        model.relations["org:holds"], doc=replace(model.relations["org:holds"].doc, deprecated=True)
+    )
+    model = replace(model, relations={**model.relations, "org:holds": deprecated})
+    assert connecting(model, "ppl:Person", "org:Position")["direct"] == []
+    assert connecting(model, "ppl:Person", "org:Department")["paths"] == []
+    abstract = {
+        name: replace(cls, abstract=True) if name == "org:Position" else cls
+        for name, cls in MODEL.classes.items()
+    }
+    no_mid = replace(MODEL, classes=abstract)
+    assert connecting(no_mid, "ppl:Person", "org:Department")["paths"] == []

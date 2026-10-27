@@ -205,6 +205,16 @@ Every write is a change set that commits completely or not at all;
 validation findings, refusals and dry runs are described in
 [Architecture: write pipeline](architecture.md#write-pipeline).
 
+A `data.referential.domain_violation` or `data.referential.range_violation`
+finding (also in `graph check`) carries `connecting`, computed from the
+ontology alone: `direct` lists the relations that accept the two types in
+either direction, and only when there are none, `paths` lists up to three
+chains of two relations over an intermediate class (each hop is `{relation,
+from, to}`). Relations with an open domain or range, such as the provenance
+relations, and deprecated relations are never listed; an abstract class is
+never the intermediate one. The text output adds a line `connect with: a -rel->
+b`.
+
 A write that leaves an entity as it was (its content after all ops of the
 document equals its current revision: `--add` of a value already there,
 `--set` to the current value, an `add` and a `remove` that cancel out)

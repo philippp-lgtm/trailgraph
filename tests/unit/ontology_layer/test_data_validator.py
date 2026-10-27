@@ -10,6 +10,7 @@ from support.writes import codes, judge
 
 from graph_cli.kernel.changeset import FloatLiteral
 from graph_cli.kernel.findings import sort_findings
+from graph_cli.ontology_layer import data_validator
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import Bound, CompiledModel
 
@@ -69,6 +70,27 @@ def inv(*ops: dict[str, Any]) -> list[str]:
 
 def nas(*ops: dict[str, Any]) -> list[str]:
     return codes(judge(NAS, *ops, base=NAS_BASE)[1])
+
+
+def test_connecting_is_computed_once_per_type_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+    real = data_validator.connecting
+
+    def counting(model: CompiledModel, source: str, target: str) -> Any:
+        calls.append((source, target))
+        return real(model, source, target)
+
+    monkeypatch.setattr(data_validator, "connecting", counting)
+    ops = []
+    for i in range(20):
+        op = note(edges=[{"rel": "nas:about", "target": T}, {"rel": "nas:cites", "target": T}])
+        op["local"] = f"n{i}"
+        ops.append(op)
+    _, findings = judge(NAS, *ops, base=NAS_BASE)
+    violations = [f for f in findings if f.code == "data.referential.range_violation"]
+    assert len(violations) == 20
+    assert all(f.connecting is not None for f in violations)
+    assert calls == [("nas:Note", "nas:Topic")]
 
 
 def test_valid_writes_on_both_fixtures_have_no_findings() -> None:
