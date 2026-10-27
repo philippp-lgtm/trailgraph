@@ -36,14 +36,14 @@ by a minor release and is explored by agents top down.
 - **A curated graph skill** (`skill/graph-company/SKILL.md`) with the `modules` block instead
   of one table per type. See [Skills](../../docs/skills.md) for how it is published and
   installed.
-- **Synthetic seed data** (117 entities): `seeds/1.0.0.jsonl` for the first version,
+- **Synthetic seed data**: `seeds/1.0.0.jsonl` for the first version,
   `seeds/1.1.0.jsonl` for what only exists from the second. Stable idempotency keys
   (`company-<version>-<nn>`), so a second apply writes nothing twice.
 
 ## Build it
 
 Needs `graph` and `graph-admin` on `PATH` (from a checkout: `uv sync`, then
-`PATH="$PWD/.venv/bin:$PATH"`). `BASE` is a new directory outside the checkout; the script
+`PATH="$PWD/.venv/bin:$PATH"`). `BASE` is a new or empty directory outside the checkout; the script
 puts the data root, configuration and a home directory below it, a short state directory
 in `/tmp` (the live view's socket path is limited in length), and leaves your own
 installation alone:
@@ -89,13 +89,9 @@ graph is named `company`.
   /path/to/examples/company/load.sh
   ```
 
-  Without a script, the same by hand: `graph-admin graph create company --ontology
-  examples/company/ontology/1.0.0 --module company`, `graph apply
-  examples/company/seeds/1.0.0.jsonl --graph company`, `graph-admin ontology release company
-  examples/company/ontology/1.1.0 --module company`, `graph apply
-  examples/company/seeds/1.1.0.jsonl --graph company`, `graph-admin graph skill publish
-  company examples/company/skill/graph-company`, then `graph-admin graph check company` and
-  `graph-admin audit verify`. If `graph apply` answers `access.denied`, the policy has no
+  `load.sh` is the single list of steps; read it for the exact commands. It can be run again
+  after a failure: it creates the graph only when it is missing and releases 1.1.0 only while
+  the graph is still at 1.0.0. If `graph apply` answers `access.denied`, the policy has no
   scope for the project ([Access control](../../docs/access_control.md)); if it answers
   `skills.outdated`, run `graph self update`. The live view of a server runs where the data
   is ([Container](../../docs/server.md#container)).
@@ -133,5 +129,5 @@ Try a write the model refuses. The answer names the relations that connect the t
 graph link EMP-0003 org:in_unit DEPT-0006
 # connect with: ppl:Employee -org:holds-> org:Position -org:in_unit-> org:Department
 graph transition LE-0002 dissolved --dry-run      # guards: the entity still employs people
-graph transition EMP-0001 left --dry-run          # rule: a leaver still holds a position
+graph transition EMP-0001 left --dry-run          # rules: a leaver holds a position and has an employer
 ```
