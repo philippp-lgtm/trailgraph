@@ -154,13 +154,8 @@ def test_a_single_module_graph_gets_no_pages(ontology: str) -> None:
 @pytest.mark.parametrize("ontology", TOY_ONTOLOGIES)
 def test_the_block_on_a_single_module_graph_has_no_page_pointers(ontology: str) -> None:
     files = read_tree(BLOCKS_TEMPLATE)[0]
-    skill = (
-        files[SKILL_FILE]
-        .decode()
-        .replace("<!-- graph_cli:block start -->", "<!-- graph_cli:block modules -->")
-    )
     documents, graph = render_inputs(compiled_model(ontology))
-    template, _ = parse_template({**files, SKILL_FILE: skill.encode()})
+    template, _ = parse_template(files)
     assert template is not None
     rendered = render_graph_skill(template, documents, graph)
     assert "graph describe module <module>" in rendered[SKILL_FILE]
