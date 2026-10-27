@@ -32,6 +32,27 @@ deliberate choice in the README next to the ontology.
 - [ ] Facts about a link are qualifiers; links with their own life are
       classes.
 
+## Modules
+
+Only for a graph with more than one module of its own.
+
+- [ ] The model is cut into subject areas because it needs to be (several
+      areas, owners or a size an agent cannot read at once), one module
+      per area.
+- [ ] Every module `summary` says what the area holds and what it does
+      not.
+- [ ] Imports point from the dependent area to the one it builds on; no
+      cycles.
+- [ ] A relation between two areas lives in the importing module, or in a
+      small bridge module when both need each other.
+- [ ] The main module holds no terms of its own and imports every area.
+- [ ] Any change in a module is matched by a bump of the main module
+      (the graph's version).
+- [ ] A term that moved to another module is declared with `renamed_from`
+      and released as major.
+- [ ] No rule is a prose prohibition between areas: what may not be
+      linked is left out of `domain` and `range`.
+
 ## Names and descriptions
 
 - [ ] Names follow the conventions; relations read from source to target.

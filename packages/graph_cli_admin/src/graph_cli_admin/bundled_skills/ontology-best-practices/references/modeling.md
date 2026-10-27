@@ -131,7 +131,54 @@ occurrence.
 - Edges stay inside one graph. A reference into another graph is an
   `external_ref` attribute, which is never checked; use it rarely.
 - Several modules in one graph make sense when one part is reused by
-  another graph; otherwise keep one module.
+  another graph or when the model is cut into subject areas (next
+  section); otherwise keep one module.
+- A subject area that needs other permissions or another owner or
+  lifecycle is a separate graph, not a module: modules share one graph's
+  policy, data and release.
+
+## Splitting into modules
+
+A module holds the terms of one subject area. The module `prefix` is the
+CURIE prefix, so membership is visible in every name. Agents explore a
+modular graph top down (`graph describe modules`, then `graph describe
+module <module>`, then `graph describe type <type>`), so the cut decides
+what they read and when.
+
+When to split:
+
+- the model has several subject areas that answer different questions;
+- different people maintain different parts;
+- the model no longer fits an agent's context in one piece.
+
+A small model stays one module; splitting it only adds files and imports.
+
+How to cut:
+
+- **One module per subject area**, named for what it holds (`catalog`,
+  `members`, `lending`), not for a layer (`base`, `misc`, `common`).
+- **A thin main module** (the umbrella) imports the areas, holds no terms
+  of its own and carries the graph's release version: the bundle version
+  is the main module's version, so every release bumps it. Areas keep
+  their own versions for their own history.
+- **Imports point from the dependent area to the one it builds on**
+  (`lending` imports `members` and `catalog`, which import nothing from
+  it). No cycles; a cycle means the cut is wrong.
+- **A relation between two areas lives in the importing module.** When
+  both areas need each other, put the relation in a small bridge module
+  that imports both, instead of a cycle.
+- **The module `summary` is what agents read first** in `graph describe
+  modules`. Say what the area holds and what it does not, and name the
+  neighbor that holds the rest ("Items and their copies; not the people
+  who borrow them.").
+- **Prefer positive `domain` and `range` over prose prohibitions.** A
+  sentence such as "a copy is never linked to a member" is not checked; a
+  relation with a `domain` and `range` is, and the write path refuses a
+  wrong edge and names the relations that do connect the two types.
+- **Moving a term to another module changes its CURIE.** That is a major
+  change: declare `renamed_from` with the old CURIE, and move the data
+  before the old name goes away
+  ([versioning](versioning_and_release.md#releasing-a-modular-graph)).
 
 ## Anti-patterns
 

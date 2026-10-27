@@ -128,7 +128,7 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
 | Task | Read |
 | --- | --- |
 | Look up a key, type, facet or condition of the YAML format | [ir_format.md](references/ir_format.md) |
-| Decide how to model something; patterns and anti-patterns | [modeling.md](references/modeling.md) |
+| Decide how to model something, or whether to split into modules; patterns and anti-patterns | [modeling.md](references/modeling.md) |
 | Name terms, write summaries, choose label roles and aliases | [naming_and_descriptions.md](references/naming_and_descriptions.md) |
 | Write rules and guards, decide error vs warning, write vs batch | [rules_and_lifecycles.md](references/rules_and_lifecycles.md) |
 | Choose a version bump, deprecate, try and release a change | [versioning_and_release.md](references/versioning_and_release.md) |

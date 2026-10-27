@@ -28,6 +28,7 @@ generated from the graph's model:
 | Block | Renders |
 | --- | --- |
 | `start` | how to tell the graph is available here and which name to pass as `--graph`; to load the `graph-cli` skill first |
+| `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, size, links to other modules) and the commands to read one module; replaces `types` and `relations` |
 | `types` | one row per entity type: name, alias example, summary, supertypes, fields, states and transitions |
 | `relations` | relations from or to those types with cardinality and qualifiers, then the same as `graph query` patterns |
 | `constraints` | transition guards, write-once fields, rules with severity |
@@ -37,6 +38,28 @@ generated from the graph's model:
 Each block at most once. Without any marker the skill is `static`: it is
 installed as it is and goes stale with every ontology release, so use
 markers. Never write a file `references/model.md` yourself.
+
+### Modular graphs
+
+A graph with two or more modules besides the built-in ones is modular. Use
+`modules` in the template instead of `types` and `relations`: those still
+work, but they list every type into `SKILL.md`, which grows with the model.
+For a modular graph `graph` also generates `references/modules/<module>.md`
+(one page per module: its types, relations inside, links to other modules,
+rules) and turns `references/model.md` into an index of them. Both are
+generated: a file of your own below `references/modules/` is refused, like
+`references/model.md`.
+
+The module list comes from the module summaries, so a vague summary in the
+ontology is a vague skill: fix it there
+(`ontology-best-practices`, modeling). What stays yours is the curated part:
+when to use the graph, its purpose, recipes, and judgement rules the model
+cannot express, for instance which module a new kind of fact belongs in.
+Do not copy module summaries or type lists into the text.
+
+Check what agents will see, on the installed graph, with `graph describe
+modules`, `graph describe module <module>` and `graph describe search
+<text>`, next to the rendered preview (below).
 
 A good skeleton:
 

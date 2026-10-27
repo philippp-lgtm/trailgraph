@@ -95,6 +95,22 @@ from there.
    generated graph skill renders the new model on its own; they run
    `graph self update` (or `graph skills install`) where they work.
 
+A graph with several ontology modules (a main module that imports the
+subject areas) is released the same way, with these additions:
+
+- The version directory holds every module file, changed or not.
+- Give `--module <main>` to `graph-admin ontology validate`,
+  `graph-admin ontology diff`, `graph-admin ontology release`,
+  `graph-admin graph create` and `graph-admin graph check` (with its
+  `--ontology` option) whenever the directory holds more than one module;
+  `graph-admin graph push` needs none.
+- A change in any module needs a bump of the main module, because its
+  version is the graph's version: `ontology diff` names the level for the
+  whole bundle. Adding a module is minor, moving a term to another module
+  is major.
+- Afterwards check what agents see with `graph describe modules`
+  (`graph-cli` skill) and render the graph skill (below).
+
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from
 there. `admin.version_bump_insufficient` means the bump is too small for
