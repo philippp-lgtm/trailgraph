@@ -1,0 +1,143 @@
+format: graph_cli.ir/1
+module:
+  id: legal
+  prefix: leg
+  version: 1.0.0
+  summary: The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company.
+  imports:
+    - {module: people, version: "^1.0"}
+    - {module: organization, version: "^1.0"}
+
+datatypes:
+  CountryCode:
+    summary: Country of registration as a two-letter ISO 3166 code in upper case.
+    base: string
+    single_line: true
+    pattern: '^[A-Z]{2}$'
+
+lifecycles:
+  EntityLifecycle:
+    summary: Where a legal entity stands in its existence.
+    states:
+      active: {summary: Exists and may employ people and run units., initial: true}
+      in_liquidation: {summary: Is being wound up and takes on nothing new.}
+      dissolved: {summary: Has ceased to exist., terminal: true}
+    transitions:
+      - {from: active, to: in_liquidation, summary: Start the liquidation.}
+      - {from: in_liquidation, to: active, summary: Call off the liquidation.}
+      - from: [active, in_liquidation]
+        to: dissolved
+        summary: Record that the entity has ceased to exist.
+        guards:
+          - id: no_staff
+            summary: A dissolved entity employs nobody.
+            require:
+              - count: {rel: employed_by, direction: in, where: {record_status: [active]}}
+                equals_number: 0
+          - id: no_units
+            summary: A dissolved entity runs no unit.
+            require:
+              - count: {rel: operated_by, direction: in, where: {record_status: [active]}}
+                equals_number: 0
+
+classes:
+  LegalEntity:
+    summary: A company or other body with its own legal personality, inside or outside the group.
+    description: >-
+      The group is the set of legal entities with in_group true. A parent
+      company is a legal entity that holds more than half of the shares of
+      another; read it from the Shareholdings, it is not stored.
+    display_prefix: LE
+    attributes:
+      name:
+        summary: Registered name of the entity.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the entity, such as the short name.
+        type: string
+        many: true
+        role: alt_label
+      legal_form:
+        summary: Form of incorporation as the register names it.
+        type: string
+      country:
+        summary: Country of registration.
+        type: CountryCode
+        required: true
+      registration_number:
+        summary: Number in the commercial register.
+        type: string
+        unique: true
+      in_group:
+        summary: Whether the entity belongs to the group; false for outside owners.
+        type: boolean
+        required: true
+        default: true
+      status:
+        summary: Where the entity stands in its existence.
+        lifecycle: EntityLifecycle
+        required: true
+  Shareholding:
+    summary: The part of a legal entity that one owner holds, with its size and the date it was acquired.
+    description: >-
+      One Shareholding per owner and entity. It is a class and not a bare
+      relation so that the sizes of all stakes in an entity can be checked
+      against the whole.
+    display_prefix: SH
+    attributes:
+      percent:
+        summary: Share of the entity's capital that the owner holds, in percent.
+        type: decimal
+        required: true
+      since:
+        summary: Date the owner acquired the stake.
+        type: date
+
+relations:
+  shareholder:
+    summary: The legal entity or person that holds the stake.
+    domain: Shareholding
+    range: [LegalEntity, ppl:Person]
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: holds_stake
+  stake_in:
+    summary: The legal entity whose capital the stake is a part of.
+    domain: Shareholding
+    range: LegalEntity
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_stake
+  employed_by:
+    summary: The legal entity that is the employer under the employment contract.
+    domain: ppl:Employee
+    range: LegalEntity
+    cardinality: {out: {max: 1}}
+    inverse_label: employs
+  operated_by:
+    summary: The legal entity that runs the unit and bears its legal responsibility.
+    domain: org:OrgUnit
+    range: LegalEntity
+    cardinality: {out: {max: 1}}
+    inverse_label: operates
+
+rules:
+  - id: stakes_within_capital
+    summary: The stakes in a legal entity add up to at most 100 percent.
+    severity: warning
+    when: write
+    scope: LegalEntity
+    if:
+      - sum: {rel: stake_in, direction: in, attr: percent}
+        value_presence: PRESENT
+    then:
+      - sum: {rel: stake_in, direction: in, attr: percent}
+        maximum_value: 100
+  - id: employee_has_employer
+    summary: Every employee is employed by a legal entity.
+    severity: warning
+    when: batch
+    scope: ppl:Employee
+    then:
+      - count: {rel: employed_by}
+        minimum_value: 1

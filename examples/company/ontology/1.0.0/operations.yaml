@@ -1,0 +1,210 @@
+format: graph_cli.ir/1
+module:
+  id: operations
+  prefix: ops
+  version: 1.0.0
+  summary: How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company.
+  imports:
+    - {module: people, version: "^1.0"}
+    - {module: organization, version: "^1.0"}
+
+lifecycles:
+  PolicyLifecycle:
+    summary: How far a policy has come from a draft to being binding.
+    states:
+      draft: {summary: Written but not binding yet., initial: true}
+      in_force: {summary: Binding for the units it applies to.}
+      withdrawn: {summary: No longer binding., terminal: true}
+    transitions:
+      - from: draft
+        to: in_force
+        summary: Put the policy into force.
+        guards:
+          - id: has_scope
+            summary: A policy in force applies to at least one unit.
+            require:
+              - count: {rel: applies_to}
+                minimum_value: 1
+      - {from: in_force, to: draft, summary: Take the policy back for rework.}
+      - {from: [draft, in_force], to: withdrawn, summary: Withdraw the policy.}
+  TaskLifecycle:
+    summary: How far a task has come.
+    states:
+      open: {summary: Waiting to be started., initial: true}
+      in_progress: {summary: Someone is working on it.}
+      done: {summary: The work is finished., terminal: true}
+      cancelled: {summary: Dropped without being finished., terminal: true}
+    transitions:
+      - from: open
+        to: in_progress
+        summary: Start the work.
+        guards:
+          - id: has_assignee
+            summary: A task that is started has an assignee.
+            require:
+              - count: {rel: assigned_to}
+                equals_number: 1
+      - {from: in_progress, to: open, summary: Put the task back on the pile.}
+      - {from: in_progress, to: done, summary: Finish the task.}
+      - {from: [open, in_progress], to: cancelled, summary: Drop the task.}
+
+classes:
+  Process:
+    summary: A recurring way of getting one kind of work done, owned by a position.
+    display_prefix: PROC
+    attributes:
+      name:
+        summary: Name of the process.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the process, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+  Instruction:
+    summary: A written how-to for carrying out one process, the prescription of the steps.
+    display_prefix: INSTR
+    attributes:
+      title:
+        summary: Title of the instruction.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the instruction, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+      url:
+        summary: Where the text of the instruction is kept.
+        type: iri
+  Policy:
+    summary: A binding rule of the company that applies to units and governs processes; unlike an instruction it says what must hold, not how to do it.
+    display_prefix: POL
+    attributes:
+      title:
+        summary: Title of the policy.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the policy, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+      effective_from:
+        summary: Date from which the policy is binding.
+        type: date
+      review_due:
+        summary: Date by which the policy is to be reviewed.
+        type: date
+      status:
+        summary: How far the policy has come from a draft to being binding.
+        lifecycle: PolicyLifecycle
+        required: true
+  Training:
+    summary: A course or certification that the carriers of a role complete.
+    display_prefix: TRN
+    attributes:
+      title:
+        summary: Title of the training.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the training, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+  Task:
+    summary: One concrete piece of work, usually an occurrence of a process, handed to a person.
+    display_prefix: TASK
+    attributes:
+      title:
+        summary: What is to be done.
+        type: string
+        required: true
+        role: label
+      due_on:
+        summary: Date by which the task is to be finished.
+        type: date
+      status:
+        summary: How far the task has come.
+        lifecycle: TaskLifecycle
+        required: true
+
+relations:
+  owned_by:
+    summary: The position that is accountable for the process or the policy.
+    domain: [Process, Policy]
+    range: org:Position
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: owns
+  performed_by:
+    summary: The process is carried out by the people who carry the role.
+    domain: Process
+    range: org:Role
+    inverse_label: performs
+  describes:
+    summary: The instruction explains how to carry out the process.
+    domain: Instruction
+    range: Process
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: described_by
+  governs:
+    summary: The policy sets the rules for the process.
+    domain: Policy
+    range: Process
+    inverse_label: governed_by
+  applies_to:
+    summary: The policy binds the unit and the units below it.
+    domain: Policy
+    range: org:OrgUnit
+    inverse_label: bound_by
+  required_for:
+    summary: The training must be completed by the people who carry the role.
+    domain: Training
+    range: org:Role
+    inverse_label: requires_training
+  completed:
+    summary: The person completed the training.
+    domain: ppl:Person
+    range: Training
+    inverse_label: completed_by
+    qualifiers:
+      "on":
+        summary: Date the person completed the training.
+        type: date
+  of_process:
+    summary: The task is an occurrence of the process.
+    domain: Task
+    range: Process
+    cardinality: {out: {max: 1}}
+    inverse_label: has_task
+  assigned_to:
+    summary: The person who has to do the task.
+    domain: Task
+    range: ppl:Person
+    cardinality: {out: {max: 1}}
+    inverse_label: assignee_of
+
+rules:
+  - id: policy_in_force_has_date
+    summary: A policy in force states from when it is binding.
+    severity: error
+    when: write
+    scope: Policy
+    if:
+      - {attr: status, equals_string: in_force}
+    then:
+      - {attr: effective_from, value_presence: PRESENT}
+  - id: process_documented
+    summary: Every process has at least one instruction.
+    severity: warning
+    when: batch
+    scope: Process
+    then:
+      - count: {rel: describes, direction: in}
+        minimum_value: 1

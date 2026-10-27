@@ -1,0 +1,11 @@
+format: graph_cli.ir/1
+module:
+  id: company
+  prefix: co
+  version: 1.1.0
+  summary: The company as a whole, the main module that brings its subject areas together and carries the release of the graph; it holds no terms of its own.
+  imports:
+    - {module: people, version: "^1.0"}
+    - {module: organization, version: "^1.0"}
+    - {module: operations, version: "^1.0"}
+    - {module: legal, version: "^1.0"}
