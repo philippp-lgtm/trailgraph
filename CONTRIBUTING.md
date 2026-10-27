@@ -37,6 +37,14 @@ clean). The repository variable `CI_RUNS_ON` (a JSON `runs-on` value) moves
 the jobs to a self-hosted runner; pull requests from forks always run on a
 hosted one.
 
+A push to `main` that merges a pull request rebased on `main` (its tree equals
+the tree of the pull request head, and that head has a green first-attempt
+`check` run) is not tested again: both jobs log "tree identical to PR #n head
+..., validated in run ...; not re-run" and succeed. `scripts/ci-reuse-pr-run.sh`
+decides, any doubt or API error means the full run, and
+`tests/ci-reuse/run.sh` tests it offline. The rule and why it is safe: the
+infra repository's `DECISIONS.md` I31.
+
 A release is a tag `vX.Y.Z` on a commit of `main`. Before tagging, check
 that the `check` run of that commit is green; the release workflow does not
 look it up. The three distributions carry the version (`version` in each
