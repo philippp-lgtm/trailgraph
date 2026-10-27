@@ -200,7 +200,13 @@ one new revision unless its content ends up equal to its current revision
 one that changes nothing stops after validation, without a transaction.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
-along with the result. Refusals are audited: denials in the installation
+along with the result. A `domain_violation` or
+`range_violation` finding (write and batch check alike) carries `connecting`,
+computed from the model alone: `direct` lists the relations that accept the
+two types in either direction, and only when there are none, `paths` lists up
+to three chains of two relations over an intermediate class (relations with an
+open domain or range, such as the provenance relations, are never listed). The
+text output adds a line `connect with: a -rel-> b`. Refusals are audited: denials in the installation
 stream, invalid and conflicting writes in the graph's stream. A dry run
 validates against the current state without the lock, without ids and
 without any audit or file change. A JSONL batch commits one document per

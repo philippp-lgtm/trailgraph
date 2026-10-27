@@ -977,6 +977,22 @@ SKILL_GUIDANCE: Final = (
 )
 
 
+# Modules for agents, M6: the finding names what would have been accepted.
+CONNECTING_GUIDANCE: Final = (
+    "## When a relation does not fit the types",
+    "",
+    "- `data.referential.domain_violation` and `data.referential.range_violation` (in"
+    " `error.details.findings` of `write.invalid`): the relation does not accept the type of"
+    " the source or of the target. Do not retry the same edge. The finding's `connecting` names"
+    " what the model accepts between the two types: `direct` lists relations (`from` -relation->"
+    " `to`), and when there are none `paths` lists up to three chains of two relations over an"
+    " intermediate entity. Pick one; a path means creating or finding the intermediate entity"
+    " and writing both edges in one `graph apply` change set, dry-run first. When both lists are"
+    " empty the model has no such connection: ask the user.",
+    "",
+)
+
+
 # A relation with on_target_inactive keeps its targets active.
 TARGET_GUIDANCE: Final = (
     "## When a retract or supersede is refused",
@@ -1017,6 +1033,7 @@ def _errors_file(codes: Sequence[JsonObject]) -> str:
         *REMOTE_GUIDANCE,
         *SKILL_GUIDANCE,
         *TARGET_GUIDANCE,
+        *CONNECTING_GUIDANCE,
         "## Codes",
         "",
         *table(

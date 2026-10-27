@@ -92,6 +92,7 @@ from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.kernel.text import edit_distance, search_key
+from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import (
@@ -262,6 +263,7 @@ class _Checker:
         expected: JsonValue | None = None,
         actual: JsonValue | None = None,
         rule_id: str | None = None,
+        connecting: JsonValue | None = None,
     ) -> None:
         target: dict[str, JsonValue] = {"id": str(revision.id), "type": revision.type}
         if path is not None:
@@ -269,9 +271,17 @@ class _Checker:
         local = self.local_names.get(revision.id)
         if local is not None:
             target["local"] = local
-        finding = Finding(severity, code, target, message, expected, actual, rule_id)
+        finding = Finding(
+            severity, code, target, message, expected, actual, rule_id, connecting=connecting
+        )
         if finding not in self.findings:  # two ops may name the same problem
             self.findings.append(finding)
+
+    def connecting(self, source: str, target: str) -> JsonValue | None:
+        """What would connect two types, when both exist in the model."""
+        if source in self.model.classes and target in self.model.classes:
+            return connecting(self.model, source, target)
+        return None
 
     # ---- structure -----------------------------------------------------
 
@@ -463,6 +473,7 @@ class _Checker:
                 path,
                 f"{edge.rel} does not apply to {revision.type}",
                 expected=list(relation.domain),
+                connecting=self.connecting(revision.type, target.type),
             )
         if target.type in self.model.classes and not self.model.is_a_any(
             target.type, relation.range
@@ -474,6 +485,7 @@ class _Checker:
                 f"{edge.rel} does not accept a {target.type} target",
                 expected=list(relation.range),
                 actual=target.type,
+                connecting=self.connecting(revision.type, target.type),
             )
         self.qualifiers(revision, edge.rel, edge.qualifiers)
         if new and target.record_status != "active" and edge.rel not in PROVENANCE_RELATIONS:

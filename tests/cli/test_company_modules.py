@@ -513,3 +513,99 @@ def test_describe_search_errors(run_cli: CliRunner, company: None) -> None:
     assert (module.code, module.error["code"]) == (1, "term.unknown")
     kind = app(run_cli, "describe", "search", "name", "--kind", "field", env=ENV)
     assert kind.code == 2
+
+
+PERSON_TO_DEPARTMENT = {
+    "direct": [],
+    "paths": [
+        [
+            {"relation": "org:holds", "from": "ppl:Person", "to": "org:Position"},
+            {"relation": "org:in_unit", "from": "org:Position", "to": "org:Department"},
+        ]
+    ],
+}
+
+
+def test_a_refused_link_names_the_relations_that_connect_the_types(
+    run_cli: CliRunner, root: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    write_documents(root, "example_graph", seed_documents("changes.jsonl"))
+    person = app(run_cli, "get", "PER-0005", env=ENV)
+    department = app(run_cli, "get", "DEPT-0001", env=ENV)
+    assert person.code == department.code == 0, (person.envelope, department.envelope)
+    args = ("link", "PER-0005", "org:in_unit", "DEPT-0001")
+
+    refused = app(run_cli, *args, env=ENV)
+    assert refused.code == 1, refused.envelope
+    assert refused.error["code"] == "write.invalid"
+    [finding] = refused.error["details"]["findings"]
+    assert finding["code"] == "data.referential.domain_violation"
+    assert finding["severity"] == "error"
+    assert finding["connecting"] == PERSON_TO_DEPARTMENT
+
+    text = run_cli("graph", *args, env=ENV)
+    assert text.returncode == 1
+    assert (
+        "    connect with: ppl:Person -org:holds-> org:Position -org:in_unit-> org:Department\n"
+        in text.stderr
+    )
+
+
+def test_a_refused_range_names_the_relations_that_connect_the_types(
+    run_cli: CliRunner, root: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    write_documents(root, "example_graph", seed_documents("changes.jsonl"))
+    refused = app(run_cli, "link", "POS-0001", "org:reports_to", "PER-0005", env=ENV)
+    assert refused.code == 1, refused.envelope
+    [finding] = refused.error["details"]["findings"]
+    assert finding["code"] == "data.referential.range_violation"
+    assert finding["actual"] == "ppl:Person"
+    assert finding["connecting"] == {
+        "direct": [{"relation": "org:holds", "from": "ppl:Person", "to": "org:Position"}],
+        "paths": [],
+    }
+
+
+def test_the_batch_check_names_the_relations_that_connect_the_types(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """Under a stricter authored version (``part_of`` only leaves departments) the existing
+    team-to-department edges violate the domain; the department -> team direction fits."""
+    create(run_cli, "1.1.0")
+    write_documents(root, "example_graph", seed_documents("changes.jsonl"))
+    stricter = tmp_path / "stricter"
+    shutil.copytree(COMPANY / "1.1.0", stricter)
+    organization = stricter / "organization.yaml"
+    text = organization.read_text()
+    narrowed = text.replace(
+        "    domain: OrgUnit\n    range: OrgUnit\n",
+        "    domain: Department\n    range: OrgUnit\n",
+        1,
+    )
+    assert narrowed != text
+    organization.write_text(narrowed)
+
+    outcome = admin(
+        run_cli,
+        "graph",
+        "check",
+        "example_graph",
+        "--ontology",
+        str(stricter),
+        "--module",
+        "company",
+    )
+    assert outcome.error is not None, outcome.envelope
+    findings = [
+        f
+        for f in outcome.error["details"]["findings"]
+        if f["code"] == "data.referential.domain_violation"
+    ]
+    assert findings
+    assert all(f["connecting"] is not None for f in findings)
+    team = next(f for f in findings if f["target"]["type"] == "org:Team")
+    assert team["connecting"]["direct"] == [
+        {"relation": "org:part_of", "from": "org:Department", "to": "org:Team"}
+    ]

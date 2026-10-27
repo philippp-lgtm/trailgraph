@@ -131,7 +131,27 @@ def _findings(findings: Sequence[JsonValue]) -> list[str]:
             where = ", ".join(f"{k}={v}" for k, v in target.items())
         code, message = finding.get("code"), finding.get("message")
         lines.append(f"  {finding.get('severity')} {code} [{where}] {message}")
+        options = _connections(finding.get("connecting"))
+        if options:
+            lines.append(f"    connect with: {'; '.join(options)}")
     return lines
+
+
+def _connections(connecting: JsonValue) -> list[str]:
+    """``a -rel-> b`` chains of a finding's ``connecting`` (direct relations, else paths)."""
+    if not isinstance(connecting, Mapping):
+        return []
+    direct, paths = connecting.get("direct"), connecting.get("paths")
+    chains = [[hop] for hop in direct] if isinstance(direct, list) and direct else paths
+    options = []
+    for chain in chains if isinstance(chains, list) else []:
+        hops = [h for h in chain if isinstance(h, Mapping)] if isinstance(chain, list) else []
+        if hops:
+            text = str(hops[0].get("from"))
+            for hop in hops:
+                text += f" -{hop.get('relation')}-> {hop.get('to')}"
+            options.append(text)
+    return options
 
 
 def _block(value: JsonValue, indent: int = 0) -> str:

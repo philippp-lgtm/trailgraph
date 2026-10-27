@@ -35,6 +35,10 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 - `data.referential.target_referenced` (in `error.details.findings` of `write.invalid`): active entities still point at the entity over a relation that keeps its targets active; `actual.sources` lists them (at most 20 of `actual.count`). Decide for each: relink it (on a supersede, to the replacing entity) or retract it when it is withdrawn too; ask the user when it is not clear. Then put those writes and the refused one into one `graph apply` change set and dry-run it. Never retract an entity only to get the write through.
 - The same code as a warning in `data.findings`: the write went through; tell the user which entities still point at the entity.
 
+## When a relation does not fit the types
+
+- `data.referential.domain_violation` and `data.referential.range_violation` (in `error.details.findings` of `write.invalid`): the relation does not accept the type of the source or of the target. Do not retry the same edge. The finding's `connecting` names what the model accepts between the two types: `direct` lists relations (`from` -relation-> `to`), and when there are none `paths` lists up to three chains of two relations over an intermediate entity. Pick one; a path means creating or finding the intermediate entity and writing both edges in one `graph apply` change set, dry-run first. When both lists are empty the model has no such connection: ask the user.
+
 ## Codes
 
 | Error code | Error category | Exit |

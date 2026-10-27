@@ -199,7 +199,7 @@ DEFS: Final[dict[str, Schema]] = {
             "target": OPEN,
             "message": STRING,
         },
-        {"expected": ANY, "actual": ANY, "rule_id": STRING, "hint": STRING},
+        {"expected": ANY, "actual": ANY, "rule_id": STRING, "hint": STRING, "connecting": OPEN},
     ),
     "param": _param(),
     "inventory": _inventory(),

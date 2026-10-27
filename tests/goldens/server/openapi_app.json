@@ -2415,6 +2415,10 @@
           },
           "hint": {
             "type": "string"
+          },
+          "connecting": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "required": [
