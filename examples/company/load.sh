@@ -9,6 +9,10 @@
 # applied with `graph apply`, so the current directory has to be one where `graph` may write
 # the graph "company" (a project directory whose pointer lists it, in remote mode). See the
 # README next to this script. For a throwaway installation use setup.sh instead.
+#
+# The script can be run again after a failure: it creates the graph only when it is missing,
+# releases 1.1.0 only while the graph is still at 1.0.0, and the seeds carry idempotency keys,
+# so a change set that was written already is not written twice.
 set -euo pipefail
 
 upto="${1:-1.1.0}"
@@ -21,13 +25,27 @@ esac
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 graph_name=company
 
-graph-admin graph create "$graph_name" --ontology "$here/ontology/1.0.0" --module company \
-  --title "Example company: people, organization, operations and legal entities" --language en
-graph apply "$here/seeds/1.0.0.jsonl" --graph "$graph_name"
-graph-admin graph check "$graph_name"
+# The pinned ontology version of the graph, read from the text answer of `graph show`.
+pinned_version() {
+  graph-admin graph show "$graph_name" | awk '/^ontology:/ {f = 1; next} f && $1 == "version:" {print $2; exit}'
+}
+
+if graph-admin graph show "$graph_name" >/dev/null 2>&1; then
+  echo "graph $graph_name exists (ontology $(pinned_version)); continuing" >&2
+else
+  graph-admin graph create "$graph_name" --ontology "$here/ontology/1.0.0" --module company \
+    --title "Example company: people, organization, operations and legal entities" --language en
+fi
+
+if [ "$(pinned_version)" = 1.0.0 ]; then
+  graph apply "$here/seeds/1.0.0.jsonl" --graph "$graph_name"
+  graph-admin graph check "$graph_name"
+fi
 
 if [ "$upto" = 1.1.0 ]; then
-  graph-admin ontology release "$graph_name" "$here/ontology/1.1.0" --module company
+  if [ "$(pinned_version)" = 1.0.0 ]; then
+    graph-admin ontology release "$graph_name" "$here/ontology/1.1.0" --module company
+  fi
   graph apply "$here/seeds/1.1.0.jsonl" --graph "$graph_name"
   graph-admin graph skill publish "$graph_name" "$here/skill/graph-company" \
     --reason "Curated skill of the example graph"
