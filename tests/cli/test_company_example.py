@@ -166,9 +166,9 @@ def test_the_seeds_hold_the_structure_the_example_shows(run_cli: CliRunner, comp
     )
     assert owners == [{"n": 3}]
     unemployed = rows(
-        "MATCH (e:Employee) WHERE NOT (e)-[:employed_by]->() RETURN count(e) AS n",
+        "MATCH (e:Employee) WHERE NOT (e)-[:employed_by]->() RETURN e.status AS status",
     )
-    assert unemployed == [{"n": 0}]
+    assert unemployed == [{"status": "left"}]
 
 
 def test_the_modules_read_top_down(run_cli: CliRunner, company: None) -> None:
@@ -208,17 +208,64 @@ def test_a_refused_link_names_the_relations_that_connect_the_types(
     ]
 
 
-def test_the_rules_and_guards_of_the_example_fire(run_cli: CliRunner, company: None) -> None:
-    dissolve = app(run_cli, "transition", "LE-0002", "dissolved", "--dry-run", env=ENV)
-    assert dissolve.code == 1, dissolve.envelope
-    guards = {f["message"] for f in dissolve.error["details"]["findings"]}
-    assert guards == {"A dissolved entity employs nobody.", "A dissolved entity runs no unit."}
+def refused_messages(outcome: Outcome) -> set[str]:
+    assert outcome.code == 1, outcome.envelope
+    assert outcome.error["code"] == "write.invalid"
+    return {f["message"] for f in outcome.error["details"]["findings"]}
 
-    leaver = app(run_cli, "transition", "EMP-0001", "left", "--dry-run", env=ENV)
-    assert leaver.code == 1, leaver.envelope
-    [finding] = leaver.error["details"]["findings"]
-    assert finding["rule_id"] == "org.left_employee_holds_no_position"
 
+def test_every_guard_and_rule_of_the_example_fires(run_cli: CliRunner, company: None) -> None:
+    """Each guard and rule of the five modules is made to fire once (review checklist)."""
+
+    def transition(entity: str, state: str) -> Outcome:
+        return app(run_cli, "transition", entity, state, "--dry-run", env=ENV)
+
+    # org.not_held
+    assert refused_messages(transition("POS-0001", "abolished")) == {
+        "A position that is held by a person cannot be abolished."
+    }
+    # ops.has_assignee (the open task without a person)
+    assert refused_messages(transition("TASK-0004", "in_progress")) == {
+        "A task that is started has an assignee."
+    }
+    # ops.policy_in_force_has_date (the draft policy has a scope but no date)
+    assert refused_messages(transition("POL-0004", "in_force")) == {
+        "A policy in force states from when it is binding."
+    }
+    # ops.has_scope (a new draft policy that applies to no unit)
+    probe = {
+        "ops": [
+            {
+                "op": "create",
+                "type": "ops:Policy",
+                "local": "probe",
+                "attrs": {"title": "Probe policy", "effective_from": "2026-01-01"},
+                "edges": [{"rel": "ops:owned_by", "target": "POS-0001"}],
+            },
+            {"op": "transition", "id": "@probe", "to": "in_force"},
+        ]
+    }
+    scope = app(run_cli, "apply", "-", "--dry-run", env=ENV, input=json.dumps(probe))
+    assert refused_messages(scope) == {"A policy in force applies to at least one unit."}
+    # leg.no_staff and leg.no_units
+    assert refused_messages(transition("LE-0002", "dissolved")) == {
+        "A dissolved entity employs nobody.",
+        "A dissolved entity runs no unit.",
+    }
+    # org.left_employee_holds_no_position and leg.left_employee_has_no_employer
+    assert refused_messages(transition("EMP-0001", "left")) == {
+        "An employee who has left holds no position.",
+        "An employee who has left is employed by no legal entity.",
+    }
+    # org.team_in_department
+    stray = app(
+        run_cli,
+        *("create", "org:Team", "--set-json", 'name="Stray team"'),
+        *("--edge", "org:part_of=TEAM-0001", "--dry-run"),
+        env=ENV,
+    )
+    assert refused_messages(stray) == {"A team is part of exactly one department."}
+    # leg.stakes_within_capital (a warning: the write goes through)
     over = app(
         run_cli,
         *("create", "leg:Shareholding", "--set", "percent=30"),
@@ -230,13 +277,27 @@ def test_the_rules_and_guards_of_the_example_fire(run_cli: CliRunner, company: N
     [warning] = over.data["findings"]
     assert (warning["severity"], warning["rule_id"]) == ("warning", "leg.stakes_within_capital")
 
-    stray = app(
+
+def test_the_batch_rules_of_the_example_fire(run_cli: CliRunner, company: None) -> None:
+    """ops.process_documented and leg.employee_has_employer only show in the batch check."""
+    clean = admin(run_cli, "graph", "check", "company")
+    assert clean.data["findings"] == []
+    process = app(
         run_cli,
-        *("create", "org:Team", "--set-json", 'name="Stray team"'),
-        *("--edge", "org:part_of=TEAM-0001", "--dry-run"),
+        *("create", "ops:Process", "--set", "name=Probe process"),
+        *("--edge", "ops:owned_by=POS-0001"),
         env=ENV,
     )
-    assert stray.code == 1 and stray.error["code"] == "write.invalid"
+    employee = app(
+        run_cli,
+        *("create", "ppl:Employee", "--set", "name=Probe Person"),
+        *("--set", "employee_number=E-900"),
+        env=ENV,
+    )
+    assert process.code == employee.code == 0, (process.envelope, employee.envelope)
+    checked = admin(run_cli, "graph", "check", "company")
+    rules = {f["rule_id"]: f["severity"] for f in checked.data["findings"]}
+    assert rules == {"ops.process_documented": "warning", "leg.employee_has_employer": "warning"}
 
 
 def test_the_graph_skill_renders_with_every_module(
@@ -271,7 +332,7 @@ def run_script(
 
 
 def state_dir_of(base: Path) -> Path:
-    match = re.search(r"XDG_STATE_HOME='([^']+)'", (base / "env.sh").read_text())
+    match = re.search(r"^export XDG_STATE_HOME=(\S+)$", (base / "env.sh").read_text(), re.M)
     assert match is not None
     return Path(match.group(1))
 
@@ -304,9 +365,23 @@ def test_setup_builds_a_throwaway_installation(
         assert shown.returncode == 0, shown.stderr
         assert f'"version": "{upto}"' in shown.stdout
         assert (json.loads(shown.stdout)["data"]["skill"] is not None) == (upto == "1.1.0")
+        # Nothing leaked into the caller's home and XDG directories.
+        home = Path(isolated_env["HOME"])
+        assert not (home / ".claude").exists()
+        for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
+            assert list(Path(isolated_env[key]).iterdir()) == [], key
+        # load.sh can be run again in the same installation.
+        rerun = subprocess.run(
+            ["bash", str(EXAMPLE / "load.sh"), upto],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=base / "work",
+        )
+        assert rerun.returncode == 0, rerun.stdout + rerun.stderr
         # The installation is not a second run's target.
         again = run_script("setup.sh", isolated_env, tmp_path, upto)
-        assert again.returncode == 1 and "installation already" in again.stderr
+        assert again.returncode == 1 and "is not empty" in again.stderr
     finally:
         env_file = base / "env.sh"
         if env_file.exists():
