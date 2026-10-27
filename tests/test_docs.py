@@ -2,9 +2,9 @@
 the command overviews of `graph` and `graph-admin` name exactly the commands each has,
 with options those commands take.
 
-Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md,
-docs/ and the hand-written admin skills that ship with graph-admin). Links inside
-code blocks are ignored. Anchors follow GitHub's heading slugs. The command
+Covers the tracked Markdown documentation (the root README, CONTRIBUTING.md, the
+example's README, docs/ and the hand-written admin skills that ship with graph-admin).
+Links inside code blocks are ignored. Anchors follow GitHub's heading slugs. The command
 overviews are compared with the inventory goldens, which `tests/cli/test_app_meta.py`
 and `tests/cli/test_admin_init.py` keep equal to `describe commands` of each program.
 Each check has a positive control, so a broken scanner cannot pass silently.
@@ -38,6 +38,7 @@ def _documents() -> list[Path]:
     return [
         REPO_ROOT / "README.md",
         REPO_ROOT / "CONTRIBUTING.md",
+        REPO_ROOT / "examples" / "company" / "README.md",
         *sorted(DOCS_DIR.glob("*.md")),
         *sorted(ADMIN_SKILLS_DIR.rglob("*.md")),
     ]

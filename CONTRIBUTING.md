@@ -223,6 +223,11 @@ server marks itself `@pytest.mark.unchecked_output("<reason>")`.
 
 ### Fixtures
 
+`examples/company/` is not a fixture but a user-facing example graph (a modular ontology
+in two versions, seeds, a graph skill, `setup.sh` and `load.sh`); it stays separate from
+the `company` fixture below, and `tests/cli/test_company_example.py` keeps it buildable
+(the `setup.sh` runs are marked `slow`).
+
 `tests/fixtures/` holds two unrelated single-module toy ontologies
 (`notes_and_sources`, `inventory` with a version series) and a third that is
 authored as several modules (`company`: `people`, `organization` and, from
