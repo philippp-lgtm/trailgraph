@@ -465,6 +465,19 @@ def test_a_broken_graph_is_a_500_without_details(
     ]
 
 
+def test_a_client_that_went_away_is_not_reported(
+    server: ViewServer, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def gone(source: object) -> None:
+        raise ConnectionResetError("peer reset")
+
+    monkeypatch.setattr("graph_cli_admin.maintenance_cli.view_server.graph_json", gone)
+    with pytest.raises(http.client.RemoteDisconnected):
+        get(server, f"/graph?t={server.token}")
+    assert get(server, f"/trail?t={server.token}").status == 200  # the server goes on
+    assert capsys.readouterr().err == ""
+
+
 def test_the_stop_reaches_a_client_with_a_full_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("graph_cli_admin.maintenance_cli.view_server.CLIENT_QUEUE", 2)
     hub = Hub()

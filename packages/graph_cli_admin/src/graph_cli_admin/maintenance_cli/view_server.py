@@ -279,7 +279,12 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             self.started = False
             try:
                 route()
+            except ConnectionError:  # the client went away: nothing to answer, nothing to report
+                self.close_connection = True
             except GraphCliError as exc:
+                if self.started:  # the answer is under way: only the connection can end
+                    self.close_connection = True
+                    return
                 status = (
                     404 if exc.code in NOT_FOUND_CODES else 403 if "denied" in exc.code else 400
                 )
