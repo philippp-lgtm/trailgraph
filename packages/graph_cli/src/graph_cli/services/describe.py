@@ -511,12 +511,21 @@ def describe_schema(
 
 def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
-    ``describe types``, ``describe type <T>`` for every class, ``describe relations``
-    and ``describe schema`` print, as ``{types, type: {curie: document}, relations,
-    schema}``."""
+    ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
+    ``describe schema``, ``describe modules`` and ``describe module <M>`` for every
+    non-built-in module print, as ``{types, type: {curie: document}, relations, schema,
+    modules: [item], module: {id: document}}``."""
+    index = ModuleIndex(model)
+    modules = describe_modules(entry, model)["modules"]
     return {
         "types": describe_types(entry, model),
         "type": {curie: describe_type(entry, model, curie) for curie in sorted(model.classes)},
         "relations": describe_relations(entry, model),
         "schema": describe_schema(entry, model),
+        "modules": modules,
+        "module": {
+            info.id: describe_module(entry, model, info.id)
+            for info in sorted(model.modules, key=lambda m: m.id)
+            if not index.builtin(info.id)
+        },
     }
