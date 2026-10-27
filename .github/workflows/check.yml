@@ -18,8 +18,10 @@ permissions:
 
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
-  group: check-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request run is superseded by a newer push to its branch. Every push to main keeps its own group (the run id) and
+  # is never cancelled or dropped: build.yml promotes a candidate only when check.yml ran green on its commit (infra DECISIONS.md I32).
+  group: check-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -104,3 +106,11 @@ jobs:
       - name: CI reuse self-test
         if: steps.reuse.outputs.reuse != 'true'
         run: tests/ci-reuse/run.sh
+
+      - name: CI promote self-test
+        if: steps.reuse.outputs.reuse != 'true'
+        run: tests/ci-promote/run.sh
+
+      - name: Lint the workflows
+        if: steps.reuse.outputs.reuse != 'true'
+        run: scripts/lint-workflows.sh

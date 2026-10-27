@@ -1,31 +1,130 @@
 name: build
 
-# The container image of graph-server (Dockerfile target runtime), on a release tag only.
-#   tag vX.Y.Z:  the tag equals the version of the three distributions, the tagged commit is
-#                on main, the image tag does not exist yet, the suite passes on the tagged tree
-#                (target test) and the linux/amd64 runtime image passes the smoke test; then
-#                ghcr.io/<owner>/<repository>:vX.Y.Z is pushed with GITHUB_TOKEN and its
-#                digest goes to the job summary (deployments pin <tag>@sha256:<digest>)
+# The container image of graph-server (Dockerfile target runtime), built once per change (infra DECISIONS.md I32).
+#   push to main:  when the image inputs changed (see `paths` below; keep them equal to INPUT_PATHS in the release job), the
+#                  linux/amd64 runtime image passes the smoke test and is pushed as the candidate
+#                  ghcr.io/<owner>/<repository>:sha-<commit>; its digest goes to the job summary. The suite runs in check.yml
+#                  on the same commit (the Dockerfile target test), not here.
+#   tag vX.Y.Z:    the tag equals the version of the three distributions, the tagged commit is on main, the image tag does not
+#                  exist yet; then the candidate of the tagged commit (the newest commit that changed the image inputs) is
+#                  PROMOTED to ghcr.io/<owner>/<repository>:vX.Y.Z (scripts/ci-promote-image.sh: same manifest, same digest, no
+#                  rebuild), provided the registry holds it, its revision label and platform match and check.yml and build.yml
+#                  ran green on first attempt on the commits that matter. Anything else, including any error, builds as before:
+#                  the suite on the tagged tree (target test), the linux/amd64 runtime image, the smoke test, the push. The
+#                  digest goes to the job summary either way (deployments pin <tag>@sha256:<digest>)
+# No workflow_dispatch and no pull_request trigger: only pushes to main and tags can write packages.
 # Releases: CONTRIBUTING.md, "CI and releases". Runs on CI_RUNS_ON like check.yml; on a runner
 # of another architecture, the linux/amd64 image needs amd64 emulation (binfmt) in the kernel of
 # the runner's Docker host.
 on:
   push:
+    branches: [main]
+    paths: ['Dockerfile', '.dockerignore', 'pyproject.toml', 'uv.lock', 'packages/**', 'scripts/build_id.py', 'docker/**']
     tags: ['v*']
 
 permissions:
   contents: read
 
 jobs:
-  release:
+  candidate:
+    if: github.ref_type == 'branch'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 40
     permissions:
       contents: read
       packages: write   # push to GHCR with GITHUB_TOKEN
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image name
+        id: meta
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # GHCR image names must be lowercase.
+          echo "image=ghcr.io/${REPOSITORY,,}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Runtime image (linux/amd64)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: graph-server:candidate
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: false
+
+      - name: Smoke test
+        run: scripts/smoke_image.sh graph-server:candidate
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The same build again (from the cache, same labels), now pushed.
+      - name: Push the candidate
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          # source links the package to this repository (visibility and access follow it).
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: false   # keep the pushed manifest a plain image: its digest is the one deployments pin
+
+      # The digest, recorded by this very run on main: a release promotes exactly this digest (ci-promote-image.sh), never whatever
+      # the mutable sha-<commit> tag names later.
+      - name: Record the candidate digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest from the build" >&2; exit 1; }
+          printf 'image=ghcr.io/%s\ncommit=%s\ndigest=%s\n' "${REPOSITORY,,}" "$GITHUB_SHA" "$DIGEST" > "$RUNNER_TEMP/candidate-digest.txt"
+
+      - name: Upload the candidate digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate-digest
+          path: ${{ runner.temp }}/candidate-digest.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Report
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "candidate: ${IMAGE}@${DIGEST}"
+          { echo "### graph-server image (candidate)"; echo; echo "\`${IMAGE}@${DIGEST}\`"; } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    if: github.ref_type == 'tag'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write   # push to GHCR with GITHUB_TOKEN
+      actions: read     # ci-promote-image.sh reads the runs of the candidate commit
+    steps:
       # fetch-depth 0 fetches every branch as origin/<branch>, so origin/main is
-      # there for the ancestry check without a second fetch.
+      # there for the ancestry check without a second fetch, and the history for the candidate lookup.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -43,6 +142,7 @@ jobs:
           [ "$versions" = "${REF_NAME#v}" ] \
             || { echo "::error::tag $REF_NAME, distributions at: $(echo $versions)" >&2; exit 1; }
           # GHCR image names must be lowercase.
+          echo "repo=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${REPOSITORY,,}:${REF_NAME}" >> "$GITHUB_OUTPUT"
 
       # Tag builds only publish reviewed code: the tagged commit must be on main.
@@ -52,14 +152,6 @@ jobs:
             || { echo "::error::tag commit $GITHUB_SHA is not on origin/main; merge it first, then tag" >&2; exit 1; }
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Test suite (Dockerfile target test)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          target: test
-          push: false
-          provenance: false
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -78,7 +170,33 @@ jobs:
             echo "::error::$IMAGE exists already; release the next version instead" >&2; exit 1
           fi
 
+      # The candidate of the tagged commit (the digest recorded by the build run on main) becomes the release without a rebuild when the script finds it sound (the suite of
+      # check.yml green on the candidate commit and on the tagged commit, the build run green, revision label and platform
+      # right); every other outcome runs the steps below.
+      - name: Promote the candidate
+        id: promote
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.meta.outputs.repo }}
+          VERSION_TAG: ${{ github.ref_name }}
+          INPUT_PATHS: Dockerfile .dockerignore pyproject.toml uv.lock packages scripts/build_id.py docker
+          BUILD_WORKFLOW: build.yml
+          ARTIFACT_NAME: candidate-digest
+          CANDIDATE_WORKFLOWS: build.yml check.yml
+          TREE_WORKFLOWS: check.yml
+        run: scripts/ci-promote-image.sh
+
+      - name: Test suite (Dockerfile target test)
+        if: steps.promote.outputs.promoted != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: test
+          push: false
+          provenance: false
+
       - name: Runtime image (linux/amd64)
+        if: steps.promote.outputs.promoted != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -94,11 +212,13 @@ jobs:
           provenance: false
 
       - name: Smoke test
+        if: steps.promote.outputs.promoted != 'true'
         run: scripts/smoke_image.sh graph-server:release
 
       # The same build again (from the cache, same labels), now pushed.
       - name: Push
         id: build
+        if: steps.promote.outputs.promoted != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -116,7 +236,7 @@ jobs:
       - name: Report
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.promote.outputs.promoted == 'true' && steps.promote.outputs.digest || steps.build.outputs.digest }}
         run: |
           echo "pushed: ${IMAGE}@${DIGEST}"
           { echo "### graph-server image"; echo; echo "\`${IMAGE}@${DIGEST}\`"; } >> "$GITHUB_STEP_SUMMARY"
