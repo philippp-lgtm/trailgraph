@@ -1,0 +1,137 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "notes_and_sources",
+    "version": "1.0.0"
+  },
+  "module": {
+    "id": "notes_and_sources",
+    "prefix": "nas",
+    "version": "1.0.0",
+    "summary": "Notes about topics that cite their sources and assert claims.",
+    "builtin": false,
+    "types": [
+      {
+        "curie": "nas:Book",
+        "abstract": false,
+        "extends": "nas:Source",
+        "summary": "A published book.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:Note",
+        "abstract": false,
+        "extends": null,
+        "summary": "A short piece of writing about one or more topics.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:Source",
+        "abstract": true,
+        "extends": null,
+        "summary": "Where information comes from.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:Topic",
+        "abstract": false,
+        "extends": null,
+        "summary": "A subject that notes are about.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:WebPage",
+        "abstract": false,
+        "extends": "nas:Source",
+        "summary": "A page on the web.",
+        "deprecated": false
+      }
+    ],
+    "relations": [
+      {
+        "curie": "nas:about",
+        "domain": [
+          "nas:Note"
+        ],
+        "range": [
+          "nas:Topic"
+        ],
+        "cardinality": {
+          "out": "1..n",
+          "in": "0..n"
+        },
+        "summary": "The note is about the topic.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:broader",
+        "domain": [
+          "nas:Topic"
+        ],
+        "range": [
+          "nas:Topic"
+        ],
+        "cardinality": {
+          "out": "0..n",
+          "in": "0..n"
+        },
+        "summary": "The target topic is more general than the source topic.",
+        "deprecated": false
+      },
+      {
+        "curie": "nas:cites",
+        "domain": [
+          "nas:Note"
+        ],
+        "range": [
+          "nas:Source"
+        ],
+        "cardinality": {
+          "out": "0..n",
+          "in": "0..n"
+        },
+        "summary": "The note uses information from the source.",
+        "deprecated": false
+      }
+    ],
+    "links_out": [
+      {
+        "relation": "nas:asserts",
+        "module": "notes_and_sources",
+        "from": [
+          "nas:Note"
+        ],
+        "to": [
+          "provenance:Claim"
+        ],
+        "summary": "The note asserts the claim.",
+        "deprecated": false
+      }
+    ],
+    "links_in": [],
+    "rules": [
+      {
+        "id": "nas.source_cited",
+        "severity": "warning",
+        "summary": "Every source is cited by at least one note.",
+        "deprecated": false
+      },
+      {
+        "id": "nas.summary_cites_source",
+        "severity": "error",
+        "summary": "A published summary note cites at least one source.",
+        "deprecated": false
+      },
+      {
+        "id": "nas.topic_not_orphan",
+        "severity": "warning",
+        "summary": "A topic has notes or narrower topics.",
+        "deprecated": false
+      }
+    ]
+  }
+}

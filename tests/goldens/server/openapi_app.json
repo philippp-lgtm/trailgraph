@@ -593,6 +593,9 @@
                   }
                 ]
               },
+              "module": {
+                "type": "string"
+              },
               "ancestors": {
                 "type": "array",
                 "items": {
@@ -777,6 +780,7 @@
               "curie",
               "abstract",
               "extends",
+              "module",
               "ancestors",
               "subtypes",
               "alias_prefix",

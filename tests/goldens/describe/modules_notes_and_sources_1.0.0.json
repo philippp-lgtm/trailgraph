@@ -1,0 +1,55 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "notes_and_sources",
+    "version": "1.0.0"
+  },
+  "modules": [
+    {
+      "id": "core",
+      "prefix": "core",
+      "version": "1.0.0",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "builtin": true,
+      "types": 0,
+      "relations": 4,
+      "links": []
+    },
+    {
+      "id": "notes_and_sources",
+      "prefix": "nas",
+      "version": "1.0.0",
+      "summary": "Notes about topics that cite their sources and assert claims.",
+      "builtin": false,
+      "types": 5,
+      "relations": 4,
+      "links": [
+        {
+          "module": "provenance",
+          "out": 1,
+          "in": 0
+        }
+      ]
+    },
+    {
+      "id": "provenance",
+      "prefix": "provenance",
+      "version": "1.0.0",
+      "summary": "Claims with their own evidence, confidence and validity period.",
+      "builtin": true,
+      "types": 1,
+      "relations": 2,
+      "links": [
+        {
+          "module": "notes_and_sources",
+          "out": 0,
+          "in": 1
+        }
+      ]
+    }
+  ]
+}

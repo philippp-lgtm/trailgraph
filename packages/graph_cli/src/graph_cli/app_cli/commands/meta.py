@@ -106,6 +106,7 @@ _TYPE: Final = obj(
         "curie": STRING,
         "abstract": BOOLEAN,
         "extends": NULLABLE_STRING,
+        "module": STRING,
         "ancestors": STRINGS,
         "subtypes": STRINGS,
         "alias_prefix": NULLABLE_STRING,
