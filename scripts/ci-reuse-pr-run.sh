@@ -8,7 +8,8 @@
 #     a test merge with an older base,
 #   - the commit's tree equals the tree of the pull request head: identical inputs,
 #   - the newest `pull_request` run of the same workflow file on that exact head, belonging to this pull request
-#     (into this repository's main; the head belongs to no other pull request); ALL its runs are completed, successful
+#     (into this repository's main; the head commit must belong to that pull request only, always checked,
+#     because a run cannot name its pull request once the head branch is deleted); ALL its runs are completed, successful
 #     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
 # Prints the decision and writes `reuse=true|false` to $GITHUB_OUTPUT; the steps after it run `if: steps.<id>.outputs.reuse != 'true'`.
 # Needs: gh and jq; GH_TOKEN with actions: read and pull-requests: read; GITHUB_REPOSITORY, GITHUB_SHA,
@@ -27,6 +28,7 @@ decide() {
 
   local pulls pr n head
   pulls=$(api "commits/$sha/pulls?per_page=100") || { echo "cannot list the pull requests of ${sha:0:7}"; return 1; }
+  [ "$(jq length <<<"$pulls" 2>/dev/null)" -lt 100 ] 2>/dev/null || { echo "pull request list of ${sha:0:7} unreadable or possibly truncated"; return 1; }
   pr=$(jq -c --arg sha "$sha" --arg b "$branch" \
     '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == $b)]' <<<"$pulls") \
     || { echo "unreadable pull request list"; return 1; }
@@ -49,6 +51,7 @@ decide() {
   # then come from no other pull request (e.g. one into another base, which would have tested another tree).
   local hp
   hp=$(api "commits/$head/pulls?per_page=100") || { echo "cannot list the pull requests of head ${head:0:7}"; return 1; }
+  [ "$(jq length <<<"$hp" 2>/dev/null)" -lt 100 ] 2>/dev/null || { echo "pull request list of head ${head:0:7} unreadable or possibly truncated"; return 1; }
   [ "$(jq -c --argjson n "$n" '[.[].number] == [$n]' <<<"$hp" 2>/dev/null)" = true ] \
     || { echo "head ${head:0:7} belongs to other pull requests than #$n as well"; return 1; }
 

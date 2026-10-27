@@ -89,4 +89,7 @@ good 35; jq '.workflow_runs[0].conclusion="skipped"' "$(runs_file "$FX")" > "$FX
 good 36; jq '.total_count=101' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "more runs than one page" full 'no usable green'
 good 37; jq '.workflow_runs += [(.workflow_runs[0] | .id=96 | .created_at="2026-10-27T00:10:00Z")] | .total_count=2' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "two first-attempt successes" reuse 'run 99'
 
+good 38; jq -n --arg m "$M" '[range(0;100) | {number:., merged_at:null, merge_commit_sha:"x", base:{ref:"main"}, head:{sha:"y"}}] | .[0] = {number:7, merged_at:"2026-10-27T00:00:00Z", merge_commit_sha:$m, base:{ref:"main"}, head:{sha:"'$H'"}}' > "$FX/commits_${M}_pulls_per_page_100"; expect "pull request list of the commit hits the page size" full 'possibly truncated'
+good 39; jq -n '[range(0;100) | {number:.}]' > "$FX/commits_${H}_pulls_per_page_100"; expect "pull request list of the head hits the page size" full 'possibly truncated'
+
 exit "$failed"
