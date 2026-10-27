@@ -15,6 +15,8 @@ on:
 
 permissions:
   contents: read
+  actions: read          # ci-reuse-pr-run.sh reads the pull request run
+  pull-requests: read
 
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
@@ -30,8 +32,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # A push to main whose tree equals the head of its merged pull request, with a green first-attempt run of this workflow
+      # on that head (both jobs), is not checked again (infra DECISIONS.md I31). Any doubt or API error means the full run.
+      - name: Reuse the pull request run
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-reuse-pr-run.sh check.yml
+
       # In the uv image of the Dockerfile's uv and Python versions (tags, as there), as the runner's user.
       - name: Lint, format, types, import contracts
+        if: steps.reuse.outputs.reuse != 'true'
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/src" -w /src \
             -e HOME=/tmp -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_PYTHON_DOWNLOADS=never -e UV_LINK_MODE=copy \
@@ -50,10 +61,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reuse the pull request run
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-reuse-pr-run.sh check.yml
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.reuse.outputs.reuse != 'true'
 
       # Not as a container job: those run as root, and the suite checks file permissions.
       - name: Test suite (Dockerfile target test)
+        if: steps.reuse.outputs.reuse != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -62,6 +81,7 @@ jobs:
           provenance: false
 
       - name: Runtime image
+        if: steps.reuse.outputs.reuse != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -72,4 +92,9 @@ jobs:
           provenance: false
 
       - name: Smoke test
+        if: steps.reuse.outputs.reuse != 'true'
         run: scripts/smoke_image.sh graph-server:ci
+
+      - name: CI reuse self-test
+        if: steps.reuse.outputs.reuse != 'true'
+        run: tests/ci-reuse/run.sh
