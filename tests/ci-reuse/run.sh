@@ -28,10 +28,11 @@ runs_file() { echo "$1/actions_workflows_validate.yml_runs_head_sha_${H}_event_p
 fixture() {
   FX="$tmp/fx$1"; rm -rf "$FX"; mkdir -p "$FX"
   echo "[{\"number\":7,\"merged_at\":\"2026-10-27T00:00:00Z\",\"merge_commit_sha\":\"$M\",\"base\":{\"ref\":\"main\"},\"head\":{\"sha\":\"$H\"}}]" > "$FX/commits_${M}_pulls_per_page_100"
+  echo "[{\"number\":7}]" > "$FX/commits_${H}_pulls_per_page_100"
   echo "{\"tree\":{\"sha\":\"$T1\"},\"parents\":[{\"sha\":\"$P\"},{\"sha\":\"$H\"}]}" > "$FX/git_commits_$M"
   echo "{\"tree\":{\"sha\":\"$T1\"},\"parents\":[{\"sha\":\"$P\"}]}" > "$FX/git_commits_$H"
   echo '{"status":"ahead"}' > "$FX/compare_${P}...${H}_per_page_1"
-  echo "{\"workflow_runs\":[{\"id\":99,\"head_sha\":\"$H\",\"head_repository\":{\"full_name\":\"$R\"},\"path\":\".github/workflows/validate.yml\",\"status\":\"completed\",\"conclusion\":\"success\",\"run_attempt\":1}]}" > "$(runs_file "$FX")"
+  echo "{\"workflow_runs\":[{\"id\":99,\"head_sha\":\"$H\",\"head_repository\":{\"full_name\":\"$R\"},\"created_at\":\"2026-10-27T01:00:00Z\",\"pull_requests\":[{\"number\":7,\"base\":{\"ref\":\"main\",\"repo\":{\"url\":\"https://api.github.com/repos/$R\"}}}],\"path\":\".github/workflows/validate.yml\",\"status\":\"completed\",\"conclusion\":\"success\",\"run_attempt\":1}]}" > "$(runs_file "$FX")"
   echo "$FX"
 }
 
@@ -59,16 +60,27 @@ good 8; jq '.[0].base.ref="release"' "$FX/commits_${M}_pulls_per_page_100" > "$F
 good 9; jq --arg t "$T2" '.tree.sha=$t' "$FX/git_commits_$H" > "$FX/x" && mv "$FX/x" "$FX/git_commits_$H"; expect "tree differs from PR head" full 'tree of aaaaaaa differs'
 good 10; echo '{"status":"diverged"}' > "$FX/compare_${P}...${H}_per_page_1"; expect "head not rebased on the base side" full 'not rebased on'
 good 11; echo '{"status":"identical"}' > "$FX/compare_${P}...${H}_per_page_1"; expect "head equals the base side" reuse 'tree identical'
-good 12; jq '.workflow_runs[0].conclusion="failure"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run failed" full 'no successful first-attempt'
-good 13; jq '.workflow_runs[0].run_attempt=2' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run green only on attempt 2" full 'no successful first-attempt'
-good 14; jq '.workflow_runs[0].head_sha="dead"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run of another head SHA" full 'no successful first-attempt'
-good 15; jq '.workflow_runs[0].path=".github/workflows/other.yml"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run of another workflow" full 'no successful first-attempt'
-good 16; jq '.workflow_runs[0].head_repository.full_name="fork/repo"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run from a fork" full 'no successful first-attempt'
-good 17; jq '.workflow_runs[0].status="in_progress"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run still running" full 'no successful first-attempt'
+good 12; jq '.workflow_runs[0].conclusion="failure"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run failed" full 'no usable green'
+good 13; jq '.workflow_runs[0].run_attempt=2' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run green only on attempt 2" full 'no usable green'
+good 14; jq '.workflow_runs[0].head_sha="dead"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run of another head SHA" full 'no usable green'
+good 15; jq '.workflow_runs[0].path=".github/workflows/other.yml"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run of another workflow" full 'no usable green'
+good 16; jq '.workflow_runs[0].head_repository.full_name="fork/repo"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run from a fork" full 'no usable green'
+good 17; jq '.workflow_runs[0].status="in_progress"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "PR run still running" full 'no usable green'
 good 18; rm "$FX/commits_${M}_pulls_per_page_100"; expect "API error listing pull requests" full 'cannot list'
 good 19; rm "$FX/git_commits_$H"; expect "API error reading the head commit" full 'cannot read the commits'
 good 20; rm "$FX/compare_${P}...${H}_per_page_1"; expect "API error on compare" full 'not rebased on .*unknown'
 good 21; rm "$(runs_file "$FX")"; expect "API error listing runs" full 'cannot list the runs'
 good 22; echo 'not json' > "$FX/commits_${M}_pulls_per_page_100"; expect "garbage answer" full 'unreadable|cannot|not the merge commit'
+good 23; jq '.workflow_runs[0].pull_requests[0].number=8' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "green run belongs to another PR" full 'no usable green'
+good 24; jq '.workflow_runs[0].pull_requests[0].base.ref="release"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "green run belongs to another base" full 'no usable green'
+good 25; jq '.workflow_runs[0].pull_requests[0].base.repo.url="https://api.github.com/repos/fork/repo"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "green run belongs to another base repository" full 'no usable green'
+good 26; jq '.workflow_runs[0].pull_requests=[]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "run names no pull request (branch deleted), head is unique to #7" reuse 'run 99'
+good 27; jq '.workflow_runs += [(.workflow_runs[0] | .id=98 | .conclusion="failure" | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "failed run, later success, same head" full 'no usable green'
+good 28; jq '.workflow_runs += [(.workflow_runs[0] | .id=98 | .conclusion="cancelled" | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "cancelled run, later success, same head" full 'no usable green'
+good 29; jq '.workflow_runs += [(.workflow_runs[0] | .id=100 | .status="in_progress" | .conclusion=null | .created_at="2026-10-27T02:00:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "newest run not finished" full 'no usable green'
+good 30; jq '.workflow_runs += [(.workflow_runs[0] | .id=97 | .run_attempt=2 | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "older re-run next to a newer first-attempt success" reuse 'run 99'
+
+good 31; echo '[{"number":7},{"number":9}]' > "$FX/commits_${H}_pulls_per_page_100"; jq '.workflow_runs[0].pull_requests=[]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "head also belongs to another PR (e.g. into another base)" full 'belongs to other pull requests'
+good 32; rm "$FX/commits_${H}_pulls_per_page_100"; expect "API error listing the PRs of the head" full 'cannot list the pull requests of head'
 
 exit "$failed"

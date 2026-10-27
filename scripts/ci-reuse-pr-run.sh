@@ -7,8 +7,9 @@
 #     rebased on main right before the merge (I30), so the pull request run tested the head tree itself and not
 #     a test merge with an older base,
 #   - the commit's tree equals the tree of the pull request head: identical inputs,
-#   - that exact head SHA has a completed, successful first-attempt `pull_request` run of the same workflow
-#     file (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
+#   - the newest `pull_request` run of the same workflow file on that exact head, belonging to this pull request
+#     (into this repository's main; the head belongs to no other pull request), is completed, successful and a first attempt, and no run for that head failed or
+#     was cancelled (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
 # Prints the decision and writes `reuse=true|false` to $GITHUB_OUTPUT; the steps after it run `if: steps.<id>.outputs.reuse != 'true'`.
 # Needs: gh and jq; GH_TOKEN with actions: read and pull-requests: read; GITHUB_REPOSITORY, GITHUB_SHA,
 # GITHUB_EVENT_NAME, GITHUB_REF (set by Actions). Only the GitHub API is read, no checkout is needed.
@@ -43,13 +44,29 @@ decide() {
   st=$(api "compare/$parent...$head?per_page=1" | jq -r '.status // empty') || st=""
   case $st in identical|ahead) ;; *) echo "head ${head:0:7} of #$n is not rebased on ${parent:0:7} (compare: ${st:-unknown})"; return 1 ;; esac
 
+  # GitHub empties a run's pull_requests once the head branch is deleted, so the run cannot always name its pull
+  # request. Then the head commit itself must belong to this pull request only: a pull_request run of that head can
+  # then come from no other pull request (e.g. one into another base, which would have tested another tree).
+  local hp
+  hp=$(api "commits/$head/pulls?per_page=100") || { echo "cannot list the pull requests of head ${head:0:7}"; return 1; }
+  [ "$(jq -c --argjson n "$n" '[.[].number] == [$n]' <<<"$hp" 2>/dev/null)" = true ] \
+    || { echo "head ${head:0:7} belongs to other pull requests than #$n as well"; return 1; }
+
   local runs run
   runs=$(api "actions/workflows/$wf/runs?head_sha=$head&event=pull_request&per_page=100") || { echo "cannot list the runs of $wf for ${head:0:7}"; return 1; }
-  run=$(jq -r --arg h "$head" --arg r "$repo" --arg p ".github/workflows/$wf" \
-    '[.workflow_runs[] | select(.head_sha == $h and .head_repository.full_name == $r and .path == $p
-                                and .status == "completed" and .conclusion == "success" and .run_attempt == 1)][0].id // empty' <<<"$runs") \
+  # The runs of this workflow on this exact head. One that names pull requests must name #n into $branch of this
+  # repository. A failed, cancelled or timed-out one is not erased by a later green run: full run. Otherwise the
+  # newest must be a completed first-attempt success.
+  run=$(jq -r --arg h "$head" --arg r "$repo" --arg p ".github/workflows/$wf" --argjson n "$n" --arg b "$branch" '
+    [.workflow_runs[]
+     | select(.head_sha == $h and .head_repository.full_name == $r and .path == $p
+              and ((.pull_requests // []) | length == 0
+                   or any(.[]; .number == $n and .base.ref == $b and (.base.repo.url | endswith("/repos/" + $r)))))]
+    | sort_by(.created_at) | reverse
+    | if length == 0 or any(.[]; .status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out"))) then empty
+      else .[0] | select(.status == "completed" and .conclusion == "success" and .run_attempt == 1) | .id end // empty' <<<"$runs") \
     || { echo "unreadable run list"; return 1; }
-  [ -n "$run" ] || { echo "no successful first-attempt pull_request run of $wf for head ${head:0:7} of #$n"; return 1; }
+  [ -n "$run" ] || { echo "no usable green first-attempt pull_request run of $wf for head ${head:0:7} of #$n (none, failed, re-run or other PR)"; return 1; }
 
   echo "tree identical to PR #$n head ${head:0:7}, validated in run $run; not re-run"
   return 0
