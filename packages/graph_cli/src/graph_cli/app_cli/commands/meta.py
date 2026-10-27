@@ -136,6 +136,66 @@ _RELATION: Final = obj(
 _PROPERTIES: Final = {  # absent with --compact
     "properties": array(obj({"name": STRING, "base": STRING, "many": BOOLEAN}))
 }
+MODULE_OPTION: Final = ParamSpec(
+    "--module", "string", "Only the terms of this module (id or prefix); see describe modules."
+)
+MODULE_ARG: Final = ParamSpec(
+    "module",
+    "string",
+    "Module id or prefix (see describe modules).",
+    required=True,
+    positional=True,
+)
+_MODULE_FILTER: Final = {"module": STRING}  # a filtered answer names the module it is limited to
+_TYPE_ITEM: Final = obj({"curie": STRING, "abstract": BOOLEAN, "extends": NULLABLE_STRING, **_DOC})
+_MODULE_LINK: Final = obj(
+    {"relation": STRING, "module": STRING, "from": STRINGS, "to": STRINGS, **_DOC}
+)
+_MODULE_HEAD: Final = {
+    "id": STRING,
+    "prefix": STRING,
+    "version": STRING,
+    "summary": STRING,
+    "builtin": BOOLEAN,
+}
+_MODULES: Final = model_document(
+    {
+        "modules": array(
+            obj(
+                {
+                    **_MODULE_HEAD,
+                    "types": INTEGER,
+                    "relations": INTEGER,
+                    "links": array(obj({"module": STRING, "out": INTEGER, "in": INTEGER})),
+                }
+            )
+        )
+    }
+)
+_MODULE: Final = model_document(
+    {
+        "module": obj(
+            {
+                **_MODULE_HEAD,
+                "types": array(_TYPE_ITEM),
+                "relations": array(
+                    obj(
+                        {
+                            "curie": STRING,
+                            "domain": STRINGS,
+                            "range": STRINGS,
+                            "cardinality": obj({"out": STRING, "in": STRING}),
+                            **_DOC,
+                        }
+                    )
+                ),
+                "links_out": array(_MODULE_LINK),
+                "links_in": array(_MODULE_LINK),
+                "rules": array(obj({"id": STRING, "severity": STRING, **_DOC})),
+            }
+        )
+    }
+)
 _SCHEMA: Final = model_document(
     {
         "labels": array(
@@ -149,7 +209,8 @@ _SCHEMA: Final = model_document(
         ),
         "node_fields": STRINGS,
         "relationship_fields": STRINGS,
-    }
+    },
+    _MODULE_FILTER,
 )
 GRAPH_ERRORS: Final = (
     "graph.not_selected",
@@ -209,9 +270,89 @@ def _view(state: CommandState, graph: str | None, command: str) -> GraphRead:
     return view
 
 
-def describe_types(state: CommandState, graph: str | None) -> Result:
+def describe_types(state: CommandState, module: str | None, graph: str | None) -> Result:
     view = _view(state, graph, "describe types")
-    return Result(data=describe.describe_types(view.entry, view.model), graph=view.envelope_graph())
+    return Result(
+        data=describe.describe_types(view.entry, view.model, module=module),
+        graph=view.envelope_graph(),
+    )
+
+
+def _modules_text(data: JsonObject) -> str:
+    """One block per module: id, prefix, version, counts, summary and the modules it links to."""
+    lines: list[str] = []
+    for value in req_list(data, "modules"):
+        item = as_object(value, "module")
+        built = " (built-in)" if item["builtin"] else ""
+        lines.append(
+            f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}"
+            f"  {item['types']} types, {item['relations']} relations"
+        )
+        lines.append(f"  {req_str(item, 'summary')}")
+        links = [as_object(v, "link") for v in req_list(item, "links")]
+        if links:
+            lines.append(
+                "  links: "
+                + ", ".join(f"{req_str(k, 'module')} ({k['out']} out, {k['in']} in)" for k in links)
+            )
+    return "\n".join(lines) + "\n"
+
+
+def _ends(item: JsonObject, key: str) -> str:
+    return "|".join(str(c) for c in req_list(item, key))
+
+
+def _module_text(data: JsonObject) -> str:
+    """The module head, then its types, relations, cross-module links and rules."""
+    item = as_object(data["module"], "module")
+    built = " (built-in)" if item["builtin"] else ""
+    lines = [
+        f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}",
+        f"  {req_str(item, 'summary')}",
+        "Types:",
+    ]
+    for value in req_list(item, "types"):
+        t = as_object(value, "type")
+        extends = f" extends {t['extends']}" if t["extends"] else ""
+        abstract = " (abstract)" if t["abstract"] else ""
+        lines.append(f"  {req_str(t, 'curie')}{abstract}{extends}  {req_str(t, 'summary')}")
+    lines.append("Relations inside the module:")
+    for value in req_list(item, "relations"):
+        r = as_object(value, "relation")
+        lines.append(
+            f"  {_ends(r, 'domain')} -{req_str(r, 'curie')}-> {_ends(r, 'range')}"
+            f"  {req_str(r, 'summary')}"
+        )
+    for key, title in (
+        ("links_out", "Links to other modules:"),
+        ("links_in", "Links from other modules:"),
+    ):
+        lines.append(title)
+        for value in req_list(item, key):
+            k = as_object(value, "link")
+            lines.append(
+                f"  {_ends(k, 'from')} -{req_str(k, 'relation')}-> {_ends(k, 'to')}"
+                f"  [{req_str(k, 'module')}]"
+            )
+    lines.append("Rules:")
+    for value in req_list(item, "rules"):
+        rule = as_object(value, "rule")
+        lines.append(
+            f"  {req_str(rule, 'id')} ({req_str(rule, 'severity')})  {req_str(rule, 'summary')}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def describe_modules(state: CommandState, graph: str | None) -> Result:
+    view = _view(state, graph, "describe modules")
+    data = describe.describe_modules(view.entry, view.model)
+    return Result(data=data, graph=view.envelope_graph(), text=_modules_text(data))
+
+
+def describe_module(state: CommandState, module: str, graph: str | None) -> Result:
+    view = _view(state, graph, "describe module")
+    data = describe.describe_module(view.entry, view.model, module)
+    return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
 
 
 def describe_type(state: CommandState, type: str, graph: str | None) -> Result:
@@ -221,10 +362,11 @@ def describe_type(state: CommandState, type: str, graph: str | None) -> Result:
     )
 
 
-def describe_relations(state: CommandState, graph: str | None) -> Result:
+def describe_relations(state: CommandState, module: str | None, graph: str | None) -> Result:
     view = _view(state, graph, "describe relations")
     return Result(
-        data=describe.describe_relations(view.entry, view.model), graph=view.envelope_graph()
+        data=describe.describe_relations(view.entry, view.model, module=module),
+        graph=view.envelope_graph(),
     )
 
 
@@ -265,9 +407,11 @@ def _schema_text(data: JsonObject) -> str:
     return "\n".join(lines) + "\n"
 
 
-def describe_schema(state: CommandState, compact: bool, graph: str | None) -> Result:
+def describe_schema(
+    state: CommandState, compact: bool, module: str | None, graph: str | None
+) -> Result:
     view = _view(state, graph, "describe schema")
-    data = describe.describe_schema(view.entry, view.model, compact=compact)
+    data = describe.describe_schema(view.entry, view.model, compact=compact, module=module)
     return Result(data=data, graph=view.envelope_graph(), text=_schema_text(data))
 
 
@@ -277,12 +421,21 @@ def _describe(
     handler: object,
     *,
     with_type: bool,
+    with_module: bool = False,
     examples: tuple[Example, ...],
     output: Schema,
     options: tuple[ParamSpec, ...] = (),
 ) -> CommandSpec:
     params = (TYPE_ARG, *options, GRAPH) if with_type else (*options, GRAPH)
-    errors = (*GRAPH_ERRORS, "term.unknown", "query.ambiguous_term") if with_type else GRAPH_ERRORS
+    if with_module:
+        params = (MODULE_ARG, GRAPH)
+    errors = (
+        (*GRAPH_ERRORS, "term.unknown", "query.ambiguous_term")
+        if with_type
+        else (*GRAPH_ERRORS, "term.unknown")
+        if with_module or MODULE_OPTION in options
+        else GRAPH_ERRORS
+    )
     return CommandSpec(
         path=("describe", name),
         kind="read",
@@ -362,16 +515,35 @@ SPECS: Final = (
         "List the types of the selected graph's ontology.",
         describe_types,
         with_type=False,
-        output=model_document(
-            {
-                "types": array(
-                    obj({"curie": STRING, "abstract": BOOLEAN, "extends": NULLABLE_STRING, **_DOC})
-                )
-            }
-        ),
+        output=model_document({"types": array(_TYPE_ITEM)}, _MODULE_FILTER),
         examples=(
             Example("graph describe types", "All types with summaries."),
             Example("graph describe types --graph <graph> --json", "Types of one graph."),
+            Example("graph describe types --module <module>", "Only the types of one module."),
+        ),
+        options=(MODULE_OPTION,),
+    ),
+    _describe(
+        "modules",
+        "List the modules (subject areas) of the graph's ontology and how they link.",
+        describe_modules,
+        with_type=False,
+        output=_MODULES,
+        examples=(
+            Example("graph describe modules", "The subject areas: what each holds, how they link."),
+            Example("graph describe modules --json", "The modules as graph_cli.model/1."),
+        ),
+    ),
+    _describe(
+        "module",
+        "Describe one module: its types, relations, links to other modules and rules.",
+        describe_module,
+        with_type=False,
+        with_module=True,
+        output=_MODULE,
+        examples=(
+            Example("graph describe module <module>", "Everything one subject area holds."),
+            Example("graph describe module <module> --json", "The module as graph_cli.model/1."),
         ),
     ),
     _describe(
@@ -390,11 +562,16 @@ SPECS: Final = (
         "List the relations of the selected graph's ontology.",
         describe_relations,
         with_type=False,
-        output=model_document({"relations": array(_RELATION)}),
+        output=model_document({"relations": array(_RELATION)}, _MODULE_FILTER),
         examples=(
             Example("graph describe relations", "All relations."),
             Example("graph describe relations --json", "Relations as JSON."),
+            Example(
+                "graph describe relations --module <module>",
+                "The relations that declare or touch one module.",
+            ),
         ),
+        options=(MODULE_OPTION,),
     ),
     _describe(
         "schema",
@@ -406,9 +583,14 @@ SPECS: Final = (
             Example("graph describe schema", "Patterns and labels to write a query with."),
             Example("graph describe schema --json", "The schema as graph_cli.model/1."),
             Example("graph describe schema --compact --json", "Labels and patterns only."),
+            Example(
+                "graph describe schema --module <module> --compact",
+                "Patterns of one module and its links, no properties.",
+            ),
         ),
         options=(
             ParamSpec("--compact", "flag", "Only labels and relationship patterns, no properties."),
+            MODULE_OPTION,
         ),
     ),
     _describe(

@@ -142,6 +142,26 @@ def test_write_read_and_text_rendering(
     assert any(e["actor"]["client"]["entrypoint"] == "server" for e in events)
 
 
+def test_module_describe_commands_are_served(
+    served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
+) -> None:
+    app, _ = served
+    token = installation["tokens"]["ci"]
+    pointer = {"graphs": ["example_graph"], "default": "example_graph"}
+    modules = command(app, "describe/modules", token, pointer=pointer)
+    assert modules.status == 200, modules.json
+    ids = [m["id"] for m in modules.json["data"]["modules"]]
+    assert "core" in ids and len(ids) >= 2
+    one = command(app, "describe/module", token, args={"module": "core"}, pointer=pointer)
+    assert one.status == 200, one.json
+    assert one.json["data"]["module"]["builtin"] is True
+    filtered = command(app, "describe/types", token, args={"--module": "core"}, pointer=pointer)
+    assert filtered.status == 200 and filtered.json["data"]["module"] == "core"
+    unknown = command(app, "describe/module", token, args={"module": "nope"}, pointer=pointer)
+    assert unknown.status == 404
+    assert unknown.error["code"] == "term.unknown"
+
+
 def test_usage_errors_unknown_routes_and_methods(
     served: tuple[ServerApp, io.StringIO], installation: dict[str, Any]
 ) -> None:

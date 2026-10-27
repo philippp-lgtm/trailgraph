@@ -95,6 +95,10 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "fields", cls),
         ("describe", "lifecycle", cls),
         ("describe", "type", "no:Such"),
+        ("describe", "modules"),
+        ("describe", "module", "core"),
+        ("describe", "types", "--module", "core"),
+        ("describe", "module", "no_such_module"),
     ):
         call(*args)
     text("describe", "types")

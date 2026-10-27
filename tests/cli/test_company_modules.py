@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
-from support.app import ENV, app
+from support.app import ENV, app, create_graph
 from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
 from support.trees import tree_hash
 
@@ -335,3 +335,121 @@ def test_equal_local_names_in_two_modules_stay_apart(
     for item in schema.data["relationships"]:
         query = app(run_cli, "query", f"MATCH {item['pattern']} RETURN count(*) AS n", env=ENV)
         assert query.code == 0, (item["pattern"], query.envelope)
+
+
+@pytest.fixture
+def company(run_cli: CliRunner, root: Path) -> None:
+    create(run_cli, "1.0.0")
+    assert release(run_cli, "1.1.0").code == 0
+
+
+def test_describe_modules_lists_the_subject_areas(run_cli: CliRunner, company: None) -> None:
+    outcome = app(run_cli, "describe", "modules", env=ENV)
+    assert outcome.code == 0, outcome.envelope
+    modules = {m["id"]: m for m in outcome.data["modules"]}
+    assert list(modules) == sorted(modules)
+    assert set(modules) == {"core", *V110_MODULES}
+    assert [m["id"] for m in outcome.data["modules"] if m["builtin"]] == ["core"]
+    assert modules["company"]["types"] == 0 and modules["company"]["relations"] == 0
+    assert modules["organization"]["prefix"] == "org"
+    assert {"module": "people", "out": 0, "in": 1} in modules["organization"]["links"]
+
+    text = run_cli("graph", "describe", "modules", env=ENV)
+    assert text.returncode == 0
+    assert "organization [org] 1.0.0  5 types, 5 relations" in text.stdout
+    assert "core [core] 1.0.0 (built-in)" in text.stdout
+    assert "links: operations (0 out, 2 in), people (0 out, 1 in)" in text.stdout
+
+
+def test_describe_module_by_id_and_by_prefix(run_cli: CliRunner, company: None) -> None:
+    by_id = app(run_cli, "describe", "module", "organization", env=ENV)
+    by_prefix = app(run_cli, "describe", "module", "org", env=ENV)
+    assert by_id.code == 0, by_id.envelope
+    assert by_id.data["module"] == by_prefix.data["module"]
+    module = by_id.data["module"]
+    assert module["id"] == "organization" and module["builtin"] is False
+    assert {t["curie"] for t in module["types"]} == {
+        "org:CostCenter",
+        "org:Department",
+        "org:OrgUnit",
+        "org:Position",
+        "org:Team",
+    }
+    assert {r["curie"] for r in module["relations"]} == {
+        "org:charged_to",
+        "org:in_unit",
+        "org:part_of",
+        "org:reports_to",
+    }
+    assert {(k["relation"], k["module"]) for k in module["links_in"]} == {
+        ("org:holds", "organization"),
+        ("ops:owned_by", "operations"),
+        ("ops:required_for", "operations"),
+    }
+    assert [r["id"] for r in module["rules"]] == ["org.team_in_department"]
+
+    text = run_cli("graph", "describe", "module", "org", env=ENV)
+    assert text.returncode == 0
+    assert "org:Team extends org:OrgUnit" in text.stdout
+    assert "ppl:Person -org:holds-> org:Position  [organization]" in text.stdout
+    assert "org.team_in_department (error)" in text.stdout
+
+
+def test_an_unknown_module_suggests_the_known_ones(run_cli: CliRunner, company: None) -> None:
+    for args in (("module", "orgs"), ("types", "--module", "orgs"), ("schema", "--module", "orgs")):
+        refused = app(run_cli, "describe", *args, env=ENV)
+        assert (refused.code, refused.error["code"]) == (1, "term.unknown"), args
+        assert refused.error["details"]["kind"] == "module"
+        assert "org" in refused.error["details"]["did_you_mean"]
+
+
+def test_the_module_filter_limits_types_relations_and_schema(
+    run_cli: CliRunner, company: None
+) -> None:
+    types = app(run_cli, "describe", "types", "--module", "ops", env=ENV)
+    assert types.code == 0, types.envelope
+    assert types.data["module"] == "operations"
+    assert {t["curie"] for t in types.data["types"]} == {
+        "ops:Guideline",
+        "ops:Process",
+        "ops:Training",
+    }
+    relations = app(run_cli, "describe", "relations", "--module", "people", env=ENV)
+    assert relations.data["module"] == "people"
+    assert {r["curie"] for r in relations.data["relations"]} == {
+        "org:holds",
+        "ops:completed",
+    }
+    schema = app(run_cli, "describe", "schema", "--module", "operations", "--compact", env=ENV)
+    assert schema.code == 0, schema.envelope
+    assert schema.data["module"] == "operations"
+    assert all("properties" not in item for item in schema.data["labels"])
+    patterns = {r["pattern"] for r in schema.data["relationships"]}
+    assert "(:Process)-[:owned_by]->(:Position)" in patterns
+    assert {item["label"] for item in schema.data["labels"]} == {
+        "Guideline",
+        "Person",
+        "Position",
+        "Process",
+        "Training",
+    }
+    everything = app(run_cli, "describe", "types", env=ENV)
+    assert "module" not in everything.data
+
+    text = run_cli("graph", "describe", "schema", "--module", "ops", "--compact", env=ENV)
+    assert text.returncode == 0
+    assert "(:Process)-[:owned_by]->(:Position)" in text.stdout
+    assert "(:Team)" not in text.stdout
+
+
+def test_a_single_module_graph_has_one_authored_module(run_cli: CliRunner, root: Path) -> None:
+    create_graph(run_cli, "example_graph", "inventory")
+    modules = app(run_cli, "describe", "modules", env=ENV).data["modules"]
+    authored = [m for m in modules if not m["builtin"]]
+    assert len(authored) == 1 and authored[0]["links"] == []
+    only = app(run_cli, "describe", "module", authored[0]["prefix"], env=ENV)
+    assert only.code == 0, only.envelope
+    assert {t["curie"] for t in only.data["module"]["types"]} == {
+        t["curie"] for t in app(run_cli, "describe", "types", env=ENV).data["types"]
+    }
+    assert only.data["module"]["links_out"] == only.data["module"]["links_in"] == []
