@@ -46,16 +46,38 @@ decides, any doubt or API error means the full run, and
 infra repository's `DECISIONS.md` I31.
 
 A release is a tag `vX.Y.Z` on a commit of `main`. Before tagging, check
-that the `check` run of that commit is green; the release workflow does not
-look it up. The three distributions carry the version (`version` in each
+that the `check` run of that commit is green and wait for the `build` run
+of the merge commit (it pushes the candidate image, see below); the release
+workflow only looks them up to decide between promoting and building. The three distributions carry the version (`version` in each
 `packages/*/pyproject.toml` and `__version__` in each package, then `uv
 lock`, the goldens and the generated skill, which name it), bumped in a
 pull request before the tag. The version is part of skill 1, so a client
 of the previous release has to update. `.github/workflows/build.yml`
 refuses a tag that differs from that version, is not on `main` or names an
-image that exists already; it runs the suite on the tagged tree and the
-smoke test on the `linux/amd64` image, then pushes it as
-`ghcr.io/<owner>/<repository>:vX.Y.Z`. The job summary names its digest,
+image that exists already.
+
+The image is built once and promoted (infra `DECISIONS.md` I32). A push to
+`main` that changes the image inputs (`Dockerfile`, `.dockerignore`,
+`pyproject.toml`, `uv.lock`, `packages/`, `scripts/build_id.py`, `docker/`) builds
+the `linux/amd64` runtime image, runs the smoke test on it and pushes it as the
+candidate `ghcr.io/<owner>/<repository>:sha-<commit>` (revision label, digest in the
+job summary); the suite runs in `check` on the same commit. A tag then adds
+`vX.Y.Z` to the candidate of the newest commit at or before the tagged one that
+changed the inputs: `scripts/ci-promote-image.sh` tags the same manifest, so the
+digest is the candidate's and nothing is rebuilt (minutes become seconds). It
+promotes only if the digest that the `build` run on `main` recorded in its
+artifact `candidate-digest` is the one the tag `sha-<commit>` still names (the
+recorded digest is what gets promoted, never the mutable tag itself), its revision
+label and platform match, and the `build` and `check` runs on `main` of that commit and
+the `check` run of the tagged commit are first-attempt successes (a run that is
+green only after a re-run, a cancelled or a still running one does not count)
+and the version tag is free. Anything else, including any error, builds
+as before: the suite on the tagged tree (target `test`), the
+smoke test on the `linux/amd64` image, then the push as
+`ghcr.io/<owner>/<repository>:vX.Y.Z`. A promoted image has no
+`org.opencontainers.image.version` label (the candidate is built before the version
+is known); its revision label names the commit. `tests/ci-promote/run.sh` tests the
+decision offline. The job summary names the digest either way,
 which deployments pin (`<tag>@sha256:<digest>`). A pushed tag is never
 moved; fix forward with the next version.
 
