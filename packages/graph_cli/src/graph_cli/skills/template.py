@@ -9,8 +9,8 @@ extra files) is curated and kept. A marker inside a line is plain text.
 
 Refused (rule ``template``): an unknown block name (a newer publisher, or a
 typo), a block used twice, a line that starts like a marker but is not one,
-markers outside ``SKILL.md`` and a curated ``references/model.md``, which
-every generated skill gets from the model.
+markers outside ``SKILL.md`` and a curated ``references/model.md`` or file below
+``references/modules/``, which every generated skill gets from the model.
 """
 
 from __future__ import annotations
@@ -23,8 +23,9 @@ from typing import Final
 from graph_cli.kernel.skill_marker import GENERATED, STATIC
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles
 
-BLOCKS: Final = ("start", "types", "relations", "constraints", "names", "model")
+BLOCKS: Final = ("start", "modules", "types", "relations", "constraints", "names", "model")
 MODEL_FILE: Final = "references/model.md"
+MODULES_DIR: Final = "references/modules/"  # one generated page per module of a modular graph
 MARKER_RE: Final = re.compile(r"^<!-- graph_cli:block ([a-z_]+) -->$")
 MARKER_START: Final = "<!-- graph_cli:"
 
@@ -67,10 +68,9 @@ def parse_template(files: SkillFiles) -> tuple[Template | None, list[Problem]]:
             continue  # a tree problem (``file``), reported by ``tree.validate``
     if SKILL_FILE not in texts:
         return None, [Problem("template", SKILL_FILE, "missing or not UTF-8")]
-    if MODEL_FILE in files:
-        problems.append(
-            Problem("template", MODEL_FILE, "generated from the model; remove this file")
-        )
+    for path in sorted(files):
+        if path == MODEL_FILE or path.startswith(MODULES_DIR):
+            problems.append(Problem("template", path, "generated from the model; remove this file"))
     for path, text in sorted(texts.items()):
         if path == SKILL_FILE:
             continue

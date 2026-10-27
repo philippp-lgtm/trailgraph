@@ -11,6 +11,8 @@ description: "Every generated block once, for the render goldens of the toy onto
 
 ## What is in it
 
+<!-- graph_cli:block modules -->
+
 <!-- graph_cli:block types -->
 
 Relations:

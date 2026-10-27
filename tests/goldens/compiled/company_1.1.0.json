@@ -1,0 +1,1041 @@
+{
+  "bundle": {
+    "id": "company",
+    "version": "1.1.0"
+  },
+  "classes": {
+    "ops:Guideline": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "ops:Guideline",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the guideline, such as short forms.",
+          "type": "string",
+          "unique": false
+        },
+        "effective_from": {
+          "annotations": {},
+          "declared_in": "ops:Guideline",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Date from which the guideline applies.",
+          "type": "date",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "ops:Guideline",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Title of the guideline.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "GUIDE",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A written rule of the company that governs processes."
+    },
+    "ops:Process": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "ops:Process",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the process, such as short forms.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "ops:Process",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the process.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "PROC",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A recurring way of getting one kind of work done, owned by a position."
+    },
+    "ops:Training": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "ops:Training",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the training, such as short forms.",
+          "type": "string",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "ops:Training",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Title of the training.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "TRN",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A course or certification that a position requires and a person completes."
+    },
+    "org:CostCenter": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "code": {
+          "annotations": {},
+          "declared_in": "org:CostCenter",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Short code of the cost center in the accounts.",
+          "type": "string",
+          "unique": true
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "org:CostCenter",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the cost center.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "CC",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "An accounting bucket that costs of units are charged to."
+    },
+    "org:Department": {
+      "abstract": false,
+      "ancestors": [
+        "org:OrgUnit"
+      ],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the unit, such as abbreviations.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the unit as used in the company.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "DEPT",
+      "extends": "org:OrgUnit",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A larger unit that groups teams and may contain further departments."
+    },
+    "org:OrgUnit": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the unit, such as abbreviations.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the unit as used in the company.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A unit of the company structure, either a department or a team."
+    },
+    "org:Position": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "org:Position",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the position, such as short forms.",
+          "type": "string",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "org:Position",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "lifecycle",
+          "many": false,
+          "mutability": "lifecycle",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "How far the position has come in the org chart.",
+          "type": "org:PositionLifecycle",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "org:Position",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the position as listed in the org chart.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "POS",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A slot in the org chart that one person holds at a time; the slot outlives the holder."
+    },
+    "org:Team": {
+      "abstract": false,
+      "ancestors": [
+        "org:OrgUnit"
+      ],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the unit, such as abbreviations.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "org:OrgUnit",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the unit as used in the company.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "TEAM",
+      "extends": "org:OrgUnit",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A small unit that works together day to day and sits in a department."
+    },
+    "ppl:Person": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "alt_labels": {
+          "annotations": {},
+          "declared_in": "ppl:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names, such as a short form or a former name.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "ppl:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Full name as used at work.",
+          "type": "string",
+          "unique": false
+        },
+        "work_email": {
+          "annotations": {},
+          "declared_in": "ppl:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Work email address, if the person has one.",
+          "type": "ppl:WorkEmail",
+          "unique": true
+        }
+      },
+      "deprecated": false,
+      "description": "A person is the human, independent of any job; the jobs a person holds are Positions of the organization module, linked by holds.",
+      "display_prefix": "PER",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A human being who works for the company or with it."
+    }
+  },
+  "datatypes": {
+    "ppl:WorkEmail": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^[^@\\s]+@[^@\\s]+$",
+        "single_line": true
+      },
+      "summary": "Email address at the company's own mail domain."
+    }
+  },
+  "enums": {},
+  "lifecycles": {
+    "org:PositionLifecycle": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "initial": [
+        "planned"
+      ],
+      "states": [
+        {
+          "name": "planned",
+          "summary": "Approved on paper but not yet part of the working structure."
+        },
+        {
+          "name": "active",
+          "summary": "Part of the working structure and may be held."
+        },
+        {
+          "name": "abolished",
+          "summary": "Removed from the structure for good."
+        }
+      ],
+      "summary": "How far a position has come in the org chart.",
+      "terminal": [
+        "abolished"
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "out",
+                      "rel": "org:in_unit"
+                    }
+                  },
+                  {
+                    "const": 1
+                  }
+                ]
+              },
+              "id": "org.has_unit",
+              "summary": "An active position belongs to a unit."
+            }
+          ],
+          "summary": "Open the position.",
+          "to": "active"
+        },
+        {
+          "from": "planned",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "in",
+                      "rel": "org:holds",
+                      "where": {
+                        "record_status": [
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "const": 0
+                  }
+                ]
+              },
+              "id": "org.not_held",
+              "summary": "A position that is held by a person cannot be abolished."
+            }
+          ],
+          "summary": "Remove the position from the structure.",
+          "to": "abolished"
+        },
+        {
+          "from": "active",
+          "guards": [
+            {
+              "expr": {
+                "eq": [
+                  {
+                    "count": {
+                      "direction": "in",
+                      "rel": "org:holds",
+                      "where": {
+                        "record_status": [
+                          "active"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "const": 0
+                  }
+                ]
+              },
+              "id": "org.not_held",
+              "summary": "A position that is held by a person cannot be abolished."
+            }
+          ],
+          "summary": "Remove the position from the structure.",
+          "to": "abolished"
+        }
+      ]
+    }
+  },
+  "modules": [
+    {
+      "extensions": {},
+      "id": "core",
+      "namespace": "urn:graph_cli:onto:core#",
+      "prefix": "core",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "people",
+      "namespace": "urn:graph_cli:onto:people#",
+      "prefix": "ppl",
+      "summary": "The people the company knows, who they are and how to reach them; not their positions or units.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "organization",
+      "namespace": "urn:graph_cli:onto:organization#",
+      "prefix": "org",
+      "summary": "The structure of the company, its units, the positions in them and what they cost; not the people or the work done.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "operations",
+      "namespace": "urn:graph_cli:onto:operations#",
+      "prefix": "ops",
+      "summary": "How work gets done, the processes, the guidelines that govern them and the training positions need; not who is in the structure.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "company",
+      "namespace": "urn:graph_cli:onto:company#",
+      "prefix": "co",
+      "summary": "The company as a whole, the main module that brings its subject areas together; it holds no terms of its own.",
+      "version": "1.1.0"
+    }
+  ],
+  "prefixes": {
+    "co": "urn:graph_cli:onto:company#",
+    "core": "urn:graph_cli:onto:core#",
+    "ops": "urn:graph_cli:onto:operations#",
+    "org": "urn:graph_cli:onto:organization#",
+    "ppl": "urn:graph_cli:onto:people#"
+  },
+  "relations": {
+    "core:derived_from": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "derivation_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source was derived from a specific revision of the target."
+    },
+    "core:retracts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "retracted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source withdraws the target; created only by the retract operation."
+    },
+    "core:source": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "source_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The target is where the information in the source came from."
+    },
+    "core:supersedes": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "superseded_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source replaces the target; created only by the supersede operation."
+    },
+    "ops:completed": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "ppl:Person"
+      ],
+      "inverse_label": "completed_by",
+      "mappings": {},
+      "qualifiers": {
+        "on": {
+          "kind": "base",
+          "many": false,
+          "required": false,
+          "summary": "Date the person completed the training.",
+          "type": "date"
+        }
+      },
+      "range": [
+        "ops:Training"
+      ],
+      "renamed_from": null,
+      "summary": "The person completed the training."
+    },
+    "ops:governs": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "ops:Guideline"
+      ],
+      "inverse_label": "governed_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "ops:Process"
+      ],
+      "renamed_from": null,
+      "summary": "The guideline sets the rules for the process."
+    },
+    "ops:owned_by": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "ops:Process"
+      ],
+      "inverse_label": "owns",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:Position"
+      ],
+      "renamed_from": null,
+      "summary": "The position that is accountable for the process."
+    },
+    "ops:required_for": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "ops:Training"
+      ],
+      "inverse_label": "requires_training",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:Position"
+      ],
+      "renamed_from": null,
+      "summary": "The training must be completed by the holder of the position."
+    },
+    "org:charged_to": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "org:OrgUnit"
+      ],
+      "inverse_label": "bears_costs_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:CostCenter"
+      ],
+      "renamed_from": null,
+      "summary": "The cost center that bears the costs of the unit."
+    },
+    "org:holds": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": 1,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "ppl:Person"
+      ],
+      "inverse_label": "held_by",
+      "mappings": {},
+      "qualifiers": {
+        "since": {
+          "kind": "base",
+          "many": false,
+          "required": false,
+          "summary": "Date the person took over the position.",
+          "type": "date"
+        }
+      },
+      "range": [
+        "org:Position"
+      ],
+      "renamed_from": null,
+      "summary": "The person currently holds the position."
+    },
+    "org:in_unit": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "org:Position"
+      ],
+      "inverse_label": "has_position",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:OrgUnit"
+      ],
+      "renamed_from": null,
+      "summary": "The unit the position belongs to."
+    },
+    "org:part_of": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "org:OrgUnit"
+      ],
+      "inverse_label": "has_part",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:OrgUnit"
+      ],
+      "renamed_from": null,
+      "summary": "The unit is part of a larger unit."
+    },
+    "org:reports_to": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "org:Position"
+      ],
+      "inverse_label": "has_report",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "org:Position"
+      ],
+      "renamed_from": null,
+      "summary": "The position whose holder this position's holder reports to."
+    }
+  },
+  "rules": [
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "eq": [
+          {
+            "count": {
+              "direction": "out",
+              "rel": "org:part_of",
+              "where": {
+                "type": [
+                  "org:Department"
+                ]
+              }
+            }
+          },
+          {
+            "const": 1
+          }
+        ]
+      },
+      "id": "org.team_in_department",
+      "severity": "error",
+      "summary": "A team is part of exactly one department.",
+      "target": "org:Team",
+      "when": "write"
+    }
+  ],
+  "schema": "graph_cli.compiled_ontology/1"
+}

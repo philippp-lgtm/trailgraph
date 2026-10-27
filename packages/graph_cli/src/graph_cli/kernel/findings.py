@@ -74,6 +74,7 @@ class Finding:
     actual: JsonValue | None = None
     rule_id: str | None = None
     hint: str | None = None
+    connecting: JsonValue | None = None
 
     def to_json(self) -> dict[str, JsonValue]:
         data: dict[str, JsonValue] = {
@@ -82,7 +83,7 @@ class Finding:
             "target": dict(self.target),
             "message": self.message,
         }
-        for key in ("expected", "actual", "rule_id", "hint"):
+        for key in ("expected", "actual", "rule_id", "hint", "connecting"):
             value = getattr(self, key)
             if value is not None:
                 data[key] = value

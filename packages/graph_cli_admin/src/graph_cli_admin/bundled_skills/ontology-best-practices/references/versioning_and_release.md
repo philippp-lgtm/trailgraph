@@ -51,6 +51,35 @@ without releasing and also lists the warnings. In practice:
    `graph supersede`; tell the graph skill to stop using the term.
 3. Major release: remove the term once no active data uses it.
 
+## Releasing a modular graph
+
+A graph whose ontology has several modules is released as one bundle; the
+version of the bundle is the version of the main (umbrella) module.
+
+- The version directory holds every module file, also those that did not
+  change. A module file is never left out of a new version directory.
+- Name the main module wherever a directory with several modules is
+  given: `--module <main>` on `ontology validate`, `ontology diff`,
+  `ontology release`, `graph-admin graph create` and `graph-admin graph check` (with its
+  `--ontology` option); without it these commands refuse with
+  `usage.missing_argument`. `graph-admin graph push` takes it from the
+  pulled base.
+- A change in any module needs at least the same bump of the main module.
+  `ontology diff` classifies the whole bundle; the main module's version
+  must follow it, and a patch-level edit of an area is a patch bump of the
+  main module. Bump the area's own version too.
+- Adding a module is a minor change: a new file plus a new import in the
+  main module (or in the module that builds on it).
+- Moving a term to another module changes its CURIE, which `ontology diff`
+  sees as a removal plus an addition. `renamed_from` is a local name
+  and only works within one module, so it cannot carry the move. It is a
+  major release with a data migration: add the term in the new module,
+  move the data, then remove the old term (see the major versions above).
+- Removing an import is major.
+- After the release, check what agents will see: `graph describe modules`
+  and `graph describe module <module>`, and the generated graph skill
+  (`graph-admin graph skill render`).
+
 ## Trying an ontology on a throwaway graph
 
 Before the first release and before every release with new structure or

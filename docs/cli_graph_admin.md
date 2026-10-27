@@ -87,6 +87,24 @@ Pull is authorized as `maint.graph_configure` on the graph; push as that
 and, for a release, `maint.ontology_release` and `maint.ontology_pin`. Every
 change is audited as by the single commands, with the push's `--reason`.
 
+## Ontologies with several modules
+
+An authored version directory holds one `<module>.yaml` per module, and a
+graph's release is one bundle: the version of the bundle is the version of
+the main module (the one that imports the others). When a directory holds
+more than one module file, name the main module with `--module <module>` on
+`ontology validate`, `ontology diff`, `ontology release`, `graph create` and
+`graph check --ontology`; without it these commands refuse with
+`usage.missing_argument`. `graph push` takes the main module from the pulled
+base. The release rules (all module files in every version directory, the
+bump of the main module, moving a term between modules) are in the
+`ontology-best-practices` skill
+([versioning](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/versioning_and_release.md#releasing-a-modular-graph)),
+as is how to cut a model into modules
+([modeling](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/modeling.md#splitting-into-modules));
+what agents see of a modular graph is described in
+[Skills](skills.md#blocks).
+
 ## Maintainer workspaces
 
 `workspace sync DIR` turns a directory into a place an agent maintains

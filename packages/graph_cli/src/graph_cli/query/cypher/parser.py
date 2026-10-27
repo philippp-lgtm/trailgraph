@@ -52,7 +52,7 @@ from graph_cli.query.cypher.ast import (
     Variable,
     With,
 )
-from graph_cli.query.cypher.errors import syntax_error, unsupported
+from graph_cli.query.cypher.errors import PREFIXED_NAME_ADVICE, syntax_error, unsupported
 from graph_cli.query.cypher.lexer import Token, tokenize
 
 MAX_HOPS: Final = 5  # upper bound of a variable-length relationship
@@ -435,10 +435,10 @@ class _Parser:
         if self.accept_symbol("["):
             variable = self.variable_name() if self.at_variable() else None
             if self.accept_symbol(":"):
-                found = [self.name("a relationship type")]
+                found = [self.relationship_type()]
                 while self.accept_symbol("|"):
                     self.accept_symbol(":")
-                    found.append(self.name("a relationship type"))
+                    found.append(self.relationship_type())
                 types = tuple(found)
             if self.at_symbol("*"):
                 length = self.length()
@@ -448,6 +448,19 @@ class _Parser:
         right = self.accept_symbol(">")
         direction: Direction = "both" if left == right else "in" if left else "out"
         return RelPattern(variable, types, direction, properties, length, start.pos)
+
+    def relationship_type(self) -> str:
+        name = self.name("a relationship type")
+        if self.at_symbol(":"):
+            token = self.peek()
+            raise syntax_error(
+                token.pos,
+                f"expected ']', found :; {PREFIXED_NAME_ADVICE}",
+                found=token.describe(),
+                expected=["]"],
+                prefixed=True,
+            )
+        return name
 
     def length(self) -> tuple[int, int]:
         star = self.expect_symbol("*")

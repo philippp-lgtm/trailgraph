@@ -103,7 +103,8 @@ with `graph_cli.skills.install`, whose scan sees only one owner's skills
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
-them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
+them; `services.schema_search` ranks the terms of the model for `describe search` (no graph data).
+`graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
 `ast`, `resolve` checks it against the model (names to CURIEs, fields,
 parameters, scopes) and `render` writes a tree back as Cypher text.
@@ -184,6 +185,7 @@ only caller of `WriteSession.commit`.
 | `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
 | `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |
+| `ontology_layer.connecting` | the relations and two-hop paths that connect two types, from the compiled model alone; used for the `connecting` of domain and range findings |
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch` |
 | `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path`, `check`; the built-in media type table |
@@ -199,7 +201,9 @@ one new revision unless its content ends up equal to its current revision
 one that changes nothing stops after validation, without a transaction.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
-along with the result. Refusals are audited: denials in the installation
+along with the result. The `connecting` of a domain or range finding
+(described in [the `graph` CLI](cli_graph.md)) is computed once per type pair
+and only for findings that are kept. Refusals are audited: denials in the installation
 stream, invalid and conflicting writes in the graph's stream. A dry run
 validates against the current state without the lock, without ids and
 without any audit or file change. A JSONL batch commits one document per

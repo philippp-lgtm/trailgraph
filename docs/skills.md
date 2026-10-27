@@ -51,7 +51,8 @@ into the graph's runtime area. Its kind follows the content:
 
 | Block | Renders |
 | --- | --- |
-| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); load the `graph-cli` skill before the first command, and two of its ground rules repeated (plain `graph` calls, retried plainly when refused; `graph query` for a few fields, a count or a join) |
+| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); load the `graph-cli` skill before the first command, and two of its ground rules repeated (plain `graph` calls, retried plainly when refused; `graph query` for a few fields, a count or a join; on a modular graph the patterns come from the module views, not the whole schema) |
+| `modules` | the subject areas (ontology modules) of the graph: one row per module that is not built in (module, prefix, summary, number of types, links to other modules with the number of relations per direction), the built-in modules in one line, then the commands to read one module (`graph describe module <module>`), to find a term (`graph describe search <text>`) and to read a type (`graph describe type <type>`). For a graph with several modules it takes the place of `types` and `relations`, which would list every type |
 | `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
 | `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label; then the same relations as `graph query` patterns (`(:A)-[:rel]->(:B)`, from `describe schema`) |
 | `constraints` | transition guards, write-once fields, rules with severity |
@@ -68,6 +69,23 @@ same render stays `fresh`. The summary of a deprecated term starts with
 "Deprecated." in every block. Blocks use only the model and the manifest,
 never graph data (no counts, no records). Curated examples may name real
 aliases.
+
+A graph with two or more modules besides the built-in ones is modular. Its
+generated skill reads the model module by module instead of in one piece:
+
+- `references/modules/<module>.md`, one page per module that is not built in:
+  the module's summary, its types (alias example, abstract, supertype,
+  summary), the relations inside it, the relations to and from other
+  modules with the other module named, and its rules. A template may not
+  contain a file below `references/modules/`.
+- `references/model.md` becomes an index: every module with its page and
+  every type with its module and page. Fields, lifecycles and rules stay
+  with `graph describe type`.
+
+A single-module graph renders as before; the `modules` block then lists the
+one module and does not mention pages. Use `modules` instead of `types` and
+`relations` for a modular graph, so `SKILL.md` stays short however many
+types the graph has.
 
 ### Publishing
 

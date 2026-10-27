@@ -1,0 +1,33 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.1"
+  },
+  "modules": [
+    {
+      "id": "core",
+      "prefix": "core",
+      "version": "1.0.0",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "builtin": true,
+      "types": 0,
+      "relations": 4,
+      "links": []
+    },
+    {
+      "id": "inventory",
+      "prefix": "inv",
+      "version": "1.0.1",
+      "summary": "Physical items, where they are stored and how they are grouped.",
+      "builtin": false,
+      "types": 3,
+      "relations": 4,
+      "links": []
+    }
+  ]
+}

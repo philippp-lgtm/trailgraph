@@ -95,6 +95,16 @@ from there.
    generated graph skill renders the new model on its own; they run
    `graph self update` (or `graph skills install`) where they work.
 
+A graph with several ontology modules is released the same way. Give
+`--module <main>` to `graph-admin ontology validate`,
+`graph-admin ontology diff`, `graph-admin ontology release`,
+`graph-admin graph create` and `graph-admin graph check` (with its
+`--ontology` option) whenever the directory holds more than one module;
+`graph-admin graph push` needs none. The rules (every module file in each
+version directory, the bump of the main module, moving terms) are in
+`ontology-best-practices`, `references/versioning_and_release.md`
+(section "Releasing a modular graph").
+
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from
 there. `admin.version_bump_insufficient` means the bump is too small for

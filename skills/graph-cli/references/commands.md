@@ -142,6 +142,44 @@ Usage: `graph describe lifecycle TYPE [OPTIONS]`
 | `graph describe lifecycle <type>` | States and transitions of a type. |
 | `graph describe lifecycle <type> --json` | Lifecycles as JSON. |
 
+## graph describe module
+
+Describe one module: its types, relations, links to other modules and rules.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe module MODULE [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `module` | string | yes | no | Module id or prefix (see describe modules). |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe module <module>` | Everything one subject area holds. |
+| `graph describe module <module> --json` | The module as graph_cli.model/1. |
+
+## graph describe modules
+
+List the modules (subject areas) of the graph's ontology and how they link.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe modules [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe modules` | The subject areas: what each holds, how they link. |
+| `graph describe modules --json` | The modules as graph_cli.model/1. |
+
 ## graph describe relations
 
 List the relations of the selected graph's ontology.
@@ -152,12 +190,14 @@ Usage: `graph describe relations [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
 |---|---|
 | `graph describe relations` | All relations. |
 | `graph describe relations --json` | Relations as JSON. |
+| `graph describe relations --module <module>` | The relations that declare or touch one module. |
 
 ## graph describe schema
 
@@ -170,6 +210,7 @@ Usage: `graph describe schema [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--compact` | flag | no | no | Only labels and relationship patterns, no properties. |
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
@@ -177,6 +218,36 @@ Usage: `graph describe schema [OPTIONS]`
 | `graph describe schema` | Patterns and labels to write a query with. |
 | `graph describe schema --json` | The schema as graph_cli.model/1. |
 | `graph describe schema --compact --json` | Labels and patterns only. |
+| `graph describe schema --module <module> --compact` | Patterns of one module and its links, no properties. |
+
+## graph describe search
+
+Search the ontology by text: types, relations, fields, enum values, states.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe search TEXT [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `text` | string | yes | no | The words to look for. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`. |
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many results. Default: `0`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph describe search <value>` | Terms of the model that match the words. |
+| `graph describe search <value> --kind attribute --module <module> --json` | Only fields, only in one module. |
 
 ## graph describe type
 
@@ -209,12 +280,14 @@ Usage: `graph describe types [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 
 | Example | Summary |
 |---|---|
 | `graph describe types` | All types with summaries. |
 | `graph describe types --graph <graph> --json` | Types of one graph. |
+| `graph describe types --module <module>` | Only the types of one module. |
 
 ## graph file add
 

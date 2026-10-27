@@ -20,6 +20,11 @@ Blocks (each one optional):
 - ``start``: how to tell the graph is reachable, load the ``graph-cli`` skill before the
   first command, and two of its ground rules (plain calls, ``query`` for a few fields);
   for a model with ``files:File``, one line on the file workflow.
+- ``modules``: the subject areas (ontology modules) of the graph as a table (module, prefix,
+  summary, number of types, links to other modules; built-in modules in one line) and the
+  commands to read one module (``describe module``), find a term (``describe search``) and
+  read a type (``describe type``). For a modular graph it takes the place of ``types`` and
+  ``relations`` in the template.
 - ``types``: the entity types (types with an alias prefix; without any, every
   concrete type) with their supertypes, fields, enum values inline (F11), and
   states.
@@ -29,6 +34,13 @@ Blocks (each one optional):
 - ``names``: the live alias format (F12), what ``graph lookup`` matches per
   type (label roles) and the rule to ask when the match is not unique (F24).
 - ``model``: a pointer to ``references/model.md`` and ``graph describe``.
+
+A graph with two or more non-built-in modules is modular: every generated skill then also
+gets ``references/modules/<module>.md`` (level 1 of the module view as text) and
+``references/model.md`` is an index of the modules and of every type with its module and
+page, without the per-type sections. A single-module graph renders as before; the module
+documents (``modules``, ``module``) only feed the ``modules`` block. This renderer stays
+kernel-only: the module line formats follow the CLI text output but are written here.
 """
 
 from __future__ import annotations
@@ -42,7 +54,7 @@ from graph_cli.kernel.ids import ALIAS_DIGITS, format_alias
 from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
 from graph_cli.skills.markdown import table
-from graph_cli.skills.template import MODEL_FILE, Template, parse_template
+from graph_cli.skills.template import MODEL_FILE, MODULES_DIR, Template, parse_template
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
@@ -88,7 +100,15 @@ def render_graph_skill(
         lines[index : index + 1] = blocks[name]
     end = _frontmatter_end(lines)
     lines[end:end] = ["", stamp]
-    return {**template.files, SKILL_FILE: "\n".join(lines), MODEL_FILE: _model_file(doc, stamp)}
+    return {
+        **template.files,
+        SKILL_FILE: "\n".join(lines),
+        MODEL_FILE: _model_file(doc, stamp),
+        **{
+            f"{MODULES_DIR}{module_id}.md": _module_page(doc, module_id, stamp)
+            for module_id in (doc.pages if doc.modular else {})
+        },
+    }
 
 
 def render_checked(
@@ -141,6 +161,8 @@ class _Model:
     types: Mapping[str, JsonObject]  # CURIE -> the ``type`` body of ``describe type``
     relations: Mapping[str, JsonObject]  # CURIE -> one item of ``describe relations``
     patterns: Mapping[str, str]  # relation CURIE -> its ``describe schema`` pattern
+    modules: Sequence[JsonObject]  # the items of ``describe modules``, built-ins included
+    pages: Mapping[str, JsonObject]  # module id -> ``module`` body of ``describe module``
 
     @staticmethod
     def of(model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]) -> _Model:
@@ -148,6 +170,13 @@ class _Model:
         listing = _document(bundle, "types")
         relations = _document(bundle, "relations")
         schema = _document(bundle, "schema")
+        modules = _objects(bundle, "modules")
+        pages: dict[str, JsonObject] = {}
+        for module_id, value in sorted(req_obj(bundle, "module").items()):
+            body = req_obj(_document({"module": value}, "module"), "module")
+            if req_str(body, "id") != module_id or "/" in module_id:
+                raise ValueError(f"module document {module_id!r} describes {body.get('id')!r}")
+            pages[module_id] = body
         types: dict[str, JsonObject] = {}
         for curie, value in sorted(req_obj(bundle, "type").items()):
             body = req_obj(_document({"type": value}, "type"), "type")
@@ -183,7 +212,14 @@ class _Model:
                     as_object(r, "relationships[]") for r in req_list(schema, "relationships")
                 )
             },
+            modules=modules,
+            pages=pages,
         )
+
+    @property
+    def modular(self) -> bool:
+        """Two or more modules besides the built-in ones: the model is read module by module."""
+        return len(self.pages) >= 2
 
     @property
     def listed(self) -> list[str]:
@@ -273,6 +309,17 @@ def _frontmatter_end(lines: list[str]) -> int:
 # ---- blocks ------------------------------------------------------------------------
 
 
+def _patterns_source(doc: _Model) -> str:
+    """Where the query patterns are read: the whole schema, or one module at a time."""
+    if doc.modular:
+        return (
+            f"read the module first with `graph describe module <module> --graph {doc.name}`;"
+            f" `graph describe schema --module <module> --graph {doc.name} --compact --json`"
+            " lists its patterns"
+        )
+    return "`graph describe schema --compact --json` lists the patterns"
+
+
 def _start(doc: _Model) -> list[str]:
     title = f" (title: {_plain(doc.title)})" if doc.title else ""
     return [
@@ -289,7 +336,7 @@ def _start(doc: _Model) -> list[str]:
         " loops, pipes or heredocs, which a restricted harness refuses. If a call is"
         " refused, run it again in that form before you give up.",
         "- For a few fields, a count or a join, use `graph query` and `RETURN` only those"
-        " columns (`graph describe schema --compact --json` lists the patterns), or"
+        f" columns ({_patterns_source(doc)}), or"
         " `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering"
         " JSON with another program.",
         *(
@@ -549,7 +596,61 @@ def _names(doc: _Model) -> list[str]:
     return lines
 
 
+def _module_links(item: JsonObject) -> str:
+    links = [
+        f"{_code(req_str(k, 'module'))} ({k['out']} out, {k['in']} in)"
+        for k in _objects(item, "links")
+    ]
+    return ", ".join(links) or "none"
+
+
+def _modules(doc: _Model) -> list[str]:
+    """Level 0: the subject areas, then how to read one. Built-in modules (shared by every
+    graph) get one line, not a row."""
+    shown = [m for m in doc.modules if m.get("builtin") is not True]
+    built = [req_str(m, "id") for m in doc.modules if m.get("builtin") is True]
+    lines = _table(
+        ["Module", "Prefix", "What it holds", "Types", "Links to other modules"],
+        [
+            [
+                _code(req_str(m, "id")),
+                _code(req_str(m, "prefix")),
+                _plain(opt_str(m, "summary")),
+                str(m["types"]),
+                _module_links(m),
+            ]
+            for m in shown
+        ],
+    )
+    if built:
+        lines += ["", f"Built-in modules, shared by every graph: {_codes(built)}."]
+    name = doc.name
+    lines += [
+        "",
+        f"- Before you work in a module, read it: `graph describe module <module> --graph {name}"
+        " --json` lists its types, its relations, its links to and from other modules (with the"
+        " other module named) and its rules.",
+        f"- To find a term whose module you do not know: `graph describe search <text> --graph"
+        f" {name} --json` (types, relations, fields, enum values and states).",
+        f"- For the fields, states and relations of one type: `graph describe type <type>"
+        f" --graph {name} --json`.",
+    ]
+    if doc.modular:
+        lines.append(
+            f"- The same module views as text, and an index of every type with its module:"
+            f" [{MODEL_FILE}]({MODEL_FILE}) and the pages `{MODULES_DIR}<module>.md`."
+        )
+    return lines
+
+
 def _model_pointer(doc: _Model) -> list[str]:
+    if doc.modular:
+        return [
+            f"The modules and every type with its module and page: [{MODEL_FILE}]({MODEL_FILE});"
+            f" one page per module in `{MODULES_DIR}`. Fields, lifecycles and rules of a type, the"
+            f" live source, which wins when they differ:"
+            f" `graph describe type <type> --graph {doc.name} --json`."
+        ]
     return [
         f"Every type with all its fields, lifecycles, relations and rules: [{MODEL_FILE}]"
         f"({MODEL_FILE}). The live source, which wins when they differ:"
@@ -559,6 +660,7 @@ def _model_pointer(doc: _Model) -> list[str]:
 
 _BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
     "start": _start,
+    "modules": _modules,
     "types": _types,
     "relations": _relations,
     "constraints": _constraints,
@@ -571,6 +673,8 @@ _BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
 
 
 def _model_file(doc: _Model, stamp: str) -> str:
+    if doc.modular:
+        return _model_index(doc, stamp)
     lines = [
         stamp,
         "",
@@ -768,3 +872,161 @@ def _lifecycle_section(lifecycle: JsonObject) -> list[str]:
             )
         lines.append(text)
     return lines
+
+
+# ---- modular graphs: references/model.md as an index, references/modules/<module>.md -----
+
+
+def _page_link(doc: _Model, module_id: str) -> str:
+    return f"[{module_id}.md](modules/{module_id}.md)" if module_id in doc.pages else ""
+
+
+def _model_index(doc: _Model, stamp: str) -> str:
+    lines = [
+        stamp,
+        "",
+        f"# Model of graph `{doc.name}`",
+        "",
+        f"Ontology `{doc.bundle}` {doc.version}, read module by module. The live source is"
+        f" `graph describe modules --graph {doc.name} --json`,"
+        f" `graph describe module <module> --graph {doc.name} --json` and"
+        f" `graph describe type <type> --graph {doc.name} --json`; it wins when they differ."
+        " A module without a page is built in and shared by every graph.",
+        "",
+        "## Modules",
+        "",
+        *_table(
+            ["Module", "Prefix", "Page", "Summary"],
+            [
+                [
+                    _code(req_str(m, "id")),
+                    _code(req_str(m, "prefix")),
+                    _page_link(doc, req_str(m, "id")),
+                    _plain(opt_str(m, "summary")),
+                ]
+                for m in doc.modules
+            ],
+        ),
+        "",
+        "## Types",
+        "",
+        *_table(
+            ["Type", "Module", "Page", "Alias", "Abstract", "Extends", "Summary"],
+            [
+                [
+                    _code(curie),
+                    _code(req_str(body, "module")),
+                    _page_link(doc, req_str(body, "module")),
+                    _code(format_alias(doc.prefixes[curie], 1)) if curie in doc.prefixes else "",
+                    "yes" if body.get("abstract") is True else "no",
+                    _code(str(body["extends"])) if body.get("extends") else "",
+                    _summary(body),
+                ]
+                for curie, body in doc.types.items()
+            ],
+        ),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _link_where(link: JsonObject, module_id: str) -> str:
+    """The other modules at the ends; the declaring module too when it is neither end."""
+    others = [str(m) for m in req_list(link, "other_modules")]
+    where = _codes(others) or "any"
+    owner = req_str(link, "module")
+    if owner != module_id and owner not in others:
+        where += f"; declared in {_code(owner)}"
+    return where
+
+
+def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
+    item = doc.pages[module_id]
+    name = doc.name
+    lines = [
+        stamp,
+        "",
+        f"# Module `{module_id}` of graph `{name}`",
+        "",
+        f"Prefix `{req_str(item, 'prefix')}`, version {req_str(item, 'version')}. "
+        + _plain(opt_str(item, "summary")),
+        "",
+        f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe module"
+        f" {module_id} --graph {name} --json`; it wins when they differ. Fields, states and"
+        f" relations of a type: `graph describe type <type> --graph {name} --json`.",
+        "",
+        "## Types",
+        "",
+    ]
+    types = _objects(item, "types")
+    lines += (
+        _table(
+            ["Type", "Alias", "Abstract", "Extends", "Summary"],
+            [
+                [
+                    _code(req_str(t, "curie")),
+                    _code(format_alias(doc.prefixes[req_str(t, "curie")], 1))
+                    if req_str(t, "curie") in doc.prefixes
+                    else "",
+                    "yes" if t.get("abstract") is True else "no",
+                    _code(str(t["extends"])) if t.get("extends") else "",
+                    _summary(t),
+                ]
+                for t in types
+            ],
+        )
+        if types
+        else ["None."]
+    )
+    lines += ["", "## Relations inside the module", ""]
+    relations = _objects(item, "relations")
+    lines += (
+        _table(
+            ["Relation", "From", "To", "Cardinality", "Summary"],
+            [
+                [
+                    _code(req_str(r, "curie")),
+                    _ends(r, "domain"),
+                    _ends(r, "range"),
+                    _cardinality(req_obj(r, "cardinality")),
+                    _summary(r),
+                ]
+                for r in relations
+            ],
+        )
+        if relations
+        else ["None."]
+    )
+    for key, title in (
+        ("links_out", "Links to other modules"),
+        ("links_in", "Links from other modules"),
+    ):
+        links = _objects(item, key)
+        lines += ["", f"## {title}", ""]
+        lines += (
+            _table(
+                ["Relation", "From", "To", "Other modules", "Summary"],
+                [
+                    [
+                        _code(req_str(k, "relation")),
+                        _ends(k, "from"),
+                        _ends(k, "to"),
+                        _link_where(k, module_id),
+                        _summary(k),
+                    ]
+                    for k in links
+                ],
+            )
+            if links
+            else ["None."]
+        )
+    rules = _objects(item, "rules")
+    lines += ["", "## Rules", ""]
+    lines += (
+        _table(
+            ["Rule", "Severity", "Summary"],
+            [[_code(req_str(r, "id")), req_str(r, "severity"), _summary(r)] for r in rules],
+        )
+        if rules
+        else ["None."]
+    )
+    return "\n".join(lines) + "\n"

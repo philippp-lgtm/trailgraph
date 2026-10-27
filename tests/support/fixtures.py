@@ -17,6 +17,9 @@ BROKEN = FIXTURES / "broken"
 GOLDENS = REPO_ROOT / "tests" / "goldens"
 
 TOY_ONTOLOGIES = ("notes_and_sources", "inventory")
+# Authored as several modules under a main module named like the fixture. Not in
+# TOY_ONTOLOGIES: the role-based and contract tests run on the single-module toys.
+MODULAR_ONTOLOGIES = ("company",)
 UPDATE_GOLDENS = os.environ.get("GRAPH_CLI_UPDATE_GOLDENS") == "1"
 
 

@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.4.0",
+  "program_version": "0.5.0",
   "surface": "app",
   "global_options": [
     {
@@ -543,12 +543,78 @@
     {
       "path": [
         "describe",
-        "relations"
+        "module"
       ],
       "kind": "read",
       "surface": "model",
       "action": "read.describe",
-      "summary": "List the relations of the selected graph's ontology.",
+      "summary": "Describe one module: its types, relations, links to other modules and rules.",
+      "args": [
+        {
+          "name": "module",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Module id or prefix (see describe modules)."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe module <module>",
+          "summary": "Everything one subject area holds."
+        },
+        {
+          "command": "graph describe module <module> --json",
+          "summary": "The module as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "modules"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the modules (subject areas) of the graph's ontology and how they link.",
       "args": [],
       "options": [
         {
@@ -561,12 +627,12 @@
       ],
       "examples": [
         {
-          "command": "graph describe relations",
-          "summary": "All relations."
+          "command": "graph describe modules",
+          "summary": "The subject areas: what each holds, how they link."
         },
         {
-          "command": "graph describe relations --json",
-          "summary": "Relations as JSON."
+          "command": "graph describe modules --json",
+          "summary": "The modules as graph_cli.model/1."
         }
       ],
       "errors": [
@@ -600,6 +666,75 @@
     {
       "path": [
         "describe",
+        "relations"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the relations of the selected graph's ontology.",
+      "args": [],
+      "options": [
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe relations",
+          "summary": "All relations."
+        },
+        {
+          "command": "graph describe relations --json",
+          "summary": "Relations as JSON."
+        },
+        {
+          "command": "graph describe relations --module <module>",
+          "summary": "The relations that declare or touch one module."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
         "schema"
       ],
       "kind": "read",
@@ -614,6 +749,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Only labels and relationship patterns, no properties."
+        },
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
         },
         {
           "name": "--graph",
@@ -635,6 +777,10 @@
         {
           "command": "graph describe schema --compact --json",
           "summary": "Labels and patterns only."
+        },
+        {
+          "command": "graph describe schema --module <module> --compact",
+          "summary": "Patterns of one module and its links, no properties."
         }
       ],
       "errors": [
@@ -652,6 +798,7 @@
         "remote.protocol",
         "remote.unauthorized",
         "remote.unreachable",
+        "term.unknown",
         "usage.invalid_argument"
       ],
       "exit_codes": [
@@ -663,6 +810,111 @@
         6
       ],
       "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "search"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Search the ontology by text: types, relations, fields, enum values, states.",
+      "args": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The words to look for."
+        }
+      ],
+      "options": [
+        {
+          "name": "--kind",
+          "type": "choice",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this kind of term.",
+          "choices": [
+            "type",
+            "relation",
+            "attribute",
+            "enum_value",
+            "state"
+          ]
+        },
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many results.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe search <value>",
+          "summary": "Terms of the model that match the words."
+        },
+        {
+          "command": "graph describe search <value> --kind attribute --module <module> --json",
+          "summary": "Only fields, only in one module."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      },
       "remote": "server"
     },
     {
@@ -744,6 +996,13 @@
       "args": [],
       "options": [
         {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -759,6 +1018,10 @@
         {
           "command": "graph describe types --graph <graph> --json",
           "summary": "Types of one graph."
+        },
+        {
+          "command": "graph describe types --module <module>",
+          "summary": "Only the types of one module."
         }
       ],
       "errors": [
@@ -776,6 +1039,7 @@
         "remote.protocol",
         "remote.unauthorized",
         "remote.unreachable",
+        "term.unknown",
         "usage.invalid_argument"
       ],
       "exit_codes": [

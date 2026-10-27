@@ -1,0 +1,119 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "module": {
+    "id": "inventory",
+    "prefix": "inv",
+    "version": "1.0.0",
+    "summary": "Physical items, where they are stored and how they are grouped.",
+    "builtin": false,
+    "types": [
+      {
+        "curie": "inv:Category",
+        "abstract": false,
+        "extends": null,
+        "summary": "A group of similar items.",
+        "deprecated": false
+      },
+      {
+        "curie": "inv:Item",
+        "abstract": false,
+        "extends": null,
+        "summary": "A physical thing that is tracked.",
+        "deprecated": false
+      },
+      {
+        "curie": "inv:Location",
+        "abstract": false,
+        "extends": null,
+        "summary": "A place where items are stored.",
+        "deprecated": false
+      }
+    ],
+    "relations": [
+      {
+        "curie": "inv:in_category",
+        "domain": [
+          "inv:Item"
+        ],
+        "range": [
+          "inv:Category"
+        ],
+        "cardinality": {
+          "out": "0..n",
+          "in": "0..n"
+        },
+        "summary": "The item belongs to the category.",
+        "deprecated": false
+      },
+      {
+        "curie": "inv:located_in",
+        "domain": [
+          "inv:Item"
+        ],
+        "range": [
+          "inv:Location"
+        ],
+        "cardinality": {
+          "out": "1..1",
+          "in": "0..n"
+        },
+        "summary": "Where an item is stored.",
+        "deprecated": false
+      },
+      {
+        "curie": "inv:part_of",
+        "domain": [
+          "inv:Item"
+        ],
+        "range": [
+          "inv:Item"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The item is a component of a larger item.",
+        "deprecated": false
+      },
+      {
+        "curie": "inv:within",
+        "domain": [
+          "inv:Location"
+        ],
+        "range": [
+          "inv:Location"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The location is inside a larger location.",
+        "deprecated": false
+      }
+    ],
+    "links_out": [],
+    "links_in": [],
+    "rules": [
+      {
+        "id": "inv.location_not_empty",
+        "severity": "warning",
+        "summary": "A location holds items or contains other locations.",
+        "deprecated": false
+      },
+      {
+        "id": "inv.serial_single_unit",
+        "severity": "error",
+        "summary": "Serialized items have quantity 1.",
+        "deprecated": false
+      }
+    ]
+  }
+}

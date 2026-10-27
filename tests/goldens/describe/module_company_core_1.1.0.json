@@ -1,0 +1,76 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "module": {
+    "id": "core",
+    "prefix": "core",
+    "version": "1.0.0",
+    "summary": "Minimal provenance relations shared by every graph.",
+    "builtin": true,
+    "types": [],
+    "relations": [],
+    "links_out": [
+      {
+        "relation": "core:derived_from",
+        "module": "core",
+        "other_modules": [],
+        "from": [
+          "any"
+        ],
+        "to": [
+          "any"
+        ],
+        "summary": "The source was derived from a specific revision of the target.",
+        "deprecated": false
+      },
+      {
+        "relation": "core:retracts",
+        "module": "core",
+        "other_modules": [],
+        "from": [
+          "any"
+        ],
+        "to": [
+          "any"
+        ],
+        "summary": "The source withdraws the target; created only by the retract operation.",
+        "deprecated": false
+      },
+      {
+        "relation": "core:source",
+        "module": "core",
+        "other_modules": [],
+        "from": [
+          "any"
+        ],
+        "to": [
+          "any"
+        ],
+        "summary": "The target is where the information in the source came from.",
+        "deprecated": false
+      },
+      {
+        "relation": "core:supersedes",
+        "module": "core",
+        "other_modules": [],
+        "from": [
+          "any"
+        ],
+        "to": [
+          "any"
+        ],
+        "summary": "The source replaces the target; created only by the supersede operation.",
+        "deprecated": false
+      }
+    ],
+    "links_in": [],
+    "rules": []
+  }
+}

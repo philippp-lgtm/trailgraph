@@ -1,0 +1,65 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.0.0"
+  },
+  "modules": [
+    {
+      "id": "company",
+      "prefix": "co",
+      "version": "1.0.0",
+      "summary": "The company as a whole, the main module that brings its subject areas together; it holds no terms of its own.",
+      "builtin": false,
+      "types": 0,
+      "relations": 0,
+      "links": []
+    },
+    {
+      "id": "core",
+      "prefix": "core",
+      "version": "1.0.0",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "builtin": true,
+      "types": 0,
+      "relations": 4,
+      "links": []
+    },
+    {
+      "id": "organization",
+      "prefix": "org",
+      "version": "1.0.0",
+      "summary": "The structure of the company, its units, the positions in them and what they cost; not the people or the work done.",
+      "builtin": false,
+      "types": 5,
+      "relations": 5,
+      "links": [
+        {
+          "module": "people",
+          "out": 0,
+          "in": 1
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "prefix": "ppl",
+      "version": "1.0.0",
+      "summary": "The people the company knows, who they are and how to reach them; not their positions or units.",
+      "builtin": false,
+      "types": 1,
+      "relations": 0,
+      "links": [
+        {
+          "module": "organization",
+          "out": 1,
+          "in": 0
+        }
+      ]
+    }
+  ]
+}

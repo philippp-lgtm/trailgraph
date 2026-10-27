@@ -1,0 +1,108 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "module": {
+    "id": "operations",
+    "prefix": "ops",
+    "version": "1.0.0",
+    "summary": "How work gets done, the processes, the guidelines that govern them and the training positions need; not who is in the structure.",
+    "builtin": false,
+    "types": [
+      {
+        "curie": "ops:Guideline",
+        "abstract": false,
+        "extends": null,
+        "summary": "A written rule of the company that governs processes.",
+        "deprecated": false
+      },
+      {
+        "curie": "ops:Process",
+        "abstract": false,
+        "extends": null,
+        "summary": "A recurring way of getting one kind of work done, owned by a position.",
+        "deprecated": false
+      },
+      {
+        "curie": "ops:Training",
+        "abstract": false,
+        "extends": null,
+        "summary": "A course or certification that a position requires and a person completes.",
+        "deprecated": false
+      }
+    ],
+    "relations": [
+      {
+        "curie": "ops:governs",
+        "domain": [
+          "ops:Guideline"
+        ],
+        "range": [
+          "ops:Process"
+        ],
+        "cardinality": {
+          "out": "0..n",
+          "in": "0..n"
+        },
+        "summary": "The guideline sets the rules for the process.",
+        "deprecated": false
+      }
+    ],
+    "links_out": [
+      {
+        "relation": "ops:owned_by",
+        "module": "operations",
+        "other_modules": [
+          "organization"
+        ],
+        "from": [
+          "ops:Process"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The position that is accountable for the process.",
+        "deprecated": false
+      },
+      {
+        "relation": "ops:required_for",
+        "module": "operations",
+        "other_modules": [
+          "organization"
+        ],
+        "from": [
+          "ops:Training"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The training must be completed by the holder of the position.",
+        "deprecated": false
+      }
+    ],
+    "links_in": [
+      {
+        "relation": "ops:completed",
+        "module": "operations",
+        "other_modules": [
+          "people"
+        ],
+        "from": [
+          "ppl:Person"
+        ],
+        "to": [
+          "ops:Training"
+        ],
+        "summary": "The person completed the training.",
+        "deprecated": false
+      }
+    ],
+    "rules": []
+  }
+}

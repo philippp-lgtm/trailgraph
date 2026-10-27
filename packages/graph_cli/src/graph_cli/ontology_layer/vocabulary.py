@@ -14,6 +14,8 @@ COMPILED_SCHEMA: Final = "graph_cli.compiled_ontology/1"
 DIFF_SCHEMA: Final = "graph_cli.ontology_diff/1"
 
 CORE_MODULE: Final = "core"
+# The modules shipped as package data (``ontology_layer/modules/``); a graph cannot shadow them.
+BUILTIN_MODULES: Final = frozenset({CORE_MODULE, "provenance", "files"})
 FILE_TYPE: Final = "files:File"  # the stored-file class of the standard module files (B7.8)
 DEFAULT_NAMESPACE: Final = "urn:graph_cli:onto:{module}#"
 

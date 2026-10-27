@@ -24,12 +24,25 @@ def _where(pos: Pos) -> dict[str, JsonValue]:
 
 
 def syntax_error(
-    pos: Pos, message: str, *, found: str | None = None, expected: Sequence[str] = ()
+    pos: Pos,
+    message: str,
+    *,
+    found: str | None = None,
+    expected: Sequence[str] = (),
+    prefixed: bool = False,
 ) -> GraphCliError:
     details: dict[str, JsonValue] = {**_where(pos), "found": found, "expected": list(expected)}
+    if prefixed:
+        details["prefixed"] = True
     return GraphCliError(
         "query.syntax", f"line {pos.line}, column {pos.column}: {message}", details=details
     )
+
+
+PREFIXED_NAME_ADVICE = (
+    "labels and relationship types use the local name, or the prefixed name in backticks"
+    " when the local name is ambiguous, e.g. (:`prefix:Name`); `describe schema` lists them"
+)
 
 
 def did_you_mean(name: str, choices: Iterable[str]) -> list[JsonValue]:
@@ -60,11 +73,19 @@ def unsupported(
     )
 
 
-def unknown_term(pos: Pos, kind: str, name: str, choices: Iterable[str]) -> GraphCliError:
-    """``term.unknown`` as ``find`` raises it, plus the position."""
+def unknown_term(
+    pos: Pos, kind: str, name: str, choices: Iterable[str], *, is_prefix: bool = False
+) -> GraphCliError:
+    """``term.unknown`` as ``find`` raises it, plus the position.
+
+    ``is_prefix``: the name is a module prefix, as in ``(:org:Position)``.
+    """
+    message = f"line {pos.line}, column {pos.column}: unknown {kind} {name!r}"
+    if is_prefix:
+        message += f"; {name!r} is a module prefix, {PREFIXED_NAME_ADVICE}"
     return GraphCliError(
         "term.unknown",
-        f"line {pos.line}, column {pos.column}: unknown {kind} {name!r}",
+        message,
         details={
             "kind": kind,
             "term": name,

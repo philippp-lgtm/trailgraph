@@ -105,6 +105,10 @@ against it and audited. The CLI is on `PATH`.
    `graph describe type <type> --json`: fields with datatype, enum `values`,
    `limits` and `role`; relations with their `qualifiers` (values on the edge);
    lifecycles with states, transitions and the `guards` a dry run checks.
+   On a graph with several modules (subject areas) start with
+   `graph describe modules --json`, then `graph describe module <module> --json`
+   or, for a term you can only name, `graph describe search <value> --json`
+   (types, relations, fields, values; not data); never dump the whole schema.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is
@@ -341,6 +345,8 @@ grouping. For one type with field filters, one hop or a name, `find`,
   properties are fields and system fields such as `id` and `alias`. Write
   a type or relation by its local name (`(:<type>)`) when it is unique; its
   full CURIE always works when wrapped in backticks inside the query.
+  Never split a CURIE into two labels or two relationship types: write
+  the local name, or the whole CURIE in backticks.
   `graph describe schema --json` lists every label, relationship pattern
   and property as the query writes them.
 - Only active entities are nodes; `--include-inactive` adds superseded and
@@ -973,6 +979,22 @@ SKILL_GUIDANCE: Final = (
 )
 
 
+# The finding names what would have been accepted.
+CONNECTING_GUIDANCE: Final = (
+    "## When a relation does not fit the types",
+    "",
+    "- `data.referential.domain_violation` and `data.referential.range_violation` (in"
+    " `error.details.findings` of `write.invalid`): the relation does not accept the type of"
+    " the source or of the target. Do not retry the same edge. The finding's `connecting` names"
+    " what the model accepts between the two types: `direct` lists relations (`from` -relation->"
+    " `to`), and when there are none `paths` lists up to three chains of two relations over an"
+    " intermediate entity. Pick one; a path means creating or finding the intermediate entity"
+    " and writing both edges in one `graph apply` change set, dry-run first. When both lists are"
+    " empty the model has no such connection: ask the user.",
+    "",
+)
+
+
 # A relation with on_target_inactive keeps its targets active.
 TARGET_GUIDANCE: Final = (
     "## When a retract or supersede is refused",
@@ -1013,6 +1035,7 @@ def _errors_file(codes: Sequence[JsonObject]) -> str:
         *REMOTE_GUIDANCE,
         *SKILL_GUIDANCE,
         *TARGET_GUIDANCE,
+        *CONNECTING_GUIDANCE,
         "## Codes",
         "",
         *table(

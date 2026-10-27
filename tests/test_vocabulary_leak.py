@@ -15,7 +15,7 @@ import ast
 import re
 
 from harness import REPO_ROOT
-from support.fixtures import TOY_ONTOLOGIES, compiled_model, ontology_versions
+from support.fixtures import MODULAR_ONTOLOGIES, TOY_ONTOLOGIES, compiled_model, ontology_versions
 
 from graph_cli.ontology_layer.bundle import LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
@@ -44,12 +44,17 @@ def deny_list() -> tuple[set[str], set[str]]:
     """``(words, prefixes)`` taken from the fixture modules themselves."""
     words: set[str] = set()
     prefixes: set[str] = set()
-    for name in TOY_ONTOLOGIES:
+    for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES):
         for version in ontology_versions(name):
             model = compiled_model(name, version)
-            (module,) = [m for m in model.modules if m.id == name]
-            prefixes.add(module.prefix)
-            own = [c for c in model.term_curies() if c.startswith(module.prefix + ":")]
+            authored = [m for m in model.modules if m.id not in BUILTIN_MODULES]
+            assert name in [m.id for m in authored]
+            prefixes.update(m.prefix for m in authored)
+            own = [
+                c
+                for c in model.term_curies()
+                if c.partition(":")[0] in {m.prefix for m in authored}
+            ]
             names = {curie.partition(":")[2] for curie in own}
             for curie in own:
                 if curie in model.classes:
@@ -117,7 +122,8 @@ def find_leaks(words: set[str], prefixes: set[str]) -> dict[str, list[str]]:
 def test_deny_list_is_meaningful() -> None:
     words, prefixes = deny_list()
     assert {"Item", "WebPage", "located_in", "in_stock", "serial_number"} <= words
-    assert prefixes == {"nas", "inv"}
+    assert {"Position", "OrgUnit", "reports_to", "work_email"} <= words  # every authored module
+    assert prefixes == {"nas", "inv", "ppl", "org", "ops", "co"}
     assert "about" not in words  # plain single words are excluded
     assert "retrieved_at" not in words  # also a term of the standard module files
 

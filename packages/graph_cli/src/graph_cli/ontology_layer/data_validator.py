@@ -75,7 +75,7 @@ import re
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from functools import cached_property
 from typing import Final
@@ -92,6 +92,7 @@ from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.kernel.text import edit_distance, search_key
+from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
 from graph_cli.ontology_layer.model import (
@@ -248,6 +249,10 @@ class _Checker:
     snapshot: Snapshot
     local_names: Mapping[EntityId, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
+    _bare: list[Finding] = field(default_factory=list, init=False, repr=False)
+    _connecting: dict[tuple[str, str], JsonValue | None] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     # ---- reporting -----------------------------------------------------
 
@@ -262,6 +267,7 @@ class _Checker:
         expected: JsonValue | None = None,
         actual: JsonValue | None = None,
         rule_id: str | None = None,
+        connect: tuple[str, str] | None = None,
     ) -> None:
         target: dict[str, JsonValue] = {"id": str(revision.id), "type": revision.type}
         if path is not None:
@@ -270,8 +276,20 @@ class _Checker:
         if local is not None:
             target["local"] = local
         finding = Finding(severity, code, target, message, expected, actual, rule_id)
-        if finding not in self.findings:  # two ops may name the same problem
-            self.findings.append(finding)
+        if finding in self._bare:  # two ops may name the same problem
+            return
+        self._bare.append(finding)
+        if connect is not None:
+            finding = replace(finding, connecting=self.connecting(*connect))
+        self.findings.append(finding)
+
+    def connecting(self, source: str, target: str) -> JsonValue | None:
+        """What would connect two types, when both exist in the model (once per pair)."""
+        pair = (source, target)
+        if pair not in self._connecting:
+            known = source in self.model.classes and target in self.model.classes
+            self._connecting[pair] = connecting(self.model, source, target) if known else None
+        return self._connecting[pair]
 
     # ---- structure -----------------------------------------------------
 
@@ -463,6 +481,7 @@ class _Checker:
                 path,
                 f"{edge.rel} does not apply to {revision.type}",
                 expected=list(relation.domain),
+                connect=(revision.type, target.type),
             )
         if target.type in self.model.classes and not self.model.is_a_any(
             target.type, relation.range
@@ -474,6 +493,7 @@ class _Checker:
                 f"{edge.rel} does not accept a {target.type} target",
                 expected=list(relation.range),
                 actual=target.type,
+                connect=(revision.type, target.type),
             )
         self.qualifiers(revision, edge.rel, edge.qualifiers)
         if new and target.record_status != "active" and edge.rel not in PROVENANCE_RELATIONS:
