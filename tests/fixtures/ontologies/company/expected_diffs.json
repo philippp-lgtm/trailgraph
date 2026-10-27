@@ -1,0 +1,62 @@
+{
+  "diffs": [
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.ops:Guideline"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.ops:Process"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.ops:Training"
+        },
+        {
+          "detail": {},
+          "kind": "add_import",
+          "level": "minor",
+          "path": "modules.operations"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.ops:completed"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.ops:governs"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.ops:owned_by"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.ops:required_for"
+        }
+      ],
+      "from": "1.0.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.1.0"
+    }
+  ],
+  "ontology": "company",
+  "schema": "graph_cli.fixture_diffs/1"
+}

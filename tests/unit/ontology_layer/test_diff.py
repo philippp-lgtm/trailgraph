@@ -5,6 +5,7 @@ from itertools import pairwise
 
 import pytest
 from support.fixtures import (
+    MODULAR_ONTOLOGIES,
     ONTOLOGIES,
     TOY_ONTOLOGIES,
     assert_golden,
@@ -22,7 +23,7 @@ SERIES = ontology_versions("inventory")
 PAIRS = list(pairwise(SERIES))
 
 
-@pytest.mark.parametrize("name", TOY_ONTOLOGIES)
+@pytest.mark.parametrize("name", [*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES])
 def test_version_series_golden(name: str) -> None:
     reports = [
         classify(compiled_model(name, a), compiled_model(name, b)).to_json()

@@ -1,0 +1,38 @@
+# Toy ontology C (test_fixtures.md): a company, authored as several modules.
+# people is the bottom of the import chain (people <- organization <- operations).
+format: graph_cli.ir/1
+module:
+  id: people
+  prefix: ppl
+  version: 1.0.0
+  summary: The people the company knows, who they are and how to reach them; not their positions or units.
+
+datatypes:
+  WorkEmail:
+    summary: Email address at the company's own mail domain.
+    base: string
+    single_line: true
+    pattern: '^[^@\s]+@[^@\s]+$'
+
+classes:
+  Person:
+    summary: A human being who works for the company or with it.
+    description: >-
+      A person is the human, independent of any job; the jobs a person
+      holds are Positions of the organization module, linked by holds.
+    display_prefix: PER
+    attributes:
+      name:
+        summary: Full name as used at work.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names, such as a short form or a former name.
+        type: string
+        many: true
+        role: alt_label
+      work_email:
+        summary: Work email address, if the person has one.
+        type: WorkEmail
+        unique: true

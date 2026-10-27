@@ -3,6 +3,7 @@
 import pytest
 from support.fixtures import (
     GOLDENS,
+    MODULAR_ONTOLOGIES,
     TOY_ONTOLOGIES,
     assert_golden,
     compile_fixture,
@@ -17,7 +18,9 @@ from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
 
-ALL_VERSIONS = [(name, v) for name in TOY_ONTOLOGIES for v in ontology_versions(name)]
+ALL_VERSIONS = [
+    (name, v) for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES) for v in ontology_versions(name)
+]
 
 
 @pytest.mark.parametrize(("name", "version"), ALL_VERSIONS)
@@ -46,6 +49,7 @@ def test_artifact_hash_is_stable(name: str, version: str) -> None:
     [
         *((name, ontology_versions(name)[0]) for name in TOY_ONTOLOGIES),
         ("notes_and_sources", "1.1.0"),
+        *((name, version) for name in MODULAR_ONTOLOGIES for version in ontology_versions(name)),
     ],
 )
 def test_compiled_golden(name: str, version: str) -> None:
@@ -440,3 +444,29 @@ def test_unknown_relation_key_or_policy_is_an_unsupported_version(
     assert info.value.code == "format.unsupported_version"
     assert info.value.details == {"owner": "relation ex:copied_from", "unknown": unknown}
     assert "update graph" in info.value.message
+
+
+def test_a_modular_fixture_keeps_every_module_and_its_prefix() -> None:
+    old, new = compiled_model("company", "1.0.0"), compiled_model("company", "1.1.0")
+    assert [m.id for m in old.modules] == ["core", "people", "organization", "company"]
+    assert [m.id for m in new.modules] == [
+        "core",
+        "people",
+        "organization",
+        "operations",
+        "company",
+    ]
+    assert (old.bundle_id, old.bundle_version) == ("company", "1.0.0")
+    assert (new.bundle_id, new.bundle_version) == ("company", "1.1.0")
+    assert {m.prefix: m.id for m in new.modules if m.id != "core"} == {
+        "ppl": "people",
+        "org": "organization",
+        "ops": "operations",
+        "co": "company",
+    }
+    assert all(m.summary for m in new.modules)
+    owners = {curie.partition(":")[0] for curie in new.classes}
+    assert {"ppl", "org", "ops"} <= owners and "co" not in owners  # the main module has no terms
+    holds = new.relations["org:holds"]
+    assert holds.domain == ("ppl:Person",) and holds.range == ("org:Position",)
+    assert new.relations["ops:completed"].domain == ("ppl:Person",)

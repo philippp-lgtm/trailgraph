@@ -223,11 +223,16 @@ server marks itself `@pytest.mark.unchecked_output("<reason>")`.
 
 ### Fixtures
 
-`tests/fixtures/` holds two unrelated toy ontologies (`notes_and_sources`,
-`inventory` with a version series), one broken ontology per `model.*` finding
+`tests/fixtures/` holds two unrelated single-module toy ontologies
+(`notes_and_sources`, `inventory` with a version series) and a third that is
+authored as several modules (`company`: `people`, `organization` and, from
+1.1.0, `operations`, brought together by the main module `company`, whose
+version is the graph's release; its tests are `tests/cli/test_company_modules.py`
+and the `MODULAR_ONTOLOGIES` entries of the compiler, diff and vocabulary tests;
+the role-based and contract tests run on the single-module toys only), one broken ontology per `model.*` finding
 code, one broken change set per `data.*` finding code, seed change sets for
-both ontologies (`tests/fixtures/seeds/`, applied through the write
-service), role mappings for role-based contract tests
+all three (`tests/fixtures/seeds/`, applied through the write
+service; `company` has a second file for the classes of 1.1.0), role mappings for role-based contract tests
 (`tests/support/roles.py`) and graph skills for the `inventory` test graph
 (`tests/fixtures/skills/`: a static one, a template with curated text, and
 `blocks/` with every block once, rendered for both toy ontologies into

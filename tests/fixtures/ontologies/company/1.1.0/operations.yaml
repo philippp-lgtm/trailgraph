@@ -1,0 +1,83 @@
+format: graph_cli.ir/1
+module:
+  id: operations
+  prefix: ops
+  version: 1.0.0
+  summary: How work gets done, the processes, the guidelines that govern them and the training positions need; not who is in the structure.
+  imports:
+    - {module: people, version: "^1.0"}
+    - {module: organization, version: "^1.0"}
+
+classes:
+  Process:
+    summary: A recurring way of getting one kind of work done, owned by a position.
+    display_prefix: PROC
+    attributes:
+      name:
+        summary: Name of the process.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the process, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+  Guideline:
+    summary: A written rule of the company that governs processes.
+    display_prefix: GUIDE
+    attributes:
+      title:
+        summary: Title of the guideline.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the guideline, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+      effective_from:
+        summary: Date from which the guideline applies.
+        type: date
+  Training:
+    summary: A course or certification that a position requires and a person completes.
+    display_prefix: TRN
+    attributes:
+      title:
+        summary: Title of the training.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the training, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+
+relations:
+  owned_by:
+    summary: The position that is accountable for the process.
+    domain: Process
+    range: org:Position
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: owns
+  governs:
+    summary: The guideline sets the rules for the process.
+    domain: Guideline
+    range: Process
+    inverse_label: governed_by
+  required_for:
+    summary: The training must be completed by the holder of the position.
+    domain: Training
+    range: org:Position
+    inverse_label: requires_training
+  completed:
+    summary: The person completed the training.
+    domain: ppl:Person
+    range: Training
+    inverse_label: completed_by
+    qualifiers:
+      "on":
+        summary: Date the person completed the training.
+        type: date
