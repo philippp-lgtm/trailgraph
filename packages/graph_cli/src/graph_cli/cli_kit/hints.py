@@ -57,6 +57,11 @@ def _term(details: Mapping[str, JsonValue], program: str) -> str | None:
     return _types(details, program)
 
 
+def _schema(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A prefixed name where a local one is expected: the labels as the query writes them."""
+    return f"{program} describe schema" if details.get("prefixed") is True else None
+
+
 def _fields(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Where the fields of a type show, with their base type and ``role``."""
     types = details.get("types")
@@ -169,7 +174,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "changeset.local_ref_duplicate": None,
     "changeset.too_large": None,
     "write.invalid": None,
-    "query.syntax": None,
+    "query.syntax": _schema,
     "query.unsupported": _apply,
     "query.ambiguous_term": _types,
     "query.unbound_variable": None,

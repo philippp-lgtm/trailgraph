@@ -214,7 +214,8 @@ class _Resolver:
             return candidates[0]
         if candidates:
             raise ambiguous_term(pos, kind, name, candidates)
-        raise unknown_term(pos, kind, name, [*known, *index])
+        is_prefix = any(curie.startswith(f"{name}:") for curie in known)
+        raise unknown_term(pos, kind, name, [*known, *index], is_prefix=is_prefix)
 
     def label_groups(
         self, groups: tuple[tuple[str, ...], ...], pos: Pos

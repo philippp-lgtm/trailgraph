@@ -165,3 +165,19 @@ def test_the_block_on_a_single_module_graph_has_no_page_pointers(ontology: str) 
     rendered = render_graph_skill(template, documents, graph)
     assert "graph describe module <module>" in rendered[SKILL_FILE]
     assert MODULES_DIR not in rendered[SKILL_FILE]
+
+
+def test_start_points_a_modular_graph_to_the_module_views() -> None:
+    skill = text(render(version="1.1.0"), SKILL_FILE)
+    assert (
+        "read the module first with `graph describe module <module> --graph example_graph`" in skill
+    )
+    assert "graph describe schema --module <module> --graph example_graph --compact --json" in skill
+    assert "describe schema --compact" not in skill
+
+
+@pytest.mark.parametrize("ontology", TOY_ONTOLOGIES)
+def test_start_on_a_single_module_graph_still_points_to_the_schema(ontology: str) -> None:
+    skill = text(render(ontology, files=read_tree(BLOCKS_TEMPLATE)[0]), SKILL_FILE)
+    assert "(`graph describe schema --compact --json` lists the patterns)" in skill
+    assert "describe schema --module" not in skill

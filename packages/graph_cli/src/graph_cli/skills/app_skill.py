@@ -345,6 +345,8 @@ grouping. For one type with field filters, one hop or a name, `find`,
   properties are fields and system fields such as `id` and `alias`. Write
   a type or relation by its local name (`(:<type>)`) when it is unique; its
   full CURIE always works when wrapped in backticks inside the query.
+  Never split a CURIE into two labels or two relationship types: write
+  the local name, or the whole CURIE in backticks.
   `graph describe schema --json` lists every label, relationship pattern
   and property as the query writes them.
 - Only active entities are nodes; `--include-inactive` adds superseded and

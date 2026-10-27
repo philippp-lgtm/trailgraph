@@ -309,6 +309,17 @@ def _frontmatter_end(lines: list[str]) -> int:
 # ---- blocks ------------------------------------------------------------------------
 
 
+def _patterns_source(doc: _Model) -> str:
+    """Where the query patterns are read: the whole schema, or one module at a time."""
+    if doc.modular:
+        return (
+            f"read the module first with `graph describe module <module> --graph {doc.name}`;"
+            f" `graph describe schema --module <module> --graph {doc.name} --compact --json`"
+            " lists its patterns"
+        )
+    return "`graph describe schema --compact --json` lists the patterns"
+
+
 def _start(doc: _Model) -> list[str]:
     title = f" (title: {_plain(doc.title)})" if doc.title else ""
     return [
@@ -325,7 +336,7 @@ def _start(doc: _Model) -> list[str]:
         " loops, pipes or heredocs, which a restricted harness refuses. If a call is"
         " refused, run it again in that form before you give up.",
         "- For a few fields, a count or a join, use `graph query` and `RETURN` only those"
-        " columns (`graph describe schema --compact --json` lists the patterns), or"
+        f" columns ({_patterns_source(doc)}), or"
         " `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering"
         " JSON with another program.",
         *(

@@ -421,3 +421,21 @@ def test_resolved_tree_keeps_its_shape() -> None:
     query = run("MATCH (n:Note) RETURN n").query
     assert isinstance(query, Query) and isinstance(query.clauses[0], Match)
     assert query.clauses[0].patterns[0].nodes[0].labels == (("nas:Note",),)
+
+
+COMPANY = compiled_model("company", "1.1.0")
+
+
+def test_a_module_prefix_as_a_label_says_to_use_the_local_name() -> None:
+    error = failure("MATCH (p:org:Position) RETURN p", COMPANY)
+    assert error.code == "term.unknown" and error.details["term"] == "org"
+    assert "module prefix" in error.message and "`prefix:Name`" in error.message
+    plain = failure("MATCH (p:Nothing) RETURN p", COMPANY)
+    assert "module prefix" not in plain.message
+
+
+def test_a_prefixed_name_in_backticks_works_for_an_ambiguous_label() -> None:
+    model = with_second_note(NAS)
+    assert failure("MATCH (n:Note) RETURN n", model).code == "query.ambiguous_term"
+    assert "provenance:Note" in text_of(run("MATCH (n:`provenance:Note`) RETURN n", model))
+    assert "org:Position" in text_of(run("MATCH (p:`org:Position`) RETURN p", COMPANY))

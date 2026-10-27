@@ -609,3 +609,15 @@ def test_the_batch_check_names_the_relations_that_connect_the_types(
     assert team["connecting"]["direct"] == [
         {"relation": "org:part_of", "from": "org:Department", "to": "org:Team"}
     ]
+
+
+def test_a_prefixed_relationship_type_in_a_query_gets_the_hint(
+    run_cli: CliRunner, root: Path
+) -> None:
+    create(run_cli, "1.0.0")
+    refused = app(run_cli, "query", "MATCH (a)-[:org:holds]->(b) RETURN count(a) AS n", env=ENV)
+    assert refused.code == 2 and refused.error["code"] == "query.syntax"
+    assert refused.error["hint"] == "graph describe schema"
+    assert "in backticks" in refused.error["message"]
+    quoted = app(run_cli, "query", "MATCH (a)-[:`org:holds`]->(b) RETURN count(a) AS n", env=ENV)
+    assert quoted.code == 0, quoted.envelope

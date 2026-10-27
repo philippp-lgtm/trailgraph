@@ -20,7 +20,7 @@ Run `graph graphs --json`. Use this skill only if an item named `example_graph` 
 Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
 
 - Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
+- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (read the module first with `graph describe module <module> --graph example_graph`; `graph describe schema --module <module> --graph example_graph --compact --json` lists its patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
 
 ## Subject areas
 

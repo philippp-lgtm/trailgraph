@@ -492,3 +492,12 @@ def test_mutated_valid_queries_never_crash(seed: int) -> None:
             parse("".join(chars))
         except GraphCliError as exc:
             assert exc.code in ("query.syntax", "query.unsupported"), exc.message
+
+
+def test_a_second_colon_in_a_relationship_type_carries_the_prefix_advice() -> None:
+    with pytest.raises(GraphCliError) as caught:
+        parse("MATCH (a)-[:org:holds]->(b) RETURN a")
+    error = caught.value
+    assert error.code == "query.syntax" and error.details["prefixed"] is True
+    assert "expected ']', found :" in error.message and "in backticks" in error.message
+    assert parse("MATCH (a)-[:`org:holds`]->(b) RETURN a")
