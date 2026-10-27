@@ -1,0 +1,163 @@
+format: graph_cli.ir/1
+module:
+  id: organization
+  prefix: org
+  version: 1.0.0
+  summary: The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations).
+  imports:
+    - {module: people, version: "^1.0"}
+
+lifecycles:
+  PositionLifecycle:
+    summary: How far a position has come in the org chart.
+    states:
+      planned: {summary: Approved on paper but not yet part of the working structure., initial: true}
+      active: {summary: Part of the working structure and may be held.}
+      abolished: {summary: Removed from the structure for good., terminal: true}
+    transitions:
+      - {from: planned, to: active, summary: Open the position.}
+      - from: [planned, active]
+        to: abolished
+        summary: Remove the position from the structure.
+        guards:
+          - id: not_held
+            summary: A position that is held by a person cannot be abolished.
+            require:
+              - count: {rel: holds, direction: in, where: {record_status: [active]}}
+                equals_number: 0
+
+classes:
+  OrgUnit:
+    summary: A unit of the company structure, either a department or a team.
+    abstract: true
+    attributes:
+      name:
+        summary: Name of the unit as used in the company.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the unit, such as abbreviations.
+        type: string
+        many: true
+        role: alt_label
+  Department:
+    summary: A larger unit that groups teams and may contain further departments.
+    is_a: OrgUnit
+    display_prefix: DEPT
+  Team:
+    summary: A small unit that works together day to day and sits in a department.
+    is_a: OrgUnit
+    display_prefix: TEAM
+  Position:
+    summary: A slot in the org chart that one person holds at a time; the slot outlives the holder.
+    display_prefix: POS
+    attributes:
+      title:
+        summary: Name of the position as listed in the org chart.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names of the position, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+      status:
+        summary: How far the position has come in the org chart.
+        lifecycle: PositionLifecycle
+        required: true
+  Role:
+    summary: A function that several positions can carry, such as approving budgets; duties and trainings attach to it.
+    display_prefix: ROLE
+    attributes:
+      name:
+        summary: Name of the role.
+        type: string
+        required: true
+        unique: true
+        role: label
+      alt_labels:
+        summary: Other names of the role, such as short forms.
+        type: string
+        many: true
+        role: alt_label
+  CostCenter:
+    summary: An accounting bucket that costs of units are charged to.
+    display_prefix: CC
+    attributes:
+      name:
+        summary: Name of the cost center.
+        type: string
+        required: true
+        role: label
+      code:
+        summary: Short code of the cost center in the accounts.
+        type: string
+        required: true
+        unique: true
+        mutability: immutable
+
+relations:
+  part_of:
+    summary: The unit is part of a larger unit.
+    domain: OrgUnit
+    range: OrgUnit
+    cardinality: {out: {max: 1}}
+    characteristics: [acyclic]
+    on_target_inactive: refuse
+    inverse_label: has_part
+  in_unit:
+    summary: The unit the position belongs to.
+    domain: Position
+    range: OrgUnit
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_position
+  reports_to:
+    summary: The position whose holder this position's holder reports to.
+    domain: Position
+    range: Position
+    cardinality: {out: {max: 1}}
+    characteristics: [acyclic]
+    inverse_label: has_report
+  carries:
+    summary: The position performs the function of the role.
+    domain: Position
+    range: Role
+    inverse_label: carried_by
+  charged_to:
+    summary: The cost center that bears the costs of the unit.
+    domain: OrgUnit
+    range: CostCenter
+    cardinality: {out: {max: 1}}
+    inverse_label: bears_costs_of
+  holds:
+    summary: The person currently holds the position.
+    domain: ppl:Person
+    range: Position
+    cardinality: {in: {max: 1}}
+    inverse_label: held_by
+    qualifiers:
+      since:
+        summary: Date the person took over the position.
+        type: date
+
+rules:
+  - id: team_in_department
+    summary: A team is part of exactly one department.
+    severity: error
+    when: write
+    scope: Team
+    then:
+      - count: {rel: part_of, where: {type: Department}}
+        equals_number: 1
+  - id: left_employee_holds_no_position
+    summary: An employee who has left holds no position.
+    severity: error
+    when: write
+    scope: ppl:Employee
+    if:
+      - {attr: status, equals_string: left}
+    then:
+      - count: {rel: holds}
+        equals_number: 0

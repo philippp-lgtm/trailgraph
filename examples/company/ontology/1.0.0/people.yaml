@@ -1,0 +1,122 @@
+format: graph_cli.ir/1
+module:
+  id: people
+  prefix: ppl
+  version: 1.0.0
+  summary: The people the company works with, employees and externals, and the identities they use in systems; not their positions or units (organization) or their work (operations).
+
+datatypes:
+  WorkEmail:
+    summary: Work email address.
+    base: string
+    single_line: true
+    pattern: '^[^@\s]+@[^@\s]+$'
+
+enums:
+  ExternalKind:
+    summary: Why an external person works with the company.
+    values:
+      contractor: {summary: Works on the company's own tasks for a fixed period.}
+      consultant: {summary: Advises on a question and does not take part in daily work.}
+      auditor: {summary: Examines the company on behalf of a third party.}
+  IdentitySystem:
+    summary: The kind of system an identity is used in.
+    values:
+      directory: {summary: The central login directory of the company.}
+      email: {summary: A mailbox.}
+      chat: {summary: The internal messaging tool.}
+      source_control: {summary: The code hosting service.}
+
+lifecycles:
+  EmploymentLifecycle:
+    summary: Where an employee stands in the employment.
+    states:
+      onboarding: {summary: Has joined but is not yet part of the daily work., initial: true}
+      active: {summary: Works for the company.}
+      left: {summary: Has left the company., terminal: true}
+    transitions:
+      - {from: onboarding, to: active, summary: Complete the onboarding.}
+      - {from: [onboarding, active], to: left, summary: Record that the employee has left.}
+
+classes:
+  Person:
+    summary: A human being who works for the company or with it, either an employee or an external.
+    description: >-
+      A person is the human, independent of any job. The jobs a person
+      holds are Positions of the organization module, linked by holds.
+    abstract: true
+    attributes:
+      name:
+        summary: Full name as used at work.
+        type: string
+        required: true
+        role: label
+      alt_labels:
+        summary: Other names, such as a short form or a former name.
+        type: string
+        many: true
+        role: alt_label
+      work_email:
+        summary: Work email address, if the person has one.
+        type: WorkEmail
+        unique: true
+  Employee:
+    summary: A person who is employed by the company.
+    is_a: Person
+    display_prefix: EMP
+    attributes:
+      employee_number:
+        summary: Number printed on the employment contract.
+        type: string
+        required: true
+        unique: true
+        mutability: immutable
+      joined_on:
+        summary: Date the employment started.
+        type: date
+      status:
+        summary: Where the employee stands in the employment.
+        lifecycle: EmploymentLifecycle
+        required: true
+  External:
+    summary: A person who works with the company without being employed by it.
+    is_a: Person
+    display_prefix: EXT
+    attributes:
+      kind:
+        summary: Why the person works with the company.
+        type: ExternalKind
+        required: true
+      engaged_until:
+        summary: Date the engagement ends; absent when it has no fixed end.
+        type: date
+  Identity:
+    summary: The account or handle one person uses in one system.
+    description: >-
+      One person may have several identities, one per system. The identity
+      is not the person: it can be closed while the person stays.
+    display_prefix: IDN
+    attributes:
+      handle:
+        summary: Login name, address or handle as the system knows it.
+        type: string
+        required: true
+        role: label
+      system:
+        summary: The kind of system the identity is used in.
+        type: IdentitySystem
+        required: true
+
+relations:
+  identity_of:
+    summary: The identity belongs to the person.
+    domain: Identity
+    range: Person
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_identity
+  sponsored_by:
+    summary: The employee who answers for the external person inside the company.
+    domain: External
+    range: Employee
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: sponsors

@@ -86,6 +86,9 @@ graph find --type nas:Topic --json
 mkdir -p .claude && graph skills install --scope project   # the graph-cli agent skill
 ```
 
+A larger, modular graph with seed data, a graph skill and a setup script is in
+[`examples/company`](examples/company/README.md).
+
 A graph skill that tells agents what the graph holds is published with
 `graph-admin graph skill publish` and installed with `--graph` (see
 [Skills](docs/skills.md)).

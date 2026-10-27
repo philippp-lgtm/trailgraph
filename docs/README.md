@@ -25,6 +25,9 @@ Start with the [project README](../README.md) (install, quickstart).
 - [Security model](security_model.md): what access control prevents, what
   it detects, what it does not
 - [Live view](live_view.md): `graph-admin view`
+- [Example graph `company`](../examples/company/README.md): a modular ontology in two
+  versions with seed data, a graph skill and a script that builds it in a throwaway
+  installation or loads it into an existing one
 - [Server](server.md): `graph-server`, the HTTP API that owns the data,
   tokens, the remote mode of `graph`, the container
 - [Ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md):
