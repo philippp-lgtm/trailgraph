@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from harness import CliRunner
-from support.admin import Outcome, admin, init, write_documents
+from support.admin import Outcome, admin, init, parse, write_documents
 from support.app import ENV, app, create_graph
 from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
 from support.trees import tree_hash
@@ -489,6 +489,20 @@ def test_describe_search_finds_terms_of_the_model(run_cli: CliRunner, company: N
     first = text.stdout.splitlines()[0]
     assert first.startswith("type  org:Position  [organization]  A slot in the org chart")
     assert first.endswith("<name: exact>")
+
+
+def test_describe_search_next_page_hint_protects_a_dashed_text(
+    run_cli: CliRunner, company: None
+) -> None:
+    args = ("describe", "search", "--json", "--limit", "3", "--", "-position")
+    found = parse(run_cli("graph", *args, env=ENV))
+    assert found.code == 0, found.envelope
+    command = found.envelope["hints"][0]["command"]
+    assert command == (
+        "graph describe search --graph example_graph --limit 3 --offset 3 -- -position"
+    )
+    again = parse(run_cli(*command.replace(" --graph", " --json --graph").split(), env=ENV))
+    assert again.code == 0, again.envelope
 
 
 def test_describe_search_without_hits_hints_at_the_wider_search(

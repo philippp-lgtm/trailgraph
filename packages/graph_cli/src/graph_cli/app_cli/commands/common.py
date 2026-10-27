@@ -46,7 +46,9 @@ def command_line(
     offset: int | None = None,
 ) -> str:
     """A copy-pasteable read command; ``offset`` given for the next page."""
-    parts = [PROGRAM, *command.split(), *positional, "--graph", graph]
+    dashed = any(value.startswith("-") for value in positional)
+    # A positional that looks like an option goes after "--", so options stay in front.
+    parts = [PROGRAM, *command.split(), *(() if dashed else positional), "--graph", graph]
     for flag, values in options:
         for value in values:
             parts += [flag, value]
@@ -55,6 +57,8 @@ def command_line(
         parts += ["--limit", str(limit)]
     if offset is not None:
         parts += ["--offset", str(offset)]
+    if dashed:
+        parts += ["--", *positional]
     return shlex.join(parts)
 
 
