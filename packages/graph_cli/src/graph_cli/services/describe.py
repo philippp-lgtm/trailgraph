@@ -49,7 +49,7 @@ class ModuleLink:
 
 
 class ModuleIndex:
-    """Subject areas of a compiled model, derived at read time (plan decision M3): a term
+    """Subject areas of a compiled model, derived at read time: a term
     belongs to the module whose prefix its CURIE carries, a relation to the module that
     declares it. Pure; nothing is stored in the compiled form.
 

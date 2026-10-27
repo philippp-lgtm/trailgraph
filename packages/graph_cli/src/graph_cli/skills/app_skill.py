@@ -979,7 +979,7 @@ SKILL_GUIDANCE: Final = (
 )
 
 
-# Modules for agents, M6: the finding names what would have been accepted.
+# The finding names what would have been accepted.
 CONNECTING_GUIDANCE: Final = (
     "## When a relation does not fit the types",
     "",

@@ -1,5 +1,5 @@
 """describe: the module index, ``describe_modules`` / ``describe_module`` and the ``module``
-filter (B11.5, plan ``modules_for_agents`` step 2)."""
+filter (B11.5)."""
 
 import json
 from typing import Any

@@ -1,5 +1,5 @@
-"""``graph describe search``: find terms of the compiled model by text (plan
-``modules_for_agents`` decision M5). Reads the model only, never graph data.
+"""``graph describe search``: find terms of the compiled model by text. Reads
+the model only, never graph data.
 
 Searched: types, relations, attributes (once, under the class that declares them), enum values
 and lifecycle states, by local name, CURIE, summary and description. Matching works on

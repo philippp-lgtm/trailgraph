@@ -1,5 +1,4 @@
-"""describe search: ranking, kinds, module filter, folding and paging over the compiled model
-(plan ``modules_for_agents`` step 4)."""
+"""describe search: ranking, kinds, module filter, folding and paging over the compiled model."""
 
 import json
 from typing import Any

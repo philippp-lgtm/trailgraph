@@ -1,4 +1,4 @@
-"""Generated graph skills of a modular graph (plan decision M7): the ``modules`` block, one
+"""Generated graph skills of a modular graph: the ``modules`` block, one
 page per module, ``references/model.md`` as an index; the single-module fixtures stay as
 they are (their goldens are covered by ``test_graph_skill_render``)."""
 
