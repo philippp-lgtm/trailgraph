@@ -1,4 +1,4 @@
-"""``graph-admin view``: a local live view of one graph (graph view plan)."""
+"""``graph-admin view``: a local live view of the graphs of a data root (graph view plan)."""
 
 from __future__ import annotations
 
@@ -10,20 +10,20 @@ from typing import Final
 
 import click
 
-from graph_cli.catalog.activity import ActivityListener
+from graph_cli.catalog.activity import ActivityListener, activity_dir
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, obj
+from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, nullable, obj
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli_admin.maintenance_cli.commands.common import (
     DATA_ROOT,
     GRAPH_ERRORS,
-    GRAPH_OPTION,
     admin_context,
 )
 from graph_cli_admin.maintenance_cli.view_server import ViewServer
-from graph_cli_admin.services_admin import view
+from graph_cli_admin.services_admin.view import ViewGraphs
 
 MIN_TOKEN: Final = 32  # characters; a random token of 24 bytes has 32
 
@@ -57,7 +57,7 @@ def read_token_file(path: str) -> str:
 
 def view_command(
     state: CommandState,
-    graph_ref: str,
+    graph_ref: str | None,
     port: int,
     host: str,
     no_open: bool,
@@ -79,25 +79,33 @@ def view_command(
         )
     token = read_token_file(token_file) if token_file is not None else None
     ctx = admin_context(state, data_root)
-    source = view.open_view(ctx, graph_ref=graph_ref)
-    state.warnings += source.warnings
+    graphs = ViewGraphs(ctx, default=graph_ref)
+    first = graphs.get(None).source if graph_ref is not None else None
+    if first is not None:
+        state.warnings += first.warnings
+    of = f" of {first.entry.name}" if first is not None else ""
+    # A graph opened later warns now, once: the envelope's warnings print only at the stop.
+    graphs.on_warning = lambda graph, warning: click.echo(
+        f"Warning for {graph} ({warning.code}): {warning.message}", err=True
+    )
     listener: ActivityListener | None = None
     no_reads = ""  # why the activity socket cannot be bound
     if ctx.config.signal_reads:
+        directory = activity_dir(ctx.roots.state_root)
         try:
-            listener = ActivityListener.open(source.activity_dir)
+            listener = ActivityListener.open(directory)
         except OSError as exc:
-            no_reads = f"{exc.strerror or exc} in {source.activity_dir}"
+            no_reads = f"{exc.strerror or exc} in {directory}"
             state.warnings.append(
                 WarningRecord(
                     "admin.view_reads_unavailable",
                     f"reads cannot be shown: {exc.strerror or exc}",
-                    {"directory": str(source.activity_dir)},
+                    {"directory": str(directory)},
                 )
             )
     try:
         server = ViewServer(
-            source,
+            graphs,
             page=page(),
             port=port,
             host=host,
@@ -108,19 +116,21 @@ def view_command(
     except OSError as exc:
         if listener is not None:
             listener.close()
+        details: dict[str, JsonValue] = {"port": port}
+        if first is not None:
+            details["graph"] = first.entry.name
         raise GraphCliError(
             "admin.view_port_unavailable",
             f"cannot serve on {host}:{port}: {exc.strerror or exc}",
-            details={"graph": source.entry.name, "port": port},
+            details=details,
         ) from exc
     try:
         server.start()
         if token is None:
-            click.echo(f"Graph view of {source.entry.name}: {server.url}", err=True)
+            click.echo(f"Graph view{of}: {server.url}", err=True)
         else:
             click.echo(
-                f"Graph view of {source.entry.name}: {server.address}"
-                " (add ?t= with the token of --token-file)",
+                f"Graph view{of}: {server.address} (add ?t= with the token of --token-file)",
                 err=True,
             )
         if host != "127.0.0.1":
@@ -143,12 +153,16 @@ def view_command(
         if listener is not None:
             listener.close()
     return Result(
-        data={"graph_id": str(source.entry.id), "address": server.address, "stopped": True},
-        text=f"Graph view of {source.entry.name} stopped.",
+        data={
+            "graph_id": str(first.entry.id) if first is not None else None,
+            "address": server.address,
+            "stopped": True,
+        },
+        text=f"Graph view{of} stopped.",
     )
 
 
-OUTPUT: Final = obj({"graph_id": STRING, "address": STRING, "stopped": BOOLEAN})
+OUTPUT: Final = obj({"graph_id": nullable(STRING), "address": STRING, "stopped": BOOLEAN})
 
 
 SPECS: Final = (
@@ -157,9 +171,14 @@ SPECS: Final = (
         kind="read",
         surface="retrieve",
         action=None,
-        summary="Show a graph in the browser; reads, updates and new entities light up live.",
+        summary="Show the graphs in the browser; reads, updates and new entities light up live.",
         params=(
-            GRAPH_OPTION,
+            ParamSpec(
+                "--graph",
+                "graph_ref",
+                "Graph to show first, name or id; without it the page opens on the list of graphs.",
+                keyword="graph_ref",
+            ),
             ParamSpec("--port", "integer", "Port to serve on; 0 picks a free one.", default=0),
             ParamSpec(
                 "--host",
@@ -177,14 +196,14 @@ SPECS: Final = (
             DATA_ROOT,
         ),
         examples=(
-            Example("graph-admin view --graph <graph>", "Open the live view."),
+            Example("graph-admin view", "Open the live view; pick a graph in the page."),
+            Example("graph-admin view --graph <graph>", "Open the live view on one graph."),
             Example(
                 "graph-admin view --graph <graph> --port <value> --no-open",
                 "Serve on a fixed port without opening a browser.",
             ),
             Example(
-                "graph-admin view --graph <graph> --host 0.0.0.0 --port <value> --no-open"
-                " --token-file <file>",
+                "graph-admin view --host 0.0.0.0 --port <value> --no-open --token-file <file>",
                 "Serve in a container behind a proxy that adds the token.",
             ),
         ),
@@ -193,7 +212,9 @@ SPECS: Final = (
         output=OUTPUT,
         description="Serves a read-only page on 127.0.0.1 (or --host) until Ctrl+C and prints"
         " its address on stderr; the address carries a token, keep it to yourself. There is"
-        " no JSON mode. GET /health answers ok without the token, for probes."
+        " no JSON mode. A side bar lists every graph you may read; the page opens on the"
+        " graph of --graph, else on none. GET /health answers ok without the token, for"
+        " probes."
         " Writes show up by themselves (green: new, blue: changed). Reads (yellow) show only"
         " when the app sends them: [activity] signal_reads = true in config.toml.",
         remote="local",

@@ -1,9 +1,30 @@
 # Live view
 
-`graph-admin view --graph <graph>` prints an address on stderr and opens
-it: the whole graph as dots and lines, with labels, and a list of recent
-activity. It serves until Ctrl+C (`--port`, `--host`, `--no-open`,
-`--token-file`).
+`graph-admin view` prints an address on stderr and opens it: a side bar
+with the graphs of the data root and, for the graph picked there, the
+whole graph as dots and lines, with labels, and a list of recent
+activity. `--graph <graph>` opens the page on that graph; without it the
+page opens on none. It serves until Ctrl+C (`--port`, `--host`,
+`--no-open`, `--token-file`).
+
+## Switching graphs
+
+The side bar lists every graph you may read (`read.get`), archived ones
+marked, with name and title; a graph you may not read is left out, and
+listing it is not audited as a denial. Click a graph to show it. The
+address names the shown graph as `graph=<name>`, so a reload, a bookmark
+or Back and Forward keep it, and an address with `graph=` opens on that
+graph directly (a name or an id). The list refreshes when the window gets
+the focus and every minute, so a graph created while the view runs shows
+up without a restart. The toggle at the top folds the side bar to a
+narrow strip and back; the browser remembers the choice.
+
+The view opens a graph when the page first asks for it, not at start,
+and keeps up to eight open. Beyond that it closes the graph used least
+recently that no page is showing and that `--graph` did not name; a
+graph a page shows stays open, so with more graphs shown at once more
+stay open. Warnings about a graph opened later (for example an ontology
+pin the program cannot read) print on stderr once.
 
 ## Activity
 
@@ -54,12 +75,14 @@ whose state is such a mount, put that one directory on a `tmpfs`.
 
 ### Trail
 
-The view numbers what it sees as steps: one per read command and one per
-written entity, each with time, command, reader and session, the entity
-ids and, for reads, the edge ids. It keeps the last 500 steps in memory,
-so the steps of one session show where an agent went; they are gone
-when the view stops. The page gets each step live and can fetch the
-recent ones at `/trail` with the same token, for example after a
+The view numbers what it sees in a graph as steps: one per read command
+and one per written entity, each with time, command, reader and session,
+the entity ids and, for reads, the edge ids. It keeps the last 500 steps
+per open graph in memory, so the steps of one session show where an
+agent went; they start when the graph is opened and are gone when it is
+closed or the view stops. The page gets the steps of the shown graph
+live, and only those, and can fetch the recent ones at
+`/trail?graph=<graph>` with the same token, for example after a
 reconnect.
 
 ## Access
@@ -72,6 +95,15 @@ name `127.0.0.1` or `localhost` (any port or none) and carry the token. The prin
 address names the port inside the container: open the published port with
 the same token. The graph itself carries labels, types, aliases and record
 status only.
+
+Each request for a graph checks `read.get` on it again, so a read
+revoked in the policy takes effect with the next request; an open
+activity stream was checked when it connected and runs on until it
+reconnects. A refused request is audited like any denial, but at most
+once per graph and minute: repeats in that time are refused the same way
+without an event, so a page or client that keeps retrying cannot flood
+the audit log. After a refusal or an unknown graph the page stops
+reconnecting and says why.
 
 `--token-file <file>` reads the token from a file instead (surrounding
 whitespace stripped, at least 32 characters); the view refuses to start
@@ -92,13 +124,15 @@ and, with `signal_reads` in the server's `config.toml`, reads show up
 (see [Activity](#activity)):
 
 ```sh
-graph-admin view --graph <graph> --host 0.0.0.0 --port <port> --no-open --token-file <file>
+graph-admin view --host 0.0.0.0 --port <port> --no-open --token-file <file>
 ```
 
 The token file comes from a secret that only the view and the proxy
 see. The proxy
 
-- authenticates the user and forwards only `GET` requests;
+- authenticates the user and forwards only `GET` requests, to the routes
+  `/` (the page), `/graphs`, `/graph`, `/entity`, `/blob`, `/events` and
+  `/trail`, with their query parameters (`graph`, `id`);
 - sends `Host: localhost` or `127.0.0.1` (with any port or none), not
   the public name, else the view answers 403;
 - adds the token as the query parameter `t`, replacing any `t` the
@@ -113,6 +147,16 @@ see. The proxy
 Point liveness and readiness probes at `/health` on the view's port.
 The view's page and answers are not encrypted; keep its port inside the
 pod or cluster network and let the proxy terminate TLS.
+
+A proxy that wraps the page in its own frame (a bar above it, a shared
+light or dark mode) can rely on two things. The page follows
+`data-theme="dark"` or `data-theme="light"` on its `<html>` element and
+switches when the attribute changes; without it, the page follows the
+device setting. And it fills the height its `<body>` leaves, so a
+`padding-top` on `body` for a bar keeps everything in view without
+scrolling. A page may also call the global `readColors()` after changing
+the theme some other way; it applies the theme and re-reads the colors
+the graph is drawn with.
 
 ## Using the view
 
@@ -130,3 +174,9 @@ alias or type does not contain the text (Enter opens the first match);
 checkbox per type hides whole types. Attribute values are not searched.
 "scale nodes by number of connections" enlarges nodes in proportion to
 their edge count, relative to the most connected visible node.
+
+On a narrow screen (720 pixels or less, such as a phone) the list of
+graphs starts folded and opens over the graph; picking a graph or Escape
+folds it again. The panel becomes a sheet at the bottom that shows the
+graph's name and counts; "Details" opens it, and clicking a node opens
+it with that entity.

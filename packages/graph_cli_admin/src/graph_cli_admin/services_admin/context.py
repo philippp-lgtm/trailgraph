@@ -84,11 +84,18 @@ class AdminContext:
             raise graph_not_found(ref)
         return entry
 
-    def manifests(self, *, include_archived: bool) -> list[ManifestData]:
+    def manifests(
+        self, *, include_archived: bool, skip_unreadable: bool = False
+    ) -> list[ManifestData]:
         """The graphs' manifests; a project admin's are those of the graphs it maintains
-        (an unreadable manifest of another graph neither shows nor stops it)."""
+        (an unreadable manifest of another graph neither shows nor stops it).
+        ``skip_unreadable`` leaves out every unreadable one, with a catalog warning."""
         if not self.project_admin:
-            return list(self.catalog.manifests(include_archived=include_archived))
+            return list(
+                self.catalog.manifests(
+                    include_archived=include_archived, skip_unreadable=skip_unreadable
+                )
+            )
         found = self.catalog.manifests(include_archived=include_archived, skip_unreadable=True)
         return [
             m for m in found if maintains(self.actor, m.entry.id, self.policy.current(m.entry.id))
@@ -141,6 +148,17 @@ class AdminContext:
             )
             raise GraphCliError(first.code, f"{first.action} on {first.resource} is not permitted")
         return decisions
+
+    def decide(self, action: str, resource: str, *, graph: GraphId | None = None) -> Decision:
+        """What ``authorize`` would decide for the pair, without auditing a denial."""
+        policy = self.policy.current(graph)
+        ctx = AuthzContext(op_count=1, has_reason=False, dry_run=False)
+        return authorize(self.actor, action, resource, ctx, policy)
+
+    def allows(self, action: str, resource: str, *, graph: GraphId | None = None) -> bool:
+        """Whether ``authorize`` would permit the pair; nothing is audited, so a listing
+        can leave out what the caller may not see without recording a denial per entry."""
+        return self.decide(action, resource, graph=graph).effect != "deny"
 
     def intent(
         self,

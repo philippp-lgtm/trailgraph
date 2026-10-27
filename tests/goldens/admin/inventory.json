@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.3.0",
+  "program_version": "0.4.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -2315,15 +2315,15 @@
       "kind": "read",
       "surface": "retrieve",
       "action": null,
-      "summary": "Show a graph in the browser; reads, updates and new entities light up live.",
+      "summary": "Show the graphs in the browser; reads, updates and new entities light up live.",
       "args": [],
       "options": [
         {
           "name": "--graph",
           "type": "graph_ref",
-          "required": true,
+          "required": false,
           "repeatable": false,
-          "summary": "Graph name or id."
+          "summary": "Graph to show first, name or id; without it the page opens on the list of graphs."
         },
         {
           "name": "--port",
@@ -2365,15 +2365,19 @@
       ],
       "examples": [
         {
+          "command": "graph-admin view",
+          "summary": "Open the live view; pick a graph in the page."
+        },
+        {
           "command": "graph-admin view --graph <graph>",
-          "summary": "Open the live view."
+          "summary": "Open the live view on one graph."
         },
         {
           "command": "graph-admin view --graph <graph> --port <value> --no-open",
           "summary": "Serve on a fixed port without opening a browser."
         },
         {
-          "command": "graph-admin view --graph <graph> --host 0.0.0.0 --port <value> --no-open --token-file <file>",
+          "command": "graph-admin view --host 0.0.0.0 --port <value> --no-open --token-file <file>",
           "summary": "Serve in a container behind a proxy that adds the token."
         }
       ],

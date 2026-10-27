@@ -12,17 +12,24 @@ Routes: ``/health`` ``ok`` without token, for the probes of a container
 platform; bound to another address also without the ``Host`` check (a
 probe names the pod's address), on ``127.0.0.1`` under it, so a page of
 another site cannot probe it by DNS rebinding; it touches no graph.
-``/`` the page, ``/graph`` the whole graph as JSON, ``/entity?id=``
-one entity in full (attributes, edges, history with the writing agents),
-``/blob?id=`` the stored file of a file entity (PDFs and images inline,
-anything else as a download), ``/events`` Server-Sent Events, ``/trail``
-the recent steps of activity (``ActivityTrail``). The page asks for every
-route by a relative URL, so a proxy may serve it below a path prefix.
-One feed thread polls the store and the activity socket, numbers each
-write and read as a trail step and hands it to a bounded queue per
-client: a slow client loses events, the feed never waits; ``/trail``
-gives a page the steps it missed. A failing poll becomes an ``error``
-event and the feed goes on.
+``/`` the page, ``/graphs`` the graphs the page can switch between
+(``ViewGraphs.listing``). The routes of one graph take it as ``graph=``
+(name or id; without it the graph of ``--graph``): ``/graph`` the whole
+graph as JSON, ``/entity?id=`` one entity in full (attributes, edges,
+history with the writing agents), ``/blob?id=`` the stored file of a file
+entity (PDFs and images inline, anything else as a download), ``/events``
+Server-Sent Events of that graph only, ``/trail`` its recent steps of
+activity (``ActivityTrail``). The page asks for every route by a relative
+URL, so a proxy may serve it below a path prefix.
+One feed thread polls the store of every open graph and the activity
+socket, numbers each write and read as a step of that graph's trail and
+hands it to a bounded queue per client of that graph: a slow client loses
+events, the feed never waits; ``/trail`` gives a page the steps it missed.
+A failing poll becomes an ``error`` event and the feed goes on. A graph
+that clients watch is never closed (``MAX_OPEN``); a stream that lost the
+race with closing its graph ends at once and the browser reconnects. A
+stream is authorized when it connects. Any other exception in a route is
+a 500 with a fixed message, and one line on stderr.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ import contextlib
 import json
 import queue
 import secrets
+import sys
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,9 +50,8 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_admin.services_admin.view import (
-    ActivityTrail,
-    ViewFeed,
-    ViewSource,
+    GraphView,
+    ViewGraphs,
     entity_json,
     graph_json,
     open_blob,
@@ -70,40 +77,74 @@ SECURITY_HEADERS: Final = (
 BLOB_POLICY: Final = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'self'"
 )
-NOT_FOUND_CODES: Final = frozenset({"entity.not_found"})
+NOT_FOUND_CODES: Final = frozenset({"entity.not_found", "graph.not_found"})
 
 Event = dict[str, JsonValue]
 
 
+Client = queue.Queue[Event | None]
+
+
 class Hub:
-    """Fans events out to the connected clients; ``None`` tells a client to stop."""
+    """Fans the events of a graph out to its connected clients; ``None`` tells a
+    client to stop."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._clients: set[queue.Queue[Event | None]] = set()
+        self._clients: dict[str, set[Client]] = {}
 
-    def subscribe(self) -> queue.Queue[Event | None]:
-        client: queue.Queue[Event | None] = queue.Queue(maxsize=CLIENT_QUEUE)
+    def subscribe(self, graph: str) -> Client:
+        client: Client = queue.Queue(maxsize=CLIENT_QUEUE)
         with self._lock:
-            self._clients.add(client)
+            self._clients.setdefault(graph, set()).add(client)
         return client
 
-    def unsubscribe(self, client: queue.Queue[Event | None]) -> None:
+    def unsubscribe(self, graph: str, client: Client) -> None:
         with self._lock:
-            self._clients.discard(client)
+            clients = self._clients.get(graph, set())
+            clients.discard(client)
+            if not clients:
+                self._clients.pop(graph, None)
 
-    def publish(self, event: Event | None) -> None:
+    def watched(self, graph: str) -> bool:
         with self._lock:
-            clients = list(self._clients)
+            return bool(self._clients.get(graph))
+
+    def publish(self, graph: str, event: Event | None) -> None:
+        with self._lock:
+            clients = list(self._clients.get(graph, ()))
         for client in clients:
-            with contextlib.suppress(queue.Full):  # too slow: it reloads on reconnect
+            try:
                 client.put_nowait(event)
+            except queue.Full:  # too slow: it reloads on reconnect
+                if event is None:  # but the stop must arrive: it takes the oldest's place
+                    with contextlib.suppress(queue.Empty):
+                        client.get_nowait()
+                    with contextlib.suppress(queue.Full):
+                        client.put_nowait(None)
+
+    def close(self, graph: str) -> None:
+        self.publish(graph, None)
+
+    def close_all(self) -> None:
+        with self._lock:
+            graphs = list(self._clients)
+        for graph in graphs:
+            self.close(graph)
+
+
+class _HTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """A client that went away is no error; anything else is one line, no traceback."""
+        exc = sys.exception()
+        if not isinstance(exc, ConnectionError):
+            print(f"graph-admin view: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 class ViewServer:
     def __init__(
         self,
-        source: ViewSource,
+        graphs: ViewGraphs,
         *,
         page: bytes,
         port: int = 0,
@@ -114,19 +155,19 @@ class ViewServer:
         clock: Clock | None = None,
         token: str | None = None,
     ) -> None:
-        self.source = source
+        self.graphs = graphs
         self.page = page
         self.listener = listener
         self.signal_reads = signal_reads
         self.poll_s = poll_s
         self.token = token if token is not None else secrets.token_urlsafe(24)
         self.hub = Hub()
-        self.trail = ActivityTrail()
+        graphs.on_close = self.hub.close
+        graphs.watched = self.hub.watched
         self.clock = clock if clock is not None else SystemClock()
-        self.feed = ViewFeed(source, source.read.head().seq)
         self._stop = threading.Event()
         self.host = host
-        self._http = ThreadingHTTPServer((host, port), _handler(self))
+        self._http = _HTTPServer((host, port), _handler(self))
         self._http.daemon_threads = True
         self._threads: list[threading.Thread] = []
 
@@ -155,24 +196,36 @@ class ViewServer:
 
     def stop(self) -> None:
         self._stop.set()
-        self.hub.publish(None)
+        self.hub.close_all()
         self._http.shutdown()
         self._http.server_close()
         for thread in self._threads:
             thread.join(timeout=2.0)
 
-    def graph(self) -> dict[str, JsonValue]:
-        data = graph_json(self.source)
-        data["signal_reads"] = self.signal_reads and self.listener is not None
+    @property
+    def reads_shown(self) -> bool:
+        return self.signal_reads and self.listener is not None
+
+    def listing(self) -> dict[str, JsonValue]:
+        data = self.graphs.listing()
+        data["signal_reads"] = self.reads_shown
+        return data
+
+    def graph(self, view: GraphView) -> dict[str, JsonValue]:
+        data = graph_json(view.source)
+        data["signal_reads"] = self.reads_shown
         return data
 
     def _run_feed(self) -> None:
         while not self._stop.is_set():
-            try:
-                for event in self.feed.poll():
-                    self.hub.publish(self.trail.add(event))
-            except GraphCliError as exc:
-                self.hub.publish({"kind": "error", "code": exc.code, "message": exc.message})
+            for view in self.graphs.opened():
+                graph = str(view.source.entry.id)
+                try:
+                    for event in view.feed.poll():
+                        self.hub.publish(graph, view.trail.add(event))
+                except GraphCliError as exc:
+                    error: Event = {"kind": "error", "code": exc.code, "message": exc.message}
+                    self.hub.publish(graph, error)
             if self.listener is None:
                 self._stop.wait(self.poll_s)
                 continue
@@ -183,9 +236,10 @@ class ViewServer:
                 continue
             now = self.clock.now()
             for activity in received:
-                read = read_event(self.source, activity, now)
-                if read is not None:
-                    self.hub.publish(self.trail.add(read))
+                shown = self.graphs.find(activity.graph)  # a graph not open has no viewer
+                read = read_event(shown.source, activity, now) if shown is not None else None
+                if shown is not None and read is not None:
+                    self.hub.publish(activity.graph, shown.trail.add(read))
 
 
 def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
@@ -193,6 +247,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
         protocol_version = "HTTP/1.1"
         server_version = "graph-admin-view"
         sys_version = ""
+        started = False  # the status line of this request's answer is sent
 
         def do_GET(self) -> None:
             url = urlsplit(self.path)
@@ -202,36 +257,58 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             if not self._local_host() or not self._token(url.query):
                 self._send(403, b"forbidden\n", "text/plain; charset=utf-8")
                 return
-            entity = parse_qs(url.query).get("id", [""])[0]
+            params = parse_qs(url.query)
+            entity = params.get("id", [""])[0]
+
+            def view() -> GraphView:
+                return server.graphs.get(params.get("graph", [""])[0])
+
             routes: dict[str, Callable[[], None]] = {
                 "/": lambda: self._send(200, server.page, "text/html; charset=utf-8"),
-                "/graph": lambda: self._send(
-                    200, json.dumps(server.graph()).encode(), "application/json"
-                ),
-                "/entity": lambda: self._send(
-                    200, json.dumps(entity_json(server.source, entity)).encode(), "application/json"
-                ),
-                "/blob": lambda: self._blob(entity),
-                "/events": self._events,
-                "/trail": lambda: self._send(
-                    200, json.dumps(server.trail.to_json()).encode(), "application/json"
-                ),
+                "/graphs": lambda: self._json(server.listing()),
+                "/graph": lambda: self._json(server.graph(view())),
+                "/entity": lambda: self._json(entity_json(view().source, entity)),
+                "/blob": lambda: self._blob(view(), entity),
+                "/events": lambda: self._events(view()),
+                "/trail": lambda: self._json(view().trail.to_json()),
             }
             route = routes.get(url.path)
             if route is None:
                 self._send(404, b"not found\n", "text/plain; charset=utf-8")
                 return
+            self.started = False
             try:
                 route()
+            except ConnectionError:  # the client went away: nothing to answer, nothing to report
+                self.close_connection = True
             except GraphCliError as exc:
+                if self.started:  # the answer is under way: only the connection can end
+                    self.close_connection = True
+                    return
                 status = (
                     404 if exc.code in NOT_FOUND_CODES else 403 if "denied" in exc.code else 400
                 )
                 body = json.dumps({"code": exc.code, "message": exc.message}).encode()
                 self._send(status, body, "application/json")
+            except Exception as exc:  # a broken graph: no traceback, no path to the browser
+                print(f"graph-admin view: {url.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                if self.started:  # the answer is under way: only the connection can end
+                    self.close_connection = True
+                    return
+                body = json.dumps(
+                    {"code": "internal.error", "message": "the view could not answer"}
+                ).encode()
+                self._send(500, body, "application/json")
 
-        def _blob(self, entity: str) -> None:
-            blob = open_blob(server.source, entity)
+        def send_response(self, code: int, message: str | None = None) -> None:
+            self.started = True
+            super().send_response(code, message)
+
+        def _json(self, data: dict[str, JsonValue]) -> None:
+            self._send(200, json.dumps(data).encode(), "application/json")
+
+        def _blob(self, view: GraphView, entity: str) -> None:
+            blob = open_blob(view.source, entity)
             self.send_response(200)
             self.send_header("Content-Type", blob.media_type)
             self.send_header("Content-Length", str(blob.size))
@@ -274,9 +351,13 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
-        def _events(self) -> None:
-            client = server.hub.subscribe()
+        def _events(self, view: GraphView) -> None:
+            graph = str(view.source.entry.id)
+            client = server.hub.subscribe(graph)
             try:
+                if server.graphs.find(graph) is not view:  # closed before it was watched
+                    self.close_connection = True
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 for name, value in SECURITY_HEADERS:
@@ -298,7 +379,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
             except (BrokenPipeError, ConnectionResetError):
                 return
             finally:
-                server.hub.unsubscribe(client)
+                server.hub.unsubscribe(graph, client)
 
         def log_message(self, format: str, *args: Any) -> None:
             return  # no access log: stderr belongs to the envelope

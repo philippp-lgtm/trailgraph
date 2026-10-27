@@ -488,7 +488,7 @@ writer, but is not the default.
 docker compose up -d                       # 127.0.0.1:8470 on this machine only
 docker compose exec graph graph-admin token create <name> --project <value>
 GRAPH_DOMAIN=graphs.example.org docker compose --profile tls up -d   # HTTPS via Caddy
-docker compose exec graph graph-admin view --graph <graph> --host 0.0.0.0 --port 8471 --no-open
+docker compose exec graph graph-admin view --host 0.0.0.0 --port 8471 --no-open
 ```
 
 The first start creates the data root and installs a default

@@ -11,7 +11,7 @@ strict split between usage and maintenance, and a server:
   `PATH`; run from the repository checkout, or installed from a server on a
   machine in remote mode. Creates graphs, versions ontologies, installs
   policies and skills, verifies the audit trail and serves a
-  [live view](docs/live_view.md) of a graph in the browser; `graph-admin
+  [live view](docs/live_view.md) of the graphs in the browser; `graph-admin
   workspace sync <dir>` sets up a folder to maintain graphs from, with
   skills for agents ([Maintainer workspaces](docs/cli_graph_admin.md#maintainer-workspaces)).
 - `graph-server` (distribution `graph_cli_server`): the command surface of
