@@ -7,13 +7,18 @@ Contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13 (Cypher).
 from __future__ import annotations
 
 import json
-import shlex
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
-from graph_cli.app_cli.commands.common import AS_OF, GRAPH, PROGRAM, context
+from graph_cli.app_cli.commands.common import (
+    AS_OF,
+    GRAPH,
+    command_line,
+    context,
+    next_page,
+)
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS
 from graph_cli.cli_kit.envelope import Result
@@ -99,35 +104,6 @@ def _pinned(view: GraphRead, as_of: AsOf | None) -> tuple[tuple[str, tuple[str, 
     return () if as_of is None else (("--as-of", (f"tx:{view.snapshot.seq}",)),)
 
 
-def _command_line(
-    command: str,
-    positional: tuple[str, ...],
-    graph: str,
-    options: tuple[tuple[str, tuple[str, ...]], ...],
-    switches: tuple[str, ...],
-    limit: int,
-    offset: int | None = None,
-) -> str:
-    """A copy-pasteable read command; ``offset`` given for the next page."""
-    parts = [PROGRAM, command, *positional, "--graph", graph]
-    for flag, values in options:
-        for value in values:
-            parts += [flag, value]
-    parts += switches
-    if limit != DEFAULT_LIMIT or offset is not None:
-        parts += ["--limit", str(limit)]
-    if offset is not None:
-        parts += ["--offset", str(offset)]
-    return shlex.join(parts)
-
-
-def _next_page(page: dict[str, JsonValue], line: Callable[[int], str]) -> tuple[Hint, ...]:
-    next_offset = page["next_offset"]
-    if not isinstance(next_offset, int):
-        return ()
-    return ({"text": "More results available", "command": line(next_offset)},)
-
-
 FIELDS: Final = ParamSpec(
     "--fields",
     "string",
@@ -175,9 +151,9 @@ def history(
 
     def line(next_offset: int) -> str:
         options = _pinned(view, point)
-        return _command_line("history", (ref,), view.entry.name, options, (), limit, next_offset)
+        return command_line("history", (ref,), view.entry.name, options, (), limit, next_offset)
 
-    hints = _next_page(page_json, line)
+    hints = next_page(page_json, line)
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
@@ -235,9 +211,9 @@ def find(
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
-        return _command_line("find", (), view.entry.name, options, switches, limit, next_offset)
+        return command_line("find", (), view.entry.name, options, switches, limit, next_offset)
 
-    hints = _next_page(page_json, line)
+    hints = next_page(page_json, line)
     return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
 
 
@@ -304,14 +280,12 @@ def lookup(
             ("--lang", (lang,) if lang else ()),
             *_pinned(view, point),
         )
-        return _command_line(
-            "lookup", texts, view.entry.name, options, switches, limit, next_offset
-        )
+        return command_line("lookup", texts, view.entry.name, options, switches, limit, next_offset)
 
     counts = data["texts"]
     assert isinstance(counts, list)
     missing = tuple(str(c["text"]) for c in counts if isinstance(c, Mapping) and not c["total"])
-    hints = _next_page(page_json, lambda next_offset: line(text, match, next_offset))
+    hints = next_page(page_json, lambda next_offset: line(text, match, next_offset))
     if missing and match == "exact":
         hints += (
             {
@@ -327,7 +301,7 @@ def lookup(
         hints += tuple(
             {
                 "text": "No name starts with the text; search names and text fields",
-                "command": _command_line(
+                "command": command_line(
                     "search",
                     (value,),
                     view.entry.name,
@@ -380,16 +354,16 @@ def search(
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
-        return _command_line(
+        return command_line(
             "search", (text,), view.entry.name, options, switches, limit, next_offset
         )
 
-    hints = _next_page(page_json, line)
+    hints = next_page(page_json, line)
     if not page.total and (type or field):
         hints = (
             {
                 "text": "Nothing found; search every type and field",
-                "command": _command_line(
+                "command": command_line(
                     "search",
                     (text,),
                     view.entry.name,
@@ -534,7 +508,7 @@ def query(
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
-        return _command_line(
+        return command_line(
             "query", positional, view.entry.name, options, switches, limit, next_offset
         )
 
@@ -544,12 +518,10 @@ def query(
         data=data,
         graph=view.envelope_graph(),
         page=page_json,
-        hints=_next_page(page_json, line),
+        hints=next_page(page_json, line),
         text=_table([str(c) for c in columns], items),
     )
 
-
-Hint = dict[str, JsonValue]
 
 REF: Final = ParamSpec(
     "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True

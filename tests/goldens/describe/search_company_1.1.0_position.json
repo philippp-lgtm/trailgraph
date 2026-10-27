@@ -1,0 +1,158 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "text": "position",
+  "items": [
+    {
+      "kind": "type",
+      "curie": "org:Position",
+      "of": null,
+      "module": "organization",
+      "summary": "A slot in the org chart that one person holds at a time; the slot outlives the holder.",
+      "deprecated": false,
+      "match": {
+        "field": "name",
+        "how": "exact"
+      }
+    },
+    {
+      "kind": "relation",
+      "curie": "org:holds",
+      "of": null,
+      "module": "organization",
+      "summary": "The person currently holds the position.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "attribute",
+      "curie": "org:Position.title",
+      "of": "org:Position",
+      "module": "organization",
+      "summary": "Name of the position as listed in the org chart.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "relation",
+      "curie": "org:in_unit",
+      "of": null,
+      "module": "organization",
+      "summary": "The unit the position belongs to.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "attribute",
+      "curie": "org:Position.status",
+      "of": "org:Position",
+      "module": "organization",
+      "summary": "How far the position has come in the org chart.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "type",
+      "curie": "ops:Process",
+      "of": null,
+      "module": "operations",
+      "summary": "A recurring way of getting one kind of work done, owned by a position.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "relation",
+      "curie": "ops:owned_by",
+      "of": null,
+      "module": "operations",
+      "summary": "The position that is accountable for the process.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "type",
+      "curie": "ops:Training",
+      "of": null,
+      "module": "operations",
+      "summary": "A course or certification that a position requires and a person completes.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "relation",
+      "curie": "org:reports_to",
+      "of": null,
+      "module": "organization",
+      "summary": "The position whose holder this position's holder reports to.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "attribute",
+      "curie": "org:Position.alt_labels",
+      "of": "org:Position",
+      "module": "organization",
+      "summary": "Other names of the position, such as short forms.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "relation",
+      "curie": "ops:required_for",
+      "of": null,
+      "module": "operations",
+      "summary": "The training must be completed by the holder of the position.",
+      "deprecated": false,
+      "match": {
+        "field": "summary",
+        "how": "phrase"
+      }
+    },
+    {
+      "kind": "type",
+      "curie": "ppl:Person",
+      "of": null,
+      "module": "people",
+      "summary": "A human being who works for the company or with it.",
+      "deprecated": false,
+      "match": {
+        "field": "description",
+        "how": "phrase"
+      }
+    }
+  ]
+}

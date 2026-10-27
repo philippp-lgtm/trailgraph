@@ -220,6 +220,35 @@ Usage: `graph describe schema [OPTIONS]`
 | `graph describe schema --compact --json` | Labels and patterns only. |
 | `graph describe schema --module <module> --compact` | Patterns of one module and its links, no properties. |
 
+## graph describe search
+
+Search the ontology by text: types, relations, fields, enum values, states.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe search TEXT [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `text` | string | yes | no | The words to look for. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`. |
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many results. Default: `0`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph describe search <value>` | Terms of the model that match the words. |
+| `graph describe search <value> --kind attribute --module <module> --json` | Only fields, only in one module. |
+
 ## graph describe type
 
 Describe one type: fields, lifecycles, relations and rules.

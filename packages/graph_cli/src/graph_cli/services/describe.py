@@ -155,7 +155,9 @@ def _bound(bound: Bound) -> str:
     return f"{bound.min}..{'n' if bound.max is None else bound.max}"
 
 
-def _envelope(entry: GraphEntry, model: CompiledModel, **body: JsonValue) -> dict[str, JsonValue]:
+def model_envelope(
+    entry: GraphEntry, model: CompiledModel, **body: JsonValue
+) -> dict[str, JsonValue]:
     return {
         "schema": MODEL_SCHEMA,
         "graph": {"id": str(entry.id), "name": entry.name, "language": entry.language},
@@ -225,7 +227,9 @@ def _filtered(
     entry: GraphEntry, model: CompiledModel, module: str | None, **body: JsonValue
 ) -> dict[str, JsonValue]:
     """The envelope; a filtered answer names the module it is limited to."""
-    return _envelope(entry, model, **({"module": module} if module is not None else {}), **body)
+    return model_envelope(
+        entry, model, **({"module": module} if module is not None else {}), **body
+    )
 
 
 def _type_item(curie: str, cls: ClassDef) -> dict[str, JsonValue]:
@@ -252,11 +256,18 @@ def describe_types(
     return _filtered(entry, model, wanted, types=types)
 
 
-def _link(model: CompiledModel, link: ModuleLink) -> dict[str, JsonValue]:
+def _link(
+    model: CompiledModel, index: ModuleIndex, link: ModuleLink, module_id: str
+) -> dict[str, JsonValue]:
+    """A cross-module link as seen from ``module_id``: ``module`` declares the relation,
+    ``other_modules`` are the modules at its ends besides ``module_id`` (none for an open
+    end only)."""
     r = model.relations[link.relation]
+    ends = {index.owner(c) for c in (*link.domain, *link.range)}
     return {
         "relation": link.relation,
         "module": link.owner,
+        "other_modules": sorted(ends - {module_id}),
         "from": list(link.domain) or [ANY_END],
         "to": list(link.range) or [ANY_END],
         "summary": r.doc.summary,
@@ -280,7 +291,7 @@ def describe_modules(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonV
         }
         for info in sorted(model.modules, key=lambda m: m.id)
     ]
-    return _envelope(entry, model, modules=modules)
+    return model_envelope(entry, model, modules=modules)
 
 
 def describe_module(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
@@ -311,8 +322,8 @@ def describe_module(entry: GraphEntry, model: CompiledModel, name: str) -> dict[
         "builtin": index.builtin(info.id),
         "types": [_type_item(c, model.classes[c]) for c in index.types(module_id)],
         "relations": internal,
-        "links_out": [_link(model, link) for link in index.links_out(module_id)],
-        "links_in": [_link(model, link) for link in index.links_in(module_id)],
+        "links_out": [_link(model, index, link, module_id) for link in index.links_out(module_id)],
+        "links_in": [_link(model, index, link, module_id) for link in index.links_in(module_id)],
         "rules": [
             {
                 "id": rule.id,
@@ -324,7 +335,7 @@ def describe_module(entry: GraphEntry, model: CompiledModel, name: str) -> dict[
             if index.owner(rule.target) == module_id
         ],
     }
-    return _envelope(entry, model, module=body)
+    return model_envelope(entry, model, module=body)
 
 
 def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
@@ -383,7 +394,7 @@ def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[st
             if model.is_a(curie, r.target)
         ],
     }
-    return _envelope(entry, model, type=body)
+    return model_envelope(entry, model, type=body)
 
 
 def describe_relations(
@@ -414,17 +425,19 @@ def describe_relations(
 
 def describe_fields(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
     curie, cls = _class(model, name)
-    return _envelope(entry, model, type=curie, fields=_fields(model, cls))
+    return model_envelope(entry, model, type=curie, fields=_fields(model, cls))
 
 
 def describe_lifecycle(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
     """The lifecycles of a class, or one lifecycle by its CURIE."""
     curie = resolve_term("type or lifecycle", name, {**model.classes, **model.lifecycles})
     if curie in model.lifecycles:
-        return _envelope(
+        return model_envelope(
             entry, model, lifecycles=[_lifecycle(curie, model.lifecycles[curie], None)]
         )
-    return _envelope(entry, model, type=curie, lifecycles=_lifecycles(model, model.classes[curie]))
+    return model_envelope(
+        entry, model, type=curie, lifecycles=_lifecycles(model, model.classes[curie])
+    )
 
 
 def _property(name: str, base: str, many: bool) -> dict[str, JsonValue]:

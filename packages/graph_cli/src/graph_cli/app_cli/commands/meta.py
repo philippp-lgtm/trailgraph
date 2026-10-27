@@ -9,7 +9,9 @@ from graph_cli.app_cli.commands.common import (
     GLOBAL_OPTIONS,
     GRAPH,
     PROGRAM,
+    command_line,
     context,
+    next_page,
 )
 from graph_cli.app_cli.output_schemas import DEFS, NULLABLE_STRING, STRINGS, model_document
 from graph_cli.cli_kit.envelope import Result
@@ -29,8 +31,10 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services import describe
-from graph_cli.services.read import GraphRead
+from graph_cli.services.read import GraphRead, Page
+from graph_cli.services.schema_search import SEARCH_TERM_KINDS, search_model
 
 TYPE_ARG: Final = ParamSpec(
     "type", "term", "Type CURIE or unique local name.", required=True, positional=True
@@ -149,7 +153,14 @@ MODULE_ARG: Final = ParamSpec(
 _MODULE_FILTER: Final = {"module": STRING}  # a filtered answer names the module it is limited to
 _TYPE_ITEM: Final = obj({"curie": STRING, "abstract": BOOLEAN, "extends": NULLABLE_STRING, **_DOC})
 _MODULE_LINK: Final = obj(
-    {"relation": STRING, "module": STRING, "from": STRINGS, "to": STRINGS, **_DOC}
+    {
+        "relation": STRING,
+        "module": STRING,
+        "other_modules": STRINGS,
+        "from": STRINGS,
+        "to": STRINGS,
+        **_DOC,
+    }
 )
 _MODULE_HEAD: Final = {
     "id": STRING,
@@ -195,6 +206,30 @@ _MODULE: Final = model_document(
             }
         )
     }
+)
+_SEARCH: Final = model_document(
+    {
+        "text": STRING,
+        "items": array(
+            obj(
+                {
+                    "kind": enum(*SEARCH_TERM_KINDS),
+                    "curie": STRING,
+                    "of": NULLABLE_STRING,
+                    "module": STRING,
+                    "summary": NULLABLE_STRING,
+                    "deprecated": BOOLEAN,
+                    "match": obj(
+                        {
+                            "field": enum("name", "curie", "summary", "description"),
+                            "how": enum("exact", "prefix", "word", "contains", "phrase", "words"),
+                        }
+                    ),
+                }
+            )
+        ),
+    },
+    _MODULE_FILTER,
 )
 _SCHEMA: Final = model_document(
     {
@@ -278,6 +313,10 @@ def describe_types(state: CommandState, module: str | None, graph: str | None) -
     )
 
 
+def _count(n: JsonValue, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
 def _modules_text(data: JsonObject) -> str:
     """One block per module: id, prefix, version, counts, summary and the modules it links to."""
     lines: list[str] = []
@@ -286,7 +325,7 @@ def _modules_text(data: JsonObject) -> str:
         built = " (built-in)" if item["builtin"] else ""
         lines.append(
             f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}"
-            f"  {item['types']} types, {item['relations']} relations"
+            f"  {_count(item['types'], 'type')}, {_count(item['relations'], 'relation')}"
         )
         lines.append(f"  {req_str(item, 'summary')}")
         links = [as_object(v, "link") for v in req_list(item, "links")]
@@ -302,44 +341,60 @@ def _ends(item: JsonObject, key: str) -> str:
     return "|".join(str(c) for c in req_list(item, key))
 
 
+def _link_line(link: JsonObject, module_id: str) -> str:
+    """``from -rel-> to  [other modules]``; the declaring module only when it is neither end."""
+    others = [str(m) for m in req_list(link, "other_modules")]
+    where = ", ".join(others) or "any"
+    owner = req_str(link, "module")
+    if owner != module_id and owner not in others:
+        where += f"; declared in {owner}"
+    return f"  {_ends(link, 'from')} -{req_str(link, 'relation')}-> {_ends(link, 'to')}  [{where}]"
+
+
 def _module_text(data: JsonObject) -> str:
-    """The module head, then its types, relations, cross-module links and rules."""
+    """The module head, then its types, relations, cross-module links and rules; an empty
+    section shows ``-``."""
     item = as_object(data["module"], "module")
     built = " (built-in)" if item["builtin"] else ""
     lines = [
         f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}",
         f"  {req_str(item, 'summary')}",
-        "Types:",
     ]
+
+    def section(title: str, rows: list[str]) -> None:
+        lines.append(title)
+        lines.extend(rows or ["  -"])
+
+    types = []
     for value in req_list(item, "types"):
         t = as_object(value, "type")
         extends = f" extends {t['extends']}" if t["extends"] else ""
         abstract = " (abstract)" if t["abstract"] else ""
-        lines.append(f"  {req_str(t, 'curie')}{abstract}{extends}  {req_str(t, 'summary')}")
-    lines.append("Relations inside the module:")
+        types.append(f"  {req_str(t, 'curie')}{abstract}{extends}  {req_str(t, 'summary')}")
+    section("Types:", types)
+    relations = []
     for value in req_list(item, "relations"):
         r = as_object(value, "relation")
-        lines.append(
+        relations.append(
             f"  {_ends(r, 'domain')} -{req_str(r, 'curie')}-> {_ends(r, 'range')}"
             f"  {req_str(r, 'summary')}"
         )
+    section("Relations inside the module:", relations)
     for key, title in (
         ("links_out", "Links to other modules:"),
         ("links_in", "Links from other modules:"),
     ):
-        lines.append(title)
-        for value in req_list(item, key):
-            k = as_object(value, "link")
-            lines.append(
-                f"  {_ends(k, 'from')} -{req_str(k, 'relation')}-> {_ends(k, 'to')}"
-                f"  [{req_str(k, 'module')}]"
-            )
-    lines.append("Rules:")
+        section(
+            title,
+            [_link_line(as_object(v, "link"), req_str(item, "id")) for v in req_list(item, key)],
+        )
+    rules = []
     for value in req_list(item, "rules"):
         rule = as_object(value, "rule")
-        lines.append(
+        rules.append(
             f"  {req_str(rule, 'id')} ({req_str(rule, 'severity')})  {req_str(rule, 'summary')}"
         )
+    section("Rules:", rules)
     return "\n".join(lines) + "\n"
 
 
@@ -353,6 +408,57 @@ def describe_module(state: CommandState, module: str, graph: str | None) -> Resu
     view = _view(state, graph, "describe module")
     data = describe.describe_module(view.entry, view.model, module)
     return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
+
+
+def _search_text(data: JsonObject) -> str:
+    """One line per hit: kind, CURIE, module, summary and how it matched."""
+    lines = []
+    for value in req_list(data, "items"):
+        item = as_object(value, "hit")
+        match = as_object(item["match"], "match")
+        deprecated = " (deprecated)" if item["deprecated"] else ""
+        summary = f"  {item['summary']}" if item["summary"] else ""
+        lines.append(
+            f"{req_str(item, 'kind')}  {req_str(item, 'curie')}  [{req_str(item, 'module')}]"
+            f"{deprecated}{summary}  <{req_str(match, 'field')}: {req_str(match, 'how')}>"
+        )
+    return "\n".join(lines or ["-"]) + "\n"
+
+
+def describe_search(
+    state: CommandState,
+    text: str,
+    kind: tuple[str, ...],
+    module: str | None,
+    limit: int,
+    offset: int,
+    graph: str | None,
+) -> Result:
+    view = _view(state, graph, "describe search")
+    data, total = search_model(
+        view.entry, view.model, text, kinds=kind, module=module, limit=limit, offset=offset
+    )
+    page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
+    options = (("--kind", kind), ("--module", (module,) if module else ()))
+
+    def line(next_offset: int) -> str:
+        return command_line(
+            "describe search", (text,), view.entry.name, options, (), limit, next_offset
+        )
+
+    hints = next_page(page, line)
+    if not total and (kind or module):
+        hints = (
+            {
+                "text": "Nothing found; search every kind and module",
+                "command": command_line(
+                    "describe search", (text,), view.entry.name, (), (), DEFAULT_LIMIT
+                ),
+            },
+        )
+    return Result(
+        data=data, graph=view.envelope_graph(), page=page, hints=hints, text=_search_text(data)
+    )
 
 
 def describe_type(state: CommandState, type: str, graph: str | None) -> Result:
@@ -545,6 +651,45 @@ SPECS: Final = (
             Example("graph describe module <module>", "Everything one subject area holds."),
             Example("graph describe module <module> --json", "The module as graph_cli.model/1."),
         ),
+    ),
+    CommandSpec(
+        path=("describe", "search"),
+        kind="read",
+        surface="model",
+        action="read.describe",
+        summary="Search the ontology by text: types, relations, fields, enum values, states.",
+        description=(
+            "Looks at names, CURIEs, summaries and descriptions of the model, never at "
+            "graph data (that is graph search). Ignores case, accents and punctuation; "
+            "best matches first."
+        ),
+        params=(
+            ParamSpec("text", "string", "The words to look for.", required=True, positional=True),
+            ParamSpec(
+                "--kind",
+                "choice",
+                "Only this kind of term.",
+                repeatable=True,
+                choices=SEARCH_TERM_KINDS,
+            ),
+            MODULE_OPTION,
+            ParamSpec(
+                "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many results.", default=0),
+            GRAPH,
+        ),
+        examples=(
+            Example("graph describe search <value>", "Terms of the model that match the words."),
+            Example(
+                "graph describe search <value> --kind attribute --module <module> --json",
+                "Only fields, only in one module.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, "term.unknown"),
+        handler=describe_search,
+        output=_SEARCH,
+        limits={"limit": MAX_LIMIT},
     ),
     _describe(
         "type",

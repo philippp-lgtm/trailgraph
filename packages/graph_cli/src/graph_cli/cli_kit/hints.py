@@ -50,6 +50,13 @@ def _types(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe types"
 
 
+def _term(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Where the terms of the unknown kind are listed: modules for a module, else types."""
+    if details.get("kind") == "module":
+        return f"{program} describe modules"
+    return _types(details, program)
+
+
 def _fields(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Where the fields of a type show, with their base type and ``role``."""
     types = details.get("types")
@@ -154,7 +161,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "entity.not_found": None,
     "entity.ambiguous_ref": None,
     "entity.revision_not_found": _history,
-    "term.unknown": _types,
+    "term.unknown": _term,
     "term.no_labels": _fields,
     "term.no_text_fields": _fields,
     "changeset.malformed": None,

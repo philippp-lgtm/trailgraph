@@ -102,6 +102,9 @@
       {
         "relation": "nas:asserts",
         "module": "notes_and_sources",
+        "other_modules": [
+          "provenance"
+        ],
         "from": [
           "nas:Note"
         ],

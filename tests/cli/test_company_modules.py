@@ -391,8 +391,14 @@ def test_describe_module_by_id_and_by_prefix(run_cli: CliRunner, company: None) 
     text = run_cli("graph", "describe", "module", "org", env=ENV)
     assert text.returncode == 0
     assert "org:Team extends org:OrgUnit" in text.stdout
-    assert "ppl:Person -org:holds-> org:Position  [organization]" in text.stdout
+    assert "ppl:Person -org:holds-> org:Position  [people]" in text.stdout
     assert "org.team_in_department (error)" in text.stdout
+    people = run_cli("graph", "describe", "module", "people", env=ENV)
+    assert "Links from other modules:\n  -\n" in people.stdout  # an empty section shows "-"
+    assert "ppl:Person -org:holds-> org:Position  [organization]" in people.stdout
+    assert "1 types, 0 relations" not in people.stdout
+    modules = run_cli("graph", "describe", "modules", env=ENV)
+    assert "1 type, 0 relations" in modules.stdout
 
 
 def test_an_unknown_module_suggests_the_known_ones(run_cli: CliRunner, company: None) -> None:
@@ -401,6 +407,7 @@ def test_an_unknown_module_suggests_the_known_ones(run_cli: CliRunner, company: 
         assert (refused.code, refused.error["code"]) == (1, "term.unknown"), args
         assert refused.error["details"]["kind"] == "module"
         assert "org" in refused.error["details"]["did_you_mean"]
+        assert refused.envelope["error"]["hint"] == "graph describe modules"
 
 
 def test_the_module_filter_limits_types_relations_and_schema(
@@ -453,3 +460,56 @@ def test_a_single_module_graph_has_one_authored_module(run_cli: CliRunner, root:
         t["curie"] for t in app(run_cli, "describe", "types", env=ENV).data["types"]
     }
     assert only.data["module"]["links_out"] == only.data["module"]["links_in"] == []
+
+
+def test_describe_search_finds_terms_of_the_model(run_cli: CliRunner, company: None) -> None:
+    found = app(run_cli, "describe", "search", "position", "--limit", "3", env=ENV)
+    assert found.code == 0, found.envelope
+    assert found.data["text"] == "position"
+    assert found.data["items"][0]["curie"] == "org:Position"
+    assert found.envelope["page"]["total"] == 12 and found.envelope["page"]["next_offset"] == 3
+    hint = found.envelope["hints"][0]
+    assert hint["command"] == (
+        "graph describe search position --graph example_graph --limit 3 --offset 3"
+    )
+
+    narrowed = app(
+        run_cli,
+        *("describe", "search", "name", "--kind", "attribute", "--kind", "state"),
+        *("--module", "ppl"),
+        env=ENV,
+    )
+    assert narrowed.code == 0, narrowed.envelope
+    assert narrowed.data["module"] == "people"
+    assert {i["kind"] for i in narrowed.data["items"]} == {"attribute"}
+    assert {i["module"] for i in narrowed.data["items"]} == {"people"}
+
+    text = run_cli("graph", "describe", "search", "position", env=ENV)
+    assert text.returncode == 0
+    first = text.stdout.splitlines()[0]
+    assert first.startswith("type  org:Position  [organization]  A slot in the org chart")
+    assert first.endswith("<name: exact>")
+
+
+def test_describe_search_without_hits_hints_at_the_wider_search(
+    run_cli: CliRunner, company: None
+) -> None:
+    empty = app(
+        run_cli, "describe", "search", "position", "--kind", "state", "--module", "ppl", env=ENV
+    )
+    assert empty.code == 0 and empty.data["items"] == []
+    assert empty.envelope["page"]["total"] == 0
+    assert [h["command"] for h in empty.envelope["hints"]] == [
+        "graph describe search position --graph example_graph"
+    ]
+    text = run_cli("graph", "describe", "search", "zzzqqq", env=ENV)
+    assert text.returncode == 0 and text.stdout == "-\n"
+
+
+def test_describe_search_errors(run_cli: CliRunner, company: None) -> None:
+    short = app(run_cli, "describe", "search", "a", env=ENV)
+    assert (short.code, short.error["code"]) == (2, "usage.invalid_argument")
+    module = app(run_cli, "describe", "search", "name", "--module", "orgs", env=ENV)
+    assert (module.code, module.error["code"]) == (1, "term.unknown")
+    kind = app(run_cli, "describe", "search", "name", "--kind", "field", env=ENV)
+    assert kind.code == 2

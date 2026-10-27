@@ -106,8 +106,9 @@ against it and audited. The CLI is on `PATH`.
    `limits` and `role`; relations with their `qualifiers` (values on the edge);
    lifecycles with states, transitions and the `guards` a dry run checks.
    On a graph with several modules (subject areas) start with
-   `graph describe modules --json`, then `graph describe module <module> --json`,
-   then `graph describe type <type> --json`; do not dump the whole schema.
+   `graph describe modules --json`, then `graph describe module <module> --json`
+   or, for a term you can only name, `graph describe search <value> --json`
+   (types, relations, fields, values; not data); never dump the whole schema.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is

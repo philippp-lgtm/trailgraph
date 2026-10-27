@@ -160,6 +160,16 @@ def test_module_describe_commands_are_served(
     unknown = command(app, "describe/module", token, args={"module": "nope"}, pointer=pointer)
     assert unknown.status == 404
     assert unknown.error["code"] == "term.unknown"
+    found = command(
+        app,
+        "describe/search",
+        token,
+        args={"text": "name", "--kind": ["type", "attribute"], "--limit": 2},
+        pointer=pointer,
+    )
+    assert found.status == 200, found.json
+    assert len(found.json["data"]["items"]) <= 2
+    assert found.json["page"]["limit"] == 2
 
 
 def test_usage_errors_unknown_routes_and_methods(

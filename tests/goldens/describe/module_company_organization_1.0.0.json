@@ -118,6 +118,9 @@
       {
         "relation": "org:holds",
         "module": "organization",
+        "other_modules": [
+          "people"
+        ],
         "from": [
           "ppl:Person"
         ],

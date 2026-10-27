@@ -20,6 +20,7 @@
       {
         "relation": "core:derived_from",
         "module": "core",
+        "other_modules": [],
         "from": [
           "any"
         ],
@@ -32,6 +33,7 @@
       {
         "relation": "core:retracts",
         "module": "core",
+        "other_modules": [],
         "from": [
           "any"
         ],
@@ -44,6 +46,7 @@
       {
         "relation": "core:source",
         "module": "core",
+        "other_modules": [],
         "from": [
           "any"
         ],
@@ -56,6 +59,7 @@
       {
         "relation": "core:supersedes",
         "module": "core",
+        "other_modules": [],
         "from": [
           "any"
         ],

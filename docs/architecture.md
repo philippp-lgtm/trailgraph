@@ -103,7 +103,8 @@ with `graph_cli.skills.install`, whose scan sees only one owner's skills
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
-them. `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
+them; `services.schema_search` ranks the terms of the model for `describe search` (no graph data).
+`graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
 `ast`, `resolve` checks it against the model (names to CURIEs, fields,
 parameters, scopes) and `render` writes a tree back as Cypher text.

@@ -815,6 +815,111 @@
     {
       "path": [
         "describe",
+        "search"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Search the ontology by text: types, relations, fields, enum values, states.",
+      "args": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The words to look for."
+        }
+      ],
+      "options": [
+        {
+          "name": "--kind",
+          "type": "choice",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this kind of term.",
+          "choices": [
+            "type",
+            "relation",
+            "attribute",
+            "enum_value",
+            "state"
+          ]
+        },
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many results.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe search <value>",
+          "summary": "Terms of the model that match the words."
+        },
+        {
+          "command": "graph describe search <value> --kind attribute --module <module> --json",
+          "summary": "Only fields, only in one module."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      },
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
         "type"
       ],
       "kind": "read",

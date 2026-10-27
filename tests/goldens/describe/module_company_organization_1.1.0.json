@@ -118,6 +118,9 @@
       {
         "relation": "ops:owned_by",
         "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
         "from": [
           "ops:Process"
         ],
@@ -130,6 +133,9 @@
       {
         "relation": "ops:required_for",
         "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
         "from": [
           "ops:Training"
         ],
@@ -142,6 +148,9 @@
       {
         "relation": "org:holds",
         "module": "organization",
+        "other_modules": [
+          "people"
+        ],
         "from": [
           "ppl:Person"
         ],
