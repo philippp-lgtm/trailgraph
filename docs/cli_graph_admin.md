@@ -96,9 +96,11 @@ more than one module file, name the main module with `--module <module>` on
 `ontology validate`, `ontology diff`, `ontology release`, `graph create` and
 `graph check --ontology`; without it these commands refuse with
 `usage.missing_argument`. `graph push` takes the main module from the pulled
-base. Every version directory holds all module files, and a change in any
-module needs at least that bump of the main module. How to cut a model into
-modules is in the `ontology-best-practices` skill
+base. The release rules (all module files in every version directory, the
+bump of the main module, moving a term between modules) are in the
+`ontology-best-practices` skill
+([versioning](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/versioning_and_release.md#releasing-a-modular-graph)),
+as is how to cut a model into modules
 ([modeling](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/modeling.md#splitting-into-modules));
 what agents see of a modular graph is described in
 [Skills](skills.md#blocks).

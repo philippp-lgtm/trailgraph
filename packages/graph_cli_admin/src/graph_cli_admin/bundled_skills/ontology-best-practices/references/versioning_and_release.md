@@ -61,7 +61,9 @@ version of the bundle is the version of the main (umbrella) module.
 - Name the main module wherever a directory with several modules is
   given: `--module <main>` on `ontology validate`, `ontology diff`,
   `ontology release`, `graph-admin graph create` and `graph-admin graph check` (with its
-  `--ontology` option). `graph-admin graph push` takes it from the pulled base.
+  `--ontology` option); without it these commands refuse with
+  `usage.missing_argument`. `graph-admin graph push` takes it from the
+  pulled base.
 - A change in any module needs at least the same bump of the main module.
   `ontology diff` classifies the whole bundle; the main module's version
   must follow it, and a patch-level edit of an area is a patch bump of the
@@ -69,9 +71,10 @@ version of the bundle is the version of the main (umbrella) module.
 - Adding a module is a minor change: a new file plus a new import in the
   main module (or in the module that builds on it).
 - Moving a term to another module changes its CURIE, which `ontology diff`
-  sees as a removal plus an addition unless the new term declares
-  `renamed_from`; it is a major release, and the data has to be moved
-  first (see the major versions above).
+  sees as a removal plus an addition. `renamed_from` is a local name
+  and only works within one module, so it cannot carry the move. It is a
+  major release with a data migration: add the term in the new module,
+  move the data, then remove the old term (see the major versions above).
 - Removing an import is major.
 - After the release, check what agents will see: `graph describe modules`
   and `graph describe module <module>`, and the generated graph skill

@@ -48,8 +48,9 @@ Only for a graph with more than one module of its own.
 - [ ] The main module holds no terms of its own and imports every area.
 - [ ] Any change in a module is matched by a bump of the main module
       (the graph's version).
-- [ ] A term that moved to another module is declared with `renamed_from`
-      and released as major.
+- [ ] A term that moved to another module is released as major with a
+      data migration (removal plus addition; `renamed_from` only works
+      within one module).
 - [ ] No rule is a prose prohibition between areas: what may not be
       linked is left out of `domain` and `range`.
 
