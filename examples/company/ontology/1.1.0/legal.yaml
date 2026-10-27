@@ -3,7 +3,7 @@ module:
   id: legal
   prefix: leg
   version: 1.0.0
-  summary: The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company.
+  summary: The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company (organization) or the people (people).
   imports:
     - {module: people, version: "^1.0"}
     - {module: organization, version: "^1.0"}
@@ -134,10 +134,22 @@ rules:
       - sum: {rel: stake_in, direction: in, attr: percent}
         maximum_value: 100
   - id: employee_has_employer
-    summary: Every employee is employed by a legal entity.
+    summary: Every employee who has not left is employed by a legal entity.
     severity: warning
     when: batch
     scope: ppl:Employee
+    if:
+      - {attr: status, equals_string_in: [onboarding, active]}
     then:
       - count: {rel: employed_by}
         minimum_value: 1
+  - id: left_employee_has_no_employer
+    summary: An employee who has left is employed by no legal entity.
+    severity: warning
+    when: write
+    scope: ppl:Employee
+    if:
+      - {attr: status, equals_string: left}
+    then:
+      - count: {rel: employed_by}
+        equals_number: 0

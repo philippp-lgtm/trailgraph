@@ -3,7 +3,7 @@ module:
   id: operations
   prefix: ops
   version: 1.0.0
-  summary: How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company.
+  summary: How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company (organization) or the people (people).
   imports:
     - {module: people, version: "^1.0"}
     - {module: organization, version: "^1.0"}

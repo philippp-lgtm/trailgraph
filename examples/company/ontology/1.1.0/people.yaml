@@ -3,11 +3,11 @@ module:
   id: people
   prefix: ppl
   version: 1.0.0
-  summary: The people the company works with, employees and externals, and the identities they use in systems; not their positions, units or work.
+  summary: The people the company works with, employees and externals, and the identities they use in systems; not their positions or units (organization) or their work (operations).
 
 datatypes:
   WorkEmail:
-    summary: Email address at the company's own mail domain.
+    summary: Work email address.
     base: string
     single_line: true
     pattern: '^[^@\s]+@[^@\s]+$'

@@ -3,7 +3,7 @@ module:
   id: organization
   prefix: org
   version: 1.0.0
-  summary: The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the work that is done or the legal entities.
+  summary: The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations).
   imports:
     - {module: people, version: "^1.0"}
 
@@ -15,15 +15,7 @@ lifecycles:
       active: {summary: Part of the working structure and may be held.}
       abolished: {summary: Removed from the structure for good., terminal: true}
     transitions:
-      - from: planned
-        to: active
-        summary: Open the position.
-        guards:
-          - id: has_unit
-            summary: An active position belongs to a unit.
-            require:
-              - count: {rel: in_unit}
-                equals_number: 1
+      - {from: planned, to: active, summary: Open the position.}
       - from: [planned, active]
         to: abolished
         summary: Remove the position from the structure.
