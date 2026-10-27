@@ -78,9 +78,15 @@ good 26; jq '.workflow_runs[0].pull_requests=[]' "$(runs_file "$FX")" > "$FX/x" 
 good 27; jq '.workflow_runs += [(.workflow_runs[0] | .id=98 | .conclusion="failure" | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "failed run, later success, same head" full 'no usable green'
 good 28; jq '.workflow_runs += [(.workflow_runs[0] | .id=98 | .conclusion="cancelled" | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "cancelled run, later success, same head" full 'no usable green'
 good 29; jq '.workflow_runs += [(.workflow_runs[0] | .id=100 | .status="in_progress" | .conclusion=null | .created_at="2026-10-27T02:00:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "newest run not finished" full 'no usable green'
-good 30; jq '.workflow_runs += [(.workflow_runs[0] | .id=97 | .run_attempt=2 | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "older re-run next to a newer first-attempt success" reuse 'run 99'
+good 30; jq '.workflow_runs += [(.workflow_runs[0] | .id=97 | .run_attempt=2 | .created_at="2026-10-27T00:30:00Z")]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "older run green only on attempt 2, newer first-attempt success" full 'no usable green'
 
 good 31; echo '[{"number":7},{"number":9}]' > "$FX/commits_${H}_pulls_per_page_100"; jq '.workflow_runs[0].pull_requests=[]' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "head also belongs to another PR (e.g. into another base)" full 'belongs to other pull requests'
 good 32; rm "$FX/commits_${H}_pulls_per_page_100"; expect "API error listing the PRs of the head" full 'cannot list the pull requests of head'
+
+good 33; jq '.workflow_runs[0].conclusion="neutral"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "conclusion neutral" full 'no usable green'
+good 34; jq '.workflow_runs[0].conclusion="startup_failure"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "conclusion startup_failure" full 'no usable green'
+good 35; jq '.workflow_runs[0].conclusion="skipped"' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "conclusion skipped" full 'no usable green'
+good 36; jq '.total_count=101' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "more runs than one page" full 'no usable green'
+good 37; jq '.workflow_runs += [(.workflow_runs[0] | .id=96 | .created_at="2026-10-27T00:10:00Z")] | .total_count=2' "$(runs_file "$FX")" > "$FX/x" && mv "$FX/x" "$(runs_file "$FX")"; expect "two first-attempt successes" reuse 'run 99'
 
 exit "$failed"

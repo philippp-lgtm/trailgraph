@@ -8,8 +8,8 @@
 #     a test merge with an older base,
 #   - the commit's tree equals the tree of the pull request head: identical inputs,
 #   - the newest `pull_request` run of the same workflow file on that exact head, belonging to this pull request
-#     (into this repository's main; the head belongs to no other pull request), is completed, successful and a first attempt, and no run for that head failed or
-#     was cancelled (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
+#     (into this repository's main; the head belongs to no other pull request); ALL its runs are completed, successful
+#     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
 # Prints the decision and writes `reuse=true|false` to $GITHUB_OUTPUT; the steps after it run `if: steps.<id>.outputs.reuse != 'true'`.
 # Needs: gh and jq; GH_TOKEN with actions: read and pull-requests: read; GITHUB_REPOSITORY, GITHUB_SHA,
 # GITHUB_EVENT_NAME, GITHUB_REF (set by Actions). Only the GitHub API is read, no checkout is needed.
@@ -55,18 +55,20 @@ decide() {
   local runs run
   runs=$(api "actions/workflows/$wf/runs?head_sha=$head&event=pull_request&per_page=100") || { echo "cannot list the runs of $wf for ${head:0:7}"; return 1; }
   # The runs of this workflow on this exact head. One that names pull requests must name #n into $branch of this
-  # repository. A failed, cancelled or timed-out one is not erased by a later green run: full run. Otherwise the
-  # newest must be a completed first-attempt success.
+  # repository. Allowlist: ALL of them must be completed, conclusion success and a first attempt (a failed, cancelled,
+  # neutral, skipped, stale, startup_failure run, or a run re-run to green, is never erased by a later green one).
+  # More runs than one page holds: full run.
   run=$(jq -r --arg h "$head" --arg r "$repo" --arg p ".github/workflows/$wf" --argjson n "$n" --arg b "$branch" '
+    if (.total_count // 0) > (.workflow_runs | length) then empty else
     [.workflow_runs[]
      | select(.head_sha == $h and .head_repository.full_name == $r and .path == $p
               and ((.pull_requests // []) | length == 0
                    or any(.[]; .number == $n and .base.ref == $b and (.base.repo.url | endswith("/repos/" + $r)))))]
     | sort_by(.created_at) | reverse
-    | if length == 0 or any(.[]; .status == "completed" and (.conclusion | IN("failure", "cancelled", "timed_out"))) then empty
-      else .[0] | select(.status == "completed" and .conclusion == "success" and .run_attempt == 1) | .id end // empty' <<<"$runs") \
+    | if length > 0 and all(.[]; .status == "completed" and .conclusion == "success" and .run_attempt == 1) then .[0].id else empty end
+    end // empty' <<<"$runs") \
     || { echo "unreadable run list"; return 1; }
-  [ -n "$run" ] || { echo "no usable green first-attempt pull_request run of $wf for head ${head:0:7} of #$n (none, failed, re-run or other PR)"; return 1; }
+  [ -n "$run" ] || { echo "no usable green first-attempt pull_request run of $wf for head ${head:0:7} of #$n (none, or one of them not a first-attempt success, or too many runs)"; return 1; }
 
   echo "tree identical to PR #$n head ${head:0:7}, validated in run $run; not re-run"
   return 0
