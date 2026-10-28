@@ -8,11 +8,11 @@ Ontology `company` 1.1.0. The live source is `graph describe module operations -
 
 ## Types
 
-| Type | Alias | Abstract | Extends | Summary |
-|---|---|---|---|---|
-| `ops:Guideline` | `GUIDE-0001` | no |  | A written rule of the company that governs processes. |
-| `ops:Process` | `PROC-0001` | no |  | A recurring way of getting one kind of work done, owned by a position. |
-| `ops:Training` | `TRN-0001` | no |  | A course or certification that a position requires and a person completes. |
+| Type | Alias | Abstract | Extends | Names | Summary |
+|---|---|---|---|---|---|
+| `ops:Guideline` | `GUIDE-0001` | no |  | `title` (main name), `alt_labels` (other names) | A written rule of the company that governs processes. |
+| `ops:Process` | `PROC-0001` | no |  | `name` (main name), `alt_labels` (other names) | A recurring way of getting one kind of work done, owned by a position. |
+| `ops:Training` | `TRN-0001` | no |  | `title` (main name), `alt_labels` (other names) | A course or certification that a position requires and a person completes. |
 
 ## Relations inside the module
 

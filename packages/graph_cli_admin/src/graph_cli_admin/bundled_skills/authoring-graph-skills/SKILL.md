@@ -32,7 +32,7 @@ generated from the graph's model:
 | `types` | one row per entity type: name, alias example, summary, supertypes, fields, states and transitions |
 | `relations` | relations from or to those types with cardinality and qualifiers, then the same as `graph query` patterns |
 | `constraints` | transition guards, write-once fields, rules with severity |
-| `names` | the alias format and which fields `graph lookup` matches per type |
+| `names` | the alias format and which fields `graph lookup` matches per type; on a modular graph one example and pointers, not every type |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
 
 Each block at most once. Without any marker the skill is `static`: it is

@@ -8,13 +8,13 @@ Ontology `company` 1.0.0. The live source is `graph describe module organization
 
 ## Types
 
-| Type | Alias | Abstract | Extends | Summary |
-|---|---|---|---|---|
-| `org:CostCenter` | `CC-0001` | no |  | An accounting bucket that costs of units are charged to. |
-| `org:Department` | `DEPT-0001` | no | `org:OrgUnit` | A larger unit that groups teams and may contain further departments. |
-| `org:OrgUnit` |  | yes |  | A unit of the company structure, either a department or a team. |
-| `org:Position` | `POS-0001` | no |  | A slot in the org chart that one person holds at a time; the slot outlives the holder. |
-| `org:Team` | `TEAM-0001` | no | `org:OrgUnit` | A small unit that works together day to day and sits in a department. |
+| Type | Alias | Abstract | Extends | Names | Summary |
+|---|---|---|---|---|---|
+| `org:CostCenter` | `CC-0001` | no |  | `name` (main name) | An accounting bucket that costs of units are charged to. |
+| `org:Department` | `DEPT-0001` | no | `org:OrgUnit` | `name` (main name), `alt_labels` (other names) | A larger unit that groups teams and may contain further departments. |
+| `org:OrgUnit` |  | yes |  |  | A unit of the company structure, either a department or a team. |
+| `org:Position` | `POS-0001` | no |  | `title` (main name), `alt_labels` (other names) | A slot in the org chart that one person holds at a time; the slot outlives the holder. |
+| `org:Team` | `TEAM-0001` | no | `org:OrgUnit` | `name` (main name), `alt_labels` (other names) | A small unit that works together day to day and sits in a department. |
 
 ## Relations inside the module
 

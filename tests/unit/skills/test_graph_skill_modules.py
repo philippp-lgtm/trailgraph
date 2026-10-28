@@ -99,6 +99,21 @@ def test_a_module_page_lists_types_relations_links_and_rules() -> None:
     assert umbrella.count("None.") == 5  # holds no terms of its own
 
 
+def test_names_of_a_modular_graph_stay_at_the_module_level() -> None:
+    """One example alias and pointers instead of every type (L0 budget); the module pages
+    carry the name fields per type."""
+    files = render(version="1.1.0")
+    names = text(files, SKILL_FILE).split("## Names and ids")[1].split("## Model")[0]
+    assert "Aliases such as `GUIDE-0001` (`ops:Guideline`)" in names
+    assert "`PER-0001`" not in names and "`ppl:Person`" not in names
+    assert "  - `" not in names  # no line per type
+    assert "graph describe type <type> --graph example_graph --json" in names
+    assert "`alt_label`: other names" in names
+    page = text(files, f"{MODULES_DIR}people.md")
+    row = "| `ppl:Person` | `PER-0001` | no |  | `name` (main name), `alt_labels` (other names) |"
+    assert row in page
+
+
 def test_model_md_is_an_index_of_modules_and_types() -> None:
     files = render(version="1.1.0")
     index = text(files, MODEL_FILE)
