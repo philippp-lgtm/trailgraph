@@ -41,7 +41,7 @@ COPY --chown=tester . .
 USER tester
 RUN uv sync --frozen --all-packages
 # Eight workers on a four-core sidecar: the suite spends much of its time waiting on child
-# processes, so more workers than cores keep the cores busy (measured: -n 4 5.5 min, -n 8 3.3 min).
+# processes, so more workers than cores keep the cores busy (serial: 13.6 min; -n 4: 5.5 min, -n 8: 3.3 min on the same suite outside the image).
 RUN uv run pytest -q -p no:cacheprovider -n 8
 
 # ---- runtime: wheels only, a user without a login, data in volumes ----
