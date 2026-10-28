@@ -10,6 +10,7 @@ Setup is in the [README](README.md#install). The design of the code base
 uv sync                     # create .venv with the three distributions + dev tools
 uv run pytest               # all tests (includes import contracts and wheel checks)
 uv run pytest -m "not slow" # skip distribution builds, crash and process tests
+uv run pytest -n 8          # in parallel (pytest-xdist); the image's test stage does the same
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy

@@ -40,7 +40,9 @@ WORKDIR /src
 COPY --chown=tester . .
 USER tester
 RUN uv sync --frozen --all-packages
-RUN uv run pytest -q -p no:cacheprovider
+# Eight workers on a four-core sidecar: the suite spends much of its time waiting on child
+# processes, so more workers than cores keep the cores busy (measured: -n 4 5.5 min, -n 8 3.3 min).
+RUN uv run pytest -q -p no:cacheprovider -n 8
 
 # ---- runtime: wheels only, a user without a login, data in volumes ----
 # pip goes after the install: nothing runs it here, and its vendored packages
