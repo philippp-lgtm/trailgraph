@@ -48,6 +48,17 @@ Test for enum versus class: would anyone ever want to `lookup` the value
 by another name, link something to it, or add a value without asking the
 maintainer? Then it is a class.
 
+**Roles are relations, not copies.** One person or organization acting in
+several roles is one entity with one edge per role it holds (`teaches` to a
+course, `leads` to a school), never one node per role joined by a `same_as`
+or "identical with" link: such copies split every query, every count and
+every history in two. A role becomes a class of its own only when it has a
+validity period, attributes or links of its own (a term of office, a
+position that outlives its holder); the entity then links to it. Agents add
+a second role to the existing entity when they `lookup` its name before a
+create, so give the class label fields
+([identity and naming](#identity-and-naming-of-data)).
+
 ## Inheritance
 
 - **Subclass test.** "Every X is a Y" holds without exception. "Part of"
