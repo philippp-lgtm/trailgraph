@@ -83,7 +83,8 @@ against it and audited. The CLI is on `PATH`.
 
 ## Ground rules
 
-- Pass `--json` to every command and read the envelope (below), not the text.
+- Pass `--json` to every command and read the envelope (below), not the text;
+  only the module views of step 2 read better as text.
 - The live CLI wins. If this skill and `graph describe commands --json` or
   `--help` disagree, trust the CLI.
 - If a skill for the selected graph exists, read it first: it names the
@@ -106,8 +107,9 @@ against it and audited. The CLI is on `PATH`.
    `limits` and `role`; relations with their `qualifiers` (values on the edge);
    lifecycles with states, transitions and the `guards` a dry run checks.
    On a graph with several modules (subject areas) start with
-   `graph describe modules --json`, then `graph describe module <module> --json`
-   or, for a term you can only name, `graph describe search <value> --json`
+   `graph describe modules`, then `graph describe module <module>` (their text
+   is made for reading and less than half the size of `--json`) or, for a
+   term you can only name, `graph describe search <value> --json`
    (types, relations, fields, values; not data); never dump the whole schema.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are

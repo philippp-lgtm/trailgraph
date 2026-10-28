@@ -660,9 +660,9 @@ def _modules(doc: _Model) -> list[str]:
     name = doc.name
     lines += [
         "",
-        f"- Before you work in a module, read it: `graph describe module <module> --graph {name}"
-        " --json` lists its types, its relations, its links to and from other modules (with the"
-        " other module named) and its rules.",
+        f"- Before you work in a module, read it: `graph describe module <module> --graph {name}`"
+        " lists its types, its relations, its links to and from other modules (with the other"
+        " module named) and its rules. Read its text; `--json` is more than twice the size.",
         f"- To find a term whose module you do not know: `graph describe search <text> --graph"
         f" {name} --json` (types, relations, fields, enum values and states).",
         f"- For the fields, states and relations of one type: `graph describe type <type>"

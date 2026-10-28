@@ -32,7 +32,7 @@ Before your first `graph` command, load the `graph-cli` skill as well: it explai
 
 Built-in modules, shared by every graph: `core`.
 
-- Before you work in a module, read it: `graph describe module <module> --graph example_graph --json` lists its types, its relations, its links to and from other modules (with the other module named) and its rules.
+- Before you work in a module, read it: `graph describe module <module> --graph example_graph` lists its types, its relations, its links to and from other modules (with the other module named) and its rules. Read its text; `--json` is more than twice the size.
 - To find a term whose module you do not know: `graph describe search <text> --graph example_graph --json` (types, relations, fields, enum values and states).
 - For the fields, states and relations of one type: `graph describe type <type> --graph example_graph --json`.
 - The same module views as text, and an index of every type with its module: [references/model.md](references/model.md) and the pages `references/modules/<module>.md`.

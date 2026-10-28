@@ -70,7 +70,7 @@ def test_the_block_is_a_compact_table_and_a_pointer() -> None:
     assert "Built-in modules, shared by every graph: `core`." in skill
     assert "`core` |" not in skill  # no row for a built-in module
     for command in (
-        "graph describe module <module> --graph example_graph --json",
+        "graph describe module <module> --graph example_graph` lists",
         "graph describe search <text> --graph example_graph --json",
         "graph describe type <type> --graph example_graph --json",
     ):
