@@ -3,6 +3,7 @@
 One scenario per refusal code plus the inventory version series.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -232,3 +233,23 @@ def test_archived_graph(run_cli: CliRunner, root: Path) -> None:
     manifest.write_text(manifest.read_text().replace('state = "active"', 'state = "archived"'))
     outcome = release(run_cli, INVENTORY / "1.0.1")
     assert (outcome.code, outcome.error["code"]) == (1, "graph.archived")
+
+
+def test_a_module_without_its_own_bump_is_a_warning(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    base = ONTOLOGIES / "company" / "1.1.0"
+    created = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(base), "--module", "company"
+    )
+    assert created.code == 0, created.envelope
+    source = tmp_path / "company"
+    shutil.copytree(base, source)
+    main, people = source / "company.yaml", source / "people.yaml"
+    main.write_text(main.read_text().replace("version: 1.1.0", "version: 1.1.1"))
+    people.write_text(people.read_text().replace("company knows", "company knows of"))
+    outcome = admin(
+        run_cli, "ontology", "release", "example_graph", str(source), "--module", "company"
+    )
+    assert (outcome.code, outcome.data["pinned"]) == (0, True)
+    assert outcome.warning_codes == ["admin.module_bump_insufficient"]

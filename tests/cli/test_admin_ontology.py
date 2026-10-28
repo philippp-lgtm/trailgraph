@@ -72,3 +72,24 @@ def test_diff_reports_an_insufficient_bump(run_cli: CliRunner) -> None:
 def test_diff_needs_exactly_one_baseline(run_cli: CliRunner) -> None:
     outcome = admin(run_cli, "ontology", "diff", str(INVENTORY / "1.0.1"))
     assert (outcome.code, outcome.error["code"]) == (2, "usage.missing_argument")
+
+
+def test_diff_warns_about_a_module_without_its_own_bump(run_cli: CliRunner, tmp_path: Path) -> None:
+    base = ONTOLOGIES / "company" / "1.1.0"
+    source = tmp_path / "company"
+    shutil.copytree(base, source)
+    main, people = source / "company.yaml", source / "people.yaml"
+    main.write_text(main.read_text().replace("version: 1.1.0", "version: 1.1.1"))
+    people.write_text(people.read_text().replace("company knows", "company knows of"))
+    outcome = admin(
+        run_cli, "ontology", "diff", str(source), "--against", str(base), "--module", "company"
+    )
+    assert (outcome.code, outcome.data["bump"]) == (0, "ok")
+    assert outcome.warning_codes == ["admin.module_bump_insufficient"]
+    (warning,) = outcome.envelope["warnings"]
+    assert warning["details"] == {
+        "module": "people",
+        "from": "1.0.0",
+        "to": "1.0.0",
+        "level": "patch",
+    }

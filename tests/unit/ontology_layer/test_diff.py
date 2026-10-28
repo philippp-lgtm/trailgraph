@@ -16,7 +16,7 @@ from support.fixtures import (
 from graph_cli.kernel.canonical import pretty_bytes
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
-from graph_cli.ontology_layer.diff import check_bump, classify
+from graph_cli.ontology_layer.diff import check_bump, classify, module_bumps
 from graph_cli.ontology_layer.model import CompiledModel
 
 SERIES = ontology_versions("inventory")
@@ -278,3 +278,63 @@ def test_target_policy_changes_are_major_only_towards_refuse(
             "detail": {"from": old or "allow", "to": new or "allow"},
         }
     ]
+
+
+COMPANY = ONTOLOGIES / "company"
+
+
+def company_variant(version: str, edit: dict[str, tuple[str, str]]) -> CompiledModel:
+    """The company fixture at ``version`` with text replacements per module file."""
+    files = {}
+    for path in sorted((COMPANY / version).glob("*.yaml")):
+        text = path.read_text()
+        old, new = edit.get(path.stem, ("", ""))
+        assert old in text
+        files[path.stem] = text.replace(old, new).encode()
+    outcome = compile_bundle("company", LayeredSource(MappingSource(files)))
+    assert outcome.model is not None, [f.to_json() for f in outcome.findings]
+    return outcome.model
+
+
+def test_module_bumps_judge_each_authored_module() -> None:
+    old, new = compiled_model("company", "1.0.0"), compiled_model("company", "1.1.0")
+    bumps = module_bumps(old, new, classify(old, new))
+    # Not the main module company, not the built-in core, not operations (added).
+    assert [(b.module, b.level, b.check) for b in bumps] == [
+        ("organization", "none", "ok"),
+        ("people", "none", "ok"),
+    ]
+
+
+def test_a_changed_module_without_its_own_bump_is_insufficient() -> None:
+    old = compiled_model("company", "1.1.0")
+    summary = "  summary: The people the company knows"
+    new = company_variant(
+        "1.1.0",
+        {
+            "company": ("version: 1.1.0", "version: 1.1.1"),
+            "people": (summary, summary.replace("knows", "knows of")),
+            "organization": ("prefix: org\n  version: 1.0.0", "prefix: org\n  version: 1.1.0"),
+        },
+    )
+    report = classify(old, new)
+    assert check_bump(report) == "ok"  # the main module covers the release
+    bumps = {b.module: b for b in module_bumps(old, new, report)}
+    assert (bumps["people"].level, bumps["people"].check) == ("patch", "insufficient")
+    assert bumps["people"].to_json() == {
+        "module": "people",
+        "from": "1.0.0",
+        "to": "1.0.0",
+        "level": "patch",
+    }
+    assert (bumps["organization"].level, bumps["organization"].check) == ("none", "excessive")
+    assert (bumps["operations"].level, bumps["operations"].check) == ("none", "ok")
+
+
+def test_rule_changes_count_for_the_module_of_their_prefix() -> None:
+    old = compiled_model("company", "1.1.0")
+    rule = "A team is part of exactly one department."
+    new = company_variant("1.1.0", {"organization": (rule, "A team sits in one department.")})
+    bumps = {b.module: b for b in module_bumps(old, new, classify(old, new))}
+    assert (bumps["organization"].level, bumps["organization"].check) == ("patch", "insufficient")
+    assert bumps["people"].check == "ok"

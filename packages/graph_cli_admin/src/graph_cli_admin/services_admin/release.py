@@ -52,6 +52,7 @@ from graph_cli_admin.services_admin.ontology import (
     PinnedModel,
     compile_source,
     diff,
+    module_bump_warnings,
     release_files,
 )
 
@@ -166,9 +167,9 @@ def plan(ctx: AdminContext, session: MaintenanceSession, compiled: Compiled) -> 
         )
     if Version.parse(target.version).major > Version.parse(current.version).major and head.seq:
         _check_data(compiled.model, session, bump_details, head.seq)
-    warnings: tuple[WarningRecord, ...] = ()
+    warnings = module_bump_warnings(old_model, compiled.model, report)
     if bump == "excessive":
-        warnings = (
+        warnings += (
             WarningRecord(
                 "admin.version_bump_excessive",
                 f"{current.version} -> {target.version} is more than {report.level} needs",

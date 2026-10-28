@@ -64,7 +64,11 @@ def diff_command(
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
     report, bump = ontology.diff(old, new.model)
-    return Result(data={**report.to_json(), "bump": bump}, graph=graph)
+    return Result(
+        data={**report.to_json(), "bump": bump},
+        graph=graph,
+        warnings=ontology.module_bump_warnings(old, new.model, report),
+    )
 
 
 def release_command(
