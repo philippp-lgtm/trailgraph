@@ -1,0 +1,22 @@
+schema: graph_cli.function/1
+name: replaced_by_invalid
+module: organization
+summary: Positions of a unit.
+use_when: Positions that belong to a department or team.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to list.
+query: |
+  MATCH (q:Position)-[:in_unit]->(u:OrgUnit)
+  WHERE u.id = $unit
+  RETURN q.title AS position
+  ORDER BY position
+returns:
+  - column: position
+    summary: The position.
+examples:
+  - question: Which positions does the support team have?
+status: deprecated
+replaced_by: no_such_function

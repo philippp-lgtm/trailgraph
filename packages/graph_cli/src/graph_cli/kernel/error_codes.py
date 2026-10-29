@@ -76,6 +76,14 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A query value has the wrong type or cannot be computed.",
     ),
+    ErrorSpec("function.parameter_missing", _C.USAGE, False, "A function parameter has no value."),
+    ErrorSpec("function.parameter_unknown", _C.USAGE, False, "The function has no such parameter."),
+    ErrorSpec(
+        "function.parameter_invalid",
+        _C.USAGE,
+        False,
+        "A function parameter value does not fit its declared type.",
+    ),
     ErrorSpec(
         "temporal.as_of_unsupported",
         _C.REFUSED,

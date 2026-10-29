@@ -243,7 +243,9 @@ service; `company` has a second file for the classes of 1.1.0), role mappings fo
 (`tests/support/roles.py`) and graph skills for the `inventory` test graph
 (`tests/fixtures/skills/`: a static one, a template with curated text, and
 `blocks/` with every block once, rendered for both toy ontologies into
-`tests/goldens/skills/`) and a vendored subset of the openCypher TCK for
+`tests/goldens/skills/`), function files for `company`
+(`tests/fixtures/functions/company/`: a valid set, compiled into
+`tests/goldens/functions/`, and one broken file per check) and a vendored subset of the openCypher TCK for
 the Cypher queries (`tests/fixtures/opencypher_tck/`, Apache-2.0; its README
 names the source commit and how to update it; runner in
 `tests/support/tck.py`).

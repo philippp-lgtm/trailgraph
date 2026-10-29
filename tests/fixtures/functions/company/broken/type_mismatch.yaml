@@ -1,0 +1,22 @@
+schema: graph_cli.function/1
+name: type_mismatch
+module: organization
+summary: Positions of a unit.
+use_when: Positions that belong to a department or team.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to list.
+  title:
+    type: integer
+    summary: A number compared with a title.
+query: |
+  MATCH (q:Position)-[:in_unit]->(u:OrgUnit)
+  WHERE u.id = $unit AND q.title = $title
+  RETURN q.title AS position
+returns:
+  - column: position
+    summary: The position.
+examples:
+  - question: Which positions does the support team have?

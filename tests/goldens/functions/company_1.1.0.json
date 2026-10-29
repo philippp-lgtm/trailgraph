@@ -1,0 +1,681 @@
+{
+  "functions": [
+    {
+      "examples": [
+        {
+          "params": {
+            "date": "2026-01-01"
+          },
+          "question": "Which guidelines applied to the purchasing team at the start of the year?"
+        }
+      ],
+      "featured": false,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "id",
+          "many": false,
+          "variable": "u"
+        },
+        {
+          "datatypes": [
+            "date"
+          ],
+          "field": "effective_from",
+          "many": false,
+          "variable": "g"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "g"
+        }
+      ],
+      "hash": "sha256:b8d72955556f6d3dc87bc0333985907186431bc5cc9493cca034981b4fc9e499",
+      "module": "operations",
+      "name": "guidelines_in_effect",
+      "params": [
+        {
+          "class": "org:OrgUnit",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The unit whose positions own the processes.",
+          "type": "ref"
+        },
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "date",
+          "summary": "The day the guideline must be effective on.",
+          "type": "date"
+        }
+      ],
+      "query": "MATCH (g:`ops:Guideline`)-[:`ops:governs`]->(:`ops:Process`)-[:`ops:owned_by`]->(:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`) WHERE ((u.id = $unit) AND (g.effective_from <= $date))\nRETURN DISTINCT g.title AS guideline, g.effective_from AS effective_from ORDER BY effective_from DESC, guideline",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "guideline",
+          "summary": "Title of the guideline."
+        },
+        {
+          "column": "effective_from",
+          "summary": "Date the guideline took effect."
+        }
+      ],
+      "source_query": "MATCH (g:Guideline)-[:governs]->(:Process)-[:owned_by]->(:Position)-[:in_unit]->(u:OrgUnit)\nWHERE u.id = $unit AND g.effective_from <= $date\nRETURN DISTINCT g.title AS guideline, g.effective_from AS effective_from\nORDER BY effective_from DESC, guideline",
+      "status": "active",
+      "summary": "Guidelines that apply on a date to the processes owned from a unit.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "ops:governs",
+            "module": "operations"
+          },
+          {
+            "curie": "ops:owned_by",
+            "module": "operations"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ops:Guideline",
+            "module": "operations"
+          },
+          {
+            "curie": "ops:Process",
+            "module": "operations"
+          },
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          }
+        ]
+      },
+      "use_when": "Which rules or policies govern the work of a department or team on a given day."
+    },
+    {
+      "examples": [
+        {
+          "params": {},
+          "question": "Who works in the infrastructure department, including its teams?"
+        }
+      ],
+      "featured": true,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "id",
+          "many": false,
+          "variable": "d"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "p"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "q"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "u"
+        }
+      ],
+      "hash": "sha256:65b8d8df95e6e0987ef7b15aa508ecac799fec316d6c1681a123e9be7a2d827d",
+      "module": "organization",
+      "name": "members_of_unit",
+      "params": [
+        {
+          "class": "org:OrgUnit",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The unit to list.",
+          "type": "ref"
+        }
+      ],
+      "query": "MATCH (p:`ppl:Person`)-[:`org:holds`]->(q:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`)-[:`org:part_of`*0..5]->(d:`org:OrgUnit`) WHERE (d.id = $unit)\nRETURN p.name AS person, q.title AS position, u.name AS unit ORDER BY unit, person",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "person",
+          "summary": "Name of the holder."
+        },
+        {
+          "column": "position",
+          "summary": "Title of the position held."
+        },
+        {
+          "column": "unit",
+          "summary": "The unit the position belongs to."
+        }
+      ],
+      "source_query": "MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)\nWHERE d.id = $unit\nRETURN p.name AS person, q.title AS position, u.name AS unit\nORDER BY unit, person",
+      "status": "active",
+      "summary": "People holding a position in a unit or in any unit below it.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:part_of",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Who works in a department or team, including its sub-units; headcount of a unit."
+    },
+    {
+      "examples": [
+        {
+          "params": {},
+          "question": "Who in the finance department has not done the required safety training?"
+        }
+      ],
+      "featured": true,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "id",
+          "many": false,
+          "variable": "u"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "p"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "t"
+        }
+      ],
+      "hash": "sha256:0f52ccc40a873ce1a59fb3cf219ffb3fe2a206f285e548c40c3893c838359efc",
+      "module": "operations",
+      "name": "missing_required_trainings",
+      "params": [
+        {
+          "class": "org:OrgUnit",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The unit whose position holders are checked.",
+          "type": "ref"
+        }
+      ],
+      "query": "MATCH (p:`ppl:Person`)-[:`org:holds`]->(q:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`), (t:`ops:Training`)-[:`ops:required_for`]->(q) WHERE ((u.id = $unit) AND (NOT (p)-[:`ops:completed`]->(t)))\nRETURN p.name AS person, t.title AS training ORDER BY person, training",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "person",
+          "summary": "Name of the person."
+        },
+        {
+          "column": "training",
+          "summary": "Title of the training they still have to complete."
+        }
+      ],
+      "source_query": "MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit),\n      (t:Training)-[:required_for]->(q)\nWHERE u.id = $unit AND NOT (p)-[:completed]->(t)\nRETURN p.name AS person, t.title AS training\nORDER BY person, training",
+      "status": "active",
+      "summary": "Trainings that holders of positions in a unit have not completed yet.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "ops:completed",
+            "module": "operations"
+          },
+          {
+            "curie": "ops:required_for",
+            "module": "operations"
+          },
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ops:Training",
+            "module": "operations"
+          },
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Compliance gaps, who still has to complete a required training in a department or team."
+    },
+    {
+      "examples": [
+        {
+          "params": {
+            "text": "example"
+          },
+          "question": "Who has a mail address at the example domain?"
+        }
+      ],
+      "featured": false,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "work_email",
+          "many": false,
+          "variable": "p"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "p"
+        }
+      ],
+      "hash": "sha256:bcd68c20bc0054d2ee8e583ff963223579321adef1d0e2e5e9e83c237e12d2e2",
+      "module": "people",
+      "name": "people_by_email_text",
+      "params": [
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "text",
+          "summary": "The text to look for in the address.",
+          "type": "string"
+        }
+      ],
+      "query": "MATCH (p:`ppl:Person`) WHERE (p.work_email CONTAINS $text)\nRETURN p.name AS person, p.work_email AS email ORDER BY person",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "person",
+          "summary": "Name of the person."
+        },
+        {
+          "column": "email",
+          "summary": "Work email address."
+        }
+      ],
+      "source_query": "MATCH (p:Person)\nWHERE p.work_email CONTAINS $text\nRETURN p.name AS person, p.work_email AS email\nORDER BY person",
+      "status": "active",
+      "summary": "People whose work email contains a text.",
+      "touches": {
+        "relations": [],
+        "types": [
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Find a person from part of an email address or a mail domain."
+    },
+    {
+      "examples": [
+        {
+          "params": {
+            "since": "2026-01-01",
+            "titles": [
+              "Safety",
+              "Security"
+            ]
+          },
+          "question": "Who completed the safety or the security training this year?"
+        }
+      ],
+      "featured": false,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "t"
+        },
+        {
+          "datatypes": [
+            "date"
+          ],
+          "field": "on",
+          "many": false,
+          "variable": "c"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "p"
+        }
+      ],
+      "hash": "sha256:f4e7ae9f40d04bde3d9ad2e0f1765d1b11c122dd354945d10a689449e5dfbb1e",
+      "module": "operations",
+      "name": "training_completions",
+      "params": [
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": true,
+          "name": "titles",
+          "summary": "Titles of the trainings to include.",
+          "type": "string"
+        },
+        {
+          "class": null,
+          "default": "2000-01-01",
+          "enum": null,
+          "many": false,
+          "name": "since",
+          "summary": "Only completions on or after this date.",
+          "type": "date"
+        }
+      ],
+      "query": "MATCH (p:`ppl:Person`)-[c:`ops:completed`]->(t:`ops:Training`) WHERE ((t.title IN $titles) AND (c.on >= $since))\nRETURN p.name AS person, t.title AS training, c.on AS completed_on ORDER BY completed_on, person",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "person",
+          "summary": "Name of the person."
+        },
+        {
+          "column": "training",
+          "summary": "Title of the training."
+        },
+        {
+          "column": "completed_on",
+          "summary": "Date of completion."
+        }
+      ],
+      "source_query": "MATCH (p:Person)-[c:completed]->(t:Training)\nWHERE t.title IN $titles AND c.on >= $since\nRETURN p.name AS person, t.title AS training, c.on AS completed_on\nORDER BY completed_on, person",
+      "status": "active",
+      "summary": "Who completed which of the given trainings since a date.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "ops:completed",
+            "module": "operations"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ops:Training",
+            "module": "operations"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Completion records of named trainings, certificates earned in a period."
+    },
+    {
+      "examples": [
+        {
+          "params": {},
+          "question": "Who is directly in the support team?"
+        }
+      ],
+      "featured": false,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "id",
+          "many": false,
+          "variable": "u"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "p"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "q"
+        }
+      ],
+      "hash": "sha256:03e1f146247d93eb3cbf8c77f8a19b481a103509406ac49338e01378fb5b53fc",
+      "module": "organization",
+      "name": "unit_members",
+      "params": [
+        {
+          "class": "org:OrgUnit",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The unit to list.",
+          "type": "ref"
+        }
+      ],
+      "query": "MATCH (p:`ppl:Person`)-[:`org:holds`]->(q:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`) WHERE (u.id = $unit)\nRETURN p.name AS person, q.title AS position ORDER BY person",
+      "replaced_by": "members_of_unit",
+      "returns": [
+        {
+          "column": "person",
+          "summary": "Name of the holder."
+        },
+        {
+          "column": "position",
+          "summary": "Title of the position held."
+        }
+      ],
+      "source_query": "MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit)\nWHERE u.id = $unit\nRETURN p.name AS person, q.title AS position\nORDER BY person",
+      "status": "deprecated",
+      "summary": "People holding a position directly in a unit.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Who sits in exactly this unit, without its sub-units. Superseded by members_of_unit."
+    },
+    {
+      "examples": [
+        {
+          "params": {},
+          "question": "Which positions are still open in the sales department?"
+        }
+      ],
+      "featured": false,
+      "fields": [
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "id",
+          "many": false,
+          "variable": "d"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "title",
+          "many": false,
+          "variable": "q"
+        },
+        {
+          "datatypes": [
+            "string"
+          ],
+          "field": "name",
+          "many": false,
+          "variable": "u"
+        }
+      ],
+      "hash": "sha256:79c219a8fae2c386453dff866e40e7f8bca0acbaeb0b9fbc046f47e0a88e5115",
+      "module": "organization",
+      "name": "vacant_positions",
+      "params": [
+        {
+          "class": "org:OrgUnit",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The unit to search, including its sub-units.",
+          "type": "ref"
+        }
+      ],
+      "query": "MATCH (q:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`)-[:`org:part_of`*0..5]->(d:`org:OrgUnit`) WHERE ((d.id = $unit) AND (NOT (:`ppl:Person`)-[:`org:holds`]->(q)))\nRETURN q.title AS position, u.name AS unit ORDER BY unit, position",
+      "replaced_by": null,
+      "returns": [
+        {
+          "column": "position",
+          "summary": "Title of the vacant position."
+        },
+        {
+          "column": "unit",
+          "summary": "The unit the position belongs to."
+        }
+      ],
+      "source_query": "MATCH (q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)\nWHERE d.id = $unit AND NOT (:Person)-[:holds]->(q)\nRETURN q.title AS position, u.name AS unit\nORDER BY unit, position",
+      "status": "active",
+      "summary": "Positions in a unit or below it that nobody holds.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:part_of",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Open or unfilled positions of a department or team, hiring needs."
+    }
+  ],
+  "schema": "graph_cli.functions/1"
+}

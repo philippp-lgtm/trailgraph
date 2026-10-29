@@ -24,6 +24,10 @@ def test_import_contracts() -> None:
 
 # Contract name -> (module file in a scratch copy of the sources, violating import).
 POSITIVE_CONTROLS = {
+    "graph_cli layers": (
+        "graph_cli/kinetic/__init__.py",
+        "import graph_cli.storage\n",
+    ),
     "Only graph_cli_admin uses the FileStore maintenance port": (
         "graph_cli/services/__init__.py",
         "import graph_cli.storage.files.maintenance\n",

@@ -1,0 +1,21 @@
+schema: graph_cli.function/1
+name: returns_star
+module: organization
+summary: Positions of a unit.
+use_when: Positions that belong to a department or team.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to list.
+query: |
+  MATCH (q:Position)-[:in_unit]->(u:OrgUnit)
+  WHERE u.id = $unit
+  RETURN *
+returns:
+  - column: q
+    summary: The q.
+  - column: u
+    summary: The u.
+examples:
+  - question: Which positions does the support team have?

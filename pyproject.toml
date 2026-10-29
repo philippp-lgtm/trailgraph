@@ -67,6 +67,7 @@ layers = [
     "graph_cli.extensions",
     "graph_cli.services",
     "graph_cli.audit | graph_cli.access_control | graph_cli.temporal_knowledge | graph_cli.storage",
+    "graph_cli.kinetic",
     "graph_cli.query",
     "graph_cli.ontology_layer",
     "graph_cli.kernel",
@@ -122,6 +123,7 @@ source_modules = ["graph_cli.storage"]
 forbidden_modules = [
     "graph_cli.ontology_layer",
     "graph_cli.query",
+    "graph_cli.kinetic",
     "graph_cli.audit",
     "graph_cli.access_control",
     "graph_cli.temporal_knowledge",
@@ -171,6 +173,7 @@ forbidden_modules = [
     "graph_cli.temporal_knowledge",
     "graph_cli.storage",
     "graph_cli.query",
+    "graph_cli.kinetic",
     "graph_cli.ontology_layer",
 ]
 
@@ -181,7 +184,7 @@ forbidden_modules = [
 name = "Audit and access control import only the kernel"
 type = "forbidden"
 source_modules = ["graph_cli.audit", "graph_cli.access_control"]
-forbidden_modules = ["graph_cli.ontology_layer", "graph_cli.query"]
+forbidden_modules = ["graph_cli.ontology_layer", "graph_cli.query", "graph_cli.kinetic"]
 
 # B13.1: the maintenance port is constructed by admin wiring only. Inside the
 # app distribution only graph_cli.storage itself may import it.
@@ -222,6 +225,7 @@ source_modules = [
     "graph_cli.kernel",
     "graph_cli.ontology_layer",
     "graph_cli.query",
+    "graph_cli.kinetic",
     "graph_cli.storage",
     "graph_cli.audit",
     "graph_cli.access_control",
@@ -233,15 +237,16 @@ source_modules = [
 ]
 forbidden_modules = ["click"]
 
-# Authored YAML (schema IR, policy) is parsed only by the ontology layer and
-# access_control, through the kernel's strict loader; runtime documents are
-# canonical JSON (contracts C.7, D4).
+# Authored YAML (schema IR, policy, function files) is parsed only through the
+# kernel's strict loader: the ontology layer, access_control and kinetic call it, the
+# others never see YAML; runtime documents are canonical JSON (contracts C.7, D4).
 [[tool.importlinter.contracts]]
 name = "Only the ontology layer and access control parse YAML"
 type = "forbidden"
 source_modules = [
     "graph_cli.kernel",
     "graph_cli.query",
+    "graph_cli.kinetic",
     "graph_cli.storage",
     "graph_cli.audit",
     "graph_cli.temporal_knowledge",
