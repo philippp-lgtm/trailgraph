@@ -47,6 +47,9 @@ against it and audited. The CLI is on `PATH`.
    is made for reading and less than half the size of `--json`) or, for a
    term you can only name, `graph describe search <value> --json`
    (types, relations, fields, values; not data); never dump the whole schema.
+   For a question, look for a function first (`graph describe search <value>
+   --kind function` or the graph skill's list) and run it with
+   `graph run <function> --param ...`; write a `query` when none fits.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is

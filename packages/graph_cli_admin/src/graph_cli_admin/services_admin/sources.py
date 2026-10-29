@@ -422,6 +422,17 @@ def push(
         releasing = planned is not None and not planned.unchanged
         after = replace(entry, pin=target_pin) if releasing else entry
         publishing = skill_changed and current_skill != pushed
+        # The functions the graph will have must resolve against the ontology it will have.
+        function_slot = None
+        if publishing_functions:
+            label_f: Path | str = sources_dir
+            model_f = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            checked_f = functions.check_files(
+                after, function_files, function_problems, model_f, label=label_f
+            )
+            function_slot = functions.slot_of(checked_f, after)
+        else:
+            functions.refuse(sources_dir, after, function_problems)
         checked: skill.Checked | None = None
         if releasing or publishing:
             # The skill the graph will have must fit the ontology it will have.
@@ -438,23 +449,14 @@ def push(
                     directory=name if files is not None else None,
                     inventory=inventory,
                     model=model,
+                    # the catalog the graph will have: `graph run <name>` in the text is checked
+                    functions=function_slot.compiled if function_slot is not None else None,
                 )
                 skill.refuse(label, after, name, checked.problems)
         slot = None
         if publishing:
             assert checked is not None and files is not None and pushed is not None
             slot = SkillSlot(checked.kind, pushed, after.pin, files)
-        # The functions the graph will have must resolve against the ontology it will have.
-        function_slot = None
-        if publishing_functions:
-            label_f: Path | str = sources_dir
-            model_f = compiled.model if releasing else pinned_model(ctx.catalog, after)
-            checked_f = functions.check_files(
-                after, function_files, function_problems, model_f, label=label_f
-            )
-            function_slot = functions.slot_of(checked_f, after)
-        else:
-            functions.refuse(sources_dir, after, function_problems)
         seq = session.head().seq
         if not dry_run:
             if releasing:

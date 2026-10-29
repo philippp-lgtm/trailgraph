@@ -437,10 +437,15 @@ class ReadService:
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
     ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
         """The model documents a generated graph skill is rendered with: those of the
-        graph's current pin, as ``graph describe`` prints them (``read.describe``)."""
+        graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
+        compiled function catalog when the graph has one. Like the type names, the function
+        names and summaries are schema-level text, so the skill lists them for every reader
+        of the description (K10)."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
-        return describe_model(entry, model), warnings
+        slot = self._catalog.read_functions(entry.id)
+        catalog = slot.compiled if slot is not None and slot.count else None
+        return describe_model(entry, model, catalog), warnings
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None

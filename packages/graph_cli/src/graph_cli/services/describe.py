@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kinetic.entries import FunctionEntry, find_entry
 from graph_cli.ontology_layer.model import (
@@ -566,15 +566,18 @@ def describe_schema(
     )
 
 
-def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
+def describe_model(
+    entry: GraphEntry, model: CompiledModel, functions: JsonObject | None = None
+) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
     ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
     ``describe schema``, ``describe modules`` and ``describe module <M>`` for every
     non-built-in module print, as ``{types, type: {curie: document}, relations, schema,
-    modules: [item], module: {id: document}}``."""
+    modules: [item], module: {id: document}}``. ``functions`` is the compiled catalog of
+    the graph (``graph_cli.functions/1``); given, it joins as the key ``functions``."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
-    return {
+    documents: dict[str, JsonValue] = {
         "types": describe_types(entry, model),
         "type": {curie: describe_type(entry, model, curie) for curie in sorted(model.classes)},
         "relations": describe_relations(entry, model),
@@ -586,3 +589,6 @@ def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVal
             if not index.builtin(info.id)
         },
     }
+    if functions is not None:
+        documents["functions"] = functions
+    return documents

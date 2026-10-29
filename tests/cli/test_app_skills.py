@@ -762,3 +762,55 @@ def test_an_unknown_block_makes_the_skill_unavailable(
         {"skill": "graph-example-graph", "graph": generated, "reason": "skills.source_invalid"}
     ]
     assert (project / ".claude" / "skills" / "graph-example-graph" / "SKILL.md").is_file()
+
+
+def test_a_new_function_catalog_makes_the_generated_copy_stale(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """The functions of a graph skill are rendered at install, so publishing functions
+    changes the render: ``check`` reports the copy as stale and install refreshes it."""
+    from support.functions import VALID
+
+    template = FIXTURES / "skills" / "company_functions" / "graph-example-graph"
+    created = admin(
+        run_cli,
+        "graph",
+        "create",
+        "example_graph",
+        "--ontology",
+        str(ONTOLOGIES / "company" / "1.1.0"),
+        "--module",
+        "company",
+    )
+    assert created.code == 0, created.envelope
+    assert admin(run_cli, "graph", "skill", "publish", "example_graph", str(template)).code == 0
+    project = new_project(tmp_path, pointer="example_graph")
+    args = ("--scope", "project", "--dir", str(project), "--graph", "example_graph")
+    assert install(run_cli, *args).code == 0
+    skill = project / ".claude" / "skills" / "graph-example-graph"
+    assert "no published functions" in (skill / "SKILL.md").read_text()
+    assert statuses(check(run_cli, project)) == {
+        "graph-cli": "fresh",
+        "graph-example-graph": "fresh",
+    }
+    published = admin(run_cli, "graph", "functions", "publish", "example_graph", str(VALID))
+    assert published.code == 0, published.envelope
+    stale = check(run_cli, project)
+    assert stale.code == 1
+    assert statuses(stale) == {"graph-cli": "fresh", "graph-example-graph": "stale"}
+    assert install(run_cli, *args).code == 0
+    assert "`members_of_unit(unit: ref org:OrgUnit)`" in (skill / "SKILL.md").read_text()
+    assert "| Functions |" in (skill / "SKILL.md").read_text()
+    page = (skill / "references" / "modules" / "organization.md").read_text()
+    assert "## Functions" in page and "| `members_of_unit` |" in page
+    assert statuses(check(run_cli, project)) == {
+        "graph-cli": "fresh",
+        "graph-example-graph": "fresh",
+    }
+    preview = tmp_path / "preview"
+    preview.mkdir()
+    rendered = admin(
+        run_cli, "graph", "skill", "render", "example_graph", str(template), "--out", str(preview)
+    )
+    assert rendered.code == 0, rendered.envelope
+    assert skill_files(preview / "graph-example-graph") == without_marker(skill_files(skill))
