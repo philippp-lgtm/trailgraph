@@ -201,8 +201,8 @@ SCENARIOS: dict[str, Callable[[Scene], None]] = {
 
 
 # Codes whose scenario needs manifests and releases (tests/tamper/test_maint_verify.py),
-# installed policies (tests/tamper/test_policy_verify.py) or tokens
-# (tests/tamper/test_token_verify.py).
+# installed policies (tests/tamper/test_policy_verify.py), tokens
+# (tests/tamper/test_token_verify.py) or published slots (tests/tamper/test_slot_verify.py).
 MAINT_SCENARIO_CODES = {
     finding_codes.TOKEN_MISMATCH,
     finding_codes.ENROLLMENT_MISMATCH,
@@ -211,6 +211,7 @@ MAINT_SCENARIO_CODES = {
     finding_codes.POLICY_HASH_MISMATCH,
     finding_codes.POLICY_FALLBACK,
     finding_codes.POLICY_HASH_UNCHECKED,
+    finding_codes.SLOT_MISMATCH,
 }
 
 

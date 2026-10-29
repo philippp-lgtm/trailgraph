@@ -49,10 +49,11 @@ prevents depends on what is verified:
   reindex) and sees no other graph; a hard-coded ceiling keeps it from
   every installation and destructive action and from the maintainer
   rules ([Project admins](access_control.md#project-admins)). Whoever
-  holds it can still change those graphs' ontology and skill, and reads
-  their data through check findings. The skill steers every agent that
-  uses the graph, in every project: `maintain` on a graph other projects
-  read lets one project's admin write instructions for their agents.
+  holds it can still change those graphs' ontology, skill and named
+  functions, and reads their data through check findings. The skill and the
+  functions steer every agent that uses the graph, in every project:
+  `maintain` on a graph other projects read lets one project's admin write
+  instructions for their agents and choose which queries they run.
 - A token bound to a project (`token create --project`) verifies the
   project, so that project's scope is a boundary for the token, and a
   grant to the project (`principal: {project: P}`) reaches it; without a

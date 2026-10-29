@@ -36,6 +36,11 @@ by a minor release and is explored by agents top down.
 - **A curated graph skill** (`skill/graph-company/SKILL.md`) with the `modules` block instead
   of one table per type. See [Skills](../../docs/skills.md) for how it is published and
   installed.
+- **Named read functions** (`functions/`, one `graph_cli.function/1` file each) for the
+  recurring questions: members of a unit, missing trainings, policies, employer, reporting chain,
+  vacant positions. Each takes typed `ref` parameters and agents run it with `graph run`; the
+  curated skill lists the featured ones through its `functions` block. See
+  [Functions](../../docs/cli_graph.md#functions) and the `authoring-graph-functions` admin skill.
 - **Synthetic seed data**: `seeds/1.0.0.jsonl` for the first version,
   `seeds/1.1.0.jsonl` for what only exists from the second. Stable idempotency keys
   (`company-<version>-<nn>`), so a second apply writes nothing twice.
@@ -56,7 +61,8 @@ graph-admin view                          # the live view, see docs/live_view.md
 
 It runs `graph-admin init`, creates the graph from `ontology/1.0.0` (`--module company`
 names the main module), applies `seeds/1.0.0.jsonl`, releases `ontology/1.1.0`, applies
-`seeds/1.1.0.jsonl`, publishes the skill and ends with `graph-admin graph check company` and
+`seeds/1.1.0.jsonl`, publishes the functions and then the skill (the skill lists the functions
+and is checked against them) and ends with `graph-admin graph check company` and
 `graph-admin audit verify`, both clean. `setup.sh 1.0.0` stops after the first version, so
 the minor release can be shown by hand:
 
@@ -64,6 +70,7 @@ the minor release can be shown by hand:
 graph-admin ontology diff examples/company/ontology/1.1.0 --graph company --module company
 graph-admin ontology release company examples/company/ontology/1.1.0 --module company
 graph apply examples/company/seeds/1.1.0.jsonl
+graph-admin graph functions publish company examples/company/functions
 graph-admin graph skill publish company examples/company/skill/graph-company
 ```
 
@@ -109,7 +116,15 @@ graph describe types --module ops        # --module also limits types, relations
 graph describe schema --module legal --compact
 ```
 
-Questions the graph answers (each is a `graph query`; the generated skill lists more):
+Run a named function (parameters are ids or aliases, found with `graph lookup`):
+
+```sh
+graph describe functions                                   # what is published
+graph run members_of_unit --param unit=DEPT-0003           # people of a unit and its sub-units
+graph run reporting_chain --param position=POS-0013
+```
+
+Questions the graph answers (the first three also exist as functions; the rest are `graph query`; the generated skill lists more):
 
 - Who holds a position, and whom does it report to, up to the top? `(:Employee)-[:holds]->(:Position)`
   and `(:Position)-[:reports_to*1..4]->(:Position)`.

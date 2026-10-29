@@ -1,7 +1,7 @@
-"""``graph get``, ``graph history``, ``graph find``, ``graph lookup``, ``graph neighbors``
-and ``graph query``.
+"""``graph get``, ``graph history``, ``graph find``, ``graph lookup``, ``graph neighbors``,
+``graph query`` and ``graph run``.
 
-Contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13 (Cypher).
+Contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13 (Cypher); ``run``: named functions.
 """
 
 from __future__ import annotations
@@ -523,6 +523,43 @@ def query(
     )
 
 
+def run(
+    state: CommandState,
+    name: str,
+    param: tuple[str, ...],
+    limit: int,
+    offset: int,
+    graph: str | None,
+) -> Result:
+    check_paging(limit, offset)
+    pairs = [split_assignment(text, "--param") for text in param]
+    args: dict[str, JsonValue] = {
+        "name": name,
+        "param": list(param),
+        "limit": limit,
+        "offset": offset,
+    }
+    view = _open(state, graph, "read.function", "run", args, None)
+    data, page, warnings = context(state).reader.run(view, name, pairs, limit=limit, offset=offset)
+    state.warnings += warnings
+    page_json = page.to_json()
+
+    def line(next_offset: int) -> str:
+        return command_line(
+            "run", (name,), view.entry.name, (("--param", param),), (), limit, next_offset
+        )
+
+    columns, items = data["columns"], data["items"]
+    assert isinstance(columns, list) and isinstance(items, list)
+    return Result(
+        data=data,
+        graph=view.envelope_graph(),
+        page=page_json,
+        hints=next_page(page_json, line),
+        text=_table([str(c) for c in columns], items),
+    )
+
+
 REF: Final = ParamSpec(
     "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True
 )
@@ -643,6 +680,26 @@ QUERY_OUTPUT: Final = one_of(
             )
         }
     ),
+)
+RUN_OUTPUT: Final = obj(
+    {
+        "function": obj({"name": STRING, "hash": STRING}),
+        "columns": STRINGS,
+        "items": array(obj(extra=ANY)),
+    }
+)
+RUN_ERRORS: Final = (
+    *GRAPH_ERRORS,
+    "function.not_found",
+    "function.parameter_missing",
+    "function.parameter_unknown",
+    "function.parameter_invalid",
+    "function.parameter_type",
+    "function.stale",
+    "entity.not_found",
+    "entity.ambiguous_ref",
+    "query.too_large",
+    "query.invalid_value",
 )
 
 SPECS: Final = (
@@ -985,6 +1042,47 @@ SPECS: Final = (
         handler=query,
         output=QUERY_OUTPUT,
         remote="hooked",
+        limits={"limit": MAX_LIMIT},
+    ),
+    CommandSpec(
+        path=("run",),
+        kind="read",
+        surface="retrieve",
+        action="read.function",
+        summary="Run a named function of the graph with typed parameters.",
+        description=(
+            "A function is a curated, typed read query the maintainer published; find one "
+            "with describe search --kind function. Each --param is read by the type the "
+            "function declares (repeat a name for a list). A reference parameter takes an "
+            "id, alias or trailing hex digits of an entity of the declared class, never a "
+            "name: look the name up first. The answer is like query's, plus the function's "
+            "name and hash."
+        ),
+        params=(
+            ParamSpec("name", "string", "The function name.", required=True, positional=True),
+            ParamSpec(
+                "--param",
+                "assignment",
+                "name=value for a parameter of the function, read by its declared type.",
+                repeatable=True,
+                pairs="multimap",
+            ),
+            ParamSpec(
+                "--limit", "integer", f"Rows per page, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
+            ),
+            ParamSpec("--offset", "integer", "Skip this many rows.", default=0),
+            GRAPH,
+        ),
+        examples=(
+            Example("graph run <function> --param key=<value> --json", "Run a function."),
+            Example(
+                "graph run <function> --param key=<value> --param key=<value>",
+                "A list parameter takes its name once per value.",
+            ),
+        ),
+        errors=RUN_ERRORS,
+        handler=run,
+        output=RUN_OUTPUT,
         limits={"limit": MAX_LIMIT},
     ),
 )

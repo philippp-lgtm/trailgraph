@@ -391,8 +391,8 @@ An admin token bound to a project (`token create NAME --scope admin
 needs no `maintainers` entry, and passes instead when its project's scope
 says `maintain` for at least one graph (`token create` warns otherwise).
 It runs only the commands on one graph (`graph show|check|pull|push|
-reindex`, `graph skill publish|render`, `ontology release|diff`, `files
-verify`) and `graph list`, and sees only the graphs it maintains; every
+reindex`, `graph skill publish|render`, `graph functions publish|show`,
+`ontology release|diff`, `files verify`) and `graph list`, and sees only the graphs it maintains; every
 other command is refused with `access.ceiling`.
 
 Answers, errors and problem details follow the [app API](#api). No
@@ -455,7 +455,7 @@ with the admin token from `GRAPH_CLI_ADMIN_TOKEN`, the project's stored
 parses the command line itself and prints the server's answer as its own,
 as `graph` does.
 
-- Ontology and skill directories and policy files are read here and
+- Ontology, skill and function directories and policy files are read here and
   uploaded: every regular file below a directory; a symlink or another
   file kind is refused.
 - `graph skill render` checks `--out` here and writes the preview into it.

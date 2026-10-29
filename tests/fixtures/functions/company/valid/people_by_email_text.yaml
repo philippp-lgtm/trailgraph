@@ -1,0 +1,24 @@
+schema: graph_cli.function/1
+name: people_by_email_text
+module: people
+summary: People whose work email contains a text.
+use_when: >-
+  Find a person from part of an email address or a mail domain.
+params:
+  text:
+    type: string
+    summary: The text to look for in the address.
+query: |
+  MATCH (p:Person)
+  WHERE p.work_email CONTAINS $text
+  RETURN p.name AS person, p.work_email AS email
+  ORDER BY person
+returns:
+  - column: person
+    summary: Name of the person.
+  - column: email
+    summary: Work email address.
+examples:
+  - question: Who has a mail address at the example domain?
+    params:
+      text: example

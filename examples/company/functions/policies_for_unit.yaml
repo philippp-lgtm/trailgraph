@@ -1,0 +1,33 @@
+schema: graph_cli.function/1
+name: policies_for_unit
+module: operations
+summary: Policies that bind a unit, directly or through a unit above it, with status and dates.
+use_when: >-
+  Which policies apply to a department or team, which rules a unit is bound by, whether a policy
+  is in force or due for review. A policy that applies to a unit binds the units below it too, so
+  policies of parent units are included. Not for the processes a policy governs or for the text of
+  a policy.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The department or team whose policies are listed.
+query: |
+  MATCH (pol:Policy)-[:applies_to]->(a:OrgUnit)<-[:part_of*0..5]-(u:OrgUnit)
+  WHERE u.id = $unit
+  RETURN DISTINCT pol.title AS policy, pol.status AS status, pol.effective_from AS effective_from,
+         pol.review_due AS review_due
+  ORDER BY policy
+returns:
+  - column: policy
+    summary: Title of the policy.
+  - column: status
+    summary: Lifecycle state of the policy.
+  - column: effective_from
+    summary: Date from which the policy is binding, empty for a draft.
+  - column: review_due
+    summary: Date by which the policy is to be reviewed, if set.
+examples:
+  - question: Which policies is the finance department bound by?
+  - question: Which policies apply to this team, including those of its department?
+featured: true

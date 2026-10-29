@@ -36,6 +36,17 @@ Blocks (each one optional):
   graph it names one alias and points at the module pages and ``describe type`` for the
   prefixes and name fields, so its size does not grow with the types.
 - ``model``: a pointer to ``references/model.md`` and ``graph describe``.
+- ``functions``: up to ``FEATURED_LIMIT`` of the graph's named functions, the ones the
+  maintainer marked ``featured`` (by module, then name), one line each (``name(signature)``:
+  summary), and the commands to list a module's functions and to search them. Without
+  published functions it is one line saying so.
+
+The compiled function catalog (``graph_cli.functions/1``, the key ``functions`` of the model
+documents) is one more input document; the renderer reads only its public shape and never
+imports ``graph_cli.kinetic``. A graph without active functions renders exactly as before.
+With some, the ``modules`` block gets a ``Functions`` column, every module page a
+``Functions`` section and a single-module graph the page ``references/functions.md``
+(deprecated functions are left out everywhere).
 
 A graph with two or more non-built-in modules is modular: every generated skill then also
 gets ``references/modules/<module>.md`` (level 1 of the module view as text) and
@@ -56,10 +67,18 @@ from graph_cli.kernel.ids import ALIAS_DIGITS, format_alias
 from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, req_obj, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
 from graph_cli.skills.markdown import table
-from graph_cli.skills.template import MODEL_FILE, MODULES_DIR, Template, parse_template
+from graph_cli.skills.template import (
+    FUNCTIONS_FILE,
+    MODEL_FILE,
+    MODULES_DIR,
+    Template,
+    parse_template,
+)
 from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 
 MODEL_SCHEMA: Final = "graph_cli.model/1"
+FUNCTIONS_SCHEMA: Final = "graph_cli.functions/1"  # the compiled catalog, ``graph_cli.kinetic``
+FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
 GENERATOR: Final = "graph_cli.skills"
 ROLE_NAMES: Final[Mapping[str, str]] = {
     "label": "main name",
@@ -89,9 +108,14 @@ VALUE_SHAPES: Final[Mapping[str, str]] = {
 FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
 # Level 0 of the disclosure levels: the most bytes ``SKILL.md`` of a modular graph's skill
 # should have (about 5000 tokens at 4 bytes a token, the size the Agent Skills guidance
-# suggests for a skill body). A test holds it for 50 modules of any size; the blocks of a
-# modular graph grow with the modules only. Not checked on publish.
-L0_BUDGET: Final = 20_000
+# suggests for a skill body). A test holds ``L0_BASE`` for 50 modules of any size; the blocks
+# of a modular graph grow with the modules only. A graph with functions may use
+# ``L0_FUNCTIONS`` more for the ``functions`` block (``FEATURED_LIMIT`` lines of a name, a
+# signature and a 100-character summary, two lines of pointers) and the ``Functions`` column;
+# a test holds ``L0_BUDGET`` for 50 modules of 20 functions. Not checked on publish.
+L0_BASE: Final = 20_000
+L0_FUNCTIONS: Final = 2_500
+L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -115,6 +139,11 @@ def render_graph_skill(
             f"{MODULES_DIR}{module_id}.md": _module_page(doc, module_id, stamp)
             for module_id in (doc.pages if doc.modular else {})
         },
+        **(
+            {FUNCTIONS_FILE: _functions_file(doc, stamp)}
+            if doc.functions and not doc.modular
+            else {}
+        ),
     }
 
 
@@ -170,6 +199,7 @@ class _Model:
     patterns: Mapping[str, str]  # relation CURIE -> its ``describe schema`` pattern
     modules: Sequence[JsonObject]  # the items of ``describe modules``, built-ins included
     pages: Mapping[str, JsonObject]  # module id -> ``module`` body of ``describe module``
+    functions: Sequence[JsonObject]  # active catalog entries, by module then name
 
     @staticmethod
     def of(model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]) -> _Model:
@@ -221,6 +251,7 @@ class _Model:
             },
             modules=modules,
             pages=pages,
+            functions=_active_functions(bundle),
         )
 
     @property
@@ -243,6 +274,18 @@ class _Model:
             for key in ("relations_out", "relations_in"):
                 found |= {req_str(as_object(r, key), "curie") for r in req_list(body, key)}
         return sorted(found)
+
+
+def _active_functions(bundle: JsonObject) -> list[JsonObject]:
+    """The active entries of the compiled catalog document, if the bundle has one."""
+    catalog = bundle.get("functions")
+    if catalog is None:
+        return []
+    document = as_object(catalog, "functions")
+    if document.get("schema") != FUNCTIONS_SCHEMA:
+        raise ValueError(f"functions: expected {FUNCTIONS_SCHEMA}, got {document.get('schema')!r}")
+    entries = [e for e in _objects(document, "functions") if e.get("status") != "deprecated"]
+    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
 
 
 def _document(bundle: JsonObject, key: str) -> JsonObject:
@@ -642,14 +685,23 @@ def _modules(doc: _Model) -> list[str]:
     graph) get one line, not a row."""
     shown = [m for m in doc.modules if m.get("builtin") is not True]
     built = [req_str(m, "id") for m in doc.modules if m.get("builtin") is True]
+    counts = _function_counts(doc)  # the column exists only for a graph with functions
     lines = _table(
-        ["Module", "Prefix", "What it holds", "Types", "Links to other modules"],
+        [
+            "Module",
+            "Prefix",
+            "What it holds",
+            "Types",
+            *(["Functions"] if doc.functions else []),
+            "Links to other modules",
+        ],
         [
             [
                 _code(req_str(m, "id")),
                 _code(req_str(m, "prefix")),
                 _plain(opt_str(m, "summary")),
                 str(m["types"]),
+                *([str(counts.get(req_str(m, "id"), 0))] if doc.functions else []),
                 _module_links(m),
             ]
             for m in shown
@@ -676,6 +728,104 @@ def _modules(doc: _Model) -> list[str]:
     return lines
 
 
+def _function_counts(doc: _Model) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for function in doc.functions:
+        module = opt_str(function, "module")
+        if module is not None:
+            counts[module] = counts.get(module, 0) + 1
+    return counts
+
+
+def _param_text(param: JsonObject) -> str:
+    """``name: type``, ``name?: type`` for an optional parameter (the form of ``graph describe
+    functions``)."""
+    kind = req_str(param, "type")
+    if kind == "ref":
+        kind += f" {param.get('class')}"
+    elif kind == "enum":
+        kind += f" {param.get('enum')}"
+    if param.get("many") is True:
+        kind = f"list of {kind}"
+    optional = "" if param.get("default") is None else "?"
+    return f"{req_str(param, 'name')}{optional}: {kind}"
+
+
+def _signature(function: JsonObject) -> str:
+    return ", ".join(_param_text(as_object(p, "params[]")) for p in req_list(function, "params"))
+
+
+def _function_line(function: JsonObject) -> str:
+    call = f"{req_str(function, 'name')}({_signature(function)})"
+    return f"- {_code(call)}: {_plain(opt_str(function, 'summary'))}"
+
+
+def _functions(doc: _Model) -> list[str]:
+    """Level 0: a few featured functions and how to find the rest (K12)."""
+    if not doc.functions:
+        return ["This graph has no published functions."]
+    name = doc.name
+    featured = [f for f in doc.functions if f.get("featured") is True][:FEATURED_LIMIT]
+    lines = [
+        f"{len(doc.functions)} named functions; for a question use one before you write a query:"
+        f" `graph run <function> --param <name>=<value> --graph {name} --json`.",
+    ]
+    if featured:
+        lines += ["", *[_function_line(f) for f in featured]]
+    lines += [
+        "",
+        f"More: `graph describe functions --module <module> --graph {name}`; find one:"
+        f" `graph describe search <text> --kind function --graph {name} --json`; columns and use:"
+        f" `graph describe function <function> --graph {name}`.",
+    ]
+    return lines
+
+
+def _function_table(functions: Sequence[JsonObject]) -> list[str]:
+    return _table(
+        ["Function", "Parameters", "Summary"],
+        [
+            [_code(req_str(f, "name")), _signature(f) or "none", _plain(opt_str(f, "summary"))]
+            for f in functions
+        ],
+    )
+
+
+def _function_hint(doc: _Model) -> list[str]:
+    return [
+        "",
+        f"Run one with `graph run <function> --param <name>=<value> --graph {doc.name} --json`;"
+        f" `graph describe function <function> --graph {doc.name}` gives its columns and when to"
+        " use it.",
+    ]
+
+
+def _functions_file(doc: _Model, stamp: str) -> str:
+    """``references/functions.md`` of a single-module graph."""
+    lines = [
+        stamp,
+        "",
+        f"# Functions of graph `{doc.name}`",
+        "",
+        f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe functions"
+        f" --graph {doc.name} --json`; it wins when they differ.",
+        "",
+        *_function_table(doc.functions),
+        *_function_hint(doc),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _module_functions(doc: _Model, module_id: str) -> list[str]:
+    """The ``Functions`` section of a module page (none for a graph without functions)."""
+    if not doc.functions:
+        return []
+    own = [f for f in doc.functions if opt_str(f, "module") == module_id]
+    if not own:
+        return ["", "## Functions", "", "None."]
+    return ["", "## Functions", "", *_function_table(own), *_function_hint(doc)]
+
+
 def _model_pointer(doc: _Model) -> list[str]:
     if doc.modular:
         return [
@@ -699,6 +849,7 @@ _BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
     "constraints": _constraints,
     "names": _names,
     "model": _model_pointer,
+    "functions": _functions,
 }
 
 
@@ -1064,4 +1215,5 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         if rules
         else ["None."]
     )
+    lines += _module_functions(doc, module_id)
     return "\n".join(lines) + "\n"

@@ -169,7 +169,14 @@ def test_unknown_kind_and_module() -> None:
 
 
 def test_the_kinds_are_the_declared_ones() -> None:
-    assert SEARCH_TERM_KINDS == ("type", "relation", "attribute", "enum_value", "state")
+    assert SEARCH_TERM_KINDS == (
+        "type",
+        "relation",
+        "attribute",
+        "enum_value",
+        "state",
+        "function",
+    )
 
 
 @pytest.mark.parametrize(

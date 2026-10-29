@@ -30,6 +30,7 @@ Dependencies point down only. Enforced by import-linter
 | Extensions | `extensions` |
 | Services | `services` |
 | Cross-cutting (independent of each other) | `audit`, `access_control`, `temporal_knowledge`, `storage` |
+| Named read functions | `kinetic` |
 | Query model | `query` |
 | Schema IR | `ontology_layer` |
 | Kernel | `kernel` |
@@ -41,11 +42,12 @@ Dependencies point down only. Enforced by import-linter
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
-planners next to it. The storage maintenance port
+planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
+`query`; the layers above may use it. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. Authored YAML (ontologies,
-policies) is parsed only by `ontology_layer` and `access_control`, through
-the kernel's strict loader `kernel.yaml_strict`.
+policies, function files) is parsed only through the kernel's strict loader
+`kernel.yaml_strict`, by `ontology_layer`, `access_control` and `kinetic`.
 
 The cross-cutting packages have their own documents:
 [Storage](storage.md), [Audit](audit.md) and
@@ -162,6 +164,36 @@ load. The versions are constants in `graph_cli/__init__.py` and
 `catalog.identity` builds the one `ActorContext` per invocation. Only
 `catalog` and the admin wiring may read the process environment.
 Locations and keys: [Configuration](configuration.md).
+
+## Named read functions
+
+`graph_cli.kinetic` holds the pure part of named read functions: documents
+in, documents out, no storage and no services.
+
+| Module | Content |
+| --- | --- |
+| `kinetic.format` | `graph_cli.function/1`: the typed definition of one function file, strict YAML loading with a `Problem` per defect (shape, names, lengths), and the `Problem` type of every check |
+| `kinetic.compile` | `compile_catalog` checks the function files of a graph against a compiled ontology and writes the catalog document `graph_cli.functions/1`; `check_catalog` runs the same checks over a published catalog against another model |
+| `kinetic.entries` | the entries of a published catalog as the app shows them: signature text, the summary and detail documents of `describe functions` and `describe function` |
+| `kinetic.bind` | parameter values from CLI text or JSON by the declared type, defaults, typed placeholders for resolving |
+
+The checks use the query engine without data: `query.cypher.parameters` lists the
+`$parameters` of a parsed query, `resolve` runs with a typed placeholder per
+parameter, and `ontology_layer.connecting` supplies the hint of an impossible
+relationship pattern.
+
+The layers above use it in four places: `services.read` and `services.describe`
+load the published catalog next to the model (`describe functions`,
+`describe function`, `run`, the search kind `function`); `skills` receive the
+compiled catalog as one more document and render the `functions` block and
+pages; `graph_cli_admin.services_admin.functions` publishes a folder of function
+files into the graph's slot (one maintenance operation, audited as
+`change.functions`); and `services_admin.release` and `sources` check the
+published catalog against the model a release gives the graph, so a catalog
+that stays published always resolves against the pinned ontology. The slot
+layout is in [Storage](storage.md#filestore), its verification in
+[Audit](audit.md#slot-verification), the file format in the authoring skill of
+the admin skills ([Skills](skills.md#admin-skills)).
 
 ## Access control modules
 

@@ -2,7 +2,9 @@
 
 Projections for agents: the modules (subject areas) and one module, types, one type with
 its fields, lifecycles and relations in both directions, relations, fields, lifecycles, and
-the schema as ``graph query`` (Cypher) sees it; the list projections take a ``module``
+the schema as ``graph query`` (Cypher) sees it, and the named functions of the graph
+(``describe_functions``, ``describe_function``; ``modules`` and ``module`` list them when the
+caller passes the visible ones); the list projections take a ``module``
 filter. Every term with a summary also carries its ``deprecated`` flag. Deterministic
 (sorted), no timestamps. A type or lifecycle is its CURIE or its unique
 local name, as for ``find`` (``query.plan.resolve_term``); unknown terms
@@ -15,12 +17,13 @@ rendered from.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kinetic.entries import FunctionEntry, find_entry
 from graph_cli.ontology_layer.model import (
     AttributeDef,
     Bound,
@@ -275,11 +278,22 @@ def _link(
     }
 
 
-def describe_modules(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
-    """Level 0: the subject areas of the graph, one item per module (sorted by id)."""
+def _active_in(functions: Sequence[FunctionEntry], module_id: str) -> list[FunctionEntry]:
+    return [f for f in functions if f.module == module_id and not f.deprecated]
+
+
+def describe_modules(
+    entry: GraphEntry,
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry] | None = None,
+) -> dict[str, JsonValue]:
+    """Level 0: the subject areas of the graph, one item per module (sorted by id). With
+    ``functions`` (the ones the caller may see; ``None``: the graph has none or they are
+    hidden) every module also counts its active functions."""
     index = ModuleIndex(model)
-    modules: list[JsonValue] = [
-        {
+    modules: list[JsonValue] = []
+    for info in sorted(model.modules, key=lambda m: m.id):
+        item: dict[str, JsonValue] = {
             "id": info.id,
             "prefix": info.prefix,
             "version": info.version,
@@ -287,17 +301,24 @@ def describe_modules(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonV
             "builtin": index.builtin(info.id),
             "types": len(index.types(info.id)),
             "relations": len(index.relations(info.id)),
-            "links": index.neighbours(info.id),
         }
-        for info in sorted(model.modules, key=lambda m: m.id)
-    ]
+        if functions is not None:
+            item["functions"] = len(_active_in(functions, info.id))
+        item["links"] = index.neighbours(info.id)
+        modules.append(item)
     return model_envelope(entry, model, modules=modules)
 
 
-def describe_module(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
+def describe_module(
+    entry: GraphEntry,
+    model: CompiledModel,
+    name: str,
+    functions: Sequence[FunctionEntry] | None = None,
+) -> dict[str, JsonValue]:
     """Level 1: one module (id or prefix): its types, the relations that stay inside it, the
     cross-module relations leaving (``links_out``) and arriving (``links_in``) and the rules
-    whose target is one of its types."""
+    whose target is one of its types. With ``functions`` (see ``describe_modules``) also its
+    active functions."""
     index = ModuleIndex(model)
     module_id = index.resolve(name)
     info = index.infos[module_id]
@@ -335,7 +356,43 @@ def describe_module(entry: GraphEntry, model: CompiledModel, name: str) -> dict[
             if index.owner(rule.target) == module_id
         ],
     }
+    if functions is not None:
+        body["functions"] = [
+            {"name": f.name, "summary": f.defn.summary, "signature": f.signature}
+            for f in _active_in(functions, module_id)
+        ]
     return model_envelope(entry, model, module=body)
+
+
+def describe_functions(
+    entry: GraphEntry,
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry] | None,
+    *,
+    module: str | None = None,
+    include_deprecated: bool = False,
+) -> dict[str, JsonValue]:
+    """The named functions of the graph (by name); with ``module`` (id or prefix) those the
+    module owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    wanted = ModuleIndex(model).filter(module)
+    items: list[JsonValue] = [
+        f.summary_json()
+        for f in functions or ()
+        if (include_deprecated or not f.deprecated) and (wanted is None or f.module == wanted)
+    ]
+    return _filtered(entry, model, wanted, functions=items)
+
+
+def describe_function(
+    entry: GraphEntry,
+    model: CompiledModel,
+    functions: Sequence[FunctionEntry] | None,
+    name: str,
+) -> dict[str, JsonValue]:
+    """One function with everything its definition says, the normalized query text and its
+    hash; ``function.not_found`` with ``did_you_mean`` for an unknown name."""
+    found = find_entry(functions, name)
+    return model_envelope(entry, model, function=found.detail_json())
 
 
 def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
@@ -509,15 +566,36 @@ def describe_schema(
     )
 
 
-def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonValue]:
+# The keys of a catalog entry a graph skill reads: names, summaries and signatures are
+# schema-level text; query text, ``touches``, ``fields`` and ``hash`` need ``read.function``.
+SKILL_FUNCTION_KEYS: Final = ("name", "module", "summary", "status", "featured", "params")
+
+
+def skill_functions(catalog: JsonObject) -> JsonObject:
+    """The compiled catalog reduced to the keys of ``SKILL_FUNCTION_KEYS`` per entry."""
+    entries = catalog.get("functions")
+    kept: list[JsonValue] = []
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict):
+                kept.append({k: entry[k] for k in SKILL_FUNCTION_KEYS if k in entry})
+    return {"schema": catalog.get("schema"), "functions": kept}
+
+
+def describe_model(
+    entry: GraphEntry, model: CompiledModel, functions: JsonObject | None = None
+) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
     ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
     ``describe schema``, ``describe modules`` and ``describe module <M>`` for every
     non-built-in module print, as ``{types, type: {curie: document}, relations, schema,
-    modules: [item], module: {id: document}}``."""
+    modules: [item], module: {id: document}}``. ``functions`` is the compiled catalog of
+    the graph (``graph_cli.functions/1``); given, it joins as the key ``functions``, reduced
+    to what a skill prints (``skill_functions``): the documents are readable with
+    ``read.describe`` alone, so they carry no query text (K10)."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
-    return {
+    documents: dict[str, JsonValue] = {
         "types": describe_types(entry, model),
         "type": {curie: describe_type(entry, model, curie) for curie in sorted(model.classes)},
         "relations": describe_relations(entry, model),
@@ -529,3 +607,6 @@ def describe_model(entry: GraphEntry, model: CompiledModel) -> dict[str, JsonVal
             if not index.builtin(info.id)
         },
     }
+    if functions is not None:
+        documents["functions"] = skill_functions(functions)
+    return documents

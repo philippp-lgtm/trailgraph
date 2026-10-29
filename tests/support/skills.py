@@ -73,8 +73,9 @@ def graph_entry(model: CompiledModel, *, prefixes: bool = True) -> GraphEntry:
 
 
 def render_inputs(
-    model: CompiledModel, *, prefixes: bool = True
+    model: CompiledModel, *, prefixes: bool = True, functions: dict[str, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """``(model documents, graph block)`` of ``render_graph_skill`` for a fixture model."""
+    """``(model documents, graph block)`` of ``render_graph_skill`` for a fixture model;
+    ``functions`` is the compiled catalog document, if the graph has one."""
     entry = graph_entry(model, prefixes=prefixes)
-    return describe_model(entry, model), graph_block(entry)
+    return describe_model(entry, model, functions), graph_block(entry)

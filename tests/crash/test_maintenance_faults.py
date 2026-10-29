@@ -15,13 +15,16 @@ from support.stores import FaultSwitch
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
-from graph_cli_admin.services_admin import audit, graphs
+from graph_cli_admin.services_admin import audit, graphs, sources
+from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.context import AdminContext
+from graph_cli_admin.services_admin.functions import publish as publish_functions
 from graph_cli_admin.services_admin.release import release
 from graph_cli_admin.services_admin.skill import publish
 
 INVENTORY = ONTOLOGIES / "inventory"
 SKILL = FIXTURES / "skills" / "graph-example-graph"
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 IWE = "integrity.audit.intent_without_effect"
 
 
@@ -105,7 +108,7 @@ def test_pin_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
 
 
 def test_skill_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
-    """D15 Q8: the old slot (here: none) stays; skill intents are not walked yet."""
+    """D15 Q8: the old slot (here: none) stays; the intent is an interrupted publish."""
     create(ctx)
     run = lambda: publish(  # noqa: E731
         ctx,
@@ -118,8 +121,98 @@ def test_skill_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
     interrupted(faults, CrashPoint.SKILL_BEFORE_RENAME, run)
     graph = ctx.catalog.resolve("example_graph")
     assert ctx.catalog.read_skill(graph.id) is None
-    assert verify_codes(ctx) == []  # audit verify walks skill intents later (plan scope cut)
+    assert verify_codes(ctx) == [IWE]
     assert run().data["published"] is True
     slot = ctx.catalog.read_skill(graph.id)
     assert slot is not None and slot.kind == "static"
-    assert verify_codes(ctx) == []
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+
+
+def test_functions_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
+    """K6: the old slot (here: none) stays; a retry publishes and verifies."""
+    create(ctx)
+    run = lambda: publish_functions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.FUNCTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_functions(graph.id) is None
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    slot = ctx.catalog.read_functions(graph.id)
+    assert slot is not None and slot.count == 2
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+    assert run().data["published"] is False  # unchanged: no third intent
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_functions_replaced_before_rename_keep_the_old_catalog(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    one = tmp_path / "one"
+    one.mkdir()
+    (one / "items_in_location.yaml").write_bytes(
+        (FUNCTIONS / "items_in_location.yaml").read_bytes()
+    )
+    run = lambda: publish_functions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=one, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.FUNCTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    old = ctx.catalog.read_functions(graph.id)
+    assert old is not None and old.count == 2
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    new = ctx.catalog.read_functions(graph.id)
+    assert new is not None and new.count == 1
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_repeatable(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    """K5 defence in depth: the release is pinned, the catalog write is lost. The old catalog
+    does not resolve against the new pin (``graph check`` reports ``function.stale``), and
+    repeating the push completes the catalog."""
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    work = tmp_path / "work"
+    sources.pull(ctx, graph_ref="example_graph", target=work, version=None, force=False)
+    major = work / "ontology" / "2.0.0"
+    major.mkdir()
+    text = (INVENTORY / "1.0.0" / "inventory.yaml").read_text()
+    text = text.replace("located_in", "stored_in").replace("version: 1.0.0", "version: 2.0.0")
+    (major / "inventory.yaml").write_text(text)
+    path = work / "functions" / "items_in_location.yaml"
+    path.write_text(path.read_text().replace("located_in", "stored_in"))
+
+    def run() -> sources.Pushed:
+        return sources.push(
+            ctx,
+            graph_ref="example_graph",
+            source=work,
+            reason=None,
+            dry_run=False,
+            inventory=app_inventory(),
+        )
+
+    interrupted(faults, CrashPoint.FUNCTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert graph.pin.version == "2.0.0"
+    old = ctx.catalog.read_functions(graph.id)
+    assert old is not None and old.published_against.version == "1.0.0"
+    with pytest.raises(GraphCliError) as caught:
+        check(ctx, graph_ref="example_graph", source=None, module=None)
+    assert caught.value.code == "admin.functions_broken"
+    details = caught.value.details
+    assert details is not None and details["functions"] == ["items_in_location"]
+    codes = {p["code"] for p in details["problems"]}  # type: ignore[union-attr, index]
+    assert "function.stale" in codes
+    assert verify_codes(ctx) == [IWE]
+    done = run()
+    assert done.data["ontology"]["released"] is False  # pinned already
+    assert done.data["functions"]["published"] is True  # type: ignore[index]
+    check(ctx, graph_ref="example_graph", source=None, module=None)
+    assert ctx.catalog.read_functions(graph.id) is not None

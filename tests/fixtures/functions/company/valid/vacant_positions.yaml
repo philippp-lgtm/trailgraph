@@ -1,0 +1,23 @@
+schema: graph_cli.function/1
+name: vacant_positions
+module: organization
+summary: Positions in a unit or below it that nobody holds.
+use_when: >-
+  Open or unfilled positions of a department or team, hiring needs.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to search, including its sub-units.
+query: |
+  MATCH (q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)
+  WHERE d.id = $unit AND NOT (:Person)-[:holds]->(q)
+  RETURN q.title AS position, u.name AS unit
+  ORDER BY unit, position
+returns:
+  - column: position
+    summary: Title of the vacant position.
+  - column: unit
+    summary: The unit the position belongs to.
+examples:
+  - question: Which positions are still open in the sales department?

@@ -1,0 +1,30 @@
+schema: graph_cli.function/1
+name: employer_of
+module: legal
+summary: The legal entity that employs an employee, with its legal form, country and status.
+use_when: >-
+  Which company, legal entity or subsidiary employs a person, who the employer under the
+  employment contract is, in which country. Employees only; an external person has no employer in
+  the graph. Not for who owns the employer, and not for the unit a person works in.
+params:
+  person:
+    type: ref
+    class: ppl:Employee
+    summary: The employee whose employer is asked for.
+query: |
+  MATCH (e:Employee)-[:employed_by]->(l:LegalEntity)
+  WHERE e.id = $person
+  RETURN l.name AS entity, l.legal_form AS legal_form, l.country AS country, l.status AS status
+  ORDER BY entity
+returns:
+  - column: entity
+    summary: Registered name of the employing legal entity.
+  - column: legal_form
+    summary: Form of incorporation, if recorded.
+  - column: country
+    summary: Country of registration.
+  - column: status
+    summary: Lifecycle state of the legal entity.
+examples:
+  - question: Which legal entity employs this person?
+  - question: In which country is the employer of this employee registered?

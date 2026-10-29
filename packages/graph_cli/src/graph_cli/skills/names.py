@@ -14,6 +14,9 @@ does not have. Checked, each with rule:
   or more digits and a prefix the graph does not have is reported too
   (text like ``UTF-8`` stays plain). Whether the entity exists is not checked:
   data changes, the model part does not name data (Q4).
+- ``function``: every ``graph run <name>`` in code names a function of the compiled catalog
+  (the key ``functions`` of the model documents; a graph without one has none). A
+  placeholder such as ``<function>`` is not a name.
 
 Generated blocks are not checked; they come from the model.
 """
@@ -41,6 +44,7 @@ FENCE_RE: Final = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE_RE: Final = re.compile(r"(`+)((?:(?!\n[ \t]*\n).)+?)\1", re.DOTALL)
 COMMAND_WORD_RE: Final = re.compile(r"^[a-z][a-z-]*$")
 FLAG_RE: Final = re.compile(r"^--[a-z][a-z0-9-]*")
+FUNCTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 SHELL_STOPS: Final = frozenset({"|", "||", "&&", ";", ">", ">>", "2>&1", "&"})
 ALWAYS_FLAGS: Final = frozenset({"--help"})
 
@@ -59,13 +63,14 @@ def check_names(
     graph: Mapping[str, JsonValue],
     inventory: Mapping[str, JsonValue],
 ) -> list[Problem]:
-    """Every ``term``, ``command`` and ``alias`` problem of the curated text."""
+    """Every ``term``, ``command``, ``alias`` and ``function`` problem of the curated text."""
     terms = _terms(model)
     prefixes = {curie.partition(":")[0] for curie in terms}
     aliases = sorted(
         {str(p) for p in req_obj(as_object(dict(graph), "graph"), "alias_prefixes").values()}
     )
     commands = _commands(inventory)
+    published = _functions(model)
     problems: list[Problem] = []
     for path, text in sorted(template.curated().items()):
         problems += _term_problems(path, text, terms, prefixes)
@@ -73,6 +78,7 @@ def check_names(
         problems += _alias_problems(path, text, code, aliases)
         for piece in code:
             problems += _command_problems(path, piece, commands)
+            problems += _function_problems(path, piece, published)
     return problems
 
 
@@ -224,6 +230,40 @@ def _words(text: str) -> list[str]:
             break
         found.append(word)
     return found
+
+
+# ---- functions ----------------------------------------------------------------------------
+
+
+def _functions(model: Mapping[str, JsonValue]) -> frozenset[str]:
+    """The names of the compiled catalog (deprecated ones too: they still run)."""
+    catalog = as_object(dict(model), "model").get("functions")
+    if catalog is None:
+        return frozenset()
+    return frozenset(
+        req_str(e, "name") for e in _objects(as_object(catalog, "functions"), "functions")
+    )
+
+
+def _function_problems(path: str, piece: _Code, published: frozenset[str]) -> list[Problem]:
+    problems = []
+    for match in COMMAND_RE.finditer(piece.text):
+        words = _words(match.group(1))
+        if len(words) < 2 or words[0] != "run" or not FUNCTION_NAME_RE.match(words[1]):
+            continue  # not `graph run`, or a placeholder, flag or other non-name
+        if words[1] in published:
+            continue
+        line = piece.line + piece.text.count("\n", 0, match.start())
+        close = difflib.get_close_matches(words[1], sorted(published), n=1)
+        hint = f"; did you mean {close[0]}?" if close else ""
+        problems.append(
+            Problem(
+                "function",
+                path,
+                f"line {line}: {words[1]} is not a published function of this graph{hint}",
+            )
+        )
+    return problems
 
 
 # ---- reading Markdown -------------------------------------------------------------------------

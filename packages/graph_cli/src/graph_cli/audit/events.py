@@ -316,6 +316,15 @@ def skill_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
     return {"skill": {"from": old_hash, "to": new_hash}}
 
 
+def functions_change(
+    old_hash: str | None, new_hash: str, compiled_hash: str
+) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that publishes the function catalog
+    (K6): the tree hash of the sources before (``None`` for the first publish) and after,
+    and the hash of the compiled catalog the app reads."""
+    return {"functions": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
+
+
 def policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
     """``change`` of a ``maint.policy_change`` intent (B5.15): the compiled policy's hash
     before (``None`` when none was installed) and after."""

@@ -49,6 +49,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
+from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
@@ -57,6 +58,9 @@ from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStor
 from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
+from graph_cli.kinetic.bind import bind_cli
+from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
+from graph_cli.kinetic.format import ParamDef
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
@@ -87,6 +91,7 @@ from graph_cli.temporal_knowledge.history import changed_names
 
 if TYPE_CHECKING:
     from graph_cli.query.cypher.ast import Query as CypherQuery
+    from graph_cli.query.cypher.resolve import ResolvedQuery
 
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
@@ -272,6 +277,7 @@ class ReadService:
         self._env = env
         self.timings = timings if timings is not None else Timings()
         self._models = ModelCache(catalog, self.timings)
+        self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
 
     # ---- authorization -------------------------------------------------
 
@@ -304,6 +310,37 @@ class ReadService:
             policy = self._policy.current(entry.id)
             decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
         return decision.effect == "allow"
+
+    def functions(self, actor: ActorContext, entry: GraphEntry) -> tuple[FunctionEntry, ...] | None:
+        """The graph's published functions as the actor may see them (K10): ``None`` when the
+        graph has none or the actor may not ``read.function`` on it, so a listing shows
+        nothing and records nothing (no denial event, like ``graphs``). The parsed catalog is
+        cached by the hash of the compiled document."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            decision = authorize(actor, "read.function", f"graph:{entry.id}", _VISIBLE, policy)
+        if decision.effect != "allow":
+            return None
+        return self._published(entry)
+
+    def _published(self, entry: GraphEntry) -> tuple[FunctionEntry, ...] | None:
+        """The parsed catalog of the graph (``None`` when it has none), no authorization."""
+        with self.timings.phase("model"):
+            slot = self._catalog.read_functions(entry.id)
+            if slot is None:
+                return None
+            found = self._functions.get(slot.compiled_hash)
+            if found is None:
+                try:
+                    found = load_entries(slot.compiled)
+                except JsonShapeError as exc:
+                    raise GraphCliError(
+                        "functions.slot_invalid",
+                        f"the compiled function catalog is unreadable: {exc}",
+                        details={"file": f"graphs/{entry.id}/functions/slot.json"},
+                    ) from exc
+                self._functions[slot.compiled_hash] = found
+        return found or None
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta
@@ -347,10 +384,16 @@ class ReadService:
         return error
 
     def _signal(
-        self, view: GraphRead, entities: Sequence[EntityId], edges: Sequence[EdgeId] = ()
+        self,
+        view: GraphRead,
+        entities: Sequence[EntityId],
+        edges: Sequence[EdgeId] = (),
+        function: str | None = None,
     ) -> None:
         """Tell running views what this read returned (``[activity] signal_reads``)."""
-        self.activity.reads(ReadSignal(view.entry.id, view.command, view.actor, entities, edges))
+        self.activity.reads(
+            ReadSignal(view.entry.id, view.command, view.actor, entities, edges, function)
+        )
 
     # ---- reads ---------------------------------------------------------
 
@@ -394,10 +437,15 @@ class ReadService:
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
     ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
         """The model documents a generated graph skill is rendered with: those of the
-        graph's current pin, as ``graph describe`` prints them (``read.describe``)."""
+        graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
+        compiled function catalog when the graph has one. Like the type names, the function
+        names and summaries are schema-level text, so the skill lists them for every reader
+        of the description (K10)."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
-        return describe_model(entry, model), warnings
+        slot = self._catalog.read_functions(entry.id)
+        catalog = slot.compiled if slot is not None and slot.count else None
+        return describe_model(entry, model, catalog), warnings
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None
@@ -663,22 +711,39 @@ class ReadService:
     ) -> tuple[dict[str, JsonValue], Page | None]:
         """A parsed query resolved against the graph's model and, unless ``explain``,
         run over its snapshot; the rows are paged like ``find``."""
-        from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
         from graph_cli.query.cypher.resolve import resolve
 
         with self.timings.phase("resolve"):
             resolved = resolve(query, view.model, spec.parameters)
         if spec.explain:
             return {"plan": resolved.explain()}, None
+        return self._rows(
+            view, resolved, spec.include_inactive, spec.budget, spec.limit, spec.offset
+        )
+
+    def _rows(
+        self,
+        view: GraphRead,
+        resolved: ResolvedQuery,
+        include_inactive: bool,
+        budget: int | None,
+        limit: int,
+        offset: int,
+        function: str | None = None,
+    ) -> tuple[dict[str, JsonValue], Page]:
+        """A resolved query run over the snapshot, one page of its rows, and the activity
+        signal for what it read."""
+        from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
+
         with self.timings.phase("execute"):
             result = execute(
                 resolved,
                 view.model,
                 view.snapshot,
-                include_inactive=spec.include_inactive,
-                budget=DEFAULT_BUDGET if spec.budget is None else spec.budget,
+                include_inactive=include_inactive,
+                budget=DEFAULT_BUDGET if budget is None else budget,
             )
-        shown = result.rows[spec.offset : spec.offset + spec.limit]
+        shown = result.rows[offset : offset + limit]
         items: list[JsonValue] = [
             {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
             for row in shown
@@ -687,9 +752,96 @@ class ReadService:
         # returns only values or counts lights up the entities it read too.
         entities = dict.fromkeys([*entities_in(shown), *result.touched])
         edges = dict.fromkeys([*edges_in(shown), *result.walked])
-        self._signal(view, list(entities), list(edges))
+        self._signal(view, list(entities), list(edges), function)
         data: dict[str, JsonValue] = {"columns": list(result.columns), "items": items}
-        return data, Page(len(result.rows), len(shown), spec.limit, spec.offset)
+        return data, Page(len(result.rows), len(shown), limit, offset)
+
+    def run(
+        self,
+        view: GraphRead,
+        name: str,
+        pairs: Sequence[tuple[str, str]],
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[dict[str, JsonValue], Page, tuple[WarningRecord, ...]]:
+        """A published function run with ``name=value`` parameters (plan K2, K3, K5, K8).
+
+        The caller is authorized (``read.function``, by ``open``). Values are read by the
+        declared types, a ``ref`` is resolved and its class checked, and the stored
+        normalized query text is parsed and resolved against the current pin: text that no
+        longer does is ``function.stale``. The rows are paged and signalled like ``query``;
+        the activity signal names the function, never a value."""
+        from graph_cli.query.cypher.resolve import resolve
+
+        function = find_entry(self._published(view.entry), name)
+        warnings: list[WarningRecord] = []
+        if function.deprecated:
+            replaced = function.defn.replaced_by
+            warnings.append(
+                WarningRecord(
+                    "function.deprecated",
+                    f"function {name} is deprecated"
+                    + (f"; use {replaced}" if replaced is not None else ""),
+                    {"name": name, "replaced_by": replaced},
+                )
+            )
+        with self.timings.phase("query"):
+            bound = bind_cli(name, function.defn.params, pairs, view.model)
+            for param in function.defn.params:
+                if param.type == "ref":
+                    bound[param.name], found = self._entity_params(view, name, param, bound)
+                    warnings += found
+        try:
+            parsed = self.parse_query(function.query)
+            with self.timings.phase("resolve"):
+                resolved = resolve(parsed, view.model, bound)
+        except GraphCliError as exc:
+            raise GraphCliError(
+                "function.stale",
+                f"function {name} no longer fits the graph's ontology ({exc.code}); "
+                "tell the maintainer of this graph",
+                details={"function": name, "hash": function.hash, "cause": exc.code},
+            ) from exc
+        data, page = self._rows(view, resolved, False, None, limit, offset, name)
+        data = {"function": {"name": name, "hash": function.hash}, **data}
+        return data, page, tuple(warnings)
+
+    def _entity_params(
+        self, view: GraphRead, function: str, param: ParamDef, bound: Mapping[str, Value]
+    ) -> tuple[Value, list[WarningRecord]]:
+        """The canonical ids for the reference texts of a ``ref`` parameter, each checked to
+        exist and to be of the declared class or a subclass (no name resolution)."""
+        assert param.of_class is not None
+        given = bound[param.name]
+        texts = given if isinstance(given, list) else [given]
+        warnings: list[WarningRecord] = []
+        ids: list[Value] = []
+        for text in texts:
+            assert isinstance(text, str)
+            entity, found = resolve_ref(text, view.snapshot)
+            warnings += found
+            revision = view.snapshot.get(entity)
+            if revision is None:
+                raise GraphCliError(
+                    "entity.not_found",
+                    f"no entity {text} (parameter {param.name!r} of {function})",
+                    details={"ref": text, "id": str(entity), "function": function},
+                )
+            if not view.model.is_a(revision.type, param.of_class):
+                raise GraphCliError(
+                    "function.parameter_type",
+                    f"parameter {param.name!r} of {function} expects {param.of_class}, "
+                    f"{text} is a {revision.type}",
+                    details={
+                        "function": function,
+                        "parameter": param.name,
+                        "expected": param.of_class,
+                        "found": revision.type,
+                    },
+                )
+            ids.append(str(entity))
+        return (ids if isinstance(given, list) else ids[0]), warnings
 
     def whoami(
         self, actor: ActorContext, *, allowed: Sequence[str] | None = None

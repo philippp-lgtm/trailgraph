@@ -331,6 +331,19 @@ def test_render_of_a_static_skill_is_its_files(
     assert read_tree(out / "graph-example-graph")[0] == read_tree(SKILL)[0]
 
 
+def test_a_template_naming_an_unpublished_function_is_refused(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """`graph run <name>` in curated text must name a published function (K12)."""
+    curated = copy_template(tmp_path)
+    recipes = curated / "references" / "recipes.md"
+    recipes.write_text(recipes.read_text() + "\nRun `graph run ghost_function --param key=1`.\n")
+    refused = publish(run_cli, curated)
+    assert (refused.code, refused.error["code"]) == (1, "admin.skill_invalid")
+    (problem,) = refused.error["details"]["problems"]
+    assert problem["rule"] == "function" and "ghost_function" in problem["message"]
+
+
 def test_publish_checks_the_template_against_the_current_pin(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:

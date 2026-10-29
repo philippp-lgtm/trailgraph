@@ -11,7 +11,7 @@ maintenance effects, pin events, anchors). Order, without cascades:
 2. each graph under its maintenance lock: storage findings, then the graph
    stream with the txs (only if the tx log is clean) and the maintenance
    effects (the manifest pin only if storage found it intact, the graph's
-   installed policy);
+   installed policy, the published skill and function catalog);
 3. the anchors against the graph streams.
 
 Then a ``maint.audit_verify`` event anchors the heads of the graphs without
@@ -32,6 +32,7 @@ from graph_cli.audit import events
 from graph_cli.audit.verify import (
     UNREADABLE,
     InstalledPolicy,
+    InstalledSlots,
     MaintEffects,
     StreamReport,
     check_anchors,
@@ -52,12 +53,17 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findings
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
-from graph_cli.kernel.ports.storage import GraphStoreRead
+from graph_cli.kernel.ports.catalog import FunctionsSlot, SkillSlot
+from graph_cli.kernel.ports.storage import GraphStoreRead, MaintenanceSession
 from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import enrollments_path, read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
+
+DAMAGED_SLOT = frozenset(
+    {"skills.source_invalid", "functions.slot_invalid", "format.unsupported_version"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +154,34 @@ def verify(ctx: AdminContext) -> Verification:
     return Verification(data, ordered, warnings)
 
 
+def _slot_hash(read: Callable[[], SkillSlot | FunctionsSlot | None]) -> str | None:
+    """The tree hash of a published slot as found; a damaged one is a finding, not a crash."""
+    try:
+        slot = read()
+    except GraphCliError as exc:
+        if exc.code not in DAMAGED_SLOT:
+            raise
+        return UNREADABLE
+    return slot.hash if slot is not None else None
+
+
+def _installed_slots(session: MaintenanceSession) -> InstalledSlots:
+    """The published skill and function catalog as found, damaged ones as findings."""
+    functions: FunctionsSlot | None = None
+    try:
+        functions = session.read_functions()
+        functions_hash = functions.hash if functions is not None else None
+    except GraphCliError as exc:
+        if exc.code not in DAMAGED_SLOT:
+            raise
+        functions_hash = UNREADABLE
+    return InstalledSlots(
+        skill=_slot_hash(session.read_skill),
+        functions=functions_hash,
+        functions_compiled=functions.compiled_hash if functions is not None else None,
+    )
+
+
 def _installed(read: Callable[[], bytes | None]) -> InstalledPolicy:
     """An installed policy as found; one that cannot be read is a finding, not a crash."""
     try:
@@ -170,6 +204,7 @@ def _verify_graph(
             releases=session.release_hashes(),
             anchored=anchored or frozenset(),
             policy=_installed(session.read_policy),
+            slots=_installed_slots(session),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

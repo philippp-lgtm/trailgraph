@@ -19,6 +19,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, format_id, parse_id
 from graph_cli.kernel.ports.catalog import (
     Catalog,
+    FunctionsSlot,
     GraphEntry,
     ManifestData,
     SkillSlot,
@@ -27,6 +28,7 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
+from graph_cli.storage.files.functions_slot import read_functions
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
@@ -139,6 +141,9 @@ class FileCatalog:
 
     def read_skill(self, graph: GraphId) -> SkillSlot | None:
         return read_skill(self._layout(graph))
+
+    def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
+        return read_functions(self._layout(graph), sources=sources)
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.file_store(graph)

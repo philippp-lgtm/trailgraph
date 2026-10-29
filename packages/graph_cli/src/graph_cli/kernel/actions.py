@@ -26,6 +26,7 @@ READ_ACTIONS: Final = frozenset(
         "history",
         "describe",
         "query",
+        "function",
         "audit_own",
         "native",
     )
@@ -86,7 +87,7 @@ PROJECT_MAINT_ACTIONS: Final = tuple(
 PROJECT_ADMIN_ACTIONS: Final = (*PROJECT_MAINT_ACTIONS, Action("read.get"))
 _LEVEL_READS: Final = tuple(
     Action(f"read.{verb}")
-    for verb in ("list", "get", "find", "traverse", "history", "describe", "query")
+    for verb in ("list", "get", "find", "traverse", "history", "describe", "query", "function")
 )
 
 EXT_ACTION_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.[a-z][a-z0-9_]*$")

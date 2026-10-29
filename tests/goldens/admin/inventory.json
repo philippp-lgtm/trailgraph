@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.6.0",
+  "program_version": "0.7.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -571,6 +571,7 @@
       "errors": [
         "access.denied",
         "admin.data_errors",
+        "admin.functions_broken",
         "admin.model_invalid",
         "admin.remote_mode",
         "backend.unavailable",
@@ -694,6 +695,156 @@
     {
       "path": [
         "graph",
+        "functions",
+        "publish"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Publish DIR as the function catalog of graph REF (name or id).",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "A functions folder: one <name>.yaml per function."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the functions change; recorded in the audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Check and show the change without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph functions publish <graph> <dir>",
+          "summary": "Publish the functions."
+        },
+        {
+          "command": "graph-admin graph functions publish <graph> <dir> --dry-run --json",
+          "summary": "Check them and show the change, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.functions_invalid",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.archived",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
+        "functions",
+        "show"
+      ],
+      "kind": "read",
+      "surface": "meta",
+      "action": "maint.graph_configure",
+      "summary": "Show the published function catalog of graph REF.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph functions show <graph>",
+          "summary": "List the published functions."
+        },
+        {
+          "command": "graph-admin graph functions show <graph> --json",
+          "summary": "The same, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
         "list"
       ],
       "kind": "read",
@@ -757,7 +908,7 @@
       "kind": "read",
       "surface": "model",
       "action": "maint.graph_configure",
-      "summary": "Write graph REF's ontology release and skill into DIR to edit and push them.",
+      "summary": "Write graph REF's ontology release, skill and functions into DIR to edit.",
       "args": [
         {
           "name": "ref",
@@ -787,7 +938,7 @@
           "type": "flag",
           "required": false,
           "repeatable": false,
-          "summary": "Replace the version directory, skill directory and base file if they exist."
+          "summary": "Replace the version, skill and functions directories and base file if they exist."
         },
         {
           "name": "--data-root",
@@ -814,6 +965,7 @@
         "backend.corrupt",
         "backend.unavailable",
         "config.invalid",
+        "functions.slot_invalid",
         "graph.not_found",
         "internal.error",
         "ontology.artifact_missing",
@@ -895,6 +1047,8 @@
       ],
       "errors": [
         "access.denied",
+        "admin.functions_broken",
+        "admin.functions_invalid",
         "admin.migration_required",
         "admin.model_invalid",
         "admin.release_exists",
@@ -1332,7 +1486,7 @@
           "type": "graph_ref",
           "required": false,
           "repeatable": false,
-          "summary": "Compare with the release this graph is pinned to."
+          "summary": "Compare with the release this graph is pinned to; warns (admin.functions_affected) about published functions the release would break."
         },
         {
           "name": "--data-root",
@@ -1431,6 +1585,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.functions_broken",
         "admin.migration_required",
         "admin.model_invalid",
         "admin.release_exists",
@@ -2505,6 +2660,16 @@
       "exit": 1
     },
     {
+      "code": "admin.functions_broken",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.functions_invalid",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
       "code": "admin.graph_name_taken",
       "category": "refused",
       "exit": 1
@@ -2608,6 +2773,11 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "functions.slot_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "graph.archived",

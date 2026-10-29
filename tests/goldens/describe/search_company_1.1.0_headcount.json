@@ -1,0 +1,26 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "text": "headcount",
+  "items": [
+    {
+      "kind": "function",
+      "curie": "members_of_unit",
+      "of": null,
+      "module": "organization",
+      "summary": "People holding a position in a unit or in any unit below it.",
+      "deprecated": false,
+      "match": {
+        "field": "use_when",
+        "how": "phrase"
+      }
+    }
+  ]
+}

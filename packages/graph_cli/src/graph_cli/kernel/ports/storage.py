@@ -21,7 +21,7 @@ from graph_cli.kernel.errors import EMPTY, WarningRecord
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef, TxId
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
-from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot
+from graph_cli.kernel.ports.catalog import FunctionsSlot, ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.records import BlobInfo, EdgeRecord, Revision, RevisionMeta, TxRecord
 
@@ -197,6 +197,14 @@ class MaintenanceSession(WriteSession, Protocol):
 
     def replace_skill(self, slot: SkillSlot, receipt: AuditReceipt) -> None:
         """Publish the graph skill atomically, replacing the previous one (D15 Q2)."""
+        ...
+
+    def read_functions(self) -> FunctionsSlot | None:
+        """The graph's published function catalog as it is now, with its sources (K6)."""
+        ...
+
+    def replace_functions(self, slot: FunctionsSlot, receipt: AuditReceipt) -> None:
+        """Publish the function catalog atomically, replacing the previous one (K6)."""
         ...
 
     def read_policy(self) -> bytes | None:

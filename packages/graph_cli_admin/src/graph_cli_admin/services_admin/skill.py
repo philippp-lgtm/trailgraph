@@ -36,7 +36,7 @@ from pathlib import Path
 
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot, skill_hash
 from graph_cli.kernel.ports.storage import MaintenanceSession
@@ -101,17 +101,22 @@ def check_files(
     directory: str | None,
     inventory: Mapping[str, JsonValue],
     model: CompiledModel | None = None,
+    functions: JsonObject | None = None,
 ) -> Checked:
     """``check_source`` for files read already; a template renders against ``model`` (the
-    entry's pinned model when ``None``)."""
+    entry's pinned model when ``None``) and the compiled function catalog ``functions`` (the
+    published one when ``None``), as the app does at install."""
     name = graph_skill_name(entry.name)
     kind = kind_of(files)
     if kind != GENERATED:
         problems = [*problems, *validate(files, name=name, directory=directory)]
         refuse(label, entry, name, problems)
         return Checked(kind, files, files)
+    if functions is None:
+        slot = ctx.catalog.read_functions(entry.id)
+        functions = slot.compiled if slot is not None and slot.count else None
     described = describe_model(
-        entry, model if model is not None else pinned_model(ctx.catalog, entry)
+        entry, model if model is not None else pinned_model(ctx.catalog, entry), functions
     )
     graph = graph_block(entry)
     rendered, render_problems = render_checked(

@@ -1,0 +1,25 @@
+schema: graph_cli.function/1
+name: unit_members
+module: organization
+summary: People holding a position directly in a unit.
+use_when: >-
+  Who sits in exactly this unit, without its sub-units. Superseded by members_of_unit.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to list.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit)
+  WHERE u.id = $unit
+  RETURN p.name AS person, q.title AS position
+  ORDER BY person
+returns:
+  - column: person
+    summary: Name of the holder.
+  - column: position
+    summary: Title of the position held.
+examples:
+  - question: Who is directly in the support team?
+status: deprecated
+replaced_by: members_of_unit

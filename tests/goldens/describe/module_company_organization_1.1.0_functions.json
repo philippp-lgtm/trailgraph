@@ -1,0 +1,185 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "module": {
+    "id": "organization",
+    "prefix": "org",
+    "version": "1.0.0",
+    "summary": "The structure of the company, its units, the positions in them and what they cost; not the people or the work done.",
+    "builtin": false,
+    "types": [
+      {
+        "curie": "org:CostCenter",
+        "abstract": false,
+        "extends": null,
+        "summary": "An accounting bucket that costs of units are charged to.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Department",
+        "abstract": false,
+        "extends": "org:OrgUnit",
+        "summary": "A larger unit that groups teams and may contain further departments.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:OrgUnit",
+        "abstract": true,
+        "extends": null,
+        "summary": "A unit of the company structure, either a department or a team.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Position",
+        "abstract": false,
+        "extends": null,
+        "summary": "A slot in the org chart that one person holds at a time; the slot outlives the holder.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Team",
+        "abstract": false,
+        "extends": "org:OrgUnit",
+        "summary": "A small unit that works together day to day and sits in a department.",
+        "deprecated": false
+      }
+    ],
+    "relations": [
+      {
+        "curie": "org:charged_to",
+        "domain": [
+          "org:OrgUnit"
+        ],
+        "range": [
+          "org:CostCenter"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The cost center that bears the costs of the unit.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:in_unit",
+        "domain": [
+          "org:Position"
+        ],
+        "range": [
+          "org:OrgUnit"
+        ],
+        "cardinality": {
+          "out": "1..1",
+          "in": "0..n"
+        },
+        "summary": "The unit the position belongs to.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:part_of",
+        "domain": [
+          "org:OrgUnit"
+        ],
+        "range": [
+          "org:OrgUnit"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The unit is part of a larger unit.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:reports_to",
+        "domain": [
+          "org:Position"
+        ],
+        "range": [
+          "org:Position"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The position whose holder this position's holder reports to.",
+        "deprecated": false
+      }
+    ],
+    "links_out": [],
+    "links_in": [
+      {
+        "relation": "ops:owned_by",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Process"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The position that is accountable for the process.",
+        "deprecated": false
+      },
+      {
+        "relation": "ops:required_for",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Training"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The training must be completed by the holder of the position.",
+        "deprecated": false
+      },
+      {
+        "relation": "org:holds",
+        "module": "organization",
+        "other_modules": [
+          "people"
+        ],
+        "from": [
+          "ppl:Person"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The person currently holds the position.",
+        "deprecated": false
+      }
+    ],
+    "rules": [
+      {
+        "id": "org.team_in_department",
+        "severity": "error",
+        "summary": "A team is part of exactly one department.",
+        "deprecated": false
+      }
+    ],
+    "functions": [
+      {
+        "name": "members_of_unit",
+        "summary": "People holding a position in a unit or in any unit below it.",
+        "signature": "unit: ref org:OrgUnit"
+      },
+      {
+        "name": "vacant_positions",
+        "summary": "Positions in a unit or below it that nobody holds.",
+        "signature": "unit: ref org:OrgUnit"
+      }
+    ]
+  }
+}

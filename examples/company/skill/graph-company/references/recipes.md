@@ -16,12 +16,6 @@ Open tasks, the next due first:
 graph find --type ops:Task --where status=open --sort due_on --graph company
 ```
 
-Employees and externals who hold a position of one unit, through the position:
-
-```sh
-graph query 'MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u) WHERE u.name = $unit RETURN p.name, q.title' --graph company --param unit="<unit name>"
-```
-
 ## Writing
 
 Check a state change before making it; the answer names the guard that would refuse it:

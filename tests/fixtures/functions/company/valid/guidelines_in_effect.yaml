@@ -1,0 +1,28 @@
+schema: graph_cli.function/1
+name: guidelines_in_effect
+module: operations
+summary: Guidelines that apply on a date to the processes owned from a unit.
+use_when: >-
+  Which rules or policies govern the work of a department or team on a given day.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit whose positions own the processes.
+  date:
+    type: date
+    summary: The day the guideline must be effective on.
+query: |
+  MATCH (g:Guideline)-[:governs]->(:Process)-[:owned_by]->(:Position)-[:in_unit]->(u:OrgUnit)
+  WHERE u.id = $unit AND g.effective_from <= $date
+  RETURN DISTINCT g.title AS guideline, g.effective_from AS effective_from
+  ORDER BY effective_from DESC, guideline
+returns:
+  - column: guideline
+    summary: Title of the guideline.
+  - column: effective_from
+    summary: Date the guideline took effect.
+examples:
+  - question: Which guidelines applied to the purchasing team at the start of the year?
+    params:
+      date: "2026-01-01"

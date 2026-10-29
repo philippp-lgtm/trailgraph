@@ -13,14 +13,19 @@ from support.skills import GRAPH_SKILL_NAME, render_inputs
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.skills.graph_skill import L0_BUDGET, render_graph_skill
+from graph_cli.skills.graph_skill import FEATURED_LIMIT, L0_BASE, L0_BUDGET, render_graph_skill
 from graph_cli.skills.template import parse_template
-from graph_cli.skills.tree import SKILL_FILE, read_tree
+from graph_cli.skills.tree import MAX_TOTAL_BYTES, SKILL_FILE, read_tree
 
 # The curated template of the modular fixture: start, modules, names, model.
 TEMPLATE = FIXTURES / "skills" / "company" / GRAPH_SKILL_NAME
 MAIN = "synthetic"
 LINKS = 3  # each module links to up to this many earlier modules, one relation each
+SUMMARY_100 = (
+    "People holding a position in a unit or in any unit below it, with the title of a position"
+    " they hold."
+)
+assert len(SUMMARY_100) == 100
 SUMMARY = "A subject area of the synthetic graph that holds a part of what the graph knows."
 
 
@@ -104,21 +109,50 @@ def synthetic_model(modules: int, types: int) -> CompiledModel:
     return outcome.model
 
 
-def skill_md(model: CompiledModel) -> bytes:
+def catalog(modules: int, per_module: int, featured: int = FEATURED_LIMIT) -> dict[str, Any]:
+    """A compiled catalog of ``per_module`` functions in each of the first ``modules`` areas;
+    the first ``featured`` of them (by module, then name) are featured. Summaries and
+    signatures have the length the format allows or a real function would have."""
+    entries = []
+    for index in range(modules):
+        for number in range(per_module):
+            entries.append(
+                {
+                    "name": f"function_{index:02d}_{number:03d}",
+                    "module": _module_id(index),
+                    "summary": SUMMARY_100,
+                    "status": "active",
+                    "featured": len(entries) < featured,
+                    "params": [
+                        {"name": "unit", "type": "ref", "class": "a00:Thing000", "many": False}
+                        | {"enum": None, "default": None, "summary": "The unit to list."},
+                        {"name": "since", "type": "date", "class": None, "many": False}
+                        | {"enum": None, "default": "2000-01-01", "summary": "From when."},
+                    ],
+                }
+            )
+    return {"schema": "graph_cli.functions/1", "functions": entries}
+
+
+def skill_md(model: CompiledModel, functions: dict[str, Any] | None = None) -> bytes:
     """``SKILL.md`` alone: the reference pages of a model this large go over the size limit of
     a whole skill tree, which ``render_checked`` would report."""
+    return rendered(model, functions)[SKILL_FILE].encode()
+
+
+def rendered(model: CompiledModel, functions: dict[str, Any] | None = None) -> dict[str, str]:
     files, problems = read_tree(TEMPLATE)
     assert problems == []
     template, problems = parse_template(files)
     assert problems == [] and template is not None
-    documents, graph = render_inputs(model)
-    return render_graph_skill(template, documents, graph)[SKILL_FILE].encode()
+    documents, graph = render_inputs(model, functions=functions)
+    return render_graph_skill(template, documents, graph)
 
 
 @pytest.mark.parametrize("modules", [2, 50])
 def test_skill_md_stays_under_the_budget(modules: int) -> None:
     size = len(skill_md(synthetic_model(modules, 25)))
-    assert size <= L0_BUDGET, f"{modules} modules: SKILL.md has {size} bytes"
+    assert size <= L0_BASE, f"{modules} modules: SKILL.md has {size} bytes"
 
 
 def test_skill_md_does_not_grow_with_the_types() -> None:
@@ -126,3 +160,38 @@ def test_skill_md_does_not_grow_with_the_types() -> None:
     large = skill_md(synthetic_model(5, 99))
     assert len(small) == len(large)  # only the type counts in the module table differ
     assert b"Thing050" not in large
+
+
+def test_skill_md_with_functions_stays_under_the_budget() -> None:
+    """50 modules x 20 functions, 12 featured: the template of the fixture has no functions
+    block, so the block (twelve lines and two pointers) is added to it here."""
+    size = len(with_block(synthetic_model(50, 25), catalog(50, 20)))
+    assert size <= L0_BUDGET, f"SKILL.md has {size} bytes"
+
+
+def with_block(model: CompiledModel, functions: dict[str, Any]) -> bytes:
+    files, _ = read_tree(TEMPLATE)
+    files[SKILL_FILE] += b"\n## Functions\n\n<!-- graph_cli:block functions -->\n"
+    template, problems = parse_template(files)
+    assert problems == [] and template is not None
+    documents, graph = render_inputs(model, functions=functions)
+    return render_graph_skill(template, documents, graph)[SKILL_FILE].encode()
+
+
+def test_skill_md_does_not_grow_with_the_functions() -> None:
+    model = synthetic_model(5, 10)
+    small = with_block(model, catalog(5, 10))
+    large = with_block(model, catalog(5, 19))
+    assert len(small) == len(large)  # the same twelve featured, counts of equal width
+    assert b"function_04_018" not in large  # not featured: on the module page only
+
+
+def test_the_reference_tree_of_a_thousand_functions_fits() -> None:
+    """1,000 functions with the longest summary (20 modules x 50) on the pages of a model of
+    20 modules with 3 types each. A function costs about 180 bytes on its page, so a thousand
+    take about 70 percent of the tree limit; the model pages share the rest."""
+    files = rendered(synthetic_model(20, 3), catalog(20, 50))
+    total = sum(len(text.encode()) for text in files.values())
+    assert total <= MAX_TOTAL_BYTES, f"{total} bytes of {MAX_TOTAL_BYTES}"
+    page = files["references/modules/area_07.md"]
+    assert page.count("| `function_07_") == 50

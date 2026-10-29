@@ -57,6 +57,19 @@ def _term(details: Mapping[str, JsonValue], program: str) -> str | None:
     return _types(details, program)
 
 
+def _function_search(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Find a function by what it is for."""
+    return f"{program} describe search <words> --kind function"
+
+
+def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A reference of the wrong class: find the entity of the expected class by its name."""
+    expected = details.get("expected")
+    if isinstance(expected, str):
+        return f"{program} lookup <text> --type {expected}"
+    return None
+
+
 def _schema(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A prefixed name where a local one is expected: the labels as the query writes them."""
     return f"{program} describe schema" if details.get("prefixed") is True else None
@@ -181,6 +194,37 @@ _BASE: Final[dict[str, Hint | None]] = {
     "query.parameter_missing": _param,
     "query.too_large": None,
     "query.invalid_value": None,
+    "function.not_found": _function_search,
+    "function.parameter_missing": None,
+    "function.parameter_unknown": None,
+    "function.parameter_invalid": None,
+    "function.parameter_type": _lookup_class,
+    "function.builtin_module": None,
+    "function.invalid_default": None,
+    "function.invalid_example": None,
+    "function.invalid_file": None,
+    "function.invalid_value": None,
+    "function.invalid_yaml": None,
+    "function.missing_key": None,
+    "function.module_required": None,
+    "function.name_mismatch": None,
+    "function.parameter_paging": None,
+    "function.parameter_undeclared": None,
+    "function.parameter_unused": None,
+    "function.pattern_impossible": None,
+    "function.query_too_long": None,
+    "function.replaced_by_invalid": None,
+    "function.returns_mismatch": None,
+    "function.returns_star": None,
+    "function.stale": None,
+    "function.too_many_functions": None,
+    "function.type_mismatch": None,
+    "function.unknown_class": None,
+    "function.unknown_enum": None,
+    "function.unknown_key": None,
+    "function.unknown_module": None,
+    "function.unsupported_schema": None,
+    "functions.slot_invalid": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,

@@ -9,7 +9,7 @@ installation stream.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill and function catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -48,6 +48,7 @@ fails:
 | `result` | `{status: ok}` or `{status: error, code}` |
 | `output` | `{format: json\|text, bytes, spilled_bytes}`: the bytes the caller received on stdout, and the size of an answer that went to a file instead (null otherwise) |
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
+| `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
 
 `phases` names only the phases the command went through. Each phase counts
 its own time (a phase inside another is taken out of the outer one), a
@@ -135,5 +136,23 @@ graph-admin decisions under its fallback are a warning
 (`policy_fallback`); decisions before a graph's first mirror (policies
 applied before mirrors existed) are checked loosely (info). Applying the
 installed policy again records the mirrors such a graph lacks.
+
+## Slot verification
+
+Publishing the graph skill or the function catalog is one maintenance
+operation: an intent in the graph stream with `change.skill{from, to}` or
+`change.functions{from, to, compiled_hash}` (the tree hash of the published files before,
+`null` for the first publish, and after; for the catalog also the hash of the compiled
+catalog the app reads), the slot switch, then an
+installation event that anchors the intent. `audit verify` walks these
+intents from "no slot" and compares the end with the slot on disk: the
+published hash must equal the last committed `to`, and for the function
+catalog the `compiled_hash` of its slot (whose file content is hash-checked on
+read) must equal the one the last committed event recorded; a replaced compiled
+catalog with an adjusted `slot.json` is caught this way. A slot published,
+changed, damaged or removed by hand, or a skill or catalog that differs
+from its recorded hash, is `integrity.audit.slot_mismatch`; an intent
+whose slot switch never happened is an interrupted publish
+(`intent_without_effect`, info).
 
 What verification cannot detect: [Security model](security_model.md#detection).

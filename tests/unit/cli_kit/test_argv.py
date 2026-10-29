@@ -119,6 +119,7 @@ def test_pair_parameters_declare_their_shape() -> None:
         ("--qualifier", "map", "text"),
         ("--qualifier-json", "map", "json"),
         ("--param", "map", "json"),
+        ("--param", "multimap", "text"),
         ("--add", "multimap", "text"),
         ("--add-json", "multimap", "json"),
         ("--remove", "multimap", "text"),

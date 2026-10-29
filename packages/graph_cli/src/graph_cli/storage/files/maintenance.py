@@ -9,7 +9,8 @@ Maintenance effects are published by one rename each, which is their commit
 point: ``graphs/.tmp-<id>`` -> ``graphs/<id>`` (graph create, under the
 registry lock ``<root>/.lock``), ``ontology/.tmp-<version>`` ->
 ``ontology/<version>``, ``manifest.toml.tmp`` -> ``manifest.toml`` and
-``skill/source.json.tmp`` -> ``skill/source.json``, ``policy.json.tmp`` ->
+``skill/source.json.tmp`` -> ``skill/source.json``,
+``functions/slot.json.tmp`` -> ``functions/slot.json``, ``policy.json.tmp`` ->
 ``policy.json`` (under the graph lock, after the intent event) and
 ``policy/installation.json.tmp`` -> ``policy/installation.json`` (under the
 registry lock, after the installation event). A failure before the rename
@@ -32,6 +33,7 @@ from typing import TYPE_CHECKING
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import (
     JsonValue,
+    hash_value,
     pretty_bytes,
 )
 from graph_cli.kernel.errors import GraphCliError
@@ -44,7 +46,13 @@ from graph_cli.kernel.ports.audit import (
     AuditReceipt,
     graph_stream,
 )
-from graph_cli.kernel.ports.catalog import ManifestData, SkillSlot, skill_hash
+from graph_cli.kernel.ports.catalog import (
+    FunctionsSlot,
+    ManifestData,
+    SkillSlot,
+    functions_hash,
+    skill_hash,
+)
 from graph_cli.kernel.ports.storage import (
     CommitResult,
     GraphStoreMaintenance,
@@ -69,6 +77,7 @@ from graph_cli.storage.files.durable import (
     write_temp,
     write_tree,
 )
+from graph_cli.storage.files.functions_slot import read_functions
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.index import INDEX_ERRORS, TxSpan, index_difference
 from graph_cli.storage.files.layout import (
@@ -460,6 +469,51 @@ class FileMaintenanceSession:
         except OSError as exc:
             raise _unavailable("cannot publish the skill", exc) from exc
 
+    def read_functions(self) -> FunctionsSlot | None:
+        self._check_open()
+        return read_functions(self._store.layout, sources=True)
+
+    def replace_functions(self, slot: FunctionsSlot, receipt: AuditReceipt) -> None:
+        """Publish ``functions/`` (K6): write the sources tree and the compiled catalog once
+        under their hashes, then switch ``slot.json`` with one rename (the commit point);
+        unreferenced trees and compiled files go last."""
+        store = self._store
+        bad = sorted(name for name in slot.files if not _is_source_name(name))
+        if (
+            bad
+            or functions_hash(slot.files) != slot.hash
+            or hash_value(dict(slot.compiled)) != slot.compiled_hash
+        ):
+            raise GraphCliError("internal.error", f"bad functions slot: {bad or 'hash or files'}")
+        self._writer().claim_receipt(receipt)
+        layout = store.layout
+        tree = layout.functions_files(slot.hash)
+        compiled = layout.functions_compiled(slot.compiled_hash)
+        try:
+            ensure_dir(tree.parent, store.syncer)
+            ensure_dir(compiled.parent, store.syncer)
+            if not tree.is_dir():
+                staging = tree.parent / f"{STAGING_PREFIX}{tree.name}"
+                if staging.exists():
+                    shutil.rmtree(staging)
+                write_tree(staging, slot.files, store.syncer)
+                os.rename(staging, tree)
+                store.syncer.sync_dir(tree.parent)
+            if not compiled.is_file():
+                temp = write_temp(compiled, pretty_bytes(slot.compiled), store.syncer)
+                os.replace(temp, compiled)
+                store.syncer.sync_dir(compiled.parent)
+            temp = write_temp(layout.functions_slot, pretty_bytes(slot.slot_json()), store.syncer)
+            fire(store.faults, CrashPoint.FUNCTIONS_BEFORE_RENAME)
+            os.replace(temp, layout.functions_slot)
+            store.syncer.sync_dir(layout.functions)
+            for keep, directory in ((tree, tree.parent), (compiled, compiled.parent)):
+                for name in sorted(os.listdir(directory)):
+                    if name != keep.name:
+                        _remove(directory / name)
+        except OSError as exc:
+            raise _unavailable("cannot publish the functions", exc) from exc
+
     def read_policy(self) -> bytes | None:
         """The graph's installed policy as stored (B6.14)."""
         self._check_open()
@@ -778,6 +832,18 @@ def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None, list[TxSpa
             spans,
         )
     return view, None, spans
+
+
+def _is_source_name(name: str) -> bool:
+    """``<function name>.yaml``: a flat file name, the sources have no directories."""
+    return name.endswith(".yaml") and "/" not in name and is_relative_name(name)
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
 
 
 def _check_release(version: str, files: Mapping[str, bytes]) -> None:

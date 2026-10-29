@@ -1,0 +1,30 @@
+schema: graph_cli.function/1
+name: reporting_chain
+module: organization
+summary: The positions a position reports to, up to the top, nearest first, with their current holders.
+use_when: >-
+  Who is the manager or boss of a position, whom a position reports to, the escalation path or
+  chain of command up to the top of the org chart. Walks the reporting line of one position, not
+  the people who report to it. A position nobody holds shows an empty holder.
+params:
+  position:
+    type: ref
+    class: org:Position
+    summary: The position whose reporting line is walked.
+query: |
+  MATCH (a:Position)-[r:reports_to*1..5]->(b:Position)
+  WHERE a.id = $position
+  OPTIONAL MATCH (h:Person)-[:holds]->(b)
+  RETURN size(r) AS level, b.title AS position, h.name AS holder
+  ORDER BY level
+returns:
+  - column: level
+    summary: Number of steps above the given position, 1 for its direct superior.
+  - column: position
+    summary: Title of the position at that level.
+  - column: holder
+    summary: Name of the current holder, empty when the position is vacant.
+examples:
+  - question: Whom does this position report to, all the way up?
+  - question: Who is the manager of this position?
+featured: true

@@ -121,6 +121,46 @@ Usage: `graph describe fields TYPE [OPTIONS]`
 | `graph describe fields <type>` | Fields of one type. |
 | `graph describe fields <type> --json` | Fields as JSON. |
 
+## graph describe function
+
+Describe one function: parameters, columns, touched terms and its query.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe function NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The function name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe function <function>` | Everything about one function. |
+| `graph describe function <function> --json` | The function as graph_cli.model/1. |
+
+## graph describe functions
+
+List the named functions of the graph with their parameters.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe functions [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--include-deprecated` | flag | no | no | Also list deprecated functions. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe functions` | The functions: name, parameters, summary. |
+| `graph describe functions --module <module> --include-deprecated` | One module's functions, deprecated ones too. |
+
 ## graph describe lifecycle
 
 Show the lifecycles of a type, or one lifecycle by name.
@@ -222,7 +262,7 @@ Usage: `graph describe schema [OPTIONS]`
 
 ## graph describe search
 
-Search the ontology by text: types, relations, fields, enum values, states.
+Search the ontology by text: types, relations, fields, enum values, states, functions.
 
 Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
 
@@ -234,7 +274,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`. |
+| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`, `function`. |
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
@@ -248,6 +288,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 |---|---|
 | `graph describe search <value>` | Terms of the model that match the words. |
 | `graph describe search <value> --kind attribute --module <module> --json` | Only fields, only in one module. |
+| `graph describe search <value> --kind function` | Only the named functions that fit the words. |
 
 ## graph describe type
 
@@ -625,6 +666,34 @@ Usage: `graph retract REF [OPTIONS]`
 |---|---|
 | `graph retract <id> --reason <value>` | Withdraw an entity. |
 | `graph retract <id> --by <id> --reason <value> --json` | Withdraw, citing a correction. |
+
+## graph run
+
+Run a named function of the graph with typed parameters.
+
+Kind: read. Surface: retrieve. Action: `read.function`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph run NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The function name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--param` | assignment | no | yes | name=value for a parameter of the function, read by its declared type. |
+| `--limit` | integer | no | no | Rows per page, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many rows. Default: `0`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph run <function> --param key=<value> --json` | Run a function. |
+| `graph run <function> --param key=<value> --param key=<value>` | A list parameter takes its name once per value. |
 
 ## graph search
 

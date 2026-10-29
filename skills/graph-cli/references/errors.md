@@ -71,6 +71,12 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `file.too_large` | refused | 1 |
 | `file.unreadable` | usage | 2 |
 | `format.unsupported_version` | unavailable | 5 |
+| `function.not_found` | not_found | 1 |
+| `function.parameter_invalid` | usage | 2 |
+| `function.parameter_missing` | usage | 2 |
+| `function.parameter_type` | refused | 1 |
+| `function.parameter_unknown` | usage | 2 |
+| `function.stale` | invalid | 1 |
 | `graph.archived` | refused | 1 |
 | `graph.not_found` | not_found | 1 |
 | `graph.not_in_project` | refused | 1 |

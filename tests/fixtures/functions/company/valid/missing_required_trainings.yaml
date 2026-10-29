@@ -1,0 +1,25 @@
+schema: graph_cli.function/1
+name: missing_required_trainings
+module: operations
+summary: Trainings that holders of positions in a unit have not completed yet.
+use_when: >-
+  Compliance gaps, who still has to complete a required training in a department or team.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit whose position holders are checked.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit),
+        (t:Training)-[:required_for]->(q)
+  WHERE u.id = $unit AND NOT (p)-[:completed]->(t)
+  RETURN p.name AS person, t.title AS training
+  ORDER BY person, training
+returns:
+  - column: person
+    summary: Name of the person.
+  - column: training
+    summary: Title of the training they still have to complete.
+examples:
+  - question: Who in the finance department has not done the required safety training?
+featured: true

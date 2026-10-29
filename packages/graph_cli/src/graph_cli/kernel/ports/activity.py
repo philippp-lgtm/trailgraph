@@ -5,8 +5,8 @@ read never fails or waits because of it.
 
 A signal names one successful read command: which command, who ran it, the
 entities it returned and the edges it walked (``neighbors``, relationships
-in ``query`` rows). The adapter decides how much of the actor leaves the
-process.
+in ``query`` rows). A ``run`` also names its function. The adapter decides how
+much of the actor leaves the process.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ class ReadSignal:
     actor: ActorContext
     entities: Sequence[EntityId]
     edges: Sequence[EdgeId] = ()
+    function: str | None = None  # the name of the function a ``run`` executed, never its values
 
 
 class ActivitySink(Protocol):

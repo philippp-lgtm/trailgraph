@@ -24,6 +24,7 @@ EXAMPLE = REPO_ROOT / "examples" / "company"
 ONTOLOGY = EXAMPLE / "ontology"
 SEEDS = EXAMPLE / "seeds"
 SKILL = EXAMPLE / "skill" / "graph-company"
+FUNCTIONS = EXAMPLE / "functions"
 ENV = {"GRAPH_CLI_GRAPH": "company"}
 V100_MODULES = ["company", "operations", "organization", "people"]
 V110_MODULES = ["company", "legal", "operations", "organization", "people"]
@@ -314,6 +315,55 @@ def test_the_graph_skill_renders_with_every_module(
     text = (out / "graph-company" / "SKILL.md").read_text()
     assert "## Subject areas" in text and "| `legal` | `leg` |" in text
     assert "graph_cli:block" not in text
+
+
+def test_the_functions_publish_run_and_appear_in_the_skill(
+    run_cli: CliRunner, company: None, tmp_path: Path
+) -> None:
+    names = sorted(p.stem for p in FUNCTIONS.glob("*.yaml"))
+    assert names == [
+        "employer_of",
+        "members_of_unit",
+        "missing_required_trainings",
+        "policies_for_unit",
+        "reporting_chain",
+        "vacant_positions",
+    ]
+    checked = admin(
+        run_cli, "graph", "functions", "publish", "company", str(FUNCTIONS), "--dry-run"
+    )
+    assert checked.code == 0, checked.envelope
+    published = admin(run_cli, "graph", "functions", "publish", "company", str(FUNCTIONS))
+    assert published.code == 0, published.envelope
+
+    def run(name: str, **params: str) -> list[dict[str, Any]]:
+        args = [a for k, v in params.items() for a in ("--param", f"{k}={v}")]
+        outcome = app(run_cli, "run", name, *args, env=ENV)
+        assert outcome.code == 0, outcome.envelope
+        items: list[dict[str, Any]] = outcome.data["items"]
+        return items
+
+    chain = run("reporting_chain", position="POS-0013")
+    assert [r["position"] for r in chain] == [
+        "Head of Infrastructure",
+        "Chief Technology Officer",
+        "Chief Executive Officer",
+    ]
+    assert len(run("members_of_unit", unit="DEPT-0002")) > len(
+        run("members_of_unit", unit="DEPT-0003")
+    )
+    assert run("missing_required_trainings", unit="DEPT-0003")
+    assert run("policies_for_unit", unit="TEAM-0004")
+    assert [r["entity"] for r in run("employer_of", person="EMP-0003")] == ["Marrowdale Holding AG"]
+    assert run("vacant_positions", unit="DEPT-0001")
+
+    out = tmp_path / "preview"
+    out.mkdir()
+    rendered = admin(run_cli, "graph", "skill", "render", "company", str(SKILL), "--out", str(out))
+    assert rendered.code == 0, rendered.envelope
+    assert rendered.data["problems"] == []
+    text = (out / "graph-company" / "SKILL.md").read_text()
+    assert "6 named functions" in text and "`reporting_chain(position: ref org:Position)`" in text
 
 
 def run_script(

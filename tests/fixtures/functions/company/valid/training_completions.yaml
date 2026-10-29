@@ -1,0 +1,32 @@
+schema: graph_cli.function/1
+name: training_completions
+module: operations
+summary: Who completed which of the given trainings since a date.
+use_when: >-
+  Completion records of named trainings, certificates earned in a period.
+params:
+  titles:
+    type: string
+    many: true
+    summary: Titles of the trainings to include.
+  since:
+    type: date
+    default: "2000-01-01"
+    summary: Only completions on or after this date.
+query: |
+  MATCH (p:Person)-[c:completed]->(t:Training)
+  WHERE t.title IN $titles AND c.on >= $since
+  RETURN p.name AS person, t.title AS training, c.on AS completed_on
+  ORDER BY completed_on, person
+returns:
+  - column: person
+    summary: Name of the person.
+  - column: training
+    summary: Title of the training.
+  - column: completed_on
+    summary: Date of completion.
+examples:
+  - question: Who completed the safety or the security training this year?
+    params:
+      titles: [Safety, Security]
+      since: "2026-01-01"

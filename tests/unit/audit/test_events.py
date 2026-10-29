@@ -1,6 +1,7 @@
 """Audit event builders: routing, content rules, golden lines (contracts B5.2-B5.8, B5.11)."""
 
 import dataclasses
+from collections.abc import Callable
 
 import pytest
 from support.audit_events import (
@@ -23,7 +24,7 @@ from support.txbuilder import FuncState, TxBuilder, actor
 from graph_cli.audit import events
 from graph_cli.audit.schema import event_problems
 from graph_cli.kernel.authz import AuthorizedTx
-from graph_cli.kernel.canonical import canonical_bytes, hash_document, parse_json
+from graph_cli.kernel.canonical import JsonValue, canonical_bytes, hash_document, parse_json
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
@@ -334,9 +335,15 @@ def test_builders_refuse_bad_input(world: World) -> None:
         assert info.value.code == "internal.error"
 
 
-def test_skill_changes_name_both_tree_hashes(world: World) -> None:
-    """D15 Q2: a skill publish intent carries ``change.skill{from, to}``."""
+@pytest.mark.parametrize("key", ["skill", "functions"])
+def test_slot_changes_name_both_tree_hashes(world: World, key: str) -> None:
+    """D15 Q2, K6: a skill or function catalog publish intent carries ``change.<key>{from, to}``."""
     pin = world.graph.pin
+    build: Callable[[str | None, str], dict[str, JsonValue]] = (
+        events.skill_change
+        if key == "skill"
+        else lambda old, new: events.functions_change(old, new, pin.artifact_hash)
+    )
     common = dict(
         actor=maint_actor(),
         decisions=[allow("maint.graph_configure", f"graph:{world.graph_id}")],
@@ -344,10 +351,8 @@ def test_skill_changes_name_both_tree_hashes(world: World) -> None:
         env=ENV,
         graph=world.graph,
     )
-    for change in (
-        events.skill_change(None, pin.artifact_hash),
-        events.skill_change(pin.artifact_hash, pin.artifact_hash),
-    ):
+    for change in (build(None, pin.artifact_hash), build(pin.artifact_hash, pin.artifact_hash)):
+        assert set(change) == {key}
         events.maintenance(
             ts=world.clock.now(),
             event_id=world.event_id(),
@@ -355,9 +360,10 @@ def test_skill_changes_name_both_tree_hashes(world: World) -> None:
             **common,  # type: ignore[arg-type]
         )
     for bad in (
-        {"skill": {"from": None}},
-        {"skill": {"from": "x", "to": pin.artifact_hash}},
-        {"skill": {"from": None, "to": None}},
+        {key: {"from": None}},
+        {key: {"from": "x", "to": pin.artifact_hash}},
+        {key: {"from": None, "to": None}},
+        *([{key: {"from": None, "to": pin.artifact_hash}}] if key == "functions" else []),
     ):
         with pytest.raises(GraphCliError) as caught:
             events.maintenance(
@@ -366,7 +372,7 @@ def test_skill_changes_name_both_tree_hashes(world: World) -> None:
                 change=bad,
                 **common,  # type: ignore[arg-type]
             )
-        assert "change.skill" in caught.value.message
+        assert f"change.{key}" in caught.value.message
 
 
 def test_invalid_events_keep_twenty_findings(world: World) -> None:

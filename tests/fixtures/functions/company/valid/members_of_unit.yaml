@@ -1,0 +1,26 @@
+schema: graph_cli.function/1
+name: members_of_unit
+module: organization
+summary: People holding a position in a unit or in any unit below it.
+use_when: >-
+  Who works in a department or team, including its sub-units; headcount of a unit.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The unit to list.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)
+  WHERE d.id = $unit
+  RETURN p.name AS person, q.title AS position, u.name AS unit
+  ORDER BY unit, person
+returns:
+  - column: person
+    summary: Name of the holder.
+  - column: position
+    summary: Title of the position held.
+  - column: unit
+    summary: The unit the position belongs to.
+examples:
+  - question: Who works in the infrastructure department, including its teams?
+featured: true

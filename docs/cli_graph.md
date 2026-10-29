@@ -63,9 +63,11 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
-| `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules |
-| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read and is less than half the size of `--json` (it leaves out cardinalities and the summaries of links, which `describe type` gives); the skills point agents to it |
-| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
+| `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions you may read, each module also has a `functions` count of its active functions |
+| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read and is less than half the size of `--json` (it leaves out cardinalities and the summaries of links, which `describe type` gives); the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`) |
+| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`; a function's `curie` is its name, see [Functions](#functions)), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
+| `describe functions [--module M] [--include-deprecated]` | the named functions of the graph (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`. See [Functions](#functions) |
+| `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)) |
 | `history REF` | one entity's revisions, newest first: time, command, reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
@@ -74,6 +76,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
+| `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
@@ -408,3 +411,61 @@ what was found and expected), `query.unbound_variable` and
 `query.parameter_missing` (exit 2), `query.unsupported`,
 `query.ambiguous_term`, `query.too_large` and `query.invalid_value` (exit
 1).
+
+## Functions
+
+A graph can carry named read functions: curated, typed queries that the
+maintainer published for the questions people ask again and again. They
+are found and read, never changed, with the `describe` commands:
+
+- `describe functions` lists them, `--module M` narrows the list to one
+  module, `--include-deprecated` adds the deprecated ones (a deprecated
+  function names its `replaced_by` in `describe function`).
+- `describe function NAME` shows the definition. An unknown name is
+  `function.not_found` (exit 1) with the closest names in `did_you_mean`
+  and the hint `graph describe search <words> --kind function`.
+- `describe search TEXT --kind function` ranks functions like the other
+  terms: the name (read as words, `members_of_unit` has three), the summary,
+  then, in the last tier, what the function is for (`use_when`, the example
+  questions, the parameter names; `match.field` is `use_when`) and the
+  local names, inverse labels and summaries of the types and relations its
+  query touches (`match.field` is `touches`). A question in plain words
+  therefore finds the function that answers it.
+- `describe modules` and `describe module M` list the functions per module.
+- `run NAME --param name=value ...` runs a function. Each `--param` is read
+  by the type the function declares (`string`, `integer`, `decimal`,
+  `boolean`, `date`, `datetime`, `enum`, `ref`), never guessed from its
+  look, and a list parameter repeats its name once per value; a parameter
+  with a default may be left out. Over the server API the same values come
+  as `{"param": {"name": ["value"]}}`. A missing, unknown or malformed
+  parameter is a usage error (exit 2: `function.parameter_missing`,
+  `function.parameter_unknown`, `function.parameter_invalid`).
+- A `ref` parameter takes what every other command takes for an entity (full
+  id, alias or 8-32 trailing hex digits), never a name; the entity must exist
+  and be of the declared class or one of its subclasses. A name goes through
+  `lookup` first. An entity that does not exist is the usual
+  `entity.not_found`; an entity of another class is `function.parameter_type`
+  (exit 1, details `expected` and `found`, hint `graph lookup <text> --type
+  <class>`).
+- The answer is that of `query`: `data.function` (`name`, `hash`),
+  `data.columns` and `data.items`, `--limit` and `--offset` page the rows
+  with a next-page hint, the text form is a table. A run reads the current
+  state only (no `--as-of`, no `--explain`) and is bounded like a `query`.
+- A deprecated function runs with the warning `function.deprecated`, which
+  names `replaced_by`. The stored query is checked against the graph's
+  ontology on every run; if it no longer resolves (a pin that moved without
+  the catalog being checked) the run is refused with `function.stale`: tell
+  the maintainer.
+
+Functions are shown only to callers who may `read.function` on the graph
+(see [Access control](access_control.md#functions)); for everyone else the
+graph reads as if it had none. A graph that has no functions answers every
+`describe` command exactly as before.
+
+Maintainers write functions as one YAML file each and publish them with
+`graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The
+file format, the types of parameters and the checks publishing applies are
+described once, in the format reference of the `authoring-graph-functions`
+admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md)); the
+[generated graph skill](skills.md#blocks) lists a graph's featured
+functions.
