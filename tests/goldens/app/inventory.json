@@ -2560,6 +2560,107 @@
     },
     {
       "path": [
+        "run"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.function",
+      "summary": "Run a named function of the graph with typed parameters.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The function name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--param",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "name=value for a parameter of the function, read by its declared type.",
+          "pairs": "multimap",
+          "pair_values": "text"
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Rows per page, at most 500.",
+          "default": 50
+        },
+        {
+          "name": "--offset",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Skip this many rows.",
+          "default": 0
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph run <function> --param key=<value> --json",
+          "summary": "Run a function."
+        },
+        {
+          "command": "graph run <function> --param key=<value> --param key=<value>",
+          "summary": "A list parameter takes its name once per value."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "function.not_found",
+        "function.parameter_invalid",
+        "function.parameter_missing",
+        "function.parameter_type",
+        "function.parameter_unknown",
+        "function.stale",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "query.invalid_value",
+        "query.too_large",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      },
+      "remote": "server"
+    },
+    {
+      "path": [
         "search"
       ],
       "kind": "read",
@@ -3571,6 +3672,7 @@
   "actions": [
     "read.describe",
     "read.find",
+    "read.function",
     "read.get",
     "read.history",
     "read.list",
@@ -3728,6 +3830,31 @@
     {
       "code": "function.not_found",
       "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "function.parameter_invalid",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "function.parameter_missing",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "function.parameter_type",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "function.parameter_unknown",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "function.stale",
+      "category": "invalid",
       "exit": 1
     },
     {

@@ -667,6 +667,34 @@ Usage: `graph retract REF [OPTIONS]`
 | `graph retract <id> --reason <value>` | Withdraw an entity. |
 | `graph retract <id> --by <id> --reason <value> --json` | Withdraw, citing a correction. |
 
+## graph run
+
+Run a named function of the graph with typed parameters.
+
+Kind: read. Surface: retrieve. Action: `read.function`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph run NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The function name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--param` | assignment | no | yes | name=value for a parameter of the function, read by its declared type. |
+| `--limit` | integer | no | no | Rows per page, at most 500. Default: `50`. |
+| `--offset` | integer | no | no | Skip this many rows. Default: `0`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph run <function> --param key=<value> --json` | Run a function. |
+| `graph run <function> --param key=<value> --param key=<value>` | A list parameter takes its name once per value. |
+
 ## graph search
 
 Search names and text fields of every type; ranked suggestions, typos allowed.

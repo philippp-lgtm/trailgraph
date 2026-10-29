@@ -8,7 +8,8 @@ viewer creates it with mode 0700.
 
 A datagram is canonical JSON ``{"v": 2, "graph": <id>, "kind": "read",
 "command": <command name>, "call": <random hex>, "actor": <label>,
-"session": <session id or null>, "ids": [<entity ids>], "edges": [<edge
+"session": <session id or null>, "function": <function name, only for a
+``run``>, "ids": [<entity ids>], "edges": [<edge
 ids>]}``: who read (the label ``graph-admin view`` shows for writes and the
 session that groups one agent's reads) and what, never labels, attributes,
 arguments or query text. Actor and session are cut to ``MAX_TEXT``
@@ -60,6 +61,7 @@ class ActivityEvent:
     call: str | None = None
     actor: str | None = None
     session: str | None = None
+    function: str | None = None
 
 
 def encode_reads(signal: ReadSignal, call: str | None = None) -> list[bytes]:
@@ -74,6 +76,8 @@ def encode_reads(signal: ReadSignal, call: str | None = None) -> list[bytes]:
         "actor": signal.actor.label()[:MAX_TEXT],
         "session": _session(signal),
     }
+    if signal.function is not None:
+        header["function"] = signal.function[:MAX_TEXT]
     entities = [("ids", text) for text in dict.fromkeys(str(i) for i in signal.entities)]
     edges = [("edges", text) for text in dict.fromkeys(str(e) for e in signal.edges)]
     items = [item for pair in zip(entities, edges, strict=False) for item in pair]
@@ -126,7 +130,10 @@ def decode(data: bytes) -> ActivityEvent | None:
         return None
     if not isinstance(actor, str) or not (session is None or isinstance(session, str)):
         return None
-    return ActivityEvent(graph, "read", ids, edges, command, call, actor, session)
+    function = document.get("function")
+    if not (function is None or isinstance(function, str)):
+        return None
+    return ActivityEvent(graph, "read", ids, edges, command, call, actor, session, function)
 
 
 def _texts(value: JsonValue | None) -> tuple[str, ...] | None:

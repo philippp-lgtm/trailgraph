@@ -16,16 +16,14 @@ rendered from.
 
 from __future__ import annotations
 
-import difflib
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.kinetic.entries import FunctionEntry
+from graph_cli.kinetic.entries import FunctionEntry, find_entry
 from graph_cli.ontology_layer.model import (
     AttributeDef,
     Bound,
@@ -393,15 +391,8 @@ def describe_function(
 ) -> dict[str, JsonValue]:
     """One function with everything its definition says, the normalized query text and its
     hash; ``function.not_found`` with ``did_you_mean`` for an unknown name."""
-    for f in functions or ():
-        if f.name == name:
-            return model_envelope(entry, model, function=f.detail_json())
-    names = sorted(f.name for f in functions or ())
-    raise GraphCliError(
-        "function.not_found",
-        f"no function {name!r}",
-        details={"name": name, "did_you_mean": difflib.get_close_matches(name, names, n=5)},
-    )
+    found = find_entry(functions, name)
+    return model_envelope(entry, model, function=found.detail_json())
 
 
 def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:

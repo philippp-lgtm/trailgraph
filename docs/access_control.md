@@ -172,8 +172,11 @@ action, `read.function`, in the `read` level. Functions are shown by
 `read.function` on the graph; for everyone else the graph reads as if it
 had none (a function is then `function.not_found`). Listing is no
 decision that is recorded: it writes no denial event, like `graph graphs`.
-A deny rule on `read.function` withholds the functions and leaves ad-hoc
-queries readable (`whoami` names the action in `withheld`), and a deny on
+`graph run` is decided by the same action, on the graph, before any
+storage is read; a denial is audited like that of any other read (the
+`args_digest` covers the function name and the parameters, the values
+themselves are never written). A deny rule on `read.function` withholds the
+functions and leaves ad-hoc queries readable (`whoami` names the action in `withheld`), and a deny on
 `read.query` leaves the functions. Levels expand when a policy is
 compiled, so a policy installed before `read.function` existed grants it
 only after `policy apply` runs again with the same source.

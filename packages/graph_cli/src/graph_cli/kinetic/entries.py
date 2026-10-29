@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
 from graph_cli.kinetic.format import FunctionDef, ParamDef
 
@@ -86,6 +88,19 @@ class FunctionEntry:
 
 def signature(params: Sequence[ParamDef]) -> str:
     return ", ".join(p.signature for p in params)
+
+
+def find_entry(functions: Sequence[FunctionEntry] | None, name: str) -> FunctionEntry:
+    """The function called ``name``; ``function.not_found`` with ``did_you_mean`` otherwise."""
+    for f in functions or ():
+        if f.name == name:
+            return f
+    names = sorted(f.name for f in functions or ())
+    raise GraphCliError(
+        "function.not_found",
+        f"no function {name!r}",
+        details={"name": name, "did_you_mean": difflib.get_close_matches(name, names, n=5)},
+    )
 
 
 def load_entries(document: JsonObject) -> tuple[FunctionEntry, ...]:

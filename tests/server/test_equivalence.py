@@ -174,6 +174,18 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     call("query", "-", input=cypher.read_text())
     call("query", "--file", "missing.cypher")
     text("query", "--file", "count.cypher")
+    call("run", "no_such_function")
+    if "inv:Location" in factory.model.classes:  # the ontology with published functions
+        place, other = create("inv:Location", "place"), create("inv:Category", "kind")
+        call("run", "items_in_location", "--param", f"location={place}")
+        call("run", "items_in_location", "--param", f"location={place}", "--limit", "1")
+        call("run", "items_in_location", "--param", f"location={other}")  # wrong class
+        call("run", "items_in_location", "--param", "location=Main building")
+        call("run", "items_in_location")
+        call("run", "items_in_location", "--param", f"location={place}", "--param", "x=1")
+        call("run", "items_by_condition", "--param", "condition=damaged")
+        call("run", "items_by_condition", "--param", "condition=mint")
+        text("run", "items_in_location", "--param", f"location={place}")
     out = cwd / "emitted"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir()
@@ -196,6 +208,8 @@ def test_local_and_remote_answers_are_equal(
         runner(local, workdir), roles, OpsFactory(compiled_model(ontology)), workdir
     )
 
+    runs = [o for o in expected if o[0][0] == "run" and o[1] == 0]
+    assert bool(runs) == (ontology == "inventory")  # a function ran where one is published
     listed = next(o for o in expected if o[0] == ["describe", "functions"])
     assert bool(listed[2]["data"]["functions"]) == (ontology == "inventory")  # both are covered
     owner = home_env(isolated_env, tmp_path / "server")

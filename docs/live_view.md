@@ -40,12 +40,12 @@ signal_reads = true
 ```
 
 Then `graph get`, `history`, `find`, `lookup`, `search`, `neighbors`,
-`query`, `file path` and `file check` tell every running view what they
+`query`, `run`, `file path` and `file check` tell every running view what they
 returned, as Unix datagrams to sockets in the state directory. Nothing
 is stored, a read never fails or waits because of it, and without a
 running view nothing is sent. A signal names the command, the reader
 (the agent if the harness names one, else the principal, as for writes)
-and its session, the ids of the entities returned and the ids of the
+and its session, for `run` the name of the function (never a parameter value), the ids of the entities returned and the ids of the
 edges walked: those `neighbors` followed, and for `query` the entities
 and relationships in the rows and then every node and relationship its
 `MATCH` rows went through, so a query that returns only values or counts

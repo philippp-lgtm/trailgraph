@@ -3,9 +3,9 @@
 Opt-in with ``[audit] access_log``. One line per ``graph`` command that
 opened the installation, reads and writes alike: when, who, which command
 on which graph state, the outcome, and how many bytes the caller received
-on stdout, and how long it took, per phase. Never a value, an argument,
-an entity id or a message (B5.8): the size of a read is recorded, not what
-was read.
+on stdout, and how long it took, per phase. A ``run`` also names its function
+(``{name, hash}``). Never a value, an argument, a parameter value, an entity
+id or a message (B5.8): the size of a read is recorded, not what was read.
 
 Not chained and not audited: anyone who can write the state dir can edit
 it, so it is a usage record, not evidence (the audit streams are). Best
@@ -45,7 +45,7 @@ def access_record(
     result: dict[str, JsonValue] = {"status": "ok"}
     if isinstance(error, Mapping):
         result = {"status": "error", "code": error.get("code")}
-    return {
+    record: dict[str, JsonValue] = {
         "schema": ACCESS_SCHEMA,
         "ts": format_timestamp(ts),
         "command": document.get("command"),
@@ -61,6 +61,27 @@ def access_record(
         },
         "timing_us": dict(timing),
     }
+    function = _function(document)
+    if function is not None:
+        record["function"] = function
+    return record
+
+
+def _function(document: Mapping[str, JsonValue]) -> dict[str, JsonValue] | None:
+    """``{name, hash}`` of the function a ``run`` executed: from its answer, or, when it
+    failed, the name its error carries (hash ``null``); nothing else of either."""
+    if document.get("command") != "run":
+        return None
+    data, error = document.get("data"), document.get("error")
+    found = data.get("function") if isinstance(data, Mapping) else None
+    if isinstance(found, Mapping) and isinstance(found.get("name"), str):
+        return {"name": found["name"], "hash": found.get("hash")}
+    details = error.get("details") if isinstance(error, Mapping) else None
+    name = details.get("function") if isinstance(details, Mapping) else None
+    if isinstance(details, Mapping) and isinstance(name, str):
+        hashed = details.get("hash")
+        return {"name": name, "hash": hashed if isinstance(hashed, str) else None}
+    return None
 
 
 class AccessLogFile:

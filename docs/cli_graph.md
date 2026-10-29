@@ -76,6 +76,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
+| `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
@@ -431,6 +432,29 @@ are found and read, never changed, with the `describe` commands:
   query touches (`match.field` is `touches`). A question in plain words
   therefore finds the function that answers it.
 - `describe modules` and `describe module M` list the functions per module.
+- `run NAME --param name=value ...` runs a function. Each `--param` is read
+  by the type the function declares (`string`, `integer`, `decimal`,
+  `boolean`, `date`, `datetime`, `enum`, `ref`), never guessed from its
+  look, and a list parameter repeats its name once per value; a parameter
+  with a default may be left out. Over the server API the same values come
+  as `{"param": {"name": ["value"]}}`. A missing, unknown or malformed
+  parameter is a usage error (exit 2: `function.parameter_missing`,
+  `function.parameter_unknown`, `function.parameter_invalid`).
+- A `ref` parameter takes what every other command takes for an entity (full
+  id, alias or 8-32 trailing hex digits), never a name; the entity must exist
+  and be of the declared class or one of its subclasses. A name goes through
+  `lookup` first. An entity of another class is `function.parameter_type`
+  (exit 1, details `expected` and `found`, hint `graph lookup <text> --type
+  <class>`).
+- The answer is that of `query`: `data.function` (`name`, `hash`),
+  `data.columns` and `data.items`, `--limit` and `--offset` page the rows
+  with a next-page hint, the text form is a table. A run reads the current
+  state only (no `--as-of`, no `--explain`) and is bounded like a `query`.
+- A deprecated function runs with the warning `function.deprecated`, which
+  names `replaced_by`. The stored query is checked against the graph's
+  ontology on every run; if it no longer resolves (a pin that moved without
+  the catalog being checked) the run is refused with `function.stale`: tell
+  the maintainer.
 
 Functions are shown only to callers who may `read.function` on the graph
 (see [Access control](access_control.md#functions)); for everyone else the

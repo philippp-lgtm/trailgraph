@@ -85,6 +85,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A function parameter value does not fit its declared type.",
     ),
+    ErrorSpec(
+        "function.parameter_type",
+        _C.REFUSED,
+        False,
+        "A reference parameter names an entity of the wrong class.",
+    ),
     ErrorSpec("function.builtin_module", _C.INVALID, False, "A function names a built-in module."),
     ErrorSpec(
         "function.invalid_default",
@@ -299,6 +305,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("audit.refusal_not_recorded", _C.WARNING, False, "A refusal was not audited."),
     ErrorSpec("ontology.pin_mismatch_read", _C.WARNING, False, "Read with a mismatching artifact."),
     ErrorSpec("graph.archived_read", _C.WARNING, False, "The graph is archived."),
+    ErrorSpec("function.deprecated", _C.WARNING, False, "The function is deprecated."),
     ErrorSpec("temporal.as_of_read", _C.WARNING, False, "An earlier state was read."),
     ErrorSpec("output.spilled", _C.WARNING, False, "A large answer was written to a file."),
     ErrorSpec("output.spill_failed", _C.WARNING, False, "A large answer could not go to a file."),

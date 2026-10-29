@@ -62,6 +62,14 @@ def _function_search(details: Mapping[str, JsonValue], program: str) -> str | No
     return f"{program} describe search <words> --kind function"
 
 
+def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A reference of the wrong class: find the entity of the expected class by its name."""
+    expected = details.get("expected")
+    if isinstance(expected, str):
+        return f"{program} lookup <text> --type {expected}"
+    return None
+
+
 def _schema(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A prefixed name where a local one is expected: the labels as the query writes them."""
     return f"{program} describe schema" if details.get("prefixed") is True else None
@@ -190,6 +198,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.parameter_missing": None,
     "function.parameter_unknown": None,
     "function.parameter_invalid": None,
+    "function.parameter_type": _lookup_class,
     "function.builtin_module": None,
     "function.invalid_default": None,
     "function.invalid_example": None,
