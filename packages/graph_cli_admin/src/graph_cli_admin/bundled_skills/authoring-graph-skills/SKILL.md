@@ -34,10 +34,21 @@ generated from the graph's model:
 | `constraints` | transition guards, write-once fields, rules with severity |
 | `names` | the alias format and which fields `graph lookup` matches per type; on a modular graph one example and pointers, not every type |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
+| `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them; one line saying so when there are none |
 
-Each block at most once. Without any marker the skill is `static`: it is
+Each block at most once. Put `functions` where agents decide how to answer
+a question, after the model and before the recipes. Which functions appear
+is decided in the function files (`featured`, see
+`authoring-graph-functions`), not in the template. Without any marker the skill is `static`: it is
 installed as it is and goes stale with every ontology release, so use
 markers. Never write a file `references/model.md` yourself.
+
+A graph with published functions also gets generated text without any
+block: the `modules` block gets a `Functions` column (the number of active
+functions per module), every module page a `Functions` section, and a
+single-module graph a file `references/functions.md`. Never write a file of
+that name yourself; it is refused like `references/model.md`. A graph
+without functions renders as it did before.
 
 ### Modular graphs
 
@@ -137,9 +148,14 @@ names the file and the rule):
 - Aliases with the graph's prefix have the live format (`ITEM-0001`, not
   `ITEM-1`).
 - Each block name is known and used once.
+- Every `graph run <name>` in code names a published function (a
+  placeholder such as `<function>` does not count; in a workspace push the
+  functions of the same push count). Publish the functions first or in the
+  same push, else the rule `function` refuses the skill.
 
 When a later ontology release removes a name the curated text uses, agents
-get the warning `skills.source_unknown_names`: fix the text and push.
+get the warning `skills.source_unknown_names`: fix the text and push. The
+same warning follows when a function the text runs is later deleted.
 
 ## The loop
 

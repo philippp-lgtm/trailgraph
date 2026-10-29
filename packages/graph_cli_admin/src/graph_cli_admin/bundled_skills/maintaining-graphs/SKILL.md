@@ -1,14 +1,16 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill or the named functions, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
 
 This skill is for whoever maintains graphs with `graph-admin`: it creates
-graphs, releases their ontologies and publishes their skills. What a graph
-holds is designed with the `ontology-best-practices` skill; the curated
-text of a graph skill is written with the `authoring-graph-skills` skill.
+graphs, releases their ontologies and publishes their skills and named
+functions. What a graph holds is designed with the `ontology-best-practices`
+skill; the curated text of a graph skill is written with the
+`authoring-graph-skills` skill; the function files with the
+`authoring-graph-functions` skill.
 Reading and writing the data of a graph is the `graph-cli` skill.
 
 ## Before the first command
@@ -62,6 +64,7 @@ Each graph folder holds:
   README.md                         purpose, competency questions, design choices (yours)
   ontology/<version>/<module>.yaml  the released ontology, one directory per version
   skill/graph-<graph>/              the published graph skill, if the graph has one
+  functions/<name>.yaml             the published named functions, if the graph has any
   .graph_cli_source.json            the base: what the folder was pulled from
 ```
 
@@ -90,8 +93,8 @@ from there.
    refuse. Fix the data (with the `graph-cli` skill) or the model first.
 5. `graph-admin graph push <graph> <folder> --dry-run`, then the same with
    `--reason "<why>"`. Push releases the highest version directory, pins
-   the graph to it and publishes a changed skill, in one step; it writes
-   the new base into the folder.
+   the graph to it and publishes a changed skill and changed functions, in
+   one step; it writes the new base into the folder.
 6. `graph-admin audit verify`.
 7. Tell the user that the agents using the graph need fresh skills: a
    generated graph skill renders the new model on its own; they run
@@ -106,6 +109,15 @@ A graph with several ontology modules is released the same way. Give
 version directory, the bump of the main module, moving terms) are in
 `ontology-best-practices`, `references/versioning_and_release.md`
 (section "Releasing a modular graph").
+
+Published functions must resolve under the new version. `ontology diff
+--graph` warns `admin.functions_affected` with the functions the new
+version would break, and a release (also a minor or patch) that would
+break one is refused with `admin.functions_broken`. Do not release around
+it: change or delete the affected files in the folder's `functions/` (see
+the `authoring-graph-functions` skill) and push them together with the new
+ontology version, in the same `graph-admin graph push`; both are checked against the
+model the graph will have.
 
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from
@@ -159,12 +171,34 @@ and lists what publishing would refuse (exit 1). Read the preview before
 pushing. A graph without a skill gets one the same way: create the
 directory in its folder and push.
 
+## Publish or change functions
+
+The named functions of a graph (`functions/<name>.yaml` in its folder) are
+published with the ontology and the skill by `graph-admin graph push`.
+Write them with the `authoring-graph-functions` skill, then:
+
+```sh
+graph-admin graph functions publish <graph> <folder>/functions --dry-run
+graph-admin graph push <graph> <folder> --dry-run
+graph-admin graph push <graph> <folder> --reason "<why>"
+graph-admin graph functions show <graph>
+```
+
+The dry run reports every problem of every file together
+(`admin.functions_invalid`). A missing or empty `functions/` folder
+unpublishes all functions. Agents may run the functions only when their
+policy grants `read.function`; a policy installed before that action
+existed needs `graph-admin policy apply` with the same source once. On
+`access.denied` for that, tell the user.
+
 ## Check a graph
 
 - `graph-admin graph show <graph>`: manifest, head, installed releases,
-  the published skill.
+  the published skill, the number of published functions.
 - `graph-admin graph check <graph>`: every entity against the pinned
-  ontology, including what no write checks; exit 1 on error findings.
+  ontology, including what no write checks, and the published functions
+  against the same model; exit 1 on error findings or when a function no
+  longer resolves (`admin.functions_broken`).
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
   that imports the `files` module.
 - `graph-admin audit verify`: every chain, log and pin of the
@@ -180,6 +214,8 @@ directory in its folder and push.
 | `admin.source_exists` | the folder holds a pull already; `graph-admin workspace sync`, or `graph-admin graph pull --force` |
 | `admin.workspace_conflict` | a folder `workspace sync` needs is taken; move it away |
 | `admin.skill_invalid` | fix what `details.problems` lists, check with `graph-admin graph skill render` |
+| `admin.functions_invalid` | fix what `details.problems` lists, check with `graph-admin graph functions publish <graph> <folder>/functions --dry-run` |
+| `admin.functions_broken` | a published function would not resolve; fix or delete its file and push it together with the ontology in one `graph-admin graph push` |
 | `admin.data_errors` | the data breaks the new version; fix the entities in `details.findings` |
 | `access.denied` | not allowed for this token; stop and tell the user |
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |

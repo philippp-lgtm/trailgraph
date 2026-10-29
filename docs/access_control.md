@@ -165,21 +165,32 @@ after `policy apply` runs again with the same source.
 
 ## Functions
 
-Named functions of a graph (`graph describe functions`) have their own
-action, `read.function`, in the `read` level. Functions are shown by
-`describe functions`, `describe function`, `describe module`,
-`describe modules` and `describe search` only to callers who may
-`read.function` on the graph; for everyone else the graph reads as if it
-had none (a function is then `function.not_found`). Listing is no
-decision that is recorded: it writes no denial event, like `graph graphs`.
-`graph run` is decided by the same action, on the graph, before any
-storage is read; a denial is audited like that of any other read (the
-`args_digest` covers the function name and the parameters, the values
-themselves are never written). A deny rule on `read.function` withholds the
-functions and leaves ad-hoc queries readable (`whoami` names the action in `withheld`), and a deny on
-`read.query` leaves the functions. Levels expand when a policy is
-compiled, so a policy installed before `read.function` existed grants it
-only after `policy apply` runs again with the same source.
+Named functions of a graph ([Functions](cli_graph.md#functions)) have their
+own action, `read.function`, in the `read` level.
+
+- **Running.** `graph run` is decided by `read.function` on the graph, before
+  any storage is read. A denial is audited like that of any other read (the
+  `args_digest` covers the function name and the parameters; the values
+  themselves are never written).
+- **Listing.** `describe functions`, `describe function`, `describe module`,
+  `describe modules` and `describe search` show functions only to callers
+  who may `read.function` on the graph. For everyone else the graph reads
+  as if it had none, and a function is `function.not_found`. Listing is no
+  recorded decision: it writes no denial event, like `graph graphs`.
+- **Graph skill.** The generated graph skill is the same for every reader of
+  the graph (it is read with `read.describe`) and lists the featured
+  functions: their names and summaries are schema-level text like type
+  names. Running one still needs `read.function`.
+- **Separate from queries.** A deny rule on `read.function` withholds the
+  functions and leaves ad-hoc queries readable (`whoami` names the action
+  in `withheld`); a deny on `read.query` leaves the functions. This allows
+  curated functions without ad-hoc Cypher for an agent type or a machine
+  actor.
+- **Grants are per graph**, not per function. Levels expand when a policy is
+  compiled, so a policy installed before `read.function` existed grants it
+  only after `policy apply` runs again with the same source.
+- **Publishing** the catalog is `maint.graph_configure`, as for the graph
+  skill (see [Project admins](#project-admins)).
 
 ## Authoring and installing policies
 

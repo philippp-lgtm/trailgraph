@@ -58,7 +58,7 @@ into the graph's runtime area. Its kind follows the content:
 | `constraints` | transition guards, write-once fields, rules with severity |
 | `names` | the alias format (`ITEM-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask. On a modular graph: one alias example, and the module pages and `graph describe type` for the prefix and name fields of each type |
 | `model` | a pointer to `references/model.md` and `graph describe type` |
-| `functions` | the graph's named functions ([Functions](cli_graph.md#functions)): the number of active functions, then at most 12 of them, those marked `featured: true` in their file (by module, then name), one line each (`name(signature)`: summary), and the commands to run one (`graph run`), list a module's functions, search them (`graph describe search <text> --kind function`) and read one. Without published functions: one line saying so |
+| `functions` | the graph's named functions ([Functions](cli_graph.md#functions)): the number of active functions, then at most 12 of them, those marked `featured: true` in their file (by module, then name; further ones are not listed and nothing warns about them), one line each (`name(signature)`: summary), and the commands to run one (`graph run`), list a module's functions, search them (`graph describe search <text> --kind function`) and read one. Without published functions: one line saying so |
 
 Each block may be used once; an unknown block name is refused. Every
 generated skill also gets `references/model.md` (every type of the model,
@@ -107,10 +107,12 @@ one module and does not mention pages. Use `modules` instead of `types` and
 types the graph has: its generated blocks then grow with the number of
 modules only, and with the template of the test fixtures `SKILL.md` of a
 graph of 50 modules stays under 20,000 bytes (about 5,000 tokens), whatever
-the size of each module; the `functions` block and the `Functions` column
-may add 2,500 bytes, and `SKILL.md` stays under 22,500 bytes for 50 modules
-of 20 functions each, whatever the number of functions. Curated text adds to
-that.
+the size of each module. A graph with published functions may use 2,500
+bytes more for the `functions` block and the `Functions` column (the budget
+`L0_BUDGET` is the base 20,000 plus 2,500, and a graph without functions
+keeps the base): `SKILL.md` stays under 22,500 bytes for 50 modules of 20
+functions each, whatever the number of functions, because the block lists
+at most 12 of them. Curated text adds to that.
 
 ### Publishing
 
@@ -161,7 +163,7 @@ template into a workspace and `graph-admin graph push` publishes it again
 
 ## Admin skills
 
-Three hand-written skills for maintainers ship inside `graph-admin`
+Four hand-written skills for maintainers ship inside `graph-admin`
 (`packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/`), so every
 install of it, the wheel a server hands out included, carries the version
 that fits it:
@@ -171,6 +173,7 @@ that fits it:
 | [`ontology-best-practices`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md) | authoring an ontology: when a graph pays off, competency questions to release, modeling choices, names and summaries, rules and lifecycles, change levels, a review checklist; `references/ir_format.md` is the reference of the `graph_cli.ir/1` format |
 | [`maintaining-graphs`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/maintaining-graphs/SKILL.md) | the maintainer workflow with `graph-admin`: the workspace, new ontology versions, new graphs, publishing graph skills, checks and the audit |
 | [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md) | the curated text of a graph skill template: blocks, description, rules and recipes, what publishing checks, the preview loop |
+| [`authoring-graph-functions`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/SKILL.md) | the named read functions of a graph: when to write one, names, `use_when`, typed `ref` parameters, `returns`, `featured`, the publish loop and release refusals; `references/format.md` is the reference of the `graph_cli.function/1` format |
 
 `graph-admin skills install --scope project|user` copies them into an
 agent skill directory with the installer of `graph skills install` (the
@@ -186,7 +189,8 @@ says so, and `skills install` or `workspace sync` refreshes them after
 
 `tests/skills/test_ontology_skill.py` compiles the YAML examples of
 `ontology-best-practices` and checks that its format reference names every
-key the parser accepts; `tests/skills/test_admin_skills.py` checks that
+key the parser accepts, and `tests/skills/test_functions_skill.py` does the
+same for the function files of `authoring-graph-functions`; `tests/skills/test_admin_skills.py` checks that
 every `graph-admin` and `graph` command line in the admin skills names a
 real command and only its options. In the checkout, link them for an agent
 working there (`.claude/` is not tracked):

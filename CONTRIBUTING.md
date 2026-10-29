@@ -94,7 +94,7 @@ reader looks for it:
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
 | `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md` | maintainers | operating graphs, policies, what is protected and what is not |
-| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates) |
+| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance) |
 | `examples/<name>/README.md` | newcomers and maintainers | what one example graph shows, how to build it in a throwaway installation, how to load it into an existing one, sample queries; the example's files are its source |
 | `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
 
@@ -122,6 +122,7 @@ Update the documentation in the same change as the code:
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
+| a key, type, limit or check of `graph_cli.function/1`, or a rule publishing applies to functions | `bundled_skills/authoring-graph-functions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
@@ -150,7 +151,7 @@ output fields against real answers and the envelope keys against the
 renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
 placeholders outside `<graph> <type> <id> <attr> <value> <relation>
-<function> <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
+<module> <function> <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
 skill names no graph type.
 
 The OpenAPI documents of the server are generated from the inventories with

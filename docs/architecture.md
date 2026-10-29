@@ -182,6 +182,19 @@ The checks use the query engine without data: `query.cypher.parameters` lists th
 parameter, and `ontology_layer.connecting` supplies the hint of an impossible
 relationship pattern.
 
+The layers above use it in four places: `services.read` and `services.describe`
+load the published catalog next to the model (`describe functions`,
+`describe function`, `run`, the search kind `function`); `skills` receive the
+compiled catalog as one more document and render the `functions` block and
+pages; `graph_cli_admin.services_admin.functions` publishes a folder of function
+files into the graph's slot (one maintenance operation, audited as
+`change.functions`); and `services_admin.release` and `sources` check the
+published catalog against the model a release gives the graph, so a catalog
+that stays published always resolves against the pinned ontology. The slot
+layout is in [Storage](storage.md#filestore), its verification in
+[Audit](audit.md#slot-verification), the file format in the authoring skill of
+the admin skills ([Skills](skills.md#admin-skills)).
+
 ## Access control modules
 
 | Module | Content |

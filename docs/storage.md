@@ -17,7 +17,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 ## FileStore
 
@@ -95,3 +95,17 @@ POSIX only, local filesystems only.
   under their hash before), the function catalog's `slot.json` (its sources
   and compiled document likewise), an installed policy. A failure before the rename leaves only the
   staging state, which readers ignore.
+- Two published slots sit in a graph directory beside the manifest, each
+  switched by one rename of its pointer file, with the content written once
+  under its hash before and never changed:
+  `skill/source.json` (`kind`, tree `hash`, `published_against`) with
+  `skill/files/<hash>/`, and `functions/slot.json`
+  (`graph_cli.function_slot/1`: the `hash` of the function sources,
+  `compiled_hash` and `published_against`, the ontology pin at publish
+  time) with `functions/files/<hash>/<name>.yaml` (the authored sources,
+  read only by `graph-admin`) and `functions/compiled/<compiled hash>.json`
+  (the catalog `graph_cli.functions/1`, the only part the app reads). A
+  reader checks the hashes on read; a damaged functions slot is
+  `functions.slot_invalid`. The slots are verified against the audit trail
+  ([Slot verification](audit.md#slot-verification)); the format of a
+  function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md).

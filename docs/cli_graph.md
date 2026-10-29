@@ -443,7 +443,8 @@ are found and read, never changed, with the `describe` commands:
 - A `ref` parameter takes what every other command takes for an entity (full
   id, alias or 8-32 trailing hex digits), never a name; the entity must exist
   and be of the declared class or one of its subclasses. A name goes through
-  `lookup` first. An entity of another class is `function.parameter_type`
+  `lookup` first. An entity that does not exist is the usual
+  `entity.not_found`; an entity of another class is `function.parameter_type`
   (exit 1, details `expected` and `found`, hint `graph lookup <text> --type
   <class>`).
 - The answer is that of `query`: `data.function` (`name`, `hash`),
@@ -460,3 +461,11 @@ Functions are shown only to callers who may `read.function` on the graph
 (see [Access control](access_control.md#functions)); for everyone else the
 graph reads as if it had none. A graph that has no functions answers every
 `describe` command exactly as before.
+
+Maintainers write functions as one YAML file each and publish them with
+`graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The
+file format, the types of parameters and the checks publishing applies are
+described once, in the format reference of the `authoring-graph-functions`
+admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md)); the
+[generated graph skill](skills.md#blocks) lists a graph's featured
+functions.
