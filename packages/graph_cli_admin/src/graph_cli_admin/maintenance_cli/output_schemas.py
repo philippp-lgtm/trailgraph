@@ -152,6 +152,16 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         "skill_summary": obj(  # kernel.ports.catalog.SkillSlot.summary
             {"kind": SKILL_KIND, "hash": STRING, "published_against": ref("ontology_pin")}
         ),
+        "function_problem": obj(  # graph_cli.kinetic.format.Problem.to_json
+            {
+                "function": STRING,
+                "code": STRING,
+                "message": STRING,
+                "path": NULLABLE_STRING,
+                "line": nullable(INTEGER),
+                "details": OPEN,
+            }
+        ),
         "functions_summary": obj(  # kernel.ports.catalog.FunctionsSlot.summary
             {
                 "count": INTEGER,
@@ -162,6 +172,9 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         ),
         "source_skill": obj(  # services_admin.sources._skill_json
             {"name": STRING, "kind": SKILL_KIND, "hash": STRING}
+        ),
+        "source_functions": obj(  # services_admin.sources._functions_json
+            {"count": INTEGER, "hash": STRING}
         ),
         "policy_document": _policy_document(),
         "token": obj(TOKEN),

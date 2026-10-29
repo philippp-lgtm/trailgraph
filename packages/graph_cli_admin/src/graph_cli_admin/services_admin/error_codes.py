@@ -25,6 +25,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.functions_invalid", _C.INVALID, False, "The function files are invalid."),
     ErrorSpec(
+        "admin.functions_broken", _C.REFUSED, False, "A published function would not resolve."
+    ),
+    ErrorSpec(
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),
     ErrorSpec("admin.source_exists", _C.REFUSED, False, "The directory holds pulled files."),
@@ -52,6 +55,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         _C.WARNING,
         False,
         "A module's own version does not cover its changes.",
+    ),
+    ErrorSpec(
+        "admin.functions_affected", _C.WARNING, False, "A release would break published functions."
     ),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),

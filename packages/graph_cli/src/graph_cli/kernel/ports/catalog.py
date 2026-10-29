@@ -159,9 +159,10 @@ class Catalog(Protocol):
         """The graph's published skill, or ``None`` when none was published (D15 Q2)."""
         ...
 
-    def read_functions(self, graph: GraphId) -> FunctionsSlot | None:
-        """The graph's published function catalog without the sources, or ``None`` when none
-        was published (K6)."""
+    def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
+        """The graph's published function catalog, or ``None`` when none was published (K6).
+        The sources (``files``) are read only on request: the app does not need them,
+        ``graph pull`` does."""
         ...
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]: ...

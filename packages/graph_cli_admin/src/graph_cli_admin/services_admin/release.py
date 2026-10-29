@@ -21,9 +21,16 @@ with the counts and the first 20 findings). A larger bump than needed is a
 warning.
 Re-running a release that is already pinned changes nothing.
 
+Every bump also re-checks the published function catalog against the new
+model (``graph_cli.kinetic.check_catalog``, K5): a function that no longer
+resolves refuses the release with ``admin.functions_broken`` (first 20
+problems in the details). The fix is ``graph push`` with the ontology and
+the fixed or deleted function files together; ``plan`` then leaves the
+catalog to the push, which checks the new files against the same model.
+
 ``plan`` makes every check under the lock and ``write`` writes, so
-``graph push`` (``sources``) runs a release and a skill publish under one
-lock, checking both before the first write.
+``graph push`` (``sources``) runs a release, a skill publish and a function
+publish under one lock, checking all before the first write.
 """
 
 from __future__ import annotations
@@ -38,9 +45,11 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ids import TermRef
-from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData
+from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, ManifestData
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kinetic.compile import check_catalog
+from graph_cli.kinetic.format import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
@@ -57,6 +66,7 @@ from graph_cli_admin.services_admin.ontology import (
 )
 
 MAX_FINDINGS = 20
+FUNCTIONS_DAMAGED = frozenset({"functions.slot_invalid", "format.unsupported_version"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +130,18 @@ def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | No
         return Released(pinned, planned.data, planned.seq, planned.warnings)
 
 
-def plan(ctx: AdminContext, session: MaintenanceSession, compiled: Compiled) -> Planned:
-    """Every check of a release, under the lock; refuses before anything is written."""
+def plan(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    compiled: Compiled,
+    *,
+    functions_replaced: bool = False,
+) -> Planned:
+    """Every check of a release, under the lock; refuses before anything is written.
+
+    ``functions_replaced``: the caller publishes new function files after the release
+    and checks them against the new model itself, so the published catalog is not
+    checked here."""
     target = compiled.pin
     manifest = session.manifest()  # W.6: re-read under the lock
     entry = manifest.entry
@@ -167,6 +187,12 @@ def plan(ctx: AdminContext, session: MaintenanceSession, compiled: Compiled) -> 
         )
     if Version.parse(target.version).major > Version.parse(current.version).major and head.seq:
         _check_data(compiled.model, session, bump_details, head.seq)
+    if not functions_replaced:
+        slot = current_functions(session)
+        if slot is not None:
+            broken = check_catalog(slot.compiled, compiled.model)
+            if broken:
+                raise functions_broken(broken, bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report)
     if bump == "excessive":
         warnings += (
@@ -250,6 +276,66 @@ def _check_data(
                 "findings": [f.to_json() for f in errors[:MAX_FINDINGS]],
             },
         )
+
+
+def current_functions(session: MaintenanceSession) -> FunctionsSlot | None:
+    """The published function catalog; a damaged slot is replaced like a missing one."""
+    try:
+        return session.read_functions()
+    except GraphCliError as exc:
+        if exc.code not in FUNCTIONS_DAMAGED:
+            raise
+        return None
+
+
+def functions_broken(
+    problems: list[Problem],
+    bump: dict[str, JsonValue],
+    *,
+    advice: str = "; fix or delete them in the same push",
+) -> GraphCliError:
+    """``admin.functions_broken``: the first problems of the published functions against
+    the model of ``bump['to']``."""
+    names = sorted({p.function for p in problems})
+    return GraphCliError(
+        "admin.functions_broken",
+        _would_not_resolve(names, str(bump["to"])) + advice,
+        details={
+            **bump,
+            "count": len(problems),
+            "functions": list[JsonValue](names[:MAX_FINDINGS]),
+            "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
+        },
+    )
+
+
+def _would_not_resolve(names: list[str], version: str) -> str:
+    shown = ", ".join(names[:5]) + (", ..." if len(names) > 5 else "")
+    plural = "s" if len(names) != 1 else ""
+    return f"{len(names)} published function{plural} would not resolve under {version}: {shown}"
+
+
+def functions_affected(
+    slot: FunctionsSlot | None, model: CompiledModel
+) -> tuple[WarningRecord, ...]:
+    """``admin.functions_affected`` when the published functions would not resolve under
+    ``model`` (what ``ontology diff --graph`` shows before a release refuses)."""
+    problems = check_catalog(slot.compiled, model) if slot is not None else []
+    if not problems:
+        return ()
+    names = sorted({p.function for p in problems})
+    return (
+        WarningRecord(
+            "admin.functions_affected",
+            _would_not_resolve(names, model.bundle_version),
+            {
+                "to": model.bundle_version,
+                "count": len(problems),
+                "functions": list[JsonValue](names[:MAX_FINDINGS]),
+                "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
+            },
+        ),
+    )
 
 
 def check_state(entry: GraphEntry) -> None:

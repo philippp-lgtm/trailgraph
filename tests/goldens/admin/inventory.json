@@ -571,6 +571,7 @@
       "errors": [
         "access.denied",
         "admin.data_errors",
+        "admin.functions_broken",
         "admin.model_invalid",
         "admin.remote_mode",
         "backend.unavailable",
@@ -907,7 +908,7 @@
       "kind": "read",
       "surface": "model",
       "action": "maint.graph_configure",
-      "summary": "Write graph REF's ontology release and skill into DIR to edit and push them.",
+      "summary": "Write graph REF's ontology release, skill and functions into DIR to edit.",
       "args": [
         {
           "name": "ref",
@@ -937,7 +938,7 @@
           "type": "flag",
           "required": false,
           "repeatable": false,
-          "summary": "Replace the version directory, skill directory and base file if they exist."
+          "summary": "Replace the version, skill and functions directories and base file if they exist."
         },
         {
           "name": "--data-root",
@@ -964,6 +965,7 @@
         "backend.corrupt",
         "backend.unavailable",
         "config.invalid",
+        "functions.slot_invalid",
         "graph.not_found",
         "internal.error",
         "ontology.artifact_missing",
@@ -1045,6 +1047,8 @@
       ],
       "errors": [
         "access.denied",
+        "admin.functions_broken",
+        "admin.functions_invalid",
         "admin.migration_required",
         "admin.model_invalid",
         "admin.release_exists",
@@ -1482,7 +1486,7 @@
           "type": "graph_ref",
           "required": false,
           "repeatable": false,
-          "summary": "Compare with the release this graph is pinned to."
+          "summary": "Compare with the release this graph is pinned to; warns (admin.functions_affected) about published functions the release would break."
         },
         {
           "name": "--data-root",
@@ -1581,6 +1585,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.functions_broken",
         "admin.migration_required",
         "admin.model_invalid",
         "admin.release_exists",
@@ -2655,6 +2660,11 @@
       "exit": 1
     },
     {
+      "code": "admin.functions_broken",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "admin.functions_invalid",
       "category": "invalid",
       "exit": 1
@@ -2763,6 +2773,11 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "functions.slot_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "graph.archived",

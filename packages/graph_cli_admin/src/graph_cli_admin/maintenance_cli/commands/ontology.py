@@ -9,7 +9,7 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import STRING, array, enum, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.diff import BumpCheck
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -20,7 +20,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
 )
 from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
 from graph_cli_admin.services_admin import graphs, ontology
-from graph_cli_admin.services_admin.release import release
+from graph_cli_admin.services_admin.release import functions_affected, release
 
 SOURCE: Final = ParamSpec(
     "source", "directory", "Directory with the authored ontology.", required=True, positional=True
@@ -50,6 +50,7 @@ def diff_command(
         )
     new = ontology.compile_source(Path(source), module)
     graph = None
+    affected: tuple[WarningRecord, ...] = ()
     if graph_ref is not None:
         ctx = admin_context(state, data_root)
         entry = ctx.resolve(graph_ref, "ontology diff")
@@ -60,6 +61,7 @@ def diff_command(
         )
         old = ontology.pinned_model(ctx.catalog, entry)
         graph = graphs.envelope_graph(entry)
+        affected = functions_affected(ctx.catalog.read_functions(entry.id), new.model)
     else:
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
@@ -67,7 +69,7 @@ def diff_command(
     return Result(
         data={**report.to_json(), "bump": bump},
         graph=graph,
-        warnings=ontology.module_bump_warnings(old, new.model, report),
+        warnings=(*ontology.module_bump_warnings(old, new.model, report), *affected),
     )
 
 
@@ -129,7 +131,8 @@ SPECS: Final = (
             ParamSpec(
                 "--graph",
                 "graph_ref",
-                "Compare with the release this graph is pinned to.",
+                "Compare with the release this graph is pinned to; warns"
+                " (admin.functions_affected) about published functions the release would break.",
                 keyword="graph_ref",
             ),
             DATA_ROOT,
@@ -182,11 +185,14 @@ SPECS: Final = (
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",
+            "admin.functions_broken",
         ),
         handler=release_command,
         output=RELEASE_OUTPUT,
-        description="The version bump must cover the changes against the pinned release;"
-        " re-running a release that is already pinned changes nothing.",
+        description="The version bump must cover the changes against the pinned release, and"
+        " every published function must still resolve under the new one (any bump:"
+        " admin.functions_broken; fix it with graph push); re-running a release that is already"
+        " pinned changes nothing.",
         remote="hooked",
     ),
 )

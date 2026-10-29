@@ -7,26 +7,34 @@ in the layout of the maintainer workspace:
   byte-identical to ``source/`` of the installed release;
 - ``skill/graph-<graph>/...``: the published skill tree, byte-identical to
   the slot;
+- ``functions/<name>.yaml``: the published function sources
+  (``graph_cli.function/1``), byte-identical to the slot;
 - ``.graph_cli_source.json`` (``graph_cli.graph_source/1``): the base, what
   the data root held when the directory was pulled or last pushed (graph,
-  ontology pin, skill hash).
+  ontology pin, skill hash, functions hash).
 
-``pull`` writes the pinned release (or another installed one) and the
-skill. It reads the data root without a lock (a release never changes, the
-slot switches by one rename) and is authorized ``maint.graph_configure``:
-whoever may change the configuration may read it. It owns three entries of
-the directory: the version directory, the skill directory and the base
-file. Any of them existing is ``admin.source_exists`` unless ``force``
-replaces them; everything else (a README, other version directories,
-``.git``) stays. The base file is written last.
+``pull`` writes the pinned release (or another installed one), the skill and
+the functions. It reads the data root without a lock (a release never
+changes, the slots switch by one rename) and is authorized
+``maint.graph_configure``: whoever may change the configuration may read it.
+It owns four entries of the directory: the version directory, the skill
+directory, the ``functions`` directory and the base file. Any of them existing
+is ``admin.source_exists`` unless ``force`` replaces them; everything else (a README,
+other version directories, ``.git``) stays. The base file is written last.
 
 ``push`` is one maintenance operation under the graph lock, like a
 fast-forward push: the data root must still hold the base, or already what
 is pushed (a repeated push), else ``admin.source_conflict``. The highest
 version directory is the ontology: when it differs from the base it is
 released and pinned (``release.plan|write``); a skill tree that differs
-from the base is published (``skill.write``). Whenever either changes, the
-skill the graph will have is checked against the ontology it will have.
+from the base is published (``skill.write``), and so is a ``functions``
+folder that differs from the base (``functions.write``, after the release;
+a missing folder is an empty one, so deleting every file unpublishes the
+catalog). Whenever the ontology or the skill changes, the skill the graph
+will have is checked against the ontology it will have; whenever the
+ontology or the functions change, so are the functions: the new files
+against the model the graph will have, or, when the push does not touch
+them, the published catalog (``admin.functions_broken`` in the release).
 Every check runs before the first write; the new base is written into the
 directory afterwards (``dry_run``: answered, not written).
 """
@@ -42,25 +50,43 @@ from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue, hash_bytes, parse_json, pretty_bytes
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot, skill_hash
+from graph_cli.kernel.ports.catalog import (
+    FunctionsSlot,
+    GraphEntry,
+    SkillSlot,
+    functions_hash,
+    skill_hash,
+)
 from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kernel.skill_marker import graph_skill_name
+from graph_cli.kinetic.format import FILE_SUFFIX
+from graph_cli.kinetic.format import NAME_RE as FUNCTION_NAME_RE
+from graph_cli.kinetic.format import Problem as FunctionProblem
 from graph_cli.ontology_layer.semver import Version, is_version
 from graph_cli.ontology_layer.vocabulary import MODULE_ID_RE
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
-from graph_cli_admin.services_admin import release, skill
+from graph_cli_admin.services_admin import functions, release, skill
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.ontology import RELEASE_FILE, Compiled, compile_source
+from graph_cli_admin.services_admin.ontology import (
+    RELEASE_FILE,
+    Compiled,
+    compile_source,
+    pinned_model,
+)
 
 SOURCE_FILE: Final = ".graph_cli_source.json"
 SOURCE_SCHEMA: Final = "graph_cli.graph_source/1"
 ONTOLOGY: Final = "ontology"
 SKILL: Final = "skill"
-PARTS: Final = frozenset({SOURCE_FILE, ONTOLOGY, SKILL})  # what push reads of a workspace
+FUNCTIONS: Final = "functions"
+PARTS: Final = frozenset(
+    {SOURCE_FILE, ONTOLOGY, SKILL, FUNCTIONS}
+)  # what push reads of a workspace
 _RELEASE_SOURCES: Final = "source/"
 _TEMP: Final = ".graph_cli_source.tmp"
+_EMPTY_FUNCTIONS: Final = functions_hash({})  # a missing slot and an empty one are the same
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +97,7 @@ class Base:
     graph_name: str
     pin: OntologyPin
     skill: str | None  # the skill tree's hash; None: the graph had no skill
+    functions: str | None = None  # the function sources' hash; None: no catalog published
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,17 +133,21 @@ def pull(
         )
     pin, modules = _release_sources(ctx, entry, version, installed[version])
     slot = ctx.catalog.read_skill(entry.id)
+    published = ctx.catalog.read_functions(entry.id, sources=True)
     name = graph_skill_name(entry.name)
     files = {f"{ONTOLOGY}/{version}/{module}.yaml": data for module, data in modules.items()}
     if slot is not None:
         files |= {f"{SKILL}/{name}/{path}": data for path, data in slot.files.items()}
-    files[SOURCE_FILE] = pretty_bytes(base_document(entry, pin, slot))
+    if published is not None:
+        files |= {f"{FUNCTIONS}/{file}": data for file, data in published.files.items()}
+    files[SOURCE_FILE] = pretty_bytes(base_document(entry, pin, slot, published))
     write_workspace(target, files, graph_ref=graph_ref, force=force)
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "path": str(target),
         "ontology": {**pin.to_json(), "modules": sorted(modules), "pinned": pin == entry.pin},
         "skill": _skill_json(name, slot),
+        "functions": _functions_json(published),
         "files": sorted(files),
     }
     return Pulled(entry, data)
@@ -154,13 +185,17 @@ def _corrupt(entry: GraphEntry, version: str, why: str) -> GraphCliError:
 
 
 def base_document(
-    entry: GraphEntry, pin: OntologyPin, slot: SkillSlot | None
+    entry: GraphEntry,
+    pin: OntologyPin,
+    slot: SkillSlot | None,
+    published: FunctionsSlot | None = None,
 ) -> dict[str, JsonValue]:
     return {
         "schema": SOURCE_SCHEMA,
         "graph": {"id": str(entry.id), "name": entry.name},
         "ontology": pin.to_json(),
         "skill": _skill_json(graph_skill_name(entry.name), slot),
+        "functions": _functions_json(published),
     }
 
 
@@ -168,10 +203,14 @@ def _skill_json(name: str, slot: SkillSlot | None) -> JsonValue:
     return None if slot is None else {"name": name, "kind": slot.kind, "hash": slot.hash}
 
 
+def _functions_json(slot: FunctionsSlot | None) -> JsonValue:
+    return None if slot is None else {"count": slot.count, "hash": slot.hash}
+
+
 def workspace_entry(name: str) -> str | None:
     """The entry of a workspace that pull owns and ``name`` lies in: the base file, a
-    version directory or the skill directory; ``None`` for any other path (an answer
-    over the API never writes elsewhere)."""
+    version directory, the skill directory or the functions directory; ``None`` for any
+    other path (an answer over the API never writes elsewhere)."""
     if name == SOURCE_FILE:
         return name
     parts = name.split("/")
@@ -180,6 +219,10 @@ def workspace_entry(name: str) -> str | None:
     if len(parts) == 3 and parts[0] == ONTOLOGY and is_version(parts[1]):
         module = parts[2].removesuffix(".yaml")
         return "/".join(parts[:2]) if parts[2].endswith(".yaml") and _module(module) else None
+    if len(parts) == 2 and parts[0] == FUNCTIONS:
+        stem = parts[1].removesuffix(FILE_SUFFIX)
+        ok = parts[1].endswith(FILE_SUFFIX) and FUNCTION_NAME_RE.match(stem) is not None
+        return FUNCTIONS if ok else None
     if len(parts) > 2 and parts[0] == SKILL and len(parts[1]) <= MAX_NAME:
         return "/".join(parts[:2]) if NAME_RE.match(parts[1]) else None
     return None
@@ -286,16 +329,21 @@ def read_base(source: Path) -> Base:
         if not isinstance(graph_id, str) or not isinstance(name, str):
             raise ValueError("graph.id and graph.name must be strings")
         pin = OntologyPin.from_json(dict(ontology), "ontology")
-        digest: str | None = None
-        if found is not None:
-            value = found.get("hash") if isinstance(found, Mapping) else None
-            if not isinstance(value, str):
-                raise ValueError("skill must be null or name a hash")
-            digest = value
+        digest = _hash_of(found, "skill")
+        catalog = _hash_of(document.get("functions"), "functions")  # absent in older bases
     except (KeyError, ValueError, GraphCliError) as exc:
         message = exc.message if isinstance(exc, GraphCliError) else str(exc)
         raise _usage(f"{file} is not a base file of graph-admin graph pull: {message}") from exc
-    return Base(graph_id, name, pin, digest)
+    return Base(graph_id, name, pin, digest, catalog)
+
+
+def _hash_of(found: JsonValue | None, key: str) -> str | None:
+    if found is None:
+        return None
+    value = found.get("hash") if isinstance(found, Mapping) else None
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be null or name a hash")
+    return value
 
 
 def push(
@@ -329,6 +377,10 @@ def push(
             raise _usage(f"cannot read {skill_dir}: {exc.strerror or exc}") from exc
     pushed = skill_hash(files) if files is not None else None
     skill_changed = pushed is not None and pushed != base.skill
+    sources_dir = source / FUNCTIONS
+    function_files, function_problems = _function_files(sources_dir)
+    pushed_functions = functions_hash(function_files)
+    functions_changed = pushed_functions != (base.functions or _EMPTY_FUNCTIONS)
     ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
     meta = RequestMeta.of(
         "graph push",
@@ -336,6 +388,7 @@ def push(
             "graph": str(entry.id),
             "ontology": compiled.pin.to_json(),
             "skill": pushed,
+            "functions": pushed_functions,
             "dry_run": dry_run,
         },
     )
@@ -351,12 +404,21 @@ def push(
         target_pin = compiled.pin if ontology_changed else base.pin
         target_skill = pushed if skill_changed else base.skill
         current_skill = current.hash if current is not None else None
-        if entry.pin not in (base.pin, target_pin) or current_skill not in (
-            base.skill,
-            target_skill,
+        published = functions.current_slot(session)
+        current_functions = published.hash if published is not None else _EMPTY_FUNCTIONS
+        target_functions = pushed_functions if functions_changed else base.functions
+        if (
+            entry.pin not in (base.pin, target_pin)
+            or current_skill not in (base.skill, target_skill)
+            or current_functions not in (base.functions or _EMPTY_FUNCTIONS, target_functions)
         ):
-            raise _conflict(source, entry, base, current)
-        planned = release.plan(ctx, session, compiled) if ontology_changed else None
+            raise _conflict(source, entry, base, current, published)
+        publishing_functions = functions_changed and current_functions != pushed_functions
+        planned = (
+            release.plan(ctx, session, compiled, functions_replaced=publishing_functions)
+            if ontology_changed
+            else None
+        )
         releasing = planned is not None and not planned.unchanged
         after = replace(entry, pin=target_pin) if releasing else entry
         publishing = skill_changed and current_skill != pushed
@@ -382,6 +444,17 @@ def push(
         if publishing:
             assert checked is not None and files is not None and pushed is not None
             slot = SkillSlot(checked.kind, pushed, after.pin, files)
+        # The functions the graph will have must resolve against the ontology it will have.
+        function_slot = None
+        if publishing_functions:
+            label_f: Path | str = sources_dir
+            model_f = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            checked_f = functions.check_files(
+                after, function_files, function_problems, model_f, label=label_f
+            )
+            function_slot = functions.slot_of(checked_f, after)
+        else:
+            functions.refuse(sources_dir, after, function_problems)
         seq = session.head().seq
         if not dry_run:
             if releasing:
@@ -389,6 +462,10 @@ def push(
                 after = release.write(ctx, session, planned, decisions, meta, reason=reason)
             if slot is not None:
                 skill.write(ctx, session, after, configure, meta, current, slot, reason=reason)
+            if function_slot is not None:
+                functions.write(
+                    ctx, session, after, configure, meta, published, function_slot, reason=reason
+                )
         ontology: dict[str, JsonValue] = (
             planned.data
             if planned is not None
@@ -400,6 +477,7 @@ def push(
             }
         )
         final = slot if slot is not None else current
+        final_functions = function_slot if function_slot is not None else published
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
@@ -412,12 +490,20 @@ def push(
                 "files": sorted(files),
                 "published": slot is not None and not dry_run,
             },
-            "unchanged": not (releasing or publishing),
+            "functions": None
+            if not (sources_dir.is_dir() or function_slot is not None)
+            else {
+                "from": published.summary() if published is not None else None,
+                "to": final_functions.summary() if final_functions is not None else None,
+                "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(function_files)],
+                "published": function_slot is not None and not dry_run,
+            },
+            "unchanged": not (releasing or publishing or function_slot is not None),
             "dry_run": dry_run,
-            "source": base_document(after, after.pin, final),
+            "source": base_document(after, after.pin, final, final_functions),
         }
     if not dry_run:
-        write_base(source, base_document(after, after.pin, final))
+        write_base(source, base_document(after, after.pin, final, final_functions))
     warnings = planned.warnings if planned is not None else ()
     return Pushed(after, data, seq, warnings)
 
@@ -445,6 +531,13 @@ def _ontology(source: Path, base: Base) -> Compiled:
             " (bump the module version in a new directory)"
         )
     return compiled
+
+
+def _function_files(directory: Path) -> tuple[dict[str, bytes], list[FunctionProblem]]:
+    """The function files of ``functions/``; a missing folder is an empty one."""
+    if not directory.is_dir():
+        return {}, []
+    return functions.read_dir(directory)
 
 
 def _skill_dir(source: Path, name: str) -> Path | None:
@@ -491,7 +584,11 @@ def _ontology_changed(
 
 
 def _conflict(
-    source: Path, entry: GraphEntry, base: Base, current: SkillSlot | None
+    source: Path,
+    entry: GraphEntry,
+    base: Base,
+    current: SkillSlot | None,
+    published: FunctionsSlot | None,
 ) -> GraphCliError:
     return GraphCliError(
         "admin.source_conflict",
@@ -500,10 +597,15 @@ def _conflict(
         details={
             "graph": entry.name,
             "dir": str(source),
-            "base": {"ontology": base.pin.to_json(), "skill": base.skill},
+            "base": {
+                "ontology": base.pin.to_json(),
+                "skill": base.skill,
+                "functions": base.functions,
+            },
             "current": {
                 "ontology": entry.pin.to_json(),
                 "skill": current.hash if current is not None else None,
+                "functions": published.hash if published is not None else None,
             },
         },
     )

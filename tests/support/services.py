@@ -125,9 +125,9 @@ class MemoryCatalog:
     def read_skill(self, graph: GraphId) -> SkillSlot | None:
         return self.skills.get(graph)
 
-    def read_functions(self, graph: GraphId) -> FunctionsSlot | None:
+    def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
         slot = self.functions.get(graph)
-        return replace(slot, files={}) if slot is not None else None
+        return replace(slot, files={}) if slot is not None and not sources else slot
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.stores[graph]

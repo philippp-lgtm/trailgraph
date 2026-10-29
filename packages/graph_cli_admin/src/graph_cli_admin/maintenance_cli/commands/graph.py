@@ -279,6 +279,9 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         "counts": ref("finding_counts"),
         "codes": obj(extra=INTEGER),
         "findings": array(ref("finding")),
+        "functions": obj(  # the published catalog against the same model
+            {"count": INTEGER, "problems": array(ref("function_problem"))}
+        ),
     }
 )
 REINDEX_OUTPUT: Final = obj(  # services_admin.reindex.reindex
@@ -300,6 +303,7 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
             }
         ),
         "skill": nullable(ref("source_skill")),
+        "functions": nullable(ref("source_functions")),
         "files": STRINGS,
     },
     {"pulled": RETURNED_FILES},
@@ -319,6 +323,16 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 }
             )
         ),
+        "functions": nullable(
+            obj(
+                {
+                    "from": nullable(ref("functions_summary")),
+                    "to": nullable(ref("functions_summary")),
+                    "functions": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        ),
         "unchanged": BOOLEAN,
         "dry_run": BOOLEAN,
         "source": obj(  # services_admin.sources.base_document: the workspace's new base
@@ -327,6 +341,7 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 "graph": obj({"id": STRING, "name": STRING}),
                 "ontology": ref("ontology_pin"),
                 "skill": nullable(ref("source_skill")),
+                "functions": nullable(ref("source_functions")),
             }
         ),
     }
@@ -492,12 +507,20 @@ SPECS: Final = (
                 "Check it under an authored version, as JSON.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, "access.denied", "admin.model_invalid", "admin.data_errors"),
+        errors=(
+            *GRAPH_ERRORS,
+            "access.denied",
+            "admin.model_invalid",
+            "admin.data_errors",
+            "admin.functions_broken",
+        ),
         handler=check_command,
         output=CHECK_OUTPUT,
         description="Runs all data checks, including rules with when: batch and the in"
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
-        " error finding; warnings are listed only. With --ontology, checks the data under an"
+        " error finding; warnings are listed only. Also checks the published functions against the"
+        " model (admin.functions_broken, for example function.stale after an interrupted"
+        " push). With --ontology, checks the data under an"
         " authored version before it is released.",
         remote="hooked",
     ),
@@ -533,7 +556,7 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="maint.graph_configure",
-        summary="Write graph REF's ontology release and skill into DIR to edit and push them.",
+        summary="Write graph REF's ontology release, skill and functions into DIR to edit.",
         params=(
             REF,
             ParamSpec(
@@ -548,7 +571,7 @@ SPECS: Final = (
             ParamSpec(
                 "--force",
                 "flag",
-                "Replace the version directory, skill directory and base file if they exist.",
+                "Replace the version, skill and functions directories and base file if they exist.",
             ),
             DATA_ROOT,
         ),
@@ -566,11 +589,13 @@ SPECS: Final = (
             "backend.corrupt",
             "ontology.artifact_missing",
             "skills.source_invalid",
+            "functions.slot_invalid",
         ),
         handler=pull,
         output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
-        " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any) and"
+        " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any),"
+        " DIR/functions/<name>.yaml (the published functions, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
         " nothing in the data root.",
         remote="hooked",
@@ -613,16 +638,20 @@ SPECS: Final = (
             "admin.release_exists",
             "admin.migration_required",
             "admin.skill_invalid",
+            "admin.functions_invalid",
+            "admin.functions_broken",
         ),
         handler=push,
         output=PUSH_OUTPUT,
-        description="The graph must still have the ontology release and skill DIR was pulled"
-        " from (or already what DIR holds), else admin.source_conflict. The highest"
+        description="The graph must still have the ontology release, skill and functions DIR was"
+        " pulled from (or already what DIR holds), else admin.source_conflict. The highest"
         " ontology/<version>/ is released and pinned when it differs (maint.ontology_release,"
-        " maint.ontology_pin), the skill directory published when it differs"
-        " (maint.graph_configure); whenever either changes, the skill is checked against the"
-        " ontology it will render with. Everything is checked before the first write; the new"
-        " base is written into DIR.",
+        " maint.ontology_pin), the skill directory and the functions"
+        " directory published when they differ (maint.graph_configure; a missing functions"
+        " directory is an empty one); whenever the ontology changes, the skill and the functions"
+        " are checked against the ontology they will have (the published functions too, if the"
+        " push does not replace them: admin.functions_broken). Everything is checked before the"
+        " first write; the new base is written into DIR.",
         remote="hooked",
     ),
     CommandSpec(

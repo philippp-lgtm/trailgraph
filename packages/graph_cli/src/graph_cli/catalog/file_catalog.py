@@ -142,8 +142,8 @@ class FileCatalog:
     def read_skill(self, graph: GraphId) -> SkillSlot | None:
         return read_skill(self._layout(graph))
 
-    def read_functions(self, graph: GraphId) -> FunctionsSlot | None:
-        return read_functions(self._layout(graph), sources=False)
+    def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
+        return read_functions(self._layout(graph), sources=sources)
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.file_store(graph)

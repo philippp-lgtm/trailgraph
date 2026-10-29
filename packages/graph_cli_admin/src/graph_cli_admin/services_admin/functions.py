@@ -41,9 +41,9 @@ from graph_cli.kinetic.format import FILE_SUFFIX, Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
-from graph_cli_admin.services_admin.release import check_state
+from graph_cli_admin.services_admin.release import FUNCTIONS_DAMAGED, check_state, current_functions
 
-DAMAGED = frozenset({"functions.slot_invalid", "format.unsupported_version"})
+DAMAGED = FUNCTIONS_DAMAGED
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,11 +63,12 @@ class Checked:
 
 
 def read_dir(source: Path) -> tuple[dict[str, bytes], list[Problem]]:
-    """The ``<name>.yaml`` files of a folder; anything else in it is a problem, never followed."""
+    """The ``<name>.yaml`` files of a folder; anything else in it is a problem, never followed
+    (hidden files such as ``.DS_Store`` are ignored)."""
     files: dict[str, bytes] = {}
     problems: list[Problem] = []
     try:
-        names = sorted(os.listdir(source))
+        names = sorted(n for n in os.listdir(source) if not n.startswith("."))  # .DS_Store
         for name in names:
             path = source / name
             mode = os.lstat(path).st_mode
@@ -108,12 +109,7 @@ def check_files(
 
 def current_slot(session: MaintenanceSession) -> FunctionsSlot | None:
     """The published catalog; a damaged slot is replaced like a missing one."""
-    try:
-        return session.read_functions()
-    except GraphCliError as exc:
-        if exc.code not in DAMAGED:
-            raise
-        return None
+    return current_functions(session)
 
 
 def write(
