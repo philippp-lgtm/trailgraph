@@ -76,13 +76,15 @@ from there.
 ## Change the ontology of a graph
 
 1. Copy the highest version directory to the new version
-   (`ontology/1.2.0/` to `ontology/1.3.0/`) and set `module.version` in
-   every module there. Never change a released version directory.
+   (`ontology/1.2.0/` to `ontology/1.3.0/`) and set `module.version` of
+   the main module and of every module you change there. Never change a released version directory.
 2. Edit it with the `ontology-best-practices` skill;
    `graph-admin ontology validate <folder>/ontology/<new>` until it
    reports no findings.
 3. `graph-admin ontology diff <folder>/ontology/<new> --graph <graph>`
-   classifies the change and says whether the version bump is enough.
+   classifies the change and says whether the version bump is enough; the
+   warning `admin.module_bump_insufficient` names a changed module whose
+   own version did not follow.
 4. For a major change: `graph-admin graph check <graph> --ontology
    <folder>/ontology/<new>` shows which entities the new version would
    refuse. Fix the data (with the `graph-cli` skill) or the model first.

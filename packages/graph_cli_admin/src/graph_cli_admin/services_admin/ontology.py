@@ -19,14 +19,20 @@ from uuid import UUID
 import graph_cli
 from graph_cli.kernel.canonical import JsonValue, hash_bytes, pretty_bytes
 from graph_cli.kernel.clock import format_timestamp
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, has_errors
 from graph_cli.kernel.ids import format_id
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.ontology_layer.bundle import DirectorySource, LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
-from graph_cli.ontology_layer.diff import BumpCheck, DiffReport, check_bump, classify
+from graph_cli.ontology_layer.diff import (
+    BumpCheck,
+    DiffReport,
+    check_bump,
+    classify,
+    module_bumps,
+)
 from graph_cli.ontology_layer.exporters.jsonschema import export_jsonschema
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version, bump_level
@@ -143,6 +149,24 @@ def pinned_model(catalog: Catalog, entry: GraphEntry) -> CompiledModel:
 def diff(old: CompiledModel, new: CompiledModel) -> tuple[DiffReport, BumpCheck]:
     report = classify(old, new)
     return report, check_bump(report)
+
+
+def module_bump_warnings(
+    old: CompiledModel, new: CompiledModel, report: DiffReport
+) -> tuple[WarningRecord, ...]:
+    """``admin.module_bump_insufficient`` per module whose own version does not cover the
+    changes to its terms. A warning, not a refusal: the release is versioned by the main
+    module, which ``check_bump`` enforces."""
+    return tuple(
+        WarningRecord(
+            "admin.module_bump_insufficient",
+            f"module {bump.module}: {bump.from_version} -> {bump.to_version} does not cover"
+            f" {bump.level} changes",
+            bump.to_json(),
+        )
+        for bump in module_bumps(old, new, report)
+        if bump.check == "insufficient"
+    )
 
 
 def release_files(

@@ -5,6 +5,10 @@ change with its level; the report level is the maximum. Renames are
 recognized only when declared with ``renamed_from``; anything else shows up
 as remove plus add. Inherited attributes are compared once, at the class
 that declares them.
+
+``check_bump`` judges the bundle version (the main module's) against the report level;
+``module_bumps`` judges the own version of every other authored module against the level
+of the changes to its terms, since importers pin those versions with ranges.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from graph_cli.ontology_layer.model import (
     TransitionDef,
 )
 from graph_cli.ontology_layer.semver import Level, Version, bump_level, max_level
-from graph_cli.ontology_layer.vocabulary import DIFF_SCHEMA, MUTABILITY_RANK
+from graph_cli.ontology_layer.vocabulary import BUILTIN_MODULES, DIFF_SCHEMA, MUTABILITY_RANK
 
 ChangeLevel = Literal["patch", "minor", "major"]
 _EMPTY: Mapping[str, JsonValue] = MappingProxyType({})
@@ -79,13 +83,64 @@ def check_bump(report: DiffReport) -> BumpCheck:
     is a warning. A downgrade or an unchanged version with changes is
     insufficient.
     """
-    declared = bump_level(Version.parse(report.from_version), Version.parse(report.to_version))
+    return _judge(report.from_version, report.to_version, report.level)
+
+
+def _judge(from_version: str, to_version: str, level: Level) -> BumpCheck:
+    declared = bump_level(Version.parse(from_version), Version.parse(to_version))
     if declared == "downgrade":
         return "insufficient"
     order = ("none", "patch", "minor", "major")
-    if order.index(declared) < order.index(report.level):
+    if order.index(declared) < order.index(level):
         return "insufficient"
-    return "excessive" if order.index(declared) > order.index(report.level) else "ok"
+    return "excessive" if order.index(declared) > order.index(level) else "ok"
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleBump:
+    """The own version step of one module and the level of the changes to its terms."""
+
+    module: str
+    from_version: str
+    to_version: str
+    level: Level
+    check: BumpCheck
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "module": self.module,
+            "from": self.from_version,
+            "to": self.to_version,
+            "level": self.level,
+        }
+
+
+def module_bumps(old: CompiledModel, new: CompiledModel, report: DiffReport) -> list[ModuleBump]:
+    """One item per module in both models, except the main and the built-in modules (sorted
+    by id). A change belongs to the module whose prefix its term carries (rule ids start with
+    it too); ``modules.<id>`` changes to that module."""
+    old_modules = {m.id: m for m in old.modules}
+    new_modules = {m.id: m for m in new.modules}
+    by_prefix = {m.prefix: m.id for m in (*old.modules, *new.modules)}
+    levels: dict[str, list[Level]] = {}
+    for change in report.changes:
+        section, _, rest = change.path.partition(".")
+        key = rest.split(".")[0] if section in ("modules", "rules") else rest.partition(":")[0]
+        module_id = key if section == "modules" else by_prefix.get(key)
+        if module_id is not None:
+            levels.setdefault(module_id, []).append(change.level)
+    main = {old.bundle_id, new.bundle_id}
+    return [
+        ModuleBump(
+            module_id,
+            old_modules[module_id].version,
+            new_modules[module_id].version,
+            level := max_level(levels.get(module_id, [])),
+            _judge(old_modules[module_id].version, new_modules[module_id].version, level),
+        )
+        for module_id in sorted(old_modules.keys() & new_modules.keys())
+        if module_id not in main and module_id not in BUILTIN_MODULES
+    ]
 
 
 def classify(old: CompiledModel, new: CompiledModel) -> DiffReport:

@@ -67,7 +67,9 @@ version of the bundle is the version of the main (umbrella) module.
 - A change in any module needs at least the same bump of the main module.
   `ontology diff` classifies the whole bundle; the main module's version
   must follow it, and a patch-level edit of an area is a patch bump of the
-  main module. Bump the area's own version too.
+  main module. Bump the area's own version too: `ontology diff` and
+  `ontology release` warn with `admin.module_bump_insufficient` when it does
+  not cover the changes to the area's terms (the release still goes on).
 - Adding a module is a minor change: a new file plus a new import in the
   main module (or in the module that builds on it).
 - Moving a term to another module changes its CURIE, which `ontology diff`

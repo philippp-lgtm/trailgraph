@@ -46,6 +46,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
     ErrorSpec("admin.alias_prefix_taken", _C.WARNING, False, "A new type gets no alias prefix."),
+    ErrorSpec(
+        "admin.module_bump_insufficient",
+        _C.WARNING,
+        False,
+        "A module's own version does not cover its changes.",
+    ),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),
     ErrorSpec(

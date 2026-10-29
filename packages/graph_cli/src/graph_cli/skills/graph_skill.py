@@ -32,7 +32,9 @@ Blocks (each one optional):
   ``graph query`` patterns (``(:A)-[:rel]->(:B)``, from ``describe schema``).
 - ``constraints``: transition guards, write-once fields and rules.
 - ``names``: the live alias format (F12), what ``graph lookup`` matches per
-  type (label roles) and the rule to ask when the match is not unique (F24).
+  type (label roles) and the rule to ask when the match is not unique (F24). On a modular
+  graph it names one alias and points at the module pages and ``describe type`` for the
+  prefixes and name fields, so its size does not grow with the types.
 - ``model``: a pointer to ``references/model.md`` and ``graph describe``.
 
 A graph with two or more non-built-in modules is modular: every generated skill then also
@@ -85,6 +87,11 @@ VALUE_SHAPES: Final[Mapping[str, str]] = {
     " language",
 }
 FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
+# Level 0 of the disclosure levels: the most bytes ``SKILL.md`` of a modular graph's skill
+# should have (about 5000 tokens at 4 bytes a token, the size the Agent Skills guidance
+# suggests for a skill body). A test holds it for 50 modules of any size; the blocks of a
+# modular graph grow with the modules only. Not checked on publish.
+L0_BUDGET: Final = 20_000
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -535,58 +542,68 @@ def _constraints(doc: _Model) -> list[str]:
 
 
 def _names(doc: _Model) -> list[str]:
+    """Aliases and what ``lookup`` matches. A modular graph gets one example alias and the
+    places that list the rest, so the block does not grow with the types (L0 budget)."""
     lines = []
     if doc.prefixes:
-        examples = ", ".join(
-            f"{_code(curie)} {_code(format_alias(prefix, 1))}"
-            for curie, prefix in doc.prefixes.items()
-        )
         prefix = next(iter(doc.prefixes.values()))
-        lines.append(
-            f"- Aliases: {examples}. The number is zero-padded to"
-            f" {ALIAS_DIGITS} digits ({_code(format_alias(prefix, 1))}, never"
+        first = _code(format_alias(prefix, 1))
+        padding = (
+            f"The number is zero-padded to {ALIAS_DIGITS} digits ({first}, never"
             f" {_code(prefix + '-1')}) and grows past 9999. A full id works everywhere; on"
             " the command line 8 or more trailing hex digits of it work too."
         )
-    labelled = [
-        (curie, [f for f in _ordered_fields(body) if f.get("role") in ROLE_NAMES])
-        for curie, body in doc.types.items()
-        if body.get("abstract") is not True
-    ]
-    labelled = [(curie, fields) for curie, fields in labelled if fields]
+        if doc.modular:
+            lines.append(
+                f"- Aliases such as {first} ({_code(next(iter(doc.prefixes)))}) start with the"
+                " prefix of the entity's type; the module pages list the prefix of every type,"
+                f" `graph describe type <type> --graph {doc.name} --json` names it"
+                f" (`alias_prefix`). {padding}"
+            )
+        else:
+            examples = ", ".join(
+                f"{_code(curie)} {_code(format_alias(prefix, 1))}"
+                for curie, prefix in doc.prefixes.items()
+            )
+            lines.append(f"- Aliases: {examples}. {padding}")
+    labelled = _labelled(doc)
+    search = (
+        f"- `graph search <value> --graph {doc.name} --json` searches names and every text"
+        " field, forgiving case, accents, typos and parts of words. Its results are"
+        " suggestions: read one with `graph get` before you use it."
+    )
     if not labelled:
         lines.append(
             "- No type of this graph has names (label roles), so `graph lookup` finds nothing;"
             f" use `graph find --graph {doc.name}`."
         )
-        lines.append(
-            f"- `graph search <value> --graph {doc.name} --json` searches names and every text"
-            " field, forgiving case, accents, typos and parts of words. Its results are"
-            " suggestions: read one with `graph get` before you use it."
-        )
+        lines.append(search)
         return lines
-    lines.append(
+    lookup = (
         f"- `graph lookup <value> --graph {doc.name} --json` finds entities by name, ignoring"
-        " case; it matches these fields, not other text:"
+        " case; it matches"
     )
-    for curie, fields in labelled:
-        matched = ", ".join(
-            f"{_code(req_str(f, 'name'))} ({ROLE_NAMES[req_str(f, 'role')]})" for f in fields
+    if doc.modular:
+        roles = "; ".join(f"{_code(role)}: {text}" for role, text in ROLE_NAMES.items())
+        lines.append(
+            f"{lookup} the name fields of a type, not other text. The module pages list them"
+            f" per type; `graph describe type <type> --graph {doc.name} --json` marks them with"
+            f" `role` ({roles})."
         )
-        lines.append(f"  - {_code(curie)}: {matched}")
+    else:
+        lines.append(f"{lookup} these fields, not other text:")
+        for curie, fields in labelled.items():
+            lines.append(f"  - {_code(curie)}: {_name_fields(fields)}")
     lines.append(
         "- Names are not unique, so `lookup` returns candidates. Use the returned alias or id"
         " only when exactly one candidate matches exactly (`match.kind` is `exact`). With"
         " several candidates, or only prefix matches, do not answer about one of them first:"
         " list them with their names and ask which one is meant, then answer."
     )
+    lines.append(search)
+    these = "a type with names" if doc.modular else "one of these types"
     lines.append(
-        f"- `graph search <value> --graph {doc.name} --json` searches names and every text"
-        " field, forgiving case, accents, typos and parts of words. Its results are"
-        " suggestions: read one with `graph get` before you use it."
-    )
-    lines.append(
-        "- Before you create an entity of one of these types, search for its name and its"
+        f"- Before you create an entity of {these}, search for its name and its"
         " short forms. If one is the same thing, use it and add the new name to its"
         f" {ROLE_NAMES['alt_label']} field instead of creating another. When you create one,"
         f" fill its {ROLE_NAMES['alt_label']} fields with the abbreviations and synonyms people"
@@ -594,6 +611,22 @@ def _names(doc: _Model) -> list[str]:
         " already carry the name or a near spelling of it."
     )
     return lines
+
+
+def _labelled(doc: _Model) -> dict[str, list[JsonObject]]:
+    """The name fields (label roles) of every concrete type that has any."""
+    found = {
+        curie: [f for f in _ordered_fields(body) if f.get("role") in ROLE_NAMES]
+        for curie, body in doc.types.items()
+        if body.get("abstract") is not True
+    }
+    return {curie: fields for curie, fields in found.items() if fields}
+
+
+def _name_fields(fields: Sequence[JsonObject]) -> str:
+    return ", ".join(
+        f"{_code(req_str(f, 'name'))} ({ROLE_NAMES[req_str(f, 'role')]})" for f in fields
+    )
 
 
 def _module_links(item: JsonObject) -> str:
@@ -627,9 +660,9 @@ def _modules(doc: _Model) -> list[str]:
     name = doc.name
     lines += [
         "",
-        f"- Before you work in a module, read it: `graph describe module <module> --graph {name}"
-        " --json` lists its types, its relations, its links to and from other modules (with the"
-        " other module named) and its rules.",
+        f"- Before you work in a module, read it: `graph describe module <module> --graph {name}`"
+        " lists its types, its relations, its links to and from other modules (with the other"
+        " module named) and its rules. Read its text; `--json` is more than twice the size.",
         f"- To find a term whose module you do not know: `graph describe search <text> --graph"
         f" {name} --json` (types, relations, fields, enum values and states).",
         f"- For the fields, states and relations of one type: `graph describe type <type>"
@@ -958,9 +991,10 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         "",
     ]
     types = _objects(item, "types")
+    labelled = _labelled(doc)
     lines += (
         _table(
-            ["Type", "Alias", "Abstract", "Extends", "Summary"],
+            ["Type", "Alias", "Abstract", "Extends", "Names", "Summary"],
             [
                 [
                     _code(req_str(t, "curie")),
@@ -969,6 +1003,7 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
                     else "",
                     "yes" if t.get("abstract") is True else "no",
                     _code(str(t["extends"])) if t.get("extends") else "",
+                    _name_fields(labelled.get(req_str(t, "curie"), [])),
                     _summary(t),
                 ]
                 for t in types

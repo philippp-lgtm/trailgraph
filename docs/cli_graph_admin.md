@@ -96,7 +96,10 @@ more than one module file, name the main module with `--module <module>` on
 `ontology validate`, `ontology diff`, `ontology release`, `graph create` and
 `graph check --ontology`; without it these commands refuse with
 `usage.missing_argument`. `graph push` takes the main module from the pulled
-base. The release rules (all module files in every version directory, the
+base. The bump of the main module must cover every change of the bundle;
+the own version of each other module is checked against the changes to its
+terms, and one that does not cover them is the warning
+`admin.module_bump_insufficient` on `ontology diff` and `ontology release`. The release rules (all module files in every version directory, the
 bump of the main module, moving a term between modules) are in the
 `ontology-best-practices` skill
 ([versioning](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/versioning_and_release.md#releasing-a-modular-graph)),

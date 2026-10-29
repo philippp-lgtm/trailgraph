@@ -8,9 +8,9 @@ Ontology `company` 1.0.0. The live source is `graph describe module people --gra
 
 ## Types
 
-| Type | Alias | Abstract | Extends | Summary |
-|---|---|---|---|---|
-| `ppl:Person` | `PER-0001` | no |  | A human being who works for the company or with it. |
+| Type | Alias | Abstract | Extends | Names | Summary |
+|---|---|---|---|---|---|
+| `ppl:Person` | `PER-0001` | no |  | `name` (main name), `alt_labels` (other names) | A human being who works for the company or with it. |
 
 ## Relations inside the module
 
