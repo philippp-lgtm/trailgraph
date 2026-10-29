@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:484c9a5c4c22495ac4db7154e9b78ff0004f9113c2a570e46a1af951b5808146"
+  inventory_hash: "sha256:60a1c4432fa5d887401528ce221037e75593e6e0b2faa9a9e39090675f1f9464"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.6.0"
@@ -154,12 +154,14 @@ Every `--json` call prints one JSON object on stdout.
 | `graph create` | write | Create one entity of a type. |
 | `graph describe commands` | meta | Describe every command of this program (graph_cli.inventory/1). |
 | `graph describe fields` | read | List the fields of one type with datatypes and limits. |
+| `graph describe function` | read | Describe one function: parameters, columns, touched terms and its query. |
+| `graph describe functions` | read | List the named functions of the graph with their parameters. |
 | `graph describe lifecycle` | read | Show the lifecycles of a type, or one lifecycle by name. |
 | `graph describe module` | read | Describe one module: its types, relations, links to other modules and rules. |
 | `graph describe modules` | read | List the modules (subject areas) of the graph's ontology and how they link. |
 | `graph describe relations` | read | List the relations of the selected graph's ontology. |
 | `graph describe schema` | read | Show the model as graph query sees it: labels, relationship patterns, properties. |
-| `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states. |
+| `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states, functions. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
 | `graph file add` | write | Store a file as a files:File entity; known content is not stored twice. |

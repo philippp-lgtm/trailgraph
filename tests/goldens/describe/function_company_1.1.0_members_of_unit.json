@@ -1,0 +1,84 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "function": {
+    "name": "members_of_unit",
+    "module": "organization",
+    "summary": "People holding a position in a unit or in any unit below it.",
+    "use_when": "Who works in a department or team, including its sub-units; headcount of a unit.",
+    "status": "active",
+    "replaced_by": null,
+    "featured": true,
+    "signature": "unit: ref org:OrgUnit",
+    "params": [
+      {
+        "name": "unit",
+        "type": "ref",
+        "class": "org:OrgUnit",
+        "enum": null,
+        "many": false,
+        "default": null,
+        "summary": "The unit to list."
+      }
+    ],
+    "returns": [
+      {
+        "column": "person",
+        "summary": "Name of the holder."
+      },
+      {
+        "column": "position",
+        "summary": "Title of the position held."
+      },
+      {
+        "column": "unit",
+        "summary": "The unit the position belongs to."
+      }
+    ],
+    "examples": [
+      {
+        "question": "Who works in the infrastructure department, including its teams?",
+        "params": {}
+      }
+    ],
+    "touches": {
+      "types": [
+        {
+          "curie": "org:OrgUnit",
+          "module": "organization"
+        },
+        {
+          "curie": "org:Position",
+          "module": "organization"
+        },
+        {
+          "curie": "ppl:Person",
+          "module": "people"
+        }
+      ],
+      "relations": [
+        {
+          "curie": "org:holds",
+          "module": "organization"
+        },
+        {
+          "curie": "org:in_unit",
+          "module": "organization"
+        },
+        {
+          "curie": "org:part_of",
+          "module": "organization"
+        }
+      ]
+    },
+    "query": "MATCH (p:`ppl:Person`)-[:`org:holds`]->(q:`org:Position`)-[:`org:in_unit`]->(u:`org:OrgUnit`)-[:`org:part_of`*0..5]->(d:`org:OrgUnit`) WHERE (d.id = $unit)\nRETURN p.name AS person, q.title AS position, u.name AS unit ORDER BY unit, person",
+    "hash": "sha256:65b8d8df95e6e0987ef7b15aa508ecac799fec316d6c1681a123e9be7a2d827d"
+  }
+}

@@ -57,6 +57,11 @@ def _term(details: Mapping[str, JsonValue], program: str) -> str | None:
     return _types(details, program)
 
 
+def _function_search(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Find a function by what it is for."""
+    return f"{program} describe search <words> --kind function"
+
+
 def _schema(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A prefixed name where a local one is expected: the labels as the query writes them."""
     return f"{program} describe schema" if details.get("prefixed") is True else None
@@ -181,6 +186,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "query.parameter_missing": _param,
     "query.too_large": None,
     "query.invalid_value": None,
+    "function.not_found": _function_search,
     "function.parameter_missing": None,
     "function.parameter_unknown": None,
     "function.parameter_invalid": None,

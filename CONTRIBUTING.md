@@ -150,7 +150,7 @@ output fields against real answers and the envelope keys against the
 renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
 placeholders outside `<graph> <type> <id> <attr> <value> <relation>
-<state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
+<function> <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII text. The
 skill names no graph type.
 
 The OpenAPI documents of the server are generated from the inventories with

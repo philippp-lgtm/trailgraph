@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Final
 
 from graph_cli import __version__
@@ -17,6 +18,7 @@ from graph_cli.app_cli.output_schemas import DEFS, NULLABLE_STRING, STRINGS, mod
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.inventory import build_inventory
 from graph_cli.cli_kit.output_schemas import (
+    ANY,
     BOOLEAN,
     INTEGER,
     STRING,
@@ -31,6 +33,7 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead, Page
@@ -169,6 +172,45 @@ _MODULE_HEAD: Final = {
     "summary": STRING,
     "builtin": BOOLEAN,
 }
+_FUNCTION_COUNT: Final = {"functions": INTEGER}
+_FUNCTION_ITEM: Final = {
+    "name": STRING,
+    "module": NULLABLE_STRING,
+    "summary": STRING,
+    "signature": STRING,
+    "status": enum("active", "deprecated"),
+}
+_TOUCHED: Final = array(obj({"curie": STRING, "module": NULLABLE_STRING}))
+_FUNCTION: Final = model_document(
+    {
+        "function": obj(
+            {
+                **_FUNCTION_ITEM,
+                "use_when": STRING,
+                "replaced_by": NULLABLE_STRING,
+                "featured": BOOLEAN,
+                "params": array(
+                    obj(
+                        {
+                            "name": STRING,
+                            "type": STRING,
+                            "class": NULLABLE_STRING,
+                            "enum": NULLABLE_STRING,
+                            "many": BOOLEAN,
+                            "default": ANY,
+                            "summary": STRING,
+                        }
+                    )
+                ),
+                "returns": array(obj({"column": STRING, "summary": STRING})),
+                "examples": array(obj({"question": STRING, "params": obj(extra=ANY)})),
+                "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
+                "query": STRING,
+                "hash": STRING,
+            }
+        )
+    }
+)
 _MODULES: Final = model_document(
     {
         "modules": array(
@@ -178,7 +220,8 @@ _MODULES: Final = model_document(
                     "types": INTEGER,
                     "relations": INTEGER,
                     "links": array(obj({"module": STRING, "out": INTEGER, "in": INTEGER})),
-                }
+                },
+                _FUNCTION_COUNT,  # only when the caller may see the graph's functions
             )
         )
     }
@@ -203,7 +246,12 @@ _MODULE: Final = model_document(
                 "links_out": array(_MODULE_LINK),
                 "links_in": array(_MODULE_LINK),
                 "rules": array(obj({"id": STRING, "severity": STRING, **_DOC})),
-            }
+            },
+            {
+                "functions": array(  # only when the caller may see the graph's functions
+                    obj({"name": STRING, "summary": STRING, "signature": STRING})
+                )
+            },
         )
     }
 )
@@ -221,7 +269,9 @@ _SEARCH: Final = model_document(
                     "deprecated": BOOLEAN,
                     "match": obj(
                         {
-                            "field": enum("name", "curie", "summary", "description"),
+                            "field": enum(
+                                "name", "curie", "summary", "description", "use_when", "touches"
+                            ),
                             "how": enum("exact", "prefix", "word", "contains", "phrase", "words"),
                         }
                     ),
@@ -326,6 +376,7 @@ def _modules_text(data: JsonObject) -> str:
         lines.append(
             f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}"
             f"  {_count(item['types'], 'type')}, {_count(item['relations'], 'relation')}"
+            + (f", {_count(item['functions'], 'function')}" if "functions" in item else "")
         )
         lines.append(f"  {req_str(item, 'summary')}")
         links = [as_object(v, "link") for v in req_list(item, "links")]
@@ -349,6 +400,11 @@ def _link_line(link: JsonObject, module_id: str) -> str:
     if owner != module_id and owner not in others:
         where += f"; declared in {owner}"
     return f"  {_ends(link, 'from')} -{req_str(link, 'relation')}-> {_ends(link, 'to')}  [{where}]"
+
+
+def _function_call(item: JsonObject) -> str:
+    """``name(signature)``: how a function is called."""
+    return f"{req_str(item, 'name')}({req_str(item, 'signature')})"
 
 
 def _module_text(data: JsonObject) -> str:
@@ -395,19 +451,94 @@ def _module_text(data: JsonObject) -> str:
             f"  {req_str(rule, 'id')} ({req_str(rule, 'severity')})  {req_str(rule, 'summary')}"
         )
     section("Rules:", rules)
+    if "functions" in item:
+        calls = [as_object(v, "function") for v in req_list(item, "functions")]
+        section("Functions:", [f"  {_function_call(c)}  {req_str(c, 'summary')}" for c in calls])
     return "\n".join(lines) + "\n"
+
+
+def _functions(state: CommandState, view: GraphRead) -> tuple[FunctionEntry, ...] | None:
+    """The graph's functions the caller may see (``read.function``), else ``None``."""
+    return context(state).reader.functions(view.actor, view.entry)
 
 
 def describe_modules(state: CommandState, graph: str | None) -> Result:
     view = _view(state, graph, "describe modules")
-    data = describe.describe_modules(view.entry, view.model)
+    data = describe.describe_modules(view.entry, view.model, _functions(state, view))
     return Result(data=data, graph=view.envelope_graph(), text=_modules_text(data))
 
 
 def describe_module(state: CommandState, module: str, graph: str | None) -> Result:
     view = _view(state, graph, "describe module")
-    data = describe.describe_module(view.entry, view.model, module)
+    data = describe.describe_module(view.entry, view.model, module, _functions(state, view))
     return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
+
+
+def _functions_text(data: JsonObject) -> str:
+    """One line per function: how it is called, module, summary."""
+    lines = []
+    for value in req_list(data, "functions"):
+        item = as_object(value, "function")
+        deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
+        module = f"  [{item['module']}]" if item["module"] else ""
+        lines.append(f"{_function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
+    return "\n".join(lines or ["-"]) + "\n"
+
+
+def describe_functions(
+    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+) -> Result:
+    view = _view(state, graph, "describe functions")
+    data = describe.describe_functions(
+        view.entry,
+        view.model,
+        _functions(state, view),
+        module=module,
+        include_deprecated=include_deprecated,
+    )
+    return Result(data=data, graph=view.envelope_graph(), text=_functions_text(data))
+
+
+def _function_text(data: JsonObject) -> str:
+    """The definition in reading order: head, parameters, columns, touched terms, query."""
+    f = as_object(data["function"], "function")
+    head = f"{_function_call(f)}  [{f['module']}]" if f["module"] else _function_call(f)
+    lines = [head, f"  {req_str(f, 'summary')}", f"  Use when: {req_str(f, 'use_when')}"]
+    if f["status"] == "deprecated":
+        replaced = f"; use {f['replaced_by']}" if f["replaced_by"] else ""
+        lines.append(f"  Deprecated{replaced}")
+    lines.append("Parameters:")
+    for value in req_list(f, "params"):
+        p = as_object(value, "param")
+        default = "" if p["default"] is None else f" (default {json.dumps(p['default'])})"
+        kind = {"ref": f"ref {p['class']}", "enum": f"enum {p['enum']}"}.get(
+            str(p["type"]), str(p["type"])
+        )
+        kind = f"list of {kind}" if p["many"] else kind
+        lines.append(f"  {req_str(p, 'name')}: {kind}{default}  {req_str(p, 'summary')}")
+    if not req_list(f, "params"):
+        lines.append("  -")
+    lines.append("Returns:")
+    for value in req_list(f, "returns"):
+        r = as_object(value, "column")
+        lines.append(f"  {req_str(r, 'column')}  {req_str(r, 'summary')}")
+    lines.append("Examples:")
+    for value in req_list(f, "examples"):
+        lines.append(f"  {req_str(as_object(value, 'example'), 'question')}")
+    touches = as_object(f["touches"], "touches")
+    for key, title in (("types", "Types"), ("relations", "Relations")):
+        curies = [req_str(as_object(v, "term"), "curie") for v in req_list(touches, key)]
+        lines.append(f"{title} touched: {', '.join(curies) or '-'}")
+    lines.append("Query:")
+    lines.extend(f"  {row}" for row in req_str(f, "query").splitlines())
+    lines.append(f"Hash: {req_str(f, 'hash')}")
+    return "\n".join(lines) + "\n"
+
+
+def describe_function(state: CommandState, name: str, graph: str | None) -> Result:
+    view = _view(state, graph, "describe function")
+    data = describe.describe_function(view.entry, view.model, _functions(state, view), name)
+    return Result(data=data, graph=view.envelope_graph(), text=_function_text(data))
 
 
 def _search_text(data: JsonObject) -> str:
@@ -436,7 +567,14 @@ def describe_search(
 ) -> Result:
     view = _view(state, graph, "describe search")
     data, total = search_model(
-        view.entry, view.model, text, kinds=kind, module=module, limit=limit, offset=offset
+        view.entry,
+        view.model,
+        text,
+        kinds=kind,
+        module=module,
+        limit=limit,
+        offset=offset,
+        functions=_functions(state, view),
     )
     page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
     options = (("--kind", kind), ("--module", (module,) if module else ()))
@@ -657,9 +795,12 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="read.describe",
-        summary="Search the ontology by text: types, relations, fields, enum values, states.",
+        summary=(
+            "Search the ontology by text: types, relations, fields, enum values, states, functions."
+        ),
         description=(
-            "Looks at names, CURIEs, summaries and descriptions of the model, never at "
+            "Looks at names, CURIEs, summaries and descriptions of the model, and at the "
+            "names, summaries and purpose of the graph's functions, never at "
             "graph data (that is graph search). Ignores case, accents and punctuation; "
             "best matches first."
         ),
@@ -685,11 +826,58 @@ SPECS: Final = (
                 "graph describe search <value> --kind attribute --module <module> --json",
                 "Only fields, only in one module.",
             ),
+            Example(
+                "graph describe search <value> --kind function",
+                "Only the named functions that fit the words.",
+            ),
         ),
         errors=(*GRAPH_ERRORS, "term.unknown"),
         handler=describe_search,
         output=_SEARCH,
         limits={"limit": MAX_LIMIT},
+    ),
+    _describe(
+        "functions",
+        "List the named functions of the graph with their parameters.",
+        describe_functions,
+        with_type=False,
+        output=model_document({"functions": array(obj(_FUNCTION_ITEM))}, _MODULE_FILTER),
+        examples=(
+            Example("graph describe functions", "The functions: name, parameters, summary."),
+            Example(
+                "graph describe functions --module <module> --include-deprecated",
+                "One module's functions, deprecated ones too.",
+            ),
+        ),
+        options=(
+            MODULE_OPTION,
+            ParamSpec("--include-deprecated", "flag", "Also list deprecated functions."),
+        ),
+    ),
+    CommandSpec(
+        path=("describe", "function"),
+        kind="read",
+        surface="model",
+        action="read.describe",
+        summary="Describe one function: parameters, columns, touched terms and its query.",
+        description=(
+            "Shows what a function takes and returns, the types and relations its query "
+            "touches and the normalized query text, which can be copied as the start of an "
+            "ad-hoc query. Only callers who may read functions see them."
+        ),
+        params=(
+            ParamSpec("name", "string", "The function name.", required=True, positional=True),
+            GRAPH,
+        ),
+        examples=(
+            Example("graph describe function <function>", "Everything about one function."),
+            Example(
+                "graph describe function <function> --json", "The function as graph_cli.model/1."
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, "function.not_found"),
+        handler=describe_function,
+        output=_FUNCTION,
     ),
     _describe(
         "type",

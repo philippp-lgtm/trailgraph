@@ -174,6 +174,7 @@ in, documents out, no storage and no services.
 | --- | --- |
 | `kinetic.format` | `graph_cli.function/1`: the typed definition of one function file, strict YAML loading with a `Problem` per defect (shape, names, lengths), and the `Problem` type of every check |
 | `kinetic.compile` | `compile_catalog` checks the function files of a graph against a compiled ontology and writes the catalog document `graph_cli.functions/1`; `check_catalog` runs the same checks over a published catalog against another model |
+| `kinetic.entries` | the entries of a published catalog as the app shows them: signature text, the summary and detail documents of `describe functions` and `describe function` |
 | `kinetic.bind` | parameter values from CLI text or JSON by the declared type, defaults, typed placeholders for resolving |
 
 The checks use the query engine without data: `query.cypher.parameters` lists the

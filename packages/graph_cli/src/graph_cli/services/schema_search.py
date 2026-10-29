@@ -2,7 +2,9 @@
 the model only, never graph data.
 
 Searched: types, relations, attributes (once, under the class that declares them), enum values
-and lifecycle states, by local name, CURIE, summary and description. Matching works on
+and lifecycle states, by local name, CURIE, summary and description, and the named functions
+of the graph (``functions``, when the caller may see them), by name, summary and, in tier 5,
+what they are for. Matching works on
 ``kernel.text.search_key`` like ``graph search``: case, accents and punctuation do not
 matter; a name is also read as words (``CostCenter`` and ``reports_to`` have two).
 
@@ -13,16 +15,20 @@ Order, best first (``rank``): by how the text matches
   2. every word of the text starts a word of the name,
   3. the name contains the text,
   4. the summary contains the text (as a phrase or every word of it),
-  5. the description does,
+  5. the description does (a function: its ``use_when`` text, example questions or parameter
+     names, field ``use_when``; or the local name, inverse label or summary of a type or
+     relation its query touches, field ``touches``),
 then shorter names (CURIEs for a CURIE match), then the kind (type, relation, attribute,
 enum value, state) and the CURIE.
-A hit names the field and the way it matched. The CURIE of an attribute, enum value or state is
+A hit names the field and the way it matched. The ``curie`` of a function hit is its name.
+The CURIE of an attribute, enum value or state is
 its owner's CURIE, a dot and its name (``ppl:Person.email``); ``of`` names the owner.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -30,12 +36,13 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.text import search_key
+from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import DEFAULT_LIMIT, check_paging
 from graph_cli.query.search import MIN_KEY_CHARS
 from graph_cli.services.describe import ModuleIndex, model_envelope
 
-SEARCH_TERM_KINDS: Final = ("type", "relation", "attribute", "enum_value", "state")
+SEARCH_TERM_KINDS: Final = ("type", "relation", "attribute", "enum_value", "state", "function")
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
@@ -49,6 +56,7 @@ class _Term:
     summary: str | None
     description: str | None
     deprecated: bool
+    deeper: tuple[tuple[str, str], ...] = ()  # (field, text) pairs that only match in tier 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +128,42 @@ def _terms(model: CompiledModel, index: ModuleIndex) -> list[_Term]:
     return found
 
 
+def _function_terms(
+    functions: Sequence[FunctionEntry], model: CompiledModel, index: ModuleIndex
+) -> list[_Term]:
+    """A function reads as its name and summary; what it is for and the terms its query
+    touches (the ontology enriches the function's own text) match in tier 5."""
+    found: list[_Term] = []
+    for f in functions:
+        deeper = [("use_when", f.defn.use_when)]
+        deeper += [("use_when", e.question) for e in f.defn.examples]
+        deeper += [("use_when", p.name) for p in f.defn.params]
+        for t in f.types:
+            if t.curie in model.classes:
+                deeper.append(("touches", _CAMEL.sub(" ", t.curie.partition(":")[2])))
+                deeper.append(("touches", model.classes[t.curie].doc.summary or ""))
+        for t in f.relations:
+            if t.curie in model.relations:
+                r = model.relations[t.curie]
+                deeper.append(("touches", _CAMEL.sub(" ", t.curie.partition(":")[2])))
+                deeper.append(("touches", r.inverse_label or ""))
+                deeper.append(("touches", r.doc.summary or ""))
+        found.append(
+            _Term(
+                "function",
+                f.name,
+                f.name,
+                None,
+                f.module or "",
+                f.defn.summary,
+                None,
+                f.deprecated,
+                tuple(deeper),
+            )
+        )
+    return found
+
+
 def _name_key(name: str) -> str:
     return search_key(_CAMEL.sub(" ", name))
 
@@ -162,6 +206,10 @@ def _match(query: _Query, term: _Term) -> tuple[int, str, str] | None:
     how = _contains(query, term.description)
     if how:
         return 5, "description", how
+    for field, text in term.deeper:
+        how = _contains(query, text)
+        if how:
+            return 5, field, how
     return None
 
 
@@ -174,9 +222,11 @@ def search_model(
     module: str | None = None,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
+    functions: Sequence[FunctionEntry] | None = None,
 ) -> tuple[dict[str, JsonValue], int]:
     """One page of the hits and the total number of hits. ``kinds`` (any of
-    ``SEARCH_TERM_KINDS``; none means all) and ``module`` (id or prefix) narrow the search."""
+    ``SEARCH_TERM_KINDS``; none means all) and ``module`` (id or prefix) narrow the search.
+    ``functions`` are the ones the caller may see (``None``: none)."""
     check_paging(limit, offset)
     key = search_key(text)
     if len(key.replace(" ", "")) < MIN_KEY_CHARS:
@@ -196,7 +246,7 @@ def search_model(
     wanted = index.filter(module)
     query = _Query(key, key.replace(" ", ""), tuple(key.split()), ":" in text)
     hits: list[tuple[tuple[int, int, int, str], _Term, str, str]] = []
-    for term in _terms(model, index):
+    for term in [*_terms(model, index), *_function_terms(functions or (), model, index)]:
         if (kinds and term.kind not in kinds) or (wanted and term.module != wanted):
             continue
         found = _match(query, term)

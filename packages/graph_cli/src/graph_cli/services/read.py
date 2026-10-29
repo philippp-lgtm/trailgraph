@@ -49,6 +49,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
+from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
@@ -57,6 +58,7 @@ from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStor
 from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
+from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
@@ -272,6 +274,7 @@ class ReadService:
         self._env = env
         self.timings = timings if timings is not None else Timings()
         self._models = ModelCache(catalog, self.timings)
+        self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
 
     # ---- authorization -------------------------------------------------
 
@@ -304,6 +307,33 @@ class ReadService:
             policy = self._policy.current(entry.id)
             decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
         return decision.effect == "allow"
+
+    def functions(self, actor: ActorContext, entry: GraphEntry) -> tuple[FunctionEntry, ...] | None:
+        """The graph's published functions as the actor may see them (K10): ``None`` when the
+        graph has none or the actor may not ``read.function`` on it, so a listing shows
+        nothing and records nothing (no denial event, like ``graphs``). The parsed catalog is
+        cached by the hash of the compiled document."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            decision = authorize(actor, "read.function", f"graph:{entry.id}", _VISIBLE, policy)
+        if decision.effect != "allow":
+            return None
+        with self.timings.phase("model"):
+            slot = self._catalog.read_functions(entry.id)
+            if slot is None:
+                return None
+            found = self._functions.get(slot.compiled_hash)
+            if found is None:
+                try:
+                    found = load_entries(slot.compiled)
+                except JsonShapeError as exc:
+                    raise GraphCliError(
+                        "functions.slot_invalid",
+                        f"the compiled function catalog is unreadable: {exc}",
+                        details={"file": f"graphs/{entry.id}/functions/slot.json"},
+                    ) from exc
+                self._functions[slot.compiled_hash] = found
+        return found or None
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta

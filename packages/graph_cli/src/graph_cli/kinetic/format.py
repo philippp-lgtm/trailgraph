@@ -112,6 +112,19 @@ class ParamDef:
     def required(self) -> bool:
         return self.default is None
 
+    @property
+    def type_text(self) -> str:
+        """The type as people read it: ``string``, ``ref org:OrgUnit``, ``list of date``."""
+        kind = {"ref": f"ref {self.of_class}", "enum": f"enum {self.enum}"}.get(
+            self.type, self.type
+        )
+        return f"list of {kind}" if self.many else kind
+
+    @property
+    def signature(self) -> str:
+        """``name: type``; ``name?: type`` for an optional parameter."""
+        return f"{self.name}{'' if self.required else '?'}: {self.type_text}"
+
     def to_json(self) -> dict[str, JsonValue]:
         return {
             "name": self.name,

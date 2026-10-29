@@ -123,21 +123,14 @@ def _default(function: str, param: ParamDef, model: CompiledModel) -> Value:
     if param.default is None:
         raise GraphCliError(
             "function.parameter_missing",
-            f"{function} needs the parameter {param.name!r} ({_signature(param)})",
-            details={"function": function, "parameter": param.name, "type": _signature(param)},
+            f"{function} needs the parameter {param.name!r} ({param.type_text})",
+            details={"function": function, "parameter": param.name, "type": param.type_text},
         )
     if param.many and isinstance(param.default, list):
         return [
             _checked(function, param, partial(_from_json, param, v, model)) for v in param.default
         ]
     return _checked(function, param, partial(_from_json, param, param.default, model))
-
-
-def _signature(param: ParamDef) -> str:
-    kind = {"ref": f"ref {param.of_class}", "enum": f"enum {param.enum}"}.get(
-        param.type, param.type
-    )
-    return f"list of {kind}" if param.many else kind
 
 
 def _invalid(function: str, param: ParamDef, message: str) -> GraphCliError:
@@ -147,7 +140,7 @@ def _invalid(function: str, param: ParamDef, message: str) -> GraphCliError:
         details={
             "function": function,
             "parameter": param.name,
-            "type": _signature(param),
+            "type": param.type_text,
             "reason": message,
         },
     )
@@ -157,7 +150,7 @@ def _checked(function: str, param: ParamDef, read: Callable[[], str | int | bool
     try:
         value = read()
     except ValueError as exc:
-        raise _invalid(function, param, f"expects {_signature(param)}: {exc}") from None
+        raise _invalid(function, param, f"expects {param.type_text}: {exc}") from None
     return _materialize(param, value)
 
 

@@ -1,0 +1,55 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "functions": [
+    {
+      "name": "guidelines_in_effect",
+      "module": "operations",
+      "summary": "Guidelines that apply on a date to the processes owned from a unit.",
+      "signature": "unit: ref org:OrgUnit, date: date",
+      "status": "active"
+    },
+    {
+      "name": "members_of_unit",
+      "module": "organization",
+      "summary": "People holding a position in a unit or in any unit below it.",
+      "signature": "unit: ref org:OrgUnit",
+      "status": "active"
+    },
+    {
+      "name": "missing_required_trainings",
+      "module": "operations",
+      "summary": "Trainings that holders of positions in a unit have not completed yet.",
+      "signature": "unit: ref org:OrgUnit",
+      "status": "active"
+    },
+    {
+      "name": "people_by_email_text",
+      "module": "people",
+      "summary": "People whose work email contains a text.",
+      "signature": "text: string",
+      "status": "active"
+    },
+    {
+      "name": "training_completions",
+      "module": "operations",
+      "summary": "Who completed which of the given trainings since a date.",
+      "signature": "titles: list of string, since?: date",
+      "status": "active"
+    },
+    {
+      "name": "vacant_positions",
+      "module": "organization",
+      "summary": "Positions in a unit or below it that nobody holds.",
+      "signature": "unit: ref org:OrgUnit",
+      "status": "active"
+    }
+  ]
+}

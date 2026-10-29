@@ -76,6 +76,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A query value has the wrong type or cannot be computed.",
     ),
+    ErrorSpec("function.not_found", _C.NOT_FOUND, False, "The graph has no such function."),
     ErrorSpec("function.parameter_missing", _C.USAGE, False, "A function parameter has no value."),
     ErrorSpec("function.parameter_unknown", _C.USAGE, False, "The function has no such parameter."),
     ErrorSpec(

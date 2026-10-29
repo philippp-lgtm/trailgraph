@@ -18,8 +18,8 @@ from graph_cli.kernel.errors import GraphCliError
 
 
 def test_taxonomy_sizes_and_disjointness() -> None:
-    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (9, 8, 17)
-    assert len(ACTIONS) == 34  # B14.11: maint.token_create, maint.token_revoke
+    assert (len(READ_ACTIONS), len(WRITE_ACTIONS), len(MAINT_ACTIONS)) == (10, 8, 17)
+    assert len(ACTIONS) == 35  # B14.11: maint.token_create, maint.token_revoke
     assert RESERVED_ACTIONS <= ACTIONS
 
 
@@ -60,3 +60,11 @@ def test_query_is_part_of_the_read_level() -> None:
     assert "read.query" in level_actions("read")
     assert "read.query" not in RESERVED_ACTIONS
     assert "read.native" not in level_actions("read")
+
+
+def test_function_is_part_of_the_read_level() -> None:
+    """Named functions read with their own action, so a deny rule can withhold them alone."""
+    assert "read.function" in READ_ACTIONS
+    assert "read.function" in level_actions("read")
+    assert "read.function" in level_actions("write")
+    assert "read.function" not in RESERVED_ACTIONS

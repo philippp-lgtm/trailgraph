@@ -47,6 +47,14 @@ def runner(env: dict[str, str], cwd: Path) -> Run:
     return run
 
 
+def functions_step(ontology: str) -> tuple[tuple[str, ...], ...]:
+    """Publish the fixture functions of the ontology, if it has some (the others have none)."""
+    folder = FIXTURES / "functions" / ontology / "valid"
+    if not folder.is_dir():
+        return ()
+    return (("graph", "functions", "publish", "example_graph", str(folder)),)
+
+
 def prepare(env: dict[str, str], cwd: Path, ontology: str, version: str | None = None) -> None:
     version = version or compiled_model(ontology).bundle_version
     policy = cwd / "installation.yaml"
@@ -56,6 +64,7 @@ def prepare(env: dict[str, str], cwd: Path, ontology: str, version: str | None =
         ("graph", "create", "example_graph", "--ontology", str(ONTOLOGIES / ontology / version)),
         ("policy", "apply", str(policy), "--reason", "equivalence"),
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL)),
+        *functions_step(ontology),
     ):
         result = subprocess.run(
             [str(BIN_DIR / "graph-admin"), *args], env=env, cwd=cwd, capture_output=True, text=True
@@ -101,9 +110,19 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "module", "no_such_module"),
         ("describe", "search", "name", "--kind", "type", "--kind", "attribute"),
         ("describe", "search", "name", "--module", "core", "--limit", "2"),
+        ("describe", "functions"),
+        ("describe", "functions", "--include-deprecated"),
+        ("describe", "functions", "--module", "no_such_module"),
+        ("describe", "function", "items_in_location"),
+        ("describe", "function", "no_such_function"),
+        ("describe", "search", "location", "--kind", "function"),
+        ("describe", "search", "location"),
     ):
         call(*args)
     text("describe", "types")
+    text("describe", "functions")
+    text("describe", "function", "items_in_location")
+    text("describe", "modules")
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))
     call("get", entity)
@@ -177,6 +196,8 @@ def test_local_and_remote_answers_are_equal(
         runner(local, workdir), roles, OpsFactory(compiled_model(ontology)), workdir
     )
 
+    listed = next(o for o in expected if o[0] == ["describe", "functions"])
+    assert bool(listed[2]["data"]["functions"]) == (ontology == "inventory")  # both are covered
     owner = home_env(isolated_env, tmp_path / "server")
     prepare(owner, tmp_path, ontology)
     created = subprocess.run(
