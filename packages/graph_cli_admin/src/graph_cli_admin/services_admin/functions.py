@@ -8,8 +8,9 @@ pin at publish time. The app reads only the compiled catalog.
 
 Publishing is one maintenance operation in the W.e shape, authorized as
 ``maint.graph_configure`` like a skill: intent in the graph stream with
-``change.functions{from, to}`` (tree hashes of the sources), the slot switch
-(the commit point), then an installation event anchoring the intent. Refused
+``change.functions{from, to, compiled_hash}`` (tree hashes of the sources, and the
+hash of the compiled catalog), the slot switch (the commit point), then an installation
+event anchoring the intent. Refused
 before any event: an archived graph (``graph.archived``) and invalid files
 (``admin.functions_invalid``, every problem of every function in
 ``details.problems``). Publishing the same files against the same pin again
@@ -124,7 +125,9 @@ def write(
     reason: str | None,
 ) -> None:
     """Switch the slot from ``current`` to ``slot`` in the W.e shape."""
-    change = events.functions_change(current.hash if current is not None else None, slot.hash)
+    change = events.functions_change(
+        current.hash if current is not None else None, slot.hash, slot.compiled_hash
+    )
     receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
     session.replace_functions(slot, receipt)
     ctx.anchor(entry, decisions, meta, receipt, reason=reason)

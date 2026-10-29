@@ -96,7 +96,9 @@ def test_publish_records_the_change_and_verifies_clean(
     ]
     intent = graph_events(root, graph_id)[-1]
     assert intent["actions"] == ["maint.graph_configure"]
-    assert intent["change"] == {"functions": {"from": None, "to": digest}}
+    assert intent["change"]["functions"]["from"] is None
+    assert intent["change"]["functions"]["to"] == digest
+    assert intent["change"]["functions"]["compiled_hash"] == data["to"]["compiled_hash"]
     assert intent["reason"] == "first functions"
     companion = installation_events(root)[-1]
     assert companion["actions"] == ["maint.graph_configure"]
@@ -131,6 +133,7 @@ def test_republishing_changed_files_names_both_hashes(
     assert graph_events(root, graph_id)[-1]["change"]["functions"] == {
         "from": first,
         "to": sources_hash(changed),
+        "compiled_hash": outcome.data["to"]["compiled_hash"],
     }
     assert [f["name"] for f in show(run_cli).data["functions"]] == ["items_in_location"]
     assert admin(run_cli, "audit", "verify").code == 0

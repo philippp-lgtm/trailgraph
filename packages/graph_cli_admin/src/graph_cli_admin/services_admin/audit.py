@@ -54,7 +54,7 @@ from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findin
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
 from graph_cli.kernel.ports.catalog import FunctionsSlot, SkillSlot
-from graph_cli.kernel.ports.storage import GraphStoreRead
+from graph_cli.kernel.ports.storage import GraphStoreRead, MaintenanceSession
 from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
@@ -165,6 +165,23 @@ def _slot_hash(read: Callable[[], SkillSlot | FunctionsSlot | None]) -> str | No
     return slot.hash if slot is not None else None
 
 
+def _installed_slots(session: MaintenanceSession) -> InstalledSlots:
+    """The published skill and function catalog as found, damaged ones as findings."""
+    functions: FunctionsSlot | None = None
+    try:
+        functions = session.read_functions()
+        functions_hash = functions.hash if functions is not None else None
+    except GraphCliError as exc:
+        if exc.code not in DAMAGED_SLOT:
+            raise
+        functions_hash = UNREADABLE
+    return InstalledSlots(
+        skill=_slot_hash(session.read_skill),
+        functions=functions_hash,
+        functions_compiled=functions.compiled_hash if functions is not None else None,
+    )
+
+
 def _installed(read: Callable[[], bytes | None]) -> InstalledPolicy:
     """An installed policy as found; one that cannot be read is a finding, not a crash."""
     try:
@@ -187,9 +204,7 @@ def _verify_graph(
             releases=session.release_hashes(),
             anchored=anchored or frozenset(),
             policy=_installed(session.read_policy),
-            slots=InstalledSlots(
-                skill=_slot_hash(session.read_skill), functions=_slot_hash(session.read_functions)
-            ),
+            slots=_installed_slots(session),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

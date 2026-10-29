@@ -88,10 +88,12 @@ UNREADABLE = "unreadable"
 @dataclass(frozen=True, slots=True)
 class InstalledSlots:
     """The tree hashes of the published skill and function catalog as found: ``None`` when
-    the slot is empty, ``"unreadable"`` when it is damaged (K6)."""
+    the slot is empty, ``"unreadable"`` when it is damaged (K6). ``functions_compiled`` is the
+    hash of the compiled catalog the functions slot names (``None`` when there is no slot)."""
 
     skill: str | None
     functions: str | None
+    functions_compiled: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +301,10 @@ def check_maintenance(
         findings += _policy_walk(stream, ok, effects.policy, effects.anchored)
     if effects.slots is not None:
         findings += _slot_walk(stream, ok, "skill", effects.slots.skill, effects.anchored)
-        findings += _slot_walk(stream, ok, "functions", effects.slots.functions, effects.anchored)
+        walked = _slot_walk(stream, ok, "functions", effects.slots.functions, effects.anchored)
+        if not any(f.code == codes.SLOT_MISMATCH for f in walked):
+            walked += _compiled_check(stream, ok, effects.slots, effects.anchored)
+        findings += walked
     return findings
 
 
@@ -789,6 +794,41 @@ def _slot_walk(
         interrupted=f"{key} intent without its published slot (an interrupted publish)",
         changed=f"the published {key} changed outside the recorded {key} events",
     )
+
+
+def _compiled_check(
+    stream: AuditStream,
+    events: Sequence[Mapping[str, JsonValue]],
+    slots: InstalledSlots,
+    anchored: frozenset[int],
+) -> list[Finding]:
+    """The compiled catalog the functions slot names must be the one the last committed
+    publish recorded in ``change.functions.compiled_hash`` (the app reads the compiled
+    file, not the sources); the caller skips it when the sources hash already mismatches."""
+    installed, compiled = slots.functions, slots.functions_compiled
+    if installed is None or installed == UNREADABLE or compiled is None:
+        return []
+    graph_id = graph_of_stream(stream)
+    accepted: list[JsonValue] = []
+    for event, change in reversed(_effects(events, CONFIGURE_ACTION, "functions")):
+        if change.get("to") != installed:
+            continue
+        accepted.append(change.get("compiled_hash"))
+        # An interrupted republish of the same sources leaves the previous compiled catalog.
+        if not (change.get("from") == installed and event.get("seq") not in anchored):
+            break
+    if compiled in accepted or not accepted:
+        return []
+    return [
+        _finding(
+            codes.SLOT_MISMATCH,
+            {"stream": stream, "path": f"graphs/{graph_id}/functions"},
+            "the compiled catalog of the published functions differs from the recorded "
+            "compiled_hash (the sources hash matches)",
+            expected=accepted[0],
+            actual=compiled,
+        )
+    ]
 
 
 def _walk(

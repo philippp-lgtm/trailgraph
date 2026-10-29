@@ -472,14 +472,17 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
     for key in ("skill", "functions"):
         if CONFIGURE_ACTION in actions and key in entries:
             slot = entries[key]
+            fields = {"from", "to", "compiled_hash"} if key == "functions" else {"from", "to"}
             if not (
                 isinstance(slot, Mapping)
-                and set(slot) == {"from", "to"}
+                and set(slot) == fields
                 and (slot["from"] is None or _is_hash(slot["from"]))
                 and _is_hash(slot["to"])
+                and (key != "functions" or _is_hash(slot["compiled_hash"]))
             ):
                 problems.append(
-                    f"a {key} change needs change.{key}{{from: hash or null, to: hash}}"
+                    f"a {key} change needs change.{key}{{from: hash or null, to: hash"
+                    + (", compiled_hash: hash}" if key == "functions" else "}")
                 )
     for key in ("policy", "installation_policy"):
         if POLICY_ACTION in actions and key in entries:

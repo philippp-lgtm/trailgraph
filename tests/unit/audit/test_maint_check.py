@@ -175,14 +175,20 @@ def slot_check(
     a mismatch of the slot itself is reported as ``"slot"``."""
     stream = Stream()
     for old, new in published:
-        stream.maint("maint.graph_configure", {key: {"from": old, "to": new}})
+        change = {"from": old, "to": new}
+        if key == "functions":
+            change["compiled_hash"] = COMPILED
+        stream.maint("maint.graph_configure", {key: change})
     other = None
-    slots = InstalledSlots(found, other) if key == "skill" else InstalledSlots(other, found)
+    slots = (
+        InstalledSlots(found, other) if key == "skill" else InstalledSlots(other, found, COMPILED)
+    )
     effects = MaintEffects(pin(0), {}, anchored=frozenset(anchored), slots=slots)
     findings = check_maintenance(stream.graph_id, stream.events(), effects)
     return [(f.code, "slot" if "path" in f.target else f.target.get("seq")) for f in findings]
 
 
+COMPILED = hash_value({"compiled": 1})
 A, B, C = (hash_value({"slot": n}) for n in "abc")
 SLOT = codes.SLOT_MISMATCH
 

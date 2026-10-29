@@ -5,6 +5,7 @@ Both are published with the real ``graph-admin`` commands and changed by hand
 afterwards, as a same-user agent could.
 """
 
+import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,7 @@ from support.app import create_graph
 from support.fixtures import FIXTURES
 
 from graph_cli.audit import finding_codes as audit_codes
+from graph_cli.kernel.canonical import canonical_bytes, hash_value
 
 SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
@@ -141,3 +143,41 @@ def test_a_rollback_to_an_earlier_catalog_is_a_slot_mismatch(
     shutil.rmtree(directory)
     shutil.copytree(saved, directory)
     assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def swap_compiled_and_slot(directory: Path) -> None:
+    """Replace the compiled catalog by another one and make slot.json name it, as a
+    same-user agent could; the sources and their hash stay untouched."""
+    functions = directory / "functions"
+    slot_path = functions / "slot.json"
+    slot = json.loads(slot_path.read_text())
+    old = functions / "compiled" / f"{slot['compiled_hash'].removeprefix('sha256:')}.json"
+    doc = json.loads(old.read_text())
+    doc["functions"] = doc["functions"][:-1]
+    new_hash = hash_value(doc)
+    new = old.with_name(f"{new_hash.removeprefix('sha256:')}.json")
+    new.write_bytes(canonical_bytes(doc))
+    old.unlink()
+    slot["compiled_hash"] = new_hash
+    slot_path.write_text(json.dumps(slot, indent=2) + "\n")
+
+
+def test_a_replaced_compiled_catalog_with_an_adjusted_slot_is_detected(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_functions(run_cli)
+    assert codes(run_cli) == []
+    swap_compiled_and_slot(graph_dir(run_cli, root))
+    outcome = admin(run_cli, "audit", "verify")
+    assert outcome.code != 0
+    findings = outcome.error["details"]["findings"]
+    assert [f["code"] for f in findings] == [audit_codes.SLOT_MISMATCH]
+    assert "compiled" in findings[0]["message"]
+
+
+def test_untouched_compiled_catalog_verifies_after_republish(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_functions(run_cli)
+    publish_functions(run_cli)
+    assert codes(run_cli) == []
