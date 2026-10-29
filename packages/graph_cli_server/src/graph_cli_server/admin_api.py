@@ -88,6 +88,8 @@ PROJECT_COMMANDS: Final = frozenset(
     {
         "files verify",
         "graph check",
+        "graph functions publish",
+        "graph functions show",
         "graph list",
         "graph pull",
         "graph push",

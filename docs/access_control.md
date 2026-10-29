@@ -99,10 +99,11 @@ obligations:
 `scopes.<project>.<graph>: maintain` lets an admin token bound to the
 project (`graph-admin token create NAME --scope admin --project P`) run
 the graph-level maintenance of that graph: `ontology release` (release
-and pin), `graph skill publish` and `graph push` (`graph_configure`),
+and pin), `graph skill publish`, `graph functions publish` and `graph push`
+(`graph_configure`),
 `graph check` and `files verify` (`audit_verify`) and `graph reindex`;
 reads that show the graph's configuration (`graph show`, `graph pull`,
-`graph skill render`, `ontology diff --graph`) need `graph_configure`
+`graph skill render`, `graph functions show`, `ontology diff --graph`) need `graph_configure`
 too. Check and release findings quote the graph's data, so `maintain`
 includes `read.get` on the graph, and `graph check`, `ontology release`
 and a `graph push` that releases also authorize it for a project admin: a

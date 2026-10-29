@@ -152,6 +152,14 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         "skill_summary": obj(  # kernel.ports.catalog.SkillSlot.summary
             {"kind": SKILL_KIND, "hash": STRING, "published_against": ref("ontology_pin")}
         ),
+        "functions_summary": obj(  # kernel.ports.catalog.FunctionsSlot.summary
+            {
+                "count": INTEGER,
+                "hash": STRING,
+                "compiled_hash": STRING,
+                "published_against": ref("ontology_pin"),
+            }
+        ),
         "source_skill": obj(  # services_admin.sources._skill_json
             {"name": STRING, "kind": SKILL_KIND, "hash": STRING}
         ),

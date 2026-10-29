@@ -42,6 +42,7 @@ def program(*, remote: bool = False) -> click.Group:
             "audit": "Verify and anchor the audit trail.",
             "describe": "Describe the commands of this program.",
             "files": "Verify and clean up the stored files of a graph.",
+            "functions": "Publish the named read functions of a graph, or show them.",
             "graph": "Create and inspect graphs.",
             "ontology": "Validate, compare and release authored ontologies.",
             "policy": "Check, show, compare, apply and explain access policies.",

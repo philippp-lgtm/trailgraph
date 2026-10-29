@@ -16,8 +16,9 @@ does not cascade into findings for every later line:
 ``cross_check`` matches write intents with the tx log (ids, changeset hash
 and, when recorded, changeset size; B5.6, B5.12),
 ``check_maintenance`` judges maintenance intents by their effects and walks
-the pin and graph policy events against the manifest and the installed
-policy, ``check_policy`` walks the installation policy events (B5.15),
+the pin, graph policy and skill and function catalog events against the
+manifest, the installed policy and the published slots, ``check_policy`` walks
+the installation policy events (B5.15),
 ``check_policy_hashes`` checks every graph-stream decision against the
 policy in effect, and ``check_anchors`` matches installation anchors with
 graph streams (B5.11).
@@ -38,6 +39,7 @@ from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.events import changeset_size
 from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
+    CONFIGURE_ACTION,
     MAINT_EFFECT_ACTIONS,
     PIN_ACTION,
     POLICY_ACTION,
@@ -84,6 +86,15 @@ UNREADABLE = "unreadable"
 
 
 @dataclass(frozen=True, slots=True)
+class InstalledSlots:
+    """The tree hashes of the published skill and function catalog as found: ``None`` when
+    the slot is empty, ``"unreadable"`` when it is damaged (K6)."""
+
+    skill: str | None
+    functions: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class MaintEffects:
     """The maintenance effects found on disk, for judging maintenance intents (B5.6).
 
@@ -92,13 +103,15 @@ class MaintEffects:
     ``anchored`` are the graph-stream seqs named by companion anchors
     (``effect_anchors``): a companion is appended only after its effect, so
     an anchored intent is committed (W.e). ``policy`` is the graph's installed
-    policy; ``None`` skips the policy walk.
+    policy; ``None`` skips the policy walk. ``slots`` are the published skill
+    and function catalog; ``None`` skips the slot walks.
     """
 
     manifest_pin: OntologyPin | None
     releases: Mapping[str, str]  # installed version -> artifact hash of its compiled.json
     anchored: frozenset[int] = frozenset()
     policy: InstalledPolicy | None = None
+    slots: InstalledSlots | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +297,9 @@ def check_maintenance(
         findings += _pin_walk(stream, ok, effects)
     if effects.policy is not None:
         findings += _policy_walk(stream, ok, effects.policy, effects.anchored)
+    if effects.slots is not None:
+        findings += _slot_walk(stream, ok, "skill", effects.slots.skill, effects.anchored)
+        findings += _slot_walk(stream, ok, "functions", effects.slots.functions, effects.anchored)
     return findings
 
 
@@ -748,6 +764,30 @@ def _policy_walk(
         code=codes.POLICY_MISMATCH,
         interrupted="policy intent without its installed policy (an interrupted apply)",
         changed="the installed policy changed outside the recorded policy events",
+    )
+
+
+def _slot_walk(
+    stream: AuditStream,
+    events: Sequence[Mapping[str, JsonValue]],
+    key: str,
+    installed: str | None,
+    anchored: frozenset[int],
+) -> list[Finding]:
+    """From "no slot" (``None``) through the ``change.<key>`` intents to the published hash:
+    the slot must be what the last committed publish recorded."""
+    graph_id = graph_of_stream(stream)
+    return _walk(
+        stream,
+        _effects(events, CONFIGURE_ACTION, key),
+        start=None,
+        strict_start=True,
+        final=installed,
+        final_target={"stream": stream, "path": f"graphs/{graph_id}/{key}"},
+        anchored=anchored,
+        code=codes.SLOT_MISMATCH,
+        interrupted=f"{key} intent without its published slot (an interrupted publish)",
+        changed=f"the published {key} changed outside the recorded {key} events",
     )
 
 

@@ -9,7 +9,7 @@ installation stream.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill and function catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -135,5 +135,19 @@ graph-admin decisions under its fallback are a warning
 (`policy_fallback`); decisions before a graph's first mirror (policies
 applied before mirrors existed) are checked loosely (info). Applying the
 installed policy again records the mirrors such a graph lacks.
+
+## Slot verification
+
+Publishing the graph skill or the function catalog is one maintenance
+operation: an intent in the graph stream with `change.skill{from, to}` or
+`change.functions{from, to}` (the tree hash of the published files before,
+`null` for the first publish, and after), the slot switch, then an
+installation event that anchors the intent. `audit verify` walks these
+intents from "no slot" and compares the end with the slot on disk: the
+published hash must equal the last committed `to`. A slot published,
+changed, damaged or removed by hand, or a skill or catalog that differs
+from its recorded hash, is `integrity.audit.slot_mismatch`; an intent
+whose slot switch never happened is an interrupted publish
+(`intent_without_effect`, info).
 
 What verification cannot detect: [Security model](security_model.md#detection).

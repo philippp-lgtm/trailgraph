@@ -1,0 +1,19 @@
+schema: graph_cli.function/1
+name: items_in_location
+summary: Items stored in a location.
+use_when: >-
+  What is stored in a place.
+params:
+  location:
+    type: ref
+    class: inv:Location
+    summary: The location to list.
+query: |
+  MATCH (i:Item)-[:kept_in]->(l:Location)
+  WHERE l.id = $location
+  RETURN i.name AS item
+returns:
+  - column: item
+    summary: Name of the item.
+examples:
+  - question: What is in the main storage room?

@@ -40,6 +40,7 @@ POLICY_FALLBACK: Final = "integrity.audit.policy_fallback"
 POLICY_HASH_UNCHECKED: Final = "integrity.audit.policy_hash_unchecked"
 TOKEN_MISMATCH: Final = "integrity.audit.token_mismatch"
 ENROLLMENT_MISMATCH: Final = "integrity.audit.enrollment_mismatch"
+SLOT_MISMATCH: Final = "integrity.audit.slot_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -100,5 +101,10 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "enrollment_mismatch",
         Severity.ERROR,
         "The enrollment file differs from the recorded enrollment events.",
+    ),
+    _integrity(
+        "slot_mismatch",
+        Severity.ERROR,
+        "A published skill or function catalog differs from the recorded change events.",
     ),
 )

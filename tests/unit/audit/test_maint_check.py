@@ -12,6 +12,7 @@ from graph_cli.audit import events as builders
 from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.schema import event_problems
 from graph_cli.audit.verify import (
+    InstalledSlots,
     MaintEffects,
     check_anchors,
     check_maintenance,
@@ -162,6 +163,64 @@ def test_a_release_with_another_hash_is_no_effect() -> None:
     effects = MaintEffects(None, {pin(1).version: pin(2).artifact_hash})
     (finding,) = check_maintenance(stream.graph_id, stream.events(), effects)
     assert finding.code == IWE
+
+
+def slot_check(
+    key: str,
+    published: list[tuple[str | None, str]],
+    found: str | None,
+    anchored: tuple[int, ...] = (),
+) -> list[tuple[str, JsonValue]]:
+    """The slot walk over ``change.<key>`` intents (seq 2, 3, ...) against the slot found;
+    a mismatch of the slot itself is reported as ``"slot"``."""
+    stream = Stream()
+    for old, new in published:
+        stream.maint("maint.graph_configure", {key: {"from": old, "to": new}})
+    other = None
+    slots = InstalledSlots(found, other) if key == "skill" else InstalledSlots(other, found)
+    effects = MaintEffects(pin(0), {}, anchored=frozenset(anchored), slots=slots)
+    findings = check_maintenance(stream.graph_id, stream.events(), effects)
+    return [(f.code, "slot" if "path" in f.target else f.target.get("seq")) for f in findings]
+
+
+A, B, C = (hash_value({"slot": n}) for n in "abc")
+SLOT = codes.SLOT_MISMATCH
+
+
+@pytest.mark.parametrize("key", ["skill", "functions"])
+@pytest.mark.parametrize(
+    ("published", "found", "anchored", "expected"),
+    [
+        ([], None, (), []),
+        ([(None, A)], A, (), []),
+        ([(None, A), (A, B)], B, (), []),
+        ([(None, A), (A, A)], A, (), []),  # republished against a new pin: same files
+        ([(None, A)], None, (), [(IWE, 2)]),  # interrupted before the rename
+        ([(None, A)], None, (2,), [(SLOT, "slot")]),  # anchored: it did switch, then vanished
+        ([(None, A), (A, B)], A, (), [(IWE, 3)]),
+        ([(None, A), (A, B)], C, (), [(SLOT, "slot")]),  # replaced by hand
+        ([], A, (), [(SLOT, "slot")]),  # placed by hand
+        ([(None, A)], "unreadable", (), [(SLOT, "slot")]),
+        ([(None, A), (C, B)], B, (), [(SLOT, 3)]),  # the second op did not start at the slot
+        ([(None, A), (None, B)], A, (), [(SLOT, "slot")]),  # the last op recorded another hash
+        ([(None, A), (None, A)], A, (), [(IWE, 2)]),  # the first attempt died, the retry worked
+    ],
+)
+def test_slot_walk(
+    key: str,
+    published: list[tuple[str | None, str]],
+    found: str | None,
+    anchored: tuple[int, ...],
+    expected: list[tuple[str, JsonValue]],
+) -> None:
+    assert slot_check(key, published, found, anchored) == expected
+
+
+def test_without_slots_the_walk_is_skipped() -> None:
+    stream = Stream()
+    stream.maint("maint.graph_configure", {"skill": {"from": None, "to": A}})
+    effects = MaintEffects(pin(0), {})
+    assert check_maintenance(stream.graph_id, stream.events(), effects) == []
 
 
 def test_verify_graph_runs_the_maintenance_check() -> None:

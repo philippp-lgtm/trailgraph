@@ -469,15 +469,18 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             isinstance(reindex, Mapping) and set(reindex) == {"seq"} and _is_size(reindex["seq"])
         ):
             problems.append("a reindex intent needs change.reindex{seq}")
-    if CONFIGURE_ACTION in actions and "skill" in entries:
-        skill = entries["skill"]
-        if not (
-            isinstance(skill, Mapping)
-            and set(skill) == {"from", "to"}
-            and (skill["from"] is None or _is_hash(skill["from"]))
-            and _is_hash(skill["to"])
-        ):
-            problems.append("a skill change needs change.skill{from: hash or null, to: hash}")
+    for key in ("skill", "functions"):
+        if CONFIGURE_ACTION in actions and key in entries:
+            slot = entries[key]
+            if not (
+                isinstance(slot, Mapping)
+                and set(slot) == {"from", "to"}
+                and (slot["from"] is None or _is_hash(slot["from"]))
+                and _is_hash(slot["to"])
+            ):
+                problems.append(
+                    f"a {key} change needs change.{key}{{from: hash or null, to: hash}}"
+                )
     for key in ("policy", "installation_policy"):
         if POLICY_ACTION in actions and key in entries:
             policy = entries[key]

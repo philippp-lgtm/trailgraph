@@ -39,6 +39,8 @@ V100 = ONTOLOGIES / "inventory" / "1.0.0"
 V101 = ONTOLOGIES / "inventory" / "1.0.1"
 V110 = ONTOLOGIES / "inventory" / "1.1.0"
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
+BROKEN_FUNCTIONS = FIXTURES / "functions" / "inventory" / "broken"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
 FOLDER = re.compile(r"\b(example_graph|second)_[0-9a-f]{6}\b")  # workspace sync: id ends
@@ -272,10 +274,13 @@ def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: 
     """Arguments that get every project command as far as resolving ``graph``."""
     ontology = upload_tree(app, token, V101)
     skill = upload_tree(app, token, GRAPH_SKILL)
+    functions = upload_tree(app, token, FUNCTIONS)
     empty = {"files": {}, "name": "out"}
     return {
         ("files", "verify"): {"--graph": graph},
         ("graph", "check"): {"ref": graph},
+        ("graph", "functions", "publish"): {"ref": graph, "dir": functions, "--reason": "test"},
+        ("graph", "functions", "show"): {"ref": graph},
         ("graph", "list"): {},
         ("graph", "pull"): {"ref": graph, "dir": empty},
         ("graph", "push"): {"ref": graph, "dir": ontology, "--dry-run": True},
@@ -569,6 +574,8 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     shutil.rmtree(workspace, ignore_errors=True)
     shutil.rmtree(cwd / "admin_ws", ignore_errors=True)
     (cwd / "policy.yaml").write_text(POLICY)
+    shutil.rmtree(cwd / "no_functions", ignore_errors=True)
+    (cwd / "no_functions").mkdir()
 
     def run(*args: str, text: bool = False) -> None:
         argv = [str(BIN_DIR / "graph-admin"), *args, *([] if text else ["--json"])]
@@ -595,6 +602,14 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("graph", "reindex", "second", "--reason", "equivalence"),
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL), "--dry-run"),
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL)),
+        ("graph", "functions", "publish", "example_graph", str(BROKEN_FUNCTIONS)),
+        ("graph", "functions", "publish", "example_graph", str(FUNCTIONS), "--dry-run"),
+        ("graph", "functions", "publish", "example_graph", str(FUNCTIONS)),
+        ("graph", "functions", "publish", "example_graph", str(FUNCTIONS)),
+        ("graph", "functions", "show", "example_graph"),
+        ("graph", "show", "example_graph"),
+        ("graph", "functions", "publish", "example_graph", "no_functions"),
+        ("graph", "functions", "show", "example_graph"),
         ("graph", "skill", "render", "example_graph", str(GRAPH_SKILL), "--out", "preview"),
         ("graph", "skill", "render", "example_graph", str(GRAPH_SKILL), "--out", "preview"),
         (

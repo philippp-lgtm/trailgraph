@@ -17,11 +17,13 @@ from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
 from graph_cli_admin.services_admin import audit, graphs
 from graph_cli_admin.services_admin.context import AdminContext
+from graph_cli_admin.services_admin.functions import publish as publish_functions
 from graph_cli_admin.services_admin.release import release
 from graph_cli_admin.services_admin.skill import publish
 
 INVENTORY = ONTOLOGIES / "inventory"
 SKILL = FIXTURES / "skills" / "graph-example-graph"
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 IWE = "integrity.audit.intent_without_effect"
 
 
@@ -105,7 +107,7 @@ def test_pin_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
 
 
 def test_skill_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
-    """D15 Q8: the old slot (here: none) stays; skill intents are not walked yet."""
+    """D15 Q8: the old slot (here: none) stays; the intent is an interrupted publish."""
     create(ctx)
     run = lambda: publish(  # noqa: E731
         ctx,
@@ -118,8 +120,50 @@ def test_skill_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
     interrupted(faults, CrashPoint.SKILL_BEFORE_RENAME, run)
     graph = ctx.catalog.resolve("example_graph")
     assert ctx.catalog.read_skill(graph.id) is None
-    assert verify_codes(ctx) == []  # audit verify walks skill intents later (plan scope cut)
+    assert verify_codes(ctx) == [IWE]
     assert run().data["published"] is True
     slot = ctx.catalog.read_skill(graph.id)
     assert slot is not None and slot.kind == "static"
-    assert verify_codes(ctx) == []
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+
+
+def test_functions_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
+    """K6: the old slot (here: none) stays; a retry publishes and verifies."""
+    create(ctx)
+    run = lambda: publish_functions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.FUNCTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_functions(graph.id) is None
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    slot = ctx.catalog.read_functions(graph.id)
+    assert slot is not None and slot.count == 2
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+    assert run().data["published"] is False  # unchanged: no third intent
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_functions_replaced_before_rename_keep_the_old_catalog(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    one = tmp_path / "one"
+    one.mkdir()
+    (one / "items_in_location.yaml").write_bytes(
+        (FUNCTIONS / "items_in_location.yaml").read_bytes()
+    )
+    run = lambda: publish_functions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=one, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.FUNCTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    old = ctx.catalog.read_functions(graph.id)
+    assert old is not None and old.count == 2
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    new = ctx.catalog.read_functions(graph.id)
+    assert new is not None and new.count == 1
+    assert verify_codes(ctx) == [IWE]

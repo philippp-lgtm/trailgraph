@@ -1,0 +1,23 @@
+schema: graph_cli.function/1
+name: items_by_condition
+summary: Items in a given physical condition.
+use_when: >-
+  Which items are worn or damaged; a list of items by condition.
+params:
+  condition:
+    type: enum
+    enum: inv:Condition
+    summary: The condition to look for.
+query: |
+  MATCH (i:Item)
+  WHERE i.condition = $condition
+  RETURN i.name AS item, i.condition AS condition
+  ORDER BY item
+returns:
+  - column: item
+    summary: Name of the item.
+  - column: condition
+    summary: The condition, as asked for.
+examples:
+  - question: Which items are damaged?
+    params: {condition: damaged}

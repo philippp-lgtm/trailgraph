@@ -13,6 +13,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
 | `storage.files.index` | the disposable index: building and updating it, binding it to the tx log, its log digest, the view over it for readers and writers |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
+| `storage.files.functions_slot` | reading a graph's published function catalog (`functions/slot.json`, `functions/compiled/<hash>.json`, and with `sources=True` `functions/files/<hash>/<name>.yaml`); the app reads only the compiled document |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
@@ -91,5 +92,6 @@ POSIX only, local filesystems only.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
-  under their hash before), an installed policy. A failure before the rename leaves only the
+  under their hash before), the function catalog's `slot.json` (its sources
+  and compiled document likewise), an installed policy. A failure before the rename leaves only the
   staging state, which readers ignore.
