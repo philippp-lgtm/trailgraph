@@ -5,15 +5,17 @@ from typing import Any
 
 import pytest
 from support.fixtures import GOLDENS, assert_golden, compiled_model
-from support.functions import valid_sources
+from support.functions import VALID, valid_sources
 from support.skills import graph_entry
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.services.describe import (
+    SKILL_FUNCTION_KEYS,
     describe_function,
     describe_functions,
+    describe_model,
     describe_module,
     describe_modules,
 )
@@ -240,3 +242,22 @@ def test_goldens() -> None:
         describe_module(ENTRY, MODEL, "organization", FUNCTIONS),
     )
     golden("search_company_1.1.0_headcount", search("headcount"))
+
+
+def test_the_model_document_keeps_no_query_text() -> None:
+    """K10: a reader of the graph skill gets names, summaries and signatures only."""
+    document, _ = compile_catalog(valid_sources(), MODEL)
+    full = json.dumps(document)
+    assert "source_query" in full and "touches" in full  # what the catalog holds
+    secret = next(
+        line.strip()
+        for line in (VALID / "members_of_unit.yaml").read_text().splitlines()
+        if line.strip().startswith("MATCH")
+    )
+    assert secret in full
+    reduced = describe_model(ENTRY, MODEL, document)["functions"]
+    text = json.dumps(reduced)
+    for hidden in (secret, "source_query", "touches", '"fields"', '"hash"', "use_when"):
+        assert hidden not in text
+    assert [f["name"] for f in reduced["functions"]] == [f["name"] for f in document["functions"]]
+    assert all(set(f) <= set(SKILL_FUNCTION_KEYS) for f in reduced["functions"])

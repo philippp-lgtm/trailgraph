@@ -566,6 +566,22 @@ def describe_schema(
     )
 
 
+# The keys of a catalog entry a graph skill reads: names, summaries and signatures are
+# schema-level text; query text, ``touches``, ``fields`` and ``hash`` need ``read.function``.
+SKILL_FUNCTION_KEYS: Final = ("name", "module", "summary", "status", "featured", "params")
+
+
+def skill_functions(catalog: JsonObject) -> JsonObject:
+    """The compiled catalog reduced to the keys of ``SKILL_FUNCTION_KEYS`` per entry."""
+    entries = catalog.get("functions")
+    kept: list[JsonValue] = []
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict):
+                kept.append({k: entry[k] for k in SKILL_FUNCTION_KEYS if k in entry})
+    return {"schema": catalog.get("schema"), "functions": kept}
+
+
 def describe_model(
     entry: GraphEntry, model: CompiledModel, functions: JsonObject | None = None
 ) -> dict[str, JsonValue]:
@@ -574,7 +590,9 @@ def describe_model(
     ``describe schema``, ``describe modules`` and ``describe module <M>`` for every
     non-built-in module print, as ``{types, type: {curie: document}, relations, schema,
     modules: [item], module: {id: document}}``. ``functions`` is the compiled catalog of
-    the graph (``graph_cli.functions/1``); given, it joins as the key ``functions``."""
+    the graph (``graph_cli.functions/1``); given, it joins as the key ``functions``, reduced
+    to what a skill prints (``skill_functions``): the documents are readable with
+    ``read.describe`` alone, so they carry no query text (K10)."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
     documents: dict[str, JsonValue] = {
@@ -590,5 +608,5 @@ def describe_model(
         },
     }
     if functions is not None:
-        documents["functions"] = functions
+        documents["functions"] = skill_functions(functions)
     return documents

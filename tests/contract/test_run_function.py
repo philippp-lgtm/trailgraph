@@ -3,6 +3,7 @@ K10, K11): a run equals the ad-hoc query of the normalized text with the bound p
 references are resolved and class-checked, a catalog that no longer resolves is refused, and
 nothing of a parameter value leaves the answer."""
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,11 @@ from support.services import RecordingActivity, ServiceEnv
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, functions_hash
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import load_entries
+from graph_cli.services.describe import SKILL_FUNCTION_KEYS
 from graph_cli.services.read import GraphRead, QuerySpec, ReadService
 
 REQUEST = RequestMeta("run", "sha256:" + "0" * 64)
@@ -198,3 +201,39 @@ def test_a_graph_without_a_catalog_has_no_function(svc: ServiceEnv) -> None:
     with pytest.raises(GraphCliError) as info:
         reader.run(view, "items_in_location", [], limit=5, offset=0)
     assert (info.value.code, info.value.details["did_you_mean"]) == ("function.not_found", [])
+
+
+def test_the_skill_model_carries_no_query_text_for_a_reader_without_read_function(
+    svc: ServiceEnv,
+) -> None:
+    """K10: ``read.describe`` alone gets names, summaries and signatures, never the queries."""
+    rules: list[JsonValue] = [
+        {"id": "no_function", "effect": "deny", "action": ["read.function"], "resource": "graph:*"},
+        {"id": "describe", "effect": "allow", "action": ["read.describe"], "resource": "graph:*"},
+    ]
+    document: JsonValue = {
+        "schema": "graph_cli.policy/1",
+        "id": "test",
+        "rules": rules,
+        "obligations": [],
+    }
+    policy = PolicySet("sha256:" + "1" * 64, ({**document},))  # type: ignore[arg-type]
+
+    class Source:
+        def current(self, graph: object) -> PolicySet:
+            return policy
+
+    entry = svc.catalog.resolve(svc.name)
+    narrow = svc.make_reader(Source())
+    with pytest.raises(GraphCliError):
+        open_view(svc, narrow)  # running a function is refused
+    model, _ = narrow.skill_model(svc.actor, entry, REQUEST)
+    full, _ = svc.make_reader().skill_model(svc.actor, entry, REQUEST)
+    assert model == full  # the same reduced document for every reader of the description
+    functions = model["functions"]
+    assert isinstance(functions, dict) and functions["functions"]
+    for function in functions["functions"]:  # type: ignore[union-attr]
+        assert set(function) <= set(SKILL_FUNCTION_KEYS)  # type: ignore[arg-type]
+    text = json.dumps(model)
+    assert "located_in" in text  # the model itself stays
+    assert "WHERE l.id" not in text and "ORDER BY" not in text and "source_query" not in text
