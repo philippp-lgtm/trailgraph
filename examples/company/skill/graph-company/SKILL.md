@@ -46,12 +46,13 @@ recording changes to them. The rules below say what the model itself cannot.
 
 <!-- graph_cli:block names -->
 
-Questions agents ask most (replace the placeholders):
+<!-- graph_cli:block functions -->
+
+Questions that no function above answers (replace the placeholders):
 
 ```sh
 graph lookup "<name>" --graph company
 graph query 'MATCH (p:Employee)-[:holds]->(q:Position) WHERE q.title = $title RETURN p.name' --graph company --param title="<position title>"
-graph query 'MATCH (a:Position)-[:reports_to*1..4]->(b:Position) WHERE a.title = $title RETURN b.title' --graph company --param title="<position title>"
 graph query 'MATCH (p:Person)-[:holds]->(:Position)-[:carries]->(:Role)<-[:required_for]-(t:Training) WHERE p.name = $name RETURN DISTINCT t.title' --graph company --param name="<person name>"
 graph query 'MATCH (s:Shareholding)-[:stake_in]->(e:LegalEntity), (s)-[:shareholder]->(h) WHERE e.name = $name RETURN h.name, s.percent' --graph company --param name="<entity name>"
 ```

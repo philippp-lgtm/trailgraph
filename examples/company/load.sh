@@ -2,7 +2,7 @@
 # Create the example graph "company" in the installation `graph` and `graph-admin` talk to
 # (a local data root, or a server in remote mode), fill it with the seed data and check it.
 #
-#   examples/company/load.sh            both versions, the skill, the checks
+#   examples/company/load.sh            both versions, the functions, the skill, the checks
 #   examples/company/load.sh 1.0.0      stop after version 1.0.0 and its seeds
 #
 # Needs `graph` and `graph-admin` on PATH and the right to maintain graphs. The seeds are
@@ -47,6 +47,9 @@ if [ "$upto" = 1.1.0 ]; then
     graph-admin ontology release "$graph_name" "$here/ontology/1.1.0" --module company
   fi
   graph apply "$here/seeds/1.1.0.jsonl" --graph "$graph_name"
+  # The functions come first: the skill lists them and its names are checked against them.
+  graph-admin graph functions publish "$graph_name" "$here/functions" \
+    --reason "Named read functions of the example graph"
   graph-admin graph skill publish "$graph_name" "$here/skill/graph-company" \
     --reason "Curated skill of the example graph"
   graph-admin graph check "$graph_name"

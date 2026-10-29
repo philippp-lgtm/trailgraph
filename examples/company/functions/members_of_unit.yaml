@@ -1,0 +1,30 @@
+schema: graph_cli.function/1
+name: members_of_unit
+module: organization
+summary: People holding a position in a unit or in any unit below it, with the position and its unit.
+use_when: >-
+  Who works in a department or team, who belongs to a unit including its sub-units, headcount or
+  staffing of a unit, who sits in which position of a unit. Lists holders of positions, so a
+  position nobody holds does not appear; use vacant_positions for those. Not for the reporting
+  line of one position.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The department or team to list; its sub-units are included.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)
+  WHERE d.id = $unit
+  RETURN p.name AS person, q.title AS position, u.name AS unit
+  ORDER BY unit, position, person
+returns:
+  - column: person
+    summary: Name of the holder.
+  - column: position
+    summary: Title of the position held.
+  - column: unit
+    summary: The unit the position belongs to, the given one or a unit below it.
+examples:
+  - question: Who works in the engineering department, including its teams?
+  - question: Which people hold a position in this team?
+featured: true

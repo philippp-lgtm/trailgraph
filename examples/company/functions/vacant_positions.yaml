@@ -1,0 +1,30 @@
+schema: graph_cli.function/1
+name: vacant_positions
+module: organization
+summary: Positions of a unit or of any unit below it that nobody holds, active or still planned.
+use_when: >-
+  Which positions are open, vacant or unfilled in a department or team, where hiring is needed,
+  staffing gaps of a unit including its sub-units. Abolished positions are left out; the status
+  column tells an open position from a planned one. Not for who holds the filled positions; use
+  members_of_unit for that.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The department or team to check; its sub-units are included.
+query: |
+  MATCH (q:Position)-[:in_unit]->(u:OrgUnit)-[:part_of*0..5]->(d:OrgUnit)
+  WHERE d.id = $unit AND q.status <> 'abolished' AND NOT (:Person)-[:holds]->(q)
+  RETURN q.title AS position, q.status AS status, u.name AS unit
+  ORDER BY unit, position
+returns:
+  - column: position
+    summary: Title of the vacant position.
+  - column: status
+    summary: Lifecycle state of the position, active (open now) or planned.
+  - column: unit
+    summary: The unit the position belongs to, the given one or a unit below it.
+examples:
+  - question: Which positions in the engineering department are currently vacant?
+  - question: Where do we still have open positions in this team?
+featured: true

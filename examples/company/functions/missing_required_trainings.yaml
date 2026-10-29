@@ -1,0 +1,31 @@
+schema: graph_cli.function/1
+name: missing_required_trainings
+module: operations
+summary: Trainings that the holders of positions in a unit must still complete, per person.
+use_when: >-
+  Which trainings are outstanding, overdue or not yet completed in a department or team, who still
+  has to complete a required training, training gaps or compliance of a unit including its
+  sub-units. A training is required through the role a position carries. Answers per unit, not for
+  one person's full list of required trainings.
+params:
+  unit:
+    type: ref
+    class: org:OrgUnit
+    summary: The department or team to check; its sub-units are included.
+query: |
+  MATCH (p:Person)-[:holds]->(q:Position)-[:in_unit]->(:OrgUnit)-[:part_of*0..5]->(d:OrgUnit),
+        (q)-[:carries]->(:Role)<-[:required_for]-(t:Training)
+  WHERE d.id = $unit AND NOT (p)-[:completed]->(t)
+  RETURN DISTINCT p.name AS person, q.title AS position, t.title AS training
+  ORDER BY person, training
+returns:
+  - column: person
+    summary: Name of the holder who has not completed the training.
+  - column: position
+    summary: Title of the position through whose role the training is required.
+  - column: training
+    summary: Title of the training that is still missing.
+examples:
+  - question: Which required trainings are still open for the people of the infrastructure department?
+  - question: Who in this team has not completed all trainings their role requires?
+featured: true
