@@ -19,7 +19,10 @@ graph as JSON, ``/entity?id=`` one entity in full (attributes, edges,
 history with the writing agents), ``/blob?id=`` the stored file of a file
 entity (PDFs and images inline, anything else as a download), ``/model``
 the ontology (``model_json``, also needs ``read.describe``), ``/functions``
-the published functions in full (``functions_json``), ``/events``
+the published functions in full (``functions_json``), ``/policies`` the
+installed policies as they bear on that graph (``policies_json``, also
+needs ``maint.audit_read`` on ``installation``, as the admin API's
+installation reads do), ``/events``
 Server-Sent Events of that graph only, ``/trail`` its recent steps of
 activity (``ActivityTrail``). The page asks for every route by a relative
 URL, so a proxy may serve it below a path prefix.
@@ -59,6 +62,7 @@ from graph_cli_admin.services_admin.view import (
     graph_json,
     model_json,
     open_blob,
+    policies_json,
     read_event,
 )
 
@@ -224,6 +228,10 @@ class ViewServer:
         self.graphs.authorize(view.source.entry, "read.describe")
         return model_json(view.source)
 
+    def policies(self, view: GraphView) -> dict[str, JsonValue]:
+        self.graphs.authorize(view.source.entry, "maint.audit_read", "installation")
+        return policies_json(self.graphs.ctx, view.source)
+
     def _run_feed(self) -> None:
         while not self._stop.is_set():
             for view in self.graphs.opened():
@@ -279,6 +287,7 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
                 "/blob": lambda: self._blob(view(), entity),
                 "/model": lambda: self._json(server.model(view())),
                 "/functions": lambda: self._json(functions_json(view().source)),
+                "/policies": lambda: self._json(server.policies(view())),
                 "/events": lambda: self._events(view()),
                 "/trail": lambda: self._json(view().trail.to_json()),
             }

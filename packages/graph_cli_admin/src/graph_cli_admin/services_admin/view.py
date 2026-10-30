@@ -7,11 +7,11 @@
   event per graph), ``get`` resolves and authorizes a graph on every
   request and opens it on first use, with its own feed and trail;
   ``authorize`` decides another action on it (``read.describe`` for the
-  model). A denial is audited once per graph, action and
-  ``DENIAL_AUDIT_S``; repeats in that time are refused alike without an
-  event, so a retrying page or client cannot flood the installation audit
-  log. Up to ``MAX_OPEN``
-  graphs stay open: beyond that the least recently used graph that no
+  model, ``maint.audit_read`` on ``installation`` for the policies). A
+  denial is audited once per graph, action and ``DENIAL_AUDIT_S``;
+  repeats in that time are refused alike without an event, so a retrying
+  page or client cannot flood the installation audit log. Up to
+  ``MAX_OPEN`` graphs stay open: beyond that the least recently used graph that no
   client watches (``watched``) and that is not the default is closed
   (``on_close``); when every open graph is watched, more stay open. A
   graph whose ontology pin moved is opened again, its feed and trail
@@ -26,6 +26,9 @@
   ``graph describe function`` prints it, or none when the caller may not
   ``read.function`` on the graph (like ``describe functions``: nothing
   shown, nothing audited).
+- ``policies_json`` is what ``policy.for_graph`` says about the graph: the
+  installed rules that can decide on it and what each project, no project
+  and each token gets there, as ``policy show`` and ``policy explain`` print.
 - ``entity_json`` is one entity in full for the detail panel: attributes
   (hidden labels left out), edges both ways with their qualifiers, and
   every revision with the actor that wrote it.
@@ -82,6 +85,7 @@ from graph_cli.services.describe import (
     model_envelope,
 )
 from graph_cli.services.models import ModelCache
+from graph_cli_admin.services_admin import policy
 from graph_cli_admin.services_admin.context import AdminContext
 
 PAGE: Final = 1000  # txs per changes_since call
@@ -203,6 +207,11 @@ def functions_json(source: ViewSource) -> dict[str, JsonValue]:
     when the graph has none or the caller may not ``read.function`` on it."""
     functions: list[JsonValue] = [f.detail_json() for f in source.functions() or ()]
     return model_envelope(source.entry, source.model, functions=functions)
+
+
+def policies_json(ctx: AdminContext, source: ViewSource) -> dict[str, JsonValue]:
+    """The policies as they bear on the graph (``policy.for_graph``)."""
+    return model_envelope(source.entry, source.model, **policy.for_graph(ctx, source.entry))
 
 
 def label_of(model: CompiledModel, revision: Revision, language: str | None = None) -> str:
@@ -641,10 +650,13 @@ class ViewGraphs:
             self.on_close(graph)
         return view
 
-    def authorize(self, entry: GraphEntry, action: str = "read.get") -> None:
-        """``action`` on the graph; a denial is audited at most once per graph, action and
-        ``DENIAL_AUDIT_S``, a repeat in that time is refused without an event."""
-        resource = f"graph:{entry.id}"
+    def authorize(
+        self, entry: GraphEntry, action: str = "read.get", resource: str | None = None
+    ) -> None:
+        """``action`` on the graph, or on ``resource`` for the graph's page; a denial is
+        audited at most once per graph, action and ``DENIAL_AUDIT_S``, a repeat in that
+        time is refused without an event."""
+        resource = resource or f"graph:{entry.id}"
         decision = self.ctx.decide(action, resource, graph=entry.id)
         if decision.effect != "deny":
             return

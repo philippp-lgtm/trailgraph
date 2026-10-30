@@ -153,9 +153,12 @@ button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 2px
 #sidebar.collapsed { width: 44px; }
 #sidebar .head { display: flex; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 #sidebar .head h2 { margin: 0; }
-#sidebar.collapsed .head h2, #sidebar.collapsed #graphs_status { display: none; }
+#sidebar.collapsed .head h2, #sidebar.collapsed #graphs_status, #sidebar.collapsed #sidebar_back { display: none; }
+#sidebar .head h2[hidden], #sidebar_back[hidden] { display: none; }
 #sidebar_toggle { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; flex: none; }
 #sidebar_toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+#sidebar_back { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px 0 4px; }
+#sidebar_back svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 #graph_list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; display: grid; align-content: start; gap: 2px; }
 #graph_list[hidden] { display: none; }
 #graph_list button { width: 100%; text-align: left; background: none; border-color: transparent; padding: 6px 8px; }
@@ -165,9 +168,17 @@ button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 2px
 #graph_list .state { font-size: 11px; font-weight: 400; color: var(--text-muted); }
 #graph_list .title { color: var(--text-secondary); font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 #graphs_status { padding: 0 14px 12px; }
-#graph_list .tabs { list-style: none; margin: 2px 0 6px 12px; padding: 0 0 0 8px; border-left: 1px solid var(--border); display: grid; gap: 1px; }
-#graph_list .tabs button { padding: 3px 8px; font-size: 12px; color: var(--text-secondary); }
-#graph_list .tabs button[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+/* A graph is a folder: picked, the side bar shows its views instead of the list, with Back. */
+#graph_folder { flex: 1; overflow-y: auto; padding: 6px; }
+#graph_folder[hidden] { display: none; }
+#graph_folder .folder { padding: 6px 8px 8px; }
+#graph_folder .name { display: flex; gap: 6px; align-items: baseline; font-weight: 600; word-break: break-word; }
+#graph_folder .state { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+#graph_folder .title { color: var(--text-secondary); font-size: 12px; }
+#view_list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+#view_list button { width: 100%; text-align: left; background: none; border-color: transparent; padding: 6px 8px; }
+#view_list button:hover { background: var(--surface-1); }
+#view_list button[aria-current="page"] { background: var(--surface-1); border-color: var(--border); font-weight: 600; }
 /* The views of the shown graph once the side bar is folded: a bar at the top left. */
 #tabbar {
   position: absolute; top: 8px; left: 52px; z-index: 2; display: none; gap: 2px; padding: 2px;
@@ -291,10 +302,15 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
 <div id="layout">
 <nav id="sidebar" aria-labelledby="graphs_heading">
   <div class="head">
-    <button id="sidebar_toggle" type="button" aria-expanded="true" aria-controls="graph_list"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg></button>
+    <button id="sidebar_toggle" type="button" aria-expanded="true" aria-controls="graph_list graph_folder"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg></button>
+    <button id="sidebar_back" type="button" hidden aria-label="Back to the list of graphs" title="Back to the list of graphs"><svg viewBox="0 0 16 16" aria-hidden="true"><polyline points="10,3 5,8 10,13"/></svg>Back</button>
     <h2 id="graphs_heading">Graphs</h2>
   </div>
   <ul id="graph_list"></ul>
+  <div id="graph_folder" hidden>
+    <div class="folder"><div class="name" id="folder_name"></div><div class="title" id="folder_title"></div></div>
+    <ul id="view_list"></ul>
+  </div>
   <div id="graphs_status" class="muted hint"></div>
 </nav>
 <nav id="tabbar" aria-label="Views"></nav>
@@ -973,6 +989,10 @@ function connect(gen) {
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebar_toggle");
 const graphListBox = document.getElementById("graph_list");
+const graphFolder = document.getElementById("graph_folder");
+const viewList = document.getElementById("view_list");
+const sidebarBack = document.getElementById("sidebar_back");
+const graphsHeading = document.getElementById("graphs_heading");
 const graphsStatus = document.getElementById("graphs_status");
 const emptyShow = document.getElementById("empty_show");
 const SIDEBAR_KEY = "graph-view.sidebar";
@@ -985,7 +1005,7 @@ function setSidebar(open, remember) {
   const label = open ? "Hide the list of graphs" : "Show the list of graphs";
   sidebarToggle.setAttribute("aria-label", label);
   sidebarToggle.title = label;
-  graphListBox.hidden = !open;
+  showFolder();
   emptyShow.hidden = open;
   if (remember && !narrow.matches) {
     try { localStorage.setItem(SIDEBAR_KEY, open ? "open" : "collapsed"); } catch (error) { /* storage off */ }
@@ -1006,6 +1026,29 @@ function isCurrent(graph) {
 }
 
 let renderedList = "";    // the list the side bar shows, as JSON: rebuilt only when it changed
+let inFolder = false;     // the side bar shows the views of the shown graph instead of the list
+
+// The list of graphs, or the shown graph as a folder: its views and Back to the list.
+function showFolder() {
+  const open = !sidebar.classList.contains("collapsed");
+  const folder = inFolder && current !== null;
+  graphListBox.hidden = !open || folder;
+  graphFolder.hidden = !open || !folder;
+  sidebarBack.hidden = !folder;
+  graphsHeading.hidden = folder;
+  graphsStatus.hidden = folder;
+}
+
+// Into the folder of the shown graph, or ``false``: back to the list; ``focus`` moves there.
+function enterFolder(open, focus) {
+  inFolder = open;
+  showFolder();
+  if (!focus) return;
+  const target = open
+    ? viewList.querySelector('button[aria-current="page"]') || viewList.querySelector("button")
+    : graphListBox.querySelector('button[aria-current="true"]') || graphListBox.querySelector("button");
+  if (target) target.focus();
+}
 
 function renderGraphs() {
   graphsStatus.textContent = listed && !graphList.length ? "No graphs to show." : "";
@@ -1104,6 +1147,7 @@ function failGraph(error) {
 function showGraph(name, wanted, target) {
   generation++;
   if (stream) { stream.close(); stream = null; }
+  if ((name || null) !== current) inFolder = Boolean(name);
   current = name || null;
   tab = current && TABS.some(([key]) => key === wanted) ? wanted : "graph";
   item = target || null;
@@ -1127,17 +1171,18 @@ function showGraph(name, wanted, target) {
   connect(generation);
 }
 
-// A graph picked in the side bar: a new history entry, so Back returns to the previous one.
-// The shown graph picked again returns to its graph view.
+// A graph picked in the side bar opens its folder there and shows it: a new history entry,
+// so Back returns to the previous one. The shown graph picked again keeps its view.
 function choose(name) {
-  if (name === current && tab === "graph") return;
+  inFolder = true;
+  if (name === current) { enterFolder(true, true); return; }
   const params = new URLSearchParams(location.search);
   params.set("graph", name);
   params.delete("tab");
   params.delete("item");
   history.pushState(null, "", "?" + params);
-  if (narrow.matches) setSidebar(false, false);  // the list covered the canvas
   showGraph(name);
+  enterFolder(true, true);
 }
 
 function wantedGraph() {
@@ -1153,11 +1198,12 @@ function wantedItem() {
 }
 
 sidebarToggle.addEventListener("click", () => setSidebar(sidebar.classList.contains("collapsed"), true));
+sidebarBack.addEventListener("click", () => enterFolder(false, true));
 emptyShow.addEventListener("click", () => { setSidebar(true, true); sidebarToggle.focus(); });
 addEventListener("popstate", () => {
   const name = wantedGraph(), wanted = wantedTab();
   // Back and Forward between the items of one tab keep what the tab loaded.
-  if (current && name === current && wanted === tab && tab !== "graph" && (model || functionList)) showItem(wantedItem());
+  if (current && name === current && wanted === tab && tab !== "graph" && (model || functionList || policies)) showItem(wantedItem());
   else showGraph(name, wanted, wantedItem());
 });
 addEventListener("focus", loadGraphs);
@@ -1165,7 +1211,7 @@ setInterval(() => { if (!document.hidden) loadGraphs(); }, LIST_REFRESH_MS);
 
 // ---- views: model, type graph, functions -----------------------------
 
-const TABS = [["graph", "Graph"], ["model", "Model"], ["types", "Type graph"], ["functions", "Functions"]];
+const TABS = [["types", "Type graph"], ["model", "Model"], ["functions", "Functions"], ["policies", "Policies"], ["graph", "Graph"]];
 const MODULE_COLORS = 8;  // the categorical palette --m1 .. --m8 in fixed order; further modules stay neutral
 const SVG_NS = "http://www.w3.org/2000/svg";
 let tab = "graph";        // the view of the shown graph, a key of TABS
@@ -1173,6 +1219,7 @@ let item = null;          // what the view shows: a module or type (model, type 
 let focusTypes = null;    // the types "show in graph" leaves visible once the graph has loaded
 let model = null;         // the /model answer of the shown graph
 let functionList = null;  // the functions of the /functions answer
+let policies = null;      // the /policies answer of the shown graph
 let browseGraph = null;   // {id, name} of the graph the browse answers are about
 let tg = null;            // the type graph: nodes, edges, view, selection
 const tabbar = document.getElementById("tabbar");
@@ -1190,31 +1237,34 @@ function tabButtons() {
     button.type = "button";
     button.dataset.tab = key;
     if (key === tab) button.setAttribute("aria-current", "page");
-    // the shown view picked again returns to its start
-    button.addEventListener("click", () => { if (key !== tab || item) chooseTab(key); });
+    // the shown view picked again returns to its start; on a narrow screen it folds the list
+    button.addEventListener("click", () => {
+      if (key !== tab || item) chooseTab(key);
+      else if (narrow.matches) setSidebar(false, false);
+    });
     return button;
   });
 }
 
-// The views of the shown graph: below its entry in the side bar, and in the bar at the top
+// The views of the shown graph: in its folder in the side bar, and in the bar at the top
 // while the side bar is folded.
 function renderTabs() {
   const active = document.activeElement;
   const focused = active && active.dataset ? active.dataset.tab : null;
-  const where = focused && active.closest("#tabbar") ? tabbar : graphListBox;
-  for (const old of graphListBox.querySelectorAll(".tabs")) old.remove();
+  const where = focused && active.closest("#tabbar") ? tabbar : viewList;
   tabbar.replaceChildren(...(current ? tabButtons() : []));
-  const entry = graphListBox.querySelector('button[data-graph][aria-current="true"]');
-  if (current && entry) {
-    const list = el("ul", "tabs");
-    list.setAttribute("aria-label", `Views of ${current}`);
-    for (const button of tabButtons()) {
-      const row = el("li");
-      row.append(button);
-      list.append(row);
-    }
-    entry.parentElement.append(list);
-  }
+  const graph = graphList.find(isCurrent);
+  const name = document.getElementById("folder_name");
+  name.replaceChildren(graph ? graph.name : current || "");
+  if (graph && graph.state !== "active") name.append(el("span", "state", graph.state));
+  document.getElementById("folder_title").textContent = graph ? graph.title || "" : "";
+  viewList.setAttribute("aria-label", `Views of ${current}`);
+  viewList.replaceChildren(...(current ? tabButtons() : []).map(button => {
+    const row = el("li");
+    row.append(button);
+    return row;
+  }));
+  showFolder();
   if (focused) {
     const again = where.querySelector(`button[data-tab="${focused}"]`);
     if (again) again.focus();
@@ -1244,6 +1294,7 @@ function go(target, push = true) {
 function resetBrowse() {
   model = null;
   functionList = null;
+  policies = null;
   browseGraph = null;
   if (tg) tg.stopped = true;
   tg = null;
@@ -1261,7 +1312,7 @@ async function getJson(path) {
 }
 
 async function openBrowse(gen) {
-  const route = tab === "functions" ? "functions" : "model";
+  const route = tab === "functions" || tab === "policies" ? tab : "model";
   browseMain.replaceChildren(el("div", "doc muted", "Loading…"));
   let data;
   try {
@@ -1276,7 +1327,9 @@ async function openBrowse(gen) {
   browseGraph = data.graph;
   currentId = data.graph.id;
   renderGraphs();
-  if (route === "functions") functionList = data.functions; else model = data;
+  if (route === "functions") functionList = data.functions;
+  else if (route === "policies") policies = data;
+  else model = data;
   showItem(item);
 }
 
@@ -1287,6 +1340,7 @@ function showItem(target) {
     if (!tg) buildTypeGraph();
     tgSelect(item);
   } else if (tab === "functions") renderFunctions();
+  else if (tab === "policies") renderPolicies();
 }
 
 // ---- views: building blocks --------------------------------------------
@@ -1778,6 +1832,168 @@ function functionDoc(doc, f) {
   section(doc, "Query");
   doc.append(el("pre", null, f.query));
   doc.append(el("div", "small", `hash ${f.hash}`));
+}
+
+// ---- views: policies -------------------------------------------------------
+
+// The groups of compiled rules, by the kind the server names, in the order they are shown.
+const RULE_KINDS = [
+  ["grant", "Grants"], ["maintainer", "Maintainers"], ["maintain", "Project admins"], ["scope", "Scopes"],
+  ["deny", "Deny rules"], ["type_limit", "Type limits"], ["builtin", "Built-in rules"], ["rule", "Other rules"],
+];
+const FACETS = {
+  entrypoint: "through", principal_id: "principal", principal_name: "user", project: "project",
+  agent_type: "agent type", agent_id: "agent", session_id: "session", device_id: "device",
+};
+const LAYER_ITEMS = {installation: "Installation policy", graph: "Graph policy"};
+
+function buildPoliciesNav() {
+  if (browseNav.dataset.built === "policies") return;
+  browseNav.dataset.built = "policies";
+  const list = el("ul");
+  for (const [target, text] of [[null, "Access"], ["installation", LAYER_ITEMS.installation], ["graph", LAYER_ITEMS.graph]]) {
+    const layer = target && policies.layers.find(l => l.layer === target);
+    const row = el("li");
+    row.append(navEntry(target, text, null, layer ? layer.rules.length : null));
+    list.append(row);
+  }
+  browseNav.replaceChildren(list);
+}
+
+function renderPolicies() {
+  buildPoliciesNav();
+  markNav();
+  const doc = el("div", "doc");
+  const layer = item ? policies.layers.find(l => l.layer === item) : null;
+  if (!item) policiesOverview(doc);
+  else if (layer) layerDoc(doc, layer);
+  else doc.append(el("p", "muted", `There is no policy layer ${item}.`));
+  showDoc(doc);
+}
+
+function shortHash(hash) {
+  return hash ? code(hash.slice(0, 19) + "…") : el("span", "muted", "none");
+}
+
+function accessLevel(caller) {
+  const box = frag(code(caller.level));
+  if (caller.withheld.length) box.append(" ", el("span", "small", "withheld: "), frag(...caller.withheld.flatMap((a, i) => i ? [", ", code(a)] : [code(a)])));
+  return box;
+}
+
+function callerName(caller) {
+  if (caller.token) {
+    return frag("token ", code(caller.token), caller.scope === "admin" ? " " : null, caller.scope === "admin" ? badge("admin") : null,
+      caller.expired ? " " : null, caller.expired ? badge("expired", true) : null);
+  }
+  return caller.project ? frag("you from project ", code(caller.project)) : el("span", null, "you without a project");
+}
+
+function policiesOverview(doc) {
+  doc.append(el("h1", null, `Policies of ${policies.graph.name}`));
+  doc.append(el("div", "small", "policy set "));
+  doc.lastChild.append(shortHash(policies.policy_hash));
+  section(doc, "Access", policies.callers.length);
+  doc.append(el("p", "secondary", "What graph-admin policy explain answers for this graph: your own calls with graph from each project of the scopes and from none, and a request with each token."));
+  const through = {app: "graph", server: "server API", maint: "admin API"};
+  doc.append(table(["Caller", "Project", "Through", "Level", "Maintains"], policies.callers.map(c => [
+    callerName(c), c.project ? code(c.project) : el("span", "muted", "none"), through[c.entrypoint] || c.entrypoint,
+    // an admin token maintains graphs; the levels of graph and the server API are not its
+    c.entrypoint === "maint" ? el("span", "muted", "–") : accessLevel(c), c.entrypoint === "maint" ? (c.maintains ? "yes" : "no") : "",
+  ])));
+  section(doc, "Layers", policies.layers.length);
+  doc.append(table(["Layer", "Installed", "Rules for this graph", "Obligations", "Hash"], policies.layers.map(l => [
+    linkButton(LAYER_ITEMS[l.layer], null, () => go(l.layer)),
+    l.installed ? "yes" : (l.layer === "installation" ? "no, built-in policy" : "no"),
+    l.rules.length, l.obligations.length, shortHash(l.hash),
+  ]), [2, 3]));
+}
+
+// A resource glob of a rule, with graph names for graph ids.
+function resourceText(pattern) {
+  if (pattern === "*") return el("span", null, "everything");
+  if (pattern === "graph:*") return el("span", null, "every graph");
+  if (pattern === "installation") return el("span", null, "the installation");
+  const found = /^graph:([0-9a-f-]{36})(\*|\/type:(.+))?$/.exec(pattern);
+  if (!found) return code(pattern);
+  const name = policies.graphs[found[1]] || found[1];
+  const graph = found[1] === policies.graph.id ? el("strong", null, name) : el("span", null, name);
+  if (!found[3]) return graph;
+  return frag("type ", found[1] === policies.graph.id && !found[3].endsWith(":*") ? typeLink(found[3]) : code(found[3]), " in ", graph);
+}
+
+function listOf(values, render) {
+  const box = el("span");
+  values.forEach((value, index) => {
+    if (index) box.append(", ");
+    box.append(render(value));
+  });
+  return box;
+}
+
+function asList(value) {
+  return value === undefined || value === null ? [] : Array.isArray(value) ? value : [value];
+}
+
+function whoText(principal) {
+  const keys = Object.keys(principal || {});
+  if (!keys.length) return el("span", "muted", "everyone");
+  const box = el("span");
+  keys.forEach((key, index) => {
+    if (index) box.append(el("br"));
+    box.append(el("span", "small", (FACETS[key] || key) + " "), listOf(asList(principal[key]), v => code(v)));
+  });
+  return box;
+}
+
+function actionText(rule) {
+  if (rule.level) return frag(badge(`level ${rule.level}`));
+  return listOf(asList(rule.action), a => code(a));
+}
+
+function unlessText(rule) {
+  const conditions = rule.unless || [];
+  if (!conditions.length) return "";
+  const box = el("span");
+  conditions.forEach((condition, index) => {
+    if (index) box.append(el("br"), el("span", "small", "or "));
+    if (condition.principal) box.append(whoText(condition.principal));
+    if (condition.principal && condition.resource) box.append(el("span", "small", " on "));
+    if (condition.resource) box.append(listOf(asList(condition.resource), resourceText));
+  });
+  return box;
+}
+
+function layerDoc(doc, layer) {
+  doc.append(el("h1", null, LAYER_ITEMS[layer.layer]));
+  doc.append(frag(badge(layer.installed ? "installed" : "not installed"), " ", el("span", "small", "hash "), shortHash(layer.hash)));
+  if (!layer.installed) {
+    doc.append(el("p", "secondary", layer.layer === "installation"
+      ? "No installation policy is installed: the built-in policy decides, every graph readable and writable through graph."
+      : "This graph has no policy of its own: the installation policy alone decides."));
+  }
+  if (layer.layer === "graph" && Object.keys(layer.types).length) {
+    section(doc, "Type limits", Object.keys(layer.types).length);
+    doc.append(table(["Type", "Limit"], Object.entries(layer.types).map(([type, limit]) => [
+      type.endsWith(":*") ? code(type) : typeLink(type), code(limit),
+    ])));
+  }
+  for (const [kind, title] of RULE_KINDS) {
+    const found = layer.rules.filter(r => r.kind === kind);
+    if (!found.length || (kind === "type_limit" && Object.keys(layer.types).length)) continue;  // listed above
+    section(doc, title, found.length);
+    doc.append(table(["Rule", "Who", "Actions", "Resources", "Unless"], found.map(r => [
+      frag(code(r.id), " ", badge(r.effect, r.effect === "deny")), whoText(r.principal), actionText(r),
+      listOf(asList(r.resource), resourceText), unlessText(r),
+    ])));
+  }
+  if (layer.installed && !layer.rules.length) doc.append(el("p", "secondary", "No rule of this layer decides on this graph."));
+  if (layer.obligations.length) {
+    section(doc, "Obligations", layer.obligations.length);
+    doc.append(table(["Actions", "Reason required", "Max batch"], layer.obligations.map(o => [
+      listOf(asList(o.action), a => code(a)), o.require_reason ? "yes" : "", o.max_batch || "",
+    ])));
+  }
 }
 
 // ---- views: type graph -----------------------------------------------------

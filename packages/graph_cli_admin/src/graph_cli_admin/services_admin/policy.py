@@ -20,6 +20,11 @@ nothing.
 lock. ``explain`` asks ``authorize()`` what an app caller from a project, or
 from no project, or a request with a given server token would get: with the
 installed policy or with a file.
+
+``for_graph`` is what the live view shows of one graph: the rules of both
+installed layers that can decide on it, the obligations, the graph's type
+limits, and what ``explain`` answers for every project, for no project and
+for every token. It reads the installed files again, as ``show`` does.
 """
 
 from __future__ import annotations
@@ -33,7 +38,14 @@ from typing import Final
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.compiler import Compiled, compile_policy, layer_of_source
-from graph_cli.access_control.documents import GRAPH_LAYER, INSTALLATION_LAYER, RESOURCE_RE, rules
+from graph_cli.access_control.documents import (
+    GRAPH_LAYER,
+    INSTALLATION_LAYER,
+    RESOURCE_RE,
+    glob,
+    rules,
+    strings,
+)
 from graph_cli.access_control.effective import (
     graph_level,
     maintains,
@@ -71,6 +83,7 @@ from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
@@ -281,6 +294,58 @@ def explain(
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
 
 
+def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
+    """The policies as they bear on ``entry``: ``layers`` (installation, then the graph's
+    own) with the rules that can decide on it, ``callers`` with what ``explain`` answers
+    for each project, no project and each token, and ``graphs`` (id to name) for the
+    resources the rules name."""
+    source = FilePolicySource(ctx.roots.data_root)  # the files now: a view runs for long
+    installation, own = source.installation(), source.graph(entry.id)
+    policy = policy_set(installation, own)
+    resource = f"graph:{entry.id}"
+    layers: list[JsonValue] = []
+    for layer, document, installed in (
+        (INSTALLATION_LAYER, installation, installation is not BUILTIN_POLICY),
+        (GRAPH_LAYER, own or {}, own is not None),
+    ):
+        layers.append(
+            {
+                "layer": layer,
+                "installed": installed,
+                "hash": hash_value(document) if document else None,
+                "rules": [_rule_json(r) for r in rules(document) if _decides_on(r, resource)],
+                "obligations": _obligations(document),
+                "types": document.get("types") or {},
+            }
+        )
+    projects = strings(installation, "projects")
+    callers: list[JsonValue] = [
+        {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy)}
+        for p in (*projects, None)  # the maintainer's own principal, through graph
+    ]
+    records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
+    today = ctx.clock.now().date()
+    for record in sorted(records, key=lambda r: r.name):
+        caller = server_actor(record, ctx.actor.client.version)
+        callers.append(
+            {
+                "token": record.name,
+                "project": record.project,
+                "scope": record.scope,
+                "expired": not record.valid_on(today),
+                **_access(caller, entry, policy),
+            }
+        )
+    graphs = ctx.catalog.list_graphs(include_archived=True)
+    return {
+        "policy_hash": policy.hash,
+        "layers": layers,
+        "projects": list(projects),
+        "callers": callers,
+        "graphs": {str(e.id): e.name for e in graphs},
+    }
+
+
 # ---- helpers -----------------------------------------------------------------------
 
 
@@ -472,6 +537,58 @@ def _decision_json(decision: Decision) -> dict[str, JsonValue]:
     obligations = decision.obligations.to_json() if decision.effect == "allow" else None
     data["obligations"] = obligations
     return data
+
+
+# What a compiled rule stands for, by the prefix of its id (``access_control.compiler``).
+_RULE_KINDS: Final = (
+    ("grant.", "grant"),
+    ("maint.", "maintainer"),
+    ("scope.", "scope"),
+    ("no_project.", "scope"),
+    ("deny.", "deny"),
+    ("type.", "type_limit"),
+    ("builtin.", "builtin"),
+)
+
+
+def _decides_on(rule: Mapping[str, JsonValue], graph: str) -> bool:
+    """Whether ``rule`` can decide on ``graph:<id>`` or a type in it: a resource glob
+    covers it and no ``unless`` condition on resources alone lifts the rule there."""
+    if not any(glob(p, graph) or p.startswith(graph + "/") for p in strings(rule, "resource")):
+        return False
+    conditions = rule.get("unless")
+    return not any(
+        isinstance(condition, Mapping)
+        and set(condition) == {"resource"}
+        and any(glob(p, graph) for p in strings(condition, "resource"))
+        for condition in (conditions if isinstance(conditions, list) else ())
+    )
+
+
+def _rule_json(rule: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The rule with its ``kind`` and the ``level`` its actions are, if any."""
+    rule_id = str(rule.get("id"))
+    kind = next((k for prefix, k in _RULE_KINDS if rule_id.startswith(prefix)), "rule")
+    if kind == "scope" and rule_id.endswith(":maintain"):
+        kind = "maintain"
+    actions = strings(rule, "action")
+    level = next((lv for lv in ("read", "write") if actions == list(level_actions(lv))), None)
+    return {**rule, "kind": kind, "level": level}
+
+
+def _obligations(document: Mapping[str, JsonValue]) -> list[JsonValue]:
+    found = document.get("obligations")
+    return [o for o in found if isinstance(o, Mapping)] if isinstance(found, list) else []
+
+
+def _access(caller: ActorContext, entry: GraphEntry, policy: PolicySet) -> dict[str, JsonValue]:
+    return {
+        "principal": caller.principal.id,
+        "entrypoint": caller.client.entrypoint.value,
+        "level": graph_level(caller, entry.id, policy),
+        "withheld": withheld_actions(caller, entry.id, policy),
+        "maintains": maintains(caller, entry.id, policy),
+    }
 
 
 def _graph_name(entry: GraphEntry | None) -> str | None:

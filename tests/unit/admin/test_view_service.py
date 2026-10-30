@@ -22,7 +22,7 @@ from graph_cli.services.describe import (
     describe_relations,
     describe_type,
 )
-from graph_cli_admin.services_admin import view
+from graph_cli_admin.services_admin import policy, tokens, view
 from graph_cli_admin.services_admin.functions import publish
 from graph_cli_admin.services_admin.view import (
     ActivityTrail,
@@ -33,10 +33,32 @@ from graph_cli_admin.services_admin.view import (
     label_of,
     model_json,
     open_view,
+    policies_json,
     read_event,
 )
 
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
+INSTALLATION_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: maintainer}, graphs: "*", level: write}
+  - {entrypoint: server, principal: {project: example_project}, graphs: [GRAPH], level: read}
+scopes:
+  example_project: {GRAPH: read}
+  other_project: {"*": none}
+no_project: {"*": read}
+deny:
+  - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
+"""
+GRAPH_POLICY = """\
+schema: graph_cli.policy/1
+id: graph
+obligations:
+  - {action: ["write.*"], max_batch: 200}
+deny:
+  - {id: no_history, action: ["read.history"]}
+"""
 
 
 @pytest.fixture(params=TOY_ONTOLOGIES)
@@ -355,3 +377,73 @@ def test_the_model_needs_read_describe(svc: ServiceEnv) -> None:
     now[0] += view.DENIAL_AUDIT_S
     assert refused() == "access.denied"
     assert len(svc.installation_events()) == before + 2
+
+
+def test_the_policies_as_they_bear_on_the_graph(svc: ServiceEnv, tmp_path: Path) -> None:
+    ctx = admin_context(svc.root)
+    data = policies_json(ctx, source_of(svc))
+    builtin, own = data["layers"]  # type: ignore[misc]
+    assert builtin["layer"] == "installation" and builtin["installed"] is False  # type: ignore[index]
+    assert own == {  # no graph policy
+        "layer": "graph",
+        "installed": False,
+        "hash": None,
+        "rules": [],
+        "obligations": [],
+        "types": {},
+    }
+    assert data["callers"] == [  # only the scope for no project: the built-in policy has none
+        {
+            "project": None,
+            "principal": ctx.actor.principal.id,
+            "entrypoint": "app",
+            "level": "write",
+            "withheld": [],
+            "maintains": False,
+        }
+    ]
+    for name, text in (("installation", INSTALLATION_POLICY), ("graph", GRAPH_POLICY)):
+        authored = tmp_path / f"{name}.yaml"
+        authored.write_text(text.replace("GRAPH", svc.name))
+        graph_ref = svc.name if name == "graph" else None
+        policy.apply(ctx, file=authored, graph_ref=graph_ref, reason="test")
+    tokens.create(ctx, name="ci", project="example_project", expires=None, reason=None)
+    data = policies_json(ctx, source_of(svc))
+    assert data["graph"]["name"] == svc.name  # type: ignore[index, call-overload]
+    assert data["graphs"] == {str(svc.entry.id): svc.name}
+    installation, own = data["layers"]  # type: ignore[misc]
+    assert installation["installed"] is True and own["installed"] is True  # type: ignore[index]
+    kinds = {r["id"]: (r["kind"], r["level"]) for r in installation["rules"]}  # type: ignore[index]
+    assert kinds == {
+        "grant.1": ("grant", "write"),
+        "grant.2": ("grant", "read"),
+        "maint.any": ("maintainer", None),
+        f"scope.example_project.{svc.name}": ("scope", None),
+        # scope.example_project.* is lifted for the graphs the scope names: left out
+        "scope.other_project.*": ("scope", None),
+        "no_project.*": ("scope", None),
+        "deny.no_explore_writes": ("deny", None),
+    }
+    assert [r["id"] for r in own["rules"]] == ["deny.no_history"]  # type: ignore[index]
+    assert own["obligations"] == [{"action": ["write.*"], "max_batch": 200}]  # type: ignore[index]
+    access = {(c.get("token"), c["project"]): c for c in data["callers"]}  # type: ignore[union-attr, index]
+    assert data["projects"] == ["example_project", "other_project"]
+    # the graph withholds the history from everyone: below the read level, still readable
+    assert access[None, "example_project"]["withheld"] == ["read.history"]
+    assert access[None, None]["withheld"] == ["read.history"]
+    assert access[None, "other_project"]["withheld"] == []  # nothing to withhold from
+    assert {c["level"] for c in access.values()} == {"none"}
+    ci = access["ci", "example_project"]
+    assert ci["entrypoint"] == "server" and ci["principal"] == "token:ci" and not ci["expired"]
+    assert ci["withheld"] == ["read.history"] and ci["maintains"] is False
+
+
+def test_the_policies_need_audit_read_on_the_installation(svc: ServiceEnv) -> None:
+    ctx = dataclasses.replace(admin_context(svc.root), policy=policy_of("read.get"))
+    graphs = ViewGraphs(ctx)
+    entry = graphs.get(svc.name).source.entry
+    before = len(svc.installation_events())
+    with pytest.raises(GraphCliError) as info:
+        graphs.authorize(entry, "maint.audit_read", "installation")
+    assert info.value.code == "access.denied"
+    assert len(svc.installation_events()) == before + 1

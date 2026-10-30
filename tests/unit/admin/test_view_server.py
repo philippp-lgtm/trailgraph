@@ -179,6 +179,10 @@ def test_the_model_and_the_functions(server: ViewServer, svc: ServiceEnv) -> Non
     assert response.status == 200 and json.loads(response.read())["functions"] == []
     assert get(server, "/model").status == 403
     assert get(server, f"/functions?t={server.token}&graph=nothing").status == 404
+    response = get(server, f"/policies?t={server.token}")
+    data = json.loads(response.read())
+    assert response.status == 200 and data["graph"]["name"] == svc.name
+    assert [layer["layer"] for layer in data["layers"]] == ["installation", "graph"]
 
 
 def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: ServiceEnv) -> None:
