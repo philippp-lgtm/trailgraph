@@ -3,7 +3,9 @@
 `graph-admin view` prints an address on stderr and opens it: a side bar
 with the graphs of the data root and, for the graph picked there, the
 whole graph as dots and lines, with labels, and a list of recent
-activity. `--graph <graph>` opens the page on that graph; without it the
+activity. Besides the graph itself, the page shows the graph's ontology,
+its types as a graph and its named functions (see
+[Model, type graph and functions](#model-type-graph-and-functions)). `--graph <graph>` opens the page on that graph; without it the
 page opens on none. It serves until Ctrl+C (`--port`, `--host`,
 `--no-open`, `--token-file`).
 
@@ -25,6 +27,47 @@ recently that no page is showing and that `--graph` did not name; a
 graph a page shows stays open, so with more graphs shown at once more
 stay open. Warnings about a graph opened later (for example an ontology
 pin the program cannot read) print on stderr once.
+
+## Model, type graph and functions
+
+Below the picked graph the side bar lists its views; while the side bar
+is folded, a bar at the top of the page lists them. The address names
+the view as `tab=` (`model`, `types` or `functions`; none for the graph)
+and what it shows as `item=`, so a reload, a bookmark or Back and Forward
+keep both. The three views read what `graph describe` prints, for the
+graph's current ontology; nothing in them streams, a reload shows a
+change.
+
+- **Graph**: the graph itself, as described in the rest of this page.
+- **Model**: the modules with version, summary and how many types,
+  relations, functions and active entities each holds, built-in modules
+  apart. A module lists its types, the relations that stay inside it,
+  those that link it to other modules, its rules and functions. A type
+  shows its fields with their flags, its lifecycles with states and
+  transitions, its relations in both directions, its rules, ancestors
+  and subtypes, and how many active entities it and its subtypes have.
+  "Show in the graph" switches to the graph with every other type
+  hidden.
+- **Type graph**: every type as a dot in the color of its module,
+  hollow when abstract and, by default, sized by its active entities;
+  every relation as an arrow from the type it starts at to the type it
+  points to (one arrow per pair of types, named by its relations), and a
+  dashed arrow from a type to the type it extends. Relations open to any
+  type have no end to draw; the side bar names them. Pointing at a type
+  lights up its relations and neighbours; clicking it shows its
+  description next to the graph, clicking an arrow its relations. The
+  side bar hides modules, inheritance and sizes, shows the relation
+  names and searches types; drag to pan or move a type, wheel to zoom,
+  double-click to fit.
+- **Functions**: the named functions by module, each with its summary,
+  when to use it, the `graph run` command, parameters, returned columns,
+  example questions, the types and relations it reads, and its query
+  text.
+
+The model needs `read.describe` on the graph, as `graph describe` does;
+a refusal is audited like one of the graph (see [Access](#access)). The
+functions need `read.function`: without it the view lists none and
+records nothing, as `graph describe functions` does.
 
 ## Activity
 
@@ -94,13 +137,14 @@ whose port is published to `127.0.0.1` on the host; requests must then still
 name `127.0.0.1` or `localhost` (any port or none) and carry the token. The printed
 address names the port inside the container: open the published port with
 the same token. The graph itself carries labels, types, aliases and record
-status only.
+status only; the model carries no attribute values, only how many active
+entities each type has.
 
 Each request for a graph checks `read.get` on it again, so a read
 revoked in the policy takes effect with the next request; an open
 activity stream was checked when it connected and runs on until it
 reconnects. A refused request is audited like any denial, but at most
-once per graph and minute: repeats in that time are refused the same way
+once per graph, action and minute: repeats in that time are refused the same way
 without an event, so a page or client that keeps retrying cannot flood
 the audit log. After a refusal or an unknown graph the page stops
 reconnecting and says why.
@@ -131,8 +175,9 @@ The token file comes from a secret that only the view and the proxy
 see. The proxy
 
 - authenticates the user and forwards only `GET` requests, to the routes
-  `/` (the page), `/graphs`, `/graph`, `/entity`, `/blob`, `/events` and
-  `/trail`, with their query parameters (`graph`, `id`);
+  `/` (the page), `/graphs`, `/graph`, `/entity`, `/blob`, `/model`,
+  `/functions`, `/events` and `/trail`, with their query parameters
+  (`graph`, `id`);
 - sends `Host: localhost` or `127.0.0.1` (with any port or none), not
   the public name, else the view answers 403;
 - adds the token as the query parameter `t`, replacing any `t` the

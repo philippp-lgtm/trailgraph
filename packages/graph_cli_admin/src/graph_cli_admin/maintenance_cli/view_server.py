@@ -17,7 +17,9 @@ another site cannot probe it by DNS rebinding; it touches no graph.
 (name or id; without it the graph of ``--graph``): ``/graph`` the whole
 graph as JSON, ``/entity?id=`` one entity in full (attributes, edges,
 history with the writing agents), ``/blob?id=`` the stored file of a file
-entity (PDFs and images inline, anything else as a download), ``/events``
+entity (PDFs and images inline, anything else as a download), ``/model``
+the ontology (``model_json``, also needs ``read.describe``), ``/functions``
+the published functions in full (``functions_json``), ``/events``
 Server-Sent Events of that graph only, ``/trail`` its recent steps of
 activity (``ActivityTrail``). The page asks for every route by a relative
 URL, so a proxy may serve it below a path prefix.
@@ -53,7 +55,9 @@ from graph_cli_admin.services_admin.view import (
     GraphView,
     ViewGraphs,
     entity_json,
+    functions_json,
     graph_json,
+    model_json,
     open_blob,
     read_event,
 )
@@ -216,6 +220,10 @@ class ViewServer:
         data["signal_reads"] = self.reads_shown
         return data
 
+    def model(self, view: GraphView) -> dict[str, JsonValue]:
+        self.graphs.authorize(view.source.entry, "read.describe")
+        return model_json(view.source)
+
     def _run_feed(self) -> None:
         while not self._stop.is_set():
             for view in self.graphs.opened():
@@ -269,6 +277,8 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
                 "/graph": lambda: self._json(server.graph(view())),
                 "/entity": lambda: self._json(entity_json(view().source, entity)),
                 "/blob": lambda: self._blob(view(), entity),
+                "/model": lambda: self._json(server.model(view())),
+                "/functions": lambda: self._json(functions_json(view().source)),
                 "/events": lambda: self._events(view()),
                 "/trail": lambda: self._json(view().trail.to_json()),
             }
