@@ -33,7 +33,9 @@ events, the feed never waits; ``/trail`` gives a page the steps it missed.
 A failing poll becomes an ``error`` event and the feed goes on. A graph
 that clients watch is never closed (``MAX_OPEN``); a stream that lost the
 race with closing its graph ends at once and the browser reconnects. A
-stream is authorized when it connects. Any other exception in a route is
+stream is authorized when it connects; on every round the feed closes the
+graphs whose read the policy revoked meanwhile, which ends their streams,
+and the reconnect is refused. Any other exception in a route is
 a 500 with a fixed message, and one line on stderr.
 """
 
@@ -234,6 +236,7 @@ class ViewServer:
 
     def _run_feed(self) -> None:
         while not self._stop.is_set():
+            self.graphs.close_revoked()
             for view in self.graphs.opened():
                 graph = str(view.source.entry.id)
                 try:

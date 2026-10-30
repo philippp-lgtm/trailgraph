@@ -13,6 +13,7 @@ from support.services import ServiceEnv
 from support.snapshots import revision as stored_revision
 
 from graph_cli.catalog.activity import ActivityEvent
+from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
@@ -275,6 +276,29 @@ def test_a_repeated_denial_is_audited_once_per_window(svc: ServiceEnv) -> None:
     assert refused() == "access.denied"
     assert len(svc.installation_events()) == before + 2
     assert graphs.opened() == []
+
+
+def test_a_policy_applied_meanwhile_decides_the_next_request(
+    svc: ServiceEnv, tmp_path: Path
+) -> None:
+    ctx = admin_context(svc.root)
+    watched = dataclasses.replace(ctx, policy=FilePolicySource(svc.root, watch=True))
+    graphs = ViewGraphs(watched)
+    closed: list[str] = []
+    graphs.on_close = closed.append
+    graphs.get(svc.name)
+    graphs.close_revoked()
+    assert closed == [] and len(graphs.opened()) == 1
+    authored = tmp_path / "installation.yaml"
+    hidden = INSTALLATION_POLICY.replace('no_project: {"*": read}', 'no_project: {"*": none}')
+    authored.write_text(hidden.replace("GRAPH", svc.name))
+    policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+    assert graphs.listing()["graphs"] == []
+    with pytest.raises(GraphCliError) as info:
+        graphs.get(svc.name)
+    assert info.value.code == "access.denied"
+    graphs.close_revoked()  # the feed ends the open streams
+    assert closed == [str(svc.entry.id)] and graphs.opened() == []
 
 
 def test_a_graph_opens_once_and_again_when_its_manifest_changes(svc: ServiceEnv) -> None:

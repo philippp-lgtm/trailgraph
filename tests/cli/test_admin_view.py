@@ -199,3 +199,15 @@ def test_a_project_gets_the_view_its_scope(
     ]
     refused = run_cli("graph-admin", "view", "--project", "not a name")
     assert refused.returncode == 2 and "usage.invalid_argument" in refused.stderr
+
+
+def test_an_invalid_installed_policy_keeps_the_view_from_starting(
+    run_cli: CliRunner, isolated_env: dict[str, str]
+) -> None:
+    root = init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    policy = root / "policy" / "installation.json"
+    policy.parent.mkdir()
+    policy.write_text('{"schema": "graph_cli.policy/1", "rules": "everything"}\n')
+    refused = run_cli("graph-admin", "view", "--no-open")  # no fallback to the built-in policy
+    assert refused.returncode != 0 and "policy.invalid" in refused.stderr, refused.stderr

@@ -12,6 +12,7 @@ from typing import Final
 import click
 
 from graph_cli.catalog.activity import ActivityListener, activity_dir
+from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, nullable, obj
 from graph_cli.cli_kit.runner import CommandState
@@ -88,6 +89,11 @@ def view_command(
             details={"argument": "--project"},
         )
     ctx = admin_context(state, data_root)
+    # It serves for long: a policy applied meanwhile decides the next request. An invalid
+    # one refuses to start and every request, instead of falling back as graph-admin does.
+    policy = FilePolicySource(ctx.roots.data_root, watch=True)
+    policy.installation()
+    ctx = dataclasses.replace(ctx, policy=policy)
     if project is not None:  # asserted like a pointer's project: the policy's scope for it applies
         facet = Facet(Assurance.ASSERTED, id=project, source="option")
         ctx = dataclasses.replace(ctx, actor=dataclasses.replace(ctx.actor, project=facet))

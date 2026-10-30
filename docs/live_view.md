@@ -168,10 +168,14 @@ graph, those hidden from callers without a project included, gets a
 scope of its own, for example `scopes: {live_view: {"*": read}}`, and
 runs with `--project live_view`; the scope also keeps it from writing.
 
-Each request for a graph checks `read.get` on it again, so a read
-revoked in the policy takes effect with the next request; an open
-activity stream was checked when it connected and runs on until it
-reconnects. A refused request is audited like any denial, but at most
+The view notices a `graph-admin policy apply` while it runs: it reads
+an installed policy file again once it was replaced. Each request for a
+graph checks `read.get` on it again, so a read revoked in the policy
+takes effect with the next request; an open activity stream of that
+graph ends within a second, and its reconnect is refused. An installed
+policy that is not valid stops the view from starting and refuses every
+request until it is replaced; unlike other `graph-admin` commands, the
+view does not fall back to the built-in policy. A refused request is audited like any denial, but at most
 once per graph, action and minute: repeats in that time are refused the same way
 without an event, so a page or client that keeps retrying cannot flood
 the audit log. After a refusal or an unknown graph the page stops

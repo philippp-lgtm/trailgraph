@@ -13,7 +13,8 @@
   page or client cannot flood the installation audit log. Up to
   ``MAX_OPEN`` graphs stay open: beyond that the least recently used graph that no
   client watches (``watched``) and that is not the default is closed
-  (``on_close``); when every open graph is watched, more stay open. A
+  (``on_close``); when every open graph is watched, more stay open.
+  ``close_revoked`` closes the open graphs the caller may no longer read. A
   graph whose ontology pin moved is opened again, its feed and trail
   kept. Warnings of a graph opened later go to ``on_warning`` once.
 - ``graph_json`` is the whole graph at one snapshot: every entity as a node
@@ -674,6 +675,26 @@ class ViewGraphs:
             decision.code or "access.denied",
             f"{decision.action} on {decision.resource} is not permitted",
         )
+
+    def close_revoked(self) -> None:
+        """Close every open graph the caller may no longer ``read.get`` (``on_close``), so
+        its streams end and the page's reconnect is refused; nothing is audited here."""
+        revoked = [view for view in self.opened() if not self._readable(view.source.entry)]
+        closed: list[str] = []
+        with self._lock:
+            for view in revoked:
+                graph = str(view.source.entry.id)
+                if self._open.get(graph) is view:
+                    del self._open[graph]
+                    closed.append(graph)
+        for graph in closed:
+            self.on_close(graph)
+
+    def _readable(self, entry: GraphEntry) -> bool:
+        try:
+            return self.ctx.allows("read.get", f"graph:{entry.id}", graph=entry.id)
+        except GraphCliError:  # an invalid policy decides nothing: closed
+            return False
 
     def _close_unused(self, *, keep: str) -> list[str]:
         """Above ``limit``, the least recently used graphs no client watches, never
