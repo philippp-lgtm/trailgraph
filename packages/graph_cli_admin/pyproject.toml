@@ -1,6 +1,6 @@
 [project]
 name = "graph_cli_admin"
-version = "0.8.0"
+version = "0.9.0"
 description = "Domain-agnostic knowledge graph shell: maintenance CLI (graph-admin)."
 requires-python = ">=3.12"
 dependencies = ["graph_cli", "click>=8.1"]
