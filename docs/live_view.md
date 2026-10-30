@@ -140,6 +140,15 @@ the same token. The graph itself carries labels, types, aliases and record
 status only; the model carries no attribute values, only how many active
 entities each type has.
 
+The view decides as the maintainer who starts it, without a project, so
+the installation policy's `no_project` scope applies: a graph that scope
+sets to `none` is left out of the list. `--project <project>` makes the
+view act for that project (asserted, as the `project` of a pointer is),
+so the project's scope applies instead. A view that should show every
+graph, those hidden from callers without a project included, gets a
+scope of its own, for example `scopes: {live_view: {"*": read}}`, and
+runs with `--project live_view`; the scope also keeps it from writing.
+
 Each request for a graph checks `read.get` on it again, so a read
 revoked in the policy takes effect with the next request; an open
 activity stream was checked when it connected and runs on until it

@@ -12,6 +12,7 @@ from harness import BIN_DIR, CliRunner
 from support.activity import short_dir
 from support.admin import admin, init
 from support.app import create_graph
+from support.policies import write_policy
 
 
 def test_serves_until_interrupted(
@@ -147,3 +148,54 @@ def test_a_bad_token_file_is_refused(
         assert "usage.invalid_argument" in refused.stderr and why in refused.stderr
         assert "s3cr3t" not in refused.stderr + refused.stdout
         assert "0x" not in refused.stderr and "position" not in refused.stderr
+
+
+HIDDEN_FROM_NO_PROJECT = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {graphs: "*", level: write}
+scopes:
+  viewer: {"*": read}
+no_project: {"*": read, example_graph: none}
+"""
+
+
+def listed(args: tuple[str, ...], env: dict[str, str], cwd: Path) -> list[str]:
+    """The graphs a view started with ``args`` lists."""
+    proc = subprocess.Popen(
+        [str(BIN_DIR / "graph-admin"), "view", "--no-open", *args],
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stderr is not None
+        line = proc.stderr.readline()
+        found = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=(\S+)", line)
+        assert found, line
+        conn = http.client.HTTPConnection("127.0.0.1", int(found.group(1)), timeout=5)
+        conn.request("GET", f"/graphs?t={found.group(2)}")
+        return [g["name"] for g in json.loads(conn.getresponse().read())["graphs"]]
+    finally:
+        proc.send_signal(signal.SIGINT)
+        proc.communicate(timeout=10)
+
+
+def test_a_project_gets_the_view_its_scope(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    create_graph(run_cli, "other_graph", "inventory")
+    policy = write_policy(tmp_path / "work", "installation.yaml", HIDDEN_FROM_NO_PROJECT)
+    assert admin(run_cli, "policy", "apply", str(policy), "--reason", "test policy").code == 0
+    assert listed((), isolated_env, tmp_path) == ["other_graph"]
+    assert sorted(listed(("--project", "viewer"), isolated_env, tmp_path)) == [
+        "example_graph",
+        "other_graph",
+    ]
+    refused = run_cli("graph-admin", "view", "--project", "not a name")
+    assert refused.returncode == 2 and "usage.invalid_argument" in refused.stderr

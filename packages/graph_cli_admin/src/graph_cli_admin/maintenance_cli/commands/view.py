@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import webbrowser
 from importlib.resources import files
 from pathlib import Path
@@ -15,6 +16,7 @@ from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import BOOLEAN, STRING, nullable, obj
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.actor import Assurance, Facet, is_valid_asserted_value
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -62,6 +64,7 @@ def view_command(
     host: str,
     no_open: bool,
     token_file: str | None,
+    project: str | None,
     data_root: str | None,
 ) -> Result:
     if click.get_current_context().params.get("json_mode") or state.invocation.json_default:
@@ -78,7 +81,16 @@ def view_command(
             details={"argument": "--port", "actual": port},
         )
     token = read_token_file(token_file) if token_file is not None else None
+    if project is not None and not is_valid_asserted_value(project):
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"--project {project!r}: not a valid project name",
+            details={"argument": "--project"},
+        )
     ctx = admin_context(state, data_root)
+    if project is not None:  # asserted like a pointer's project: the policy's scope for it applies
+        facet = Facet(Assurance.ASSERTED, id=project, source="option")
+        ctx = dataclasses.replace(ctx, actor=dataclasses.replace(ctx.actor, project=facet))
     graphs = ViewGraphs(ctx, default=graph_ref)
     first = graphs.get(None).source if graph_ref is not None else None
     if first is not None:
@@ -193,6 +205,12 @@ SPECS: Final = (
                 "Read the page's token from this file (32 characters or more) instead of"
                 " a random one per start; the printed address leaves it out.",
             ),
+            ParamSpec(
+                "--project",
+                "string",
+                "Show what this project may read: the view acts for it, so the installation"
+                " policy's scope for the project applies instead of the one for no project.",
+            ),
             DATA_ROOT,
         ),
         examples=(
@@ -205,6 +223,10 @@ SPECS: Final = (
             Example(
                 "graph-admin view --host 0.0.0.0 --port <value> --no-open --token-file <file>",
                 "Serve in a container behind a proxy that adds the token.",
+            ),
+            Example(
+                "graph-admin view --project <value>",
+                "Show the graphs as the policy's scope for one project allows.",
             ),
         ),
         errors=(*GRAPH_ERRORS, "admin.view_port_unavailable"),

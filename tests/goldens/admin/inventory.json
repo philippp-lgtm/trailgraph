@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.8.0",
+  "program_version": "0.9.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -2511,6 +2511,13 @@
           "summary": "Read the page's token from this file (32 characters or more) instead of a random one per start; the printed address leaves it out."
         },
         {
+          "name": "--project",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what this project may read: the view acts for it, so the installation policy's scope for the project applies instead of the one for no project."
+        },
+        {
           "name": "--data-root",
           "type": "directory",
           "required": false,
@@ -2534,6 +2541,10 @@
         {
           "command": "graph-admin view --host 0.0.0.0 --port <value> --no-open --token-file <file>",
           "summary": "Serve in a container behind a proxy that adds the token."
+        },
+        {
+          "command": "graph-admin view --project <value>",
+          "summary": "Show the graphs as the policy's scope for one project allows."
         }
       ],
       "errors": [
