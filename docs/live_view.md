@@ -3,9 +3,9 @@
 `graph-admin view` prints an address on stderr and opens it: a side bar
 with the graphs of the data root and, for the graph picked there, the
 whole graph as dots and lines, with labels, and a list of recent
-activity. Besides the graph itself, the page shows the graph's ontology,
-its types as a graph and its named functions (see
-[Model, type graph and functions](#model-type-graph-and-functions)). `--graph <graph>` opens the page on that graph; without it the
+activity. Besides the graph itself, the page shows the graph's types as
+a graph, its ontology, its named functions and its policies (see
+[Type graph, model, functions and policies](#type-graph-model-functions-and-policies)). `--graph <graph>` opens the page on that graph; without it the
 page opens on none. It serves until Ctrl+C (`--port`, `--host`,
 `--no-open`, `--token-file`).
 
@@ -13,7 +13,11 @@ page opens on none. It serves until Ctrl+C (`--port`, `--host`,
 
 The side bar lists every graph you may read (`read.get`), archived ones
 marked, with name and title; a graph you may not read is left out, and
-listing it is not audited as a denial. Click a graph to show it. The
+listing it is not audited as a denial. A graph is a folder: clicking it
+shows it and opens it in the side bar, which then lists its views
+instead of the graphs; "Back" at the top left returns to the list and
+leaves the shown graph as it is. Clicking the shown graph again opens
+its folder without changing the view. The
 address names the shown graph as `graph=<name>`, so a reload, a bookmark
 or Back and Forward keep it, and an address with `graph=` opens on that
 graph directly (a name or an id). The list refreshes when the window gets
@@ -28,17 +32,17 @@ graph a page shows stays open, so with more graphs shown at once more
 stay open. Warnings about a graph opened later (for example an ontology
 pin the program cannot read) print on stderr once.
 
-## Model, type graph and functions
+## Type graph, model, functions and policies
 
-Below the picked graph the side bar lists its views; while the side bar
-is folded, a bar at the top of the page lists them. The address names
-the view as `tab=` (`model`, `types` or `functions`; none for the graph)
-and what it shows as `item=`, so a reload, a bookmark or Back and Forward
-keep both. The three views read what `graph describe` prints, for the
-graph's current ontology; nothing in them streams, a reload shows a
-change.
+The folder of a graph lists its views in this order: Type graph, Model,
+Functions, Policies and Graph; while the side bar is folded, a bar at
+the top of the page lists them. The address names the view as `tab=`
+(`types`, `model`, `functions` or `policies`; none for the graph) and
+what it shows as `item=`, so a reload, a bookmark or Back and Forward
+keep both. Type graph, model and functions read what `graph describe`
+prints, for the graph's current ontology; nothing in these views
+streams, a reload shows a change.
 
-- **Graph**: the graph itself, as described in the rest of this page.
 - **Model**: the modules with version, summary and how many types,
   relations, functions and active entities each holds, built-in modules
   apart. A module lists its types, the relations that stay inside it,
@@ -63,11 +67,26 @@ change.
   when to use it, the `graph run` command, parameters, returned columns,
   example questions, the types and relations it reads, and its query
   text.
+- **Policies**: who may do what on the graph. "Access" lists, for each
+  project of the installation policy's scopes and for no project, what
+  your own `graph` calls get, and for each token what its requests get:
+  the level, the actions a deny rule withholds below it and, for an
+  admin token, whether it maintains the graph, as `graph-admin policy
+  explain` answers. "Installation policy" and "Graph policy" list the
+  installed rules of each layer that can decide on this graph (grants,
+  maintainers, project admins, scopes, deny rules, type limits), with
+  whom they match, their actions and resources, the conditions that
+  lift them, and the obligations. The view reads the installed policy
+  files on every request, as `graph-admin policy show` does.
+- **Graph**: the graph itself, as described in the rest of this page.
 
 The model needs `read.describe` on the graph, as `graph describe` does;
 a refusal is audited like one of the graph (see [Access](#access)). The
 functions need `read.function`: without it the view lists none and
-records nothing, as `graph describe functions` does.
+records nothing, as `graph describe functions` does. The policies need
+`maint.audit_read` on `installation`, as the installation reads of the
+[admin API](server.md#admin-api) do; a refusal is audited like the
+model's.
 
 ## Activity
 
@@ -149,10 +168,14 @@ graph, those hidden from callers without a project included, gets a
 scope of its own, for example `scopes: {live_view: {"*": read}}`, and
 runs with `--project live_view`; the scope also keeps it from writing.
 
-Each request for a graph checks `read.get` on it again, so a read
-revoked in the policy takes effect with the next request; an open
-activity stream was checked when it connected and runs on until it
-reconnects. A refused request is audited like any denial, but at most
+The view notices a `graph-admin policy apply` while it runs: it reads
+an installed policy file again once it was replaced. Each request for a
+graph checks `read.get` on it again, so a read revoked in the policy
+takes effect with the next request; an open activity stream of that
+graph ends within a second, and its reconnect is refused. An installed
+policy that is not valid stops the view from starting and refuses every
+request until it is replaced; unlike other `graph-admin` commands, the
+view does not fall back to the built-in policy. A refused request is audited like any denial, but at most
 once per graph, action and minute: repeats in that time are refused the same way
 without an event, so a page or client that keeps retrying cannot flood
 the audit log. After a refusal or an unknown graph the page stops
@@ -185,7 +208,7 @@ see. The proxy
 
 - authenticates the user and forwards only `GET` requests, to the routes
   `/` (the page), `/graphs`, `/graph`, `/entity`, `/blob`, `/model`,
-  `/functions`, `/events` and `/trail`, with their query parameters
+  `/functions`, `/policies`, `/events` and `/trail`, with their query parameters
   (`graph`, `id`);
 - sends `Host: localhost` or `127.0.0.1` (with any port or none), not
   the public name, else the view answers 403;
@@ -230,7 +253,7 @@ checkbox per type hides whole types. Attribute values are not searched.
 their edge count, relative to the most connected visible node.
 
 On a narrow screen (720 pixels or less, such as a phone) the list of
-graphs starts folded and opens over the graph; picking a graph or Escape
-folds it again. The panel becomes a sheet at the bottom that shows the
+graphs starts folded and opens over the graph; picking a graph opens its
+folder there, and picking a view or Escape folds it again. The panel becomes a sheet at the bottom that shows the
 graph's name and counts; "Details" opens it, and clicking a node opens
 it with that entity.

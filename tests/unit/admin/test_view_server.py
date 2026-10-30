@@ -18,14 +18,25 @@ from support.roles import load_roles
 from support.services import ServiceEnv
 
 from graph_cli.catalog.activity import ActivityListener, SocketActivity
+from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.ports.activity import ReadSignal
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
 from graph_cli_admin.maintenance_cli.commands.view import page
 from graph_cli_admin.maintenance_cli.view_server import Hub, ViewServer
+from graph_cli_admin.services_admin import policy
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.view import ViewGraphs
+
+# Graphs hidden from a caller without a project, the view's own maintainer included.
+HIDDEN = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {principal: {name: maintainer}, graphs: "*", level: write}
+no_project: {"*": none}
+"""
 
 
 @pytest.fixture
@@ -179,6 +190,10 @@ def test_the_model_and_the_functions(server: ViewServer, svc: ServiceEnv) -> Non
     assert response.status == 200 and json.loads(response.read())["functions"] == []
     assert get(server, "/model").status == 403
     assert get(server, f"/functions?t={server.token}&graph=nothing").status == 404
+    response = get(server, f"/policies?t={server.token}")
+    data = json.loads(response.read())
+    assert response.status == 200 and data["graph"]["name"] == svc.name
+    assert [layer["layer"] for layer in data["layers"]] == ["installation", "graph"]
 
 
 def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: ServiceEnv) -> None:
@@ -205,6 +220,23 @@ def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: Servic
         "step": len(created) + 1,
     }
     assert [e["step"] for e in created] == list(range(1, len(created) + 1))
+
+
+def test_a_revoked_read_ends_the_open_stream(svc: ServiceEnv, tmp_path: Path) -> None:
+    ctx = admin_context(svc.root)
+    watched = dataclasses.replace(ctx, policy=FilePolicySource(svc.root, watch=True))
+    running = ViewServer(ViewGraphs(watched, default=svc.name), page=page(), poll_s=0.05)
+    running.start()
+    try:
+        stream = get(running, f"/events?t={running.token}")
+        assert stream.fp.readline() == b": connected\n" and stream.fp.readline() == b"\n"
+        authored = tmp_path / "installation.yaml"
+        authored.write_text(HIDDEN)
+        policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+        assert stream.fp.readline() == b""  # ended, not left streaming
+        assert get(running, f"/events?t={running.token}").status == 403
+    finally:
+        running.stop()
 
 
 def trail(server: ViewServer, count: int, graph: str = "") -> list[dict[str, Any]]:

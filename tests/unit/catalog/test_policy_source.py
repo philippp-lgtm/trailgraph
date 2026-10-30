@@ -1,6 +1,7 @@
 """FilePolicySource: installed files, built-in fallback, fail closed (contracts B6.8, B6.14)."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,34 @@ def test_files_are_read_once_per_invocation(tmp_path: Path) -> None:
     source.refresh()  # a writer under its lock reads them again
     assert source.current(None) == BUILTIN_POLICY_SET
     assert source.current(GRAPH) == policy_set(BUILTIN_POLICY, LAYER)
+
+
+def replace(path: Path, document: JsonValue) -> None:
+    """Install ``document`` at ``path`` as ``policy apply`` does: a temp file renamed in."""
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_bytes(pretty_bytes(document))
+    os.replace(temp, path)
+
+
+def test_a_watched_source_reads_a_replaced_file_again(tmp_path: Path) -> None:
+    source = FilePolicySource(tmp_path, watch=True)
+    assert source.current(GRAPH) == BUILTIN_POLICY_SET
+    path = install(tmp_path, INSTALLATION)
+    assert source.current(None) == policy_set(INSTALLATION)
+    assert source.installation() is source.installation()  # unchanged: read once
+    layer = install(tmp_path, LAYER, graph=GRAPH)
+    assert source.current(GRAPH) == policy_set(INSTALLATION, LAYER)
+    narrower = {**INSTALLATION, "rules": []}
+    replace(path, narrower)
+    assert source.current(GRAPH) == policy_set(narrower, LAYER)
+    layer.unlink()
+    assert source.current(GRAPH) == policy_set(narrower)
+    replace(path, {**INSTALLATION, "rules": "all"})  # invalid: fails closed, not stale
+    with pytest.raises(GraphCliError) as info:
+        source.current(None)
+    assert info.value.code == "policy.invalid"
+    replace(path, INSTALLATION)
+    assert source.current(None) == policy_set(INSTALLATION)
 
 
 @pytest.mark.parametrize(

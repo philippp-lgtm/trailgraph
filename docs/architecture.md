@@ -150,7 +150,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |
 | `catalog.pointer` | the project pointer file `.graph_cli.toml` and graph selection (the policy decides visibility first) |
-| `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`); the built-in policy without one; fails closed on an invalid file |
+| `catalog.policy_source` | `FilePolicySource`: the installed policies, read once per command and again by a writer under its lock (`refresh`), or again whenever a file was replaced (`watch`, for the long-running view); the built-in policy without one; fails closed on an invalid file |
 | `catalog.wiring` | the composition root of `graph`: config, roots, pointer, actor, services; writes the access log line after the envelope |
 | `catalog.identity` | identity providers and the actor (see [Identity](access_control.md#identity)); `catalog.identity.request` builds the actor of a server request from its token and the client's facets |
 | `catalog.endpoint`, `catalog.remote` | the remote mode: the server endpoint, the HTTP transport (`http.client`, imported in remote mode only) and the `RemoteSession` of one command |
