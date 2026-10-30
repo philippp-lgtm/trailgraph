@@ -162,3 +162,4 @@ the graph is pinned to. So:
 | `function.module_required`, `function.unknown_module` | name a module of the graph in `module:` |
 | `term.unknown`, `query.*` | the query itself: fix the name or the syntax |
 | `function.unknown_key`, `function.missing_key`, `function.invalid_value` | the file does not follow the format; see `references/format.md` |
+| `function.round_trip_failed` | a defect of graph_cli, not of the file: write the query another way (`references/format.md`, published form) and tell the user so it gets reported |

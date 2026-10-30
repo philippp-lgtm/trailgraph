@@ -11,6 +11,7 @@ from support.functions import BROKEN_FUNCTIONS, edited, read_dir, valid_sources
 from graph_cli.kernel.canonical import JsonObject, hash_document, pretty_bytes
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
+from graph_cli.kinetic import compile as compile_module
 from graph_cli.kinetic.compile import (
     MAX_FUNCTIONS,
     MAX_QUERY_CHARS,
@@ -84,6 +85,37 @@ def test_the_normalized_query_uses_curies_and_resolves_again() -> None:
     for name, found in entries().items():
         again = resolve(parse(found["query"]), MODEL, dict.fromkeys(_params(found), "2000-01-01"))
         assert "\n".join(render.clause(c) for c in again.query.clauses) == found["query"], name
+
+
+def test_a_parameter_first_in_a_condition_reads_back() -> None:
+    # The stored form parenthesizes it as ``(($unit = ...``, which once read
+    # as a node pattern with a parameter as property map (F67).
+    sources = edited("vacant_positions.yaml", "WHERE d.id = $unit", "WHERE $unit = d.id")
+    document, problems = compile_catalog(sources, MODEL)
+    assert problems == []
+    entry = {e["name"]: e for e in document["functions"]}["vacant_positions"]
+    assert "WHERE (($unit = d.id) AND" in entry["query"]
+    assert check_catalog(document, MODEL) == []
+
+
+@pytest.mark.parametrize(
+    ("stored", "reason"),
+    [
+        (lambda text: text.replace("MATCH", "MATCH (", 1), "query.syntax"),
+        (lambda text: text + " LIMIT 1", "it reads back as another query"),
+    ],
+)
+def test_a_stored_form_that_does_not_read_back_is_refused(
+    monkeypatch: pytest.MonkeyPatch, stored: Any, reason: str
+) -> None:
+    normalized = compile_module._normalized
+    monkeypatch.setattr(compile_module, "_normalized", lambda r: stored(normalized(r)))
+    sources = {"vacant_positions.yaml": valid_sources()["vacant_positions.yaml"]}
+    document, problems = compile_catalog(sources, MODEL)
+    assert [p.code for p in problems] == ["function.round_trip_failed"]
+    assert reason in problems[0].message
+    assert problems[0].details["normalized"].startswith("MATCH")
+    assert document["functions"] == []
 
 
 def _params(entry: dict[str, Any]) -> list[str]:

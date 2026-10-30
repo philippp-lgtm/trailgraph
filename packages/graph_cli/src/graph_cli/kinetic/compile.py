@@ -13,8 +13,12 @@ range allow, and the declared columns.
 
 The compiled entry stores the normalized query text (``render`` of the
 resolved tree: CURIEs, backticked), which parses and resolves again against
-the current model. ``check_catalog`` runs the same checks over a published
-catalog against another model (the release invariant, K5).
+the current model. Compiling reads that text back and refuses a function
+whose stored form does not resolve to the same query
+(``function.round_trip_failed``, a defect of graph_cli), so publishing never
+stores a query that ``graph run`` would refuse. ``check_catalog`` runs the
+same checks over a published catalog against another model (the release
+invariant, K5).
 """
 
 from __future__ import annotations
@@ -237,7 +241,26 @@ class _Compile:
         self.columns(resolved)
         self.type_fit(resolved)
         self.patterns(resolved)
+        self.round_trip(_normalized(resolved), paging)
         return self.entry(module, resolved)
+
+    def round_trip(self, text: str, paging: frozenset[str]) -> None:
+        """The stored text must resolve again, and to the same query."""
+        try:
+            again = _resolve_with_placeholders(parse(text), self.defn, self.model, paging)
+        except GraphCliError as exc:
+            reason = f"{exc.code}: {exc.message}"
+        else:
+            if _normalized(again) == text:
+                return
+            reason = "it reads back as another query"
+        self.add(
+            "function.round_trip_failed",
+            "query",
+            f"the normalized form of the query does not read back ({reason}); this is a defect"
+            " of graph_cli: write the query another way and report it",
+            normalized=text,
+        )
 
     # Declaration
 

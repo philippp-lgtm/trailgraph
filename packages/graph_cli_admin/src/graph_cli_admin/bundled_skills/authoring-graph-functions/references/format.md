@@ -124,7 +124,11 @@ Not checked: enum literals and `labels()`/`type()` string literals inside
 the query text; a mistake there returns no rows instead of an error.
 
 The query is stored resolved: names become prefixed CURIEs, so a published
-function reads the same after a later module reuses a local name. Every
+function reads the same after a later module reuses a local name. Publishing
+reads that stored form back before it accepts the function, so a published
+function always runs: `function.round_trip_failed` means the stored form
+does not resolve to the same query, a defect of graph_cli (write the query
+another way and report it; `details.normalized` holds the stored form). Every
 ontology release resolves the stored functions again against the new model
 (`admin.functions_broken` when one fails).
 
