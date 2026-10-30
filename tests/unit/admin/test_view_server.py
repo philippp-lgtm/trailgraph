@@ -151,7 +151,14 @@ def test_the_page_asks_for_every_route_by_a_relative_url() -> None:
     """Behind a proxy the page lives below a path prefix: no request may start at ``/``."""
     html = page().decode()
     assert re.findall(r"""(?:fetch|EventSource|url|api)\(\s*[`"'](/[^`"']*)""", html) == []
-    for route in ('"graphs?t="', 'api("graph")', 'api("events")', '"entity"', '"blob"'):
+    for route in (
+        '"graphs?t="',
+        'api("graph")',
+        'api("events")',
+        '"entity"',
+        '"blob"',
+        "api(route)",
+    ):
         assert route in html, route
 
 
@@ -161,6 +168,17 @@ def test_graph_json(server: ViewServer, svc: ServiceEnv) -> None:
     assert response.getheader("Content-Type") == "application/json"
     assert data["seq"] == svc.head_seq() and data["signal_reads"] is True
     assert len(data["nodes"]) == len(svc.all_revisions())
+
+
+def test_the_model_and_the_functions(server: ViewServer, svc: ServiceEnv) -> None:
+    response = get(server, f"/model?t={server.token}")
+    data = json.loads(response.read())
+    assert response.status == 200 and response.getheader("Content-Type") == "application/json"
+    assert data["graph"]["name"] == svc.name and data["type"] and data["entities"]
+    response = get(server, f"/functions?t={server.token}&graph={svc.name}")
+    assert response.status == 200 and json.loads(response.read())["functions"] == []
+    assert get(server, "/model").status == 403
+    assert get(server, f"/functions?t={server.token}&graph=nothing").status == 404
 
 
 def test_writes_and_reads_reach_the_event_stream(server: ViewServer, svc: ServiceEnv) -> None:

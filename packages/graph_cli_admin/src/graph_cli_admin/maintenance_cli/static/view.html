@@ -25,6 +25,14 @@
   --read-3: #0f9fb0;
   --read-4: #7d55e6;
   --read-5: #e0592a;
+  --m1: #2a78d6;
+  --m2: #eb6834;
+  --m3: #1baf7a;
+  --m4: #eda100;
+  --m5: #e87ba4;
+  --m6: #008300;
+  --m7: #6250d6;
+  --m8: #e34948;
 }
 .viz-root.theme-dark {
   color-scheme: dark;
@@ -44,6 +52,14 @@
   --read-3: #2cc4d6;
   --read-4: #9c7bff;
   --read-5: #f07a4a;
+  --m1: #3987e5;
+  --m2: #d95926;
+  --m3: #199e70;
+  --m4: #c98500;
+  --m5: #d55181;
+  --m6: #008300;
+  --m7: #9085e9;
+  --m8: #e66767;
 }
 * { box-sizing: border-box; }
 /* body may get a padding from a host page (a bar above the view): #layout fills what is left. */
@@ -149,6 +165,91 @@ button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 2px
 #graph_list .state { font-size: 11px; font-weight: 400; color: var(--text-muted); }
 #graph_list .title { color: var(--text-secondary); font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 #graphs_status { padding: 0 14px 12px; }
+#graph_list .tabs { list-style: none; margin: 2px 0 6px 12px; padding: 0 0 0 8px; border-left: 1px solid var(--border); display: grid; gap: 1px; }
+#graph_list .tabs button { padding: 3px 8px; font-size: 12px; color: var(--text-secondary); }
+#graph_list .tabs button[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+/* The views of the shown graph once the side bar is folded: a bar at the top left. */
+#tabbar {
+  position: absolute; top: 8px; left: 52px; z-index: 2; display: none; gap: 2px; padding: 2px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+}
+#sidebar.collapsed ~ #tabbar { display: flex; }
+body.no-graph #tabbar { display: none; }
+#tabbar button { border-color: transparent; background: none; font-size: 12px; padding: 2px 8px; }
+#tabbar button[aria-current="page"] { background: var(--surface-1); border-color: var(--border); }
+/* The model, the type graph and the functions: a list on the left, the shown item, for the
+   type graph a panel with the selected type on the right. */
+#browse { display: none; flex: 1; min-width: 0; min-height: 0; }
+body.browsing #browse { display: flex; }
+body.browsing #stage, body.browsing #panel { display: none; }
+#sidebar.collapsed ~ #browse { padding-top: 44px; }
+#browse_nav { width: 280px; flex: none; border-right: 1px solid var(--border); background: var(--surface-2); overflow-y: auto; padding: 6px 0 14px; }
+#browse_main { flex: 1; min-width: 0; overflow-y: auto; position: relative; }
+#browse_side { width: 380px; flex: none; border-left: 1px solid var(--border); background: var(--surface-2); overflow-y: auto; }
+#browse_side[hidden] { display: none; }
+#browse_nav h2 { margin: 12px 14px 4px; }
+#browse_nav ul { list-style: none; margin: 0; padding: 0 6px; display: grid; gap: 1px; }
+#browse_nav ul ul { padding: 0 0 4px 14px; }
+#browse_nav button.entry { width: 100%; text-align: left; background: none; border-color: transparent; padding: 3px 8px; display: flex; gap: 6px; align-items: center; }
+#browse_nav button.entry:hover { background: var(--surface-1); }
+#browse_nav button.entry[aria-current="true"] { background: var(--surface-1); border-color: var(--border); }
+#browse_nav .entry .text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#browse_nav .entry .count, #browse_nav label .count { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+#browse_nav .entry.module .text { font-weight: 600; }
+#browse_nav .entry.inherited { color: var(--text-secondary); }
+#browse_nav label { display: flex; gap: 6px; align-items: center; padding: 2px 14px; color: var(--text-secondary); }
+#browse_nav input[type="search"] { width: calc(100% - 28px); margin: 8px 14px 4px; font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; }
+#browse_nav .note { padding: 6px 14px 0; font-size: 12px; }
+.swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; background: var(--node); }
+.swatch.open { background: none; border: 1.5px dashed var(--node); }
+.doc { max-width: 960px; padding: 18px 26px 48px; }
+#browse_side .doc { padding: 12px 16px 24px; }
+.doc .close { float: right; }
+.doc dl { margin: 8px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; }
+.doc dt { color: var(--text-muted); }
+.doc dd { margin: 0; min-width: 0; word-break: break-word; }
+.doc h1 { font-size: 19px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.doc h1 .curie { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.doc h2 { margin: 22px 0 6px; }
+.doc h3 { font-size: 14px; margin: 14px 0 4px; }
+.doc p { margin: 6px 0; max-width: 72ch; }
+.doc .meta { color: var(--text-secondary); display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+.doc .lead { font-size: 14px; }
+.doc table { border-collapse: collapse; width: 100%; margin-top: 2px; }
+.doc th, .doc td { text-align: left; vertical-align: top; padding: 5px 12px 5px 0; border-bottom: 1px solid var(--border); }
+.doc th { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.doc td:first-child { white-space: nowrap; }
+.doc td.num, .doc th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.doc .small { font-size: 12px; color: var(--text-muted); }
+.doc ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0; }
+#browse_side pre { background: var(--surface-1); }
+.badge { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; color: var(--text-secondary); white-space: nowrap; }
+.badge.warn { color: var(--text-primary); border-color: var(--read); }
+#typegraph { display: block; width: 100%; height: 100%; cursor: grab; user-select: none; touch-action: none; }
+#typegraph.dragging { cursor: grabbing; }
+#typegraph .edge path.line { fill: none; stroke: var(--text-muted); stroke-width: 1.2; opacity: 0.7; }
+#typegraph .edge.extends path.line { stroke-dasharray: 5 4; }
+#typegraph .edge path.hit { fill: none; stroke: transparent; stroke-width: 10; cursor: pointer; }
+#typegraph .edge text, #typegraph .node text { font-size: 11px; fill: var(--text-secondary); paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+#typegraph .edge text { display: none; }
+#typegraph.names .edge text, #typegraph .edge.hi text { display: block; }
+#typegraph .node { cursor: pointer; }
+#typegraph .node text { font-size: 12px; fill: var(--text-primary); }
+#typegraph .node circle { stroke: var(--surface-1); stroke-width: 2; }
+#typegraph .node.abstract circle { fill: var(--surface-1) !important; stroke-width: 2; stroke-dasharray: 3 2; }
+#typegraph .node.selected circle { stroke: var(--text-primary) !important; stroke-width: 2.5; stroke-dasharray: none; }
+#typegraph.focus .node:not(.hi), #typegraph.focus .edge:not(.hi) { opacity: 0.18; }
+#typegraph .node.dim { opacity: 0.18; }
+#typegraph .edge.hi path.line { stroke: var(--text-primary); opacity: 1; stroke-width: 1.6; }
+#typegraph .edge.selected path.line { stroke-width: 2.6; }
+#typegraph .arrow { fill: var(--text-muted); }
+#typegraph .arrow.hi { fill: var(--text-primary); }
+#typegraph .arrow.open { fill: var(--surface-1); stroke: var(--text-muted); stroke-width: 1; }
+#tg_tooltip { position: absolute; pointer-events: none; display: none; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; max-width: 320px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }
+#tg_tooltip .title { font-weight: 600; word-break: break-word; }
+#tg_tooltip .meta { color: var(--text-secondary); }
 #empty { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; }
 #empty h1 { font-size: 17px; margin: 0 0 6px; }
 #empty p { margin: 0 0 12px; }
@@ -175,6 +276,14 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
   #panel #detail { max-height: none; }
   #panel.minimized > :not(:first-child) { display: none; }
   #panel_toggle { display: block; }
+  #browse { flex-direction: column; overflow-y: auto; }
+  #browse_nav, #browse_side { width: auto; border: 0; border-bottom: 1px solid var(--border); }
+  #browse_nav { max-height: 38%; flex: none; }
+  #browse_main { flex: none; overflow: visible; }
+  body.tab-types #browse_main { height: 60vh; flex: none; }
+  #browse_side { order: 3; overflow: visible; }
+  .doc { padding: 14px 14px 32px; }
+  .doc table { display: block; overflow-x: auto; }
 }
 </style>
 </head>
@@ -188,6 +297,7 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
   <ul id="graph_list"></ul>
   <div id="graphs_status" class="muted hint"></div>
 </nav>
+<nav id="tabbar" aria-label="Views"></nav>
 <div id="stage">
   <canvas id="canvas" aria-label="Graph: entities as dots, edges as lines"></canvas>
   <div id="empty" role="status">
@@ -230,6 +340,11 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
   <h2>Activity</h2>
   <ul id="events" aria-live="polite"></ul>
 </aside>
+<div id="browse">
+  <nav id="browse_nav" aria-label="Contents"></nav>
+  <main id="browse_main"></main>
+  <aside id="browse_side" hidden aria-label="Selection"></aside>
+</div>
 </div>
 <script>
 "use strict";
@@ -518,6 +633,10 @@ async function loadGraph(gen) {
     document.getElementById("title").textContent = data.graph.name;
     document.getElementById("reads").textContent = data.signal_reads ? "" : "(off: [activity] signal_reads)";
     alpha = old.size ? Math.max(alpha, 0.3) : 1;
+    if (focusTypes) {
+      hiddenTypes = new Set(data.types.filter(type => !focusTypes.has(type)));
+      focusTypes = null;
+    }
     updateCounts();
     buildTypes();
     refilter();
@@ -713,7 +832,13 @@ function fileSection(d) {
 
 function renderNode(d) {
   detail.replaceChildren(closeButton(), el("h3", null, d.label));
-  detail.append(el("div", "meta", [d.type, d.alias, d.status === "active" ? null : d.status, `rev ${d.rev}`].filter(Boolean).join(" · ")));
+  const meta = el("div", "meta");
+  const type = el("button", "link", d.type);
+  type.type = "button";
+  type.title = "Describe this type";
+  type.addEventListener("click", () => chooseTab("model", d.type));
+  meta.append(type, [" ", d.alias, d.status === "active" ? null : d.status, `rev ${d.rev}`].filter(Boolean).join(" · "));
+  detail.append(meta);
   detail.append(el("div", "small", `${d.id}`));
   if (d.file) detail.append(fileSection(d));
   detail.append(el("h4", null, "Attributes"));
@@ -796,7 +921,8 @@ async function showSelection() {
 document.getElementById("preview_close").addEventListener("click", closePreview);
 addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
-  if (document.getElementById("preview").style.display === "flex") closePreview();
+  if (tab === "types" && tg && (tg.selected || tg.selectedEdge)) go(null, false);
+  else if (document.getElementById("preview").style.display === "flex") closePreview();
   else if (selected) select(null);
   else if (narrow.matches && !sidebar.classList.contains("collapsed")) { setSidebar(false, false); sidebarToggle.focus(); }
   else if (narrow.matches && !panel.classList.contains("minimized")) setPanel(false);
@@ -885,11 +1011,12 @@ function renderGraphs() {
   graphsStatus.textContent = listed && !graphList.length ? "No graphs to show." : "";
   const key = JSON.stringify(graphList);
   if (key === renderedList) {  // keep the buttons, so a click in progress or the focus stays
-    for (const button of graphListBox.querySelectorAll("button")) {
+    for (const button of graphListBox.querySelectorAll("button[data-graph]")) {
       const graph = graphList.find(g => g.name === button.dataset.graph);
       if (graph && isCurrent(graph)) button.setAttribute("aria-current", "true");
       else button.removeAttribute("aria-current");
     }
+    renderTabs();
     return;
   }
   renderedList = key;
@@ -911,6 +1038,7 @@ function renderGraphs() {
     graphListBox.append(item);
     if (focused === graph.name) button.focus();
   }
+  renderTabs();
 }
 
 async function loadGraphs() {
@@ -971,13 +1099,20 @@ function failGraph(error) {
   showEmpty(`Cannot show ${current}`, error.message);
 }
 
-// Shows graph ``name`` (as the URL names it), or none.
-function showGraph(name) {
+// Shows graph ``name`` (as the URL names it), or none, in view ``wanted`` (default the graph)
+// with ``target`` picked there.
+function showGraph(name, wanted, target) {
   generation++;
   if (stream) { stream.close(); stream = null; }
   current = name || null;
+  tab = current && TABS.some(([key]) => key === wanted) ? wanted : "graph";
+  item = target || null;
+  if (tab !== "graph") focusTypes = null;
   resetGraph();
+  resetBrowse();
   renderGraphs();
+  document.body.classList.toggle("browsing", tab !== "graph");
+  for (const [key] of TABS) document.body.classList.toggle("tab-" + key, key === tab);
   if (!current) {
     document.title = "graph view";
     setStatus("no graph selected", false);
@@ -985,17 +1120,21 @@ function showGraph(name) {
     return;
   }
   document.body.classList.remove("no-graph");
-  document.title = current + " · graph view";
+  document.title = `${current}${tab === "graph" ? "" : " · " + tabLabel(tab).toLowerCase()} · graph view`;
+  if (tab !== "graph") { openBrowse(generation); return; }
   setStatus("connecting", false);
   resize();
   connect(generation);
 }
 
 // A graph picked in the side bar: a new history entry, so Back returns to the previous one.
+// The shown graph picked again returns to its graph view.
 function choose(name) {
-  if (name === current) return;
+  if (name === current && tab === "graph") return;
   const params = new URLSearchParams(location.search);
   params.set("graph", name);
+  params.delete("tab");
+  params.delete("item");
   history.pushState(null, "", "?" + params);
   if (narrow.matches) setSidebar(false, false);  // the list covered the canvas
   showGraph(name);
@@ -1005,11 +1144,1116 @@ function wantedGraph() {
   return new URLSearchParams(location.search).get("graph") || defaultGraph;
 }
 
+function wantedTab() {
+  return new URLSearchParams(location.search).get("tab") || "graph";
+}
+
+function wantedItem() {
+  return new URLSearchParams(location.search).get("item");
+}
+
 sidebarToggle.addEventListener("click", () => setSidebar(sidebar.classList.contains("collapsed"), true));
 emptyShow.addEventListener("click", () => { setSidebar(true, true); sidebarToggle.focus(); });
-addEventListener("popstate", () => showGraph(wantedGraph()));
+addEventListener("popstate", () => {
+  const name = wantedGraph(), wanted = wantedTab();
+  // Back and Forward between the items of one tab keep what the tab loaded.
+  if (current && name === current && wanted === tab && tab !== "graph" && (model || functionList)) showItem(wantedItem());
+  else showGraph(name, wanted, wantedItem());
+});
 addEventListener("focus", loadGraphs);
 setInterval(() => { if (!document.hidden) loadGraphs(); }, LIST_REFRESH_MS);
+
+// ---- views: model, type graph, functions -----------------------------
+
+const TABS = [["graph", "Graph"], ["model", "Model"], ["types", "Type graph"], ["functions", "Functions"]];
+const MODULE_COLORS = 8;  // the categorical palette --m1 .. --m8 in fixed order; further modules stay neutral
+const SVG_NS = "http://www.w3.org/2000/svg";
+let tab = "graph";        // the view of the shown graph, a key of TABS
+let item = null;          // what the view shows: a module or type (model, type graph) or a function
+let focusTypes = null;    // the types "show in graph" leaves visible once the graph has loaded
+let model = null;         // the /model answer of the shown graph
+let functionList = null;  // the functions of the /functions answer
+let browseGraph = null;   // {id, name} of the graph the browse answers are about
+let tg = null;            // the type graph: nodes, edges, view, selection
+const tabbar = document.getElementById("tabbar");
+const browseNav = document.getElementById("browse_nav");
+const browseMain = document.getElementById("browse_main");
+const browseSide = document.getElementById("browse_side");
+
+function tabLabel(key) {
+  return TABS.find(([k]) => k === key)[1];
+}
+
+function tabButtons() {
+  return TABS.map(([key, label]) => {
+    const button = el("button", null, label);
+    button.type = "button";
+    button.dataset.tab = key;
+    if (key === tab) button.setAttribute("aria-current", "page");
+    // the shown view picked again returns to its start
+    button.addEventListener("click", () => { if (key !== tab || item) chooseTab(key); });
+    return button;
+  });
+}
+
+// The views of the shown graph: below its entry in the side bar, and in the bar at the top
+// while the side bar is folded.
+function renderTabs() {
+  const active = document.activeElement;
+  const focused = active && active.dataset ? active.dataset.tab : null;
+  const where = focused && active.closest("#tabbar") ? tabbar : graphListBox;
+  for (const old of graphListBox.querySelectorAll(".tabs")) old.remove();
+  tabbar.replaceChildren(...(current ? tabButtons() : []));
+  const entry = graphListBox.querySelector('button[data-graph][aria-current="true"]');
+  if (current && entry) {
+    const list = el("ul", "tabs");
+    list.setAttribute("aria-label", `Views of ${current}`);
+    for (const button of tabButtons()) {
+      const row = el("li");
+      row.append(button);
+      list.append(row);
+    }
+    entry.parentElement.append(list);
+  }
+  if (focused) {
+    const again = where.querySelector(`button[data-tab="${focused}"]`);
+    if (again) again.focus();
+  }
+}
+
+// A view picked: a new history entry, so Back returns to the previous one.
+function chooseTab(key, target) {
+  const params = new URLSearchParams(location.search);
+  params.set("graph", current);
+  if (key === "graph") params.delete("tab"); else params.set("tab", key);
+  if (target) params.set("item", target); else params.delete("item");
+  history.pushState(null, "", "?" + params);
+  if (narrow.matches) setSidebar(false, false);
+  showGraph(current, key, target);
+}
+
+// An item picked inside the shown view; ``push`` adds a history entry, else the address follows.
+function go(target, push = true) {
+  const params = new URLSearchParams(location.search);
+  if (target) params.set("item", target); else params.delete("item");
+  if (push && (target || null) !== item) history.pushState(null, "", "?" + params);
+  else history.replaceState(null, "", "?" + params);
+  showItem(target);
+}
+
+function resetBrowse() {
+  model = null;
+  functionList = null;
+  browseGraph = null;
+  if (tg) tg.stopped = true;
+  tg = null;
+  delete browseNav.dataset.built;
+  browseNav.replaceChildren();
+  browseMain.replaceChildren();
+  browseSide.replaceChildren();
+  browseSide.hidden = true;
+}
+
+async function getJson(path) {
+  const response = await fetch(path, {cache: "no-store"});
+  if (!response.ok) throw new Error(await problem(response));
+  return response.json();
+}
+
+async function openBrowse(gen) {
+  const route = tab === "functions" ? "functions" : "model";
+  browseMain.replaceChildren(el("div", "doc muted", "Loading…"));
+  let data;
+  try {
+    data = await getJson(api(route));
+  } catch (error) {
+    if (gen === generation) {
+      browseMain.replaceChildren(el("div", "doc muted", `Cannot show the ${tabLabel(tab).toLowerCase()} of ${current}: ${error.message}`));
+    }
+    return;
+  }
+  if (gen !== generation) return;
+  browseGraph = data.graph;
+  currentId = data.graph.id;
+  renderGraphs();
+  if (route === "functions") functionList = data.functions; else model = data;
+  showItem(item);
+}
+
+function showItem(target) {
+  item = target || null;
+  if (tab === "model") renderModel();
+  else if (tab === "types") {
+    if (!tg) buildTypeGraph();
+    tgSelect(item);
+  } else if (tab === "functions") renderFunctions();
+}
+
+// ---- views: building blocks --------------------------------------------
+
+function moduleColor(id) {
+  if (!model) return "var(--node)";
+  const colored = model.modules.filter(m => !m.builtin && m.types > 0).map(m => m.id);
+  const index = colored.indexOf(id);
+  return index >= 0 && index < MODULE_COLORS ? `var(--m${index + 1})` : "var(--node)";
+}
+
+function swatch(module, abstract) {
+  const mark = el("span", abstract ? "swatch open" : "swatch");
+  if (abstract) mark.style.borderColor = moduleColor(module);
+  else mark.style.background = moduleColor(module);
+  mark.setAttribute("aria-hidden", "true");
+  return mark;
+}
+
+// The active entities of a type and its subtypes.
+function entityCount(curie) {
+  const type = model.type[curie];
+  return [curie, ...(type ? type.subtypes : [])].reduce((sum, c) => sum + (model.entities[c] || 0), 0);
+}
+
+function linkButton(text, title, onClick) {
+  const button = el("button", "link", text);
+  button.type = "button";
+  if (title) button.title = title;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+// A type: in the model and the type graph it shows the type there, elsewhere it opens the model.
+function typeLink(curie) {
+  if (!curie || curie === "any") return el("span", "muted", "any");
+  return linkButton(typeName(curie), curie, () => {
+    if (tab === "model") go(curie);
+    else if (tab === "types") go(curie, false);
+    else chooseTab("model", curie);
+  });
+}
+
+function typeLinks(curies) {
+  const box = el("span");
+  (curies.length ? curies : ["any"]).forEach((curie, index) => {
+    if (index) box.append(", ");
+    box.append(typeLink(curie));
+  });
+  return box;
+}
+
+function moduleLink(id) {
+  if (!id) return el("span", "muted", "no module");
+  return linkButton(id, `module ${id}`, () => { if (tab === "model") go(id); else chooseTab("model", id); });
+}
+
+function functionLink(name) {
+  return linkButton(name, null, () => { if (tab === "functions") go(name); else chooseTab("functions", name); });
+}
+
+function badge(text, warn) {
+  return el("span", warn ? "badge warn" : "badge", text);
+}
+
+function code(text) {
+  return el("code", null, text);
+}
+
+// Inline parts in one element; null and undefined are left out.
+function frag(...parts) {
+  const box = el("span");
+  for (const part of parts) if (part !== null && part !== undefined && part !== "") box.append(part);
+  return box;
+}
+
+function summary(text, deprecated) {
+  return frag(text || "", deprecated ? " " : null, deprecated ? badge("deprecated", true) : null);
+}
+
+function table(headers, rows, numeric = []) {
+  const box = el("table");
+  const head = el("tr");
+  headers.forEach((text, index) => head.append(el("th", numeric.includes(index) ? "num" : null, text)));
+  box.append(head);
+  for (const row of rows) {
+    const line = el("tr");
+    row.forEach((cell, index) => {
+      const td = el("td", numeric.includes(index) ? "num" : null);
+      if (cell !== null && cell !== undefined) td.append(typeof cell === "number" ? String(cell) : cell);
+      line.append(td);
+    });
+    box.append(line);
+  }
+  return box;
+}
+
+function section(doc, title, count) {
+  doc.append(el("h2", null, count === undefined ? title : `${title} (${count})`));
+}
+
+function actions(...buttons) {
+  const box = el("div", "actions");
+  box.append(...buttons.filter(Boolean));
+  return box;
+}
+
+function actionButton(text, onClick, disabled) {
+  const button = el("button", null, text);
+  button.type = "button";
+  button.disabled = Boolean(disabled);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+// A side bar entry: ``target`` is the item it shows (null: the start of the view).
+function navEntry(target, text, lead, count, className) {
+  const button = el("button", "entry" + (className ? " " + className : ""));
+  button.type = "button";
+  button.dataset.item = target || "";
+  if (lead) button.append(lead);
+  button.append(el("span", "text", text));
+  if (count !== undefined && count !== null) button.append(el("span", "count", String(count)));
+  button.title = target || text;
+  button.addEventListener("click", () => go(target));
+  return button;
+}
+
+function markNav() {
+  for (const button of browseNav.querySelectorAll("button.entry")) {
+    const on = button.dataset.item === (item || "");
+    if (on) {
+      button.setAttribute("aria-current", "true");
+      button.scrollIntoView({block: "nearest"});
+    } else button.removeAttribute("aria-current");
+  }
+}
+
+function showDoc(doc) {
+  browseMain.replaceChildren(doc);
+  browseMain.scrollTop = 0;
+}
+
+// ---- views: model --------------------------------------------------------
+
+function buildModelNav() {
+  if (browseNav.dataset.built === "model") return;
+  browseNav.dataset.built = "model";
+  browseNav.replaceChildren();
+  const top = el("ul");
+  const overview = el("li");
+  overview.append(navEntry(null, "Overview"));
+  top.append(overview);
+  browseNav.append(top);
+  for (const [title, modules] of [["Modules", model.modules.filter(m => !m.builtin)], ["Built-in modules", model.modules.filter(m => m.builtin)]]) {
+    if (!modules.length) continue;
+    browseNav.append(el("h2", null, title));
+    const list = el("ul");
+    for (const m of modules) {
+      const row = el("li");
+      row.append(navEntry(m.id, m.id, swatch(m.id), m.types, "module"));
+      const types = Object.values(model.type).filter(t => t.module === m.id);
+      if (types.length) {
+        const sub = el("ul");
+        for (const t of types) {
+          const entry = el("li");
+          entry.append(navEntry(t.curie, typeName(t.curie), null, entityCount(t.curie), t.abstract ? "inherited" : null));
+          sub.append(entry);
+        }
+        row.append(sub);
+      }
+      list.append(row);
+    }
+    browseNav.append(list);
+  }
+}
+
+function renderModel() {
+  buildModelNav();
+  markNav();
+  const doc = el("div", "doc");
+  if (!item) modelOverview(doc);
+  else if (model.type[item]) typeDoc(doc, model.type[item]);
+  else if (model.module[item]) moduleDoc(doc, model.module[item]);
+  else doc.append(el("p", "muted", `${item} is not part of this ontology.`));
+  showDoc(doc);
+}
+
+function moduleEntities(id) {
+  return Object.values(model.type).filter(t => t.module === id).reduce((sum, t) => sum + (model.entities[t.curie] || 0), 0);
+}
+
+function moduleTable(modules) {
+  return table(
+    ["Module", "Prefix", "Version", "Types", "Relations", "Functions", "Entities", "Summary"],
+    modules.map(m => [frag(swatch(m.id), " ", moduleLink(m.id)), code(m.prefix), m.version, m.types, m.relations,
+      m.functions === undefined ? "–" : m.functions, moduleEntities(m.id), m.summary]),
+    [3, 4, 5, 6],
+  );
+}
+
+function modelOverview(doc) {
+  const total = Object.values(model.entities).reduce((sum, n) => sum + n, 0);
+  doc.append(el("h1", null, `Ontology of ${model.graph.name}`));
+  doc.append(el("div", "meta", `${model.ontology.bundle} ${model.ontology.version} · ${Object.keys(model.type).length} types · ${model.relations.length} relations · ${total} active entities`));
+  doc.append(actions(actionButton("Show the type graph", () => chooseTab("types"))));
+  const own = model.modules.filter(m => !m.builtin), builtin = model.modules.filter(m => m.builtin);
+  section(doc, "Modules", own.length);
+  doc.append(moduleTable(own));
+  if (builtin.length) {
+    section(doc, "Built-in modules", builtin.length);
+    doc.append(moduleTable(builtin));
+  }
+}
+
+function linkRows(links) {
+  return links.map(l => [code(l.relation), typeLinks(l.from), typeLinks(l.to), moduleLink(l.module), summary(l.summary, l.deprecated)]);
+}
+
+function moduleDoc(doc, m) {
+  const head = el("h1");
+  head.append(swatch(m.id), m.id);
+  doc.append(head);
+  doc.append(frag(badge(`prefix ${m.prefix}`), " ", badge(`version ${m.version}`), m.builtin ? " " : null, m.builtin ? badge("built-in") : null));
+  if (m.summary) doc.append(el("p", "lead", m.summary));
+  section(doc, "Types", m.types.length);
+  if (!m.types.length) doc.append(el("div", "small", "none"));
+  else {
+    doc.append(table(["Type", "Kind", "Entities", "Summary"], m.types.map(t => [
+      typeLink(t.curie),
+      frag(t.abstract ? badge("abstract") : null, t.extends ? frag(t.abstract ? " " : null, "extends ", typeLink(t.extends)) : null),
+      entityCount(t.curie),
+      summary(t.summary, t.deprecated),
+    ]), [2]));
+  }
+  if (m.relations.length) {
+    section(doc, "Relations inside the module", m.relations.length);
+    doc.append(table(["Relation", "From", "To", "Cardinality", "Summary"], m.relations.map(r => [
+      code(r.curie), typeLinks(r.domain), typeLinks(r.range), `${r.cardinality.out} out · ${r.cardinality.in} in`, summary(r.summary, r.deprecated),
+    ])));
+  }
+  if (m.links_out.length) {
+    section(doc, "Links to other modules", m.links_out.length);
+    doc.append(table(["Relation", "From", "To", "Declared in", "Summary"], linkRows(m.links_out)));
+  }
+  if (m.links_in.length) {
+    section(doc, "Links from other modules", m.links_in.length);
+    doc.append(table(["Relation", "From", "To", "Declared in", "Summary"], linkRows(m.links_in)));
+  }
+  if (m.rules.length) {
+    section(doc, "Rules", m.rules.length);
+    doc.append(table(["Rule", "Severity", "Summary"], m.rules.map(r => [code(r.id), r.severity, summary(r.summary, r.deprecated)])));
+  }
+  if (m.functions && m.functions.length) {
+    section(doc, "Functions", m.functions.length);
+    doc.append(table(["Function", "Parameters", "Summary"], m.functions.map(f => [functionLink(f.name), code(f.signature || "–"), f.summary])));
+  }
+  const listed = model.modules.find(x => x.id === m.id);
+  if (listed && listed.links.length) {
+    section(doc, "Connected modules", listed.links.length);
+    doc.append(table(["Module", "Relations to it", "Relations from it"], listed.links.map(l => [frag(swatch(l.module), " ", moduleLink(l.module)), l.out, l.in]), [1, 2]));
+  }
+}
+
+function fieldType(f) {
+  const many = f.many ? "list of " : "";
+  if (f.kind === "enum") return frag(many, code(typeName(f.type)), f.values ? el("div", "small", f.values.join(" · ")) : null);
+  if (f.kind === "lifecycle") return frag("lifecycle ", code(typeName(f.type)));
+  return frag(many, code(f.type), f.base && f.base !== f.type ? el("span", "small", ` (${f.base})`) : null);
+}
+
+function fieldFlags(f) {
+  const flags = [];
+  if (f.required) flags.push("required");
+  if (f.unique) flags.push("unique");
+  if (f.role) flags.push(f.role.replace("_", " "));
+  if (f.mutability && !["content", "lifecycle"].includes(f.mutability)) flags.push(f.mutability);
+  if (f.default !== null && f.default !== undefined) flags.push(`default ${JSON.stringify(f.default)}`);
+  for (const [key, value] of Object.entries(f.limits || {})) flags.push(`${key} ${JSON.stringify(value)}`);
+  return frag(...flags.flatMap((flag, index) => index ? [" ", badge(flag)] : [badge(flag)]));
+}
+
+function lifecycleDoc(doc, lc) {
+  doc.append(el("h3", null, `${lc.attr ? lc.attr + ": " : ""}${typeName(lc.lifecycle)}`));
+  if (lc.summary) doc.append(el("p", null, lc.summary));
+  doc.append(table(["State", "", "Summary"], lc.states.map(s => [
+    code(s.name),
+    frag(lc.initial.includes(s.name) ? badge("initial") : null, lc.initial.includes(s.name) && lc.terminal.includes(s.name) ? " " : null, lc.terminal.includes(s.name) ? badge("terminal") : null),
+    s.summary,
+  ])));
+  if (lc.transitions.length) {
+    doc.append(table(["Transition", "Guards"], lc.transitions.map(t => [
+      frag(code(t.from), " → ", code(t.to)),
+      t.guards.length ? frag(...t.guards.map(g => el("div", null, `${g.id}: ${g.summary}`))) : el("span", "small", "none"),
+    ])));
+  }
+}
+
+// Terms with their types: [[term, [curie, ...]], ...]; a term without types is left out.
+function termList(rows) {
+  const list = el("dl");
+  for (const [term, curies] of rows) {
+    if (!curies.length) continue;
+    const dd = el("dd");
+    dd.append(typeLinks(curies));
+    list.append(el("dt", null, term), dd);
+  }
+  return list;
+}
+
+function typeDoc(doc, t) {
+  const head = el("h1");
+  head.append(swatch(t.module, t.abstract), typeName(t.curie), el("span", "curie", t.curie));
+  doc.append(head);
+  doc.append(frag(
+    "module ", moduleLink(t.module),
+    t.extends ? " · extends " : null, t.extends ? typeLink(t.extends) : null,
+    t.alias_prefix ? ` · alias prefix ${t.alias_prefix}` : null,
+    t.abstract ? " " : null, t.abstract ? badge("abstract") : null,
+    t.deprecated ? " " : null, t.deprecated ? badge("deprecated", true) : null,
+  ));
+  if (t.summary) doc.append(el("p", "lead", t.summary));
+  if (t.description) {
+    const text = el("p", null, t.description);
+    text.style.whiteSpace = "pre-wrap";
+    doc.append(text);
+  }
+  const count = entityCount(t.curie);
+  doc.append(actions(
+    actionButton(count ? `Show ${count} active ${count === 1 ? "entity" : "entities"} in the graph` : "No active entities", () => {
+      focusTypes = new Set([t.curie, ...t.subtypes]);
+      chooseTab("graph");
+    }, !count),
+    tab !== "types" ? actionButton("Show in the type graph", () => chooseTab("types", t.curie)) : actionButton("Open in the model", () => chooseTab("model", t.curie)),
+  ));
+  if (t.ancestors.length || t.subtypes.length) doc.append(termList([["ancestors", t.ancestors], ["subtypes", t.subtypes]]));
+  section(doc, "Fields", t.fields.length);
+  doc.append(table(["Field", "Type", "Flags", "Summary"], t.fields.map(f => [
+    frag(code(f.name), f.declared_in !== t.curie ? el("div", "small", `from ${typeName(f.declared_in)}`) : null),
+    fieldType(f), fieldFlags(f), summary(f.summary, f.deprecated),
+  ])));
+  for (const lc of t.lifecycles) {
+    if (lc === t.lifecycles[0]) section(doc, "Lifecycle");
+    lifecycleDoc(doc, lc);
+  }
+  section(doc, "Relations from this type", t.relations_out.length);
+  if (!t.relations_out.length) doc.append(el("div", "small", "none"));
+  else doc.append(table(["Relation", "To", "Cardinality", "Summary"], t.relations_out.map(r => [
+    frag(code(r.curie), r.qualifiers.length ? el("div", "small", `qualifiers: ${r.qualifiers.join(", ")}`) : null),
+    typeLinks(r.range), r.cardinality, summary(r.summary, r.deprecated),
+  ])));
+  section(doc, "Relations to this type", t.relations_in.length);
+  if (!t.relations_in.length) doc.append(el("div", "small", "none"));
+  else doc.append(table(["Relation", "From", "Cardinality", "Summary"], t.relations_in.map(r => [
+    frag(code(r.curie), r.inverse_label ? el("div", "small", `inverse: ${r.inverse_label}`) : null),
+    typeLinks(r.from), r.cardinality, summary(r.summary, r.deprecated),
+  ])));
+  if (t.rules.length) {
+    section(doc, "Rules", t.rules.length);
+    doc.append(table(["Rule", "Severity", "Summary"], t.rules.map(r => [code(r.id), r.severity, summary(r.summary, r.deprecated)])));
+  }
+}
+
+// ---- views: functions ------------------------------------------------------
+
+function buildFunctionsNav() {
+  if (browseNav.dataset.built === "functions") return;
+  browseNav.dataset.built = "functions";
+  browseNav.replaceChildren();
+  const search = el("input");
+  search.type = "search";
+  search.placeholder = "Search functions";
+  search.setAttribute("aria-label", "Search functions");
+  browseNav.append(search);
+  const top = el("ul");
+  const overview = el("li");
+  overview.append(navEntry(null, "All functions", null, functionList.length));
+  top.append(overview);
+  browseNav.append(top);
+  const groups = new Map();
+  for (const f of functionList) {
+    const key = f.module || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  for (const key of [...groups.keys()].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b))) {
+    const title = el("h2", null, key || "no module");
+    const list = el("ul");
+    for (const f of groups.get(key).sort((a, b) => a.name.localeCompare(b.name))) {
+      const row = el("li");
+      row.dataset.search = `${f.name} ${f.summary} ${f.use_when}`.toLowerCase();
+      row.append(navEntry(f.name, f.name, null, f.status === "deprecated" ? "deprecated" : null, f.status === "deprecated" ? "inherited" : null));
+      list.append(row);
+    }
+    browseNav.append(title, list);
+  }
+  if (!functionList.length) browseNav.append(el("div", "note muted", "No functions."));
+  search.addEventListener("input", () => {
+    const text = search.value.trim().toLowerCase();
+    for (const row of browseNav.querySelectorAll("li[data-search]")) row.hidden = Boolean(text) && !row.dataset.search.includes(text);
+  });
+  search.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    const first = browseNav.querySelector("li[data-search]:not([hidden]) button");
+    if (first) first.click();
+  });
+}
+
+function renderFunctions() {
+  buildFunctionsNav();
+  markNav();
+  const doc = el("div", "doc");
+  const found = item ? functionList.find(f => f.name === item) : null;
+  if (!item) functionsOverview(doc);
+  else if (found) functionDoc(doc, found);
+  else doc.append(el("p", "muted", `There is no function ${item}.`));
+  showDoc(doc);
+}
+
+function functionsOverview(doc) {
+  doc.append(el("h1", null, `Functions of ${browseGraph.name}`));
+  if (!functionList.length) {
+    doc.append(el("p", "secondary", "This graph has no published functions, or you may not read them (read.function)."));
+    return;
+  }
+  const active = functionList.filter(f => f.status !== "deprecated").length;
+  doc.append(el("div", "meta", `${active} active · ${functionList.length - active} deprecated · run one with graph run`));
+  doc.append(table(["Function", "Module", "Parameters", "Summary"], functionList.map(f => [
+    frag(functionLink(f.name), f.featured ? " " : null, f.featured ? badge("featured") : null),
+    moduleLink(f.module), code(f.signature || "–"), summary(f.summary, f.status === "deprecated"),
+  ])));
+}
+
+function paramType(p) {
+  const many = p.many ? "list of " : "";
+  if (p.type === "ref") return frag(many, "ref ", typeLink(p.class));
+  if (p.type === "enum") return frag(many, "enum ", code(typeName(p.enum)));
+  return frag(many, code(p.type));
+}
+
+function runCommand(f) {
+  const parts = [`graph run ${f.name}`];
+  for (const p of f.params) {
+    const value = p.type === "ref" ? `<${typeName(p.class)} id>` : `<${p.type === "enum" ? typeName(p.enum) : p.type}>`;
+    parts.push(`--param ${p.name}=${value}`);
+  }
+  parts.push(`--graph ${browseGraph.name}`);
+  return parts.join(" ");
+}
+
+function functionDoc(doc, f) {
+  doc.append(el("h1", null, f.name));
+  doc.append(frag(
+    "module ", moduleLink(f.module), " ",
+    badge(f.status, f.status === "deprecated"),
+    f.featured ? " " : null, f.featured ? badge("featured") : null,
+  ));
+  if (f.summary) doc.append(el("p", "lead", f.summary));
+  if (f.replaced_by) doc.append(frag("Replaced by ", functionLink(f.replaced_by)));
+  section(doc, "Use when");
+  doc.append(el("p", null, f.use_when));
+  section(doc, "Run");
+  doc.append(el("pre", null, runCommand(f)));
+  section(doc, "Parameters", f.params.length);
+  if (!f.params.length) doc.append(el("div", "small", "none"));
+  else doc.append(table(["Parameter", "Type", "Default", "Summary"], f.params.map(p => [
+    code(p.name), paramType(p), p.default === null ? "" : code(JSON.stringify(p.default)), p.summary,
+  ])));
+  section(doc, "Returns", f.returns.length);
+  doc.append(table(["Column", "Summary"], f.returns.map(r => [code(r.column), r.summary])));
+  if (f.examples.length) {
+    section(doc, "Example questions", f.examples.length);
+    const list = el("ul", "plain");
+    for (const example of f.examples) {
+      const row = el("li", null, example.question);
+      const params = Object.keys(example.params || {});
+      if (params.length) row.append(" ", code(params.map(k => `${k}=${JSON.stringify(example.params[k])}`).join(" ")));
+      list.append(row);
+    }
+    doc.append(list);
+  }
+  section(doc, "Reads");
+  const list = el("dl");
+  const types = el("dd"), relations = el("dd");
+  types.append(typeLinks(f.touches.types.map(t => t.curie)));
+  relations.append(f.touches.relations.length ? frag(...f.touches.relations.flatMap((r, i) => i ? [", ", code(r.curie)] : [code(r.curie)])) : "none");
+  list.append(el("dt", null, "types"), types, el("dt", null, "relations"), relations);
+  doc.append(list);
+  section(doc, "Query");
+  doc.append(el("pre", null, f.query));
+  doc.append(el("div", "small", `hash ${f.hash}`));
+}
+
+// ---- views: type graph -----------------------------------------------------
+
+function svgEl(tag, attrs, parent) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+  if (parent) parent.append(node);
+  return node;
+}
+
+function arrowMarker(defs, id, className) {
+  const marker = svgEl("marker", {id, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "9", markerHeight: "9", markerUnits: "userSpaceOnUse", orient: "auto"}, defs);
+  svgEl("path", {d: "M 0 0 L 10 5 L 0 10 z", class: className}, marker);
+}
+
+// Types as dots (colored by module, sized by active entities, hollow when abstract), relations as
+// arrows from domain to range (one per pair of types, named by its relations), dashed arrows to
+// the type a type extends. Relations open to any type have no end to draw and are listed instead.
+function buildTypeGraph() {
+  tg = {
+    nodes: new Map(), edges: [], open: [], view: {x: 0, y: 0, k: 1}, alpha: 1, autoFit: true,
+    hiddenModules: new Set(), selected: null, selectedEdge: null, hover: null, hoverEdge: null,
+    query: "", inherit: true, sizes: true, dirty: true, stopped: false, drag: null,
+  };
+  const modules = model.modules.filter(m => m.types > 0);
+  const spread = modules.length > 1 ? 140 + 30 * modules.length : 0;
+  modules.forEach((m, index) => {
+    const angle = 2 * Math.PI * index / modules.length;
+    for (const t of Object.values(model.type).filter(type => type.module === m.id)) {
+      tg.nodes.set(t.curie, {
+        id: t.curie, module: t.module, abstract: t.abstract, count: model.entities[t.curie] || 0,
+        x: Math.cos(angle) * spread + (Math.random() - 0.5) * 80, y: Math.sin(angle) * spread + (Math.random() - 0.5) * 80,
+        vx: 0, vy: 0, fixed: false, r: 7,
+      });
+    }
+  });
+  const pairs = new Map();
+  for (const r of model.relations) {
+    if (!r.domain.length || !r.range.length) { tg.open.push(r); continue; }
+    for (const from of r.domain) for (const to of r.range) {
+      if (!tg.nodes.has(from) || !tg.nodes.has(to)) continue;
+      const key = from + " " + to;
+      if (!pairs.has(key)) pairs.set(key, {kind: "relation", source: from, target: to, rels: []});
+      pairs.get(key).rels.push(r.curie);
+    }
+  }
+  tg.edges = [...pairs.values()];
+  for (const t of Object.values(model.type)) {
+    if (t.extends && tg.nodes.has(t.extends)) tg.edges.push({kind: "extends", source: t.curie, target: t.extends, rels: []});
+  }
+  const box = svgEl("svg", {id: "typegraph", role: "img", "aria-label": `Type graph of ${browseGraph.name}: types as dots, relations as arrows`});
+  const defs = svgEl("defs", {}, box);
+  arrowMarker(defs, "tg_arrow", "arrow");
+  arrowMarker(defs, "tg_arrow_hi", "arrow hi");
+  arrowMarker(defs, "tg_extends", "arrow open");
+  const edgeLayer = svgEl("g", {}, box), nodeLayer = svgEl("g", {}, box);
+  tg.edges.forEach((edge, index) => {
+    edge.id = "e" + index;
+    edge.g = svgEl("g", {class: edge.kind === "extends" ? "edge extends" : "edge"}, edgeLayer);
+    edge.g.dataset.edge = edge.id;
+    edge.line = svgEl("path", {class: "line", "marker-end": edge.kind === "extends" ? "url(#tg_extends)" : "url(#tg_arrow)"}, edge.g);
+    edge.hit = svgEl("path", {class: "hit"}, edge.g);
+    edge.text = svgEl("text", {"text-anchor": "middle", dy: "-3"}, edge.g);
+    edge.text.textContent = edge.kind === "extends" ? "extends" : edge.rels.map(typeName).join(", ");
+  });
+  for (const node of tg.nodes.values()) {
+    node.g = svgEl("g", {class: node.abstract ? "node abstract" : "node"}, nodeLayer);
+    node.g.dataset.node = node.id;
+    node.circle = svgEl("circle", {r: node.r}, node.g);
+    node.circle.style.fill = moduleColor(node.module);
+    if (node.abstract) node.circle.style.stroke = moduleColor(node.module);
+    node.text = svgEl("text", {dy: "0.35em"}, node.g);
+    node.text.textContent = typeName(node.id);
+  }
+  tg.box = box;
+  tg.tooltip = el("div");
+  tg.tooltip.id = "tg_tooltip";
+  tg.tooltip.setAttribute("role", "tooltip");
+  browseMain.replaceChildren(box, tg.tooltip);
+  tgRadii();
+  tgEvents(box);
+  buildTypesNav();
+  const self = tg;
+  requestAnimationFrame(() => tgFrame(self));
+}
+
+function buildTypesNav() {
+  browseNav.dataset.built = "types";
+  browseNav.replaceChildren();
+  const search = el("input");
+  search.type = "search";
+  search.placeholder = "Search types";
+  search.setAttribute("aria-label", "Search types");
+  search.addEventListener("input", () => {
+    tg.query = search.value.trim().toLowerCase();
+    for (const node of tg.nodes.values()) node.g.classList.toggle("dim", Boolean(tg.query) && !tgMatches(node));
+  });
+  search.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || !tg.query) return;
+    const first = [...tg.nodes.values()].find(node => tgMatches(node));
+    if (first) go(first.id, false);
+  });
+  browseNav.append(search, el("h2", null, "Modules"));
+  for (const m of model.modules.filter(x => x.types > 0)) {
+    const label = el("label");
+    const input = el("input");
+    input.type = "checkbox";
+    input.checked = !tg.hiddenModules.has(m.id);
+    input.addEventListener("change", () => {
+      if (input.checked) tg.hiddenModules.delete(m.id); else tg.hiddenModules.add(m.id);
+      tg.alpha = Math.max(tg.alpha, 0.3);
+      tg.autoFit = true;
+      tg.dirty = true;
+    });
+    label.append(input, swatch(m.id), el("span", null, m.id), el("span", "count", String(m.types)));
+    browseNav.append(label);
+  }
+  browseNav.append(el("h2", null, "Show"));
+  const toggle = (text, checked, onChange) => {
+    const label = el("label");
+    const input = el("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.addEventListener("change", () => { onChange(input.checked); tg.dirty = true; });
+    label.append(input, text);
+    browseNav.append(label);
+  };
+  toggle("inheritance (extends)", tg.inherit, on => { tg.inherit = on; tg.alpha = Math.max(tg.alpha, 0.3); });
+  toggle("size by active entities", tg.sizes, on => { tg.sizes = on; tgRadii(); });
+  toggle("relation names", false, on => tg.box.classList.toggle("names", on));
+  browseNav.append(el("div", "note muted", "Arrows run from the type a relation starts at to the type it points to; dashed arrows to the type a type extends. Hollow dots are abstract types. Drag to pan, wheel to zoom, double-click to fit."));
+  if (tg.open.length) {
+    const note = el("div", "note muted", "Not drawn, open to any type: ");
+    tg.open.forEach((r, index) => note.append(index ? ", " : "", code(r.curie)));
+    browseNav.append(note);
+  }
+}
+
+function tgMatches(node) {
+  return node.id.toLowerCase().includes(tg.query);
+}
+
+function tgVisible(node) {
+  return !tg.hiddenModules.has(node.module);
+}
+
+function tgEdgeVisible(edge) {
+  return (edge.kind !== "extends" || tg.inherit) && tgVisible(tg.nodes.get(edge.source)) && tgVisible(tg.nodes.get(edge.target));
+}
+
+function tgRadii() {
+  const max = Math.max(1, ...[...tg.nodes.values()].map(node => node.count));
+  for (const node of tg.nodes.values()) {
+    node.r = node.abstract ? 8 : tg.sizes ? 6 + 11 * Math.sqrt(node.count / max) : 7;
+    node.circle.setAttribute("r", node.r);
+    node.text.setAttribute("x", node.r + 4);
+  }
+}
+
+function tgTick() {
+  if (tg.alpha < 0.004) return false;
+  const alpha = tg.alpha;
+  const list = [...tg.nodes.values()].filter(tgVisible);
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+      if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+      const force = (-2600 * alpha) / d2;
+      a.vx += dx * force; a.vy += dy * force;
+      b.vx -= dx * force; b.vy -= dy * force;
+    }
+  }
+  for (const edge of tg.edges) {
+    const a = tg.nodes.get(edge.source), b = tg.nodes.get(edge.target);
+    if (a === b || !tgEdgeVisible(edge)) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const force = ((d - (edge.kind === "extends" ? 80 : 130)) / d) * 0.05 * alpha;
+    a.vx += dx * force; a.vy += dy * force;
+    b.vx -= dx * force; b.vy -= dy * force;
+  }
+  // each module holds together a little, so its types stay a cluster
+  const centers = new Map();
+  for (const node of list) {
+    const c = centers.get(node.module) || {x: 0, y: 0, n: 0};
+    c.x += node.x; c.y += node.y; c.n++;
+    centers.set(node.module, c);
+  }
+  for (const node of list) {
+    const c = centers.get(node.module);
+    node.vx += (c.x / c.n - node.x) * 0.02 * alpha - node.x * 0.004 * alpha;
+    node.vy += (c.y / c.n - node.y) * 0.02 * alpha - node.y * 0.004 * alpha;
+    if (node.fixed) { node.vx = node.vy = 0; continue; }
+    node.vx *= 0.6; node.vy *= 0.6;
+    const speed = Math.hypot(node.vx, node.vy);
+    if (speed > 30) { node.vx *= 30 / speed; node.vy *= 30 / speed; }
+    node.x += node.vx; node.y += node.vy;
+  }
+  tg.alpha *= 0.98;
+  return true;
+}
+
+function tgScreen(node) {
+  return [browseMain.clientWidth / 2 + tg.view.x + node.x * tg.view.k, browseMain.clientHeight / 2 + tg.view.y + node.y * tg.view.k];
+}
+
+function tgWorld(sx, sy) {
+  return [(sx - browseMain.clientWidth / 2 - tg.view.x) / tg.view.k, (sy - browseMain.clientHeight / 2 - tg.view.y) / tg.view.k];
+}
+
+function toward(x, y, tx, ty, dist) {
+  const dx = tx - x, dy = ty - y, len = Math.hypot(dx, dy) || 1;
+  return [x + dx / len * dist, y + dy / len * dist];
+}
+
+// Screen coordinates, so text, lines and arrows keep their size at every zoom.
+function tgRender() {
+  for (const node of tg.nodes.values()) {
+    const shown = tgVisible(node);
+    node.g.style.display = shown ? "" : "none";
+    if (!shown) continue;
+    const [x, y] = tgScreen(node);
+    node.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+  }
+  for (const edge of tg.edges) {
+    const shown = tgEdgeVisible(edge);
+    edge.g.style.display = shown ? "" : "none";
+    if (!shown) continue;
+    const a = tg.nodes.get(edge.source), b = tg.nodes.get(edge.target);
+    const [ax, ay] = tgScreen(a), [bx, by] = tgScreen(b);
+    let path, lx, ly;
+    if (a === b) {  // a relation from a type to itself: a loop above it
+      const r = a.r;
+      path = `M ${ax - r * 0.7} ${ay - r * 0.7} C ${ax - 30} ${ay - r - 40}, ${ax + 30} ${ay - r - 40}, ${ax + r * 0.7} ${ay - r * 0.7}`;
+      lx = ax; ly = ay - r - 30;
+    } else {
+      // relations bend to one side of their direction, so two in opposite directions stay apart
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      const bend = edge.kind === "extends" ? 0 : Math.min(40, 0.12 * len);
+      const cx = (ax + bx) / 2 - dy / len * bend, cy = (ay + by) / 2 + dx / len * bend;
+      const [sx, sy] = toward(ax, ay, cx, cy, a.r + 1), [ex, ey] = toward(bx, by, cx, cy, b.r + 2);
+      path = `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`;
+      lx = 0.25 * sx + 0.5 * cx + 0.25 * ex; ly = 0.25 * sy + 0.5 * cy + 0.25 * ey;
+    }
+    edge.line.setAttribute("d", path);
+    edge.hit.setAttribute("d", path);
+    edge.text.setAttribute("x", lx.toFixed(1));
+    edge.text.setAttribute("y", ly.toFixed(1));
+  }
+}
+
+function tgFit() {
+  const list = [...tg.nodes.values()].filter(tgVisible);
+  const width = browseMain.clientWidth, height = browseMain.clientHeight;
+  if (!list.length || !width || !height) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const node of list) {
+    x0 = Math.min(x0, node.x); x1 = Math.max(x1, node.x);
+    y0 = Math.min(y0, node.y); y1 = Math.max(y1, node.y);
+  }
+  const pad = 50, labelRoom = 110;
+  const k = Math.min((width - 2 * pad - labelRoom) / Math.max(x1 - x0, 1), (height - 2 * pad) / Math.max(y1 - y0, 1), 1.5);
+  tg.view.k = Math.max(0.05, k);
+  tg.view.x = -((x0 + x1) / 2) * tg.view.k - labelRoom / 2;
+  tg.view.y = -((y0 + y1) / 2) * tg.view.k;
+}
+
+function tgFrame(self) {
+  if (self !== tg || self.stopped) return;
+  const moved = tgTick();
+  if (moved || tg.dirty) {
+    if (tg.autoFit) tgFit();
+    tgRender();
+    tg.dirty = false;
+  }
+  requestAnimationFrame(() => tgFrame(self));
+}
+
+// The selected or hovered type with its relations and neighbours, or the selected or hovered edge
+// with its ends, stands out; everything else steps back.
+function tgHighlight() {
+  const node = tg.hover || (tg.selected && tg.nodes.get(tg.selected));
+  const edge = !node && (tg.hoverEdge || tg.edges.find(e => e.id === tg.selectedEdge));
+  const lit = new Set(), litEdges = new Set();
+  if (node) {
+    lit.add(node.id);
+    for (const e of tg.edges) {
+      if (!tgEdgeVisible(e) || (e.source !== node.id && e.target !== node.id)) continue;
+      litEdges.add(e);
+      lit.add(e.source);
+      lit.add(e.target);
+    }
+  } else if (edge) {
+    litEdges.add(edge);
+    lit.add(edge.source);
+    lit.add(edge.target);
+  }
+  tg.box.classList.toggle("focus", lit.size > 0);
+  for (const n of tg.nodes.values()) {
+    n.g.classList.toggle("hi", lit.has(n.id));
+    n.g.classList.toggle("selected", n.id === tg.selected);
+  }
+  for (const e of tg.edges) {
+    const on = litEdges.has(e);
+    e.g.classList.toggle("hi", on);
+    e.g.classList.toggle("selected", e.id === tg.selectedEdge);
+    if (e.kind !== "extends") e.line.setAttribute("marker-end", on ? "url(#tg_arrow_hi)" : "url(#tg_arrow)");
+  }
+}
+
+function sideDoc() {
+  const doc = el("div", "doc");
+  const close = el("button", "close", "×");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close the selection");
+  close.addEventListener("click", () => go(null, false));
+  doc.append(close);
+  browseSide.replaceChildren(doc);
+  browseSide.hidden = false;
+  browseSide.scrollTop = 0;
+  return doc;
+}
+
+function tgSelect(curie) {
+  const node = curie ? tg.nodes.get(curie) : null;
+  tg.selected = node ? node.id : null;
+  tg.selectedEdge = null;
+  if (node && tg.hiddenModules.has(node.module)) {
+    tg.hiddenModules.delete(node.module);
+    buildTypesNav();
+    tg.alpha = Math.max(tg.alpha, 0.3);
+  }
+  if (node) typeDoc(sideDoc(), model.type[node.id]);
+  else if (curie) sideDoc().append(el("p", "muted", `${curie} is not a type of this ontology.`));
+  else { browseSide.hidden = true; browseSide.replaceChildren(); }
+  tgHighlight();
+  tg.dirty = true;
+}
+
+function tgSelectEdge(edge) {
+  if (item) {
+    const params = new URLSearchParams(location.search);
+    params.delete("item");
+    history.replaceState(null, "", "?" + params);
+    item = null;
+  }
+  tg.selected = null;
+  tg.selectedEdge = edge.id;
+  const doc = sideDoc();
+  if (edge.kind === "extends") {
+    doc.append(el("h1", null, "extends"));
+    doc.append(frag(typeLink(edge.source), " extends ", typeLink(edge.target)));
+  } else {
+    for (const curie of edge.rels) {
+      const r = model.relations.find(x => x.curie === curie);
+      doc.append(el("h1", null, typeName(r.curie)), el("div", "meta", r.curie));
+      if (r.summary) doc.append(el("p", "lead", r.summary));
+      const list = el("dl");
+      const row = (term, value) => {
+        const dd = el("dd");
+        dd.append(value);
+        list.append(el("dt", null, term), dd);
+      };
+      row("from", typeLinks(r.domain));
+      row("to", typeLinks(r.range));
+      row("cardinality", `${r.cardinality.out} out · ${r.cardinality.in} in`);
+      if (r.characteristics.length) row("characteristics", r.characteristics.join(", "));
+      if (r.qualifiers.length) row("qualifiers", r.qualifiers.join(", "));
+      if (r.inverse_label) row("inverse", r.inverse_label);
+      row("target inactive", r.on_target_inactive);
+      if (r.deprecated) row("status", badge("deprecated", true));
+      doc.append(list);
+    }
+  }
+  tgHighlight();
+  tg.dirty = true;
+}
+
+function tgTooltip(sx, sy) {
+  const tip = tg.tooltip;
+  const node = tg.hover, edge = tg.hoverEdge;
+  if (!node && !edge) { tip.style.display = "none"; return; }
+  tip.replaceChildren();
+  if (node) {
+    const t = model.type[node.id];
+    tip.append(el("div", "title", typeName(node.id)));
+    tip.append(el("div", "meta", `${node.id} · ${node.module}${t.abstract ? " · abstract" : ""} · ${entityCount(node.id)} active`));
+    if (t.summary) tip.append(el("div", null, t.summary));
+  } else {
+    tip.append(el("div", "title", edge.kind === "extends" ? "extends" : edge.rels.join(", ")));
+    tip.append(el("div", "meta", `${typeName(edge.source)} → ${typeName(edge.target)}`));
+  }
+  tip.style.display = "block";
+  tip.style.left = Math.max(8, Math.min(sx + 14, browseMain.clientWidth - tip.offsetWidth - 8)) + "px";
+  tip.style.top = Math.max(8, sy + 14) + "px";
+}
+
+function tgEvents(box) {
+  const point = event => {
+    const rect = box.getBoundingClientRect();
+    return [event.clientX - rect.left, event.clientY - rect.top];
+  };
+  const targetOf = event => {
+    const nodeG = event.target.closest && event.target.closest("[data-node]");
+    if (nodeG) return {node: tg.nodes.get(nodeG.dataset.node)};
+    const edgeG = event.target.closest && event.target.closest("[data-edge]");
+    if (edgeG) return {edge: tg.edges.find(e => e.id === edgeG.dataset.edge)};
+    return {};
+  };
+  box.addEventListener("pointerdown", event => {
+    const [sx, sy] = point(event);
+    const {node, edge} = targetOf(event);
+    tg.drag = {node, edge, sx, sy, vx: tg.view.x, vy: tg.view.y, moved: false};
+    if (node) { node.fixed = true; tg.alpha = Math.max(tg.alpha, 0.1); } else tg.autoFit = false;
+    box.setPointerCapture(event.pointerId);
+    box.classList.add("dragging");
+  });
+  box.addEventListener("pointermove", event => {
+    const [sx, sy] = point(event);
+    const drag = tg.drag;
+    if (drag) {
+      if (Math.hypot(sx - drag.sx, sy - drag.sy) > 4) drag.moved = true;
+      if (!drag.moved) return;
+      if (drag.node) {
+        [drag.node.x, drag.node.y] = tgWorld(sx, sy);
+        tg.alpha = Math.max(tg.alpha, 0.1);
+        tg.autoFit = false;
+      } else {
+        tg.view.x = drag.vx + sx - drag.sx;
+        tg.view.y = drag.vy + sy - drag.sy;
+      }
+      tg.dirty = true;
+      return;
+    }
+    const {node, edge} = targetOf(event);
+    if (node !== tg.hover || edge !== tg.hoverEdge) {
+      tg.hover = node || null;
+      tg.hoverEdge = edge || null;
+      tgHighlight();
+    }
+    tgTooltip(sx, sy);
+  });
+  const end = event => {
+    const drag = tg.drag;
+    tg.drag = null;
+    box.classList.remove("dragging");
+    if (!drag) return;
+    if (drag.node) drag.node.fixed = false;
+    if (drag.moved || event.type !== "pointerup") return;
+    if (drag.node) go(drag.node.id, false);
+    else if (drag.edge) tgSelectEdge(drag.edge);
+    else if (tg.selected || tg.selectedEdge) go(null, false);
+  };
+  box.addEventListener("pointerup", end);
+  box.addEventListener("pointercancel", end);
+  box.addEventListener("pointerleave", () => {
+    tg.hover = null;
+    tg.hoverEdge = null;
+    tgHighlight();
+    tgTooltip(0, 0);
+  });
+  box.addEventListener("wheel", event => {
+    event.preventDefault();
+    tg.autoFit = false;
+    const [sx, sy] = point(event);
+    const [wx, wy] = tgWorld(sx, sy);
+    tg.view.k = Math.min(6, Math.max(0.05, tg.view.k * Math.exp(-event.deltaY * 0.0015)));
+    tg.view.x = sx - browseMain.clientWidth / 2 - wx * tg.view.k;
+    tg.view.y = sy - browseMain.clientHeight / 2 - wy * tg.view.k;
+    tg.dirty = true;
+  }, {passive: false});
+  box.addEventListener("dblclick", () => { tg.autoFit = true; tg.dirty = true; });
+}
+
+new ResizeObserver(() => { if (tg) tg.dirty = true; }).observe(browseMain);
 
 // ---- layout ----------------------------------------------------------
 
@@ -1439,7 +2683,7 @@ fitToScreen();
 resize();
 // A graph named in the URL opens at once; else the list says which one --graph named.
 if (new URLSearchParams(location.search).get("graph")) {
-  showGraph(wantedGraph());
+  showGraph(wantedGraph(), wantedTab(), wantedItem());
   loadGraphs();
 } else {
   showGraph(null);

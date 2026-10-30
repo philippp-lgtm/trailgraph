@@ -5,10 +5,12 @@
 - ``ViewGraphs`` serves every graph of the data root: ``listing`` names
   those the caller may read (``read.get``, decided without an audit
   event per graph), ``get`` resolves and authorizes a graph on every
-  request and opens it on first use, with its own feed and trail. A
-  denial is audited once per graph and ``DENIAL_AUDIT_S``; repeats in
-  that time are refused alike without an event, so a retrying page or
-  client cannot flood the installation audit log. Up to ``MAX_OPEN``
+  request and opens it on first use, with its own feed and trail;
+  ``authorize`` decides another action on it (``read.describe`` for the
+  model). A denial is audited once per graph, action and
+  ``DENIAL_AUDIT_S``; repeats in that time are refused alike without an
+  event, so a retrying page or client cannot flood the installation audit
+  log. Up to ``MAX_OPEN``
   graphs stay open: beyond that the least recently used graph that no
   client watches (``watched``) and that is not the default is closed
   (``on_close``); when every open graph is watched, more stay open. A
@@ -17,6 +19,13 @@
 - ``graph_json`` is the whole graph at one snapshot: every entity as a node
   (label, type, alias, record status) and every edge between two of them
   as a link. Attributes other than the label stay out.
+- ``model_json`` is the graph's ontology as ``graph describe`` prints it
+  (``services.describe``: every module, every type, the relations) plus the
+  number of active entities per type; the page draws the type graph from
+  it. ``functions_json`` is every published function in full, as
+  ``graph describe function`` prints it, or none when the caller may not
+  ``read.function`` on the graph (like ``describe functions``: nothing
+  shown, nothing audited).
 - ``entity_json`` is one entity in full for the detail panel: attributes
   (hidden labels left out), edges both ways with their qualifiers, and
   every revision with the actor that wrote it.
@@ -43,7 +52,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -56,13 +65,22 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, parse_id
+from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import GraphStoreRead
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import RECORD_STATUSES, RequestMeta, Revision, TxRecord
+from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.query.lookup import label_text
+from graph_cli.services.describe import (
+    describe_module,
+    describe_modules,
+    describe_relations,
+    describe_type,
+    model_envelope,
+)
 from graph_cli.services.models import ModelCache
 from graph_cli_admin.services_admin.context import AdminContext
 
@@ -85,6 +103,8 @@ class ViewSource:
     activity_dir: Path
     warnings: tuple[WarningRecord, ...]
     authorize_type: Callable[[str], None] = lambda _type: None
+    # The published functions the caller may read (``read.function``), else ``None``.
+    functions: Callable[[], tuple[FunctionEntry, ...] | None] = lambda: None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,8 +128,29 @@ def open_view(ctx: AdminContext, *, graph_ref: str) -> ViewSource:
             [("read.get", f"graph:{entry.id}/type:{type_ref}")], request=meta, graph=entry.id
         )
 
+    def functions() -> tuple[FunctionEntry, ...] | None:
+        if not ctx.allows("read.function", f"graph:{entry.id}", graph=entry.id):
+            return None
+        slot = ctx.catalog.read_functions(entry.id)
+        if slot is None:
+            return None
+        try:
+            return load_entries(slot.compiled) or None
+        except JsonShapeError as exc:
+            raise GraphCliError(
+                "functions.slot_invalid",
+                f"the compiled function catalog is unreadable: {exc}",
+                details={"file": f"graphs/{entry.id}/functions/slot.json"},
+            ) from exc
+
     return ViewSource(
-        entry, model, read, activity_dir(ctx.roots.state_root), warnings, authorize_type
+        entry,
+        model,
+        read,
+        activity_dir(ctx.roots.state_root),
+        warnings,
+        authorize_type,
+        functions,
     )
 
 
@@ -129,6 +170,39 @@ def graph_json(source: ViewSource) -> dict[str, JsonValue]:
         "nodes": nodes,
         "links": links,
     }
+
+
+def model_json(source: ViewSource) -> dict[str, JsonValue]:
+    """The ontology of the graph: ``modules`` (``describe modules``), ``module`` and
+    ``type`` (``describe module`` and ``describe type`` of every module and type, by id),
+    ``relations`` (``describe relations``) and ``entities``, the active entities per type."""
+    entry, model = source.entry, source.model
+    functions = source.functions()
+    revisions = source.read.snapshot().query(Query(limit=sys.maxsize)).items
+    entities: dict[str, JsonValue] = dict(sorted(Counter(r.type for r in revisions).items()))
+    modules: dict[str, JsonValue] = {
+        m.id: describe_module(entry, model, m.id, functions)["module"]
+        for m in sorted(model.modules, key=lambda m: m.id)
+    }
+    types: dict[str, JsonValue] = {
+        curie: describe_type(entry, model, curie)["type"] for curie in sorted(model.classes)
+    }
+    return model_envelope(
+        entry,
+        model,
+        modules=describe_modules(entry, model, functions)["modules"],
+        module=modules,
+        type=types,
+        relations=describe_relations(entry, model)["relations"],
+        entities=entities,
+    )
+
+
+def functions_json(source: ViewSource) -> dict[str, JsonValue]:
+    """Every published function in full (``describe function``), in catalog order; none
+    when the graph has none or the caller may not ``read.function`` on it."""
+    functions: list[JsonValue] = [f.detail_json() for f in source.functions() or ()]
+    return model_envelope(source.entry, source.model, functions=functions)
 
 
 def label_of(model: CompiledModel, revision: Revision, language: str | None = None) -> str:
@@ -500,7 +574,8 @@ class ViewGraphs:
         self.on_warning: Callable[[str, WarningRecord], None] = lambda _graph, _warning: None
         self._lock = threading.Lock()
         self._open: OrderedDict[str, GraphView] = OrderedDict()
-        self._denied: dict[str, float] = {}  # graph id -> when its last denial was audited
+        # (graph id, action) -> when its last denial was audited
+        self._denied: dict[tuple[str, str], float] = {}
         self._warned: set[tuple[str, str]] = set()  # (graph id, code) passed to on_warning
         self.default: str | None = None  # the id of the graph a request without one gets
         if default is not None:
@@ -538,7 +613,7 @@ class ViewGraphs:
             ref = self.default
         entry = self.ctx.resolve(ref, "view")
         key = str(entry.id)
-        self._authorize(entry)
+        self.authorize(entry)
         with self._lock:
             found = self._open.get(key)
             if found is not None and found.source.entry == entry:
@@ -566,22 +641,22 @@ class ViewGraphs:
             self.on_close(graph)
         return view
 
-    def _authorize(self, entry: GraphEntry) -> None:
-        """``read.get`` on the graph; a denial is audited at most once per graph and
+    def authorize(self, entry: GraphEntry, action: str = "read.get") -> None:
+        """``action`` on the graph; a denial is audited at most once per graph, action and
         ``DENIAL_AUDIT_S``, a repeat in that time is refused without an event."""
         resource = f"graph:{entry.id}"
-        decision = self.ctx.decide("read.get", resource, graph=entry.id)
+        decision = self.ctx.decide(action, resource, graph=entry.id)
         if decision.effect != "deny":
             return
-        key, now = str(entry.id), self.monotonic()
+        key, now = (str(entry.id), action), self.monotonic()
         with self._lock:
             last = self._denied.get(key)
             first = last is None or now - last >= DENIAL_AUDIT_S
             if first:
                 self._denied[key] = now
         if first:  # audits the denial and raises it; passes if the policy just changed
-            meta = RequestMeta.of("view", {"graph": key})
-            self.ctx.authorize([("read.get", resource)], request=meta, graph=entry.id)
+            meta = RequestMeta.of("view", {"graph": key[0]})
+            self.ctx.authorize([(action, resource)], request=meta, graph=entry.id)
             return
         raise GraphCliError(
             decision.code or "access.denied",

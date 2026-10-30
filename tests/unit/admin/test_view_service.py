@@ -1,12 +1,13 @@
 """The live graph view's data on seeded file graphs of both fixtures (graph view plan, step 3)."""
 
 import dataclasses
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from support.admin_context import admin_context
-from support.fixtures import TOY_ONTOLOGIES, compiled_model
+from support.fixtures import FIXTURES, TOY_ONTOLOGIES, compiled_model
 from support.roles import load_roles
 from support.services import ServiceEnv
 from support.snapshots import revision as stored_revision
@@ -15,16 +16,27 @@ from graph_cli.catalog.activity import ActivityEvent
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.policy import PolicySet
+from graph_cli.services.describe import (
+    describe_module,
+    describe_modules,
+    describe_relations,
+    describe_type,
+)
 from graph_cli_admin.services_admin import view
+from graph_cli_admin.services_admin.functions import publish
 from graph_cli_admin.services_admin.view import (
     ActivityTrail,
     ViewFeed,
     ViewGraphs,
+    functions_json,
     graph_json,
     label_of,
+    model_json,
     open_view,
     read_event,
 )
+
+FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 
 
 @pytest.fixture(params=TOY_ONTOLOGIES)
@@ -264,3 +276,82 @@ def test_a_language_tagged_label_is_shown_in_the_graph_language() -> None:
     )
     assert label_of(model, entry, "en") == "Control"
     assert label_of(model, entry) == "Kontrolle"  # no language: the smallest tag
+
+
+def policy_of(*actions: str) -> object:
+    """A policy that lets the maintainer do ``actions`` on every graph and nothing else."""
+    rules = [
+        {
+            "id": "only",
+            "effect": "allow",
+            "principal": {"entrypoint": "maint"},
+            "action": list(actions),
+            "resource": "*",
+        }
+    ]
+    policy = PolicySet(
+        "sha256:" + "2" * 64,
+        ({"schema": "graph_cli.policy/1", "id": "only", "rules": rules, "obligations": []},),
+    )
+
+    class Policy:
+        def current(self, graph: object) -> PolicySet:
+            return policy
+
+    return Policy()
+
+
+def test_the_model_is_what_describe_prints(svc: ServiceEnv) -> None:
+    source = source_of(svc)
+    entry, model = source.entry, source.model
+    data = model_json(source)
+    assert data["graph"] == {"id": str(entry.id), "name": svc.name, "language": entry.language}
+    assert data["modules"] == describe_modules(entry, model)["modules"]  # no functions published
+    assert data["module"] == {
+        m.id: describe_module(entry, model, m.id)["module"] for m in model.modules
+    }
+    assert data["type"] == {c: describe_type(entry, model, c)["type"] for c in model.classes}
+    assert data["relations"] == describe_relations(entry, model)["relations"]
+    active = Counter(r.type for r in svc.all_revisions() if r.record_status == "active")
+    assert data["entities"] == dict(sorted(active.items()))
+    assert functions_json(source)["functions"] == []
+
+
+def test_the_functions_in_full_only_with_read_function(tmp_path: Path) -> None:
+    env = ServiceEnv("files", "inventory", tmp_path / "root")
+    assert env.apply_seed().error is None
+    ctx = admin_context(env.root)
+    publish(ctx, graph_ref=env.name, source=FUNCTIONS, reason=None, dry_run=False)
+    source = source_of(env)
+    shown = functions_json(source)["functions"]
+    assert isinstance(shown, list)
+    assert sorted(f["name"] for f in shown) == sorted(p.stem for p in FUNCTIONS.glob("*.yaml"))  # type: ignore[index]
+    assert all(f["query"] and f["hash"] and "use_when" in f for f in shown)  # type: ignore[index, operator]
+    modules = model_json(source)["modules"]
+    assert sum(m["functions"] for m in modules) == len(shown)  # type: ignore[index, misc]
+    before = len(env.installation_events())
+    hidden = dataclasses.replace(ctx, policy=policy_of("read.get", "read.describe"))
+    source = open_view(hidden, graph_ref=env.name)
+    assert functions_json(source)["functions"] == []
+    assert all("functions" not in m for m in model_json(source)["modules"])  # type: ignore[operator]
+    assert len(env.installation_events()) == before  # left out, not refused
+
+
+def test_the_model_needs_read_describe(svc: ServiceEnv) -> None:
+    now = [100.0]
+    ctx = dataclasses.replace(admin_context(svc.root), policy=policy_of("read.get"))
+    graphs = ViewGraphs(ctx, monotonic=lambda: now[0])
+    entry = graphs.get(svc.name).source.entry
+    before = len(svc.installation_events())
+
+    def refused() -> str:
+        with pytest.raises(GraphCliError) as info:
+            graphs.authorize(entry, "read.describe")
+        return info.value.code
+
+    assert [refused(), refused()] == ["access.denied", "access.denied"]
+    assert len(svc.installation_events()) == before + 1
+    graphs.authorize(entry)  # read.get has its own window
+    now[0] += view.DENIAL_AUDIT_S
+    assert refused() == "access.denied"
+    assert len(svc.installation_events()) == before + 2
