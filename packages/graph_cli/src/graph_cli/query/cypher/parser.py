@@ -376,11 +376,11 @@ class _Parser:
             return self.at_symbol("-", ahead=1)
         return self.at_symbol("-") and self.at_symbol("-", "[", ahead=1)
 
-    def node_pattern(self) -> NodePattern:
+    def node_pattern(self, *, probe: bool = False) -> NodePattern:
         start = self.expect_symbol("(")
         variable = self.variable_name() if self.at_variable() else None
         labels = self.labels() if self.at_symbol(":") else ()
-        properties = self.properties()
+        properties = self.properties(probe=probe)
         if self.at_word("WHERE"):
             raise unsupported(
                 self.peek().pos, "pattern", "WHERE inside a node pattern", "add WHERE after MATCH"
@@ -412,9 +412,19 @@ class _Parser:
                 "use :A:B for both labels, :A|B for either, NOT n:A in WHERE",
             )
 
-    def properties(self) -> MapExpr | None:
+    def properties(self, *, probe: bool = False) -> MapExpr | None:
+        """The property map of a pattern element, if there is one.
+
+        A parameter in its place is refused, but only in a pattern: while
+        ``probe`` tells a pattern from a parenthesized expression, ``($p``
+        may still begin one (``($p = true)``), so the parameter is passed over
+        and what follows decides.
+        """
         if self.at_symbol("{"):
             return self.nested(self.map_literal)
+        if probe and self.peek().kind == "param":
+            self.advance()
+            return None
         if self.peek().kind == "param":
             raise unsupported(
                 self.peek().pos,
@@ -824,11 +834,12 @@ class _Parser:
         """A relationship pattern starting at ``(``, else ``None`` and no token consumed.
 
         ``(a)`` alone is a parenthesized expression; a pattern needs a
-        relationship after the first node.
+        relationship after the first node. The first node is read as a probe
+        (see ``properties``), and a pattern is then read again in full.
         """
         mark = self.at
         try:
-            self.node_pattern()
+            self.node_pattern(probe=True)
         except GraphCliError as exc:
             if exc.code != "query.syntax":
                 raise

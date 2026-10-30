@@ -327,6 +327,16 @@ def test_parenthesized_node_alone_is_an_expression() -> None:
     assert where("(n:Note)") == HasLabels(V("n"), (("Note",),))
 
 
+def test_a_parenthesized_parameter_is_an_expression() -> None:
+    # Not a node pattern with a parameter as property map: no relationship follows.
+    assert where("($p = true)") == Binary("=", Parameter("p"), C(True))
+    assert where("(($p = true) OR (n.a = 1))") == Binary(
+        "or", Binary("=", Parameter("p"), C(True)), Binary("=", Property(V("n"), "a"), C(1))
+    )
+    assert returned("($a - $b)") == Binary("-", Parameter("a"), Parameter("b"))
+    assert where("($p)") == Parameter("p")
+
+
 def test_positions_point_at_the_first_token() -> None:
     query = parse("MATCH (n)\nWHERE n.a = $x\nRETURN n")
     match = query.clauses[0]
@@ -368,6 +378,7 @@ def test_positions_point_at_the_first_token() -> None:
         ("MATCH (n:!A) RETURN n", "pattern", "label expressions with !"),
         ("MATCH (n WHERE n.a = 1) RETURN n", "pattern", "WHERE inside a node pattern"),
         ("MATCH (n $props) RETURN n", "expression", "a parameter as property map"),
+        ("MATCH (a) WHERE ($props)-->(a) RETURN a", "expression", "a parameter as property map"),
         ("MATCH (a) RETURN [(a)-->(b) | b]", "expression", "pattern comprehensions"),
         ("MATCH (n) RETURN n {.title}", "expression", "map projections"),
         ("MATCH (n) RETURN n{title: n.title}", "expression", "map projections"),

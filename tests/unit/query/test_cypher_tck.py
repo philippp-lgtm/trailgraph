@@ -14,6 +14,11 @@ import pytest
 from harness import REPO_ROOT
 from support.tck import Mismatch, Scenario, Skip, run, scenarios
 
+from graph_cli.kernel.errors import GraphCliError
+from graph_cli.query.cypher import render
+from graph_cli.query.cypher.ast import Query
+from graph_cli.query.cypher.parser import parse
+
 FEATURES = REPO_ROOT / "tests" / "fixtures" / "opencypher_tck" / "features"
 
 # query.unsupported constructs refused by design (plan 3.2): a scenario that
@@ -77,3 +82,21 @@ def test_the_vendored_files_are_complete() -> None:
 def test_differences_name_existing_scenarios() -> None:
     for key in DIFFERENCES:
         assert any(s.id.startswith(key) for s in SCENARIOS), key
+
+
+def test_rendered_queries_parse_to_the_same_query() -> None:
+    """``render`` is what a published function stores; it must read back (F67)."""
+    checked = 0
+    for scenario in SCENARIOS:
+        try:
+            parsed = parse(scenario.query)
+        except GraphCliError:
+            continue  # refused by the subset or a syntax-error scenario
+        rendered = _text(parsed)
+        assert _text(parse(rendered)) == rendered, scenario.id
+        checked += 1
+    assert checked > 1500
+
+
+def _text(query: Query) -> str:
+    return "\n".join(render.clause(c) for c in query.clauses)
