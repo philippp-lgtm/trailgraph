@@ -176,6 +176,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "A function's query returns *, which has no stable columns.",
     ),
     ErrorSpec(
+        "function.round_trip_failed",
+        _C.INVALID,
+        False,
+        "A function's normalized query does not read back to the same query (a defect).",
+    ),
+    ErrorSpec(
         "function.stale",
         _C.INVALID,
         False,

@@ -216,6 +216,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.replaced_by_invalid": None,
     "function.returns_mismatch": None,
     "function.returns_star": None,
+    "function.round_trip_failed": None,
     "function.stale": None,
     "function.too_many_functions": None,
     "function.type_mismatch": None,
