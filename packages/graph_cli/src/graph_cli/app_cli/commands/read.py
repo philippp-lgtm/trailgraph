@@ -621,7 +621,12 @@ LOOKUP_OUTPUT: Final = obj(
         "items": array(
             obj({"text": STRING, **_FOUND, "match": obj({**_MATCH, "value": NULLABLE_STRING})})
         ),
-        "texts": array(obj({"text": STRING, "total": INTEGER, "exact": INTEGER})),
+        "texts": array(
+            obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
+        ),
+        "fit": nullable(  # --for, --for-source: services.read.ReadService.lookup
+            obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
+        ),
     }
 )
 SEARCH_OUTPUT: Final = obj(

@@ -12,6 +12,7 @@ from graph_cli.kernel.records import Revision
 from graph_cli.query.lookup import (
     LookupPlan,
     LookupSpec,
+    fit_classes,
     main_label,
     match_revision,
     plan_lookup,
@@ -234,3 +235,56 @@ def test_lang_must_be_a_language_range() -> None:
     with pytest.raises(GraphCliError) as info:
         lang_plan("suk", lang="de_DE")
     assert info.value.details["argument"] == "--lang"
+
+
+def test_fit_classes_expand_range_and_domain_with_subclasses() -> None:
+    assert fit_classes(NAS, "nas:cites", "target") == ("nas:Book", "nas:Source", "nas:WebPage")
+    assert fit_classes(NAS, "nas:cites", "source") == ("nas:Note",)
+    assert fit_classes(NAS, "nas:about", "target") == ("nas:Topic",)
+    assert fit_classes(NAS, "nas:broader", "source") == ("nas:Topic",)
+
+
+def test_fit_classes_of_an_any_class_side_is_no_filter() -> None:
+    assert fit_classes(NAS, "core:derived_from", "target") is None
+    assert fit_classes(NAS, "core:derived_from", "source") is None
+    assert fit_classes(NAS, "provenance:supported_by", "target") is None
+    assert fit_classes(NAS, "provenance:supported_by", "source") == ("provenance:Claim",)
+
+
+def test_the_plan_keeps_every_type_and_says_what_fits() -> None:
+    unfiltered = plan("x")
+    assert unfiltered.fit is None and unfiltered.fits("nas:Note")
+    p = plan("x", fit=("nas:Book", "nas:Source", "nas:WebPage"))
+    assert p.query == unfiltered.query  # non-fitting matches stay countable
+    assert p.fits("nas:Book") and not p.fits("nas:Topic")
+
+
+def test_fit_intersects_with_the_type_scope() -> None:
+    p = plan("x", types=("nas:Book", "nas:Topic"), fit=("nas:Book", "nas:Source", "nas:WebPage"))
+    assert p.query.types == ("nas:Book", "nas:Topic")
+    assert p.fit == {"nas:Book", "nas:Source", "nas:WebPage"}
+
+
+@pytest.mark.parametrize(
+    ("types", "fit"),
+    [
+        (("nas:Topic",), ("nas:Book", "nas:Source", "nas:WebPage")),
+        (("nas:Note", "nas:Topic"), ("nas:Source", "nas:WebPage")),
+    ],
+)
+def test_an_empty_intersection_with_the_type_scope_is_refused(
+    types: tuple[str, ...], fit: tuple[str, ...]
+) -> None:
+    with pytest.raises(GraphCliError) as caught:
+        plan("x", types=types, fit=fit)
+    assert caught.value.code == "usage.invalid_argument"
+    assert caught.value.details["argument"] == "--for"
+    assert caught.value.details["types"] == sorted(fit)
+    assert "no type fits both" in caught.value.message
+
+
+def test_a_fit_without_label_bearing_classes_is_refused() -> None:
+    with pytest.raises(GraphCliError) as caught:
+        plan("x", fit=("provenance:Claim",))
+    assert caught.value.code == "usage.invalid_argument"
+    assert caught.value.details["types"] == ["provenance:Claim"]

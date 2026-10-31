@@ -68,7 +68,7 @@ they are null.
 
 ## Lookup
 
-`graph lookup` lists candidates in `data.items`, per given name best match first; `data.texts[]` has `text`, `total` and `exact` (the count of exact matches) per name, also for a name without match.
+`graph lookup` lists candidates in `data.items`, per given name best match first; `data.texts[]` has `text`, `total`, `exact` (the count of exact matches) and `excluded` (matches whose type cannot fill the `--for` use) per name, also for a name without match. `data.fit` is null without `--for` and `--for-source`, else names them and the fitting `types` (null: any type).
 
 | Field | Meaning |
 |---|---|

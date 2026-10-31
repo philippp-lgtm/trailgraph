@@ -10,6 +10,14 @@ attribute and the record status, without paging. ``match_revision`` and
 - ``--type T`` (repeatable): a class and its subclasses, as in ``find``.
   Classes without label roles are skipped; a named family without any is
   ``term.no_labels``, and so is a model without label roles.
+- ``--for USE`` / ``--for-source RELATION``: the candidate must be able to fill a slot.
+  The caller resolves the use to the classes that fit (``fit_classes`` for a relation:
+  the range for ``--for``, the domain for ``--for-source``, each with its subclasses;
+  a function ``ref`` parameter gives its class) and passes them as ``LookupSpec.fit``.
+  The query still covers every label-bearing class of ``--type``; the plan only says
+  which classes fit (``fits``), so the service can count the matches that do not.
+  Fit classes that no label-bearing class of the ``--type`` scope is in are
+  ``usage.invalid_argument`` (``--for``), with the fit in ``details.types``.
 - ``--match exact|prefix``: the whole normalized value, or its start.
 - ``--ignore-accents``: also match with combining marks dropped; such
   matches rank after unfolded ones.
@@ -59,6 +67,7 @@ class LookupSpec:
     limit: int = DEFAULT_LIMIT
     offset: int = 0
     lang: str | None = None  # a language range
+    fit: tuple[str, ...] | None = None  # classes allowed by the use; None = any class
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +81,10 @@ class LookupPlan:
     offset: int
     lang: str | None = None  # the --lang range
     language: str | None = None  # the graph language
+    fit: frozenset[str] | None = None  # classes allowed by the use; None = any class
+
+    def fits(self, type_: str) -> bool:
+        return self.fit is None or type_ in self.fit
 
     def in_language(self, tag: str | None) -> bool:
         return in_language(self.lang, tag, self.language)
@@ -112,6 +125,19 @@ def _usage(argument: str, message: str, **details: JsonValue) -> GraphCliError:
         f"{argument}: {message}",
         details={"argument": argument, **details},
     )
+
+
+def fit_classes(
+    model: CompiledModel, relation: str, side: Literal["source", "target"]
+) -> tuple[str, ...] | None:
+    """The classes that can take ``side`` of ``relation`` (CURIE): its domain for the source,
+    its range for the target, each with its subclasses; sorted. None: any class (an empty
+    domain or range), so nothing is filtered."""
+    declared = model.relations[relation]
+    listed = declared.domain if side == "source" else declared.range
+    if not listed:
+        return None
+    return tuple(sorted({c for name in listed for c in model.subtypes(name)}))
 
 
 def check_language_range(language_range: str | None) -> None:
@@ -179,6 +205,15 @@ def plan_lookup(model: CompiledModel, spec: LookupSpec, language: str | None = N
             f"no label attributes on {', '.join(bare)}" if bare else "the model has no labels",
             details={"types": list(bare)},
         )
+    fit = None if spec.fit is None else frozenset(spec.fit)
+    if fit is not None and not fit & set(labels):
+        raise _usage(
+            "--for",
+            "no type fits both the use and --type"
+            if types
+            else "no label-bearing type fits the use",
+            types=sorted(fit),
+        )
     attrs = sorted({a for found in labels.values() for a, _ in found})
     where: Pred = Or(tuple(Cmp(a, "exists", True) for a in attrs))
     query = Query(
@@ -200,6 +235,7 @@ def plan_lookup(model: CompiledModel, spec: LookupSpec, language: str | None = N
         offset=spec.offset,
         lang=spec.lang,
         language=language,
+        fit=fit,
     )
 
 

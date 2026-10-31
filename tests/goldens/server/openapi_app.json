@@ -3544,19 +3544,74 @@
                 },
                 "exact": {
                   "type": "integer"
+                },
+                "excluded": {
+                  "type": "integer"
                 }
               },
               "required": [
                 "text",
                 "total",
-                "exact"
+                "exact",
+                "excluded"
               ]
             }
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "for": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "for_source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "types": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "for",
+                  "for_source",
+                  "types"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "items",
-          "texts"
+          "texts",
+          "fit"
         ]
       },
       "neighbors_data": {
