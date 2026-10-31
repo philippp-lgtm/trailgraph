@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:def4d7d833e8a1b96e7c8b50404e69729148cb4ed993ef9d5370d70fa942574a"
+  inventory_hash: "sha256:b24616e4734d94ccd815c7f05f5644911b1a1d1da11394d2abd335fd80cea95b"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.10.0"
@@ -56,9 +56,11 @@ against it and audited. The CLI is on `PATH`.
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that
    start with it), since names are not unique; give several names as
-   separate arguments, quoted if they hold spaces. Use a returned id only
-   when its name has exactly one exact match (`data.texts[].exact` is 1);
-   otherwise list the candidates and ask which one is meant, then answer.
+   separate arguments, quoted if they hold spaces. Add `--for <relation>`
+   or `--for <function>.<param>` when you know the slot the entity fills.
+   Use an id only when one exact match is left (`data.texts[].exact` is
+   1); with several, unless type and `facts` show which one is meant,
+   list them and ask, then answer.
 4. `graph search <value> --json` searches names and every text field,
    forgiving case, accents, typos and parts of words. Its results are
    suggestions: read one with `graph get` before you use it.

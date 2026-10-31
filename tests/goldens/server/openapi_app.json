@@ -13561,7 +13561,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: function.parameter_unknown, graph.not_selected, usage.invalid_argument.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -13580,6 +13580,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "function.parameter_unknown",
               "graph.not_selected",
               "usage.invalid_argument"
             ]
@@ -13633,7 +13634,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: graph.not_found, term.unknown.",
+            "description": "Not Found: function.not_found, graph.not_found, term.unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -13652,6 +13653,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "function.not_found",
               "graph.not_found",
               "term.unknown"
             ]
@@ -13783,6 +13785,24 @@
                           "type": "string"
                         },
                         "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "for": {
+                        "type": "string",
+                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter)."
+                      },
+                      "--for": {
+                        "type": "string",
+                        "description": "The inventory name of for; never both.",
+                        "deprecated": true
+                      },
+                      "for_source": {
+                        "type": "string",
+                        "description": "Only candidates that can be the source of this relation."
+                      },
+                      "--for-source": {
+                        "type": "string",
+                        "description": "The inventory name of for_source; never both.",
                         "deprecated": true
                       },
                       "match": {

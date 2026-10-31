@@ -120,9 +120,11 @@ against it and audited. The CLI is on `PATH`.
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that
    start with it), since names are not unique; give several names as
-   separate arguments, quoted if they hold spaces. Use a returned id only
-   when its name has exactly one exact match (`data.texts[].exact` is 1);
-   otherwise list the candidates and ask which one is meant, then answer.
+   separate arguments, quoted if they hold spaces. Add `--for <relation>`
+   or `--for <function>.<param>` when you know the slot the entity fills.
+   Use an id only when one exact match is left (`data.texts[].exact` is
+   1); with several, unless type and `facts` show which one is meant,
+   list them and ask, then answer.
 4. `graph search <value> --json` searches names and every text field,
    forgiving case, accents, typos and parts of words. Its results are
    suggestions: read one with `graph get` before you use it.

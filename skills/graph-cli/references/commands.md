@@ -558,6 +558,8 @@ Usage: `graph lookup TEXT... [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
+| `--for` | string | no | no | Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter). |
+| `--for-source` | term | no | no | Only candidates that can be the source of this relation. |
 | `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
@@ -576,6 +578,7 @@ Usage: `graph lookup TEXT... [OPTIONS]`
 | `graph lookup <value>` | Entities named exactly so, any type. |
 | `graph lookup <value> '<value> <value>' --json` | Several names in one call, one per argument. |
 | `graph lookup <value> --type <type> --match prefix --json` | Names of one type that start with the text. |
+| `graph lookup <value> --for <relation> --json` | Only candidates that can be the target of the relation. |
 
 ## graph neighbors
 

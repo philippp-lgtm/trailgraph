@@ -107,7 +107,8 @@ def render_text(document: Mapping[str, JsonValue], *, text: str | None = None) -
     if isinstance(hints, list):
         for hint in hints:
             if isinstance(hint, Mapping):
-                err_lines.append(f"hint: {hint.get('text')}: {hint.get('command')}")
+                command = hint.get("command")
+                err_lines.append(f"hint: {hint.get('text')}" + (f": {command}" if command else ""))
     return out, "".join(line + "\n" for line in err_lines)
 
 
