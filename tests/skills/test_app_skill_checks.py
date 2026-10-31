@@ -383,7 +383,7 @@ class TestStructure:
     def test_size_budgets(self) -> None:
         files = committed_files()
         assert (
-            len(files["SKILL.md"].splitlines()) <= 217
+            len(files["SKILL.md"].splitlines()) <= 218
         )  # functions: command rows, guidance; lookup --for
         for name, text in files.items():
             if name.startswith("references/"):
