@@ -288,7 +288,7 @@ def test_lookup_finds_candidates(run_cli: CliRunner, root: Path, roles: Roles) -
         "value": value,
         "lang": None,
     }
-    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match"}
+    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match", "facts"}
     assert item["text"] == value.upper()
     assert outcome.envelope["page"]["total"] == len(outcome.data["items"])
     total = len(outcome.data["items"])

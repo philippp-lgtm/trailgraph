@@ -83,6 +83,7 @@ they are null.
 | `match.kind` | `exact` or `prefix`. |
 | `match.value` | The matching name; null for a hidden label. |
 | `match.lang` | The language tag of the matching name, or null. |
+| `facts` | Null when the name has one candidate; else up to 3 links that tell the candidates apart (its parent, owner or unit): `rel`, `id`, `alias`, `label`. |
 
 ## Search
 

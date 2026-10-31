@@ -29,6 +29,12 @@ attribute and the record status, without paging. ``match_revision`` and
   one in ``--lang``, else the graph language, else the matched value's
   language, else the smallest tag.
 
+Distinguishing facts (``fact_edges``, ``fact_label``): when a text has more than
+one candidate, each shown one gets up to ``MAX_FACTS`` of its out-edges of
+functional relations (``out.max == 1``: what places an entity, such as its
+parent unit or its owner), required relations first, then by relation and
+target id, with the target's main label in the language the lookup shows.
+
 Order: exact before prefix, unfolded before folded, main label before
 alternative before hidden label, shorter matched value, normalized main
 label (missing last), id. A hidden label is never shown: its match value
@@ -47,7 +53,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import TermRef
 from graph_cli.kernel.langtag import language_matches, normalize_language_tag, tagged_parts
 from graph_cli.kernel.query_ast import Cmp, Or, Pred, Query
-from graph_cli.kernel.records import RECORD_STATUSES, Revision
+from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.kernel.text import normalize_label
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
@@ -55,6 +61,7 @@ from graph_cli.query.plan import DEFAULT_LIMIT, check_paging, resolve_types
 
 MatchKind = Literal["exact", "prefix"]
 MATCH_KINDS: Final[tuple[MatchKind, ...]] = ("exact", "prefix")
+MAX_FACTS: Final = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,3 +291,22 @@ def rank_key(
     kind, folded, role, length, _ = match.rank()
     normalized = normalize_label(label) if label is not None else ""
     return (kind, folded, role, length, label is None, normalized, str(revision.id))
+
+
+def fact_edges(model: CompiledModel, revision: Revision) -> tuple[EdgeRecord, ...]:
+    """Up to ``MAX_FACTS`` out-edges of functional relations that tell a candidate apart:
+    required relations first, then by relation CURIE and target id."""
+    found = []
+    for edge in revision.edges:
+        relation = model.relations.get(str(edge.rel))
+        if relation is not None and relation.out.max == 1:
+            found.append(((relation.out.min < 1, str(edge.rel), str(edge.target)), edge))
+    return tuple(edge for _, edge in sorted(found, key=lambda row: row[0])[:MAX_FACTS])
+
+
+def fact_label(model: CompiledModel, plan: LookupPlan, revision: Revision) -> str | None:
+    """The main label of a fact's target, of any class, in the language the lookup shows."""
+    for attr, role in model.label_attributes(str(revision.type)):
+        if role == "label":
+            return label_text(revision.attrs.get(attr), (plan.lang, plan.language))
+    return None

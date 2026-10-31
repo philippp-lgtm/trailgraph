@@ -232,7 +232,7 @@ class ServiceEnv:
                 admin_context(self.root),
                 name=self.name,
                 source=source,
-                module=None,
+                module=self.ontology if len(list(source.glob("*.yaml"))) > 1 else None,
                 title=None,
                 language=self.language,
             )

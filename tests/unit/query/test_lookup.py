@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from support.fixtures import compiled_model
-from support.snapshots import revision
+from support.snapshots import edge, revision
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.query_ast import Cmp, Or
@@ -12,6 +12,7 @@ from graph_cli.kernel.records import Revision
 from graph_cli.query.lookup import (
     LookupPlan,
     LookupSpec,
+    fact_edges,
     fit_classes,
     main_label,
     match_revision,
@@ -22,6 +23,7 @@ from graph_cli.query.lookup import (
 INV = compiled_model("inventory", "1.0.0")
 INV_LABELS = compiled_model("inventory", "1.1.0")
 NAS = compiled_model("notes_and_sources")
+COMPANY = compiled_model("company")
 
 
 def plan(text: str, **changes: Any) -> LookupPlan:
@@ -288,3 +290,21 @@ def test_a_fit_without_label_bearing_classes_is_refused() -> None:
         plan("x", fit=("provenance:Claim",))
     assert caught.value.code == "usage.invalid_argument"
     assert caught.value.details["types"] == ["provenance:Claim"]
+
+
+def test_fact_edges_take_functional_relations_required_first_and_cap_at_three() -> None:
+    # the edges need not fit one class here: fact_edges only reads the relations
+    edges = [
+        edge("org:reports_to", "boss"),
+        edge("org:holds", "slot"),  # not functional (only `in` is bounded)
+        edge("org:part_of", "parent"),
+        edge("org:charged_to", "costs"),
+        edge("org:in_unit", "unit"),
+    ]
+    found = fact_edges(COMPANY, revision("lead", "org:Position", {"title": "Lead"}, edges))
+    assert [str(e.rel) for e in found] == ["org:in_unit", "org:charged_to", "org:part_of"]
+
+
+def test_fact_edges_of_a_class_without_functional_relations_are_empty() -> None:
+    found = fact_edges(NAS, revision("n", "nas:Note", {"title": "N"}, [edge("nas:about", "t")]))
+    assert found == ()

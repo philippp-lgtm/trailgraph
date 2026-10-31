@@ -56,7 +56,7 @@ from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
-from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
+from graph_cli.kernel.records import EdgeRecord, EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
@@ -67,6 +67,8 @@ from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
     LookupPlan,
     LookupSpec,
+    fact_edges,
+    fact_label,
     fit_classes,
     main_label,
     match_revision,
@@ -667,6 +669,10 @@ class ReadService:
         classes that can fill the slot (see ``_use_fit``) and replace ``spec.fit``. A match of
         another class is no candidate: ``data.texts[].excluded`` counts it, ``total`` and
         ``exact`` do not, and ``data.fit`` names the options and the classes that fit.
+
+        ``items[].facts`` tells the candidates of a text apart (``query.lookup.fact_edges``):
+        a list when the text has more than one candidate, else null. One ``get_many`` reads
+        the targets of every shown item.
         """
         fit, asked = self._use_fit(view, for_use, for_source)
         spec = replace(spec, fit=fit)
@@ -679,6 +685,8 @@ class ReadService:
         counts: list[JsonValue] = []
         shown_ids: list[EntityId] = []
         total = more = 0
+        pending: list[tuple[dict[str, JsonValue], LookupPlan, tuple[EdgeRecord, ...]]] = []
+        targets: set[EntityId] = set()
         for text, plan in plans.values():
             found = []
             excluded = 0
@@ -692,8 +700,9 @@ class ReadService:
                     excluded += 1
             found.sort(key=lambda row: row[0])
             shown = found[plan.offset : plan.offset + plan.limit]
-            items += [
-                {
+            ambiguous = len(found) > 1
+            for _, revision, match in shown:
+                item: dict[str, JsonValue] = {
                     "text": text,
                     "id": str(revision.id),
                     "alias": revision.alias,
@@ -701,15 +710,34 @@ class ReadService:
                     "record_status": revision.record_status,
                     "label": main_label(plan, revision, match),
                     "match": match.to_json(),
+                    "facts": None,
                 }
-                for _, revision, match in shown
-            ]
+                if ambiguous:
+                    edges = fact_edges(view.model, revision)
+                    pending.append((item, plan, edges))
+                    targets.update(edge.target for edge in edges)
+                items.append(item)
             exact = sum(1 for _, _, match in found if match.kind == "exact")
             counts.append({"text": text, "total": len(found), "exact": exact, "excluded": excluded})
             shown_ids += [revision.id for _, revision, _ in shown]
             total += len(found)
             more += plan.offset + len(shown) < len(found)
-        self._signal(view, shown_ids)
+        read = view.snapshot.get_many(sorted(targets)) if targets else {}
+        for item, plan, edges in pending:
+            facts: list[JsonValue] = []
+            for edge in edges:
+                target = read.get(edge.target)
+                facts.append(
+                    {
+                        "rel": str(edge.rel),
+                        "id": str(edge.target),
+                        "alias": None if target is None else target.alias,
+                        "label": None if target is None else fact_label(view.model, plan, target),
+                    }
+                )
+            item["facts"] = facts
+        fact_ids = [edge.edge_id for _, _, edges in pending for edge in edges]
+        self._signal(view, [*shown_ids, *(t for t in sorted(targets) if t in read)], fact_ids)
         page = Page(total, len(items), spec.limit, spec.offset, more=bool(more))
         data: dict[str, JsonValue] = {"items": items, "texts": counts}
         data["fit"] = (

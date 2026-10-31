@@ -3518,6 +3518,53 @@
                     "lang",
                     "value"
                   ]
+                },
+                "facts": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "id",
+                          "alias",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -3527,7 +3574,8 @@
                 "type",
                 "record_status",
                 "label",
-                "match"
+                "match",
+                "facts"
               ]
             }
           },

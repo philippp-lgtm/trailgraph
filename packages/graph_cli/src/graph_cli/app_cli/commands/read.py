@@ -619,7 +619,25 @@ FIND_OUTPUT: Final = obj({"items": array(ref("entity"))})
 LOOKUP_OUTPUT: Final = obj(
     {
         "items": array(
-            obj({"text": STRING, **_FOUND, "match": obj({**_MATCH, "value": NULLABLE_STRING})})
+            obj(
+                {
+                    "text": STRING,
+                    **_FOUND,
+                    "match": obj({**_MATCH, "value": NULLABLE_STRING}),
+                    "facts": nullable(  # query.lookup.fact_edges
+                        array(
+                            obj(
+                                {
+                                    "rel": STRING,
+                                    "id": STRING,
+                                    "alias": NULLABLE_STRING,
+                                    "label": NULLABLE_STRING,
+                                }
+                            )
+                        )
+                    ),
+                }
+            )
         ),
         "texts": array(
             obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
