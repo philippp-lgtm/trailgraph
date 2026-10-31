@@ -56,16 +56,20 @@ from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
-from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision
+from graph_cli.kernel.records import EdgeRecord, EnvInfo, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
 from graph_cli.kinetic.format import ParamDef
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
     LookupPlan,
     LookupSpec,
+    fact_edges,
+    fact_label,
+    fit_classes,
     main_label,
     match_revision,
     plan_lookup,
@@ -78,6 +82,7 @@ from graph_cli.query.plan import (
     check_fields,
     plan_find,
     plan_neighbors,
+    resolve_term,
 )
 from graph_cli.query.search import SearchSpec, plan_search
 from graph_cli.query.search import main_label as search_label
@@ -594,16 +599,83 @@ class ReadService:
         self._signal(view, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
+    def _use_fit(
+        self, view: GraphRead, use: str | None, source: str | None
+    ) -> tuple[tuple[str, ...] | None, bool]:
+        """The classes ``--for`` and ``--for-source`` allow, intersected, and whether either
+        was given. ``--for`` is a relation (the candidate is its target) or
+        ``<function>.<param>``, a ``ref`` parameter of a published function the actor may
+        read (``read.function``); ``--for-source`` is a relation (the candidate is its source).
+        None: any class."""
+        fits: list[tuple[str, ...] | None] = []
+        if use is not None:
+            if "." in use:
+                fits.append(self._parameter_fit(view, use))
+            else:
+                relation = resolve_term("relation", use, view.model.relations)
+                fits.append(fit_classes(view.model, relation, "target"))
+        if source is not None:
+            relation = resolve_term("relation", source, view.model.relations)
+            fits.append(fit_classes(view.model, relation, "source"))
+        allowed = [set(found) for found in fits if found is not None]
+        if not allowed:
+            return None, bool(fits)
+        return tuple(sorted(set.intersection(*allowed))), True
+
+    def _parameter_fit(self, view: GraphRead, use: str) -> tuple[str, ...]:
+        """The class of a function's ``ref`` parameter and its subclasses (``--for f.p``)."""
+        name, _, param_name = use.partition(".")
+        function = find_entry(self.functions(view.actor, view.entry), name)
+        params = function.defn.params
+        found = next((p for p in params if p.name == param_name), None)
+        if found is None:
+            known = [p.name for p in params]
+            raise GraphCliError(
+                "function.parameter_unknown",
+                f"{name} has no parameter {param_name!r}"
+                + (f"; it takes {', '.join(known)}" if known else " and takes no parameters"),
+                details={
+                    "function": name,
+                    "parameter": param_name,
+                    "expected": known,
+                    "did_you_mean": did_you_mean(param_name, known),
+                },
+            )
+        if found.type != "ref" or found.of_class is None:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--for: parameter {param_name!r} of {name} is {found.type_text}, not a ref",
+                details={"argument": "--for", "function": name, "parameter": param_name},
+            )
+        return view.model.subtypes(found.of_class)
+
     @_query
     def lookup(
-        self, view: GraphRead, spec: LookupSpec, texts: Sequence[str] = ()
+        self,
+        view: GraphRead,
+        spec: LookupSpec,
+        texts: Sequence[str] = (),
+        *,
+        for_use: str | None = None,
+        for_source: str | None = None,
     ) -> tuple[dict[str, JsonValue], Page]:
         """Entities whose labels match, best first; one item per entity and text, its best match.
 
         ``texts`` (default: ``spec.text`` alone) are looked up one after the other with the
         options of ``spec``; texts with the same normalized key are looked up once. Limit and
         offset apply per text; ``data.texts`` counts the candidates and exact matches of each.
+
+        ``for_use`` / ``for_source`` (``--for``, ``--for-source``) narrow the candidates to the
+        classes that can fill the slot (see ``_use_fit``) and replace ``spec.fit``. A match of
+        another class is no candidate: ``data.texts[].excluded`` counts it, ``total`` and
+        ``exact`` do not, and ``data.fit`` names the options and the classes that fit.
+
+        ``items[].facts`` tells the candidates of a text apart (``query.lookup.fact_edges``):
+        a list when the text has more than one candidate, else null. One ``get_many`` reads
+        the targets of every shown item.
         """
+        fit, asked = self._use_fit(view, for_use, for_source)
+        spec = replace(spec, fit=fit)
         plans: dict[str, tuple[str, LookupPlan]] = {}
         for text in texts or (spec.text,):
             plan = plan_lookup(view.model, replace(spec, text=text), view.entry.language)
@@ -613,16 +685,24 @@ class ReadService:
         counts: list[JsonValue] = []
         shown_ids: list[EntityId] = []
         total = more = 0
+        pending: list[tuple[dict[str, JsonValue], LookupPlan, tuple[EdgeRecord, ...]]] = []
+        targets: set[EntityId] = set()
         for text, plan in plans.values():
             found = []
+            excluded = 0
             for revision in revisions:
                 match = match_revision(plan, revision)
-                if match is not None:
+                if match is None:
+                    continue
+                if plan.fits(revision.type):
                     found.append((rank_key(plan, revision, match), revision, match))
+                else:
+                    excluded += 1
             found.sort(key=lambda row: row[0])
             shown = found[plan.offset : plan.offset + plan.limit]
-            items += [
-                {
+            ambiguous = len(found) > 1
+            for _, revision, match in shown:
+                item: dict[str, JsonValue] = {
                     "text": text,
                     "id": str(revision.id),
                     "alias": revision.alias,
@@ -630,17 +710,42 @@ class ReadService:
                     "record_status": revision.record_status,
                     "label": main_label(plan, revision, match),
                     "match": match.to_json(),
+                    "facts": None,
                 }
-                for _, revision, match in shown
-            ]
+                if ambiguous:
+                    edges = fact_edges(view.model, revision)
+                    pending.append((item, plan, edges))
+                    targets.update(edge.target for edge in edges)
+                items.append(item)
             exact = sum(1 for _, _, match in found if match.kind == "exact")
-            counts.append({"text": text, "total": len(found), "exact": exact})
+            counts.append({"text": text, "total": len(found), "exact": exact, "excluded": excluded})
             shown_ids += [revision.id for _, revision, _ in shown]
             total += len(found)
             more += plan.offset + len(shown) < len(found)
-        self._signal(view, shown_ids)
+        read = view.snapshot.get_many(sorted(targets)) if targets else {}
+        for item, plan, edges in pending:
+            facts: list[JsonValue] = []
+            for edge in edges:
+                target = read.get(edge.target)
+                facts.append(
+                    {
+                        "rel": str(edge.rel),
+                        "id": str(edge.target),
+                        "alias": None if target is None else target.alias,
+                        "label": None if target is None else fact_label(view.model, plan, target),
+                    }
+                )
+            item["facts"] = facts
+        fact_ids = [edge.edge_id for _, _, edges in pending for edge in edges]
+        self._signal(view, [*shown_ids, *(t for t in sorted(targets) if t in read)], fact_ids)
         page = Page(total, len(items), spec.limit, spec.offset, more=bool(more))
-        return {"items": items, "texts": counts}, page
+        data: dict[str, JsonValue] = {"items": items, "texts": counts}
+        data["fit"] = (
+            {"for": for_use, "for_source": for_source, "types": None if fit is None else list(fit)}
+            if asked
+            else None
+        )
+        return data, page
 
     @_query
     def search(self, view: GraphRead, spec: SearchSpec) -> tuple[dict[str, JsonValue], Page]:

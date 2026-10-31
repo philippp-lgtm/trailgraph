@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Final
 
@@ -225,6 +225,8 @@ def lookup(
     state: CommandState,
     text: tuple[str, ...],
     type: tuple[str, ...],
+    for_use: str | None,
+    for_source: str | None,
     match: str,
     ignore_accents: bool,
     include_inactive: bool,
@@ -244,6 +246,8 @@ def lookup(
     args: dict[str, JsonValue] = {
         "text": list(text),
         "type": list(type),
+        "for": for_use,
+        "for_source": for_source,
         "match": match,
         "ignore_accents": ignore_accents,
         "include_inactive": include_inactive,
@@ -262,7 +266,9 @@ def lookup(
         offset=offset,
         lang=lang,
     )
-    data, page = context(state).reader.lookup(view, spec, text)
+    data, page = context(state).reader.lookup(
+        view, spec, text, for_use=for_use, for_source=for_source
+    )
     page_json = page.to_json()
     switches = tuple(
         flag
@@ -273,9 +279,21 @@ def lookup(
         if on
     )
 
-    def line(texts: tuple[str, ...], match_kind: str, next_offset: int | None = None) -> str:
+    uses = (
+        ("--for", (for_use,) if for_use else ()),
+        ("--for-source", (for_source,) if for_source else ()),
+    )
+
+    def line(
+        texts: tuple[str, ...],
+        match_kind: str,
+        next_offset: int | None = None,
+        *,
+        fit: bool = True,
+    ) -> str:
         options = (
             ("--type", type),
+            *(uses if fit else ()),
             ("--match", (match_kind,) if match_kind != "exact" else ()),
             ("--lang", (lang,) if lang else ()),
             *_pinned(view, point),
@@ -297,7 +315,12 @@ def lookup(
             },
         )
     elif missing:
-        options = (("--type", type), ("--lang", (lang,) if lang else ()), *_pinned(view, point))
+        options = (
+            ("--type", type),
+            *uses,
+            ("--lang", (lang,) if lang else ()),
+            *_pinned(view, point),
+        )
         hints += tuple(
             {
                 "text": "No name starts with the text; search names and text fields",
@@ -312,7 +335,55 @@ def lookup(
             }
             for value in missing[:MAX_SEARCH_HINTS]
         )
-    return Result(data=data, graph=view.envelope_graph(), page=page_json, hints=hints)
+    return Result(
+        data=data,
+        graph=view.envelope_graph(),
+        page=page_json,
+        hints=hints + _fit_hints(counts, for_use, for_source, lambda t: line(t, match, fit=False)),
+    )
+
+
+def _fit_hints(
+    counts: list[JsonValue],
+    for_use: str | None,
+    for_source: str | None,
+    unfitted: Callable[[tuple[str, ...]], str],
+) -> tuple[dict[str, JsonValue], ...]:
+    """Lookup hints about the intended use: how to narrow names with several exact
+    candidates (no ``--for`` given), or that ``--for`` dropped every exact match."""
+    rows = [c for c in counts if isinstance(c, Mapping)]
+    if for_use is None and for_source is None:
+        several = [str(c["text"]) for c in rows if int(str(c["exact"])) > 1]
+        if not several:
+            return ()
+        which = "the name" if len(rows) == 1 else f"{len(several)} of {len(rows)} names"
+        return (
+            {
+                "text": f"Several exact candidates for {which}: narrow them to what the entity is"
+                " for with --for <relation> (the candidate is its target), --for"
+                " <function>.<param> or --for-source <relation>, or tell them apart by type"
+                " and facts",
+                "command": None,
+            },
+        )
+    dropped = tuple(
+        str(c["text"]) for c in rows if not int(str(c["exact"])) and int(str(c["excluded"]))
+    )
+    if not dropped:
+        return ()
+    use = " and ".join(
+        f"{flag} {value}"
+        for flag, value in (("--for", for_use), ("--for-source", for_source))
+        if value
+    )
+    which = "" if len(rows) == 1 else f" for {len(dropped)} of {len(rows)} names"
+    return (
+        {
+            "text": f"No exact match fits {use}{which}; matches of other types are left out:"
+            " see them without it",
+            "command": unfitted(dropped),
+        },
+    )
 
 
 def search(
@@ -619,9 +690,32 @@ FIND_OUTPUT: Final = obj({"items": array(ref("entity"))})
 LOOKUP_OUTPUT: Final = obj(
     {
         "items": array(
-            obj({"text": STRING, **_FOUND, "match": obj({**_MATCH, "value": NULLABLE_STRING})})
+            obj(
+                {
+                    "text": STRING,
+                    **_FOUND,
+                    "match": obj({**_MATCH, "value": NULLABLE_STRING}),
+                    "facts": nullable(  # query.lookup.fact_edges
+                        array(
+                            obj(
+                                {
+                                    "rel": STRING,
+                                    "id": STRING,
+                                    "alias": NULLABLE_STRING,
+                                    "label": NULLABLE_STRING,
+                                }
+                            )
+                        )
+                    ),
+                }
+            )
         ),
-        "texts": array(obj({"text": STRING, "total": INTEGER, "exact": INTEGER})),
+        "texts": array(
+            obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
+        ),
+        "fit": nullable(  # --for, --for-source: services.read.ReadService.lookup
+            obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
+        ),
     }
 )
 SEARCH_OUTPUT: Final = obj(
@@ -832,8 +926,10 @@ SPECS: Final = (
             "Matches case- and Unicode-insensitively. Several names are looked up at once, "
             f"at most {MAX_LOOKUP_TEXTS}; each argument is one name, so quote a name with "
             "spaces. Limit and offset apply per name; data.texts counts the candidates and "
-            "exact matches of each. Labels are not identifiers: use the returned id for get, "
-            "writes and change sets."
+            "exact matches of each. --for and --for-source keep the candidates whose type "
+            "can fill a slot and count the others as excluded. A name with several candidates "
+            "gives each up to three facts that tell them apart. Labels are not identifiers: "
+            "use the returned id for get, writes and change sets."
         ),
         params=(
             ParamSpec(
@@ -849,6 +945,18 @@ SPECS: Final = (
                 "term",
                 "Type CURIE or unique local name, subtypes included.",
                 repeatable=True,
+            ),
+            ParamSpec(
+                "--for",
+                "string",
+                "Only candidates that can fill this slot: a relation (the candidate is its "
+                "target) or <function>.<param> (a ref parameter).",
+                keyword="for_use",
+            ),
+            ParamSpec(
+                "--for-source",
+                "term",
+                "Only candidates that can be the source of this relation.",
             ),
             ParamSpec(
                 "--match",
@@ -886,6 +994,10 @@ SPECS: Final = (
                 "graph lookup <value> --type <type> --match prefix --json",
                 "Names of one type that start with the text.",
             ),
+            Example(
+                "graph lookup <value> --for <relation> --json",
+                "Only candidates that can be the target of the relation.",
+            ),
         ),
         errors=(
             *GRAPH_ERRORS,
@@ -893,6 +1005,8 @@ SPECS: Final = (
             "term.unknown",
             "query.ambiguous_term",
             "term.no_labels",
+            "function.not_found",
+            "function.parameter_unknown",
         ),
         handler=lookup,
         output=LOOKUP_OUTPUT,

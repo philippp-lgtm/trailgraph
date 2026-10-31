@@ -138,6 +138,7 @@ def test_references_take_id_alias_and_trailing_hex_but_no_name(
     named = run(run_cli, "members_of_unit", "--param", "unit=Department A")
     assert (named.code, named.error["code"]) == (2, "function.parameter_invalid")
     assert "looked up first" in named.error["message"]
+    assert named.error["hint"] == "graph lookup <text> --for members_of_unit.unit"
     gone = run(run_cli, "members_of_unit", "--param", "unit=0192f3c0")
     assert (gone.code, gone.error["code"]) == (1, "entity.not_found")
 
@@ -148,7 +149,7 @@ def test_a_reference_of_the_wrong_class_is_refused(run_cli: CliRunner, root: Pat
     assert (refused.code, refused.error["code"]) == (1, "function.parameter_type")
     assert refused.error["details"]["expected"] == "org:OrgUnit"
     assert refused.error["details"]["found"] == "org:CostCenter"
-    assert refused.error["hint"] == "graph lookup <text> --type org:OrgUnit"
+    assert refused.error["hint"] == "graph lookup <text> --for members_of_unit.unit"
 
 
 def test_usage_errors_exit_2(run_cli: CliRunner, root: Path) -> None:

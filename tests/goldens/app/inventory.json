@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.10.0",
+  "program_version": "0.11.0",
   "surface": "app",
   "global_options": [
     {
@@ -2083,6 +2083,20 @@
           "summary": "Type CURIE or unique local name, subtypes included."
         },
         {
+          "name": "--for",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter)."
+        },
+        {
+          "name": "--for-source",
+          "type": "term",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only candidates that can be the source of this relation."
+        },
+        {
           "name": "--match",
           "type": "choice",
           "required": false,
@@ -2158,6 +2172,10 @@
         {
           "command": "graph lookup <value> --type <type> --match prefix --json",
           "summary": "Names of one type that start with the text."
+        },
+        {
+          "command": "graph lookup <value> --for <relation> --json",
+          "summary": "Only candidates that can be the target of the relation."
         }
       ],
       "errors": [
@@ -2166,6 +2184,8 @@
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
+        "function.not_found",
+        "function.parameter_unknown",
         "graph.not_found",
         "graph.not_in_project",
         "graph.not_selected",

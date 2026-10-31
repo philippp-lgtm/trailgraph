@@ -113,16 +113,19 @@ against it and audited. The CLI is on `PATH`.
    (types, relations, fields, values; not data); never dump the whole schema.
    For a question, look for a function first (`graph describe search <value>
    --kind function` or the graph skill's list) and run it with
-   `graph run <function> --param ...`; write a `query` when none fits.
+   `graph run <function> --param ...` (a `ref` parameter takes an id: look
+   names up with `graph lookup <value> --for <function>.<param>`); write a
+   `query` when none fits.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that
    start with it), since names are not unique; give several names as
-   separate arguments, quoted if they hold spaces. Use a returned id only
-   when its name has exactly one exact match (`data.texts[].exact` is 1);
-   otherwise list the candidates and ask which one is meant, then answer.
+   separate arguments, quoted if they hold spaces; `--for <relation>`
+   keeps those that can be its target. Use an id only when one exact
+   match is left (`data.texts[].exact` is 1); with several, unless type and
+   `facts` show which one is meant, list them and ask, then answer.
 4. `graph search <value> --json` searches names and every text field,
    forgiving case, accents, typos and parts of words. Its results are
    suggestions: read one with `graph get` before you use it.
@@ -573,8 +576,10 @@ OUTPUT_SECTIONS: Final = (
     (
         "Lookup",
         "`graph lookup` lists candidates in `data.items`, per given name best match"
-        " first; `data.texts[]` has `text`, `total` and `exact` (the count of exact"
-        " matches) per name, also for a name without match.",
+        " first; `data.texts[]` has `text`, `total`, `exact` (the count of exact"
+        " matches) and `excluded` (matches whose type cannot fill the `--for` use) per"
+        " name, also for a name without match. `data.fit` is null without `--for` and"
+        " `--for-source`, else names them and the fitting `types` (null: any type).",
         (
             ("text", "The given name this candidate matches."),
             ("id", "The id."),
@@ -587,6 +592,11 @@ OUTPUT_SECTIONS: Final = (
             ("match.kind", "`exact` or `prefix`."),
             ("match.value", "The matching name; null for a hidden label."),
             ("match.lang", "The language tag of the matching name, or null."),
+            (
+                "facts",
+                "Null when the name has one candidate; else up to 3 links that tell the"
+                " candidates apart (its parent, owner or unit): `rel`, `id`, `alias`, `label`.",
+            ),
         ),
     ),
     (

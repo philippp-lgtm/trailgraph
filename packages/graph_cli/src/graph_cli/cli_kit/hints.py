@@ -63,10 +63,21 @@ def _function_search(details: Mapping[str, JsonValue], program: str) -> str | No
 
 
 def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
-    """A reference of the wrong class: find the entity of the expected class by its name."""
+    """A reference of the wrong class: find the entity that fits the parameter by its name."""
+    function, parameter = details.get("function"), details.get("parameter")
+    if isinstance(function, str) and isinstance(parameter, str):
+        return f"{program} lookup <text> --for {function}.{parameter}"
     expected = details.get("expected")
     if isinstance(expected, str):
         return f"{program} lookup <text> --type {expected}"
+    return None
+
+
+def _lookup_ref(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A name where a ``ref`` parameter needs an id: look it up for that parameter."""
+    kind = details.get("type")
+    if isinstance(kind, str) and kind.startswith("ref"):
+        return _lookup_class({k: v for k, v in details.items() if k != "expected"}, program)
     return None
 
 
@@ -197,7 +208,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.not_found": _function_search,
     "function.parameter_missing": None,
     "function.parameter_unknown": None,
-    "function.parameter_invalid": None,
+    "function.parameter_invalid": _lookup_ref,
     "function.parameter_type": _lookup_class,
     "function.builtin_module": None,
     "function.invalid_default": None,

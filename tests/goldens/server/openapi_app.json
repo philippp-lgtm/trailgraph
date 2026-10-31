@@ -3518,6 +3518,53 @@
                     "lang",
                     "value"
                   ]
+                },
+                "facts": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "id",
+                          "alias",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -3527,7 +3574,8 @@
                 "type",
                 "record_status",
                 "label",
-                "match"
+                "match",
+                "facts"
               ]
             }
           },
@@ -3544,19 +3592,74 @@
                 },
                 "exact": {
                   "type": "integer"
+                },
+                "excluded": {
+                  "type": "integer"
                 }
               },
               "required": [
                 "text",
                 "total",
-                "exact"
+                "exact",
+                "excluded"
               ]
             }
+          },
+          "fit": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "for": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "for_source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "types": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "for",
+                  "for_source",
+                  "types"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "items",
-          "texts"
+          "texts",
+          "fit"
         ]
       },
       "neighbors_data": {
@@ -13458,7 +13561,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: function.parameter_unknown, graph.not_selected, usage.invalid_argument.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -13477,6 +13580,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "function.parameter_unknown",
               "graph.not_selected",
               "usage.invalid_argument"
             ]
@@ -13530,7 +13634,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: graph.not_found, term.unknown.",
+            "description": "Not Found: function.not_found, graph.not_found, term.unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -13549,6 +13653,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "function.not_found",
               "graph.not_found",
               "term.unknown"
             ]
@@ -13680,6 +13785,24 @@
                           "type": "string"
                         },
                         "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "for": {
+                        "type": "string",
+                        "description": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter)."
+                      },
+                      "--for": {
+                        "type": "string",
+                        "description": "The inventory name of for; never both.",
+                        "deprecated": true
+                      },
+                      "for_source": {
+                        "type": "string",
+                        "description": "Only candidates that can be the source of this relation."
+                      },
+                      "--for-source": {
+                        "type": "string",
+                        "description": "The inventory name of for_source; never both.",
                         "deprecated": true
                       },
                       "match": {

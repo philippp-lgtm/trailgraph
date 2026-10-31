@@ -68,7 +68,7 @@ they are null.
 
 ## Lookup
 
-`graph lookup` lists candidates in `data.items`, per given name best match first; `data.texts[]` has `text`, `total` and `exact` (the count of exact matches) per name, also for a name without match.
+`graph lookup` lists candidates in `data.items`, per given name best match first; `data.texts[]` has `text`, `total`, `exact` (the count of exact matches) and `excluded` (matches whose type cannot fill the `--for` use) per name, also for a name without match. `data.fit` is null without `--for` and `--for-source`, else names them and the fitting `types` (null: any type).
 
 | Field | Meaning |
 |---|---|
@@ -83,6 +83,7 @@ they are null.
 | `match.kind` | `exact` or `prefix`. |
 | `match.value` | The matching name; null for a hidden label. |
 | `match.lang` | The language tag of the matching name, or null. |
+| `facts` | Null when the name has one candidate; else up to 3 links that tell the candidates apart (its parent, owner or unit): `rel`, `id`, `alias`, `label`. |
 
 ## Search
 

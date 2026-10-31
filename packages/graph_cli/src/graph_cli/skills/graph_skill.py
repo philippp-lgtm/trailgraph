@@ -638,10 +638,12 @@ def _names(doc: _Model) -> list[str]:
         for curie, fields in labelled.items():
             lines.append(f"  - {_code(curie)}: {_name_fields(fields)}")
     lines.append(
-        "- Names are not unique, so `lookup` returns candidates. Use the returned alias or id"
-        " only when exactly one candidate matches exactly (`match.kind` is `exact`). With"
-        " several candidates, or only prefix matches, do not answer about one of them first:"
-        " list them with their names and ask which one is meant, then answer."
+        "- Names are not unique, so `lookup` returns candidates; `--for <relation>` or"
+        " `--for <function>.<param>` keeps those that can fill that slot. Use the returned"
+        " alias or id only when exactly one candidate matches exactly (`match.kind` is"
+        " `exact`). With several, or only prefix matches, do not answer about one of them"
+        " first: unless type and `facts` show which one the request means, list them with"
+        " their names and ask which one is meant, then answer."
     )
     lines.append(search)
     these = "a type with names" if doc.modular else "one of these types"

@@ -288,11 +288,13 @@ def test_lookup_finds_candidates(run_cli: CliRunner, root: Path, roles: Roles) -
         "value": value,
         "lang": None,
     }
-    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match"}
+    assert set(item) == {"text", "id", "alias", "type", "record_status", "label", "match", "facts"}
     assert item["text"] == value.upper()
     assert outcome.envelope["page"]["total"] == len(outcome.data["items"])
     total = len(outcome.data["items"])
-    assert outcome.data["texts"] == [{"text": value.upper(), "total": total, "exact": total}]
+    assert outcome.data["texts"] == [
+        {"text": value.upper(), "total": total, "exact": total, "excluded": 0}
+    ]
     hidden_id, hidden = a_label(run_cli, roles, "hidden_label_attribute")
     found = app(run_cli, "lookup", hidden, "--type", str(roles.get("label_type")), env=ENV)
     (item,) = found.data["items"]
@@ -344,8 +346,8 @@ def test_lookup_takes_several_names_one_per_argument(
     texts = outcome.data["texts"]
     assert [t["text"] for t in texts] == [value, spaced, "zzqq"]  # same key looked up once
     assert texts[0]["exact"] >= 1 and texts[1:] == [
-        {"text": spaced, "total": 0, "exact": 0},
-        {"text": "zzqq", "total": 0, "exact": 0},
+        {"text": spaced, "total": 0, "exact": 0, "excluded": 0},
+        {"text": "zzqq", "total": 0, "exact": 0, "excluded": 0},
     ]
     assert {i["text"] for i in outcome.data["items"]} == {value}
     assert entity in [i["id"] for i in outcome.data["items"]]

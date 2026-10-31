@@ -72,7 +72,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)) |
 | `history REF` | one entity's revisions, newest first: time, command, reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` as for `get` |
-| `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
+| `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
 | `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
@@ -260,11 +260,33 @@ quoted as one shell argument (`graph lookup 'Example name' EX`); `graph`
 splits nothing itself, since names hold spaces and commas. Names with the
 same normalized form are looked up once. Every item carries the `text` it
 matched, items are in the order of the names and then ranked, and
-`data.texts[]` gives `{text, total, exact}` per name, also for one without
-a match. `--limit` and `--offset` apply per name; `page.total` and
+`data.texts[]` gives `{text, total, exact, excluded}` per name, also for one
+without a match. `--limit` and `--offset` apply per name; `page.total` and
 `page.shown` are sums, and the next-page command repeats every name. Names
 without an exact match get one `--match prefix` hint; with `--match prefix`,
 names without a match get a `search` hint each (at most five).
+
+Names are not unique, and the same name often belongs to entities of
+different types (a department and a cost center, a subject and a topic).
+`--for <relation>` keeps the candidates whose type is in the relation's
+range, subtypes included, because the entity is about to be its target;
+`--for <function>.<param>` does the same with the class of a function's
+`ref` parameter (it needs the right to run functions, otherwise the
+function is `function.not_found`); `--for-source <relation>` keeps the types
+of its domain. Both options may be given and narrow `--type` further; when
+no type is left the answer is `usage.invalid_argument`. Nothing is picked
+for the caller: every fitting candidate is listed, and matches of other
+types are only counted (`data.texts[].excluded`). `data.fit` names the
+options and the fitting types (null for a relation that takes any type).
+When the options leave no exact match although others matched, a hint
+gives the command without them; when a name has several exact candidates
+and no option was given, a hint names `--for`.
+
+A name with more than one candidate gives every candidate `facts`: up to
+three of its links over relations that allow one target per entity (its
+parent, owner, unit; required relations first), each `{rel, id, alias,
+label}` with the target's main name. They tell the candidates apart without
+another call. A name with one candidate has `facts: null`.
 
 A write that gives an active entity a name (a value of a label-role field)
 that another active entity of the same type family already carries, as
