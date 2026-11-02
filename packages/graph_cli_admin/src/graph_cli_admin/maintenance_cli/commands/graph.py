@@ -1,5 +1,5 @@
 """``graph-admin graph create|list|show|check|reindex|pull|push``, ``graph skill
-publish|render`` and ``graph functions publish|show``."""
+publish|render``, ``graph functions publish|show`` and ``graph actions publish|show``."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
     SKILL_KIND,
     STRINGS,
 )
-from graph_cli_admin.services_admin import functions, graphs, skill, sources
+from graph_cli_admin.services_admin import actions, functions, graphs, skill, sources
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
 
@@ -55,6 +55,15 @@ FUNCTIONS_DIR: Final = ParamSpec(
     "dir",
     "directory",
     "A functions folder: one <name>.yaml per function.",
+    required=True,
+    positional=True,
+    keyword="source",
+    must_exist=True,
+)
+ACTIONS_DIR: Final = ParamSpec(
+    "dir",
+    "directory",
+    "An actions folder: one <name>.yaml per action.",
     required=True,
     positional=True,
     keyword="source",
@@ -169,6 +178,27 @@ def show_functions(state: CommandState, ref: str, data_root: str | None) -> Resu
     return Result(data=data, graph=graphs.envelope_graph(entry, None))
 
 
+def publish_actions(
+    state: CommandState,
+    ref: str,
+    source: str,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    published = actions.publish(
+        ctx, graph_ref=ref, source=Path(source).resolve(), reason=reason, dry_run=dry_run
+    )
+    return Result(data=published.data, graph=graphs.envelope_graph(published.entry, published.seq))
+
+
+def show_actions(state: CommandState, ref: str, data_root: str | None) -> Result:
+    ctx = admin_context(state, data_root)
+    entry, data = actions.show(ctx, graph_ref=ref)
+    return Result(data=data, graph=graphs.envelope_graph(entry, None))
+
+
 def render(
     state: CommandState,
     ref: str,
@@ -269,6 +299,7 @@ SHOW_OUTPUT: Final = obj(  # services_admin.graphs.show
         "releases": STRINGS,
         "skill": nullable(ref("skill_summary")),
         "functions": nullable(obj({"count": INTEGER, "hash": STRING})),
+        "actions": nullable(obj({"count": INTEGER, "hash": STRING})),
     }
 )
 CHECK_OUTPUT: Final = obj(  # services_admin.check.check
@@ -281,6 +312,9 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         "findings": array(ref("finding")),
         "functions": obj(  # the published catalog against the same model
             {"count": INTEGER, "problems": array(ref("function_problem"))}
+        ),
+        "actions": obj(  # the published action catalog against the same model
+            {"count": INTEGER, "problems": array(ref("action_problem"))}
         ),
     }
 )
@@ -304,6 +338,7 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
         ),
         "skill": nullable(ref("source_skill")),
         "functions": nullable(ref("source_functions")),
+        "actions": nullable(ref("source_actions")),
         "files": STRINGS,
     },
     {"pulled": RETURNED_FILES},
@@ -333,6 +368,16 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 }
             )
         ),
+        "actions": nullable(
+            obj(
+                {
+                    "from": nullable(ref("actions_summary")),
+                    "to": nullable(ref("actions_summary")),
+                    "actions": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        ),
         "unchanged": BOOLEAN,
         "dry_run": BOOLEAN,
         "source": obj(  # services_admin.sources.base_document: the workspace's new base
@@ -342,6 +387,7 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 "ontology": ref("ontology_pin"),
                 "skill": nullable(ref("source_skill")),
                 "functions": nullable(ref("source_functions")),
+                "actions": nullable(ref("source_actions")),
             }
         ),
     }
@@ -372,6 +418,34 @@ SHOW_FUNCTIONS_OUTPUT: Final = obj(  # services_admin.functions.show
         "graph_id": STRING,
         "slot": nullable(ref("functions_summary")),
         "functions": array(
+            obj(
+                {
+                    "name": STRING,
+                    "module": NULLABLE_STRING,
+                    "summary": STRING,
+                    "status": enum("active", "deprecated"),
+                    "featured": BOOLEAN,
+                    "hash": STRING,
+                }
+            )
+        ),
+    }
+)
+PUBLISH_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.publish
+    {
+        "graph_id": STRING,
+        "from": nullable(ref("actions_summary")),
+        "to": ref("actions_summary"),
+        "actions": STRINGS,
+        "published": BOOLEAN,
+        "dry_run": BOOLEAN,
+    }
+)
+SHOW_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.show
+    {
+        "graph_id": STRING,
+        "slot": nullable(ref("actions_summary")),
+        "actions": array(
             obj(
                 {
                     "name": STRING,
@@ -513,6 +587,7 @@ SPECS: Final = (
             "admin.model_invalid",
             "admin.data_errors",
             "admin.functions_broken",
+            "admin.actions_broken",
         ),
         handler=check_command,
         output=CHECK_OUTPUT,
@@ -520,7 +595,8 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. Also checks the published functions against the"
         " model (admin.functions_broken, for example function.stale after an interrupted"
-        " push). With --ontology, checks the data under an"
+        " push) and the published actions (admin.actions_broken, for example action.stale; the"
+        " functions are reported first). With --ontology, checks the data under an"
         " authored version before it is released.",
         remote="hooked",
     ),
@@ -556,7 +632,7 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="maint.graph_configure",
-        summary="Write graph REF's ontology release, skill and functions into DIR to edit.",
+        summary="Write graph REF's ontology release, skill, functions and actions into DIR.",
         params=(
             REF,
             ParamSpec(
@@ -571,7 +647,8 @@ SPECS: Final = (
             ParamSpec(
                 "--force",
                 "flag",
-                "Replace the version, skill and functions directories and base file if they exist.",
+                "Replace the version, skill, functions and actions directories and base file"
+                " if they exist.",
             ),
             DATA_ROOT,
         ),
@@ -590,12 +667,14 @@ SPECS: Final = (
             "ontology.artifact_missing",
             "skills.source_invalid",
             "functions.slot_invalid",
+            "actions.slot_invalid",
         ),
         handler=pull,
         output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
         " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any),"
-        " DIR/functions/<name>.yaml (the published functions, if any) and"
+        " DIR/functions/<name>.yaml (the published functions, if any),"
+        " DIR/actions/<name>.yaml (the published actions, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
         " nothing in the data root.",
         remote="hooked",
@@ -640,18 +719,22 @@ SPECS: Final = (
             "admin.skill_invalid",
             "admin.functions_invalid",
             "admin.functions_broken",
+            "admin.actions_invalid",
+            "admin.actions_broken",
         ),
         handler=push,
         output=PUSH_OUTPUT,
-        description="The graph must still have the ontology release, skill and functions DIR was"
-        " pulled from (or already what DIR holds), else admin.source_conflict. The highest"
-        " ontology/<version>/ is released and pinned when it differs (maint.ontology_release,"
-        " maint.ontology_pin), the skill directory and the functions"
-        " directory published when they differ (maint.graph_configure; a missing functions"
-        " directory is an empty one); whenever the ontology changes, the skill and the functions"
-        " are checked against the ontology they will have (the published functions too, if the"
-        " push does not replace them: admin.functions_broken). Everything is checked before the"
-        " first write; the new base is written into DIR.",
+        description="The graph must still have the ontology release, skill, functions and actions"
+        " DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
+        " highest ontology/<version>/ is released and pinned when it differs"
+        " (maint.ontology_release, maint.ontology_pin), the skill directory, the functions"
+        " directory and the actions directory published when they differ (maint.graph_configure;"
+        " a missing functions or actions directory is an empty one); whenever the ontology"
+        " changes, the skill, the functions and the actions are checked against the ontology"
+        " they will have (the published functions and actions too, if the push does not replace"
+        " them: admin.functions_broken, admin.actions_broken). A function and an action may not"
+        " share a name. Everything is checked before the first write; the new base is written"
+        " into DIR.",
         remote="hooked",
     ),
     CommandSpec(
@@ -771,6 +854,54 @@ SPECS: Final = (
         output=SHOW_FUNCTIONS_OUTPUT,
         description="The slot (hash, ontology pin it was published against) and one line per"
         " function; read-only.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "actions", "publish"),
+        kind="write",
+        surface="act",
+        action="maint.graph_configure",
+        summary="Publish DIR as the action catalog of graph REF (name or id).",
+        params=(
+            REF,
+            ACTIONS_DIR,
+            ParamSpec("--reason", "string", "Why the actions change; recorded in the audit event."),
+            ParamSpec("--dry-run", "flag", "Check and show the change without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph actions publish <graph> <dir>", "Publish the actions."),
+            Example(
+                "graph-admin graph actions publish <graph> <dir> --dry-run --json",
+                "Check them and show the change, as JSON.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.actions_invalid"),
+        handler=publish_actions,
+        output=PUBLISH_ACTIONS_OUTPUT,
+        description="DIR holds one <name>.yaml per action (graph_cli.action/1). Every"
+        " action is checked against the graph's current ontology pin; all problems are"
+        " reported together (admin.actions_invalid, details.problems). An action may not"
+        " be named like a published function. An empty DIR unpublishes every action."
+        " Publishing the same files again changes nothing. --dry-run is the check.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "actions", "show"),
+        kind="read",
+        surface="meta",
+        action="maint.graph_configure",
+        summary="Show the published action catalog of graph REF.",
+        params=(REF, DATA_ROOT),
+        examples=(
+            Example("graph-admin graph actions show <graph>", "List the published actions."),
+            Example("graph-admin graph actions show <graph> --json", "The same, as JSON."),
+        ),
+        errors=(*GRAPH_ERRORS, "access.denied"),
+        handler=show_actions,
+        output=SHOW_ACTIONS_OUTPUT,
+        description="The slot (hash, ontology pin it was published against) and one line per"
+        " action; read-only.",
         remote="hooked",
     ),
 )

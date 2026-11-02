@@ -1,0 +1,14 @@
+schema: graph_cli.action/1
+name: local_unresolved
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    summary: A person.
+ops:
+  - {op: link, id: $person, rel: org:holds, target: '@ghost'}
+examples:
+  - request: A request.

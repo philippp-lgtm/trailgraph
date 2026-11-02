@@ -25,6 +25,7 @@ ONTOLOGY = EXAMPLE / "ontology"
 SEEDS = EXAMPLE / "seeds"
 SKILL = EXAMPLE / "skill" / "graph-company"
 FUNCTIONS = EXAMPLE / "functions"
+ACTIONS = EXAMPLE / "actions"
 ENV = {"GRAPH_CLI_GRAPH": "company"}
 V100_MODULES = ["company", "operations", "organization", "people"]
 V110_MODULES = ["company", "legal", "operations", "organization", "people"]
@@ -364,6 +365,57 @@ def test_the_functions_publish_run_and_appear_in_the_skill(
     assert rendered.data["problems"] == []
     text = (out / "graph-company" / "SKILL.md").read_text()
     assert "6 named functions" in text and "`reporting_chain(position: ref org:Position)`" in text
+
+
+def test_the_actions_publish_run_and_appear_in_the_skill(
+    run_cli: CliRunner, company: None, tmp_path: Path
+) -> None:
+    names = sorted(p.stem for p in ACTIONS.glob("*.yaml"))
+    assert names == ["assign_position", "hand_over_position", "offboard_employee"]
+    for directory in (FUNCTIONS, ACTIONS):
+        kind = directory.name
+        published = admin(run_cli, "graph", kind, "publish", "company", str(directory))
+        assert published.code == 0, published.envelope
+
+    def do(name: str, *args: str, **params: str) -> Outcome:
+        pairs = [a for k, v in params.items() for a in ("--param", f"{k}={v}")]
+        return app(run_cli, "do", name, *pairs, *args, env=ENV)
+
+    def holders(position: str) -> list[str]:
+        outcome = app(
+            run_cli,
+            "query",
+            "MATCH (p:Person)-[:holds]->(q:Position) WHERE q.alias = $q RETURN p.alias AS p",
+            *("--param", f"q={position}"),
+            env=ENV,
+        )
+        assert outcome.code == 0, outcome.envelope
+        return sorted(r["p"] for r in outcome.data["items"])
+
+    # A held position is not assigned a second time; it is handed over.
+    [holder] = holders("POS-0013")
+    refused = do("assign_position", person="EMP-0003", position="POS-0013", since="2026-11-01")
+    assert refused.code == 1, refused.envelope
+    assert refused.error["code"] == "action.precondition_failed"
+    handed = do("hand_over_position", position="POS-0013", person="EMP-0003", since="2026-11-01")
+    assert handed.code == 0, handed.envelope
+    assert holder != "EMP-0003" and holders("POS-0013") == ["EMP-0003"]
+
+    # Offboarding needs a reason and leaves the employee without position and employer.
+    assert do("offboard_employee", employee="EMP-0007").error["code"] == "action.reason_required"
+    left = do("offboard_employee", "--reason", "HR confirmed", employee="EMP-0007")
+    assert left.code == 0, left.envelope
+    employee = app(run_cli, "get", "EMP-0007", env=ENV).data["entity"]
+    assert employee["attrs"]["status"] == "left"
+    assert admin(run_cli, "graph", "check", "company").data["findings"] == []
+
+    out = tmp_path / "preview"
+    out.mkdir()
+    rendered = admin(run_cli, "graph", "skill", "render", "company", str(SKILL), "--out", str(out))
+    assert rendered.code == 0, rendered.envelope
+    assert rendered.data["problems"] == []
+    text = (out / "graph-company" / "SKILL.md").read_text()
+    assert "3 named actions" in text and "`offboard_employee(employee: ref ppl:Employee)`" in text
 
 
 def run_script(

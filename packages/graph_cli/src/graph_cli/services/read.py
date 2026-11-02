@@ -28,6 +28,7 @@ other command starts without it.
 
 from __future__ import annotations
 
+import difflib
 import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -45,22 +46,23 @@ from graph_cli.audit import events
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
-from graph_cli.kernel.json_access import JsonShapeError
+from graph_cli.kernel.json_access import JsonShapeError, req_list
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
-from graph_cli.kernel.records import EdgeRecord, EnvInfo, RequestMeta, Revision
+from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
+from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
-from graph_cli.kinetic.format import ParamDef
+from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
@@ -90,7 +92,7 @@ from graph_cli.query.search import match_revision as search_match
 from graph_cli.query.search import rank_key as search_rank
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
-from graph_cli.services.refs import resolve_ref
+from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
 
@@ -118,6 +120,16 @@ class GraphRead:
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)
+
+
+@dataclass(frozen=True, slots=True)
+class ActionCatalog:
+    """The parsed published action catalog of a graph and what it was published against."""
+
+    entries: tuple[ActionEntry, ...]
+    compiled_hash: str
+    published_against: OntologyPin
+    compiled: JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +295,9 @@ class ReadService:
         self.timings = timings if timings is not None else Timings()
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
+        self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
+        # (compiled hash, pin) -> problem of each action that no longer fits the pin
+        self._action_problems: dict[tuple[str, OntologyPin], dict[str, Problem]] = {}
 
     # ---- authorization -------------------------------------------------
 
@@ -346,6 +361,86 @@ class ReadService:
                     ) from exc
                 self._functions[slot.compiled_hash] = found
         return found or None
+
+    def published_actions(self, entry: GraphEntry) -> ActionCatalog | None:
+        """The parsed action catalog of the graph (``None`` when it has none), no
+        authorization; cached by the hash of the compiled document. A document that does not
+        read is ``actions.slot_invalid``."""
+        with self.timings.phase("model"):
+            slot = self._catalog.read_actions(entry.id)
+            if slot is None:
+                return None
+            found = self._actions.get(slot.compiled_hash)
+            if found is None:
+                try:
+                    entries = load_action_entries(slot.compiled)
+                except JsonShapeError as exc:
+                    raise GraphCliError(
+                        "actions.slot_invalid",
+                        f"the compiled action catalog is unreadable: {exc}",
+                        details={"file": f"graphs/{entry.id}/actions/slot.json"},
+                    ) from exc
+                found = ActionCatalog(
+                    entries, slot.compiled_hash, slot.published_against, slot.compiled
+                )
+                self._actions[slot.compiled_hash] = found
+        return found if found.entries else None
+
+    def actions(self, actor: ActorContext, entry: GraphEntry) -> tuple[ActionEntry, ...] | None:
+        """The graph's actions as the actor may see them (A6, A10): ``None`` when the graph has
+        no catalog or the actor may run none of its actions, so a caller who sees none gets the
+        answers of a graph without actions and learns nothing about them. Records nothing."""
+        published = self.published_actions(entry)
+        if published is None:
+            return None
+        return self.visible_actions(actor, entry, published.entries) or None
+
+    def visible_actions(
+        self, actor: ActorContext, entry: GraphEntry, actions: Sequence[ActionEntry]
+    ) -> tuple[ActionEntry, ...]:
+        """The actions the actor may run (actions plan A6): every write right the action's ops
+        need is allowed on the type it is needed for. Records nothing, like ``functions``."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
+
+            def allowed(action: ActionEntry) -> bool:
+                return all(
+                    authorize(
+                        actor, need.action, f"graph:{entry.id}/type:{need.type}", ctx, policy
+                    ).effect
+                    == "allow"
+                    for need in action.needs
+                )
+
+            return tuple(a for a in actions if allowed(a))
+
+    def action_problem(
+        self, entry: GraphEntry, catalog: ActionCatalog, model: CompiledModel, name: str
+    ) -> Problem | None:
+        """Why action ``name`` no longer fits the graph's current ontology (``action.stale``
+        material), or ``None``. Only a catalog published against another pin is checked; the
+        result is cached by (compiled hash, pin)."""
+        from graph_cli.kinetic.action_compile import check_actions  # not needed by most reads
+
+        if catalog.published_against == entry.pin:
+            return None
+        key = (catalog.compiled_hash, entry.pin)
+        found = self._action_problems.get(key)
+        if found is None:
+            try:
+                problems = check_actions(catalog.compiled, model)
+            except (JsonShapeError, GraphCliError) as exc:
+                raise GraphCliError(
+                    "actions.slot_invalid",
+                    f"the compiled action catalog is unreadable: {exc}",
+                    details={"file": f"graphs/{entry.id}/actions/slot.json"},
+                ) from exc
+            found = {}
+            for problem in problems:
+                found.setdefault(problem.name, problem)
+            self._action_problems[key] = found
+        return found.get(name)
 
     def refuse_hidden(
         self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta
@@ -443,14 +538,34 @@ class ReadService:
     ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
         """The model documents a generated graph skill is rendered with: those of the
         graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
-        compiled function catalog when the graph has one. Like the type names, the function
-        names and summaries are schema-level text, so the skill lists them for every reader
-        of the description (K10)."""
+        compiled function catalog and the action catalog when the graph has them. Like the
+        type names, the function names and summaries are schema-level text, so the skill lists
+        them for every reader of the description (K10). Actions are different on purpose: a
+        skill block is a listing, so it holds only the actions the actor may run (actions plan
+        A6, as ``actions``); an actor who may run none gets the documents of a graph without
+        actions. The rest of the catalog document is kept as published, so the renderer sees
+        one shape."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
         slot = self._catalog.read_functions(entry.id)
         catalog = slot.compiled if slot is not None and slot.count else None
-        return describe_model(entry, model, catalog), warnings
+        return describe_model(entry, model, catalog, self._visible_catalog(actor, entry)), warnings
+
+    def _visible_catalog(self, actor: ActorContext, entry: GraphEntry) -> JsonObject | None:
+        """The compiled action catalog narrowed to the actions ``actor`` may see, as the
+        published document (same schema, entries as compiled); ``None`` when there are none."""
+        published = self.published_actions(entry)
+        if published is None:
+            return None
+        names = {a.name for a in self.visible_actions(actor, entry, published.entries)}
+        if not names:
+            return None
+        kept = [
+            e
+            for e in req_list(published.compiled, "actions")
+            if isinstance(e, dict) and e.get("name") in names
+        ]
+        return {**published.compiled, "actions": kept}
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None
@@ -535,20 +650,21 @@ class ReadService:
             tx = view.snapshot.tx(meta.tx_seq)
             before = view.snapshot.get_revision(entity, meta.rev - 1) if meta.rev > 1 else None
             after = view.snapshot.get_revision(entity, meta.rev)
-            items.append(
-                {
-                    "rev": meta.rev,
-                    "tx_seq": meta.tx_seq,
-                    "recorded_at": format_timestamp(meta.recorded_at),
-                    "record_status": meta.record_status,
-                    "command": tx.request.command if tx else None,
-                    "reason": tx.reason if tx else None,
-                    "own_session": tx is not None
-                    and session is not None
-                    and tx.actor.session.id == session,
-                    "changed": changed_names(before, after) if before and after else None,
-                }
-            )
+            item: dict[str, JsonValue] = {
+                "rev": meta.rev,
+                "tx_seq": meta.tx_seq,
+                "recorded_at": format_timestamp(meta.recorded_at),
+                "record_status": meta.record_status,
+                "command": tx.request.command if tx else None,
+                "reason": tx.reason if tx else None,
+                "own_session": tx is not None
+                and session is not None
+                and tx.actor.session.id == session,
+                "changed": changed_names(before, after) if before and after else None,
+            }
+            if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
+                item["action"] = tx.request.action.to_json()
+            items.append(item)
         data: dict[str, JsonValue] = {
             "id": str(entity),
             "current_rev": metas[-1].rev,
@@ -604,9 +720,9 @@ class ReadService:
     ) -> tuple[tuple[str, ...] | None, bool]:
         """The classes ``--for`` and ``--for-source`` allow, intersected, and whether either
         was given. ``--for`` is a relation (the candidate is its target) or
-        ``<function>.<param>``, a ``ref`` parameter of a published function the actor may
-        read (``read.function``); ``--for-source`` is a relation (the candidate is its source).
-        None: any class."""
+        ``<function or action>.<param>``, a ``ref`` parameter of a published function the
+        actor may read (``read.function``) or of an action the actor may run; ``--for-source`` is
+        a relation (the candidate is its source). None: any class."""
         fits: list[tuple[str, ...] | None] = []
         if use is not None:
             if "." in use:
@@ -623,19 +739,36 @@ class ReadService:
         return tuple(sorted(set.intersection(*allowed))), True
 
     def _parameter_fit(self, view: GraphRead, use: str) -> tuple[str, ...]:
-        """The class of a function's ``ref`` parameter and its subclasses (``--for f.p``)."""
+        """The class of a ``ref`` parameter of a function or an action and its subclasses
+        (``--for f.p``). Names are unique across both kinds, so a visible action is looked up
+        first."""
         name, _, param_name = use.partition(".")
-        function = find_entry(self.functions(view.actor, view.entry), name)
-        params = function.defn.params
+        actions = self.actions(view.actor, view.entry)
+        action = next((a for a in actions or () if a.name == name), None)
+        if action is not None:
+            kind, params = "action", action.defn.params
+        else:
+            functions = self.functions(view.actor, view.entry)
+            if actions is not None and all(f.name != name for f in functions or ()):
+                names = sorted([*(f.name for f in functions or ()), *(a.name for a in actions)])
+                raise GraphCliError(
+                    "function.not_found",
+                    f"no function or action {name!r}",
+                    details={
+                        "name": name,
+                        "did_you_mean": difflib.get_close_matches(name, names, n=5),
+                    },
+                )
+            kind, params = "function", find_entry(functions, name).defn.params
         found = next((p for p in params if p.name == param_name), None)
         if found is None:
             known = [p.name for p in params]
             raise GraphCliError(
-                "function.parameter_unknown",
+                f"{kind}.parameter_unknown",
                 f"{name} has no parameter {param_name!r}"
                 + (f"; it takes {', '.join(known)}" if known else " and takes no parameters"),
                 details={
-                    "function": name,
+                    kind: name,
                     "parameter": param_name,
                     "expected": known,
                     "did_you_mean": did_you_mean(param_name, known),
@@ -645,7 +778,7 @@ class ReadService:
             raise GraphCliError(
                 "usage.invalid_argument",
                 f"--for: parameter {param_name!r} of {name} is {found.type_text}, not a ref",
-                details={"argument": "--for", "function": name, "parameter": param_name},
+                details={"argument": "--for", kind: name, "parameter": param_name},
             )
         return view.model.subtypes(found.of_class)
 
@@ -895,7 +1028,9 @@ class ReadService:
             bound = bind_cli(name, function.defn.params, pairs, view.model)
             for param in function.defn.params:
                 if param.type == "ref":
-                    bound[param.name], found = self._entity_params(view, name, param, bound)
+                    bound[param.name], found = entity_params(
+                        view.snapshot, view.model, "function", name, param, bound
+                    )
                     warnings += found
         try:
             parsed = self.parse_query(function.query)
@@ -911,42 +1046,6 @@ class ReadService:
         data, page = self._rows(view, resolved, False, None, limit, offset, name)
         data = {"function": {"name": name, "hash": function.hash}, **data}
         return data, page, tuple(warnings)
-
-    def _entity_params(
-        self, view: GraphRead, function: str, param: ParamDef, bound: Mapping[str, Value]
-    ) -> tuple[Value, list[WarningRecord]]:
-        """The canonical ids for the reference texts of a ``ref`` parameter, each checked to
-        exist and to be of the declared class or a subclass (no name resolution)."""
-        assert param.of_class is not None
-        given = bound[param.name]
-        texts = given if isinstance(given, list) else [given]
-        warnings: list[WarningRecord] = []
-        ids: list[Value] = []
-        for text in texts:
-            assert isinstance(text, str)
-            entity, found = resolve_ref(text, view.snapshot)
-            warnings += found
-            revision = view.snapshot.get(entity)
-            if revision is None:
-                raise GraphCliError(
-                    "entity.not_found",
-                    f"no entity {text} (parameter {param.name!r} of {function})",
-                    details={"ref": text, "id": str(entity), "function": function},
-                )
-            if not view.model.is_a(revision.type, param.of_class):
-                raise GraphCliError(
-                    "function.parameter_type",
-                    f"parameter {param.name!r} of {function} expects {param.of_class}, "
-                    f"{text} is a {revision.type}",
-                    details={
-                        "function": function,
-                        "parameter": param.name,
-                        "expected": param.of_class,
-                        "found": revision.type,
-                    },
-                )
-            ids.append(str(entity))
-        return (ids if isinstance(given, list) else ids[0]), warnings
 
     def whoami(
         self, actor: ActorContext, *, allowed: Sequence[str] | None = None

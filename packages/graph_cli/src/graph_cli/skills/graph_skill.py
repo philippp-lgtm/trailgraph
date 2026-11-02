@@ -40,6 +40,10 @@ Blocks (each one optional):
   maintainer marked ``featured`` (by module, then name), one line each (``name(signature)``:
   summary), and the commands to list a module's functions and to search them. Without
   published functions it is one line saying so.
+- ``actions``: up to ``ACTIONS_FEATURED_LIMIT`` of the actions the reader may run, the ones the
+  maintainer marked ``featured`` (by module, then name), one line each (``name(signature)``:
+  summary), the commands to list a module's actions and to search them, and the rule to dry
+  run first. Without published actions it is one line saying so.
 
 The compiled function catalog (``graph_cli.functions/1``, the key ``functions`` of the model
 documents) is one more input document; the renderer reads only its public shape and never
@@ -47,6 +51,12 @@ imports ``graph_cli.kinetic``. A graph without active functions renders exactly 
 With some, the ``modules`` block gets a ``Functions`` column, every module page a
 ``Functions`` section and a single-module graph the page ``references/functions.md``
 (deprecated functions are left out everywhere).
+
+The compiled action catalog (``graph_cli.action_catalog/1``, the key ``actions``) is one more
+input document, present only when the graph has actions the reader may see; it is rendered
+the same way: an ``Actions`` column, an ``Actions`` section on every module page and
+``references/actions.md`` for a single-module graph. A graph without active actions renders
+exactly as before.
 
 A graph with two or more non-built-in modules is modular: every generated skill then also
 gets ``references/modules/<module>.md`` (level 1 of the module view as text) and
@@ -68,6 +78,7 @@ from graph_cli.kernel.json_access import as_list, as_object, opt_str, req_list, 
 from graph_cli.kernel.ports.catalog import GraphEntry, skill_hash
 from graph_cli.skills.markdown import table
 from graph_cli.skills.template import (
+    ACTIONS_FILE,
     FUNCTIONS_FILE,
     MODEL_FILE,
     MODULES_DIR,
@@ -79,6 +90,8 @@ from graph_cli.skills.tree import SKILL_FILE, Problem, SkillFiles, validate
 MODEL_SCHEMA: Final = "graph_cli.model/1"
 FUNCTIONS_SCHEMA: Final = "graph_cli.functions/1"  # the compiled catalog, ``graph_cli.kinetic``
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
+ACTIONS_SCHEMA: Final = "graph_cli.action_catalog/1"  # the compiled action catalog
+ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
 GENERATOR: Final = "graph_cli.skills"
 ROLE_NAMES: Final[Mapping[str, str]] = {
     "label": "main name",
@@ -112,10 +125,14 @@ FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph v
 # of a modular graph grow with the modules only. A graph with functions may use
 # ``L0_FUNCTIONS`` more for the ``functions`` block (``FEATURED_LIMIT`` lines of a name, a
 # signature and a 100-character summary, two lines of pointers) and the ``Functions`` column;
-# a test holds ``L0_BUDGET`` for 50 modules of 20 functions. Not checked on publish.
+# a graph with actions another ``L0_ACTIONS`` for the ``actions`` block (``ACTIONS_FEATURED_LIMIT``
+# lines, the pointers and the dry-run rule) and the ``Actions`` column. ``L0_BUDGET``, the most
+# for any graph, is held by a test for 50 modules of 20 functions and 10 actions each. Not
+# checked on publish.
 L0_BASE: Final = 20_000
 L0_FUNCTIONS: Final = 2_500
-L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS
+L0_ACTIONS: Final = 2_000
+L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS + L0_ACTIONS
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -144,6 +161,7 @@ def render_graph_skill(
             if doc.functions and not doc.modular
             else {}
         ),
+        **({ACTIONS_FILE: _actions_file(doc, stamp)} if doc.actions and not doc.modular else {}),
     }
 
 
@@ -200,6 +218,7 @@ class _Model:
     modules: Sequence[JsonObject]  # the items of ``describe modules``, built-ins included
     pages: Mapping[str, JsonObject]  # module id -> ``module`` body of ``describe module``
     functions: Sequence[JsonObject]  # active catalog entries, by module then name
+    actions: Sequence[JsonObject]  # active action catalog entries, by module then name
 
     @staticmethod
     def of(model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]) -> _Model:
@@ -252,6 +271,7 @@ class _Model:
             modules=modules,
             pages=pages,
             functions=_active_functions(bundle),
+            actions=_active_actions(bundle),
         )
 
     @property
@@ -285,6 +305,18 @@ def _active_functions(bundle: JsonObject) -> list[JsonObject]:
     if document.get("schema") != FUNCTIONS_SCHEMA:
         raise ValueError(f"functions: expected {FUNCTIONS_SCHEMA}, got {document.get('schema')!r}")
     entries = [e for e in _objects(document, "functions") if e.get("status") != "deprecated"]
+    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
+
+
+def _active_actions(bundle: JsonObject) -> list[JsonObject]:
+    """The active entries of the compiled action catalog document, if the bundle has one."""
+    catalog = bundle.get("actions")
+    if catalog is None:
+        return []
+    document = as_object(catalog, "actions")
+    if document.get("schema") != ACTIONS_SCHEMA:
+        raise ValueError(f"actions: expected {ACTIONS_SCHEMA}, got {document.get('schema')!r}")
+    entries = [e for e in _objects(document, "actions") if e.get("status") != "deprecated"]
     return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
 
 
@@ -687,7 +719,8 @@ def _modules(doc: _Model) -> list[str]:
     graph) get one line, not a row."""
     shown = [m for m in doc.modules if m.get("builtin") is not True]
     built = [req_str(m, "id") for m in doc.modules if m.get("builtin") is True]
-    counts = _function_counts(doc)  # the column exists only for a graph with functions
+    counts = _counts(doc.functions)  # the column exists only for a graph with functions
+    action_counts = _counts(doc.actions)  # likewise for actions
     lines = _table(
         [
             "Module",
@@ -695,6 +728,7 @@ def _modules(doc: _Model) -> list[str]:
             "What it holds",
             "Types",
             *(["Functions"] if doc.functions else []),
+            *(["Actions"] if doc.actions else []),
             "Links to other modules",
         ],
         [
@@ -704,6 +738,7 @@ def _modules(doc: _Model) -> list[str]:
                 _plain(opt_str(m, "summary")),
                 str(m["types"]),
                 *([str(counts.get(req_str(m, "id"), 0))] if doc.functions else []),
+                *([str(action_counts.get(req_str(m, "id"), 0))] if doc.actions else []),
                 _module_links(m),
             ]
             for m in shown
@@ -730,10 +765,11 @@ def _modules(doc: _Model) -> list[str]:
     return lines
 
 
-def _function_counts(doc: _Model) -> dict[str, int]:
+def _counts(entries: Sequence[JsonObject]) -> dict[str, int]:
+    """Catalog entries per module id."""
     counts: dict[str, int] = {}
-    for function in doc.functions:
-        module = opt_str(function, "module")
+    for entry in entries:
+        module = opt_str(entry, "module")
         if module is not None:
             counts[module] = counts.get(module, 0) + 1
     return counts
@@ -741,7 +777,7 @@ def _function_counts(doc: _Model) -> dict[str, int]:
 
 def _param_text(param: JsonObject) -> str:
     """``name: type``, ``name?: type`` for an optional parameter (the form of ``graph describe
-    functions``)."""
+    functions`` and ``graph describe actions``)."""
     kind = req_str(param, "type")
     if kind == "ref":
         kind += f" {param.get('class')}"
@@ -749,7 +785,7 @@ def _param_text(param: JsonObject) -> str:
         kind += f" {param.get('enum')}"
     if param.get("many") is True:
         kind = f"list of {kind}"
-    optional = "" if param.get("default") is None else "?"
+    optional = "?" if param.get("default") is not None or param.get("optional") is True else ""
     return f"{req_str(param, 'name')}{optional}: {kind}"
 
 
@@ -828,6 +864,82 @@ def _module_functions(doc: _Model, module_id: str) -> list[str]:
     return ["", "## Functions", "", *_function_table(own), *_function_hint(doc)]
 
 
+def _action_summary(action: JsonObject) -> str:
+    """The summary, and that the action needs ``--reason`` when it does (saves a refusal)."""
+    summary = _plain(opt_str(action, "summary"))
+    return f"{summary} Needs `--reason`." if action.get("reason") == "required" else summary
+
+
+def _action_line(action: JsonObject) -> str:
+    call = f"{req_str(action, 'name')}({_signature(action)})"
+    return f"- {_code(call)}: {_action_summary(action)}"
+
+
+def _actions(doc: _Model) -> list[str]:
+    """Level 0: a few featured actions, how to find the rest and the dry-run rule (A11)."""
+    if not doc.actions:
+        return ["This graph has no published actions."]
+    name = doc.name
+    featured = [a for a in doc.actions if a.get("featured") is True][:ACTIONS_FEATURED_LIMIT]
+    lines = [
+        f"{len(doc.actions)} named actions; for a change use one before you write with the"
+        f" primitives. Dry run first: `graph do <action> --param <name>=<value> --graph {name}"
+        " --dry-run`, read what it will change, then run it without `--dry-run`.",
+    ]
+    if featured:
+        lines += ["", *[_action_line(a) for a in featured]]
+    lines += [
+        "",
+        f"More: `graph describe actions --module <module> --graph {name}`; find one:"
+        f" `graph describe search <text> --kind action --graph {name} --json`; preconditions and"
+        f" use: `graph describe action <action> --graph {name}`.",
+    ]
+    return lines
+
+
+def _action_table(actions: Sequence[JsonObject]) -> list[str]:
+    return _table(
+        ["Action", "Parameters", "Summary"],
+        [[_code(req_str(a, "name")), _signature(a) or "none", _action_summary(a)] for a in actions],
+    )
+
+
+def _action_hint(doc: _Model) -> list[str]:
+    return [
+        "",
+        f"Dry run first: `graph do <action> --param <name>=<value> --graph {doc.name}"
+        " --dry-run`, read what it will change, then run it without `--dry-run`;"
+        f" `graph describe action <action> --graph {doc.name}` gives its preconditions and when"
+        " to use it.",
+    ]
+
+
+def _actions_file(doc: _Model, stamp: str) -> str:
+    """``references/actions.md`` of a single-module graph."""
+    lines = [
+        stamp,
+        "",
+        f"# Actions of graph `{doc.name}`",
+        "",
+        f"Ontology `{doc.bundle}` {doc.version}. The live source is `graph describe actions"
+        f" --graph {doc.name} --json`; it wins when they differ.",
+        "",
+        *_action_table(doc.actions),
+        *_action_hint(doc),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _module_actions(doc: _Model, module_id: str) -> list[str]:
+    """The ``Actions`` section of a module page (none for a graph without actions)."""
+    if not doc.actions:
+        return []
+    own = [a for a in doc.actions if opt_str(a, "module") == module_id]
+    if not own:
+        return ["", "## Actions", "", "None."]
+    return ["", "## Actions", "", *_action_table(own), *_action_hint(doc)]
+
+
 def _model_pointer(doc: _Model) -> list[str]:
     if doc.modular:
         return [
@@ -852,6 +964,7 @@ _BLOCKS: Final[Mapping[str, Callable[[_Model], list[str]]]] = {
     "names": _names,
     "model": _model_pointer,
     "functions": _functions,
+    "actions": _actions,
 }
 
 
@@ -1218,4 +1331,5 @@ def _module_page(doc: _Model, module_id: str, stamp: str) -> str:
         else ["None."]
     )
     lines += _module_functions(doc, module_id)
+    lines += _module_actions(doc, module_id)
     return "\n".join(lines) + "\n"

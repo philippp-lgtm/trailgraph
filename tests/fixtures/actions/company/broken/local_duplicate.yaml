@@ -1,0 +1,10 @@
+schema: graph_cli.action/1
+name: local_duplicate
+module: organization
+summary: A probe.
+use_when: Testing.
+ops:
+  - {op: create, type: org:Role, local: role, attrs: {name: One}}
+  - {op: create, type: org:Role, local: role, attrs: {name: Two}}
+examples:
+  - request: A request.

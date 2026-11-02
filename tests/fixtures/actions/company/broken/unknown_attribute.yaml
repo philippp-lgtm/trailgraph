@@ -1,0 +1,14 @@
+schema: graph_cli.action/1
+name: unknown_attribute
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    summary: A person.
+ops:
+  - {op: update, id: $person, set: {nickname: Pat}}
+examples:
+  - request: A request.

@@ -23,7 +23,7 @@ invariant, K5).
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -64,7 +64,7 @@ MAX_QUERY_CHARS: Final = 2000
 MAX_FUNCTIONS: Final = 1000
 
 # Base types of a field that a parameter of the declared type can be compared with.
-_FITS: Final[dict[str, frozenset[str]]] = {
+FITS: Final[dict[str, frozenset[str]]] = {
     "string": frozenset({"string", "text", "iri"}),
     "enum": frozenset({"string", "text"}),
     "integer": frozenset({"integer", "decimal"}),
@@ -265,36 +265,7 @@ class _Compile:
     # Declaration
 
     def module(self) -> str | None:
-        own = [m for m in self.model.modules if m.id not in BUILTIN_MODULES]
-        wanted = self.defn.module
-        if wanted is None:
-            if len(own) > 1:
-                self.add(
-                    "function.module_required",
-                    "module",
-                    "the graph has several modules; name the module this function belongs to",
-                    expected=[m.id for m in own],
-                )
-            return own[0].id if len(own) == 1 else None
-        for info in self.model.modules:
-            if wanted in (info.id, info.prefix):
-                if info.id in BUILTIN_MODULES:
-                    self.add(
-                        "function.builtin_module",
-                        "module",
-                        f"module {wanted!r} is built in; a function belongs to a module "
-                        "of the graph",
-                        expected=[m.id for m in own],
-                    )
-                    return None
-                return info.id
-        self.add(
-            "function.unknown_module",
-            "module",
-            f"the graph has no module {wanted!r}",
-            expected=[m.id for m in own],
-        )
-        return None
+        return resolve_module(self.model, self.defn.module, "function", self.add)
 
     def parameters(self) -> None:
         for param in self.defn.params:
@@ -468,7 +439,7 @@ class _Compile:
             )
         if param.type == "ref" and used.field not in _REF_FIELDS:
             return "a ref can only be compared with id or alias"
-        if not set(used.datatypes) & _FITS[param.type]:
+        if not set(used.datatypes) & FITS[param.type]:
             return f"a {param.type} does not fit the field ({_describe_field(used)})"
         return None
 
@@ -595,6 +566,46 @@ class _Compile:
             ]
 
         return {"types": named(types), "relations": named(relations)}
+
+
+def _article(kind: str) -> str:
+    return "an" if kind[0] in "aeiou" else "a"
+
+
+def resolve_module(
+    model: CompiledModel, wanted: str | None, kind: str, add: Callable[..., None]
+) -> str | None:
+    """The id of the module a function or action belongs to (``<kind>.module_required``,
+    ``<kind>.builtin_module``, ``<kind>.unknown_module`` through ``add``)."""
+    own = [m for m in model.modules if m.id not in BUILTIN_MODULES]
+    if wanted is None:
+        if len(own) > 1:
+            add(
+                f"{kind}.module_required",
+                "module",
+                f"the graph has several modules; name the module this {kind} belongs to",
+                expected=[m.id for m in own],
+            )
+        return own[0].id if len(own) == 1 else None
+    for info in model.modules:
+        if wanted in (info.id, info.prefix):
+            if info.id in BUILTIN_MODULES:
+                add(
+                    f"{kind}.builtin_module",
+                    "module",
+                    f"module {wanted!r} is built in; {_article(kind)} {kind} belongs to a module "
+                    "of the graph",
+                    expected=[m.id for m in own],
+                )
+                return None
+            return info.id
+    add(
+        f"{kind}.unknown_module",
+        "module",
+        f"the graph has no module {wanted!r}",
+        expected=[m.id for m in own],
+    )
+    return None
 
 
 def _describe_field(used: FieldUse) -> str:

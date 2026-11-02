@@ -13,11 +13,11 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
 | `storage.files.index` | the disposable index: building and updating it, binding it to the tx log, its log digest, the view over it for readers and writers |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
-| `storage.files.functions_slot` | reading a graph's published function catalog (`functions/slot.json`, `functions/compiled/<hash>.json`, and with `sources=True` `functions/files/<hash>/<name>.yaml`); the app reads only the compiled document |
+| `storage.files.kinetic_slot` | reading a graph's published function or action catalog, one implementation for both kinds (`<kind>/slot.json`, `<kind>/compiled/<hash>.json`, and with `sources=True` `<kind>/files/<hash>/<name>.yaml`); the app reads only the compiled document |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 ## FileStore
 
@@ -92,10 +92,10 @@ POSIX only, local filesystems only.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
-  under their hash before), the function catalog's `slot.json` (its sources
-  and compiled document likewise), an installed policy. A failure before the rename leaves only the
+  under their hash before), the function and action catalogs' `slot.json` (their sources
+  and compiled documents likewise), an installed policy. A failure before the rename leaves only the
   staging state, which readers ignore.
-- Two published slots sit in a graph directory beside the manifest, each
+- Three published slots sit in a graph directory beside the manifest, each
   switched by one rename of its pointer file, with the content written once
   under its hash before and never changed:
   `skill/source.json` (`kind`, tree `hash`, `published_against`) with
@@ -106,6 +106,11 @@ POSIX only, local filesystems only.
   read only by `graph-admin`) and `functions/compiled/<compiled hash>.json`
   (the catalog `graph_cli.functions/1`, the only part the app reads). A
   reader checks the hashes on read; a damaged functions slot is
-  `functions.slot_invalid`. The slots are verified against the audit trail
-  ([Slot verification](audit.md#slot-verification)); the format of a
-  function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md).
+  `functions.slot_invalid`. The action catalog is the same structure in
+  `actions/` (`actions/slot.json` with `graph_cli.action_slot/1`, the sources
+  `actions/files/<hash>/<name>.yaml` and the compiled catalog
+  `graph_cli.action_catalog/1` in `actions/compiled/<compiled hash>.json`), a
+  separate slot so that a broken action never blocks publishing functions; a
+  damaged one is `actions.slot_invalid`. The slots are verified against the
+  audit trail ([Slot verification](audit.md#slot-verification)); the format of a
+  function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), that of an action file in the [actions authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md).

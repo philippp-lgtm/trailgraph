@@ -36,7 +36,9 @@ Write one when all of these hold:
 
 Do not write one for a single occasion, for a question the graph skill's
 recipes answer in one command, or for a change to data: functions never
-write (writes are not functions).
+write. A recurring write recipe (several ops, or a check of the current
+state first) is an action: see `authoring-graph-actions`. Functions and
+actions share one namespace per graph (`function.name_taken`).
 
 ## Where it lives
 

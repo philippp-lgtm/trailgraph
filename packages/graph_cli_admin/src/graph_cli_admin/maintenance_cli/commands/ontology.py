@@ -20,7 +20,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
 )
 from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
 from graph_cli_admin.services_admin import graphs, ontology
-from graph_cli_admin.services_admin.release import functions_affected, release
+from graph_cli_admin.services_admin.release import actions_affected, functions_affected, release
 
 SOURCE: Final = ParamSpec(
     "source", "directory", "Directory with the authored ontology.", required=True, positional=True
@@ -61,7 +61,11 @@ def diff_command(
         )
         old = ontology.pinned_model(ctx.catalog, entry)
         graph = graphs.envelope_graph(entry)
-        affected = functions_affected(ctx.catalog.read_functions(entry.id), new.model)
+        published = ctx.catalog.read_functions(entry.id)
+        affected = (
+            *functions_affected(published, new.model),
+            *actions_affected(ctx.catalog.read_actions(entry.id), published, new.model),
+        )
     else:
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
@@ -132,7 +136,8 @@ SPECS: Final = (
                 "--graph",
                 "graph_ref",
                 "Compare with the release this graph is pinned to; warns"
-                " (admin.functions_affected) about published functions the release would break.",
+                " (admin.functions_affected, admin.actions_affected) about published functions and"
+                " actions the release would break.",
                 keyword="graph_ref",
             ),
             DATA_ROOT,
@@ -148,7 +153,8 @@ SPECS: Final = (
         handler=diff_command,
         output=DIFF_OUTPUT,
         description="Reports whether the declared version bump suffices; release enforces it."
-        " With --graph, authorized maint.graph_configure on the graph.",
+        " With --graph, authorized maint.graph_configure on the graph; published functions and"
+        " actions the release would break are warnings.",
         remote="hooked",
     ),
     CommandSpec(
@@ -186,13 +192,14 @@ SPECS: Final = (
             "admin.release_exists",
             "admin.migration_required",
             "admin.functions_broken",
+            "admin.actions_broken",
         ),
         handler=release_command,
         output=RELEASE_OUTPUT,
         description="The version bump must cover the changes against the pinned release, and"
-        " every published function must still resolve under the new one (any bump:"
-        " admin.functions_broken; fix it with graph push); re-running a release that is already"
-        " pinned changes nothing.",
+        " every published function and action must still resolve under the new one (any bump:"
+        " admin.functions_broken, admin.actions_broken; fix it with graph push); re-running a"
+        " release that is already pinned changes nothing.",
         remote="hooked",
     ),
 )

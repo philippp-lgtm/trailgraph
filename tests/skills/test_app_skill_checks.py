@@ -49,6 +49,7 @@ ALLOWED_PLACEHOLDERS = {
     "<relation>",
     "<module>",
     "<function>",
+    "<action>",
     "<param>",
     "<state>",
     "<file>",
@@ -382,12 +383,13 @@ class TestStructure:
 
     def test_size_budgets(self) -> None:
         files = committed_files()
-        assert (
-            len(files["SKILL.md"].splitlines()) <= 218
-        )  # functions: command rows, guidance; lookup --for
+        # functions: command rows, guidance; lookup --for; actions: the do and two describe
+        # rows, the action guidance in the write step
+        assert len(files["SKILL.md"].splitlines()) <= 222
         for name, text in files.items():
             if name.startswith("references/"):
-                assert len(text.encode()) <= 40 * 1024, name
+                # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB
+                assert len(text.encode()) <= 44 * 1024, name
 
     def test_references_are_linked_both_ways(self) -> None:
         files = committed_files()

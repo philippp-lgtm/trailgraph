@@ -140,8 +140,15 @@ def test_modules_and_module_carry_functions_only_when_given() -> None:
     assert describe_module(ENTRY, MODEL, "company", FUNCTIONS)["module"]["functions"] == []
 
 
-def test_function_is_the_last_search_kind() -> None:
-    assert SEARCH_TERM_KINDS[-1] == "function"  # existing tie-breaks stay
+def test_function_follows_the_older_search_kinds() -> None:
+    assert SEARCH_TERM_KINDS[:6] == (  # existing tie-breaks stay
+        "type",
+        "relation",
+        "attribute",
+        "enum_value",
+        "state",
+        "function",
+    )
 
 
 def test_name_tiers_split_words_on_underscores() -> None:

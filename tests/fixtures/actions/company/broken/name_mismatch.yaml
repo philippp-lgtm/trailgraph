@@ -1,0 +1,18 @@
+schema: graph_cli.action/1
+name: another_name
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    summary: A person.
+  position:
+    type: ref
+    class: org:Position
+    summary: A position.
+ops:
+  - {op: link, id: $person, rel: org:holds, target: $position}
+examples:
+  - request: A request.

@@ -24,9 +24,11 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.data_errors", _C.INVALID, False, "The data has error findings."),
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.functions_invalid", _C.INVALID, False, "The function files are invalid."),
+    ErrorSpec("admin.actions_invalid", _C.INVALID, False, "The action files are invalid."),
     ErrorSpec(
         "admin.functions_broken", _C.REFUSED, False, "A published function would not resolve."
     ),
+    ErrorSpec("admin.actions_broken", _C.REFUSED, False, "A published action would not compile."),
     ErrorSpec(
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),
@@ -58,6 +60,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ),
     ErrorSpec(
         "admin.functions_affected", _C.WARNING, False, "A release would break published functions."
+    ),
+    ErrorSpec(
+        "admin.actions_affected", _C.WARNING, False, "A release would break published actions."
     ),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),

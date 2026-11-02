@@ -1,0 +1,133 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "modules": [
+    {
+      "id": "company",
+      "prefix": "co",
+      "version": "1.1.0",
+      "summary": "The company as a whole, the main module that brings its subject areas together and carries the release of the graph; it holds no terms of its own.",
+      "builtin": false,
+      "types": 0,
+      "relations": 0,
+      "actions": 0,
+      "links": []
+    },
+    {
+      "id": "core",
+      "prefix": "core",
+      "version": "1.0.0",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "builtin": true,
+      "types": 0,
+      "relations": 4,
+      "actions": 0,
+      "links": []
+    },
+    {
+      "id": "legal",
+      "prefix": "leg",
+      "version": "1.0.0",
+      "summary": "The legal entities of the group and who owns whom, and which entity employs people or runs units; not the internal structure of the company (organization) or the people (people).",
+      "builtin": false,
+      "types": 2,
+      "relations": 4,
+      "actions": 0,
+      "links": [
+        {
+          "module": "organization",
+          "out": 0,
+          "in": 1
+        },
+        {
+          "module": "people",
+          "out": 1,
+          "in": 1
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "prefix": "ops",
+      "version": "1.0.0",
+      "summary": "How work gets done, the processes, the instructions and policies that govern them, the trainings roles need and the tasks people carry out; not the structure of the company (organization) or the people (people).",
+      "builtin": false,
+      "types": 5,
+      "relations": 9,
+      "actions": 1,
+      "links": [
+        {
+          "module": "organization",
+          "out": 4,
+          "in": 0
+        },
+        {
+          "module": "people",
+          "out": 1,
+          "in": 1
+        }
+      ]
+    },
+    {
+      "id": "organization",
+      "prefix": "org",
+      "version": "1.0.0",
+      "summary": "The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations).",
+      "builtin": false,
+      "types": 6,
+      "relations": 6,
+      "actions": 2,
+      "links": [
+        {
+          "module": "legal",
+          "out": 1,
+          "in": 0
+        },
+        {
+          "module": "operations",
+          "out": 0,
+          "in": 4
+        },
+        {
+          "module": "people",
+          "out": 0,
+          "in": 1
+        }
+      ]
+    },
+    {
+      "id": "people",
+      "prefix": "ppl",
+      "version": "1.0.0",
+      "summary": "The people the company works with, employees and externals, and the identities they use in systems; not their positions or units (organization) or their work (operations).",
+      "builtin": false,
+      "types": 4,
+      "relations": 2,
+      "actions": 1,
+      "links": [
+        {
+          "module": "legal",
+          "out": 1,
+          "in": 1
+        },
+        {
+          "module": "operations",
+          "out": 1,
+          "in": 1
+        },
+        {
+          "module": "organization",
+          "out": 1,
+          "in": 0
+        }
+      ]
+    }
+  ]
+}

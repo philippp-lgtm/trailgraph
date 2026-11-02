@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.11.0",
+  "program_version": "0.12.0",
   "surface": "app",
   "global_options": [
     {
@@ -353,6 +353,144 @@
         2,
         3,
         4,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "action"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Describe one action: parameters, preconditions, operations and needed rights.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The action name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe action <action>",
+          "summary": "Everything about one action."
+        },
+        {
+          "command": "graph describe action <action> --json",
+          "summary": "The action as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "action.not_found",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "actions"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the actions of the graph with their parameters.",
+      "args": [],
+      "options": [
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--include-deprecated",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list deprecated actions."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe actions",
+          "summary": "The actions: name, parameters, summary."
+        },
+        {
+          "command": "graph describe actions --module <module> --include-deprecated",
+          "summary": "One module's actions, deprecated ones too."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
         5,
         6
       ],
@@ -958,7 +1096,7 @@
       "kind": "read",
       "surface": "model",
       "action": "read.describe",
-      "summary": "Search the ontology by text: types, relations, fields, enum values, states, functions.",
+      "summary": "Search the ontology by text: types, relations, fields, enum values, states, functions, actions.",
       "args": [
         {
           "name": "text",
@@ -981,7 +1119,8 @@
             "attribute",
             "enum_value",
             "state",
-            "function"
+            "function",
+            "action"
           ]
         },
         {
@@ -1027,6 +1166,10 @@
         {
           "command": "graph describe search <value> --kind function",
           "summary": "Only the named functions that fit the words."
+        },
+        {
+          "command": "graph describe search <value> --kind action",
+          "summary": "Only the actions that fit the words."
         }
       ],
       "errors": [
@@ -1190,6 +1333,129 @@
         1,
         2,
         3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "do"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": null,
+      "summary": "Run a named action of the graph: a reviewed write with typed parameters.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The action name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--param",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "name=value for a parameter of the action, read by its declared type.",
+          "pairs": "multimap",
+          "pair_values": "text"
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Check the preconditions and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (some actions require it)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph do <action> --param key=<value> --dry-run --json",
+          "summary": "See what it changes."
+        },
+        {
+          "command": "graph do <action> --param key=<value> --json",
+          "summary": "Run it."
+        },
+        {
+          "command": "graph do <action> --param key=<id> --reason <value> --json",
+          "summary": "Run an action that needs a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "access.reason_required",
+        "action.not_found",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.outdated",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
         5,
         6
       ],
@@ -2087,7 +2353,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter)."
+          "summary": "Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter)."
         },
         {
           "name": "--for-source",
@@ -2181,6 +2447,7 @@
       "errors": [
         "access.denied",
         "access.project_mismatch",
+        "action.parameter_unknown",
         "backend.unavailable",
         "config.forbidden_key",
         "config.invalid",
@@ -3726,6 +3993,56 @@
       "code": "access.reason_required",
       "category": "denied",
       "exit": 3
+    },
+    {
+      "code": "action.not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "action.nothing_to_do",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "action.parameter_invalid",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.parameter_missing",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.parameter_type",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "action.parameter_unknown",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.precondition_failed",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "action.reason_required",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.stale",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "actions.slot_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "audit.unavailable",

@@ -19,10 +19,10 @@ recording changes to them. The rules below say what the model itself cannot.
 ## Rules for you
 
 - A person is not a job. Positions outlive their holders and the org chart is made of
-  positions: to record a new holder, remove the old `org:holds` edge (`graph unlink`) and
-  add the new one with its `since` date. Never rename a position after its holder. When an
-  employee leaves, remove the `org:holds` and `leg:employed_by` edges first, then move the
-  employee to `left`: the graph refuses a leaver who still holds a position.
+  positions: a new holder replaces the `org:holds` edge of the old one, with its `since`
+  date. Never rename a position after its holder. A leaver keeps no position and no
+  employer: the graph refuses a leaver who still holds a position. The actions below carry
+  these steps.
 - Put a new kind of fact in the area that answers its question: what a person is or
   uses (people), where it sits and who holds it (organization), how work is done or what
   is binding (operations), who owns whom or employs whom (legal). When two areas seem
@@ -61,7 +61,9 @@ More recipes: [references/recipes.md](references/recipes.md).
 
 ## Writing
 
-Write several linked entities as one change set and check it first:
+<!-- graph_cli:block actions -->
+
+When no action fits, write several linked entities as one change set and check it first:
 
 ```sh
 graph apply <file> --graph company --dry-run

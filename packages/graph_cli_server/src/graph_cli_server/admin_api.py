@@ -87,6 +87,8 @@ GATE: Final = ("maint.audit_read", "installation")  # every admin request: a mai
 PROJECT_COMMANDS: Final = frozenset(
     {
         "files verify",
+        "graph actions publish",
+        "graph actions show",
         "graph check",
         "graph functions publish",
         "graph functions show",

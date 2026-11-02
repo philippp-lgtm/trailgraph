@@ -1,0 +1,17 @@
+schema: graph_cli.action/1
+name: move_item
+summary: A probe with an unknown relation.
+use_when: Testing.
+params:
+  item:
+    type: ref
+    class: inv:Item
+    summary: The item that moves.
+  location:
+    type: ref
+    class: inv:Location
+    summary: The location the item moves to.
+ops:
+  - {op: link, id: $item, rel: inv:stored_in, target: $location}
+examples:
+  - request: A request.

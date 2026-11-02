@@ -13,7 +13,13 @@ from support.skills import GRAPH_SKILL_NAME, render_inputs
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.skills.graph_skill import FEATURED_LIMIT, L0_BASE, L0_BUDGET, render_graph_skill
+from graph_cli.skills.graph_skill import (
+    ACTIONS_FEATURED_LIMIT,
+    FEATURED_LIMIT,
+    L0_BASE,
+    L0_BUDGET,
+    render_graph_skill,
+)
 from graph_cli.skills.template import parse_template
 from graph_cli.skills.tree import MAX_TOTAL_BYTES, SKILL_FILE, read_tree
 
@@ -134,18 +140,49 @@ def catalog(modules: int, per_module: int, featured: int = FEATURED_LIMIT) -> di
     return {"schema": "graph_cli.functions/1", "functions": entries}
 
 
+def action_catalog(
+    modules: int, per_module: int, featured: int = ACTIONS_FEATURED_LIMIT
+) -> dict[str, Any]:
+    """A compiled action catalog of ``per_module`` actions in each of the first ``modules``
+    areas, the first ``featured`` of them featured, with the longest summary the format
+    allows and a signature of two parameters."""
+    entries = []
+    for index in range(modules):
+        for number in range(per_module):
+            entries.append(
+                {
+                    "name": f"action_{index:02d}_{number:03d}",
+                    "module": _module_id(index),
+                    "summary": SUMMARY_100,
+                    "status": "active",
+                    "featured": len(entries) < featured,
+                    "params": [
+                        {"name": "unit", "type": "ref", "class": "a00:Thing000", "many": False}
+                        | {"enum": None, "default": None, "summary": "The unit."},
+                        {"name": "since", "type": "date", "class": None, "many": False}
+                        | {"enum": None, "default": None, "summary": "From when."},
+                    ],
+                }
+            )
+    return {"schema": "graph_cli.action_catalog/1", "actions": entries}
+
+
 def skill_md(model: CompiledModel, functions: dict[str, Any] | None = None) -> bytes:
     """``SKILL.md`` alone: the reference pages of a model this large go over the size limit of
     a whole skill tree, which ``render_checked`` would report."""
     return rendered(model, functions)[SKILL_FILE].encode()
 
 
-def rendered(model: CompiledModel, functions: dict[str, Any] | None = None) -> dict[str, str]:
+def rendered(
+    model: CompiledModel,
+    functions: dict[str, Any] | None = None,
+    actions: dict[str, Any] | None = None,
+) -> dict[str, str]:
     files, problems = read_tree(TEMPLATE)
     assert problems == []
     template, problems = parse_template(files)
     assert problems == [] and template is not None
-    documents, graph = render_inputs(model, functions=functions)
+    documents, graph = render_inputs(model, functions=functions, actions=actions)
     return render_graph_skill(template, documents, graph)
 
 
@@ -169,13 +206,35 @@ def test_skill_md_with_functions_stays_under_the_budget() -> None:
     assert size <= L0_BUDGET, f"SKILL.md has {size} bytes"
 
 
-def with_block(model: CompiledModel, functions: dict[str, Any]) -> bytes:
+def with_block(
+    model: CompiledModel,
+    functions: dict[str, Any] | None = None,
+    actions: dict[str, Any] | None = None,
+) -> bytes:
     files, _ = read_tree(TEMPLATE)
-    files[SKILL_FILE] += b"\n## Functions\n\n<!-- graph_cli:block functions -->\n"
+    if functions is not None:
+        files[SKILL_FILE] += b"\n## Functions\n\n<!-- graph_cli:block functions -->\n"
+    if actions is not None:
+        files[SKILL_FILE] += b"\n## Actions\n\n<!-- graph_cli:block actions -->\n"
     template, problems = parse_template(files)
     assert problems == [] and template is not None
-    documents, graph = render_inputs(model, functions=functions)
+    documents, graph = render_inputs(model, functions=functions, actions=actions)
     return render_graph_skill(template, documents, graph)[SKILL_FILE].encode()
+
+
+def test_skill_md_with_functions_and_actions_stays_under_the_budget() -> None:
+    """50 modules x 20 functions x 10 actions, 12 and 8 featured: both blocks and both
+    columns on top of the modular base."""
+    size = len(with_block(synthetic_model(50, 25), catalog(50, 20), action_catalog(50, 10)))
+    assert size <= L0_BUDGET, f"SKILL.md has {size} bytes"
+
+
+def test_skill_md_does_not_grow_with_the_actions() -> None:
+    model = synthetic_model(5, 10)
+    small = with_block(model, actions=action_catalog(5, 10))
+    large = with_block(model, actions=action_catalog(5, 19))
+    assert len(small) == len(large)  # the same eight featured, counts of equal width
+    assert b"action_04_018" not in large  # not featured: on the module page only
 
 
 def test_skill_md_does_not_grow_with_the_functions() -> None:
@@ -184,6 +243,16 @@ def test_skill_md_does_not_grow_with_the_functions() -> None:
     large = with_block(model, catalog(5, 19))
     assert len(small) == len(large)  # the same twelve featured, counts of equal width
     assert b"function_04_018" not in large  # not featured: on the module page only
+
+
+def test_the_reference_tree_of_a_thousand_actions_fits() -> None:
+    """1,000 actions (20 modules x 50) on the pages of a model of 20 modules, as for functions.
+    Both catalogs at their limit together do not fit the tree limit (about 400 KB of 256 KB);
+    a graph in that range needs a reference page below the module pages."""
+    files = rendered(synthetic_model(20, 3), actions=action_catalog(20, 50))
+    total = sum(len(text.encode()) for text in files.values())
+    assert total <= MAX_TOTAL_BYTES, f"{total} bytes of {MAX_TOTAL_BYTES}"
+    assert files["references/modules/area_07.md"].count("| `action_07_") == 50
 
 
 def test_the_reference_tree_of_a_thousand_functions_fits() -> None:

@@ -165,6 +165,24 @@ BROKEN: dict[str, tuple[Callable[[], Event], Callable[[Event], None], str]] = {
     "deny_on_ok": (intent, _set("authz.decisions", denial()["authz"]["decisions"]), "only denied"),  # type: ignore[index]
     "denial_code": (denial, _set("result.code", "access.denied"), "needs a deny decision"),
     "request": (intent, _set("request.args_digest", "abc"), "request is not"),
+    "request_extra_key": (intent, _set("request.params", {}), "request is not"),
+    "action_shape": (intent, _set("request.action", {"name": "a_b"}), "request.action is not"),
+    "action_type": (intent, _set("request.action", "assign"), "request.action is not"),
+    "action_name": (
+        intent,
+        _set("request.action", {"name": "Bad-Name", "hash": H1}),
+        "request.action is not",
+    ),
+    "action_hash": (
+        intent,
+        _set("request.action", {"name": "assign_position", "hash": "abc"}),
+        "request.action is not",
+    ),
+    "action_extra": (
+        intent,
+        _set("request.action", {"name": "assign_position", "hash": H1, "x": 1}),
+        "request.action is not",
+    ),
     "graph_missing": (intent, _set("graph", DELETE), "needs graph"),
     "graph_other": (intent, _set("graph.id", ENTITY), "graph.id differs"),
     "graph_shape": (intent, _set("graph.ontology", DELETE), "graph is not"),
@@ -193,6 +211,16 @@ def test_each_shape_rule(name: str) -> None:
     mutate(event)
     problems = event_problems(event)
     assert any(expected in p for p in problems), problems
+
+
+def test_a_request_may_name_its_action() -> None:
+    event = intent()
+    event["request"] = {
+        "command": "do",
+        "args_digest": H2,
+        "action": {"name": "assign_position", "hash": H3},
+    }
+    assert event_problems(event) == []
 
 
 def test_intent_classification() -> None:

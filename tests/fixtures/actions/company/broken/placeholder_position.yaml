@@ -1,0 +1,21 @@
+schema: graph_cli.action/1
+name: placeholder_position
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    summary: A person.
+  position:
+    type: ref
+    class: org:Position
+    summary: A position.
+  state:
+    type: string
+    summary: A state.
+ops:
+  - {op: transition, id: $person, to: $state}
+examples:
+  - request: A request.

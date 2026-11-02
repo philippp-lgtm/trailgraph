@@ -1,0 +1,33 @@
+schema: graph_cli.action/1
+name: hand_over_position
+module: organization
+summary: Replace the current holder of a position by another person, from a date.
+use_when: >-
+  A position that somebody holds gets a new holder: succession, a swap, a handover.
+  Not for staffing a vacant position: use assign_position.
+params:
+  position:
+    type: ref
+    class: org:Position
+    summary: The position that changes hands.
+  person:
+    type: ref
+    class: ppl:Person
+    summary: The new holder.
+  since:
+    type: date
+    summary: Date the new holder takes over.
+    required: false
+preconditions:
+  - id: position_held
+    on: position
+    summary: Somebody holds the position; use assign_position for a vacant one.
+    require:
+      - count: {rel: holds, direction: in, where: {record_status: [active]}}
+        minimum_value: 1
+ops:
+  - {op: unlink, id: $position, rel: org:holds, direction: in, all: true}
+  - {op: link, id: $person, rel: org:holds, target: $position, qualifiers: {since: $since}}
+examples:
+  - request: The head of the support team hands the lead position over to a colleague.
+featured: true

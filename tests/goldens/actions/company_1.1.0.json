@@ -1,0 +1,576 @@
+{
+  "actions": [
+    {
+      "examples": [
+        {
+          "request": "The new recruiter starts as the support lead on the first of March."
+        }
+      ],
+      "featured": true,
+      "hash": "sha256:4e62b02715f95607af92be50e057a80045aaba46e473a018592978d9664629e9",
+      "module": "organization",
+      "name": "assign_position",
+      "needs": [
+        {
+          "action": "write.link",
+          "type": "ppl:Person"
+        }
+      ],
+      "ops": [
+        {
+          "id": "$person",
+          "op": "link",
+          "qualifiers": {
+            "since": "$since"
+          },
+          "rel": "org:holds",
+          "target": "$position"
+        }
+      ],
+      "params": [
+        {
+          "class": "ppl:Person",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "person",
+          "summary": "Who takes over the position.",
+          "type": "ref"
+        },
+        {
+          "class": "org:Position",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "position",
+          "summary": "The vacant position.",
+          "type": "ref"
+        },
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "since",
+          "summary": "Date the person takes over.",
+          "type": "date"
+        }
+      ],
+      "preconditions": [
+        {
+          "expr": {
+            "in": [
+              {
+                "attr": "status"
+              },
+              {
+                "const": [
+                  "planned",
+                  "active"
+                ]
+              }
+            ]
+          },
+          "id": "position_open",
+          "on": "position",
+          "summary": "The position is planned or active, not abolished."
+        },
+        {
+          "expr": {
+            "eq": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "org:holds",
+                  "where": {
+                    "record_status": [
+                      "active"
+                    ]
+                  }
+                }
+              },
+              {
+                "const": 0
+              }
+            ]
+          },
+          "id": "position_vacant",
+          "on": "position",
+          "summary": "Nobody holds the position; use hand_over_position to replace a holder."
+        }
+      ],
+      "reason": "optional",
+      "replaced_by": null,
+      "source": {
+        "ops": [
+          {
+            "id": "$person",
+            "op": "link",
+            "qualifiers": {
+              "since": "$since"
+            },
+            "rel": "org:holds",
+            "target": "$position"
+          }
+        ],
+        "preconditions": [
+          {
+            "id": "position_open",
+            "on": "position",
+            "require": [
+              {
+                "attr": "status",
+                "equals_string_in": [
+                  "planned",
+                  "active"
+                ]
+              }
+            ],
+            "summary": "The position is planned or active, not abolished."
+          },
+          {
+            "id": "position_vacant",
+            "on": "position",
+            "require": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "holds",
+                  "where": {
+                    "record_status": [
+                      "active"
+                    ]
+                  }
+                },
+                "equals_number": 0
+              }
+            ],
+            "summary": "Nobody holds the position; use hand_over_position to replace a holder."
+          }
+        ]
+      },
+      "status": "active",
+      "summary": "Record that a person takes over a position nobody holds, from a date.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Someone starts in, joins, takes over or is appointed to a job, a role in the org chart or a unit; staffing a vacant position. Not for replacing the current holder: use hand_over_position."
+    },
+    {
+      "examples": [
+        {
+          "request": "Ask the new recruiter to prepare the onboarding checklist by the end of the week."
+        }
+      ],
+      "featured": false,
+      "hash": "sha256:041a34de8d9a018137e9e3d4c737bc8bd6dae5fc6ac933b56a712a21ea6a8d9b",
+      "module": "operations",
+      "name": "create_task",
+      "needs": [
+        {
+          "action": "write.create",
+          "type": "ops:Task"
+        }
+      ],
+      "ops": [
+        {
+          "attrs": {
+            "due_on": "$due",
+            "title": "$title"
+          },
+          "edges": [
+            {
+              "rel": "ops:assigned_to",
+              "target": "$assignee"
+            }
+          ],
+          "local": "task",
+          "op": "create",
+          "type": "ops:Task"
+        }
+      ],
+      "params": [
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "title",
+          "summary": "What has to be done.",
+          "type": "string"
+        },
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "due",
+          "optional": true,
+          "summary": "Date the task is due, when there is one.",
+          "type": "date"
+        },
+        {
+          "class": "ppl:Person",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "assignee",
+          "summary": "The person who has to do the task.",
+          "type": "ref"
+        }
+      ],
+      "preconditions": [],
+      "reason": "optional",
+      "replaced_by": null,
+      "source": {
+        "ops": [
+          {
+            "attrs": {
+              "due_on": "$due",
+              "title": "$title"
+            },
+            "edges": [
+              {
+                "rel": "ops:assigned_to",
+                "target": "$assignee"
+              }
+            ],
+            "local": "task",
+            "op": "create",
+            "type": "ops:Task"
+          }
+        ],
+        "preconditions": []
+      },
+      "status": "active",
+      "summary": "Open a task for a person, optionally with a due date.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "ops:assigned_to",
+            "module": "operations"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ops:Task",
+            "module": "operations"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Somebody needs to remember a piece of work: a follow-up or a to-do for a person. Creates the task and assigns it."
+    },
+    {
+      "examples": [
+        {
+          "request": "The head of the support team hands the lead position over to a colleague."
+        }
+      ],
+      "featured": true,
+      "hash": "sha256:f3d5a5b3c287274b2bc60192bdf7d18c7b335b235ae4b2b459234dd99a1ebbd4",
+      "module": "organization",
+      "name": "hand_over_position",
+      "needs": [
+        {
+          "action": "write.link",
+          "type": "ppl:Person"
+        },
+        {
+          "action": "write.unlink",
+          "type": "ppl:Person"
+        }
+      ],
+      "ops": [
+        {
+          "all": true,
+          "direction": "in",
+          "id": "$position",
+          "op": "unlink",
+          "rel": "org:holds"
+        },
+        {
+          "id": "$person",
+          "op": "link",
+          "qualifiers": {
+            "since": "$since"
+          },
+          "rel": "org:holds",
+          "target": "$position"
+        }
+      ],
+      "params": [
+        {
+          "class": "org:Position",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "position",
+          "summary": "The position that changes hands.",
+          "type": "ref"
+        },
+        {
+          "class": "ppl:Person",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "person",
+          "summary": "The new holder.",
+          "type": "ref"
+        },
+        {
+          "class": null,
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "since",
+          "optional": true,
+          "summary": "Date the new holder takes over.",
+          "type": "date"
+        }
+      ],
+      "preconditions": [
+        {
+          "expr": {
+            "ge": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "org:holds",
+                  "where": {
+                    "record_status": [
+                      "active"
+                    ]
+                  }
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          },
+          "id": "position_held",
+          "on": "position",
+          "summary": "Somebody holds the position; use assign_position for a vacant one."
+        }
+      ],
+      "reason": "optional",
+      "replaced_by": null,
+      "source": {
+        "ops": [
+          {
+            "all": true,
+            "direction": "in",
+            "id": "$position",
+            "op": "unlink",
+            "rel": "org:holds"
+          },
+          {
+            "id": "$person",
+            "op": "link",
+            "qualifiers": {
+              "since": "$since"
+            },
+            "rel": "org:holds",
+            "target": "$position"
+          }
+        ],
+        "preconditions": [
+          {
+            "id": "position_held",
+            "on": "position",
+            "require": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "holds",
+                  "where": {
+                    "record_status": [
+                      "active"
+                    ]
+                  }
+                },
+                "minimum_value": 1
+              }
+            ],
+            "summary": "Somebody holds the position; use assign_position for a vacant one."
+          }
+        ]
+      },
+      "status": "active",
+      "summary": "Replace the current holder of a position by another person, from a date.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Person",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "A position that somebody holds gets a new holder: succession, a swap, a handover. Not for staffing a vacant position: use assign_position."
+    },
+    {
+      "examples": [
+        {
+          "request": "A colleague from the sales team left the company at the end of the month."
+        }
+      ],
+      "featured": true,
+      "hash": "sha256:ebf52a17ea0e793091c1fdfdffb49096d3499a91565e24582e118ff608a7e7f2",
+      "module": "people",
+      "name": "offboard_employee",
+      "needs": [
+        {
+          "action": "write.transition",
+          "type": "ppl:Employee"
+        },
+        {
+          "action": "write.unlink",
+          "type": "ppl:Employee"
+        }
+      ],
+      "ops": [
+        {
+          "all": true,
+          "direction": "out",
+          "id": "$employee",
+          "op": "unlink",
+          "rel": "org:holds"
+        },
+        {
+          "all": true,
+          "direction": "out",
+          "id": "$employee",
+          "op": "unlink",
+          "rel": "leg:employed_by"
+        },
+        {
+          "id": "$employee",
+          "op": "transition",
+          "to": "left"
+        }
+      ],
+      "params": [
+        {
+          "class": "ppl:Employee",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "employee",
+          "summary": "The employee who leaves.",
+          "type": "ref"
+        }
+      ],
+      "preconditions": [
+        {
+          "expr": {
+            "in": [
+              {
+                "attr": "status"
+              },
+              {
+                "const": [
+                  "onboarding",
+                  "active"
+                ]
+              }
+            ]
+          },
+          "id": "not_left_yet",
+          "on": "employee",
+          "summary": "The employee has not left already."
+        }
+      ],
+      "reason": "required",
+      "replaced_by": null,
+      "source": {
+        "ops": [
+          {
+            "all": true,
+            "direction": "out",
+            "id": "$employee",
+            "op": "unlink",
+            "rel": "org:holds"
+          },
+          {
+            "all": true,
+            "id": "$employee",
+            "op": "unlink",
+            "rel": "leg:employed_by"
+          },
+          {
+            "id": "$employee",
+            "op": "transition",
+            "to": "left"
+          }
+        ],
+        "preconditions": [
+          {
+            "id": "not_left_yet",
+            "on": "employee",
+            "require": [
+              {
+                "attr": "status",
+                "equals_string_in": [
+                  "onboarding",
+                  "active"
+                ]
+              }
+            ],
+            "summary": "The employee has not left already."
+          }
+        ]
+      },
+      "status": "active",
+      "summary": "Record that an employee has left; remove their positions and employer first.",
+      "touches": {
+        "relations": [
+          {
+            "curie": "leg:employed_by",
+            "module": "legal"
+          },
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ppl:Employee",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "An employee leaves the company or their employment ends. Removes the positions they hold and their employer link, then moves the employee to the state left."
+    }
+  ],
+  "schema": "graph_cli.action_catalog/1"
+}

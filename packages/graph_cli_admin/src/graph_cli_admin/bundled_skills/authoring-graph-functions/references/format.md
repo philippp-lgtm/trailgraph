@@ -118,6 +118,7 @@ push) and reports all problems together as `admin.functions_invalid`. The
 | the query | its own errors (`query.syntax`, `query.unbound_variable`, `term.unknown`, `query.ambiguous_term`, ...) and `function.pattern_impossible`: a relationship pattern whose ends no domain and range of the relation allow (it would match nothing); `details.connecting` shows what connects the types |
 | the result | `function.returns_star`, `function.returns_mismatch` |
 | replacement | `function.replaced_by_invalid` (target missing, deprecated or itself) |
+| the namespace | `function.name_taken` (the name is a published action of the graph; functions and actions share one namespace) |
 | size | `function.query_too_long` (2,000 characters), `function.too_many_functions` (1,000 per graph) |
 
 Not checked: enum literals and `labels()`/`type()` string literals inside

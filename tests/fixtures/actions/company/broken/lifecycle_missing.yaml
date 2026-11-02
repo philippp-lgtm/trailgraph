@@ -1,0 +1,14 @@
+schema: graph_cli.action/1
+name: lifecycle_missing
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  role:
+    type: ref
+    class: org:Role
+    summary: A role.
+ops:
+  - {op: transition, id: $role, to: active}
+examples:
+  - request: A request.

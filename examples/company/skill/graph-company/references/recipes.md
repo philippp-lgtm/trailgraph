@@ -23,9 +23,3 @@ Check a state change before making it; the answer names the guard that would ref
 ```sh
 graph transition <id> <state> --graph company --dry-run
 ```
-
-Record who holds a position, with the date the person took over:
-
-```sh
-graph link <person id> org:holds <position id> --qualifier since=<date> --graph company
-```

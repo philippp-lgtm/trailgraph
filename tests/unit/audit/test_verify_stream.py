@@ -159,6 +159,23 @@ def test_malformed_event() -> None:
     assert "missing key 'request'" in report.findings[0].message
 
 
+def test_a_request_may_name_an_action_but_only_well_formed() -> None:
+    lines = stream(2)
+    named = {"name": "assign_position", "hash": "sha256:" + "d" * 64}
+    body = _body(lines[1])
+    body["request"] = {**body["request"], "action": named}  # type: ignore[dict-item]
+    assert verify(_append(lines, body)).findings == ()
+    for broken in ({"name": "assign_position"}, {**named, "hash": "x"}, "assign_position"):
+        body["request"] = {**body["request"], "action": broken}  # type: ignore[dict-item]
+        report = verify(_append(lines, body))
+        assert codes_of(report) == [(codes.EVENT_MALFORMED, 3)]
+        assert "request.action is not {name, hash}" in report.findings[0].message
+    edited = doc(_append(lines, body)[-1])
+    edited["request"] = {**edited["request"], "action": named}  # type: ignore[dict-item]
+    report = verify([*lines, jsonl_line(edited)])  # an edit that was not rehashed
+    assert (codes.HASH_MISMATCH, 3) in codes_of(report)
+
+
 def test_unknown_action_is_a_warning() -> None:
     lines = stream(2)
     body = _body(lines[1])

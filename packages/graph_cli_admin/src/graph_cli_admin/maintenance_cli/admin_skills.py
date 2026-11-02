@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 PROGRAM: Final = "graph-admin"
 BUNDLED: Final = Path(graph_cli_admin.__file__).parent / "bundled_skills"
 NAMES: Final = (
+    "authoring-graph-actions",
     "authoring-graph-functions",
     "authoring-graph-skills",
     "maintaining-graphs",

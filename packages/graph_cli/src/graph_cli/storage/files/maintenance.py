@@ -10,7 +10,8 @@ point: ``graphs/.tmp-<id>`` -> ``graphs/<id>`` (graph create, under the
 registry lock ``<root>/.lock``), ``ontology/.tmp-<version>`` ->
 ``ontology/<version>``, ``manifest.toml.tmp`` -> ``manifest.toml`` and
 ``skill/source.json.tmp`` -> ``skill/source.json``,
-``functions/slot.json.tmp`` -> ``functions/slot.json``, ``policy.json.tmp`` ->
+``functions/slot.json.tmp`` -> ``functions/slot.json`` (and the same for ``actions/``),
+``policy.json.tmp`` ->
 ``policy.json`` (under the graph lock, after the intent event) and
 ``policy/installation.json.tmp`` -> ``policy/installation.json`` (under the
 registry lock, after the installation event). A failure before the rename
@@ -28,7 +29,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import (
@@ -47,11 +48,12 @@ from graph_cli.kernel.ports.audit import (
     graph_stream,
 )
 from graph_cli.kernel.ports.catalog import (
-    FunctionsSlot,
+    KineticSlot,
     ManifestData,
     SkillSlot,
-    functions_hash,
+    SlotKind,
     skill_hash,
+    sources_hash,
 )
 from graph_cli.kernel.ports.storage import (
     CommitResult,
@@ -77,9 +79,9 @@ from graph_cli.storage.files.durable import (
     write_temp,
     write_tree,
 )
-from graph_cli.storage.files.functions_slot import read_functions
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.index import INDEX_ERRORS, TxSpan, index_difference
+from graph_cli.storage.files.kinetic_slot import read_slot
 from graph_cli.storage.files.layout import (
     AUDIT_SEGMENT_PREFIX,
     DEFAULT_SEGMENT_BYTES,
@@ -469,26 +471,37 @@ class FileMaintenanceSession:
         except OSError as exc:
             raise _unavailable("cannot publish the skill", exc) from exc
 
-    def read_functions(self) -> FunctionsSlot | None:
+    def read_functions(self) -> KineticSlot | None:
         self._check_open()
-        return read_functions(self._store.layout, sources=True)
+        return read_slot(self._store.layout, "functions", sources=True)
 
-    def replace_functions(self, slot: FunctionsSlot, receipt: AuditReceipt) -> None:
-        """Publish ``functions/`` (K6): write the sources tree and the compiled catalog once
-        under their hashes, then switch ``slot.json`` with one rename (the commit point);
-        unreferenced trees and compiled files go last."""
+    def replace_functions(self, slot: KineticSlot, receipt: AuditReceipt) -> None:
+        self._replace_kinetic("functions", slot, receipt)
+
+    def read_actions(self) -> KineticSlot | None:
+        self._check_open()
+        return read_slot(self._store.layout, "actions", sources=True)
+
+    def replace_actions(self, slot: KineticSlot, receipt: AuditReceipt) -> None:
+        self._replace_kinetic("actions", slot, receipt)
+
+    def _replace_kinetic(self, kind: SlotKind, slot: KineticSlot, receipt: AuditReceipt) -> None:
+        """Publish ``functions/`` (K6) or ``actions/`` (A8): write the sources tree and the
+        compiled catalog once under their hashes, then switch ``slot.json`` with one rename
+        (the commit point); unreferenced trees and compiled files go last."""
         store = self._store
         bad = sorted(name for name in slot.files if not _is_source_name(name))
         if (
-            bad
-            or functions_hash(slot.files) != slot.hash
+            slot.kind != kind
+            or bad
+            or sources_hash(slot.files) != slot.hash
             or hash_value(dict(slot.compiled)) != slot.compiled_hash
         ):
-            raise GraphCliError("internal.error", f"bad functions slot: {bad or 'hash or files'}")
+            raise GraphCliError("internal.error", f"bad {kind} slot: {bad or 'hash or files'}")
         self._writer().claim_receipt(receipt)
         layout = store.layout
-        tree = layout.functions_files(slot.hash)
-        compiled = layout.functions_compiled(slot.compiled_hash)
+        tree = layout.kinetic_files(kind, slot.hash)
+        compiled = layout.kinetic_compiled(kind, slot.compiled_hash)
         try:
             ensure_dir(tree.parent, store.syncer)
             ensure_dir(compiled.parent, store.syncer)
@@ -503,16 +516,18 @@ class FileMaintenanceSession:
                 temp = write_temp(compiled, pretty_bytes(slot.compiled), store.syncer)
                 os.replace(temp, compiled)
                 store.syncer.sync_dir(compiled.parent)
-            temp = write_temp(layout.functions_slot, pretty_bytes(slot.slot_json()), store.syncer)
-            fire(store.faults, CrashPoint.FUNCTIONS_BEFORE_RENAME)
-            os.replace(temp, layout.functions_slot)
-            store.syncer.sync_dir(layout.functions)
+            temp = write_temp(
+                layout.kinetic_slot(kind), pretty_bytes(slot.slot_json()), store.syncer
+            )
+            fire(store.faults, _BEFORE_RENAME[kind])
+            os.replace(temp, layout.kinetic_slot(kind))
+            store.syncer.sync_dir(layout.kinetic(kind))
             for keep, directory in ((tree, tree.parent), (compiled, compiled.parent)):
                 for name in sorted(os.listdir(directory)):
                     if name != keep.name:
                         _remove(directory / name)
         except OSError as exc:
-            raise _unavailable("cannot publish the functions", exc) from exc
+            raise _unavailable(f"cannot publish the {kind}", exc) from exc
 
     def read_policy(self) -> bytes | None:
         """The graph's installed policy as stored (B6.14)."""
@@ -832,6 +847,12 @@ def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None, list[TxSpa
             spans,
         )
     return view, None, spans
+
+
+_BEFORE_RENAME: Final = {
+    "functions": CrashPoint.FUNCTIONS_BEFORE_RENAME,
+    "actions": CrashPoint.ACTIONS_BEFORE_RENAME,
+}
 
 
 def _is_source_name(name: str) -> bool:

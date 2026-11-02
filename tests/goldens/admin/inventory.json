@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.11.0",
+  "program_version": "0.12.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -520,6 +520,156 @@
     {
       "path": [
         "graph",
+        "actions",
+        "publish"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Publish DIR as the action catalog of graph REF (name or id).",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "An actions folder: one <name>.yaml per action."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the actions change; recorded in the audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Check and show the change without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph actions publish <graph> <dir>",
+          "summary": "Publish the actions."
+        },
+        {
+          "command": "graph-admin graph actions publish <graph> <dir> --dry-run --json",
+          "summary": "Check them and show the change, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.actions_invalid",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.archived",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
+        "actions",
+        "show"
+      ],
+      "kind": "read",
+      "surface": "meta",
+      "action": "maint.graph_configure",
+      "summary": "Show the published action catalog of graph REF.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph actions show <graph>",
+          "summary": "List the published actions."
+        },
+        {
+          "command": "graph-admin graph actions show <graph> --json",
+          "summary": "The same, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
         "check"
       ],
       "kind": "read",
@@ -570,6 +720,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.actions_broken",
         "admin.data_errors",
         "admin.functions_broken",
         "admin.model_invalid",
@@ -908,7 +1059,7 @@
       "kind": "read",
       "surface": "model",
       "action": "maint.graph_configure",
-      "summary": "Write graph REF's ontology release, skill and functions into DIR to edit.",
+      "summary": "Write graph REF's ontology release, skill, functions and actions into DIR.",
       "args": [
         {
           "name": "ref",
@@ -938,7 +1089,7 @@
           "type": "flag",
           "required": false,
           "repeatable": false,
-          "summary": "Replace the version, skill and functions directories and base file if they exist."
+          "summary": "Replace the version, skill, functions and actions directories and base file if they exist."
         },
         {
           "name": "--data-root",
@@ -960,6 +1111,7 @@
       ],
       "errors": [
         "access.denied",
+        "actions.slot_invalid",
         "admin.remote_mode",
         "admin.source_exists",
         "backend.corrupt",
@@ -1047,6 +1199,8 @@
       ],
       "errors": [
         "access.denied",
+        "admin.actions_broken",
+        "admin.actions_invalid",
         "admin.functions_broken",
         "admin.functions_invalid",
         "admin.migration_required",
@@ -1486,7 +1640,7 @@
           "type": "graph_ref",
           "required": false,
           "repeatable": false,
-          "summary": "Compare with the release this graph is pinned to; warns (admin.functions_affected) about published functions the release would break."
+          "summary": "Compare with the release this graph is pinned to; warns (admin.functions_affected, admin.actions_affected) about published functions and actions the release would break."
         },
         {
           "name": "--data-root",
@@ -1585,6 +1739,7 @@
       ],
       "errors": [
         "access.denied",
+        "admin.actions_broken",
         "admin.functions_broken",
         "admin.migration_required",
         "admin.model_invalid",
@@ -2659,6 +2814,21 @@
       "code": "access.denied",
       "category": "denied",
       "exit": 3
+    },
+    {
+      "code": "actions.slot_invalid",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "admin.actions_broken",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.actions_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "admin.data_errors",

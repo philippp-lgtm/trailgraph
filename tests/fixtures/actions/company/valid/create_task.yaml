@@ -1,0 +1,28 @@
+schema: graph_cli.action/1
+name: create_task
+module: operations
+summary: Open a task for a person, optionally with a due date.
+use_when: >-
+  Somebody needs to remember a piece of work: a follow-up or a to-do for a person.
+  Creates the task and assigns it.
+params:
+  title:
+    type: string
+    summary: What has to be done.
+  due:
+    type: date
+    summary: Date the task is due, when there is one.
+    required: false
+  assignee:
+    type: ref
+    class: ppl:Person
+    summary: The person who has to do the task.
+ops:
+  - op: create
+    type: ops:Task
+    local: task
+    attrs: {title: $title, due_on: $due}
+    edges:
+      - {rel: ops:assigned_to, target: $assignee}
+examples:
+  - request: Ask the new recruiter to prepare the onboarding checklist by the end of the week.

@@ -137,6 +137,12 @@ ENROLLMENT: Final = {
     "hash_prefix": STRING,
 }
 
+CATALOG_SUMMARY: Final[dict[str, Schema]] = {
+    "count": INTEGER,
+    "hash": STRING,
+    "compiled_hash": STRING,
+    "published_against": ref("ontology_pin"),
+}
 DEFS: Final[dict[str, Schema]] = kit.merge_defs(
     kit.DEFS,
     {"program_step": APP_DEFS["program_step"], "ontology_ref": APP_DEFS["ontology_ref"]},
@@ -162,18 +168,25 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
                 "details": OPEN,
             }
         ),
-        "functions_summary": obj(  # kernel.ports.catalog.FunctionsSlot.summary
+        "action_problem": obj(  # graph_cli.kinetic.params.Problem.to_json for actions
             {
-                "count": INTEGER,
-                "hash": STRING,
-                "compiled_hash": STRING,
-                "published_against": ref("ontology_pin"),
+                "action": STRING,
+                "code": STRING,
+                "message": STRING,
+                "path": NULLABLE_STRING,
+                "line": nullable(INTEGER),
+                "details": OPEN,
             }
         ),
+        "functions_summary": obj(CATALOG_SUMMARY),  # kernel.ports.catalog.KineticSlot.summary
+        "actions_summary": obj(CATALOG_SUMMARY),  # the same for kind actions
         "source_skill": obj(  # services_admin.sources._skill_json
             {"name": STRING, "kind": SKILL_KIND, "hash": STRING}
         ),
-        "source_functions": obj(  # services_admin.sources._functions_json
+        "source_functions": obj(  # services_admin.sources._catalog_json
+            {"count": INTEGER, "hash": STRING}
+        ),
+        "source_actions": obj(  # the same for the actions
             {"count": INTEGER, "hash": STRING}
         ),
         "policy_document": _policy_document(),

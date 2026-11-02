@@ -24,13 +24,15 @@ Re-running a release that is already pinned changes nothing.
 Every bump also re-checks the published function catalog against the new
 model (``graph_cli.kinetic.check_catalog``, K5): a function that no longer
 resolves refuses the release with ``admin.functions_broken`` (first 20
-problems in the details). The fix is ``graph push`` with the ontology and
-the fixed or deleted function files together; ``plan`` then leaves the
-catalog to the push, which checks the new files against the same model.
+problems in the details). The published action catalog gets the same check
+(``check_actions``, ``admin.actions_broken``), against the function names the graph
+will have. The fix is ``graph push`` with the ontology and the fixed or deleted
+files together; ``plan`` then leaves the replaced catalog to the push, which checks
+the new files against the same model.
 
 ``plan`` makes every check under the lock and ``write`` writes, so
-``graph push`` (``sources``) runs a release, a skill publish and a function
-publish under one lock, checking all before the first write.
+``graph push`` (``sources``) runs a release, a skill publish and a function and
+action publish under one lock, checking all before the first write.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Final
 
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
@@ -45,11 +48,13 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ids import TermRef
-from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, ManifestData
+from graph_cli.kernel.json_access import as_object, req_list, req_str
+from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, ManifestData, SlotKind
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kinetic.action_compile import check_actions
 from graph_cli.kinetic.compile import check_catalog
-from graph_cli.kinetic.format import Problem
+from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
@@ -67,6 +72,11 @@ from graph_cli_admin.services_admin.ontology import (
 
 MAX_FINDINGS = 20
 FUNCTIONS_DAMAGED = frozenset({"functions.slot_invalid", "format.unsupported_version"})
+ACTIONS_DAMAGED = frozenset({"actions.slot_invalid", "format.unsupported_version"})
+DAMAGED: Final[dict[SlotKind, frozenset[str]]] = {
+    "functions": FUNCTIONS_DAMAGED,
+    "actions": ACTIONS_DAMAGED,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,12 +146,16 @@ def plan(
     compiled: Compiled,
     *,
     functions_replaced: bool = False,
+    actions_replaced: bool = False,
+    function_names: frozenset[str] | None = None,
 ) -> Planned:
     """Every check of a release, under the lock; refuses before anything is written.
 
-    ``functions_replaced``: the caller publishes new function files after the release
-    and checks them against the new model itself, so the published catalog is not
-    checked here."""
+    ``functions_replaced`` / ``actions_replaced``: the caller publishes new function or
+    action files after the release and checks them against the new model itself, so the
+    published catalog of that kind is not checked here. ``function_names`` are the
+    functions the graph will have (the pushed ones when ``functions_replaced``); omitted,
+    the published ones."""
     target = compiled.pin
     manifest = session.manifest()  # W.6: re-read under the lock
     entry = manifest.entry
@@ -187,12 +201,19 @@ def plan(
         )
     if Version.parse(target.version).major > Version.parse(current.version).major and head.seq:
         _check_data(compiled.model, session, bump_details, head.seq)
-    if not functions_replaced:
-        slot = current_functions(session)
-        if slot is not None:
-            broken = check_catalog(slot.compiled, compiled.model)
+    functions = current_catalog(session, "functions")
+    if not functions_replaced and functions is not None:
+        broken = catalog_problems(functions, compiled.model)
+        if broken:
+            raise functions_broken(broken, bump_details)
+    if not actions_replaced:
+        actions = current_catalog(session, "actions")
+        if actions is not None:
+            if function_names is None:
+                function_names = names_of(functions)
+            broken = catalog_problems(actions, compiled.model, function_names=function_names)
             if broken:
-                raise functions_broken(broken, bump_details)
+                raise actions_broken(broken, bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report)
     if bump == "excessive":
         warnings += (
@@ -278,14 +299,59 @@ def _check_data(
         )
 
 
-def current_functions(session: MaintenanceSession) -> FunctionsSlot | None:
-    """The published function catalog; a damaged slot is replaced like a missing one."""
+def current_catalog(session: MaintenanceSession, kind: SlotKind) -> KineticSlot | None:
+    """The published catalog of ``kind``; a damaged slot is replaced like a missing one."""
     try:
-        return session.read_functions()
+        return session.read_functions() if kind == "functions" else session.read_actions()
     except GraphCliError as exc:
-        if exc.code not in FUNCTIONS_DAMAGED:
+        if exc.code not in DAMAGED[kind]:
             raise
         return None
+
+
+def names_of(slot: KineticSlot | None) -> frozenset[str]:
+    """The names in a published catalog (deprecated ones too: they still hold the name)."""
+    if slot is None:
+        return frozenset()
+    key = slot.spec.list_key
+    return frozenset(req_str(as_object(e, key), "name") for e in req_list(slot.compiled, key))
+
+
+def catalog_problems(
+    slot: KineticSlot | None,
+    model: CompiledModel,
+    *,
+    function_names: frozenset[str] | None = None,
+) -> list[Problem]:
+    """The problems a published catalog has against ``model``; none for a missing one.
+    ``function_names`` are the functions the graph has: an action may not share a name."""
+    if slot is None:
+        return []
+    if slot.kind == "functions":
+        return check_catalog(slot.compiled, model)
+    return check_actions(slot.compiled, model, function_names=function_names or frozenset())
+
+
+def catalog_broken(
+    kind: SlotKind,
+    problems: list[Problem],
+    bump: dict[str, JsonValue],
+    *,
+    advice: str,
+) -> GraphCliError:
+    """``admin.<kind>_broken``: the first problems of the published catalog against the
+    model of ``bump['to']``."""
+    names = sorted({p.name for p in problems})
+    return GraphCliError(
+        f"admin.{kind}_broken",
+        _would_not_resolve(kind, names, str(bump["to"])) + advice,
+        details={
+            **bump,
+            "count": len(problems),
+            kind: list[JsonValue](names[:MAX_FINDINGS]),
+            "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
+        },
+    )
 
 
 def functions_broken(
@@ -294,48 +360,64 @@ def functions_broken(
     *,
     advice: str = "; fix or delete them in the same push",
 ) -> GraphCliError:
-    """``admin.functions_broken``: the first problems of the published functions against
-    the model of ``bump['to']``."""
-    names = sorted({p.function for p in problems})
-    return GraphCliError(
-        "admin.functions_broken",
-        _would_not_resolve(names, str(bump["to"])) + advice,
-        details={
-            **bump,
-            "count": len(problems),
-            "functions": list[JsonValue](names[:MAX_FINDINGS]),
-            "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
-        },
-    )
+    """``admin.functions_broken`` (see ``catalog_broken``)."""
+    return catalog_broken("functions", problems, bump, advice=advice)
 
 
-def _would_not_resolve(names: list[str], version: str) -> str:
+def actions_broken(
+    problems: list[Problem],
+    bump: dict[str, JsonValue],
+    *,
+    advice: str = "; fix or delete them in the same push",
+) -> GraphCliError:
+    """``admin.actions_broken`` (see ``catalog_broken``)."""
+    return catalog_broken("actions", problems, bump, advice=advice)
+
+
+def _would_not_resolve(kind: SlotKind, names: list[str], version: str) -> str:
     shown = ", ".join(names[:5]) + (", ..." if len(names) > 5 else "")
+    noun = "function" if kind == "functions" else "action"
     plural = "s" if len(names) != 1 else ""
-    return f"{len(names)} published function{plural} would not resolve under {version}: {shown}"
+    return f"{len(names)} published {noun}{plural} would not resolve under {version}: {shown}"
 
 
-def functions_affected(
-    slot: FunctionsSlot | None, model: CompiledModel
+def catalog_affected(
+    kind: SlotKind,
+    slot: KineticSlot | None,
+    model: CompiledModel,
+    *,
+    function_names: frozenset[str] | None = None,
 ) -> tuple[WarningRecord, ...]:
-    """``admin.functions_affected`` when the published functions would not resolve under
+    """``admin.<kind>_affected`` when the published catalog would not resolve under
     ``model`` (what ``ontology diff --graph`` shows before a release refuses)."""
-    problems = check_catalog(slot.compiled, model) if slot is not None else []
+    problems = catalog_problems(slot, model, function_names=function_names)
     if not problems:
         return ()
-    names = sorted({p.function for p in problems})
+    names = sorted({p.name for p in problems})
     return (
         WarningRecord(
-            "admin.functions_affected",
-            _would_not_resolve(names, model.bundle_version),
+            f"admin.{kind}_affected",
+            _would_not_resolve(kind, names, model.bundle_version),
             {
                 "to": model.bundle_version,
                 "count": len(problems),
-                "functions": list[JsonValue](names[:MAX_FINDINGS]),
+                kind: list[JsonValue](names[:MAX_FINDINGS]),
                 "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
             },
         ),
     )
+
+
+def functions_affected(slot: KineticSlot | None, model: CompiledModel) -> tuple[WarningRecord, ...]:
+    return catalog_affected("functions", slot, model)
+
+
+def actions_affected(
+    actions: KineticSlot | None, functions: KineticSlot | None, model: CompiledModel
+) -> tuple[WarningRecord, ...]:
+    """The action twin of ``functions_affected``; the action names are checked against the
+    published functions."""
+    return catalog_affected("actions", actions, model, function_names=names_of(functions))
 
 
 def check_state(entry: GraphEntry) -> None:

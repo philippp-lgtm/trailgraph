@@ -9,7 +9,7 @@ installation stream.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill and function catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -21,6 +21,20 @@ edited line does not flood the report. A write intent without a committed
 transaction is the benign trace of an interrupted write (info); a
 transaction without its intent is an error. Events carry ids, types, hashes,
 sizes and reason text, never attribute values.
+
+A write by `graph do` names its action: `request.action` is `{name, hash}` in the
+intent, in a refusal event and in the transaction record (`request.command` is `do`;
+`args_digest` covers the action, its bound parameters, the dry-run flag, the reason and the
+idempotency key). The key is optional and appears only for such writes, so the bytes of
+every other write are unchanged; verification checks its shape. An action writes one
+transaction, so it has one intent, whatever the number of ops it expanded to. Its
+refusals are audited like other writes' refusals: `access.denied` in the installation
+stream, a failed precondition (`action.precondition_failed`) as an `invalid` refusal in
+the graph's stream whose target lists the entities of the failed preconditions, with the
+action in `request.action`. Not audited: `--dry-run`, an action with nothing to do
+(`action.nothing_to_do`), usage errors such as a missing parameter or a missing reason,
+and an unknown or hidden action. `history` shows the `action` next to the `command` of a
+revision it wrote.
 
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
@@ -49,6 +63,7 @@ fails:
 | `output` | `{format: json\|text, bytes, spilled_bytes}`: the bytes the caller received on stdout, and the size of an answer that went to a file instead (null otherwise) |
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
 | `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
+| `action` | only for `do`: `{name, hash}` of the action that ran (`hash` is `null` when it failed, except for `action.stale`); never a parameter value |
 
 `phases` names only the phases the command went through. Each phase counts
 its own time (a phase inside another is taken out of the outer one), a
@@ -139,19 +154,21 @@ installed policy again records the mirrors such a graph lacks.
 
 ## Slot verification
 
-Publishing the graph skill or the function catalog is one maintenance
-operation: an intent in the graph stream with `change.skill{from, to}` or
-`change.functions{from, to, compiled_hash}` (the tree hash of the published files before,
+Publishing the graph skill, the function catalog or the action catalog is one maintenance
+operation: an intent in the graph stream with `change.skill{from, to}`,
+`change.functions{from, to, compiled_hash}` or `change.actions{from, to, compiled_hash}`
+(the tree hash of the published files before,
 `null` for the first publish, and after; for the catalog also the hash of the compiled
 catalog the app reads), the slot switch, then an
 installation event that anchors the intent. `audit verify` walks these
 intents from "no slot" and compares the end with the slot on disk: the
-published hash must equal the last committed `to`, and for the function
-catalog the `compiled_hash` of its slot (whose file content is hash-checked on
+published hash must equal the last committed `to`, and for the function and
+action catalogs the `compiled_hash` of their slot (whose file content is hash-checked on
 read) must equal the one the last committed event recorded; a replaced compiled
 catalog with an adjusted `slot.json` is caught this way. A slot published,
 changed, damaged or removed by hand, or a skill or catalog that differs
-from its recorded hash, is `integrity.audit.slot_mismatch`; an intent
+from its recorded hash, is `integrity.audit.slot_mismatch` (its target names
+`graphs/<id>/skill`, `.../functions` or `.../actions`); an intent
 whose slot switch never happened is an interrupted publish
 (`intent_without_effect`, info).
 

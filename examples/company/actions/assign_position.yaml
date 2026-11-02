@@ -1,0 +1,37 @@
+schema: graph_cli.action/1
+name: assign_position
+module: organization
+summary: Staff a vacant position from a date; a person joins a unit by holding one of its positions.
+use_when: >-
+  Someone starts in, joins, takes over or is appointed to a job, a role in the org chart
+  or a unit; staffing a vacant position. Not for replacing the current holder: use
+  hand_over_position.
+params:
+  person:
+    type: ref
+    class: ppl:Person
+    summary: Who takes over the position.
+  position:
+    type: ref
+    class: org:Position
+    summary: The vacant position.
+  since:
+    type: date
+    summary: Date the person takes over.
+preconditions:
+  - id: position_open
+    on: position
+    summary: The position is planned or active, not abolished.
+    require:
+      - {attr: status, equals_string_in: [planned, active]}
+  - id: position_vacant
+    on: position
+    summary: Nobody holds the position; use hand_over_position to replace a holder.
+    require:
+      - count: {rel: holds, direction: in, where: {record_status: [active]}}
+        equals_number: 0
+ops:
+  - {op: link, id: $person, rel: org:holds, target: $position, qualifiers: {since: $since}}
+examples:
+  - request: The new recruiter starts as the support lead on the first of March.
+featured: true

@@ -80,25 +80,63 @@ class SkillSlot:
 
 
 FUNCTION_SLOT_SCHEMA: Final = "graph_cli.function_slot/1"
+ACTION_SLOT_SCHEMA: Final = "graph_cli.action_slot/1"
 
-
-def functions_hash(files: Mapping[str, bytes]) -> str:
-    """C.2 hash of the function sources: the hash of ``{file name: sha256 of the bytes}``."""
-    return hash_value({name: hash_bytes(files[name]) for name in sorted(files)})
+SlotKind = Literal["functions", "actions"]
 
 
 @dataclass(frozen=True, slots=True)
-class FunctionsSlot:
-    """The published function catalog of a graph (K6), written only by graph-admin.
+class KindSpec:
+    """What differs between the kinds of kinetic slot (``functions/``, ``actions/``): the
+    schema names, the list key of the compiled document and the damaged-slot error code.
+    Everything else about a slot is one implementation."""
+
+    kind: SlotKind
+    slot_schema: str
+    catalog_schema: str  # kinetic.format / kinetic.action_format CATALOG_SCHEMA; pinned by tests
+    list_key: str
+    invalid_code: str
+
+
+KINDS: Final[Mapping[str, KindSpec]] = {
+    "functions": KindSpec(
+        "functions",
+        FUNCTION_SLOT_SCHEMA,
+        "graph_cli.functions/1",
+        "functions",
+        "functions.slot_invalid",
+    ),
+    "actions": KindSpec(
+        "actions",
+        ACTION_SLOT_SCHEMA,
+        "graph_cli.action_catalog/1",
+        "actions",
+        "actions.slot_invalid",
+    ),
+}
+
+
+def sources_hash(files: Mapping[str, bytes]) -> str:
+    """C.2 hash of kinetic sources: the hash of ``{file name: sha256 of the bytes}``."""
+    return hash_value({name: hash_bytes(files[name]) for name in sorted(files)})
+
+
+functions_hash = sources_hash
+
+
+@dataclass(frozen=True, slots=True)
+class KineticSlot:
+    """The published function or action catalog of a graph (K6, actions plan A8), written
+    only by graph-admin.
 
     ``hash`` is the tree hash of the authored sources (``<name>.yaml``), the one
     the audit chain records; ``compiled`` is the catalog document
-    ``graph_cli.functions/1`` checked against ``published_against``, the
-    graph's ontology pin at publish time, and ``compiled_hash`` its C.2 hash.
-    ``files`` holds the sources when the maintenance port read them; the
-    catalog port, which the app uses, leaves it empty because the app reads
-    only the compiled document. An empty catalog is a published slot without
-    functions.
+    (``graph_cli.functions/1`` or ``graph_cli.action_catalog/1``) checked against
+    ``published_against``, the graph's ontology pin at publish time, and
+    ``compiled_hash`` its C.2 hash. ``files`` holds the sources when the maintenance
+    port read them; the catalog port, which the app uses, leaves it empty because the
+    app reads only the compiled document. An empty catalog is a published slot without
+    entries. ``kind`` is ``functions`` unless stated.
     """
 
     hash: str
@@ -106,10 +144,15 @@ class FunctionsSlot:
     published_against: OntologyPin
     compiled: JsonObject
     files: Mapping[str, bytes] = field(default_factory=dict)
+    kind: SlotKind = "functions"
+
+    @property
+    def spec(self) -> KindSpec:
+        return KINDS[self.kind]
 
     @property
     def count(self) -> int:
-        entries = self.compiled.get("functions")
+        entries = self.compiled.get(self.spec.list_key)
         return len(entries) if isinstance(entries, list) else 0
 
     def summary(self) -> dict[str, JsonValue]:
@@ -123,11 +166,14 @@ class FunctionsSlot:
     def slot_json(self) -> dict[str, JsonValue]:
         """The slot's ``slot.json`` document."""
         return {
-            "schema": FUNCTION_SLOT_SCHEMA,
+            "schema": self.spec.slot_schema,
             "hash": self.hash,
             "compiled_hash": self.compiled_hash,
             "published_against": self.published_against.to_json(),
         }
+
+
+FunctionsSlot = KineticSlot  # the name existing code uses for ``kind="functions"``
 
 
 def graph_not_found(ref: str) -> GraphCliError:
@@ -165,20 +211,31 @@ class Catalog(Protocol):
         ``graph pull`` does."""
         ...
 
+    def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        """The graph's published action catalog, or ``None`` when none was published
+        (actions plan A8); ``sources`` as for ``read_functions``."""
+        ...
+
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]: ...
 
 
 __all__ = [
+    "ACTION_SLOT_SCHEMA",
     "FUNCTION_SLOT_SCHEMA",
+    "KINDS",
     "SKILL_SOURCE_SCHEMA",
     "Catalog",
     "FunctionsSlot",
     "GraphEntry",
     "GraphState",
+    "KindSpec",
+    "KineticSlot",
     "ManifestData",
     "OntologyPin",
     "SkillSlot",
+    "SlotKind",
     "StoreInfo",
     "functions_hash",
     "skill_hash",
+    "sources_hash",
 ]

@@ -9,6 +9,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
     from graph_cli.app_cli.commands import (
         apply,
         connect,
+        do,
         files,
         meta,
         read,
@@ -21,6 +22,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *meta.SPECS,
         *read.SPECS,
         *write.SPECS,
+        *do.SPECS,
         *apply.SPECS,
         *files.SPECS,
         *skills.SPECS,

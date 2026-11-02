@@ -681,7 +681,8 @@ HISTORY_OUTPUT: Final = obj(
                             }
                         )
                     ),
-                }
+                },
+                {"action": obj({"name": STRING, "hash": STRING})},  # set by a ``do``
             )
         ),
     }
@@ -950,7 +951,7 @@ SPECS: Final = (
                 "--for",
                 "string",
                 "Only candidates that can fill this slot: a relation (the candidate is its "
-                "target) or <function>.<param> (a ref parameter).",
+                "target) or <function or action>.<param> (a ref parameter).",
                 keyword="for_use",
             ),
             ParamSpec(
@@ -1007,6 +1008,7 @@ SPECS: Final = (
             "term.no_labels",
             "function.not_found",
             "function.parameter_unknown",
+            "action.parameter_unknown",
         ),
         handler=lookup,
         output=LOOKUP_OUTPUT,

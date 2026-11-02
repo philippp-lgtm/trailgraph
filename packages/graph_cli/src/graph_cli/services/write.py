@@ -24,6 +24,18 @@ graph_cli (B3.1). Steps:
 - W.12 the intent (with ``before`` hashes and the published blobs' hash and
   size), W.13 the commit; storage warnings are passed on.
 
+Action plans (actions plan A5, ``graph do``): a request with a ``plan`` carries only
+the document frame (reason and key) and the action with its bound parameters. W.1-W.4
+run as above on the empty frame, so nothing of the action is expanded, checked or
+authorized before the lock. After W.6 the service, on the locked snapshot: expands the
+template (``action.nothing_to_do`` is held, not raised yet), resolves the expansion and
+authorizes it as W.5 does (an empty expansion is authorized by the action's declared
+needs), then W.7 matches the idempotency key on the request digest and the action
+instead of the change set hash, then checks the preconditions (``action.precondition_failed``
+is an audited ``invalid`` refusal), then raises the held ``nothing_to_do`` (not audited),
+and continues with W.8 on the expanded change set, which is what the tx records. A dry-run
+does the same on its lock-free snapshot, without audit and idempotency.
+
 Refusals (B3.14): ``invalid`` and ``conflict`` go to the graph stream under
 the lock; if that append fails the original error is raised with warning
 ``audit.refusal_not_recorded``. Usage errors and dry-runs are not audited.
@@ -71,6 +83,7 @@ from graph_cli.kernel.changeset import (
     parse_changeset,
 )
 from graph_cli.kernel.clock import Clock
+from graph_cli.kernel.error_codes import ErrorCategory, lookup_error_code
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import (
@@ -99,8 +112,11 @@ from graph_cli.kernel.ports.storage import (
 )
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
 from graph_cli.kernel.timing import Timings
+from graph_cli.kinetic.action_entries import ActionEntry
+from graph_cli.kinetic.expand import check_preconditions, expand
 from graph_cli.ontology_layer.data_validator import blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.cypher.values import Value
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
 from graph_cli.services.refs import NO_BINDINGS, Resolution, resolve_refs
@@ -118,15 +134,25 @@ class WriteConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ActionPlan:
+    """A published action and its parameters as ``kinetic.params`` binds them, ``ref`` values
+    already resolved to full entity ids. Expanded by the service on the snapshot it judges."""
+
+    entry: ActionEntry
+    bound: Mapping[str, Value]
+
+
+@dataclass(frozen=True, slots=True)
 class WriteRequest:
     actor: ActorContext
     graph: str  # name or id
-    changeset: ChangeSet
+    changeset: ChangeSet  # with a ``plan``: the document frame, no ops
     dry_run: bool
     request: RequestMeta
     bindings: Mapping[str, EntityId] = field(default=NO_BINDINGS)  # earlier documents (B3.9)
     allow_abbrev: bool = False  # references from CLI arguments (B1.9)
     blobs: tuple[StagedBlob, ...] = ()  # staged by the caller, who discards them afterwards
+    plan: ActionPlan | None = None  # an action to expand instead of ``changeset.ops``
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +316,8 @@ class WriteService:
         A dry-run batch evaluates each document on the working state of the
         documents before it, so later documents see earlier creates.
         """
+        if any(request.plan is not None for request in requests):
+            raise GraphCliError("internal.error", "action plans are applied one at a time")
         bindings: dict[str, EntityId] = {}
         results: list[WriteResult] = []
         base: Snapshot | None = None
@@ -332,8 +360,8 @@ class WriteService:
         if snapshot is None:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
-        resolution = self._resolve(request, snapshot)
-        decisions = self._authorize(request, entry, resolution)
+        resolution = self._resolve(request, snapshot)  # a plan: the empty frame, no pairs
+        decisions = self._authorize(request, entry, resolution.pairs)
         return _Prepared(entry, model, read, write, snapshot, resolution, decisions)
 
     def _resolve(self, request: WriteRequest, snapshot: Snapshot) -> Resolution:
@@ -346,7 +374,10 @@ class WriteService:
             )
 
     def _authorize(
-        self, request: WriteRequest, entry: GraphEntry, resolution: Resolution
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        pairs: Sequence[tuple[Action, TermRef]],
     ) -> tuple[Decision, ...]:
         cs = request.changeset
         with self.timings.phase("authorize"):
@@ -354,8 +385,8 @@ class WriteService:
             ctx = AuthzContext(
                 op_count=len(cs.ops), has_reason=cs.reason is not None, dry_run=request.dry_run
             )
-            pairs = sorted({(a, f"graph:{entry.id}/type:{t}") for a, t in resolution.pairs})
-            decisions = tuple(authorize(request.actor, a, r, ctx, policy) for a, r in pairs)
+            resources = sorted({(a, f"graph:{entry.id}/type:{t}") for a, t in pairs})
+            decisions = tuple(authorize(request.actor, a, r, ctx, policy) for a, r in resources)
         denied = [d for d in decisions if d.effect == "deny"]
         if not denied:
             return decisions
@@ -378,7 +409,7 @@ class WriteService:
             env=self._env,
             graph=entry,
             reason=cs.reason,
-            target={"types": sorted({t for _, t in resolution.pairs})},
+            target={"types": sorted({t for _, t in pairs})},
         )
         try:
             with self.timings.phase("audit"):
@@ -404,13 +435,19 @@ class WriteService:
             with self.timings.phase("snapshot"):
                 base = session.snapshot()
                 head = session.head()
+            plan, held = request.plan, None
+            if plan is not None:  # the action meets the state it will change
+                request, held = self._expand(request, base)
             resolution = self._resolve(request, base)
+            pairs = _plan_pairs(plan) if plan is not None and held is not None else resolution.pairs
             decisions = prepared.decisions
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
-            if resolution.pairs != prepared.resolution.pairs or _stale(
-                decisions, self._policy.current(entry.id).hash
+            if (
+                plan is not None
+                or pairs != prepared.resolution.pairs
+                or _stale(decisions, self._policy.current(entry.id).hash)
             ):
-                decisions = self._authorize(request, entry, resolution)
+                decisions = self._authorize(request, entry, pairs)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
             digest = changeset_hash(cs)
@@ -418,7 +455,7 @@ class WriteService:
                 principal = request.actor.principal.id or ""
                 previous = session.lookup_idempotency(cs.idempotency_key, principal)
                 if previous is not None:
-                    if previous.changeset_hash == digest:
+                    if _same_request(request, previous, digest):
                         return _replay(previous, entry, resolution.warnings)
                     raise refusal(
                         GraphCliError(
@@ -426,11 +463,15 @@ class WriteService:
                             f"idempotency key {cs.idempotency_key!r} was used for other content",
                             details={"idempotency_key": cs.idempotency_key, "seq": previous.seq},
                         ),
-                        types=resolution.pairs,
+                        types=pairs,
                     )
+            if plan is not None:
+                self._check_plan(plan, base, model, refusal, pairs)
+                if held is not None:  # nothing would change: no tx, no audit event
+                    raise held
             conflict = _conflict(cs, base, head.seq, resolution.refs)  # W.8
             if conflict is not None:
-                raise refusal(conflict, types=resolution.pairs)
+                raise refusal(conflict, types=pairs)
             recorded_at = _recorded_at(self._clock, head)  # W.9
             tx_id, event_id = TxId(self._ids.new_id()), EventId(self._ids.new_id())
             with self.timings.phase("normalize"):
@@ -454,9 +495,7 @@ class WriteService:
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
                 findings = [_scrub(f, working, working.created) for f in findings]
-                raise refusal(
-                    _invalid(findings), types=resolution.pairs, findings=findings, working=working
-                )
+                raise refusal(_invalid(findings), types=pairs, findings=findings, working=working)
             if not working.revisions:  # nothing changes: no tx, no audit event
                 return _result(
                     entry,
@@ -524,6 +563,15 @@ class WriteService:
         prepared = self._prepare(request, base)
         snapshot = prepared.snapshot
         resolution = prepared.resolution
+        plan = request.plan
+        if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
+            request, held = self._expand(request, snapshot)
+            resolution = self._resolve(request, snapshot)
+            pairs = _plan_pairs(plan) if held is not None else resolution.pairs
+            self._authorize(request, prepared.entry, pairs)
+            self._check_plan(plan, snapshot, prepared.model, None, pairs)
+            if held is not None:
+                raise held
         cs = resolution.changeset
         conflict = _conflict(cs, snapshot, snapshot.seq + offset, resolution.refs)
         if conflict is not None:
@@ -564,6 +612,59 @@ class WriteService:
         )
         return result, working
 
+    def _expand(
+        self, request: WriteRequest, snapshot: Snapshot
+    ) -> tuple[WriteRequest, GraphCliError | None]:
+        """The request with the plan's expansion as its change set, or, when the action has
+        nothing to do in this state, the request as it was and the ``action.nothing_to_do``
+        to raise once the idempotency key had its say."""
+        plan = request.plan
+        assert plan is not None
+        frame = request.changeset
+        try:
+            expanded = expand(
+                plan.entry,
+                plan.bound,
+                snapshot,
+                reason=frame.reason,
+                idempotency_key=frame.idempotency_key,
+            )
+        except GraphCliError as exc:
+            if exc.code != "action.nothing_to_do":
+                raise
+            return request, exc
+        if len(expanded.ops) > self.config.max_ops:
+            raise GraphCliError(
+                "changeset.too_large",
+                f"the action expands to {len(expanded.ops)} ops",
+                details={"limit_ops": self.config.max_ops, "actual_ops": len(expanded.ops)},
+            )
+        return replace(request, changeset=expanded), None
+
+    def _check_plan(
+        self,
+        plan: ActionPlan,
+        snapshot: Snapshot,
+        model: CompiledModel,
+        refusal: _Refusal | None,
+        pairs: Sequence[tuple[Action, TermRef]],
+    ) -> None:
+        """The preconditions on ``snapshot``; a failure is an audited refusal when the
+        locked write has a ``refusal`` to raise (``invalid``, naming the entities)."""
+        try:
+            check_preconditions(plan.entry, plan.bound, snapshot, model)
+        except GraphCliError as exc:
+            if refusal is None or exc.code != "action.precondition_failed":
+                raise
+            failed = exc.details.get("failed")
+            assert isinstance(failed, list)
+            entities = [
+                EntityId(parse_id(str(item["entity"])))
+                for item in failed
+                if isinstance(item, Mapping)
+            ]
+            raise refusal(exc, types=pairs, entities=entities) from None
+
     def _append_refusal(
         self,
         session: WriteSession,
@@ -577,7 +678,9 @@ class WriteService:
         findings: Sequence[Finding],
         entities: Sequence[EntityId],
     ) -> GraphCliError:
-        status: RefusalStatus = "invalid" if error.code == "write.invalid" else "conflict"
+        spec = lookup_error_code(error.code)
+        invalid = spec is not None and spec.category is ErrorCategory.INVALID
+        status: RefusalStatus = "invalid" if invalid else "conflict"
         target: dict[str, list[str]] = {"types": sorted({t for _, t in types})}
         if entities:
             target["entities"] = sorted(str(e) for e in entities)
@@ -623,10 +726,10 @@ class _Refusal:
         types: Sequence[tuple[Action, TermRef]],
         findings: Sequence[Finding] = (),
         working: WorkingState | None = None,
+        entities: Sequence[EntityId] = (),
     ) -> GraphCliError:
-        entities = (
-            () if working is None else [e for e in working.revisions if e not in working.created]
-        )
+        if working is not None:
+            entities = [e for e in working.revisions if e not in working.created]
         return self.service._append_refusal(
             self.session,
             self.request,
@@ -638,6 +741,24 @@ class _Refusal:
             findings=findings,
             entities=entities,
         )
+
+
+def _plan_pairs(plan: ActionPlan) -> tuple[tuple[Action, TermRef], ...]:
+    """The (action, type) pairs the action declares it needs: what authorizes an action whose
+    expansion is empty."""
+    return tuple(sorted({(Action(n.action), TermRef(n.type)) for n in plan.entry.needs}))
+
+
+def _same_request(request: WriteRequest, previous: TxRecord, digest: str) -> bool:
+    """Whether a retry with the same idempotency key asks for what ``previous`` recorded: an
+    action matches on the request digest and the action (its expansion depends on the state),
+    a change set on its hash."""
+    if request.plan is None:
+        return previous.changeset_hash == digest
+    return (
+        previous.request.args_digest == request.request.args_digest
+        and previous.request.action == request.request.action
+    )
 
 
 def _not_recorded(exc: GraphCliError) -> WarningRecord:

@@ -81,6 +81,7 @@ from graph_cli.storage.files.audit_log import FileAuditLog
 if TYPE_CHECKING:
     from graph_cli.catalog.endpoint import Endpoint
     from graph_cli.catalog.remote import RemoteSession
+    from graph_cli.services.actions import ActionService
     from graph_cli.services.files import FileService, Origins
     from graph_cli.services.write import WriteService
 
@@ -156,6 +157,17 @@ class AppContext:
             env=backend.env,
             config=WriteConfig(lock_timeout_s=self.config.lock_timeout_s),
             timings=backend.timings,
+        )
+
+    @functools.cached_property
+    def actions(self) -> ActionService:
+        from graph_cli.services.actions import ActionService
+
+        return ActionService(
+            catalog=self.catalog,
+            reader=self.reader,
+            writer=self.writer,
+            timings=self.backend.timings,
         )
 
     @functools.cached_property

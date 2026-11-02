@@ -192,6 +192,36 @@ own action, `read.function`, in the `read` level.
 - **Publishing** the catalog is `maint.graph_configure`, as for the graph
   skill (see [Project admins](#project-admins)).
 
+## Actions
+
+Named write actions of a graph ([Actions](cli_graph.md#actions)) have no
+action of their own: no new entry in the taxonomy and nothing to apply again
+after an update.
+
+- **Running.** `graph do` expands the action to ops and authorizes each one
+  as `apply` does: one decision per (`write.*` op action, type), with the
+  `require_reason` and `max_batch` obligations of the policy. An action
+  therefore never writes what the caller could not write by hand. A deny on
+  the type of one op refuses the whole action with `access.denied`, audited
+  like any write denial, and nothing is written; a replay or the details of
+  a failed precondition do not reach a caller without the rights.
+- **Listing.** `describe actions`, `describe action`, `describe module`,
+  `describe modules` and `describe search` show an action only when every
+  op action the action needs is allowed on every type it writes. The check
+  records no decision (no denial event), like the listing of functions, and
+  obligations do not hide an action: one that needs `--reason` is listed.
+  For everyone else the graph reads as if it had no such action, and `do`
+  or `describe action` of it is `action.not_found` with `did_you_mean` over
+  the visible actions only.
+- **Graph skill.** Unlike the functions, the generated graph skill lists
+  only the featured actions the installing reader may run
+  ([Skills](skills.md#blocks)).
+- **Publishing** the catalog is `maint.graph_configure`, as for the functions.
+- **Not available: writes only through actions.** A policy that lets an agent
+  type run reviewed actions while it may not use the primitives would let an
+  action grant what its op would not; that is not built, and the policy
+  language cannot express it.
+
 ## Authoring and installing policies
 
 Authored policies live in the maintainer workspace. `graph-admin policy

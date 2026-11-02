@@ -25,7 +25,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ReadSignal
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
-from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, SkillSlot
+from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
@@ -45,7 +45,7 @@ from graph_cli.storage.memory.store import InMemoryStore
 from support.admin_context import admin_context
 from support.audit_events import allow
 from support.clock import StepClock
-from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
+from support.fixtures import EXAMPLES, FIXTURES, ONTOLOGIES, compiled_model, example_model
 from support.graphs import pin_of, release_files
 from support.ids import SeededIdProvider
 from support.stores import ALL_STATUSES, FaultSwitch
@@ -83,6 +83,7 @@ class MemoryCatalog:
         self.files: dict[tuple[GraphId, str, str], bytes] = {}
         self.skills: dict[GraphId, SkillSlot] = {}
         self.functions: dict[GraphId, FunctionsSlot] = {}
+        self.actions: dict[GraphId, KineticSlot] = {}
 
     def add(self, entry: GraphEntry, model: CompiledModel, event_id: EventId) -> None:
         self.entries[entry.id] = entry
@@ -127,6 +128,10 @@ class MemoryCatalog:
 
     def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
         slot = self.functions.get(graph)
+        return replace(slot, files={}) if slot is not None and not sources else slot
+
+    def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        slot = self.actions.get(graph)
         return replace(slot, files={}) if slot is not None and not sources else slot
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
@@ -203,8 +208,11 @@ class ServiceEnv:
     model_override: CompiledModel | None = None  # memory backend only
     version: str | None = None  # fixture version; the first one by default
     language: str | None = None  # the graph language (BCP 47)
+    example_version: str | None = None  # the ontology is ``examples/<ontology>/ontology/<this>``
 
     def __post_init__(self) -> None:
+        if self.example_version is not None:
+            self.model_override = example_model(self.ontology, self.example_version)
         self.model = self.model_override or compiled_model(self.ontology, self.version)
         self.clock = StepClock(start="2030-01-01T00:00:00Z")
         self.ids = SeededIdProvider(self.clock, 5)
@@ -227,7 +235,11 @@ class ServiceEnv:
         else:
             from graph_cli_admin.services_admin.graphs import create
 
-            source = ONTOLOGIES / self.ontology / self.model.bundle_version
+            source = (
+                EXAMPLES / self.ontology / "ontology" / self.example_version
+                if self.example_version is not None
+                else ONTOLOGIES / self.ontology / self.model.bundle_version
+            )
             create(
                 admin_context(self.root),
                 name=self.name,
