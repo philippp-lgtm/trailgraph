@@ -1,6 +1,6 @@
 """Running an action on a snapshot: preconditions and template expansion (actions plan A4).
 
-Both functions are pure over a ``Snapshot``; the caller (the write service, under
+The functions are pure over a ``Snapshot``; the caller (the write service, under
 the graph lock) provides the snapshot, the bound parameters and the final reason.
 
 ``check_preconditions`` evaluates every precondition of the action on the current
@@ -81,6 +81,16 @@ def check_preconditions(
         )
 
 
+def check_reason(entry: ActionEntry, reason: str | None) -> None:
+    """``action.reason_required`` when the action demands a reason and there is none."""
+    if entry.defn.reason == "required" and not (reason and reason.strip()):
+        raise GraphCliError(
+            "action.reason_required",
+            f"{entry.name} needs a reason; give one with --reason",
+            details={"action": entry.name},
+        )
+
+
 def expand(
     entry: ActionEntry,
     bound: Mapping[str, Value],
@@ -97,12 +107,7 @@ def expand(
     refused as ``parse_changeset`` does (``changeset.malformed``, a defect of the
     action, which ``compile_actions`` checks).
     """
-    if entry.defn.reason == "required" and not (reason and reason.strip()):
-        raise GraphCliError(
-            "action.reason_required",
-            f"{entry.name} needs a reason; give one with --reason",
-            details={"action": entry.name},
-        )
+    check_reason(entry, reason)
     params = {p.name: p for p in entry.defn.params}
 
     def value_of(use: Use) -> JsonValue | Absent:

@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:eff6b405a7ddaa5b08ac28c0e83d4450d335a86b467352e150e1bd14a94e0d3e"
+  inventory_hash: "sha256:10202c0eb21b9215d6e98fefd46efb0b522db04b876ac2c15d8b198bddc2550d"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.11.0"
@@ -170,6 +170,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states, functions. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
+| `graph do` | write | Run a named action of the graph: a reviewed write with typed parameters. |
 | `graph file add` | write | Store a file as a files:File entity; known content is not stored twice. |
 | `graph file check` | read | Compare the origins of stored files with their content: same, changed, missing. |
 | `graph file path` | read | Show the local path of a stored file (read only), or of its origin. |

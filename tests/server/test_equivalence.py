@@ -55,6 +55,14 @@ def functions_step(ontology: str) -> tuple[tuple[str, ...], ...]:
     return (("graph", "functions", "publish", "example_graph", str(folder)),)
 
 
+def actions_step(ontology: str) -> tuple[tuple[str, ...], ...]:
+    """Publish the fixture actions of the ontology, if it has some (the others have none)."""
+    folder = FIXTURES / "actions" / ontology / "valid"
+    if not folder.is_dir():
+        return ()
+    return (("graph", "actions", "publish", "example_graph", str(folder)),)
+
+
 def prepare(env: dict[str, str], cwd: Path, ontology: str, version: str | None = None) -> None:
     version = version or compiled_model(ontology).bundle_version
     policy = cwd / "installation.yaml"
@@ -65,6 +73,7 @@ def prepare(env: dict[str, str], cwd: Path, ontology: str, version: str | None =
         ("policy", "apply", str(policy), "--reason", "equivalence"),
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL)),
         *functions_step(ontology),
+        *actions_step(ontology),
     ):
         result = subprocess.run(
             [str(BIN_DIR / "graph-admin"), *args], env=env, cwd=cwd, capture_output=True, text=True
@@ -189,6 +198,23 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call("run", "items_by_condition", "--param", "condition=damaged")
         call("run", "items_by_condition", "--param", "condition=mint")
         text("run", "items_in_location", "--param", f"location={place}")
+    call("do", "no_such_action")
+    if "inv:Location" in factory.model.classes:  # the ontology with published actions
+        stock, far = create("inv:Item", "stock"), create("inv:Location", "far")
+        move = ("do", "move_item", "--param", f"item={stock}", "--param", f"location={far}")
+        call(*move, "--dry-run")
+        call(*move, "--idempotency-key", "do-1")
+        call(*move, "--idempotency-key", "do-1")  # the recorded result again
+        call("do", "move_item", "--param", f"item={far}", "--param", f"location={far}")
+        call("do", "move_item", "--param", f"item={stock}")
+        call("do", "move_item", "--param", f"item={stock}", "--param", "x=1")
+        retire = ("do", "retire_item", "--param", f"item={stock}")
+        call(*retire)  # needs a reason
+        call(*retire, "--reason", "scrapped", "--dry-run")
+        call(*retire, "--reason", "scrapped")
+        call(*retire, "--reason", "scrapped")  # the precondition no longer holds
+        call("history", stock)
+        text(*move, "--dry-run")
     out = cwd / "emitted"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir()
@@ -213,8 +239,10 @@ def test_local_and_remote_answers_are_equal(
 
     runs = [o for o in expected if o[0][0] == "run" and o[1] == 0]
     assert bool(runs) == (ontology == "inventory")  # a function ran where one is published
-    listed = next(o for o in expected if o[0] == ["describe", "functions"])
-    assert bool(listed[2]["data"]["functions"]) == (ontology == "inventory")  # both are covered
+    done = [o for o in expected if o[0][0] == "do" and o[1] == 0]
+    assert bool(done) == (ontology == "inventory")  # and an action where some are published
+    replays = [o for o in done if isinstance(o[2], dict) and o[2]["data"]["idempotent_replay"]]
+    assert bool(replays) == (ontology == "inventory")  # the recorded result again is covered
     owner = home_env(isolated_env, tmp_path / "server")
     prepare(owner, tmp_path, ontology)
     created = subprocess.run(

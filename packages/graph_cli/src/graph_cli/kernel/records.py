@@ -56,8 +56,25 @@ class OntologyPin:
 
 
 @dataclass(frozen=True, slots=True)
+class ActionRef:
+    """The published action a request ran: its name and the hash of its compiled entry
+    (actions plan A7)."""
+
+    name: str
+    hash: str
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {"name": self.name, "hash": self.hash}
+
+    @classmethod
+    def from_json(cls, data: JsonObject, path: str = "") -> ActionRef:
+        return cls(req_str(data, "name", path), req_str(data, "hash", path))
+
+
+@dataclass(frozen=True, slots=True)
 class RequestMeta:
-    """What was asked: command name and ``args_digest`` (C.10).
+    """What was asked: command name and ``args_digest`` (C.10); ``action`` names the
+    published action of a ``do`` (actions plan A7).
 
     Lives in the kernel (contract draft: ``services.write``) because tx records
     and authorized txs carry it.
@@ -65,11 +82,32 @@ class RequestMeta:
 
     command: str
     args_digest: str
+    action: ActionRef | None = None
 
     @classmethod
-    def of(cls, command: str, args: Mapping[str, JsonValue]) -> RequestMeta:
+    def of(
+        cls, command: str, args: Mapping[str, JsonValue], action: ActionRef | None = None
+    ) -> RequestMeta:
         """C.10: the digest covers the request DTO, not raw argv."""
-        return cls(command, hash_value({"command": command, "args": dict(args)}))
+        return cls(command, hash_value({"command": command, "args": dict(args)}), action)
+
+    def to_json(self) -> dict[str, JsonValue]:
+        """The ``request`` object of an audit event or a tx record; ``action`` only when set,
+        so requests without one keep their bytes."""
+        data: dict[str, JsonValue] = {"command": self.command, "args_digest": self.args_digest}
+        if self.action is not None:
+            data["action"] = self.action.to_json()
+        return data
+
+    @classmethod
+    def from_json(cls, data: JsonObject, path: str = "request.") -> RequestMeta:
+        return cls(
+            req_str(data, "command", path),
+            req_str(data, "args_digest", path),
+            ActionRef.from_json(req_obj(data, "action", path), f"{path}action.")
+            if "action" in data
+            else None,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +337,7 @@ def tx_to_json(tx: TxRecord) -> dict[str, JsonValue]:
         "event_id": str(tx.event_id),
         "actor": tx.actor.to_json(),
         "ontology": tx.ontology.to_json(),
-        "request": {"command": tx.request.command, "args_digest": tx.request.args_digest},
+        "request": tx.request.to_json(),
         "changeset": dict(tx.changeset),
         "changeset_hash": tx.changeset_hash,
         "resolution": dict(tx.resolution),
@@ -335,9 +373,7 @@ def tx_from_json(data: JsonObject) -> TxRecord:
         event_id=EventId(_uuid(data, "event_id")),
         actor=ActorContext.from_json(req_obj(data, "actor")),
         ontology=OntologyPin.from_json(req_obj(data, "ontology"), "ontology."),
-        request=RequestMeta(
-            req_str(request, "command", "request."), req_str(request, "args_digest", "request.")
-        ),
+        request=RequestMeta.from_json(request),
         reason=opt_str(data, "reason"),
         idempotency_key=opt_str(data, "idempotency_key"),
         changeset=req_obj(data, "changeset"),

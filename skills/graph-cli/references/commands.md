@@ -330,6 +330,32 @@ Usage: `graph describe types [OPTIONS]`
 | `graph describe types --graph <graph> --json` | Types of one graph. |
 | `graph describe types --module <module>` | Only the types of one module. |
 
+## graph do
+
+Run a named action of the graph: a reviewed write with typed parameters.
+
+Kind: write. Surface: act. Action: none. Exit codes: 0, 1, 2, 3, 4, 5, 6.
+
+Usage: `graph do NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The action name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--param` | assignment | no | yes | name=value for a parameter of the action, read by its declared type. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--dry-run` | flag | no | no | Check the preconditions and show the result without writing. |
+| `--reason` | string | no | no | Why this change is made (some actions require it). |
+| `--idempotency-key` | string | no | no | Key that makes a retry safe. |
+
+| Example | Summary |
+|---|---|
+| `graph do <action> --param key=<value> --dry-run --json` | See what it changes. |
+| `graph do <action> --param key=<value> --json` | Run it. |
+| `graph do <action> --param key=<id> --reason <value> --json` | Run an action that needs a reason. |
+
 ## graph file add
 
 Store a file as a files:File entity; known content is not stored twice.

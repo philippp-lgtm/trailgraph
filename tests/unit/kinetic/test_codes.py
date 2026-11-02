@@ -5,13 +5,17 @@ import re
 from pathlib import Path
 
 import graph_cli.kinetic as kinetic
+import graph_cli.services.actions as action_service
 import graph_cli_admin.services_admin as admin_services
 from graph_cli.cli_kit.hints import known_hint_codes
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, lookup_error_code
 
 SOURCES = Path(kinetic.__file__).parent
 # The publish flow of graph-admin emits the one code of a folder that holds other files.
-ADMIN_SOURCES = (Path(admin_services.__file__).parent / "kinetic_slots.py",)
+ADMIN_SOURCES = (
+    Path(admin_services.__file__).parent / "kinetic_slots.py",
+    Path(action_service.__file__),  # ``graph do``: action.stale, action.deprecated
+)
 LITERAL = re.compile(r'"((?:function|action)\.[a-z_]+)"')
 
 # Codes the package builds from the kind (``f"{kind}.parameter_missing"``): each is
@@ -20,6 +24,7 @@ KIND_BUILT = (
     "parameter_missing",
     "parameter_unknown",
     "parameter_invalid",
+    "parameter_type",  # services.refs.entity_params
     "invalid_value",
     "missing_key",
     "unknown_key",

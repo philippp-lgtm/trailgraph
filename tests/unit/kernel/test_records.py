@@ -10,7 +10,9 @@ from graph_cli.kernel.actor import ABSENT, ActorContext, Assurance, ClientInfo, 
 from graph_cli.kernel.canonical import GENESIS_HASH, hash_document, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, TermRef, TxId
+from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.records import (
+    ActionRef,
     EdgeRecord,
     OntologyPin,
     RequestMeta,
@@ -128,6 +130,36 @@ def test_tx_round_trip_and_hash() -> None:
     assert data["alias_allocations"] == [{"entity": str(uid(1)), "alias": "THING-0001"}]
     assert tx_from_json(data) == tx
     assert hash_document(data) == tx.hash
+    assert "action" not in data["request"]  # type: ignore[operator]
+    named = replace(
+        tx,
+        request=RequestMeta(
+            "do", "sha256:" + "b" * 64, ActionRef("move_item", "sha256:" + "d" * 64)
+        ),
+    )
+    named_data = tx_to_json(named)
+    assert named_data["request"]["action"] == {  # type: ignore[index]
+        "name": "move_item",
+        "hash": "sha256:" + "d" * 64,
+    }
+    assert tx_from_json(named_data) == named
+
+
+def test_the_action_of_a_request_is_in_the_tx_record_only_when_there_is_one() -> None:
+    plain = RequestMeta("create", "sha256:" + "b" * 64)
+    assert plain.to_json() == {"command": "create", "args_digest": "sha256:" + "b" * 64}
+    named = RequestMeta(
+        "do", "sha256:" + "b" * 64, ActionRef("assign_position", "sha256:" + "d" * 64)
+    )
+    assert named.to_json() == {
+        "command": "do",
+        "args_digest": "sha256:" + "b" * 64,
+        "action": {"name": "assign_position", "hash": "sha256:" + "d" * 64},
+    }
+    for meta in (plain, named):
+        assert RequestMeta.from_json(meta.to_json()) == meta
+    with pytest.raises(JsonShapeError):
+        RequestMeta.from_json({"command": "do", "args_digest": "x", "action": {"name": "a"}})
 
 
 def test_request_meta_digest_covers_command_and_args() -> None:

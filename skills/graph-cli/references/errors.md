@@ -47,6 +47,16 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `access.denied` | denied | 3 |
 | `access.project_mismatch` | denied | 3 |
 | `access.reason_required` | denied | 3 |
+| `action.not_found` | not_found | 1 |
+| `action.nothing_to_do` | refused | 1 |
+| `action.parameter_invalid` | usage | 2 |
+| `action.parameter_missing` | usage | 2 |
+| `action.parameter_type` | refused | 1 |
+| `action.parameter_unknown` | usage | 2 |
+| `action.precondition_failed` | invalid | 1 |
+| `action.reason_required` | usage | 2 |
+| `action.stale` | invalid | 1 |
+| `actions.slot_invalid` | invalid | 1 |
 | `audit.unavailable` | unavailable | 5 |
 | `backend.corrupt` | unavailable | 5 |
 | `backend.lock_timeout` | unavailable | 5 |

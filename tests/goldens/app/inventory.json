@@ -1198,6 +1198,129 @@
     },
     {
       "path": [
+        "do"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": null,
+      "summary": "Run a named action of the graph: a reviewed write with typed parameters.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The action name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--param",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "name=value for a parameter of the action, read by its declared type.",
+          "pairs": "multimap",
+          "pair_values": "text"
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Check the preconditions and show the result without writing."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why this change is made (some actions require it)."
+        },
+        {
+          "name": "--idempotency-key",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Key that makes a retry safe."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph do <action> --param key=<value> --dry-run --json",
+          "summary": "See what it changes."
+        },
+        {
+          "command": "graph do <action> --param key=<value> --json",
+          "summary": "Run it."
+        },
+        {
+          "command": "graph do <action> --param key=<id> --reason <value> --json",
+          "summary": "Run an action that needs a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "access.reason_required",
+        "action.not_found",
+        "action.nothing_to_do",
+        "action.parameter_invalid",
+        "action.parameter_missing",
+        "action.parameter_type",
+        "action.parameter_unknown",
+        "action.precondition_failed",
+        "action.reason_required",
+        "action.stale",
+        "actions.slot_invalid",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "changeset.too_large",
+        "config.forbidden_key",
+        "config.invalid",
+        "conflict.idempotency_key_reuse",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.archived",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "graph.readonly",
+        "internal.error",
+        "ontology.artifact_missing",
+        "ontology.pin_mismatch",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "skills.outdated",
+        "usage.invalid_argument",
+        "write.invalid"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
         "file",
         "add"
       ],
@@ -3726,6 +3849,56 @@
       "code": "access.reason_required",
       "category": "denied",
       "exit": 3
+    },
+    {
+      "code": "action.not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "action.nothing_to_do",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "action.parameter_invalid",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.parameter_missing",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.parameter_type",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "action.parameter_unknown",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.precondition_failed",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "action.reason_required",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "action.stale",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "actions.slot_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "audit.unavailable",

@@ -39,6 +39,7 @@ REPAIR_ACTION: Final = "maint.repair"
 REINDEX_ACTION: Final = "maint.reindex"
 POLICY_ACTION: Final = "maint.policy_change"
 TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke")
+_ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.format.NAME_RE
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _TOKEN_PREFIX_RE: Final = re.compile(r"^sha256:[0-9a-f]{16}$")
@@ -238,14 +239,27 @@ def _is_decision(decision: JsonValue) -> bool:
 
 
 def _request_problems(request: JsonValue) -> list[str]:
+    """``{command, args_digest}``, plus ``action: {name, hash}`` for a ``do`` (actions plan A7)."""
     if (
-        isinstance(request, Mapping)
-        and set(request) == {"command", "args_digest"}
-        and isinstance(request["command"], str)
-        and _is_hash(request["args_digest"])
+        not isinstance(request, Mapping)
+        or not {"command", "args_digest"} <= set(request) <= {"command", "args_digest", "action"}
+        or not isinstance(request["command"], str)
+        or not _is_hash(request["args_digest"])
     ):
-        return []
-    return ["request is not {command, args_digest}"]
+        return ["request is not {command, args_digest}"]
+    if "action" in request and not _is_action_ref(request["action"]):
+        return ["request.action is not {name, hash}"]
+    return []
+
+
+def _is_action_ref(action: JsonValue) -> bool:
+    return (
+        isinstance(action, Mapping)
+        and set(action) == {"name", "hash"}
+        and isinstance(action["name"], str)
+        and _ACTION_NAME_RE.match(action["name"]) is not None
+        and _is_hash(action["hash"])
+    )
 
 
 def _routing_problems(

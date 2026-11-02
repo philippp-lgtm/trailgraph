@@ -45,7 +45,7 @@ from graph_cli.storage.memory.store import InMemoryStore
 from support.admin_context import admin_context
 from support.audit_events import allow
 from support.clock import StepClock
-from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
+from support.fixtures import EXAMPLES, FIXTURES, ONTOLOGIES, compiled_model, example_model
 from support.graphs import pin_of, release_files
 from support.ids import SeededIdProvider
 from support.stores import ALL_STATUSES, FaultSwitch
@@ -208,8 +208,11 @@ class ServiceEnv:
     model_override: CompiledModel | None = None  # memory backend only
     version: str | None = None  # fixture version; the first one by default
     language: str | None = None  # the graph language (BCP 47)
+    example_version: str | None = None  # the ontology is ``examples/<ontology>/ontology/<this>``
 
     def __post_init__(self) -> None:
+        if self.example_version is not None:
+            self.model_override = example_model(self.ontology, self.example_version)
         self.model = self.model_override or compiled_model(self.ontology, self.version)
         self.clock = StepClock(start="2030-01-01T00:00:00Z")
         self.ids = SeededIdProvider(self.clock, 5)
@@ -232,7 +235,11 @@ class ServiceEnv:
         else:
             from graph_cli_admin.services_admin.graphs import create
 
-            source = ONTOLOGIES / self.ontology / self.model.bundle_version
+            source = (
+                EXAMPLES / self.ontology / "ontology" / self.example_version
+                if self.example_version is not None
+                else ONTOLOGIES / self.ontology / self.model.bundle_version
+            )
             create(
                 admin_context(self.root),
                 name=self.name,

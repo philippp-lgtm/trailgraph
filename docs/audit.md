@@ -22,6 +22,12 @@ transaction is the benign trace of an interrupted write (info); a
 transaction without its intent is an error. Events carry ids, types, hashes,
 sizes and reason text, never attribute values.
 
+A write by `graph do` names its action: `request.action` is `{name, hash}` in the
+intent, in a refusal event and in the transaction record (`request.command` is `do`;
+`args_digest` covers the action, its bound parameters, the dry-run flag, the reason and the
+idempotency key). The key is optional and appears only for such writes, so the bytes of
+every other write are unchanged; verification checks its shape.
+
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
 covers), and every file the write stored is listed as `{hash, size}`.
@@ -49,6 +55,7 @@ fails:
 | `output` | `{format: json\|text, bytes, spilled_bytes}`: the bytes the caller received on stdout, and the size of an answer that went to a file instead (null otherwise) |
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
 | `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
+| `action` | only for `do`: `{name, hash}` of the action that ran (`hash` is `null` when it failed, except for `action.stale`); never a parameter value |
 
 `phases` names only the phases the command went through. Each phase counts
 its own time (a phase inside another is taken out of the outer one), a

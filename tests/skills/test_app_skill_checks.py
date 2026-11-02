@@ -49,6 +49,7 @@ ALLOWED_PLACEHOLDERS = {
     "<relation>",
     "<module>",
     "<function>",
+    "<action>",
     "<param>",
     "<state>",
     "<file>",
@@ -383,8 +384,8 @@ class TestStructure:
     def test_size_budgets(self) -> None:
         files = committed_files()
         assert (
-            len(files["SKILL.md"].splitlines()) <= 218
-        )  # functions: command rows, guidance; lookup --for
+            len(files["SKILL.md"].splitlines()) <= 219
+        )  # functions: command rows, guidance; lookup --for; actions: the do row
         for name, text in files.items():
             if name.startswith("references/"):
                 assert len(text.encode()) <= 40 * 1024, name

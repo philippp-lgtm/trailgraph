@@ -681,7 +681,8 @@ HISTORY_OUTPUT: Final = obj(
                             }
                         )
                     ),
-                }
+                },
+                {"action": obj({"name": STRING, "hash": STRING})},  # set by a ``do``
             )
         ),
     }

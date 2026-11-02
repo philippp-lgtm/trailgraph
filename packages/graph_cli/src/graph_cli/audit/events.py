@@ -446,7 +446,7 @@ def _body(
             ],
         },
         "result": result,
-        "request": {"command": request.command, "args_digest": request.args_digest},
+        "request": request.to_json(),
     }
     if graph is not None:
         body["graph"] = graph

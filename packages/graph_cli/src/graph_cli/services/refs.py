@@ -27,6 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
+from typing import Literal
 
 from graph_cli.kernel.actions import Action
 from graph_cli.kernel.changeset import (
@@ -55,6 +56,9 @@ from graph_cli.kernel.ids import (
     ref_text,
 )
 from graph_cli.kernel.ports.storage import Snapshot
+from graph_cli.kinetic.params import ParamDef
+from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.query.cypher.values import Value
 
 MAX_CANDIDATES = 10
 NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
@@ -170,6 +174,50 @@ def resolve_ref(text: str, snapshot: Snapshot) -> tuple[EntityId, tuple[WarningR
     assert not isinstance(found, LocalRef | AbbrevRef)
     entity = resolver.refs[found.alias] if isinstance(found, AliasRef) else found
     return entity, tuple(resolver.warnings.values())
+
+
+def entity_params(
+    snapshot: Snapshot,
+    model: CompiledModel,
+    kind: Literal["function", "action"],
+    name: str,
+    param: ParamDef,
+    bound: Mapping[str, Value],
+) -> tuple[Value, list[WarningRecord]]:
+    """The canonical ids for the reference texts of a ``ref`` parameter of a function or an
+    action, each checked to exist and to be of the declared class or a subclass (no name
+    resolution). Errors name the function or action under ``details[kind]``;
+    ``<kind>.parameter_type`` is the wrong class."""
+    assert param.of_class is not None
+    given = bound[param.name]
+    texts = given if isinstance(given, list) else [given]
+    warnings: list[WarningRecord] = []
+    ids: list[Value] = []
+    for text in texts:
+        assert isinstance(text, str)
+        entity, found = resolve_ref(text, snapshot)
+        warnings += found
+        revision = snapshot.get(entity)
+        if revision is None:
+            raise GraphCliError(
+                "entity.not_found",
+                f"no entity {text} (parameter {param.name!r} of {name})",
+                details={"ref": text, "id": str(entity), kind: name},
+            )
+        if not model.is_a(revision.type, param.of_class):
+            raise GraphCliError(
+                f"{kind}.parameter_type",
+                f"parameter {param.name!r} of {name} expects {param.of_class}, "
+                f"{text} is a {revision.type}",
+                details={
+                    kind: name,
+                    "parameter": param.name,
+                    "expected": param.of_class,
+                    "found": revision.type,
+                },
+            )
+        ids.append(str(entity))
+    return (ids if isinstance(given, list) else ids[0]), warnings
 
 
 def _not_found(text: str, path: str) -> GraphCliError:
