@@ -27,6 +27,52 @@
       }
     },
     "schemas": {
+      "action_problem": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "action",
+          "code",
+          "message",
+          "path",
+          "line",
+          "details"
+        ]
+      },
       "actions_summary": {
         "type": "object",
         "properties": {
@@ -872,6 +918,24 @@
               "count",
               "problems"
             ]
+          },
+          "actions": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "problems": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/action_problem"
+                }
+              }
+            },
+            "required": [
+              "count",
+              "problems"
+            ]
           }
         },
         "required": [
@@ -881,7 +945,8 @@
           "counts",
           "codes",
           "findings",
-          "functions"
+          "functions",
+          "actions"
         ]
       },
       "graph_create_data": {
@@ -1204,6 +1269,16 @@
               }
             ]
           },
+          "actions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/source_actions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "files": {
             "type": "array",
             "items": {
@@ -1223,6 +1298,7 @@
           "ontology",
           "skill",
           "functions",
+          "actions",
           "files"
         ]
       },
@@ -1333,6 +1409,53 @@
               }
             ]
           },
+          "actions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/actions_summary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "to": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/actions_summary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "published": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "actions",
+                  "published"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "unchanged": {
             "type": "boolean"
           },
@@ -1382,6 +1505,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "actions": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/source_actions"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -1389,7 +1522,8 @@
               "graph",
               "ontology",
               "skill",
-              "functions"
+              "functions",
+              "actions"
             ]
           }
         },
@@ -1398,6 +1532,7 @@
           "ontology",
           "skill",
           "functions",
+          "actions",
           "unchanged",
           "dry_run",
           "source"
@@ -3066,6 +3201,21 @@
           "kind",
           "hash",
           "published_against"
+        ]
+      },
+      "source_actions": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "hash"
         ]
       },
       "source_functions": {
@@ -6705,7 +6855,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.data_errors, admin.functions_broken, admin.model_invalid, admin.remote_mode, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.model_invalid, admin.remote_mode, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -6724,6 +6874,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "admin.actions_broken",
               "admin.data_errors",
               "admin.functions_broken",
               "admin.model_invalid",
@@ -8187,7 +8338,7 @@
     "/v1/admin/commands/graph/pull": {
       "post": {
         "operationId": "graph_pull",
-        "summary": "Write graph REF's ontology release, skill and functions into DIR to edit.",
+        "summary": "Write graph REF's ontology release, skill, functions and actions into DIR.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -8365,7 +8516,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.remote_mode, admin.source_exists, functions.slot_invalid, remote.client_outdated, skills.source_invalid.",
+            "description": "Unprocessable Content: actions.slot_invalid, admin.remote_mode, admin.source_exists, functions.slot_invalid, remote.client_outdated, skills.source_invalid.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -8384,6 +8535,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "actions.slot_invalid",
               "admin.remote_mode",
               "admin.source_exists",
               "functions.slot_invalid",
@@ -8507,7 +8659,7 @@
                       },
                       "force": {
                         "type": "boolean",
-                        "description": "Replace the version, skill and functions directories and base file if they exist."
+                        "description": "Replace the version, skill, functions and actions directories and base file if they exist."
                       },
                       "--force": {
                         "type": "boolean",
@@ -8736,7 +8888,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.functions_broken, admin.functions_invalid, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -8755,6 +8907,8 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "admin.actions_broken",
+              "admin.actions_invalid",
               "admin.functions_broken",
               "admin.functions_invalid",
               "admin.migration_required",
@@ -10637,7 +10791,7 @@
                       },
                       "graph": {
                         "type": "string",
-                        "description": "Compare with the release this graph is pinned to; warns (admin.functions_affected) about published functions the release would break."
+                        "description": "Compare with the release this graph is pinned to; warns (admin.functions_affected, admin.actions_affected) about published functions and actions the release would break."
                       },
                       "--graph": {
                         "type": "string",
@@ -10842,7 +10996,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.functions_broken, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -10861,6 +11015,7 @@
               }
             },
             "x-graph-cli-error-codes": [
+              "admin.actions_broken",
               "admin.functions_broken",
               "admin.migration_required",
               "admin.model_invalid",

@@ -313,6 +313,9 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         "functions": obj(  # the published catalog against the same model
             {"count": INTEGER, "problems": array(ref("function_problem"))}
         ),
+        "actions": obj(  # the published action catalog against the same model
+            {"count": INTEGER, "problems": array(ref("action_problem"))}
+        ),
     }
 )
 REINDEX_OUTPUT: Final = obj(  # services_admin.reindex.reindex
@@ -335,6 +338,7 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
         ),
         "skill": nullable(ref("source_skill")),
         "functions": nullable(ref("source_functions")),
+        "actions": nullable(ref("source_actions")),
         "files": STRINGS,
     },
     {"pulled": RETURNED_FILES},
@@ -364,6 +368,16 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 }
             )
         ),
+        "actions": nullable(
+            obj(
+                {
+                    "from": nullable(ref("actions_summary")),
+                    "to": nullable(ref("actions_summary")),
+                    "actions": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        ),
         "unchanged": BOOLEAN,
         "dry_run": BOOLEAN,
         "source": obj(  # services_admin.sources.base_document: the workspace's new base
@@ -373,6 +387,7 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 "ontology": ref("ontology_pin"),
                 "skill": nullable(ref("source_skill")),
                 "functions": nullable(ref("source_functions")),
+                "actions": nullable(ref("source_actions")),
             }
         ),
     }
@@ -572,6 +587,7 @@ SPECS: Final = (
             "admin.model_invalid",
             "admin.data_errors",
             "admin.functions_broken",
+            "admin.actions_broken",
         ),
         handler=check_command,
         output=CHECK_OUTPUT,
@@ -579,7 +595,8 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. Also checks the published functions against the"
         " model (admin.functions_broken, for example function.stale after an interrupted"
-        " push). With --ontology, checks the data under an"
+        " push) and the published actions (admin.actions_broken, for example action.stale; the"
+        " functions are reported first). With --ontology, checks the data under an"
         " authored version before it is released.",
         remote="hooked",
     ),
@@ -615,7 +632,7 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="maint.graph_configure",
-        summary="Write graph REF's ontology release, skill and functions into DIR to edit.",
+        summary="Write graph REF's ontology release, skill, functions and actions into DIR.",
         params=(
             REF,
             ParamSpec(
@@ -630,7 +647,8 @@ SPECS: Final = (
             ParamSpec(
                 "--force",
                 "flag",
-                "Replace the version, skill and functions directories and base file if they exist.",
+                "Replace the version, skill, functions and actions directories and base file"
+                " if they exist.",
             ),
             DATA_ROOT,
         ),
@@ -649,12 +667,14 @@ SPECS: Final = (
             "ontology.artifact_missing",
             "skills.source_invalid",
             "functions.slot_invalid",
+            "actions.slot_invalid",
         ),
         handler=pull,
         output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
         " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any),"
-        " DIR/functions/<name>.yaml (the published functions, if any) and"
+        " DIR/functions/<name>.yaml (the published functions, if any),"
+        " DIR/actions/<name>.yaml (the published actions, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
         " nothing in the data root.",
         remote="hooked",
@@ -699,18 +719,22 @@ SPECS: Final = (
             "admin.skill_invalid",
             "admin.functions_invalid",
             "admin.functions_broken",
+            "admin.actions_invalid",
+            "admin.actions_broken",
         ),
         handler=push,
         output=PUSH_OUTPUT,
-        description="The graph must still have the ontology release, skill and functions DIR was"
-        " pulled from (or already what DIR holds), else admin.source_conflict. The highest"
-        " ontology/<version>/ is released and pinned when it differs (maint.ontology_release,"
-        " maint.ontology_pin), the skill directory and the functions"
-        " directory published when they differ (maint.graph_configure; a missing functions"
-        " directory is an empty one); whenever the ontology changes, the skill and the functions"
-        " are checked against the ontology they will have (the published functions too, if the"
-        " push does not replace them: admin.functions_broken). Everything is checked before the"
-        " first write; the new base is written into DIR.",
+        description="The graph must still have the ontology release, skill, functions and actions"
+        " DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
+        " highest ontology/<version>/ is released and pinned when it differs"
+        " (maint.ontology_release, maint.ontology_pin), the skill directory, the functions"
+        " directory and the actions directory published when they differ (maint.graph_configure;"
+        " a missing functions or actions directory is an empty one); whenever the ontology"
+        " changes, the skill, the functions and the actions are checked against the ontology"
+        " they will have (the published functions and actions too, if the push does not replace"
+        " them: admin.functions_broken, admin.actions_broken). A function and an action may not"
+        " share a name. Everything is checked before the first write; the new base is written"
+        " into DIR.",
         remote="hooked",
     ),
     CommandSpec(

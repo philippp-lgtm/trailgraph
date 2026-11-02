@@ -273,3 +273,51 @@ def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_r
     assert done.data["functions"]["published"] is True  # type: ignore[index]
     check(ctx, graph_ref="example_graph", source=None, module=None)
     assert ctx.catalog.read_functions(graph.id) is not None
+
+
+def test_a_push_interrupted_between_the_release_and_the_actions_is_stale_and_repeatable(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    """Defence in depth as for functions: the release is pinned, the actions write is lost.
+    The old catalog does not compile against the new pin (``graph check`` reports
+    ``action.stale``), and repeating the push completes the catalog."""
+    create(ctx)
+    publish_actions(ctx, graph_ref="example_graph", source=ACTIONS, reason=None, dry_run=False)
+    work = tmp_path / "work"
+    sources.pull(ctx, graph_ref="example_graph", target=work, version=None, force=False)
+    major = work / "ontology" / "2.0.0"
+    major.mkdir()
+    text = (INVENTORY / "1.0.0" / "inventory.yaml").read_text()
+    text = text.replace("located_in", "stored_in").replace("version: 1.0.0", "version: 2.0.0")
+    (major / "inventory.yaml").write_text(text)
+    path = work / "actions" / "move_item.yaml"
+    path.write_text(path.read_text().replace("located_in", "stored_in"))
+
+    def run() -> sources.Pushed:
+        return sources.push(
+            ctx,
+            graph_ref="example_graph",
+            source=work,
+            reason=None,
+            dry_run=False,
+            inventory=app_inventory(),
+        )
+
+    interrupted(faults, CrashPoint.ACTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert graph.pin.version == "2.0.0"
+    old = ctx.catalog.read_actions(graph.id)
+    assert old is not None and old.published_against.version == "1.0.0"
+    with pytest.raises(GraphCliError) as caught:
+        check(ctx, graph_ref="example_graph", source=None, module=None)
+    assert caught.value.code == "admin.actions_broken"
+    details = caught.value.details
+    assert details is not None and details["actions"] == ["move_item"]
+    codes = {p["code"] for p in details["problems"]}  # type: ignore[union-attr, index]
+    assert "action.stale" in codes
+    assert verify_codes(ctx) == [IWE]
+    done = run()
+    assert done.data["ontology"]["released"] is False  # pinned already
+    assert done.data["actions"]["published"] is True  # type: ignore[index]
+    check(ctx, graph_ref="example_graph", source=None, module=None)
+    assert ctx.catalog.read_actions(graph.id) is not None

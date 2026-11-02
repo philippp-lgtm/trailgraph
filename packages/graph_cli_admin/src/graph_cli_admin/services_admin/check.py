@@ -11,7 +11,10 @@
 - The published function catalog is checked against the same model
   (``graph_cli.kinetic.check_catalog``): a function that no longer resolves
   (``function.stale`` for the stored query text) fails with
-  ``admin.functions_broken``; ``functions`` in the data lists the problems.
+  ``admin.functions_broken``; ``functions`` in the data lists the problems. The
+  published action catalog is checked the same way (``check_actions``, against the
+  function names of the graph): ``admin.actions_broken``, ``actions`` in the data.
+  When both are broken, the functions are refused first (fix, check again).
 - Error findings fail with ``admin.data_errors`` (counts and findings in the
   details); warnings and info findings alone succeed.
 """
@@ -27,12 +30,16 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import has_errors
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.kinetic.compile import check_catalog
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli_admin.services_admin.audit import counts_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import compile_source, pinned_model
-from graph_cli_admin.services_admin.release import functions_broken
+from graph_cli_admin.services_admin.release import (
+    actions_broken,
+    catalog_problems,
+    functions_broken,
+    names_of,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +66,9 @@ def check(
     findings = check_graph(model, snapshot)
     codes = Counter(f.code for f in findings)
     slot = ctx.catalog.read_functions(entry.id)
-    problems = check_catalog(slot.compiled, model) if slot is not None else []
+    problems = catalog_problems(slot, model)
+    published = ctx.catalog.read_actions(entry.id)
+    action_problems = catalog_problems(published, model, function_names=names_of(slot))
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "ontology": {"bundle": model.bundle_id, "version": model.bundle_version},
@@ -71,6 +80,10 @@ def check(
             "count": slot.count if slot is not None else 0,
             "problems": [p.to_json() for p in problems],
         },
+        "actions": {
+            "count": published.count if published is not None else 0,
+            "problems": [p.to_json() for p in action_problems],
+        },
     }
     if has_errors(findings):
         raise GraphCliError(
@@ -81,5 +94,9 @@ def check(
     if problems:
         raise functions_broken(
             problems, {"to": model.bundle_version, "pinned": source is None}, advice=""
+        )
+    if action_problems:
+        raise actions_broken(
+            action_problems, {"to": model.bundle_version, "pinned": source is None}, advice=""
         )
     return CheckOutcome(entry, data, snapshot.seq, snapshot.warnings)

@@ -168,12 +168,25 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
                 "details": OPEN,
             }
         ),
+        "action_problem": obj(  # graph_cli.kinetic.params.Problem.to_json for actions
+            {
+                "action": STRING,
+                "code": STRING,
+                "message": STRING,
+                "path": NULLABLE_STRING,
+                "line": nullable(INTEGER),
+                "details": OPEN,
+            }
+        ),
         "functions_summary": obj(CATALOG_SUMMARY),  # kernel.ports.catalog.KineticSlot.summary
         "actions_summary": obj(CATALOG_SUMMARY),  # the same for kind actions
         "source_skill": obj(  # services_admin.sources._skill_json
             {"name": STRING, "kind": SKILL_KIND, "hash": STRING}
         ),
-        "source_functions": obj(  # services_admin.sources._functions_json
+        "source_functions": obj(  # services_admin.sources._catalog_json
+            {"count": INTEGER, "hash": STRING}
+        ),
+        "source_actions": obj(  # the same for the actions
             {"count": INTEGER, "hash": STRING}
         ),
         "policy_document": _policy_document(),

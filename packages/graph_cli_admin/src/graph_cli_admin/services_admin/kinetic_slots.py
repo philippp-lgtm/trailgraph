@@ -29,11 +29,8 @@ from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
-from graph_cli_admin.services_admin.release import check_state
+from graph_cli_admin.services_admin.release import DAMAGED, check_state, current_catalog, names_of
 
-DAMAGED: Final = frozenset(
-    {"functions.slot_invalid", "actions.slot_invalid", "format.unsupported_version"}
-)
 SINGULAR: Final[dict[SlotKind, str]] = {"functions": "function", "actions": "action"}
 INVALID_FILE: Final[dict[SlotKind, str]] = {
     "functions": "function.invalid_file",
@@ -100,20 +97,7 @@ def read_dir(source: Path, kind: SlotKind) -> tuple[dict[str, bytes], list[Probl
 
 def current_slot(session: MaintenanceSession, kind: SlotKind) -> KineticSlot | None:
     """The published catalog; a damaged slot is replaced like a missing one."""
-    try:
-        return session.read_functions() if kind == "functions" else session.read_actions()
-    except GraphCliError as exc:
-        if exc.code not in DAMAGED:
-            raise
-        return None
-
-
-def names_of(slot: KineticSlot | None) -> frozenset[str]:
-    """The names in a published catalog (deprecated ones too: they still hold the name)."""
-    if slot is None:
-        return frozenset()
-    key = slot.spec.list_key
-    return frozenset(req_str(as_object(e, key), "name") for e in req_list(slot.compiled, key))
+    return current_catalog(session, kind)
 
 
 def published_names(ctx: AdminContext, entry: GraphEntry, kind: SlotKind) -> frozenset[str]:

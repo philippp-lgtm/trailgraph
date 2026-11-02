@@ -667,6 +667,7 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     model.write_text(model.read_text() + "\nOne more line.\n")
     shutil.copytree(V110, workspace / "ontology" / "1.1.0")
     shutil.copytree(FUNCTIONS, workspace / "functions")  # published by the push below
+    shutil.copytree(ACTIONS, workspace / "actions")  # published by the push below
     run("graph", "push", "example_graph", "workspace", "--reason", "equivalence")
     run("graph", "push", "example_graph", "workspace")
     run("graph", "push", "second", "workspace")

@@ -111,6 +111,7 @@ def test_pull_writes_the_release_sources_and_the_skill_byte_for_byte(
         "ontology": shown["ontology"] | {"artifact_hash": shown["ontology"]["artifact_hash"]},
         "skill": {"name": "graph-example-graph", "kind": "generated", "hash": skill_hash(template)},
         "functions": None,
+        "actions": None,
     }
     assert tree_hash(root) == before  # a pull changes nothing in the data root
 

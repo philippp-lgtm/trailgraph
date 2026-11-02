@@ -46,7 +46,10 @@ __all__ = [
     "refuse",
     "show",
     "slot_of",
+    "write",
 ]
+
+write = kinetic_slots.write
 
 
 def read_dir(source: Path) -> tuple[dict[str, bytes], list[Problem]]:

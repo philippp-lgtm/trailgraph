@@ -21,9 +21,9 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `init` | create the data root and, if missing, `config.toml` with a device id |
 | `graph create NAME --ontology DIR` | create a graph pinned to the first release of an authored ontology; `--language TAG` sets the BCP 47 default language of its values (canonical case, fixed after create) |
 | `graph list`, `graph show REF` | list graphs with title and language (a project admin: the graphs it maintains); show manifest, head, installed releases, the published skill and the count and hash of the published functions and actions |
-| `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; also checks the published functions against the model (`admin.functions_broken`, for example `function.stale` after an interrupted push); `--ontology DIR` checks against an authored version before it is released |
+| `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; also checks the published functions against the model (`admin.functions_broken`, for example `function.stale` after an interrupted push) and the published actions (`admin.actions_broken`, for example `action.stale`; the functions are reported first); `--ontology DIR` checks against an authored version before it is released |
 | `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
-| `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one), its published skill and its published functions, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
+| `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one), its published skill, functions and actions, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
 | `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`) |
 | `workspace sync DIR` | set up or refresh a [maintainer workspace](#maintainer-workspaces): the admin skills in `DIR/.claude/skills/`, `DIR/CLAUDE.md` when there is none, and a pull of every graph that has no folder yet (`--dry-run`, `--force` for the skills) |
 | `graph skill publish GRAPH DIR` | publish a skill directory or a template as the graph's skill (`--dry-run`, `--reason`) |
@@ -33,8 +33,8 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph actions show GRAPH` | the published action catalog: hash, ontology pin it was published against, and one line per action |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
-| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; with `--graph`, warns `admin.functions_affected` for the published functions the release would break |
-| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function must still resolve under the new release, on every bump, else `admin.functions_broken` ([Auditing and releases](#auditing-and-releases)) |
+| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)) |
 | `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
@@ -64,17 +64,18 @@ so it can be changed on any machine, also one in the remote mode:
 DIR/ontology/<version>/<module>.yaml   the authored modules of the release
 DIR/skill/graph-<graph>/...            the published skill (if the graph has one)
 DIR/functions/<name>.yaml              the published functions (if the graph has any)
-DIR/.graph_cli_source.json             the base: graph, ontology release, skill and functions hash
+DIR/actions/<name>.yaml                the published actions (if the graph has any)
+DIR/.graph_cli_source.json             the base: graph, ontology release, skill, functions and actions hash
 ```
 
-Pull owns these four entries (the `functions` folder as a whole): if any exists, it is refused
+Pull owns these five entries (the `functions` and `actions` folders as a whole): if any exists, it is refused
 (`admin.source_exists`) unless `--force` replaces them. Everything else in
 `DIR` stays (a README, notes, older version directories, `.git`).
 
 To change the ontology, copy the version directory to a new one named
 after the new version and bump the module version there; to change the
-skill, edit `skill/graph-<graph>/`; to change the functions, edit, add or
-delete files in `functions/`. `graph push REF DIR` then, under the
+skill, edit `skill/graph-<graph>/`; to change the functions or actions, edit, add or
+delete files in `functions/` or `actions/`. `graph push REF DIR` then, under the
 graph's lock:
 
 - refuses with `admin.source_conflict` when the graph no longer has the
@@ -86,15 +87,20 @@ graph's lock:
   base version is `admin.release_exists`), and publishes the skill
   directory when it differs (the rules of `graph skill publish`) and the
   `functions` folder when it differs, after the release (the rules of
-  `graph functions publish`; a missing folder is an empty one, so deleting
-  every file unpublishes the catalog);
+  `graph functions publish`) and the `actions` folder the same way (the
+  rules of `graph actions publish`); the order is release, skill, functions,
+  actions. A missing folder is an empty one, so deleting every file
+  unpublishes the catalog;
 - checks the skill the graph will have against the ontology it will have
-  whenever either changes, and the functions the same way: the pushed files
-  against the model the graph will have, so a release that breaks a function
-  and the fixed or deleted function files go in one push. When the push
-  does not touch the functions, the published ones are checked and a break
-  refuses the release (`admin.functions_broken`). Every other rule is
-  checked before the first write too;
+  whenever either changes, and the functions and actions the same way: the
+  pushed files against the model the graph will have, so a release that
+  breaks a function or an action and the fixed or deleted files go in one
+  push. When the push does not touch the functions or the actions, the
+  published ones are checked and a break refuses the release
+  (`admin.functions_broken`, `admin.actions_broken`). Functions and actions
+  share one namespace, checked against the names the graph will have: a
+  name can move from `functions/` to `actions/` in one push, but not be in
+  both. Every other rule is checked before the first write too;
 - writes the new base into `DIR` (not with `--dry-run`).
 
 Pull is authorized as `maint.graph_configure` on the graph; push as that
@@ -168,8 +174,9 @@ or a patch, the published functions are checked against the new model
 (`graph_cli.kinetic` rules): one that no longer resolves refuses the release
 with `admin.functions_broken` (the first 20 problems with the function
 names in `details`); `ontology diff --graph` warns about them beforehand
-(`admin.functions_affected`). Fix or delete the functions in the same
-`graph push` as the ontology. Verification reports an
+(`admin.functions_affected`). The published actions get the same check
+(`admin.actions_broken`, `admin.actions_affected`). Fix or delete the
+functions and actions in the same `graph push` as the ontology. Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 
 Related guides: [Ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md)
