@@ -188,17 +188,21 @@ The checks use the query engine without data: `query.cypher.parameters` lists th
 parameter, and `ontology_layer.connecting` supplies the hint of an impossible
 relationship pattern.
 
-The layers above use it in four places: `services.read` and `services.describe`
-load the published catalog next to the model (`describe functions`,
-`describe function`, `run`, the search kind `function`); `skills` receive the
+The layers above use it in five places: `services.read` and `services.describe`
+load the published catalogs next to the model (`describe functions|function`,
+`describe actions|action`, `run`, the search kinds `function` and `action`,
+`lookup --for`); `services.actions` and `services.write` run an action for the
+`do` command of `app_cli` (the visible action, binding, then expansion and
+preconditions under the graph lock); `skills` receive the
 compiled catalog as one more document and render the `functions` block and
-pages; `graph_cli_admin.services_admin.functions` publishes a folder of function
-files into the graph's slot (one maintenance operation, audited as
-`change.functions`); and `services_admin.release` and `sources` check the
-published catalog against the model a release gives the graph, so a catalog
+pages (the actions only as far as the installing reader may run them);
+`graph_cli_admin.services_admin.functions` and `.actions` publish a folder of
+function or action files into the graph's slot (one maintenance operation,
+audited as `change.functions` or `change.actions`); and `services_admin.release` and `sources` check the
+published catalogs against the model a release gives the graph, so a catalog
 that stays published always resolves against the pinned ontology. The slot
 layout is in [Storage](storage.md#filestore), its verification in
-[Audit](audit.md#slot-verification), the file format in the authoring skill of
+[Audit](audit.md#slot-verification), the file formats in the authoring skills of
 the admin skills ([Skills](skills.md#admin-skills)).
 
 ## Access control modules
@@ -220,7 +224,7 @@ only caller of `WriteSession.commit`.
 | Module | Content |
 | --- | --- |
 | `kernel.changeset` | change set DTOs, the keys of the document, each op and an edge as data (the parser and skill 1's `references/changesets.md` read them), strict parsing (`changeset.malformed` with `details.path`), limits (1000 ops, 8 MiB), the canonical form and its hash, JSON/JSONL input readers |
-| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments |
+| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; `entity_params`, the existence and class check of `ref` parameters shared by `run` and `do` |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
 | `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |
 | `ontology_layer.connecting` | the relations and two-hop paths that connect two types, from the compiled model alone; used for the `connecting` of domain and range findings |
@@ -238,6 +242,10 @@ commit. Ops apply in order to one working copy, each touched entity gets
 one new revision unless its content ends up equal to its current revision
 (it is unchanged then), and a change set commits completely or not at all;
 one that changes nothing stops after validation, without a transaction.
+A write by `graph do` hands the action to the same pipeline as a plan: under the
+lock the template is expanded on the locked state and the expansion authorized, then
+come the idempotency check (a replay matches the request digest, not the expansion)
+and the preconditions, and the write continues as for any change set.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
 along with the result. The `connecting` of a domain or range finding

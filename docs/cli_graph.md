@@ -65,10 +65,10 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
 | `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions you may read, each module also has a `functions` count of its active functions; likewise an `actions` count when you may run actions |
 | `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read and is less than half the size of `--json` (it leaves out cardinalities and the summaries of links, which `describe type` gives); the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`), likewise an `actions` section (text: `Actions:`) when you may run actions |
-| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`; a function's or action's `curie` is its name, see [Functions](#functions)), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
+| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`; a function's or action's `curie` is its name, see [Functions](#functions) and [Actions](#actions)), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
 | `describe functions [--module M] [--include-deprecated]` | the named functions of the graph (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`. See [Functions](#functions) |
-| `describe actions [--module M] [--include-deprecated]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; an action whose write rights you lack does not exist for you |
-| `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean` |
+| `describe actions [--module M] [--include-deprecated]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; an action whose write rights you lack does not exist for you. See [Actions](#actions) |
+| `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`. See [Actions](#actions) |
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)) |
@@ -81,7 +81,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
 | `transition REF STATE`, `supersede BY TARGET...`, `retract REF` | lifecycle and provenance; `supersede` and `retract` need `--reason`; over a relation with `on_target_inactive: refuse` they are refused while active entities still point at the target (`data.referential.target_referenced` lists them; relink or retract them in the same change set) |
-| `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it may not run is `action.not_found` |
+| `do NAME` | run a named action of the graph: a reviewed write the maintainer published (`--param name=value`, once per value for a list parameter; `--dry-run`, `--reason`, `--idempotency-key`, `--graph`). The parameters are read by the types the action declares, a reference takes an id, alias or trailing hex digits, never a name. The service checks the action's preconditions and expands it in the state it finds under the graph lock, then writes one transaction with one audit intent that names the action; `--dry-run` shows every entity it would write. The answer is the write result plus `data.action` (`name`, `hash`). A retry with the same `--idempotency-key` and parameters returns the recorded result; the caller needs the write rights of every op it expands to, and an action it may not run is `action.not_found`. See [Actions](#actions) |
 | `apply FILE` | change set documents (one JSON document or JSONL; `-` reads stdin); `--summary` leaves out the entities of each result and keeps `entity_count` and the findings |
 | `file add PATH` | store a file as `files:File` (or `--type` subclass) with its origin; known content is returned, not stored twice (see [Files](files.md)) |
 | `file path REF` | the read-only path of a stored file; `--origin` the path it came from on this machine |
@@ -494,3 +494,81 @@ described once, in the format reference of the `authoring-graph-functions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md)); the
 [generated graph skill](skills.md#blocks) lists a graph's featured
 functions.
+
+## Actions
+
+A graph can carry named write actions: reviewed, typed writes that the
+maintainer published for the changes people make again and again ("a person
+takes over a vacant position", "an employee leaves"). An action is a
+template of change set ops with typed parameters and, where it matters,
+preconditions on the state it will change. It writes exactly what the
+primitives (`create`, `link`, `unlink`, `transition`, ...) would write, in
+one step.
+
+Find one before writing by hand:
+
+- `describe search TEXT --kind action` ranks actions like functions (name,
+  summary, then `use_when`, the example requests, the parameter names and
+  the terms of the types and relations it touches). An unknown or hidden
+  name is `action.not_found` (exit 1) with the closest visible names in
+  `did_you_mean` and the hint `graph describe search <words> --kind action`.
+- `describe actions [--module M] [--include-deprecated]` lists them;
+  `describe action NAME` shows the definition: parameters, preconditions,
+  the compiled operations, the write rights it needs and whether it
+  requires a `--reason`. `describe modules` and `describe module M` count
+  and list the actions per module.
+- `lookup TEXT --for <action>.<param>` finds the entities a `ref` parameter
+  accepts by name.
+
+Run one with `do NAME --param name=value ...`, with `--dry-run` first:
+
+- Each `--param` is read by the type the action declares, as for
+  [functions](#functions) (a list parameter repeats its name; a parameter
+  may be optional). A `ref` parameter takes a full id, alias or 8-32
+  trailing hex digits, never a name, and the entity must exist and be of
+  the declared class or a subclass (`entity.not_found`,
+  `action.parameter_type`). A missing, unknown or malformed parameter is a
+  usage error (exit 2: `action.parameter_missing`,
+  `action.parameter_unknown`, `action.parameter_invalid`).
+- The preconditions are checked on the entities' current state under the
+  graph lock, right before the write, so nothing can change between check
+  and commit. A failing one refuses the action with
+  `action.precondition_failed` (exit 1), and the answer lists every failing
+  precondition with its summary, the parameter, the entity and, for a
+  count, the actual value. Nothing is written.
+- Some actions remove every edge of one relation at an entity (`unlink ...
+  all: true` in the file, for example the current holder of a position).
+  The `--dry-run` answer lists each edge it would remove, as any dry run
+  lists the entities it would write; read it before running without it.
+  When there is nothing to remove and nothing else to write the action is
+  refused with `action.nothing_to_do` (nothing is recorded).
+- An action marked `reason: required` is refused without `--reason`
+  (`action.reason_required`, exit 2).
+- `--idempotency-key` makes a retry safe. The key matches the request (the
+  action and its hash, the parameters, the reason), not the resulting
+  change: a retry with the same key and request replays the recorded result
+  even when the state has changed since, and the same key with another
+  request is `conflict.idempotency_key_reuse`.
+- The expansion is one transaction (all or nothing) with one audit intent
+  that names the action (`request.action`, see [Audit](audit.md)). The
+  answer is the write result of any write plus `data.action` (`name`,
+  `hash`). `--dry-run` writes and audits nothing.
+- A deprecated action runs with the warning `action.deprecated`, which names
+  `replaced_by`. The stored definition is checked against the graph's
+  ontology on every run; if it no longer resolves the run is refused with
+  `action.stale`: tell the maintainer.
+
+An action needs no right of its own: it is allowed when every write it
+expands to is allowed to you, and an action whose writes you may not make
+is not shown and is `action.not_found` (see
+[Access control](access_control.md#actions)). A graph that has no actions
+(or none you may run) answers every `describe` command exactly as before.
+When no action fits, use the primitives.
+
+Maintainers write actions as one YAML file each and publish them with
+`graph-admin` ([`graph actions publish`](cli_graph_admin.md#commands)). The
+file format, the checks publishing applies and the rules for preconditions
+are described once, in the format reference of the `authoring-graph-actions`
+admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md)); the
+[generated graph skill](skills.md#blocks) lists the featured actions you may
+run.

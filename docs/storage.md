@@ -113,4 +113,4 @@ POSIX only, local filesystems only.
   separate slot so that a broken action never blocks publishing functions; a
   damaged one is `actions.slot_invalid`. The slots are verified against the
   audit trail ([Slot verification](audit.md#slot-verification)); the format of a
-  function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md).
+  function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), that of an action file in the [actions authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md).

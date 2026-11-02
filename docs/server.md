@@ -391,7 +391,7 @@ An admin token bound to a project (`token create NAME --scope admin
 needs no `maintainers` entry, and passes instead when its project's scope
 says `maintain` for at least one graph (`token create` warns otherwise).
 It runs only the commands on one graph (`graph show|check|pull|push|
-reindex`, `graph skill publish|render`, `graph functions publish|show`,
+reindex`, `graph skill publish|render`, `graph functions publish|show`, `graph actions publish|show`,
 `ontology release|diff`, `files verify`) and `graph list`, and sees only the graphs it maintains; every
 other command is refused with `access.ceiling`.
 

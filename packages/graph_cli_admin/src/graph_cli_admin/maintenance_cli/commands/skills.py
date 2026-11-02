@@ -158,9 +158,10 @@ SPECS: Final = (
         remote="client",
         description="The skills for maintainers: ontology-best-practices (authoring an"
         " ontology), maintaining-graphs (graphs, workspaces, releases),"
-        " authoring-graph-skills (graph skill templates) and authoring-graph-functions"
-        " (named read functions). --scope user installs into"
-        " $CLAUDE_CONFIG_DIR/skills, else ~/.claude/skills; --scope project into"
+        " authoring-graph-skills (graph skill templates), authoring-graph-functions"
+        " (named read functions) and authoring-graph-actions (named write actions)."
+        " --scope user installs into $CLAUDE_CONFIG_DIR/skills, else ~/.claude/skills;"
+        " --scope project into"
         " <dir>/.claude/skills (<dir>/.claude must exist). Directories without our marker"
         " (.graph_cli_skill.json) or edited by hand are replaced only with --force; without"
         " it they are left as they are, the other skills are still installed, and the"

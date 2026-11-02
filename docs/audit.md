@@ -9,7 +9,7 @@ installation stream.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill and function catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -26,7 +26,15 @@ A write by `graph do` names its action: `request.action` is `{name, hash}` in th
 intent, in a refusal event and in the transaction record (`request.command` is `do`;
 `args_digest` covers the action, its bound parameters, the dry-run flag, the reason and the
 idempotency key). The key is optional and appears only for such writes, so the bytes of
-every other write are unchanged; verification checks its shape.
+every other write are unchanged; verification checks its shape. An action writes one
+transaction, so it has one intent, whatever the number of ops it expanded to. Its
+refusals are audited like other writes' refusals: `access.denied` in the installation
+stream, a failed precondition (`action.precondition_failed`) as an `invalid` refusal in
+the graph's stream whose target lists the entities of the failed preconditions, with the
+action in `request.action`. Not audited: `--dry-run`, an action with nothing to do
+(`action.nothing_to_do`), usage errors such as a missing parameter or a missing reason,
+and an unknown or hidden action. `history` shows the `action` next to the `command` of a
+revision it wrote.
 
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`

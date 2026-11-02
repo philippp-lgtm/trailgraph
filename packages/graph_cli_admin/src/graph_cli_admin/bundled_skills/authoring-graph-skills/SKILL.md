@@ -35,11 +35,16 @@ generated from the graph's model:
 | `names` | the alias format and which fields `graph lookup` matches per type; on a modular graph one example and pointers, not every type |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
 | `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them; one line saying so when there are none |
+| `actions` | the graph's named write actions: their number, at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run) as `name(signature)` with summary, the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
 
 Each block at most once. Put `functions` where agents decide how to answer
-a question, after the model and before the recipes. Which functions appear
-is decided in the function files (`featured`, see
-`authoring-graph-functions`), not in the template. Without any marker the skill is `static`: it is
+a question, after the model and before the recipes, and `actions` next to
+it, before the curated rules for writing. Which functions and actions
+appear is decided in their files (`featured`, see `authoring-graph-functions`
+and `authoring-graph-actions`), not in the template. Do not repeat a write
+recipe in the curated text that an action carries: say when to use the
+action and why the rule behind it exists, and leave the steps to the
+action. Without any marker the skill is `static`: it is
 installed as it is and goes stale with every ontology release, so use
 markers. Never write a file `references/model.md` yourself.
 
@@ -49,6 +54,13 @@ functions per module), every module page a `Functions` section, and a
 single-module graph a file `references/functions.md`. Never write a file of
 that name yourself; it is refused like `references/model.md`. A graph
 without functions renders as it did before.
+
+Published actions add the same kind of generated text: an `Actions` column
+in the `modules` block, an `Actions` section on every module page and, for
+a single-module graph, `references/actions.md` (never write that file
+yourself; it is reserved in every template). They appear only when the
+graph has actions the installing reader may run, so a graph without actions
+renders exactly as before.
 
 ### Modular graphs
 
@@ -152,10 +164,13 @@ names the file and the rule):
   placeholder such as `<function>` does not count; in a workspace push the
   functions of the same push count). Publish the functions first or in the
   same push, else the rule `function` refuses the skill.
+- Every `graph do <name>` in code names a published action, by the same
+  rule (a placeholder such as `<action>` is allowed; the actions of the same
+  push count), else the rule `action` refuses the skill.
 
 When a later ontology release removes a name the curated text uses, agents
 get the warning `skills.source_unknown_names`: fix the text and push. The
-same warning follows when a function the text runs is later deleted.
+same warning follows when a function or action the text runs is later deleted.
 
 ## The loop
 
