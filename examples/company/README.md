@@ -41,6 +41,12 @@ by a minor release and is explored by agents top down.
   vacant positions. Each takes typed `ref` parameters and agents run it with `graph run`; the
   curated skill lists the featured ones through its `functions` block. See
   [Functions](../../docs/cli_graph.md#functions) and the `authoring-graph-functions` admin skill.
+- **Named write actions** (`actions/`, one `graph_cli.action/1` file each) for the recurring
+  changes: staff a vacant position, hand a held position over, offboard an employee. Each
+  checks its preconditions on the current state and writes through the normal write path;
+  agents run it with `graph do`, and the curated skill lists them through its `actions` block
+  instead of spelling out the steps. See [Actions](../../docs/cli_graph.md#actions) and the
+  `authoring-graph-actions` admin skill.
 - **Synthetic seed data**: `seeds/1.0.0.jsonl` for the first version,
   `seeds/1.1.0.jsonl` for what only exists from the second. Stable idempotency keys
   (`company-<version>-<nn>`), so a second apply writes nothing twice.
@@ -61,8 +67,8 @@ graph-admin view                          # the live view, see docs/live_view.md
 
 It runs `graph-admin init`, creates the graph from `ontology/1.0.0` (`--module company`
 names the main module), applies `seeds/1.0.0.jsonl`, releases `ontology/1.1.0`, applies
-`seeds/1.1.0.jsonl`, publishes the functions and then the skill (the skill lists the functions
-and is checked against them) and ends with `graph-admin graph check company` and
+`seeds/1.1.0.jsonl`, publishes the functions, the actions and then the skill (the skill lists
+the functions and actions and is checked against them) and ends with `graph-admin graph check company` and
 `graph-admin audit verify`, both clean. `setup.sh 1.0.0` stops after the first version, so
 the minor release can be shown by hand:
 
@@ -71,6 +77,7 @@ graph-admin ontology diff examples/company/ontology/1.1.0 --graph company --modu
 graph-admin ontology release company examples/company/ontology/1.1.0 --module company
 graph apply examples/company/seeds/1.1.0.jsonl
 graph-admin graph functions publish company examples/company/functions
+graph-admin graph actions publish company examples/company/actions
 graph-admin graph skill publish company examples/company/skill/graph-company
 ```
 
@@ -122,6 +129,15 @@ Run a named function (parameters are ids or aliases, found with `graph lookup`):
 graph describe functions                                   # what is published
 graph run members_of_unit --param unit=DEPT-0003           # people of a unit and its sub-units
 graph run reporting_chain --param position=POS-0013
+```
+
+Run a named action: a dry run first names the entities it will change and the operations on
+each (preconditions are checked on the current state; a refusal names the one that failed):
+
+```sh
+graph describe actions
+graph do hand_over_position --param position=POS-0013 --param person=EMP-0003 --dry-run
+graph do offboard_employee --param employee=EMP-0007 --reason "HR confirmed" --dry-run
 ```
 
 Questions the graph answers (the first three also exist as functions; the rest are `graph query`; the generated skill lists more):
