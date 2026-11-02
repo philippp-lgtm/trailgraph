@@ -1,0 +1,9 @@
+schema: graph_cli.action/1
+name: unknown_type
+module: organization
+summary: A probe.
+use_when: Testing.
+ops:
+  - {op: create, type: ppl:Persn, attrs: {name: Somebody}}
+examples:
+  - request: A request.

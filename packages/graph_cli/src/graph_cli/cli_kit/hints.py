@@ -62,9 +62,21 @@ def _function_search(details: Mapping[str, JsonValue], program: str) -> str | No
     return f"{program} describe search <words> --kind function"
 
 
+def _action_search(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Find an action by what it is for."""
+    return f"{program} describe search <words> --kind action"
+
+
+def _precondition(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A refused action: read its preconditions, then look at the dry run."""
+    action = details.get("action")
+    return f"{program} describe action {action}" if isinstance(action, str) else None
+
+
 def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A reference of the wrong class: find the entity that fits the parameter by its name."""
-    function, parameter = details.get("function"), details.get("parameter")
+    function = details.get("function", details.get("action"))
+    parameter = details.get("parameter")
     if isinstance(function, str) and isinstance(parameter, str):
         return f"{program} lookup <text> --for {function}.{parameter}"
     expected = details.get("expected")
@@ -237,6 +249,54 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.unknown_module": None,
     "function.unsupported_schema": None,
     "functions.slot_invalid": None,
+    "action.not_found": _action_search,
+    "action.parameter_missing": None,
+    "action.parameter_unknown": None,
+    "action.parameter_invalid": _lookup_ref,
+    "action.precondition_failed": _precondition,
+    "action.nothing_to_do": None,
+    "action.reason_required": None,
+    "action.abstract_type": None,
+    "action.ambiguous_term": None,
+    "action.builtin_module": None,
+    "action.invalid_condition": None,
+    "action.invalid_default": None,
+    "action.invalid_op": None,
+    "action.invalid_value": None,
+    "action.invalid_yaml": None,
+    "action.lifecycle_direct_write": None,
+    "action.lifecycle_missing": None,
+    "action.literal_reference": None,
+    "action.local_duplicate": None,
+    "action.local_unresolved": None,
+    "action.missing_key": None,
+    "action.module_required": None,
+    "action.name_mismatch": None,
+    "action.name_taken": None,
+    "action.not_numeric": None,
+    "action.op_impossible": None,
+    "action.optional_position": None,
+    "action.parameter_undeclared": None,
+    "action.parameter_unused": None,
+    "action.placeholder_position": None,
+    "action.precondition_on_invalid": None,
+    "action.replaced_by_invalid": None,
+    "action.stale": None,
+    "action.template_invalid": None,
+    "action.too_many_actions": None,
+    "action.too_many_ops": None,
+    "action.too_many_preconditions": None,
+    "action.type_mismatch": None,
+    "action.unknown_attribute": None,
+    "action.unknown_class": None,
+    "action.unknown_enum": None,
+    "action.unknown_key": None,
+    "action.unknown_module": None,
+    "action.unknown_qualifier": None,
+    "action.unknown_relation": None,
+    "action.unknown_state": None,
+    "action.unknown_type": None,
+    "action.unsupported_schema": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,

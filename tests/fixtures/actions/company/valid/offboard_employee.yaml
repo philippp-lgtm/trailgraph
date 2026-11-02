@@ -1,0 +1,26 @@
+schema: graph_cli.action/1
+name: offboard_employee
+module: people
+summary: Record that an employee has left; remove their positions and employer first.
+use_when: >-
+  An employee leaves the company or their employment ends. Removes the positions they
+  hold and their employer link, then moves the employee to the state left.
+params:
+  employee:
+    type: ref
+    class: ppl:Employee
+    summary: The employee who leaves.
+preconditions:
+  - id: not_left_yet
+    on: employee
+    summary: The employee has not left already.
+    require:
+      - {attr: status, equals_string_in: [onboarding, active]}
+ops:
+  - {op: unlink, id: $employee, rel: org:holds, direction: out, all: true}
+  - {op: unlink, id: $employee, rel: leg:employed_by, all: true}
+  - {op: transition, id: $employee, to: left}
+reason: required
+examples:
+  - request: A colleague from the sales team left the company at the end of the month.
+featured: true

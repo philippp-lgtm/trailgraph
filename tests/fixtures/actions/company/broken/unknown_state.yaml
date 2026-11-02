@@ -1,0 +1,14 @@
+schema: graph_cli.action/1
+name: unknown_state
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  employee:
+    type: ref
+    class: ppl:Employee
+    summary: An employee.
+ops:
+  - {op: transition, id: $employee, to: gone}
+examples:
+  - request: A request.

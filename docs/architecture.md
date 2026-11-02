@@ -30,7 +30,7 @@ Dependencies point down only. Enforced by import-linter
 | Extensions | `extensions` |
 | Services | `services` |
 | Cross-cutting (independent of each other) | `audit`, `access_control`, `temporal_knowledge`, `storage` |
-| Named read functions | `kinetic` |
+| Named read functions and write actions | `kinetic` |
 | Query model | `query` |
 | Schema IR | `ontology_layer` |
 | Kernel | `kernel` |
@@ -165,17 +165,23 @@ load. The versions are constants in `graph_cli/__init__.py` and
 `catalog` and the admin wiring may read the process environment.
 Locations and keys: [Configuration](configuration.md).
 
-## Named read functions
+## Named read functions and write actions
 
-`graph_cli.kinetic` holds the pure part of named read functions: documents
-in, documents out, no storage and no services.
+`graph_cli.kinetic` holds the pure part of named read functions and of named
+write actions: documents in, documents out, no storage and no services. The two
+kinds share the parameter grammar and binding (`kinetic.params`).
 
 | Module | Content |
 | --- | --- |
-| `kinetic.format` | `graph_cli.function/1`: the typed definition of one function file, strict YAML loading with a `Problem` per defect (shape, names, lengths), and the `Problem` type of every check |
+| `kinetic.params` | what functions and actions share, parametrized by kind: `ParamDef` and the parameter grammar, the strict-YAML `Parser` base with its readers, the `Problem` type of every check, parameter values from CLI text or JSON by the declared type with defaults and typed placeholders (an action may declare an optional parameter without default) |
+| `kinetic.format` | `graph_cli.function/1`: the typed definition of one function file, strict YAML loading with a `Problem` per defect (shape, names, lengths) |
 | `kinetic.compile` | `compile_catalog` checks the function files of a graph against a compiled ontology and writes the catalog document `graph_cli.functions/1`; `check_catalog` runs the same checks over a published catalog against another model |
 | `kinetic.entries` | the entries of a published catalog as the app shows them: signature text, the summary and detail documents of `describe functions` and `describe function` |
-| `kinetic.bind` | parameter values from CLI text or JSON by the declared type, defaults, typed placeholders for resolving |
+| `kinetic.bind` | the function-kind entry points of the binding in `kinetic.params` |
+| `kinetic.action_format` | `graph_cli.action/1`: the typed definition of one action file (parameters, preconditions as rule-language conditions, a template of change-set ops with `$param` placeholders and the one dynamic form `unlink ... all: true`), strict YAML loading with a `Problem` per defect |
+| `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model |
+| `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
+| `kinetic.expand` | over a `Snapshot`: `check_preconditions` evaluates the preconditions on the current state (every failure in one refusal), `expand` turns bound parameters into a `ChangeSet` and replaces `all: true` by one exact unlink per current edge |
 
 The checks use the query engine without data: `query.cypher.parameters` lists the
 `$parameters` of a parsed query, `resolve` runs with a typed placeholder per

@@ -1,0 +1,17 @@
+schema: graph_cli.action/1
+name: type_mismatch
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  position:
+    type: ref
+    class: org:Position
+    summary: A position.
+  since:
+    type: date
+    summary: A date.
+ops:
+  - {op: update, id: $position, set: {title: $since}}
+examples:
+  - request: A request.

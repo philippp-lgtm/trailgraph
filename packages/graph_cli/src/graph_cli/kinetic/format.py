@@ -11,7 +11,7 @@ against another model.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -25,37 +25,31 @@ from graph_cli.kernel.json_access import (
     req_obj,
     req_str,
 )
-from graph_cli.kernel.yaml_strict import (
-    YamlError,
-    YamlMap,
-    YamlNode,
-    YamlScalar,
-    YamlSeq,
-    load_strict,
+from graph_cli.kernel.yaml_strict import YamlError, YamlMap, YamlNode, load_strict
+from graph_cli.kinetic.params import (
+    MAX_DETAIL,
+    PARAM_RE,
+    PARAM_TYPES,
+    ParamDef,
+    Parser,
+    Problem,
+    is_null,
 )
+
+# The parameter grammar and ``Problem`` live in ``params`` (shared with actions); importers
+# of this module keep using these names.
+__all__ = ["MAX_DETAIL", "PARAM_RE", "PARAM_TYPES", "ParamDef", "Problem"]
 
 FUNCTION_SCHEMA: Final = "graph_cli.function/1"
 CATALOG_SCHEMA: Final = "graph_cli.functions/1"
 FILE_SUFFIX: Final = ".yaml"
 
 NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
-PARAM_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 MODULE_REF_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 MAX_SUMMARY: Final = 100
 MAX_USE_WHEN: Final = 600
-MAX_DETAIL: Final = 200  # parameter and column summaries, example questions
 
-PARAM_TYPES: Final = (
-    "string",
-    "integer",
-    "decimal",
-    "boolean",
-    "date",
-    "datetime",
-    "enum",
-    "ref",
-)
 STATUSES: Final = ("active", "deprecated")
 
 _TOP_KEYS: Final = (
@@ -72,81 +66,6 @@ _TOP_KEYS: Final = (
     "status",
     "replaced_by",
 )
-_PARAM_KEYS: Final = ("type", "class", "enum", "many", "default", "summary")
-
-
-@dataclass(frozen=True, slots=True)
-class Problem:
-    """One broken rule of one function. ``code`` is a ``function.*`` code or the code of
-    the query error the engine raised (``query.syntax``, ``term.unknown``, ...)."""
-
-    function: str
-    code: str
-    message: str
-    path: str | None = None
-    line: int | None = None
-    details: Mapping[str, JsonValue] = field(default=EMPTY)
-
-    def to_json(self) -> dict[str, JsonValue]:
-        return {
-            "function": self.function,
-            "code": self.code,
-            "message": self.message,
-            "path": self.path,
-            "line": self.line,
-            "details": dict(self.details),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class ParamDef:
-    name: str
-    type: str  # one of PARAM_TYPES
-    summary: str
-    of_class: str | None = None  # ``class:``, only with type ref
-    enum: str | None = None  # only with type enum
-    many: bool = False
-    default: JsonValue = None  # None = no default, the parameter is required
-
-    @property
-    def required(self) -> bool:
-        return self.default is None
-
-    @property
-    def type_text(self) -> str:
-        """The type as people read it: ``string``, ``ref org:OrgUnit``, ``list of date``."""
-        kind = {"ref": f"ref {self.of_class}", "enum": f"enum {self.enum}"}.get(
-            self.type, self.type
-        )
-        return f"list of {kind}" if self.many else kind
-
-    @property
-    def signature(self) -> str:
-        """``name: type``; ``name?: type`` for an optional parameter."""
-        return f"{self.name}{'' if self.required else '?'}: {self.type_text}"
-
-    def to_json(self) -> dict[str, JsonValue]:
-        return {
-            "name": self.name,
-            "type": self.type,
-            "class": self.of_class,
-            "enum": self.enum,
-            "many": self.many,
-            "default": self.default,
-            "summary": self.summary,
-        }
-
-    @classmethod
-    def from_json(cls, data: JsonObject, path: str) -> ParamDef:
-        return cls(
-            name=req_str(data, "name", path),
-            type=req_str(data, "type", path),
-            summary=req_str(data, "summary", path),
-            of_class=opt_str(data, "class", path),
-            enum=opt_str(data, "enum", path),
-            many=req_bool(data, "many", path),
-            default=data.get("default"),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,120 +157,11 @@ def load_function(file_name: str, content: str | bytes) -> tuple[FunctionDef | N
     return (defn if not parse.problems else None), parse.problems
 
 
-class _Parse:
-    """Collects the problems of one file; the readers return ``None`` for a bad value."""
+class _Parse(Parser):
+    """Collects the problems of one function file."""
 
     def __init__(self, function: str) -> None:
-        self.function = function
-        self.problems: list[Problem] = []
-
-    def add(
-        self,
-        code: str,
-        path: str | None,
-        message: str,
-        *,
-        line: int | None = None,
-        **details: JsonValue,
-    ) -> None:
-        self.problems.append(Problem(self.function, code, message, path, line, details))
-
-    def invalid(self, path: str, message: str, node: YamlNode | None = None) -> None:
-        self.add("function.invalid_value", path, message, line=node.line if node else None)
-
-    # Readers
-
-    def mapping(
-        self, node: YamlNode | None, path: str, allowed: Iterable[str]
-    ) -> dict[str, YamlNode] | None:
-        """A mapping with known keys only; unknown keys are reported and dropped."""
-        if not isinstance(node, YamlMap):
-            self.invalid(path or "(file)", "expected a mapping", node)
-            return None
-        keys = tuple(allowed)
-        for key in node.items:
-            if key not in keys:
-                self.add(
-                    "function.unknown_key",
-                    _join(path, key),
-                    f"unknown key {key!r}",
-                    line=node.key_lines[key],
-                    expected=list(keys),
-                )
-        return {k: v for k, v in node.items.items() if k in keys}
-
-    def require(self, found: Mapping[str, YamlNode], key: str, path: str, line: int) -> bool:
-        if key in found:
-            return True
-        self.add("function.missing_key", _join(path, key), f"missing key {key!r}", line=line)
-        return False
-
-    def text(
-        self, node: YamlNode | None, path: str, *, limit: int | None = None, one_line: bool = False
-    ) -> str | None:
-        if node is None:  # absent: reported as a missing key
-            return None
-        if not isinstance(node, YamlScalar) or node.is_null():
-            self.invalid(path, "expected a string", node)
-            return None
-        value = node.text.strip()
-        if not value:
-            self.invalid(path, "must not be empty", node)
-            return None
-        if limit is not None and len(value) > limit:
-            self.invalid(path, f"is {len(value)} characters; at most {limit}", node)
-            return None
-        if one_line and "\n" in value:
-            self.invalid(path, "must be one line", node)
-            return None
-        return value
-
-    def name(self, node: YamlNode | None, path: str, grammar: re.Pattern[str]) -> str | None:
-        value = self.text(node, path)
-        if value is not None and not grammar.match(value):
-            self.invalid(path, f"{value!r} does not match {grammar.pattern}", node)
-            return None
-        return value
-
-    def boolean(self, node: YamlNode | None, path: str) -> bool | None:
-        value = node.as_bool() if isinstance(node, YamlScalar) else None
-        if value is None:
-            self.invalid(path, "expected true or false", node)
-        return value
-
-    def choice(self, node: YamlNode | None, path: str, options: tuple[str, ...]) -> str | None:
-        value = self.text(node, path)
-        if value is not None and value not in options:
-            self.invalid(path, f"{value!r} is not one of {', '.join(options)}", node)
-            return None
-        return value
-
-    def sequence(self, node: YamlNode | None, path: str) -> tuple[YamlNode, ...] | None:
-        if node is None:
-            return None
-        if not isinstance(node, YamlSeq):
-            self.invalid(path, "expected a list", node)
-            return None
-        if not node.items:
-            self.invalid(path, "must not be empty", node)
-            return None
-        return node.items
-
-    def literal(self, node: YamlNode, path: str) -> JsonValue:
-        """A default or example value: a scalar or a list of scalars (YAML 1.2 core typing)."""
-        if isinstance(node, YamlSeq):
-            items = [self.literal(item, f"{path}[{i}]") for i, item in enumerate(node.items)]
-            return None if any(i is None for i in items) else items
-        if isinstance(node, YamlMap) or _is_null(node):
-            self.invalid(path, "expected a string, number, boolean or a list of them", node)
-            return None
-        boolean = node.as_bool()
-        if boolean is not None:
-            return boolean
-        number = node.as_int()
-        return node.text if number is None else number
-
-    # Parts
+        super().__init__("function", function)
 
     def read(self, root: YamlNode, file_name: str) -> FunctionDef | None:
         top = self.mapping(root, "", _TOP_KEYS)
@@ -369,7 +179,7 @@ class _Parse:
                     f"{schema!r} is not {FUNCTION_SCHEMA}",
                     line=top["schema"].line,
                 )
-        name = self.name(top.get("name"), "name", NAME_RE) if "name" in top else None
+        name = self.name_of(top.get("name"), "name", NAME_RE) if "name" in top else None
         if name is not None and file_name != name + FILE_SUFFIX:
             self.add(
                 "function.name_mismatch",
@@ -379,7 +189,7 @@ class _Parse:
             )
         module = None
         if "module" in top:
-            module = self.name(top["module"], "module", MODULE_REF_RE)
+            module = self.name_of(top["module"], "module", MODULE_REF_RE)
         summary = self.text(top.get("summary"), "summary", limit=MAX_SUMMARY, one_line=True)
         use_when = self.text(top.get("use_when"), "use_when", limit=MAX_USE_WHEN)
         params = self.params(top["params"]) if "params" in top else ()
@@ -389,8 +199,8 @@ class _Parse:
         featured = self.boolean(top["featured"], "featured") if "featured" in top else False
         status = self.choice(top["status"], "status", STATUSES) if "status" in top else "active"
         replaced_by = None
-        if "replaced_by" in top and not _is_null(top["replaced_by"]):
-            replaced_by = self.name(top["replaced_by"], "replaced_by", NAME_RE)
+        if "replaced_by" in top and not is_null(top["replaced_by"]):
+            replaced_by = self.name_of(top["replaced_by"], "replaced_by", NAME_RE)
         if replaced_by is not None and status != "deprecated":
             self.invalid("replaced_by", "is only allowed with status: deprecated")
         if replaced_by is not None and replaced_by == name:
@@ -412,59 +222,6 @@ class _Parse:
             status=status,
             replaced_by=replaced_by,
         )
-
-    def params(self, node: YamlNode) -> tuple[ParamDef, ...] | None:
-        if not isinstance(node, YamlMap):
-            if _is_null(node):
-                return ()
-            self.invalid("params", "expected a mapping", node)
-            return None
-        result: list[ParamDef] = []
-        for key, value in node.items.items():
-            path = f"params.{key}"
-            if not PARAM_RE.match(key):
-                self.add(
-                    "function.invalid_value",
-                    path,
-                    f"parameter name {key!r} does not match {PARAM_RE.pattern}",
-                    line=node.key_lines[key],
-                )
-                continue
-            found = self.param(key, value, path)
-            if found is not None:
-                result.append(found)
-        return tuple(result)
-
-    def param(self, name: str, node: YamlNode, path: str) -> ParamDef | None:
-        body = self.mapping(node, path, _PARAM_KEYS)
-        if body is None:
-            return None
-        self.require(body, "type", path, node.line)
-        self.require(body, "summary", path, node.line)
-        kind = (
-            self.choice(body.get("type"), f"{path}.type", PARAM_TYPES) if "type" in body else None
-        )
-        summary = self.text(body.get("summary"), f"{path}.summary", limit=MAX_DETAIL)
-        of_class = enum = None
-        if "class" in body:
-            of_class = self.text(body["class"], f"{path}.class")
-        if "enum" in body:
-            enum = self.text(body["enum"], f"{path}.enum")
-        many = self.boolean(body["many"], f"{path}.many") if "many" in body else False
-        default = None
-        if "default" in body:
-            default = self.literal(body["default"], f"{path}.default")
-        if kind == "ref" and "class" not in body:
-            self.add("function.missing_key", f"{path}.class", "a ref needs a class", line=node.line)
-        if kind == "enum" and "enum" not in body:
-            self.add("function.missing_key", f"{path}.enum", "an enum needs enum:", line=node.line)
-        if kind is not None and kind != "ref" and "class" in body:
-            self.invalid(f"{path}.class", "only a ref has a class", body["class"])
-        if kind is not None and kind != "enum" and "enum" in body:
-            self.invalid(f"{path}.enum", "only an enum has enum:", body["enum"])
-        if kind is None or summary is None or many is None:
-            return None
-        return ParamDef(name, kind, summary, of_class, enum, many, default)
 
     def returns(self, node: YamlNode) -> tuple[ReturnDef, ...] | None:
         items = self.sequence(node, "returns")
@@ -505,11 +262,3 @@ class _Parse:
             if question is not None:
                 result.append(ExampleDef(question, values))
         return tuple(result)
-
-
-def _is_null(node: YamlNode) -> bool:
-    return isinstance(node, YamlScalar) and node.is_null()
-
-
-def _join(path: str, key: str) -> str:
-    return f"{path}.{key}" if path else key

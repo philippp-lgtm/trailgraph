@@ -1,0 +1,18 @@
+schema: graph_cli.action/1
+name: unknown_enum
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  external:
+    type: ref
+    class: ppl:External
+    summary: An external.
+  kind:
+    type: enum
+    enum: ppl:NoSuchKind
+    summary: A kind.
+ops:
+  - {op: update, id: $external, set: {kind: $kind}}
+examples:
+  - request: A request.

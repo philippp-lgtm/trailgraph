@@ -1,0 +1,14 @@
+schema: graph_cli.action/1
+name: lifecycle_direct_write
+module: organization
+summary: A probe.
+use_when: Testing.
+params:
+  position:
+    type: ref
+    class: org:Position
+    summary: A position.
+ops:
+  - {op: update, id: $position, set: {status: active}}
+examples:
+  - request: A request.

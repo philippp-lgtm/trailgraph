@@ -13,6 +13,7 @@ from graph_cli.ontology_layer.semver import Version
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 ONTOLOGIES = FIXTURES / "ontologies"
+EXAMPLES = REPO_ROOT / "examples"
 BROKEN = FIXTURES / "broken"
 GOLDENS = REPO_ROOT / "tests" / "goldens"
 
@@ -35,6 +36,15 @@ def compile_fixture(name: str, version: str | None = None) -> CompileOutcome:
 
 def compiled_model(name: str, version: str | None = None) -> CompiledModel:
     outcome = compile_fixture(name, version)
+    assert outcome.model is not None, [f.to_json() for f in outcome.findings]
+    return outcome.model
+
+
+def example_model(name: str, version: str) -> CompiledModel:
+    """A tracked example ontology (``examples/<name>/ontology/<version>``), compiled the same way
+    as a fixture."""
+    source = LayeredSource(DirectorySource(EXAMPLES / name / "ontology" / version))
+    outcome = compile_bundle(name, source)
     assert outcome.model is not None, [f.to_json() for f in outcome.findings]
     return outcome.model
 
