@@ -425,3 +425,26 @@ def test_a_name_moves_from_functions_to_actions_in_one_push(
     assert (shown["functions"]["count"], shown["actions"]["count"]) == (1, 3)
     assert admin(run_cli, "graph", "check", "example_graph").code == 0
     assert push(run_cli, target).data["unchanged"] is True
+
+
+def test_one_push_carries_a_new_action_and_the_skill_that_names_it(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    """The curated text is checked against the catalog the graph will have: `graph do <name>`
+    may name an action that the same push publishes, not one that exists nowhere."""
+    target = pulled(run_cli, tmp_path)
+    skill = target / "skill" / "graph-example-graph"
+    shutil.copytree(FIXTURES / "skills" / "template" / "graph-example-graph", skill)
+    recipes = skill / "references" / "recipes.md"
+    recipes.write_text(recipes.read_text() + "\nRun `graph do relocate_item --dry-run`.\n")
+    refused = push(run_cli, target)
+    assert (refused.code, refused.error["code"]) == (1, "admin.skill_invalid")
+    assert [p["rule"] for p in refused.error["details"]["problems"]] == ["action"]
+    added = (
+        (target / "actions" / MOVE).read_text().replace("name: move_item", "name: relocate_item")
+    )
+    (target / "actions" / "relocate_item.yaml").write_text(added.replace("featured: true", ""))
+    pushed = push(run_cli, target)
+    assert pushed.code == 0, pushed.envelope
+    assert pushed.data["skill"]["published"] is True
+    assert pushed.data["actions"]["published"] is True

@@ -17,6 +17,8 @@ does not have. Checked, each with rule:
 - ``function``: every ``graph run <name>`` in code names a function of the compiled catalog
   (the key ``functions`` of the model documents; a graph without one has none). A
   placeholder such as ``<function>`` is not a name.
+- ``action``: every ``graph do <name>`` in code names an action of the compiled action catalog
+  (the key ``actions`` of the model documents), under the same rules as ``function``.
 
 Generated blocks are not checked; they come from the model.
 """
@@ -63,7 +65,8 @@ def check_names(
     graph: Mapping[str, JsonValue],
     inventory: Mapping[str, JsonValue],
 ) -> list[Problem]:
-    """Every ``term``, ``command``, ``alias`` and ``function`` problem of the curated text."""
+    """Every ``term``, ``command``, ``alias``, ``function`` and ``action`` problem of the curated
+    text."""
     terms = _terms(model)
     prefixes = {curie.partition(":")[0] for curie in terms}
     aliases = sorted(
@@ -71,6 +74,7 @@ def check_names(
     )
     commands = _commands(inventory)
     published = _functions(model)
+    actions = _actions(model)
     problems: list[Problem] = []
     for path, text in sorted(template.curated().items()):
         problems += _term_problems(path, text, terms, prefixes)
@@ -79,6 +83,7 @@ def check_names(
         for piece in code:
             problems += _command_problems(path, piece, commands)
             problems += _function_problems(path, piece, published)
+            problems += _action_problems(path, piece, actions)
     return problems
 
 
@@ -246,11 +251,30 @@ def _functions(model: Mapping[str, JsonValue]) -> frozenset[str]:
 
 
 def _function_problems(path: str, piece: _Code, published: frozenset[str]) -> list[Problem]:
+    return _name_problems("function", "run", path, piece, published)
+
+
+def _actions(model: Mapping[str, JsonValue]) -> frozenset[str]:
+    """The names of the compiled action catalog (deprecated ones too: they still run)."""
+    catalog = as_object(dict(model), "model").get("actions")
+    if catalog is None:
+        return frozenset()
+    return frozenset(req_str(e, "name") for e in _objects(as_object(catalog, "actions"), "actions"))
+
+
+def _action_problems(path: str, piece: _Code, published: frozenset[str]) -> list[Problem]:
+    return _name_problems("action", "do", path, piece, published)
+
+
+def _name_problems(
+    rule: str, command: str, path: str, piece: _Code, published: frozenset[str]
+) -> list[Problem]:
+    """``graph <command> <name>`` in code where ``name`` is not in ``published``."""
     problems = []
     for match in COMMAND_RE.finditer(piece.text):
         words = _words(match.group(1))
-        if len(words) < 2 or words[0] != "run" or not FUNCTION_NAME_RE.match(words[1]):
-            continue  # not `graph run`, or a placeholder, flag or other non-name
+        if len(words) < 2 or words[0] != command or not FUNCTION_NAME_RE.match(words[1]):
+            continue  # not this command, or a placeholder, flag or other non-name
         if words[1] in published:
             continue
         line = piece.line + piece.text.count("\n", 0, match.start())
@@ -258,9 +282,9 @@ def _function_problems(path: str, piece: _Code, published: frozenset[str]) -> li
         hint = f"; did you mean {close[0]}?" if close else ""
         problems.append(
             Problem(
-                "function",
+                rule,
                 path,
-                f"line {line}: {words[1]} is not a published function of this graph{hint}",
+                f"line {line}: {words[1]} is not a published {rule} of this graph{hint}",
             )
         )
     return problems

@@ -635,8 +635,27 @@ def skill_functions(catalog: JsonObject) -> JsonObject:
     return {"schema": catalog.get("schema"), "functions": kept}
 
 
+# The keys of an action entry a graph skill reads: the signature, not the ops, ``needs``,
+# preconditions or hash. ``reason`` is left out: ``describe action`` and the refusal say it.
+SKILL_ACTION_KEYS: Final = ("name", "module", "summary", "status", "featured", "params")
+
+
+def skill_actions(catalog: JsonObject) -> JsonObject:
+    """The compiled action catalog reduced to the keys of ``SKILL_ACTION_KEYS`` per entry."""
+    entries = catalog.get("actions")
+    kept: list[JsonValue] = []
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict):
+                kept.append({k: entry[k] for k in SKILL_ACTION_KEYS if k in entry})
+    return {"schema": catalog.get("schema"), "actions": kept}
+
+
 def describe_model(
-    entry: GraphEntry, model: CompiledModel, functions: JsonObject | None = None
+    entry: GraphEntry,
+    model: CompiledModel,
+    functions: JsonObject | None = None,
+    actions: JsonObject | None = None,
 ) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
     ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
@@ -645,7 +664,10 @@ def describe_model(
     modules: [item], module: {id: document}}``. ``functions`` is the compiled catalog of
     the graph (``graph_cli.functions/1``); given, it joins as the key ``functions``, reduced
     to what a skill prints (``skill_functions``): the documents are readable with
-    ``read.describe`` alone, so they carry no query text (K10)."""
+    ``read.describe`` alone, so they carry no query text (K10). ``actions`` is the compiled
+    action catalog (``graph_cli.action_catalog/1``), likewise reduced (``skill_actions``);
+    the key ``actions`` exists only when it is given, so a graph without actions yields the
+    documents it always did."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
     documents: dict[str, JsonValue] = {
@@ -662,4 +684,6 @@ def describe_model(
     }
     if functions is not None:
         documents["functions"] = skill_functions(functions)
+    if actions is not None:
+        documents["actions"] = skill_actions(actions)
     return documents

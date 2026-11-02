@@ -506,8 +506,10 @@ def push(
                     directory=name if files is not None else None,
                     inventory=inventory,
                     model=model,
-                    # the catalog the graph will have: `graph run <name>` in the text is checked
+                    # the catalogs the graph will have: `graph run <name>` and `graph do <name>` in
+                    # the text are checked
                     functions=function_slot.compiled if function_slot is not None else None,
+                    actions=action_slot.compiled if action_slot is not None else None,
                 )
                 skill.refuse(label, after, name, checked.problems)
         slot = None

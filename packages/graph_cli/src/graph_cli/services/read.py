@@ -50,7 +50,7 @@ from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
-from graph_cli.kernel.json_access import JsonShapeError
+from graph_cli.kernel.json_access import JsonShapeError, req_list
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry, SkillSlot, graph_not_found
@@ -538,14 +538,34 @@ class ReadService:
     ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
         """The model documents a generated graph skill is rendered with: those of the
         graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
-        compiled function catalog when the graph has one. Like the type names, the function
-        names and summaries are schema-level text, so the skill lists them for every reader
-        of the description (K10)."""
+        compiled function catalog and the action catalog when the graph has them. Like the
+        type names, the function names and summaries are schema-level text, so the skill lists
+        them for every reader of the description (K10). Actions are different on purpose: a
+        skill block is a listing, so it holds only the actions the actor may run (actions plan
+        A6, as ``actions``); an actor who may run none gets the documents of a graph without
+        actions. The rest of the catalog document is kept as published, so the renderer sees
+        one shape."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
         slot = self._catalog.read_functions(entry.id)
         catalog = slot.compiled if slot is not None and slot.count else None
-        return describe_model(entry, model, catalog), warnings
+        return describe_model(entry, model, catalog, self._visible_catalog(actor, entry)), warnings
+
+    def _visible_catalog(self, actor: ActorContext, entry: GraphEntry) -> JsonObject | None:
+        """The compiled action catalog narrowed to the actions ``actor`` may see, as the
+        published document (same schema, entries as compiled); ``None`` when there are none."""
+        published = self.published_actions(entry)
+        if published is None:
+            return None
+        names = {a.name for a in self.visible_actions(actor, entry, published.entries)}
+        if not names:
+            return None
+        kept = [
+            e
+            for e in req_list(published.compiled, "actions")
+            if isinstance(e, dict) and e.get("name") in names
+        ]
+        return {**published.compiled, "actions": kept}
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None

@@ -359,3 +359,19 @@ def test_publish_checks_the_template_against_the_current_pin(
     )
     assert released.code == 0, released.envelope
     assert publish(run_cli, curated).code == 0
+
+
+def test_a_template_naming_an_action_must_name_a_published_one(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """`graph do <name>` in curated text must name a published action (actions plan A11)."""
+    curated = copy_template(tmp_path)
+    recipes = curated / "references" / "recipes.md"
+    recipes.write_text(recipes.read_text() + "\nRun `graph do move_item --param item=<id>`.\n")
+    refused = publish(run_cli, curated)
+    assert (refused.code, refused.error["code"]) == (1, "admin.skill_invalid")
+    (problem,) = refused.error["details"]["problems"]
+    assert problem["rule"] == "action" and "move_item" in problem["message"]
+    actions = FIXTURES / "actions" / "inventory" / "valid"
+    assert admin(run_cli, "graph", "actions", "publish", "example_graph", str(actions)).code == 0
+    assert publish(run_cli, curated).code == 0

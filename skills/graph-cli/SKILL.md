@@ -69,9 +69,11 @@ against it and audited. The CLI is on `PATH`.
    thing exists, add the new name to it with `graph update --add` instead. Put
    abbreviations and synonyms into `alt_label` fields, misspellings into
    `hidden_label` fields.
-6. Preview a write that adds entities or is hard to take back (`create`,
-   `apply`, `supersede`, `retract`, `transition`) with `--dry-run --json`;
-   one `update`, `link` or `unlink` may run directly (undo: `update`, `unlink`).
+6. For a change, look for an action first (`graph describe search <value>
+   --kind action` or the graph skill's list): `graph do <action> --dry-run`,
+   read what it will change, then run it without. None fits: preview `create`,
+   `apply`, `supersede`, `retract`, `transition` with `--dry-run --json`; one
+   `update`, `link` or `unlink` may run directly (undo: `update`, `unlink`).
 7. Read `data.findings` of every write: on `data.semantic.possible_duplicate`
    reuse a candidate from `actual` or tell the names apart, on
    `data.structural.deprecated_term` use the replacement its message names.
@@ -109,10 +111,9 @@ when `graph whoami` lists `require_reason`. Details: [references/history.md](ref
   `graph unlink` for a wrong edge. States change with `graph transition`.
   On `data.referential.target_referenced` read [references/errors.md](references/errors.md).
 - Prefer the single-operation commands. `graph apply` takes change set
-  documents for batches: write the document to a file in the working
-  directory, dry-run it with `graph apply <file> --dry-run --json`, then
-  apply it; `--summary` leaves out the list of entities. Read
-  [references/changesets.md](references/changesets.md) before the first.
+  documents for batches: write one to a file in the working directory,
+  dry-run it (`--dry-run --json`), then apply it; `--summary` leaves out the
+  entity list. Read [references/changesets.md](references/changesets.md) first.
 
 ## Access
 
