@@ -635,9 +635,9 @@ def skill_functions(catalog: JsonObject) -> JsonObject:
     return {"schema": catalog.get("schema"), "functions": kept}
 
 
-# The keys of an action entry a graph skill reads: the signature, not the ops, ``needs``,
-# preconditions or hash. ``reason`` is left out: ``describe action`` and the refusal say it.
-SKILL_ACTION_KEYS: Final = ("name", "module", "summary", "status", "featured", "params")
+# The keys of an action entry a graph skill reads: the signature and whether it needs
+# ``--reason``, not the ops, ``needs``, preconditions or hash.
+SKILL_ACTION_KEYS: Final = ("name", "module", "summary", "status", "featured", "params", "reason")
 
 
 def skill_actions(catalog: JsonObject) -> JsonObject:

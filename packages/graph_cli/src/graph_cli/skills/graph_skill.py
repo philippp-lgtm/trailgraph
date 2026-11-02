@@ -864,9 +864,15 @@ def _module_functions(doc: _Model, module_id: str) -> list[str]:
     return ["", "## Functions", "", *_function_table(own), *_function_hint(doc)]
 
 
+def _action_summary(action: JsonObject) -> str:
+    """The summary, and that the action needs ``--reason`` when it does (saves a refusal)."""
+    summary = _plain(opt_str(action, "summary"))
+    return f"{summary} Needs `--reason`." if action.get("reason") == "required" else summary
+
+
 def _action_line(action: JsonObject) -> str:
     call = f"{req_str(action, 'name')}({_signature(action)})"
-    return f"- {_code(call)}: {_plain(opt_str(action, 'summary'))}"
+    return f"- {_code(call)}: {_action_summary(action)}"
 
 
 def _actions(doc: _Model) -> list[str]:
@@ -894,10 +900,7 @@ def _actions(doc: _Model) -> list[str]:
 def _action_table(actions: Sequence[JsonObject]) -> list[str]:
     return _table(
         ["Action", "Parameters", "Summary"],
-        [
-            [_code(req_str(a, "name")), _signature(a) or "none", _plain(opt_str(a, "summary"))]
-            for a in actions
-        ],
+        [[_code(req_str(a, "name")), _signature(a) or "none", _action_summary(a)] for a in actions],
     )
 
 

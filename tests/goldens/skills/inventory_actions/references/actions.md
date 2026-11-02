@@ -7,6 +7,6 @@ Ontology `inventory` 1.0.0. The live source is `graph describe actions --graph e
 | Action | Parameters | Summary |
 |---|---|---|
 | `move_item` | item: ref inv:Item, location: ref inv:Location | Store an item in another location. |
-| `retire_item` | item: ref inv:Item | Take an item out of service for good. |
+| `retire_item` | item: ref inv:Item | Take an item out of service for good. Needs `--reason`. |
 
 Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`; `graph describe action <action> --graph example_graph` gives its preconditions and when to use it.

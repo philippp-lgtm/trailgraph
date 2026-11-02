@@ -49,6 +49,6 @@ Ontology `company` 1.1.0. The live source is `graph describe module people --gra
 
 | Action | Parameters | Summary |
 |---|---|---|
-| `offboard_employee` | employee: ref ppl:Employee | Record that an employee has left; remove their positions and employer first. |
+| `offboard_employee` | employee: ref ppl:Employee | Record that an employee has left; remove their positions and employer first. Needs `--reason`. |
 
 Dry run first: `graph do <action> --param <name>=<value> --graph example_graph --dry-run`, read what it will change, then run it without `--dry-run`; `graph describe action <action> --graph example_graph` gives its preconditions and when to use it.

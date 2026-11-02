@@ -65,7 +65,9 @@ a function of the graph (`action.name_taken`).
    `hand_over_position`). Two actions that differ only in a suffix are one
    action with a parameter.
 2. **`summary`**: one line, at most 100 characters, what the action
-   changes. It is shown in every listing.
+   changes. It is shown in every listing, and it is all of the action an
+   agent reads in the graph skill: say the request it answers when that is
+   not the action's name (joining a unit is holding one of its positions).
 3. **`use_when`**: at most 600 characters, the situations and request
    words that fit the action, and what does not: name the neighbouring
    action. Two actions that are easy to mix up (staffing a vacant position
@@ -102,7 +104,7 @@ A complete file that compiles against the example company ontology:
 schema: graph_cli.action/1
 name: assign_position
 module: organization
-summary: Record that a person takes over a position nobody holds, from a date.
+summary: Staff a vacant position from a date; a person joins a unit by holding one of its positions.
 use_when: >-
   Someone starts in, joins, takes over or is appointed to a job, a role in the org chart
   or a unit; staffing a vacant position. Not for replacing the current holder: use

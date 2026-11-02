@@ -74,7 +74,7 @@ def test_skill_actions_keeps_the_signature_and_nothing_behind_it() -> None:
     for entry in entries:
         assert isinstance(entry, dict)
         assert set(entry) <= set(SKILL_ACTION_KEYS)
-        assert {"name", "module", "summary", "status", "featured", "params"} <= set(entry)
+        assert {"name", "module", "summary", "status", "featured", "params", "reason"} <= set(entry)
     text_ = str(reduced)
     for secret in ("'ops'", "'needs'", "'preconditions'", "'hash'", "'touches'", "use_when"):
         assert secret not in text_
@@ -175,6 +175,30 @@ def test_an_optional_parameter_is_marked() -> None:
     }
     files = single_module_render({"schema": "graph_cli.action_catalog/1", "actions": [entry]})
     assert "- `tag_item(item: ref inv:Item, note?: string)`: Tag an item." in files[SKILL_FILE]
+
+
+def test_an_action_that_needs_a_reason_says_so() -> None:
+    entry = {
+        "name": "retire_item",
+        "module": "inventory",
+        "summary": "Retire an item.",
+        "status": "active",
+        "featured": True,
+        "reason": "required",
+        "params": [
+            {"name": "item", "type": "ref", "class": "inv:Item", "enum": None, "many": False}
+            | {"default": None, "summary": "The item."},
+        ],
+    }
+    catalog_ = {"schema": "graph_cli.action_catalog/1", "actions": [entry]}
+    files = single_module_render(catalog_)
+    line = "- `retire_item(item: ref inv:Item)`: Retire an item. Needs `--reason`."
+    assert line in files[SKILL_FILE]
+    assert "| Retire an item. Needs `--reason`. |" in files["references/actions.md"]
+    optional = single_module_render(
+        {"schema": "graph_cli.action_catalog/1", "actions": [entry | {"reason": "optional"}]}
+    )
+    assert "Needs `--reason`" not in "".join(optional.values())
 
 
 def test_the_modules_table_counts_active_actions() -> None:

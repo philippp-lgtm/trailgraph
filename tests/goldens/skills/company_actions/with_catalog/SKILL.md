@@ -47,7 +47,7 @@ Prefer a named action over the single commands when one fits.
 
 - `assign_position(person: ref ppl:Person, position: ref org:Position, since: date)`: Record that a person takes over a position nobody holds, from a date.
 - `hand_over_position(position: ref org:Position, person: ref ppl:Person, since?: date)`: Replace the current holder of a position by another person, from a date.
-- `offboard_employee(employee: ref ppl:Employee)`: Record that an employee has left; remove their positions and employer first.
+- `offboard_employee(employee: ref ppl:Employee)`: Record that an employee has left; remove their positions and employer first. Needs `--reason`.
 
 More: `graph describe actions --module <module> --graph example_graph`; find one: `graph describe search <text> --kind action --graph example_graph --json`; preconditions and use: `graph describe action <action> --graph example_graph`.
 
