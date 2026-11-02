@@ -1,0 +1,254 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "module": {
+    "id": "organization",
+    "prefix": "org",
+    "version": "1.0.0",
+    "summary": "The structure of the company, its units, positions, roles and cost centers, and who holds a position; not the people themselves (people) or the work that is done (operations).",
+    "builtin": false,
+    "types": [
+      {
+        "curie": "org:CostCenter",
+        "abstract": false,
+        "extends": null,
+        "summary": "An accounting bucket that costs of units are charged to.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Department",
+        "abstract": false,
+        "extends": "org:OrgUnit",
+        "summary": "A larger unit that groups teams and may contain further departments.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:OrgUnit",
+        "abstract": true,
+        "extends": null,
+        "summary": "A unit of the company structure, either a department or a team.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Position",
+        "abstract": false,
+        "extends": null,
+        "summary": "A slot in the org chart that one person holds at a time; the slot outlives the holder.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Role",
+        "abstract": false,
+        "extends": null,
+        "summary": "A function that several positions can carry, such as approving budgets; duties and trainings attach to it.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:Team",
+        "abstract": false,
+        "extends": "org:OrgUnit",
+        "summary": "A small unit that works together day to day and sits in a department.",
+        "deprecated": false
+      }
+    ],
+    "relations": [
+      {
+        "curie": "org:carries",
+        "domain": [
+          "org:Position"
+        ],
+        "range": [
+          "org:Role"
+        ],
+        "cardinality": {
+          "out": "0..n",
+          "in": "0..n"
+        },
+        "summary": "The position performs the function of the role.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:charged_to",
+        "domain": [
+          "org:OrgUnit"
+        ],
+        "range": [
+          "org:CostCenter"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The cost center that bears the costs of the unit.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:in_unit",
+        "domain": [
+          "org:Position"
+        ],
+        "range": [
+          "org:OrgUnit"
+        ],
+        "cardinality": {
+          "out": "1..1",
+          "in": "0..n"
+        },
+        "summary": "The unit the position belongs to.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:part_of",
+        "domain": [
+          "org:OrgUnit"
+        ],
+        "range": [
+          "org:OrgUnit"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The unit is part of a larger unit.",
+        "deprecated": false
+      },
+      {
+        "curie": "org:reports_to",
+        "domain": [
+          "org:Position"
+        ],
+        "range": [
+          "org:Position"
+        ],
+        "cardinality": {
+          "out": "0..1",
+          "in": "0..n"
+        },
+        "summary": "The position whose holder this position's holder reports to.",
+        "deprecated": false
+      }
+    ],
+    "links_out": [
+      {
+        "relation": "leg:operated_by",
+        "module": "legal",
+        "other_modules": [
+          "legal"
+        ],
+        "from": [
+          "org:OrgUnit"
+        ],
+        "to": [
+          "leg:LegalEntity"
+        ],
+        "summary": "The legal entity that runs the unit and bears its legal responsibility.",
+        "deprecated": false
+      }
+    ],
+    "links_in": [
+      {
+        "relation": "ops:applies_to",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Policy"
+        ],
+        "to": [
+          "org:OrgUnit"
+        ],
+        "summary": "The policy binds the unit and the units below it.",
+        "deprecated": false
+      },
+      {
+        "relation": "ops:owned_by",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Policy",
+          "ops:Process"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The position that is accountable for the process or the policy.",
+        "deprecated": false
+      },
+      {
+        "relation": "ops:performed_by",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Process"
+        ],
+        "to": [
+          "org:Role"
+        ],
+        "summary": "The process is carried out by the people who carry the role.",
+        "deprecated": false
+      },
+      {
+        "relation": "ops:required_for",
+        "module": "operations",
+        "other_modules": [
+          "operations"
+        ],
+        "from": [
+          "ops:Training"
+        ],
+        "to": [
+          "org:Role"
+        ],
+        "summary": "The training must be completed by the people who carry the role.",
+        "deprecated": false
+      },
+      {
+        "relation": "org:holds",
+        "module": "organization",
+        "other_modules": [
+          "people"
+        ],
+        "from": [
+          "ppl:Person"
+        ],
+        "to": [
+          "org:Position"
+        ],
+        "summary": "The person currently holds the position.",
+        "deprecated": false
+      }
+    ],
+    "rules": [
+      {
+        "id": "org.team_in_department",
+        "severity": "error",
+        "summary": "A team is part of exactly one department.",
+        "deprecated": false
+      }
+    ],
+    "actions": [
+      {
+        "name": "assign_position",
+        "summary": "Record that a person takes over a position nobody holds, from a date.",
+        "signature": "person: ref ppl:Person, position: ref org:Position, since: date"
+      },
+      {
+        "name": "hand_over_position",
+        "summary": "Replace the current holder of a position by another person, from a date.",
+        "signature": "position: ref org:Position, person: ref ppl:Person, since?: date"
+      }
+    ]
+  }
+}

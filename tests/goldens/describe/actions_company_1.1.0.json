@@ -1,0 +1,41 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "company",
+    "version": "1.1.0"
+  },
+  "actions": [
+    {
+      "name": "assign_position",
+      "module": "organization",
+      "summary": "Record that a person takes over a position nobody holds, from a date.",
+      "signature": "person: ref ppl:Person, position: ref org:Position, since: date",
+      "status": "active"
+    },
+    {
+      "name": "create_task",
+      "module": "operations",
+      "summary": "Open a task for a person, optionally with a due date.",
+      "signature": "title: string, due?: date, assignee: ref ppl:Person",
+      "status": "active"
+    },
+    {
+      "name": "hand_over_position",
+      "module": "organization",
+      "summary": "Replace the current holder of a position by another person, from a date.",
+      "signature": "position: ref org:Position, person: ref ppl:Person, since?: date",
+      "status": "active"
+    },
+    {
+      "name": "offboard_employee",
+      "module": "people",
+      "summary": "Record that an employee has left; remove their positions and employer first.",
+      "signature": "employee: ref ppl:Employee",
+      "status": "active"
+    }
+  ]
+}

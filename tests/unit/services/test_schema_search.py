@@ -176,6 +176,7 @@ def test_the_kinds_are_the_declared_ones() -> None:
         "enum_value",
         "state",
         "function",
+        "action",
     )
 
 

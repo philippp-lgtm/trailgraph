@@ -33,6 +33,7 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services import describe
@@ -173,6 +174,7 @@ _MODULE_HEAD: Final = {
     "builtin": BOOLEAN,
 }
 _FUNCTION_COUNT: Final = {"functions": INTEGER}
+_ACTION_COUNT: Final = {"actions": INTEGER}
 _FUNCTION_ITEM: Final = {
     "name": STRING,
     "module": NULLABLE_STRING,
@@ -211,6 +213,48 @@ _FUNCTION: Final = model_document(
         )
     }
 )
+_ACTION_ITEM: Final = {
+    "name": STRING,
+    "module": NULLABLE_STRING,
+    "summary": STRING,
+    "signature": STRING,
+    "status": enum("active", "deprecated"),
+}
+_ACTION: Final = model_document(
+    {
+        "action": obj(
+            {
+                **_ACTION_ITEM,
+                "use_when": STRING,
+                "replaced_by": NULLABLE_STRING,
+                "featured": BOOLEAN,
+                "reason": enum("optional", "required"),
+                "params": array(
+                    obj(
+                        {
+                            "name": STRING,
+                            "type": STRING,
+                            "class": NULLABLE_STRING,
+                            "enum": NULLABLE_STRING,
+                            "many": BOOLEAN,
+                            "default": ANY,
+                            "summary": STRING,
+                        },
+                        {"optional": BOOLEAN},
+                    )
+                ),
+                "preconditions": array(
+                    obj({"id": STRING, "on": STRING, "summary": STRING, "expr": ANY})
+                ),
+                "examples": array(obj({"request": STRING})),
+                "ops": array(obj(extra=ANY)),
+                "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
+                "needs": array(obj({"action": STRING, "type": STRING})),
+                "hash": STRING,
+            }
+        )
+    }
+)
 _MODULES: Final = model_document(
     {
         "modules": array(
@@ -221,7 +265,10 @@ _MODULES: Final = model_document(
                     "relations": INTEGER,
                     "links": array(obj({"module": STRING, "out": INTEGER, "in": INTEGER})),
                 },
-                _FUNCTION_COUNT,  # only when the caller may see the graph's functions
+                {
+                    **_FUNCTION_COUNT,  # only when the caller may see the graph's functions
+                    **_ACTION_COUNT,  # likewise its actions
+                },
             )
         )
     }
@@ -250,7 +297,10 @@ _MODULE: Final = model_document(
             {
                 "functions": array(  # only when the caller may see the graph's functions
                     obj({"name": STRING, "summary": STRING, "signature": STRING})
-                )
+                ),
+                "actions": array(  # likewise its actions
+                    obj({"name": STRING, "summary": STRING, "signature": STRING})
+                ),
             },
         )
     }
@@ -377,6 +427,7 @@ def _modules_text(data: JsonObject) -> str:
             f"{req_str(item, 'id')} [{req_str(item, 'prefix')}] {req_str(item, 'version')}{built}"
             f"  {_count(item['types'], 'type')}, {_count(item['relations'], 'relation')}"
             + (f", {_count(item['functions'], 'function')}" if "functions" in item else "")
+            + (f", {_count(item['actions'], 'action')}" if "actions" in item else "")
         )
         lines.append(f"  {req_str(item, 'summary')}")
         links = [as_object(v, "link") for v in req_list(item, "links")]
@@ -403,7 +454,7 @@ def _link_line(link: JsonObject, module_id: str) -> str:
 
 
 def _function_call(item: JsonObject) -> str:
-    """``name(signature)``: how a function is called."""
+    """``name(signature)``: how a function or an action is called."""
     return f"{req_str(item, 'name')}({req_str(item, 'signature')})"
 
 
@@ -454,6 +505,9 @@ def _module_text(data: JsonObject) -> str:
     if "functions" in item:
         calls = [as_object(v, "function") for v in req_list(item, "functions")]
         section("Functions:", [f"  {_function_call(c)}  {req_str(c, 'summary')}" for c in calls])
+    if "actions" in item:
+        runs = [as_object(v, "action") for v in req_list(item, "actions")]
+        section("Actions:", [f"  {_function_call(r)}  {req_str(r, 'summary')}" for r in runs])
     return "\n".join(lines) + "\n"
 
 
@@ -462,15 +516,24 @@ def _functions(state: CommandState, view: GraphRead) -> tuple[FunctionEntry, ...
     return context(state).reader.functions(view.actor, view.entry)
 
 
+def _actions(state: CommandState, view: GraphRead) -> tuple[ActionEntry, ...] | None:
+    """The graph's actions the caller may run (all their write rights), else ``None``."""
+    return context(state).reader.actions(view.actor, view.entry)
+
+
 def describe_modules(state: CommandState, graph: str | None) -> Result:
     view = _view(state, graph, "describe modules")
-    data = describe.describe_modules(view.entry, view.model, _functions(state, view))
+    data = describe.describe_modules(
+        view.entry, view.model, _functions(state, view), _actions(state, view)
+    )
     return Result(data=data, graph=view.envelope_graph(), text=_modules_text(data))
 
 
 def describe_module(state: CommandState, module: str, graph: str | None) -> Result:
     view = _view(state, graph, "describe module")
-    data = describe.describe_module(view.entry, view.model, module, _functions(state, view))
+    data = describe.describe_module(
+        view.entry, view.model, module, _functions(state, view), _actions(state, view)
+    )
     return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
 
 
@@ -499,6 +562,20 @@ def describe_functions(
     return Result(data=data, graph=view.envelope_graph(), text=_functions_text(data))
 
 
+def _param_lines(item: JsonObject) -> list[str]:
+    """The parameters of a function or an action, one line each (``-`` for none)."""
+    lines = []
+    for value in req_list(item, "params"):
+        p = as_object(value, "param")
+        default = "" if p["default"] is None else f" (default {json.dumps(p['default'])})"
+        kind = {"ref": f"ref {p['class']}", "enum": f"enum {p['enum']}"}.get(
+            str(p["type"]), str(p["type"])
+        )
+        kind = f"list of {kind}" if p["many"] else kind
+        lines.append(f"  {req_str(p, 'name')}: {kind}{default}  {req_str(p, 'summary')}")
+    return lines or ["  -"]
+
+
 def _function_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, columns, touched terms, query."""
     f = as_object(data["function"], "function")
@@ -508,16 +585,7 @@ def _function_text(data: JsonObject) -> str:
         replaced = f"; use {f['replaced_by']}" if f["replaced_by"] else ""
         lines.append(f"  Deprecated{replaced}")
     lines.append("Parameters:")
-    for value in req_list(f, "params"):
-        p = as_object(value, "param")
-        default = "" if p["default"] is None else f" (default {json.dumps(p['default'])})"
-        kind = {"ref": f"ref {p['class']}", "enum": f"enum {p['enum']}"}.get(
-            str(p["type"]), str(p["type"])
-        )
-        kind = f"list of {kind}" if p["many"] else kind
-        lines.append(f"  {req_str(p, 'name')}: {kind}{default}  {req_str(p, 'summary')}")
-    if not req_list(f, "params"):
-        lines.append("  -")
+    lines.extend(_param_lines(f))
     lines.append("Returns:")
     for value in req_list(f, "returns"):
         r = as_object(value, "column")
@@ -539,6 +607,71 @@ def describe_function(state: CommandState, name: str, graph: str | None) -> Resu
     view = _view(state, graph, "describe function")
     data = describe.describe_function(view.entry, view.model, _functions(state, view), name)
     return Result(data=data, graph=view.envelope_graph(), text=_function_text(data))
+
+
+def _actions_text(data: JsonObject) -> str:
+    """One line per action: how it is called, module, summary."""
+    lines = []
+    for value in req_list(data, "actions"):
+        item = as_object(value, "action")
+        deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
+        module = f"  [{item['module']}]" if item["module"] else ""
+        lines.append(f"{_function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
+    return "\n".join(lines or ["-"]) + "\n"
+
+
+def describe_actions(
+    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+) -> Result:
+    view = _view(state, graph, "describe actions")
+    data = describe.describe_actions(
+        view.entry,
+        view.model,
+        _actions(state, view),
+        module=module,
+        include_deprecated=include_deprecated,
+    )
+    return Result(data=data, graph=view.envelope_graph(), text=_actions_text(data))
+
+
+def _action_text(data: JsonObject) -> str:
+    """The definition in reading order: head, parameters, preconditions, operations, needed
+    rights, examples."""
+    a = as_object(data["action"], "action")
+    head = f"{_function_call(a)}  [{a['module']}]" if a["module"] else _function_call(a)
+    lines = [head, f"  {req_str(a, 'summary')}", f"  Use when: {req_str(a, 'use_when')}"]
+    if a["status"] == "deprecated":
+        replaced = f"; use {a['replaced_by']}" if a["replaced_by"] else ""
+        lines.append(f"  Deprecated{replaced}")
+    if a["reason"] == "required":
+        lines.append("  Requires --reason")
+    lines.append("Parameters:")
+    lines.extend(_param_lines(a))
+    lines.append("Preconditions:")
+    for value in req_list(a, "preconditions"):
+        c = as_object(value, "precondition")
+        lines.append(f"  {req_str(c, 'id')} on {req_str(c, 'on')}: {req_str(c, 'summary')}")
+    if not req_list(a, "preconditions"):
+        lines.append("  -")
+    lines.append("Operations:")
+    lines.extend(f"  {json.dumps(op, sort_keys=True)}" for op in req_list(a, "ops"))
+    lines.append("Needs:")
+    for value in req_list(a, "needs"):
+        n = as_object(value, "need")
+        lines.append(f"  {req_str(n, 'action')} on {req_str(n, 'type')}")
+    if not req_list(a, "needs"):
+        lines.append("  -")
+    lines.append("Examples:")
+    for value in req_list(a, "examples"):
+        lines.append(f"  {req_str(as_object(value, 'example'), 'request')}")
+    lines.append(f"Hash: {req_str(a, 'hash')}")
+    return "\n".join(lines) + "\n"
+
+
+def describe_action(state: CommandState, name: str, graph: str | None) -> Result:
+    view = _view(state, graph, "describe action")
+    data = describe.describe_action(view.entry, view.model, _actions(state, view), name)
+    return Result(data=data, graph=view.envelope_graph(), text=_action_text(data))
 
 
 def _search_text(data: JsonObject) -> str:
@@ -575,6 +708,7 @@ def describe_search(
         limit=limit,
         offset=offset,
         functions=_functions(state, view),
+        actions=_actions(state, view),
     )
     page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
     options = (("--kind", kind), ("--module", (module,) if module else ()))
@@ -796,11 +930,12 @@ SPECS: Final = (
         surface="model",
         action="read.describe",
         summary=(
-            "Search the ontology by text: types, relations, fields, enum values, states, functions."
+            "Search the ontology by text: types, relations, fields, enum values, states, "
+            "functions, actions."
         ),
         description=(
             "Looks at names, CURIEs, summaries and descriptions of the model, and at the "
-            "names, summaries and purpose of the graph's functions, never at "
+            "names, summaries and purpose of the graph's functions and actions, never at "
             "graph data (that is graph search). Ignores case, accents and punctuation; "
             "best matches first."
         ),
@@ -829,6 +964,10 @@ SPECS: Final = (
             Example(
                 "graph describe search <value> --kind function",
                 "Only the named functions that fit the words.",
+            ),
+            Example(
+                "graph describe search <value> --kind action",
+                "Only the actions that fit the words.",
             ),
         ),
         errors=(*GRAPH_ERRORS, "term.unknown"),
@@ -878,6 +1017,47 @@ SPECS: Final = (
         errors=(*GRAPH_ERRORS, "function.not_found"),
         handler=describe_function,
         output=_FUNCTION,
+    ),
+    _describe(
+        "actions",
+        "List the actions of the graph with their parameters.",
+        describe_actions,
+        with_type=False,
+        output=model_document({"actions": array(obj(_ACTION_ITEM))}, _MODULE_FILTER),
+        examples=(
+            Example("graph describe actions", "The actions: name, parameters, summary."),
+            Example(
+                "graph describe actions --module <module> --include-deprecated",
+                "One module's actions, deprecated ones too.",
+            ),
+        ),
+        options=(
+            MODULE_OPTION,
+            ParamSpec("--include-deprecated", "flag", "Also list deprecated actions."),
+        ),
+    ),
+    CommandSpec(
+        path=("describe", "action"),
+        kind="read",
+        surface="model",
+        action="read.describe",
+        summary="Describe one action: parameters, preconditions, operations and needed rights.",
+        description=(
+            "Shows what an action takes, the conditions it checks, the operations it expands "
+            "to, the types and relations it touches and the write rights it needs. Only "
+            "callers who may run an action see it."
+        ),
+        params=(
+            ParamSpec("name", "string", "The action name.", required=True, positional=True),
+            GRAPH,
+        ),
+        examples=(
+            Example("graph describe action <action>", "Everything about one action."),
+            Example("graph describe action <action> --json", "The action as graph_cli.model/1."),
+        ),
+        errors=(*GRAPH_ERRORS, "action.not_found"),
+        handler=describe_action,
+        output=_ACTION,
     ),
     _describe(
         "type",

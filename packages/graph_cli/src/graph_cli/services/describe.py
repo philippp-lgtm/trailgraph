@@ -3,13 +3,14 @@
 Projections for agents: the modules (subject areas) and one module, types, one type with
 its fields, lifecycles and relations in both directions, relations, fields, lifecycles, and
 the schema as ``graph query`` (Cypher) sees it, and the named functions of the graph
-(``describe_functions``, ``describe_function``; ``modules`` and ``module`` list them when the
-caller passes the visible ones); the list projections take a ``module``
+(``describe_functions``, ``describe_function``) and its actions (``describe_actions``,
+``describe_action``); ``modules`` and ``module`` list them when the caller passes the visible
+ones; the list projections take a ``module``
 filter. Every term with a summary also carries its ``deprecated`` flag. Deterministic
 (sorted), no timestamps. A type or lifecycle is its CURIE or its unique
 local name, as for ``find`` (``query.plan.resolve_term``); unknown terms
-are ``term.unknown`` with ``did_you_mean``. Functions of a graph entry and its compiled model, so
-the app (a read view) and graph-admin (the pinned model) describe a graph
+are ``term.unknown`` with ``did_you_mean``. Functions and actions of a graph entry and its
+compiled model, so the app (a read view) and graph-admin (the pinned model) describe a graph
 the same way; ``describe_model`` bundles every document a graph skill is
 rendered from.
 """
@@ -19,10 +20,11 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Protocol
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.entries import FunctionEntry, find_entry
 from graph_cli.ontology_layer.model import (
     AttributeDef,
@@ -278,18 +280,29 @@ def _link(
     }
 
 
-def _active_in(functions: Sequence[FunctionEntry], module_id: str) -> list[FunctionEntry]:
-    return [f for f in functions if f.module == module_id and not f.deprecated]
+class _Catalogued(Protocol):
+    """What functions and actions share for the listings: the module and the status."""
+
+    @property
+    def module(self) -> str | None: ...
+
+    @property
+    def deprecated(self) -> bool: ...
+
+
+def _active_in[Entry: _Catalogued](entries: Sequence[Entry], module_id: str) -> list[Entry]:
+    return [e for e in entries if e.module == module_id and not e.deprecated]
 
 
 def describe_modules(
     entry: GraphEntry,
     model: CompiledModel,
     functions: Sequence[FunctionEntry] | None = None,
+    actions: Sequence[ActionEntry] | None = None,
 ) -> dict[str, JsonValue]:
     """Level 0: the subject areas of the graph, one item per module (sorted by id). With
     ``functions`` (the ones the caller may see; ``None``: the graph has none or they are
-    hidden) every module also counts its active functions."""
+    hidden) every module also counts its active functions, with ``actions`` likewise."""
     index = ModuleIndex(model)
     modules: list[JsonValue] = []
     for info in sorted(model.modules, key=lambda m: m.id):
@@ -304,6 +317,8 @@ def describe_modules(
         }
         if functions is not None:
             item["functions"] = len(_active_in(functions, info.id))
+        if actions is not None:
+            item["actions"] = len(_active_in(actions, info.id))
         item["links"] = index.neighbours(info.id)
         modules.append(item)
     return model_envelope(entry, model, modules=modules)
@@ -314,11 +329,12 @@ def describe_module(
     model: CompiledModel,
     name: str,
     functions: Sequence[FunctionEntry] | None = None,
+    actions: Sequence[ActionEntry] | None = None,
 ) -> dict[str, JsonValue]:
     """Level 1: one module (id or prefix): its types, the relations that stay inside it, the
     cross-module relations leaving (``links_out``) and arriving (``links_in``) and the rules
-    whose target is one of its types. With ``functions`` (see ``describe_modules``) also its
-    active functions."""
+    whose target is one of its types. With ``functions`` or ``actions`` (see
+    ``describe_modules``) also its active functions or actions."""
     index = ModuleIndex(model)
     module_id = index.resolve(name)
     info = index.infos[module_id]
@@ -361,6 +377,11 @@ def describe_module(
             {"name": f.name, "summary": f.defn.summary, "signature": f.signature}
             for f in _active_in(functions, module_id)
         ]
+    if actions is not None:
+        body["actions"] = [
+            {"name": a.name, "summary": a.defn.summary, "signature": a.signature}
+            for a in _active_in(actions, module_id)
+        ]
     return model_envelope(entry, model, module=body)
 
 
@@ -393,6 +414,38 @@ def describe_function(
     hash; ``function.not_found`` with ``did_you_mean`` for an unknown name."""
     found = find_entry(functions, name)
     return model_envelope(entry, model, function=found.detail_json())
+
+
+def describe_actions(
+    entry: GraphEntry,
+    model: CompiledModel,
+    actions: Sequence[ActionEntry] | None,
+    *,
+    module: str | None = None,
+    include_deprecated: bool = False,
+) -> dict[str, JsonValue]:
+    """The actions of the graph (by name); with ``module`` (id or prefix) those the module
+    owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    wanted = ModuleIndex(model).filter(module)
+    items: list[JsonValue] = [
+        a.summary_json()
+        for a in actions or ()
+        if (include_deprecated or not a.deprecated) and (wanted is None or a.module == wanted)
+    ]
+    return _filtered(entry, model, wanted, actions=items)
+
+
+def describe_action(
+    entry: GraphEntry,
+    model: CompiledModel,
+    actions: Sequence[ActionEntry] | None,
+    name: str,
+) -> dict[str, JsonValue]:
+    """One action with everything its definition says, the compiled ops, the terms it touches,
+    the write rights it needs and its hash; ``action.not_found`` with ``did_you_mean`` (over
+    the given actions only) for an unknown name."""
+    found = find_action(actions, name)
+    return model_envelope(entry, model, action=found.detail_json())
 
 
 def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:

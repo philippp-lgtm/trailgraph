@@ -82,6 +82,46 @@ Usage: `graph create TYPE [OPTIONS]`
 | `graph create <type> --set <attr>=<value>` | Create with one attribute. |
 | `graph create <type> --set <attr>=<value> --edge <relation>=<id> --dry-run --json` | Preview the result. |
 
+## graph describe action
+
+Describe one action: parameters, preconditions, operations and needed rights.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe action NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The action name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe action <action>` | Everything about one action. |
+| `graph describe action <action> --json` | The action as graph_cli.model/1. |
+
+## graph describe actions
+
+List the actions of the graph with their parameters.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe actions [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--include-deprecated` | flag | no | no | Also list deprecated actions. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe actions` | The actions: name, parameters, summary. |
+| `graph describe actions --module <module> --include-deprecated` | One module's actions, deprecated ones too. |
+
 ## graph describe commands
 
 Describe every command of this program (graph_cli.inventory/1).
@@ -262,7 +302,7 @@ Usage: `graph describe schema [OPTIONS]`
 
 ## graph describe search
 
-Search the ontology by text: types, relations, fields, enum values, states, functions.
+Search the ontology by text: types, relations, fields, enum values, states, functions, actions.
 
 Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
 
@@ -274,7 +314,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`, `function`. |
+| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`. |
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
@@ -289,6 +329,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 | `graph describe search <value>` | Terms of the model that match the words. |
 | `graph describe search <value> --kind attribute --module <module> --json` | Only fields, only in one module. |
 | `graph describe search <value> --kind function` | Only the named functions that fit the words. |
+| `graph describe search <value> --kind action` | Only the actions that fit the words. |
 
 ## graph describe type
 
@@ -584,7 +625,7 @@ Usage: `graph lookup TEXT... [OPTIONS]`
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
 | `--type` | term | no | yes | Type CURIE or unique local name, subtypes included. |
-| `--for` | string | no | no | Only candidates that can fill this slot: a relation (the candidate is its target) or <function>.<param> (a ref parameter). |
+| `--for` | string | no | no | Only candidates that can fill this slot: a relation (the candidate is its target) or <function or action>.<param> (a ref parameter). |
 | `--for-source` | term | no | no | Only candidates that can be the source of this relation. |
 | `--match` | choice | no | no | Whole name, or names that start with the text. One of `exact`, `prefix`. Default: `exact`. |
 | `--ignore-accents` | flag | no | no | Also match with accents and other combining marks ignored. |

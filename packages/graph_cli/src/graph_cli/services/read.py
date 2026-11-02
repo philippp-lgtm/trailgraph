@@ -28,6 +28,7 @@ other command starts without it.
 
 from __future__ import annotations
 
+import difflib
 import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -385,6 +386,15 @@ class ReadService:
                 self._actions[slot.compiled_hash] = found
         return found if found.entries else None
 
+    def actions(self, actor: ActorContext, entry: GraphEntry) -> tuple[ActionEntry, ...] | None:
+        """The graph's actions as the actor may see them (A6, A10): ``None`` when the graph has
+        no catalog or the actor may run none of its actions, so a caller who sees none gets the
+        answers of a graph without actions and learns nothing about them. Records nothing."""
+        published = self.published_actions(entry)
+        if published is None:
+            return None
+        return self.visible_actions(actor, entry, published.entries) or None
+
     def visible_actions(
         self, actor: ActorContext, entry: GraphEntry, actions: Sequence[ActionEntry]
     ) -> tuple[ActionEntry, ...]:
@@ -690,9 +700,9 @@ class ReadService:
     ) -> tuple[tuple[str, ...] | None, bool]:
         """The classes ``--for`` and ``--for-source`` allow, intersected, and whether either
         was given. ``--for`` is a relation (the candidate is its target) or
-        ``<function>.<param>``, a ``ref`` parameter of a published function the actor may
-        read (``read.function``); ``--for-source`` is a relation (the candidate is its source).
-        None: any class."""
+        ``<function or action>.<param>``, a ``ref`` parameter of a published function the
+        actor may read (``read.function``) or of an action the actor may run; ``--for-source`` is
+        a relation (the candidate is its source). None: any class."""
         fits: list[tuple[str, ...] | None] = []
         if use is not None:
             if "." in use:
@@ -709,19 +719,36 @@ class ReadService:
         return tuple(sorted(set.intersection(*allowed))), True
 
     def _parameter_fit(self, view: GraphRead, use: str) -> tuple[str, ...]:
-        """The class of a function's ``ref`` parameter and its subclasses (``--for f.p``)."""
+        """The class of a ``ref`` parameter of a function or an action and its subclasses
+        (``--for f.p``). Names are unique across both kinds, so a visible action is looked up
+        first."""
         name, _, param_name = use.partition(".")
-        function = find_entry(self.functions(view.actor, view.entry), name)
-        params = function.defn.params
+        actions = self.actions(view.actor, view.entry)
+        action = next((a for a in actions or () if a.name == name), None)
+        if action is not None:
+            kind, params = "action", action.defn.params
+        else:
+            functions = self.functions(view.actor, view.entry)
+            if actions is not None and all(f.name != name for f in functions or ()):
+                names = sorted([*(f.name for f in functions or ()), *(a.name for a in actions)])
+                raise GraphCliError(
+                    "function.not_found",
+                    f"no function or action {name!r}",
+                    details={
+                        "name": name,
+                        "did_you_mean": difflib.get_close_matches(name, names, n=5),
+                    },
+                )
+            kind, params = "function", find_entry(functions, name).defn.params
         found = next((p for p in params if p.name == param_name), None)
         if found is None:
             known = [p.name for p in params]
             raise GraphCliError(
-                "function.parameter_unknown",
+                f"{kind}.parameter_unknown",
                 f"{name} has no parameter {param_name!r}"
                 + (f"; it takes {', '.join(known)}" if known else " and takes no parameters"),
                 details={
-                    "function": name,
+                    kind: name,
                     "parameter": param_name,
                     "expected": known,
                     "did_you_mean": did_you_mean(param_name, known),
@@ -731,7 +758,7 @@ class ReadService:
             raise GraphCliError(
                 "usage.invalid_argument",
                 f"--for: parameter {param_name!r} of {name} is {found.type_text}, not a ref",
-                details={"argument": "--for", "function": name, "parameter": param_name},
+                details={"argument": "--for", kind: name, "parameter": param_name},
             )
         return view.model.subtypes(found.of_class)
 

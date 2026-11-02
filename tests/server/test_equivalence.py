@@ -126,11 +126,18 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "function", "no_such_function"),
         ("describe", "search", "location", "--kind", "function"),
         ("describe", "search", "location"),
+        ("describe", "actions"),
+        ("describe", "actions", "--include-deprecated"),
+        ("describe", "action", "move_item"),
+        ("describe", "action", "no_such_action"),
+        ("describe", "search", "location", "--kind", "action"),
     ):
         call(*args)
     text("describe", "types")
     text("describe", "functions")
     text("describe", "function", "items_in_location")
+    text("describe", "actions")
+    text("describe", "action", "move_item")
     text("describe", "modules")
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))
@@ -215,6 +222,9 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call(*retire, "--reason", "scrapped")  # the precondition no longer holds
         call("history", stock)
         text(*move, "--dry-run")
+        call("lookup", "x", "--for", "move_item.location")
+        call("lookup", "x", "--for", "move_item.no_such_param")
+        call("lookup", "x", "--for", "no_such_action.location")
     out = cwd / "emitted"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir()

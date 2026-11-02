@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:10202c0eb21b9215d6e98fefd46efb0b522db04b876ac2c15d8b198bddc2550d"
+  inventory_hash: "sha256:f0b0d1e8af0ce383ee5517d73144bf99afda2de6be509224ca20c191b6eeea32"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.11.0"
@@ -158,6 +158,8 @@ Every `--json` call prints one JSON object on stdout.
 | `graph apply` | write | Apply change set documents (JSON or JSONL) from a file or stdin. |
 | `graph connect` | meta | Set up this machine and a folder for a server, from a one-time enrollment code. |
 | `graph create` | write | Create one entity of a type. |
+| `graph describe action` | read | Describe one action: parameters, preconditions, operations and needed rights. |
+| `graph describe actions` | read | List the actions of the graph with their parameters. |
 | `graph describe commands` | meta | Describe every command of this program (graph_cli.inventory/1). |
 | `graph describe fields` | read | List the fields of one type with datatypes and limits. |
 | `graph describe function` | read | Describe one function: parameters, columns, touched terms and its query. |
@@ -167,7 +169,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe modules` | read | List the modules (subject areas) of the graph's ontology and how they link. |
 | `graph describe relations` | read | List the relations of the selected graph's ontology. |
 | `graph describe schema` | read | Show the model as graph query sees it: labels, relationship patterns, properties. |
-| `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states, functions. |
+| `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states, functions, actions. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
 | `graph do` | write | Run a named action of the graph: a reviewed write with typed parameters. |
