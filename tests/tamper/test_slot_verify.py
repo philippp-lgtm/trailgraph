@@ -1,4 +1,5 @@
-"""T: published skill and function catalog against their change events (K6, R.6).
+"""T: published skill, function catalog and action catalog against their change events (K6, A8,
+R.6).
 
 ``integrity.audit.slot_mismatch`` lives here because it needs published slots.
 Both are published with the real ``graph-admin`` commands and changed by hand
@@ -21,6 +22,7 @@ from graph_cli.kernel.canonical import canonical_bytes, hash_value
 
 SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
+ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
 
 
 @pytest.fixture
@@ -44,6 +46,11 @@ def publish_skill(run_cli: CliRunner, source: Path = SKILL) -> None:
 
 def publish_functions(run_cli: CliRunner, source: Path = FUNCTIONS) -> None:
     outcome = admin(run_cli, "graph", "functions", "publish", "example_graph", str(source))
+    assert outcome.code == 0, outcome.envelope
+
+
+def publish_actions(run_cli: CliRunner, source: Path = ACTIONS) -> None:
+    outcome = admin(run_cli, "graph", "actions", "publish", "example_graph", str(source))
     assert outcome.code == 0, outcome.envelope
 
 
@@ -145,15 +152,15 @@ def test_a_rollback_to_an_earlier_catalog_is_a_slot_mismatch(
     assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
 
 
-def swap_compiled_and_slot(directory: Path) -> None:
+def swap_compiled_and_slot(directory: Path, kind: str = "functions") -> None:
     """Replace the compiled catalog by another one and make slot.json name it, as a
     same-user agent could; the sources and their hash stay untouched."""
-    functions = directory / "functions"
+    functions = directory / kind
     slot_path = functions / "slot.json"
     slot = json.loads(slot_path.read_text())
     old = functions / "compiled" / f"{slot['compiled_hash'].removeprefix('sha256:')}.json"
     doc = json.loads(old.read_text())
-    doc["functions"] = doc["functions"][:-1]
+    doc[kind] = doc[kind][:-1]
     new_hash = hash_value(doc)
     new = old.with_name(f"{new_hash.removeprefix('sha256:')}.json")
     new.write_bytes(canonical_bytes(doc))
@@ -180,4 +187,112 @@ def test_untouched_compiled_catalog_verifies_after_republish(
 ) -> None:
     publish_functions(run_cli)
     publish_functions(run_cli)
+    assert codes(run_cli) == []
+
+
+# ---- the action catalog: the same checks, one implementation per kind ---------------
+
+
+def edit_action_source(directory: Path) -> None:
+    first_file(directory / "actions" / "files").write_text("edited by hand\n")
+
+
+def remove_actions(directory: Path) -> None:
+    shutil.rmtree(directory / "actions")
+
+
+def edit_compiled_actions(directory: Path) -> None:
+    path = first_file(directory / "actions" / "compiled")
+    path.write_bytes(path.read_bytes().replace(b"move_item", b"move_anything"))
+
+
+def place_actions_by_hand(directory: Path) -> None:
+    slot = directory / "actions" / "slot.json"
+    slot.write_bytes(slot.read_bytes().replace(b'"hash": "sha256:', b'"hash": "sha256:0'))
+
+
+ACTION_TAMPERS: dict[str, Callable[[Path], None]] = {
+    "edited action source": edit_action_source,
+    "removed actions": remove_actions,
+    "edited compiled actions": edit_compiled_actions,
+    "rewritten actions slot": place_actions_by_hand,
+}
+
+
+def test_published_action_slots_verify_clean(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    publish_functions(run_cli)
+    publish_actions(run_cli)
+    one = tmp_path / "one"
+    one.mkdir()
+    shutil.copy(ACTIONS / "move_item.yaml", one)
+    publish_actions(run_cli, one)  # a second hash, then the empty catalog
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    publish_actions(run_cli, empty)
+    assert codes(run_cli) == []
+
+
+@pytest.mark.parametrize("tamper", sorted(ACTION_TAMPERS))
+def test_a_changed_action_slot_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path, tamper: str
+) -> None:
+    publish_functions(run_cli)
+    publish_actions(run_cli)
+    ACTION_TAMPERS[tamper](graph_dir(run_cli, root))
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_changed_action_slot_names_its_path(run_cli: CliRunner, root: Path) -> None:
+    publish_actions(run_cli)
+    edit_action_source(graph_dir(run_cli, root))
+    findings = admin(run_cli, "audit", "verify").error["details"]["findings"]
+    assert [f["target"]["path"].rpartition("/")[2] for f in findings] == ["actions"]
+
+
+def test_an_action_slot_placed_without_a_publish_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_actions(run_cli)
+    other = create_graph(run_cli, "other_graph")
+    shutil.copytree(graph_dir(run_cli, root) / "actions", root / "graphs" / other / "actions")
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_rollback_to_an_earlier_action_catalog_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    publish_actions(run_cli)
+    directory = graph_dir(run_cli, root) / "actions"
+    saved = tmp_path / "saved"
+    shutil.copytree(directory, saved)
+    one = tmp_path / "one"
+    one.mkdir()
+    shutil.copy(ACTIONS / "move_item.yaml", one)
+    publish_actions(run_cli, one)
+    assert codes(run_cli) == []
+    shutil.rmtree(directory)
+    shutil.copytree(saved, directory)
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_replaced_compiled_action_catalog_with_an_adjusted_slot_is_detected(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_actions(run_cli)
+    assert codes(run_cli) == []
+    swap_compiled_and_slot(graph_dir(run_cli, root), "actions")
+    outcome = admin(run_cli, "audit", "verify")
+    assert outcome.code != 0
+    findings = outcome.error["details"]["findings"]
+    assert [f["code"] for f in findings] == [audit_codes.SLOT_MISMATCH]
+    assert "compiled" in findings[0]["message"] and "actions" in findings[0]["message"]
+
+
+def test_untouched_compiled_action_catalog_verifies_after_republish(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_actions(run_cli)
+    publish_actions(run_cli)
     assert codes(run_cli) == []

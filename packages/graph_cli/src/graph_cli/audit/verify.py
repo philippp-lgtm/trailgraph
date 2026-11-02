@@ -87,13 +87,22 @@ UNREADABLE = "unreadable"
 
 @dataclass(frozen=True, slots=True)
 class InstalledSlots:
-    """The tree hashes of the published skill and function catalog as found: ``None`` when
-    the slot is empty, ``"unreadable"`` when it is damaged (K6). ``functions_compiled`` is the
-    hash of the compiled catalog the functions slot names (``None`` when there is no slot)."""
+    """The tree hashes of the published skill, function catalog and action catalog as found:
+    ``None`` when the slot is empty, ``"unreadable"`` when it is damaged (K6).
+    ``functions_compiled`` and ``actions_compiled`` are the hash of the compiled catalog the
+    slot names (``None`` when there is no slot)."""
 
     skill: str | None
     functions: str | None
     functions_compiled: str | None = None
+    actions: str | None = None
+    actions_compiled: str | None = None
+
+    def compiled_of(self, key: str) -> tuple[str | None, str | None]:
+        """The tree hash and the compiled hash of the catalog slot ``key``."""
+        if key == "functions":
+            return self.functions, self.functions_compiled
+        return self.actions, self.actions_compiled
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,10 +310,12 @@ def check_maintenance(
         findings += _policy_walk(stream, ok, effects.policy, effects.anchored)
     if effects.slots is not None:
         findings += _slot_walk(stream, ok, "skill", effects.slots.skill, effects.anchored)
-        walked = _slot_walk(stream, ok, "functions", effects.slots.functions, effects.anchored)
-        if not any(f.code == codes.SLOT_MISMATCH for f in walked):
-            walked += _compiled_check(stream, ok, effects.slots, effects.anchored)
-        findings += walked
+        for key in ("functions", "actions"):
+            tree, _ = effects.slots.compiled_of(key)
+            walked = _slot_walk(stream, ok, key, tree, effects.anchored)
+            if not any(f.code == codes.SLOT_MISMATCH for f in walked):
+                walked += _compiled_check(stream, ok, key, effects.slots, effects.anchored)
+            findings += walked
     return findings
 
 
@@ -799,18 +810,20 @@ def _slot_walk(
 def _compiled_check(
     stream: AuditStream,
     events: Sequence[Mapping[str, JsonValue]],
+    key: str,
     slots: InstalledSlots,
     anchored: frozenset[int],
 ) -> list[Finding]:
-    """The compiled catalog the functions slot names must be the one the last committed
-    publish recorded in ``change.functions.compiled_hash`` (the app reads the compiled
-    file, not the sources); the caller skips it when the sources hash already mismatches."""
-    installed, compiled = slots.functions, slots.functions_compiled
+    """The compiled catalog the ``key`` slot (``functions`` or ``actions``) names must be
+    the one the last committed publish recorded in ``change.<key>.compiled_hash`` (the app
+    reads the compiled file, not the sources); the caller skips it when the sources hash
+    already mismatches."""
+    installed, compiled = slots.compiled_of(key)
     if installed is None or installed == UNREADABLE or compiled is None:
         return []
     graph_id = graph_of_stream(stream)
     accepted: list[JsonValue] = []
-    for event, change in reversed(_effects(events, CONFIGURE_ACTION, "functions")):
+    for event, change in reversed(_effects(events, CONFIGURE_ACTION, key)):
         if change.get("to") != installed:
             continue
         accepted.append(change.get("compiled_hash"))
@@ -822,8 +835,8 @@ def _compiled_check(
     return [
         _finding(
             codes.SLOT_MISMATCH,
-            {"stream": stream, "path": f"graphs/{graph_id}/functions"},
-            "the compiled catalog of the published functions differs from the recorded "
+            {"stream": stream, "path": f"graphs/{graph_id}/{key}"},
+            f"the compiled catalog of the published {key} differs from the recorded "
             "compiled_hash (the sources hash matches)",
             expected=accepted[0],
             actual=compiled,

@@ -325,6 +325,12 @@ def functions_change(
     return {"functions": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
 
 
+def actions_change(old_hash: str | None, new_hash: str, compiled_hash: str) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that publishes the action catalog
+    (actions plan A8), shaped like ``functions_change``."""
+    return {"actions": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
+
+
 def policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
     """``change`` of a ``maint.policy_change`` intent (B5.15): the compiled policy's hash
     before (``None`` when none was installed) and after."""

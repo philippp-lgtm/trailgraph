@@ -5,10 +5,13 @@ import re
 from pathlib import Path
 
 import graph_cli.kinetic as kinetic
+import graph_cli_admin.services_admin as admin_services
 from graph_cli.cli_kit.hints import known_hint_codes
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, lookup_error_code
 
 SOURCES = Path(kinetic.__file__).parent
+# The publish flow of graph-admin emits the one code of a folder that holds other files.
+ADMIN_SOURCES = (Path(admin_services.__file__).parent / "kinetic_slots.py",)
 LITERAL = re.compile(r'"((?:function|action)\.[a-z_]+)"')
 
 # Codes the package builds from the kind (``f"{kind}.parameter_missing"``): each is
@@ -29,7 +32,8 @@ TERM_BUILT = ("action.unknown_type", "action.unknown_relation")
 
 
 def emitted() -> set[str]:
-    literal = {code for path in SOURCES.glob("*.py") for code in LITERAL.findall(path.read_text())}
+    paths = [*SOURCES.glob("*.py"), *ADMIN_SOURCES]
+    literal = {code for path in paths for code in LITERAL.findall(path.read_text())}
     built = {f"{kind}.{suffix}" for kind in ("function", "action") for suffix in KIND_BUILT}
     return literal | built | set(TERM_BUILT)
 

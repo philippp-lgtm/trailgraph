@@ -16,6 +16,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
 from graph_cli_admin.services_admin import audit, graphs, sources
+from graph_cli_admin.services_admin.actions import publish as publish_actions
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.functions import publish as publish_functions
@@ -25,6 +26,7 @@ from graph_cli_admin.services_admin.skill import publish
 INVENTORY = ONTOLOGIES / "inventory"
 SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
+ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
 IWE = "integrity.audit.intent_without_effect"
 
 
@@ -168,6 +170,61 @@ def test_functions_replaced_before_rename_keep_the_old_catalog(
     new = ctx.catalog.read_functions(graph.id)
     assert new is not None and new.count == 1
     assert verify_codes(ctx) == [IWE]
+
+
+def test_actions_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
+    """A8: the old slot (here: none) stays; a retry publishes and verifies."""
+    create(ctx)
+    run = lambda: publish_actions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=ACTIONS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.ACTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_actions(graph.id) is None
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    slot = ctx.catalog.read_actions(graph.id)
+    assert slot is not None and slot.count == 2
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+    assert run().data["published"] is False  # unchanged: no third intent
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_actions_replaced_before_rename_keep_the_old_catalog(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    create(ctx)
+    publish_actions(ctx, graph_ref="example_graph", source=ACTIONS, reason=None, dry_run=False)
+    one = tmp_path / "one"
+    one.mkdir()
+    (one / "move_item.yaml").write_bytes((ACTIONS / "move_item.yaml").read_bytes())
+    run = lambda: publish_actions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=one, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.ACTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    old = ctx.catalog.read_actions(graph.id)
+    assert old is not None and old.count == 2
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    new = ctx.catalog.read_actions(graph.id)
+    assert new is not None and new.count == 1
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_an_interrupted_actions_publish_leaves_the_functions_slot_alone(
+    ctx: AdminContext, faults: FaultSwitch
+) -> None:
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    before = ctx.catalog.read_functions(ctx.catalog.resolve("example_graph").id)
+    run = lambda: publish_actions(  # noqa: E731
+        ctx, graph_ref="example_graph", source=ACTIONS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.ACTIONS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_functions(graph.id) == before
+    assert ctx.catalog.read_actions(graph.id) is None
 
 
 def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_repeatable(

@@ -67,7 +67,7 @@ from graph_cli.ontology_layer.vocabulary import MODULE_ID_RE
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
-from graph_cli_admin.services_admin import functions, release, skill
+from graph_cli_admin.services_admin import functions, kinetic_slots, release, skill
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     RELEASE_FILE,
@@ -428,7 +428,13 @@ def push(
             label_f: Path | str = sources_dir
             model_f = compiled.model if releasing else pinned_model(ctx.catalog, after)
             checked_f = functions.check_files(
-                after, function_files, function_problems, model_f, label=label_f
+                after,
+                function_files,
+                function_problems,
+                model_f,
+                label=label_f,
+                # one namespace per graph: no function named like a published action
+                taken=kinetic_slots.names_of(kinetic_slots.current_slot(session, "actions")),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:

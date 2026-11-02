@@ -1,0 +1,21 @@
+schema: graph_cli.action/1
+name: retire_item
+summary: Take an item out of service for good.
+use_when: >-
+  An item is scrapped, written off or taken out of service.
+params:
+  item:
+    type: ref
+    class: inv:Item
+    summary: The item to retire.
+preconditions:
+  - id: not_retired
+    on: item
+    summary: The item is still in the inventory.
+    require:
+      - {attr: status, equals_string_in: [ordered, in_stock, in_use]}
+ops:
+  - {op: transition, id: $item, to: retired}
+reason: required
+examples:
+  - request: The old label printer is scrapped.

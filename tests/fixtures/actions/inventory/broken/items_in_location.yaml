@@ -1,0 +1,13 @@
+schema: graph_cli.action/1
+name: items_in_location
+summary: A probe named like a published function.
+use_when: Testing.
+params:
+  item:
+    type: ref
+    class: inv:Item
+    summary: An item.
+ops:
+  - {op: unlink, id: $item, rel: inv:located_in, direction: out, all: true}
+examples:
+  - request: A request.

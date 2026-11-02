@@ -53,7 +53,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findings
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
-from graph_cli.kernel.ports.catalog import FunctionsSlot, SkillSlot
+from graph_cli.kernel.ports.catalog import KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, MaintenanceSession
 from graph_cli.kernel.records import RequestMeta, TxRecord
 from graph_cli.storage import finding_codes as storage_codes
@@ -62,7 +62,12 @@ from graph_cli.storage.files.token_files import enrollments_path, read_tokens_fi
 from graph_cli_admin.services_admin.context import AdminContext
 
 DAMAGED_SLOT = frozenset(
-    {"skills.source_invalid", "functions.slot_invalid", "format.unsupported_version"}
+    {
+        "skills.source_invalid",
+        "functions.slot_invalid",
+        "actions.slot_invalid",
+        "format.unsupported_version",
+    }
 )
 
 
@@ -154,7 +159,7 @@ def verify(ctx: AdminContext) -> Verification:
     return Verification(data, ordered, warnings)
 
 
-def _slot_hash(read: Callable[[], SkillSlot | FunctionsSlot | None]) -> str | None:
+def _slot_hash(read: Callable[[], SkillSlot | KineticSlot | None]) -> str | None:
     """The tree hash of a published slot as found; a damaged one is a finding, not a crash."""
     try:
         slot = read()
@@ -165,20 +170,30 @@ def _slot_hash(read: Callable[[], SkillSlot | FunctionsSlot | None]) -> str | No
     return slot.hash if slot is not None else None
 
 
-def _installed_slots(session: MaintenanceSession) -> InstalledSlots:
-    """The published skill and function catalog as found, damaged ones as findings."""
-    functions: FunctionsSlot | None = None
+def _catalog_state(
+    read: Callable[[], KineticSlot | None],
+) -> tuple[str | None, str | None]:
+    """The tree hash and compiled hash of a function or action slot as found."""
     try:
-        functions = session.read_functions()
-        functions_hash = functions.hash if functions is not None else None
+        slot = read()
     except GraphCliError as exc:
         if exc.code not in DAMAGED_SLOT:
             raise
-        functions_hash = UNREADABLE
+        return UNREADABLE, None
+    return (slot.hash, slot.compiled_hash) if slot is not None else (None, None)
+
+
+def _installed_slots(session: MaintenanceSession) -> InstalledSlots:
+    """The published skill, function catalog and action catalog as found, damaged ones as
+    findings."""
+    functions, functions_compiled = _catalog_state(session.read_functions)
+    actions, actions_compiled = _catalog_state(session.read_actions)
     return InstalledSlots(
         skill=_slot_hash(session.read_skill),
-        functions=functions_hash,
-        functions_compiled=functions.compiled_hash if functions is not None else None,
+        functions=functions,
+        functions_compiled=functions_compiled,
+        actions=actions,
+        actions_compiled=actions_compiled,
     )
 
 

@@ -41,6 +41,8 @@ V110 = ONTOLOGIES / "inventory" / "1.1.0"
 GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 BROKEN_FUNCTIONS = FIXTURES / "functions" / "inventory" / "broken"
+ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
+BROKEN_ACTIONS = FIXTURES / "actions" / "inventory" / "broken"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
 FOLDER = re.compile(r"\b(example_graph|second)_[0-9a-f]{6}\b")  # workspace sync: id ends
@@ -275,9 +277,12 @@ def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: 
     ontology = upload_tree(app, token, V101)
     skill = upload_tree(app, token, GRAPH_SKILL)
     functions = upload_tree(app, token, FUNCTIONS)
+    actions = upload_tree(app, token, ACTIONS)
     empty = {"files": {}, "name": "out"}
     return {
         ("files", "verify"): {"--graph": graph},
+        ("graph", "actions", "publish"): {"ref": graph, "dir": actions, "--reason": "test"},
+        ("graph", "actions", "show"): {"ref": graph},
         ("graph", "check"): {"ref": graph},
         ("graph", "functions", "publish"): {"ref": graph, "dir": functions, "--reason": "test"},
         ("graph", "functions", "show"): {"ref": graph},
@@ -610,6 +615,14 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("graph", "show", "example_graph"),
         ("graph", "functions", "publish", "example_graph", "no_functions"),
         ("graph", "functions", "show", "example_graph"),
+        ("graph", "actions", "publish", "example_graph", str(BROKEN_ACTIONS)),
+        ("graph", "actions", "publish", "example_graph", str(ACTIONS), "--dry-run"),
+        ("graph", "actions", "publish", "example_graph", str(ACTIONS)),
+        ("graph", "actions", "publish", "example_graph", str(ACTIONS)),
+        ("graph", "actions", "show", "example_graph"),
+        ("graph", "show", "example_graph"),
+        ("graph", "actions", "publish", "example_graph", "no_functions"),
+        ("graph", "actions", "show", "example_graph"),
         ("graph", "skill", "render", "example_graph", str(GRAPH_SKILL), "--out", "preview"),
         ("graph", "skill", "render", "example_graph", str(GRAPH_SKILL), "--out", "preview"),
         (

@@ -24,6 +24,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.data_errors", _C.INVALID, False, "The data has error findings."),
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.functions_invalid", _C.INVALID, False, "The function files are invalid."),
+    ErrorSpec("admin.actions_invalid", _C.INVALID, False, "The action files are invalid."),
     ErrorSpec(
         "admin.functions_broken", _C.REFUSED, False, "A published function would not resolve."
     ),

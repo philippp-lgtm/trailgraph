@@ -233,6 +233,15 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "functions.slot_invalid", _C.INVALID, False, "The published function catalog is invalid."
     ),
     ErrorSpec(
+        "actions.slot_invalid", _C.INVALID, False, "The published action catalog is invalid."
+    ),
+    ErrorSpec(
+        "function.name_taken",
+        _C.INVALID,
+        False,
+        "A function is named like a published action.",
+    ),
+    ErrorSpec(
         "action.not_found",
         _C.NOT_FOUND,
         False,
@@ -304,6 +313,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A parameter default does not fit its declared type.",
     ),
+    ErrorSpec("action.invalid_file", _C.INVALID, False, "The actions folder holds something else."),
     ErrorSpec(
         "action.invalid_op",
         _C.INVALID,

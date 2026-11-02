@@ -1,5 +1,5 @@
 """``graph-admin graph create|list|show|check|reindex|pull|push``, ``graph skill
-publish|render`` and ``graph functions publish|show``."""
+publish|render``, ``graph functions publish|show`` and ``graph actions publish|show``."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
     SKILL_KIND,
     STRINGS,
 )
-from graph_cli_admin.services_admin import functions, graphs, skill, sources
+from graph_cli_admin.services_admin import actions, functions, graphs, skill, sources
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
 
@@ -55,6 +55,15 @@ FUNCTIONS_DIR: Final = ParamSpec(
     "dir",
     "directory",
     "A functions folder: one <name>.yaml per function.",
+    required=True,
+    positional=True,
+    keyword="source",
+    must_exist=True,
+)
+ACTIONS_DIR: Final = ParamSpec(
+    "dir",
+    "directory",
+    "An actions folder: one <name>.yaml per action.",
     required=True,
     positional=True,
     keyword="source",
@@ -169,6 +178,27 @@ def show_functions(state: CommandState, ref: str, data_root: str | None) -> Resu
     return Result(data=data, graph=graphs.envelope_graph(entry, None))
 
 
+def publish_actions(
+    state: CommandState,
+    ref: str,
+    source: str,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    published = actions.publish(
+        ctx, graph_ref=ref, source=Path(source).resolve(), reason=reason, dry_run=dry_run
+    )
+    return Result(data=published.data, graph=graphs.envelope_graph(published.entry, published.seq))
+
+
+def show_actions(state: CommandState, ref: str, data_root: str | None) -> Result:
+    ctx = admin_context(state, data_root)
+    entry, data = actions.show(ctx, graph_ref=ref)
+    return Result(data=data, graph=graphs.envelope_graph(entry, None))
+
+
 def render(
     state: CommandState,
     ref: str,
@@ -269,6 +299,7 @@ SHOW_OUTPUT: Final = obj(  # services_admin.graphs.show
         "releases": STRINGS,
         "skill": nullable(ref("skill_summary")),
         "functions": nullable(obj({"count": INTEGER, "hash": STRING})),
+        "actions": nullable(obj({"count": INTEGER, "hash": STRING})),
     }
 )
 CHECK_OUTPUT: Final = obj(  # services_admin.check.check
@@ -372,6 +403,34 @@ SHOW_FUNCTIONS_OUTPUT: Final = obj(  # services_admin.functions.show
         "graph_id": STRING,
         "slot": nullable(ref("functions_summary")),
         "functions": array(
+            obj(
+                {
+                    "name": STRING,
+                    "module": NULLABLE_STRING,
+                    "summary": STRING,
+                    "status": enum("active", "deprecated"),
+                    "featured": BOOLEAN,
+                    "hash": STRING,
+                }
+            )
+        ),
+    }
+)
+PUBLISH_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.publish
+    {
+        "graph_id": STRING,
+        "from": nullable(ref("actions_summary")),
+        "to": ref("actions_summary"),
+        "actions": STRINGS,
+        "published": BOOLEAN,
+        "dry_run": BOOLEAN,
+    }
+)
+SHOW_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.show
+    {
+        "graph_id": STRING,
+        "slot": nullable(ref("actions_summary")),
+        "actions": array(
             obj(
                 {
                     "name": STRING,
@@ -771,6 +830,54 @@ SPECS: Final = (
         output=SHOW_FUNCTIONS_OUTPUT,
         description="The slot (hash, ontology pin it was published against) and one line per"
         " function; read-only.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "actions", "publish"),
+        kind="write",
+        surface="act",
+        action="maint.graph_configure",
+        summary="Publish DIR as the action catalog of graph REF (name or id).",
+        params=(
+            REF,
+            ACTIONS_DIR,
+            ParamSpec("--reason", "string", "Why the actions change; recorded in the audit event."),
+            ParamSpec("--dry-run", "flag", "Check and show the change without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph actions publish <graph> <dir>", "Publish the actions."),
+            Example(
+                "graph-admin graph actions publish <graph> <dir> --dry-run --json",
+                "Check them and show the change, as JSON.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.actions_invalid"),
+        handler=publish_actions,
+        output=PUBLISH_ACTIONS_OUTPUT,
+        description="DIR holds one <name>.yaml per action (graph_cli.action/1). Every"
+        " action is checked against the graph's current ontology pin; all problems are"
+        " reported together (admin.actions_invalid, details.problems). An action may not"
+        " be named like a published function. An empty DIR unpublishes every action."
+        " Publishing the same files again changes nothing. --dry-run is the check.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "actions", "show"),
+        kind="read",
+        surface="meta",
+        action="maint.graph_configure",
+        summary="Show the published action catalog of graph REF.",
+        params=(REF, DATA_ROOT),
+        examples=(
+            Example("graph-admin graph actions show <graph>", "List the published actions."),
+            Example("graph-admin graph actions show <graph> --json", "The same, as JSON."),
+        ),
+        errors=(*GRAPH_ERRORS, "access.denied"),
+        handler=show_actions,
+        output=SHOW_ACTIONS_OUTPUT,
+        description="The slot (hash, ontology pin it was published against) and one line per"
+        " action; read-only.",
         remote="hooked",
     ),
 )

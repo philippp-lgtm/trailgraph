@@ -176,13 +176,15 @@ def slot_check(
     stream = Stream()
     for old, new in published:
         change = {"from": old, "to": new}
-        if key == "functions":
+        if key != "skill":
             change["compiled_hash"] = COMPILED
         stream.maint("maint.graph_configure", {key: change})
     other = None
-    slots = (
-        InstalledSlots(found, other) if key == "skill" else InstalledSlots(other, found, COMPILED)
-    )
+    slots = {
+        "skill": InstalledSlots(found, other),
+        "functions": InstalledSlots(other, found, COMPILED),
+        "actions": InstalledSlots(other, None, None, found, COMPILED),
+    }[key]
     effects = MaintEffects(pin(0), {}, anchored=frozenset(anchored), slots=slots)
     findings = check_maintenance(stream.graph_id, stream.events(), effects)
     return [(f.code, "slot" if "path" in f.target else f.target.get("seq")) for f in findings]
@@ -193,7 +195,7 @@ A, B, C = (hash_value({"slot": n}) for n in "abc")
 SLOT = codes.SLOT_MISMATCH
 
 
-@pytest.mark.parametrize("key", ["skill", "functions"])
+@pytest.mark.parametrize("key", ["skill", "functions", "actions"])
 @pytest.mark.parametrize(
     ("published", "found", "anchored", "expected"),
     [
@@ -220,6 +222,25 @@ def test_slot_walk(
     expected: list[tuple[str, JsonValue]],
 ) -> None:
     assert slot_check(key, published, found, anchored) == expected
+
+
+@pytest.mark.parametrize("key", ["functions", "actions"])
+def test_the_compiled_hash_is_checked_per_catalog(key: str) -> None:
+    """The compiled catalog a slot names must be the one the last publish recorded; the other
+    catalog's slot does not mask it."""
+    stream = Stream()
+    stream.maint("maint.graph_configure", {key: {"from": None, "to": A, "compiled_hash": COMPILED}})
+    wrong = hash_value({"compiled": 2})
+    slots = (
+        InstalledSlots(None, A, wrong)
+        if key == "functions"
+        else InstalledSlots(None, None, None, A, wrong)
+    )
+    effects = MaintEffects(pin(0), {}, slots=slots)
+    (finding,) = check_maintenance(stream.graph_id, stream.events(), effects)
+    assert finding.code == SLOT
+    assert finding.target["path"].endswith(f"/{key}")
+    assert "compiled" in finding.message
 
 
 def test_without_slots_the_walk_is_skipped() -> None:

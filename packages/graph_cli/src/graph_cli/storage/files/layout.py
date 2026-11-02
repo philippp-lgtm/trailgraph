@@ -71,21 +71,19 @@ class GraphLayout:
     def skill_files(self, digest: str) -> Path:
         return self.skill / "files" / digest.removeprefix("sha256:")
 
-    @property
-    def functions(self) -> Path:
-        """The published function catalog (K6): ``slot.json``, ``files/<hash hex>/`` with the
-        sources and ``compiled/<compiled hash hex>.json``."""
-        return self.root / "functions"
+    def kinetic(self, kind: str) -> Path:
+        """The published function (K6) or action (A8) catalog: ``slot.json``,
+        ``files/<hash hex>/`` with the sources and ``compiled/<compiled hash hex>.json``."""
+        return self.root / kind
 
-    @property
-    def functions_slot(self) -> Path:
-        return self.functions / "slot.json"
+    def kinetic_slot(self, kind: str) -> Path:
+        return self.kinetic(kind) / "slot.json"
 
-    def functions_files(self, digest: str) -> Path:
-        return self.functions / "files" / digest.removeprefix("sha256:")
+    def kinetic_files(self, kind: str, digest: str) -> Path:
+        return self.kinetic(kind) / "files" / digest.removeprefix("sha256:")
 
-    def functions_compiled(self, digest: str) -> Path:
-        return self.functions / "compiled" / f"{digest.removeprefix('sha256:')}.json"
+    def kinetic_compiled(self, kind: str, digest: str) -> Path:
+        return self.kinetic(kind) / "compiled" / f"{digest.removeprefix('sha256:')}.json"
 
     @property
     def data(self) -> Path:

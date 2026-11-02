@@ -59,6 +59,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.policy_lockout": None,  # details.rule names the rule that locks out
     "admin.skill_invalid": None,  # the files to fix are in details.problems
     "admin.functions_invalid": None,  # the problems to fix are in details.problems
+    "admin.actions_invalid": None,  # the problems to fix are in details.problems
     "admin.functions_broken": None,  # details.problems names the functions to fix or delete
     "admin.skill_render_exists": _render_force,
     "admin.source_exists": _pull_force,

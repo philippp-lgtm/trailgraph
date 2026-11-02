@@ -335,14 +335,15 @@ def test_builders_refuse_bad_input(world: World) -> None:
         assert info.value.code == "internal.error"
 
 
-@pytest.mark.parametrize("key", ["skill", "functions"])
+@pytest.mark.parametrize("key", ["skill", "functions", "actions"])
 def test_slot_changes_name_both_tree_hashes(world: World, key: str) -> None:
     """D15 Q2, K6: a skill or function catalog publish intent carries ``change.<key>{from, to}``."""
     pin = world.graph.pin
+    catalog = events.functions_change if key == "functions" else events.actions_change
     build: Callable[[str | None, str], dict[str, JsonValue]] = (
         events.skill_change
         if key == "skill"
-        else lambda old, new: events.functions_change(old, new, pin.artifact_hash)
+        else lambda old, new: catalog(old, new, pin.artifact_hash)
     )
     common = dict(
         actor=maint_actor(),
@@ -363,7 +364,7 @@ def test_slot_changes_name_both_tree_hashes(world: World, key: str) -> None:
         {key: {"from": None}},
         {key: {"from": "x", "to": pin.artifact_hash}},
         {key: {"from": None, "to": None}},
-        *([{key: {"from": None, "to": pin.artifact_hash}}] if key == "functions" else []),
+        *([{key: {"from": None, "to": pin.artifact_hash}}] if key != "skill" else []),
     ):
         with pytest.raises(GraphCliError) as caught:
             events.maintenance(

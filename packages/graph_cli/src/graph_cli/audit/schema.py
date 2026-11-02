@@ -469,20 +469,21 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             isinstance(reindex, Mapping) and set(reindex) == {"seq"} and _is_size(reindex["seq"])
         ):
             problems.append("a reindex intent needs change.reindex{seq}")
-    for key in ("skill", "functions"):
+    for key in ("skill", "functions", "actions"):
         if CONFIGURE_ACTION in actions and key in entries:
             slot = entries[key]
-            fields = {"from", "to", "compiled_hash"} if key == "functions" else {"from", "to"}
+            compiled = key != "skill"  # the catalogs also record the compiled hash
+            fields = {"from", "to", "compiled_hash"} if compiled else {"from", "to"}
             if not (
                 isinstance(slot, Mapping)
                 and set(slot) == fields
                 and (slot["from"] is None or _is_hash(slot["from"]))
                 and _is_hash(slot["to"])
-                and (key != "functions" or _is_hash(slot["compiled_hash"]))
+                and (not compiled or _is_hash(slot["compiled_hash"]))
             ):
                 problems.append(
                     f"a {key} change needs change.{key}{{from: hash or null, to: hash"
-                    + (", compiled_hash: hash}" if key == "functions" else "}")
+                    + (", compiled_hash: hash}" if compiled else "}")
                 )
     for key in ("policy", "installation_policy"):
         if POLICY_ACTION in actions and key in entries:

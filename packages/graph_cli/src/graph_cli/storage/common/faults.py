@@ -41,6 +41,7 @@ class CrashPoint(StrEnum):
     MANIFEST_BEFORE_RENAME = "manifest.before_rename"
     SKILL_BEFORE_RENAME = "skill.before_rename"
     FUNCTIONS_BEFORE_RENAME = "functions.before_rename"
+    ACTIONS_BEFORE_RENAME = "actions.before_rename"
     POLICY_BEFORE_RENAME = "policy.before_rename"
 
 
@@ -64,6 +65,7 @@ MAINT_POINTS: Final = frozenset(
         CrashPoint.MANIFEST_BEFORE_RENAME,
         CrashPoint.SKILL_BEFORE_RENAME,
         CrashPoint.FUNCTIONS_BEFORE_RENAME,
+        CrashPoint.ACTIONS_BEFORE_RENAME,
         CrashPoint.POLICY_BEFORE_RENAME,
     }
 )

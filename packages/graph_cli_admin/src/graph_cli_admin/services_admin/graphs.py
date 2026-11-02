@@ -213,4 +213,8 @@ def show(ctx: AdminContext, ref: str) -> tuple[GraphEntry, dict[str, JsonValue]]
     data["functions"] = (
         {"count": published.count, "hash": published.hash} if published is not None else None
     )
+    actions = ctx.catalog.read_actions(entry.id)
+    data["actions"] = (
+        {"count": actions.count, "hash": actions.hash} if actions is not None else None
+    )
     return entry, data

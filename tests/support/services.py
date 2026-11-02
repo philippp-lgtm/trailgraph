@@ -25,7 +25,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ReadSignal
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditSink, graph_stream
-from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, SkillSlot
+from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
@@ -83,6 +83,7 @@ class MemoryCatalog:
         self.files: dict[tuple[GraphId, str, str], bytes] = {}
         self.skills: dict[GraphId, SkillSlot] = {}
         self.functions: dict[GraphId, FunctionsSlot] = {}
+        self.actions: dict[GraphId, KineticSlot] = {}
 
     def add(self, entry: GraphEntry, model: CompiledModel, event_id: EventId) -> None:
         self.entries[entry.id] = entry
@@ -127,6 +128,10 @@ class MemoryCatalog:
 
     def read_functions(self, graph: GraphId, *, sources: bool = False) -> FunctionsSlot | None:
         slot = self.functions.get(graph)
+        return replace(slot, files={}) if slot is not None and not sources else slot
+
+    def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        slot = self.actions.get(graph)
         return replace(slot, files={}) if slot is not None and not sources else slot
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
