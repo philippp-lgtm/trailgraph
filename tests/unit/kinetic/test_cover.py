@@ -78,10 +78,13 @@ def test_an_extra_required_triple_uncovers_the_query() -> None:
     assert names(query) == []
 
 
-def test_a_query_may_use_fewer_triples_than_the_function() -> None:
-    assert "members_of_unit" in names(
-        "MATCH (q:Position)-[:in_unit]->(u:OrgUnit) WHERE u.id = 'x' RETURN q.title"
-    )
+def test_a_function_that_requires_more_relationships_answers_a_narrower_question() -> None:
+    # members_of_unit lists held positions only: no answer for every position of a unit
+    positions = "MATCH (q:Position)-[:in_unit]->(u:OrgUnit) WHERE u.id = 'x' RETURN q.title"
+    assert "members_of_unit" not in names(positions)
+    # missing_required_trainings also requires the training path: not every member
+    members = names(f"{MEMBERS} WHERE u.id = 'x' RETURN p.name, q.title")
+    assert "members_of_unit" in members and "missing_required_trainings" not in members
 
 
 def test_an_anchor_on_a_subclass_of_the_function_anchor_class_is_covered() -> None:

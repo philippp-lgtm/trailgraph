@@ -35,9 +35,11 @@ variable; ``None`` is any class.
 
 A function covers a query when (1) a query anchor class is equal to or a
 subclass of the class of a function anchor bound to a ``ref`` parameter, (2)
-every required query triple matches a triple of the function and (3) one of
-them matches a required triple of the function, and (4) the function returns
-what the query returns: every property key the query projects is projected by
+every required query triple matches a triple of the function, (3) every
+required triple of the function matches a required triple of the query (a
+relationship only the function requires drops the rows without it: the
+function answers a narrower question), and (4) the function returns what the
+query returns: every property key the query projects is projected by
 the function, and a query that aggregates meets a function that aggregates (the
 function's rows cannot be regrouped client-side). Matching is subclass-aware
 (a query node of a subclass fits a function node of its superclass, not the
@@ -477,7 +479,8 @@ def covers(
             continue
         if not all(any(_matches(q, f, model) for f in signature.triples) for q in query.required):
             continue
-        if not any(_matches(q, f, model) for q in query.required for f in signature.required):
+        # a relationship the function requires and the query does not filters its rows
+        if not all(any(_matches(q, f, model) for q in query.required) for f in signature.required):
             continue
         used = sum(
             1 for f in signature.triples if any(_matches(q, f, model) for q in query.required)
