@@ -443,6 +443,8 @@ class AppServices:
             spilled_bytes=spilled_bytes,
             timing=self.timings.to_json(),
             query=self.usage.query,
+            opened=self.usage.graph,
+            found=self.usage.function,
         )
         AccessLogFile(context.roots.state_root).append(record)
 

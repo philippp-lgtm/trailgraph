@@ -539,6 +539,7 @@ class ReadService:
                 snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
                 warnings += (warning,)
         warnings = (*warnings, *snapshot.warnings)
+        self.usage.graph = graph_json(entry, snapshot.seq)
         return GraphRead(entry, model, snapshot, warnings, actor, request.command)
 
     def skill(
@@ -1080,6 +1081,7 @@ class ReadService:
         from graph_cli.query.cypher.resolve import resolve
 
         function = find_entry(self._published(view.entry), name)
+        self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []
         if function.deprecated:
             replaced = function.defn.replaced_by

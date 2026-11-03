@@ -280,6 +280,18 @@ def test_other_commands_log_no_query(
     assert all("query" not in line for line in lines(isolated_env))
 
 
+def test_an_error_after_the_graph_was_open_names_the_graph(
+    run_cli: CliRunner, functions: Path, isolated_env: dict[str, str]
+) -> None:
+    enable(isolated_env)
+    failed = app(run_cli, "run", "items_in_location", "--param", "location=LOC-9999", env=ENV)
+    assert failed.code != 0 and failed.envelope.get("graph") is None
+    line = last(isolated_env)
+    assert line["result"] == {"status": "error", "code": "entity.not_found"}
+    assert line["graph"] is not None and line["graph"]["name"] == "example_graph"
+    assert line["function"]["name"] == "items_in_location"
+
+
 def test_no_literal_or_parameter_value_reaches_the_state_dir(
     run_cli: CliRunner, functions: Path, isolated_env: dict[str, str]
 ) -> None:

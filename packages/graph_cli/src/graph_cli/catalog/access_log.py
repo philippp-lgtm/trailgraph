@@ -42,9 +42,15 @@ def access_record(
     timing: Mapping[str, JsonValue],
     spilled_bytes: int | None = None,
     query: Mapping[str, JsonValue] | None = None,
+    opened: Mapping[str, JsonValue] | None = None,
+    found: Mapping[str, JsonValue] | None = None,
 ) -> dict[str, JsonValue]:
-    """One line of the access log, from the envelope the command wrote (B9.2)."""
+    """One line of the access log, from the envelope the command wrote (B9.2). ``opened``
+    is the graph a read opened and ``found`` the function a ``run`` found: they name the
+    graph and the function when an error after that point does not."""
     graph = document.get("graph")
+    if not isinstance(graph, Mapping):
+        graph = opened
     error = document.get("error")
     result: dict[str, JsonValue] = {"status": "ok"}
     if isinstance(error, Mapping):
@@ -66,6 +72,8 @@ def access_record(
         "timing_us": dict(timing),
     }
     function = _named(document, "run", "function")
+    if function is None and found is not None and document.get("command") == "run":
+        function = dict(found)
     if function is not None:
         record["function"] = function
     action = _named(document, "do", "action")

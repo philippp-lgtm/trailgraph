@@ -78,15 +78,17 @@ def test_the_report_reads_the_access_log_of_the_installation(
     assert report.data["access_log"] is True and report.data["skipped_lines"] == 0
     (graph,) = report.data["graphs"]
     assert graph["name"] == "example_graph"
-    assert (graph["runs"], graph["queries"], graph["unshaped_queries"]) == (1, 4, 0)
-    assert graph["function_share"] == 20
+    # the failed run is charged to its graph: it failed after the graph was open
+    assert (graph["runs"], graph["queries"], graph["unshaped_queries"]) == (2, 4, 0)
+    assert graph["function_share"] == 33
     (function,) = graph["functions"]
     assert (function["name"], function["calls"], function["sessions"]) == (
         "items_in_location",
-        1,
-        1,
+        2,
+        2,
     )
-    assert report.data["without_graph"] == {"calls": 1, "errors": {"entity.not_found": 1}}
+    assert function["errors"] == {"entity.not_found": 1}
+    assert report.data["without_graph"] == {"calls": 0, "errors": {}}
     assert graph["never_run"] == ["items_by_condition"]
     assert len(graph["shapes"]) == 2
     assert all(s["sessions"] == 2 and s["calls"] == 2 for s in graph["shapes"])
@@ -105,7 +107,7 @@ def test_the_text_report_and_since(
     traffic(run_cli)
     text = run_cli("graph-admin", "usage", "report", "example_graph", "--since", "2000-01-01")
     assert text.returncode == 0, text.stderr
-    assert "Graph example_graph" in text.stdout and "function share 20%" in text.stdout
+    assert "Graph example_graph" in text.stdout and "function share 33%" in text.stdout
     assert "Candidates" in text.stdout and "MATCH" in text.stdout
     assert MARKER not in text.stdout
     later = admin(run_cli, "usage", "report", "--since", "2999-01-01")

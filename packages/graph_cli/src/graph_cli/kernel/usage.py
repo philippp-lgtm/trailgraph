@@ -18,3 +18,9 @@ class UsageNote:
         # The access log's ``query`` value, already in log form: the shape of an ad-hoc
         # Cypher query and the functions that cover it. ``None``: nothing was noted.
         self.query: dict[str, JsonValue] | None = None
+        # The graph a read opened (``{id, name, seq}``): names the graph of a line whose
+        # envelope has none, an error after the graph was open (a failed ``run``).
+        self.graph: dict[str, JsonValue] | None = None
+        # The function a ``run`` found (``{name, hash}``), for a run that fails afterwards
+        # with an error that does not name it (a ``ref`` parameter that finds nothing).
+        self.function: dict[str, JsonValue] | None = None
