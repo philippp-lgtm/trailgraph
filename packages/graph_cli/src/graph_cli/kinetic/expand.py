@@ -15,6 +15,7 @@ parameter is already resolved to the full entity id (text).
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
@@ -22,8 +23,8 @@ from graph_cli.kernel.changeset import ChangeSet, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef, parse_id
 from graph_cli.kernel.ports.storage import Snapshot
-from graph_cli.kernel.records import EdgeRecord
-from graph_cli.kinetic.action_entries import ActionEntry
+from graph_cli.kernel.records import EdgeRecord, Revision
+from graph_cli.kinetic.action_entries import ActionEntry, PreconditionEntry
 from graph_cli.kinetic.action_format import (
     ABSENT,
     Absent,
@@ -38,6 +39,25 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
 
 ACTIVE: Final = "active"
+
+
+@dataclass(frozen=True, slots=True)
+class Unmet:
+    """A precondition that does not hold: ``actual`` is the operand values of the aggregates
+    in the condition (``explain``), ``None`` for a condition without any."""
+
+    precondition: PreconditionEntry
+    actual: JsonValue
+
+
+def judge_precondition(
+    pre: PreconditionEntry, revision: Revision, snapshot: Snapshot, model: CompiledModel
+) -> Unmet | None:
+    """``None`` when ``pre`` holds on ``revision`` (the entity its ``on`` parameter names),
+    else what it found. The one judgment of ``check_preconditions`` and of the affordances."""
+    if evaluate(pre.expr, revision, snapshot, model):
+        return None
+    return Unmet(pre, explain(pre.expr, revision, snapshot, model))
 
 
 def check_preconditions(
@@ -59,9 +79,9 @@ def check_preconditions(
                 "internal.error",
                 f"precondition {pre.id!r} of {entry.name}: no entity {entity}",
             )
-        if evaluate(pre.expr, revision, snapshot, model):
+        miss = judge_precondition(pre, revision, snapshot, model)
+        if miss is None:
             continue
-        actual = explain(pre.expr, revision, snapshot, model)
         summaries.append(f"{pre.id}: {pre.summary}")
         failed.append(
             {
@@ -69,7 +89,7 @@ def check_preconditions(
                 "parameter": pre.on,
                 "entity": str(entity),
                 "summary": pre.summary,
-                "actual": actual,
+                "actual": miss.actual,
             }
         )
     if failed:
