@@ -528,12 +528,14 @@ Usage: `graph get REF [OPTIONS]`
 |---|---|---|---|---|
 | `--rev` | integer | no | no | Show this earlier revision instead of the current one. |
 | `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
+| `--affordances` | flag | no | no | Also show what the entity can do next: lifecycle transitions with their guards, relations with room left, and the actions and functions that take it as a parameter. Not with --rev. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Example | Summary |
 |---|---|
 | `graph get <id>` | Show one entity. |
+| `graph get <id> --affordances --json` | The entity and what applies to it next. |
 | `graph get <id> --graph <graph> --json` | The entity as JSON. |
 | `graph get <id> --rev 2 --json` | The entity as it was at revision 2. |
 | `graph get <id> --fields <attr>,edges --json` | Only one field and the edges. |

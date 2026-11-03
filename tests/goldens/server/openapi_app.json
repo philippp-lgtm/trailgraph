@@ -3394,6 +3394,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "affordances": {
+            "type": "object",
+            "additionalProperties": {}
           }
         },
         "required": [
@@ -13991,6 +13995,15 @@
                           "type": "string"
                         },
                         "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "affordances": {
+                        "type": "boolean",
+                        "description": "Also show what the entity can do next: lifecycle transitions with their guards, relations with room left, and the actions and functions that take it as a parameter. Not with --rev."
+                      },
+                      "--affordances": {
+                        "type": "boolean",
+                        "description": "The inventory name of affordances; never both.",
                         "deprecated": true
                       },
                       "graph": {

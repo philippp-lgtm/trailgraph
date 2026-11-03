@@ -1972,6 +1972,13 @@
           "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
         },
         {
+          "name": "--affordances",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also show what the entity can do next: lifecycle transitions with their guards, relations with room left, and the actions and functions that take it as a parameter. Not with --rev."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,
@@ -1990,6 +1997,10 @@
         {
           "command": "graph get <id>",
           "summary": "Show one entity."
+        },
+        {
+          "command": "graph get <id> --affordances --json",
+          "summary": "The entity and what applies to it next."
         },
         {
           "command": "graph get <id> --graph <graph> --json",

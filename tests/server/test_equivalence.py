@@ -142,6 +142,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))
     call("get", entity)
+    call("get", entity, "--affordances")
+    call("get", entity, "--affordances", "--rev", "1")  # refused
     call("get", "0" * 16)
     call("find", "--type", cls, "--limit", "2")
     call("lookup", str(factory.attrs(cls)[attr]))
@@ -220,6 +222,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call(*retire, "--reason", "scrapped", "--dry-run")
         call(*retire, "--reason", "scrapped")
         call(*retire, "--reason", "scrapped")  # the precondition no longer holds
+        call("get", stock, "--affordances")  # actions and a retired item
+        call("get", place, "--affordances")  # functions
         call("history", stock)
         text(*move, "--dry-run")
         call("lookup", "x", "--for", "move_item.location")

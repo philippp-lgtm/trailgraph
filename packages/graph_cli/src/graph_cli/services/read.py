@@ -60,9 +60,11 @@ from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
+from graph_cli.kinetic.affordances import actions_for, functions_for
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
 from graph_cli.kinetic.params import Problem
+from graph_cli.ontology_layer.affordances import relations, transitions
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
@@ -105,6 +107,15 @@ RETRACTS = "core:retracts"
 _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
 _VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
 ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
+
+
+def refuse_affordances_with_rev() -> GraphCliError:
+    """``--affordances`` with ``--rev``: a past revision has no next."""
+    return GraphCliError(
+        "usage.invalid_argument",
+        "--affordances cannot be combined with --rev: a past revision has no next step",
+        details={"argument": "--affordances"},
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,10 +600,20 @@ class ReadService:
 
     @_query
     def get(
-        self, view: GraphRead, ref: str, *, rev: int | None = None, fields: Sequence[str] = ()
+        self,
+        view: GraphRead,
+        ref: str,
+        *,
+        rev: int | None = None,
+        fields: Sequence[str] = (),
+        affordances: bool = False,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """The current revision, or revision ``rev``; the status warnings and
-        ``superseded_by``/``retracted_by`` always describe the current state."""
+        ``superseded_by``/``retracted_by`` always describe the current state.
+        ``affordances`` adds what the current revision of the snapshot can do next (T5);
+        a past revision has no next, so it is refused with ``rev``."""
+        if affordances and rev is not None:
+            raise refuse_affordances_with_rev()
         shown = check_fields(view.model, (), fields)
         entity, ref_warnings = resolve_ref(ref, view.snapshot)
         current = view.snapshot.get(entity)
@@ -628,8 +649,22 @@ class ReadService:
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
         }
+        if affordances:
+            data["affordances"] = self._affordances(view, current)
         self._signal(view, [entity])
         return data, warnings
+
+    def _affordances(self, view: GraphRead, current: Revision) -> dict[str, JsonValue]:
+        """The ``affordances`` object of ``get``: the four groups, composed here because
+        only the service knows which actions and functions the actor may see."""
+        found: dict[str, JsonValue] = {"record_status": current.record_status}
+        found.update(transitions(view.model, current, view.snapshot).to_json())
+        found.update(relations(view.model, current, view.snapshot).to_json())
+        actions = self.actions(view.actor, view.entry) or ()
+        found.update(actions_for(current, actions, view.snapshot, view.model).to_json())
+        functions = self.functions(view.actor, view.entry) or ()
+        found.update(functions_for(current, functions, view.model).to_json())
+        return found
 
     @_query
     def history(

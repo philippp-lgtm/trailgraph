@@ -71,7 +71,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`. See [Actions](#actions) |
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
-| `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)) |
+| `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` as for `get` |
 | `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
@@ -242,6 +242,36 @@ named entity parts: `edges` or a system field such as `tx_seq` or
 `recorded_at`. A name no type in scope has is `term.unknown`. A next-page
 command repeats `--fields`. `query ... RETURN` is the projection of
 `graph query`; `lookup` and `search` answers are compact already.
+
+## What an entity can do next
+
+`get REF --affordances` adds an `affordances` object to the answer; without
+the flag the answer is unchanged. It is computed from the current revision
+of the snapshot (with `--as-of`, the snapshot of that point) and nothing is
+stored. It holds `record_status` and four groups, each cut at 40 entries
+(`<group>_more` counts the rest):
+
+- `transitions`: per lifecycle attribute, the transitions out of the current
+  state; `allowed` is false with `blocked_by` (guard id and summary) when a
+  guard fails. A terminal state has none.
+- `relations`: the relations the entity's class can start (`out`) or end
+  (`in`), with `count` of active edges, `min`, `max` and `room` (null when
+  unbounded; `missing` when below `min`). Relations at their maximum are
+  only named in `full`.
+- `actions`: the visible actions with a `ref` parameter that covers the
+  entity's class (subclasses included), one entry per such parameter (`as`).
+  `applies` is judged from the preconditions on that parameter; the
+  preconditions on other parameters are named in `unchecked`. `applies: true`
+  means no known obstacle, not a promise: `graph do --dry-run` is the check.
+- `functions`: the readable functions with such a parameter (`as`), without
+  a state judgment.
+
+A superseded or retracted entity has `record_status` and empty groups.
+Actions and functions are listed as `describe actions` and `describe
+functions` list them (what the caller may not see stays out, nothing is
+recorded); transitions and relations are model-level and not filtered by the
+caller's write rights, which still apply when writing. `--affordances` with
+`--rev` is `usage.invalid_argument`: a past revision has no next step.
 
 ## Names and lookup
 
