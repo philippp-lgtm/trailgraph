@@ -12,8 +12,10 @@ CURIEs, so ``Topic`` and ``vt:Topic`` agree), functions and operators.
   including decimals and negated numbers), ``$b`` (boolean). ``null`` stays: it
   is no data. A list of constants is ``$list`` whatever its length; a list
   with computed items keeps its structure; the keys of a map value (not of a
-  pattern's property map) become ``k1, k2, ...``. A ``--param`` is the placeholder of
-  the value it was given, so ``{alias: $t}`` and ``{alias: 'X'}`` agree.
+  pattern's property map) become ``k1, k2, ...`` and a property key that is no
+  field of the model (a key into such a map) ``p1, p2, ...``. A ``--param`` is
+  the placeholder of the value it was given, so ``{alias: $t}`` and
+  ``{alias: 'X'}`` agree.
 - ``SKIP`` and ``LIMIT`` are dropped.
 
 The text is the clauses rendered one per line; ``hash`` covers the full text.
@@ -75,7 +77,7 @@ class Shape:
 
 
 def shape(resolved: ResolvedQuery) -> Shape:
-    shaper = _Shaper(resolved.parameters)
+    shaper = _Shaper(resolved.parameters, frozenset(f.field for f in resolved.fields))
     text = "\n".join(render.clause(shaper.clause(c)) for c in resolved.query.clauses)
     data = text.encode("utf-8")
     return Shape(text if len(data) <= SHAPE_MAX_BYTES else None, hash_bytes(data))
@@ -101,8 +103,10 @@ def _value_kind(value: Value) -> str | None:
 
 
 class _Shaper:
-    def __init__(self, parameters: Mapping[str, Value]) -> None:
+    def __init__(self, parameters: Mapping[str, Value], fields: frozenset[str]) -> None:
         self.parameters = parameters
+        self.fields = fields  # the field names the resolver checked against the model
+        self.keys: dict[str, str] = {}  # any other property key -> ``p1, p2, ...``
         self.env: dict[str, str] = {}  # original name -> renamed, in the current scope
         self.variables = 0
         self.columns = 0
@@ -211,8 +215,10 @@ class _Shaper:
         match e:
             case Variable(name):
                 return replace(e, name=self.lookup(name))
-            case Property(subject, _):
-                return replace(e, subject=self.expr(subject))
+            case Property(subject, key):
+                if key not in self.fields:  # a key into a map value: written by the caller
+                    key = self.keys.setdefault(key, f"p{len(self.keys) + 1}")
+                return replace(e, subject=self.expr(subject), key=key)
             case ListExpr(items):
                 return replace(e, items=tuple(self.expr(i) for i in items))
             case MapExpr(entries):

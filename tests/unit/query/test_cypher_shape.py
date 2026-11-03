@@ -123,6 +123,15 @@ def test_map_values_are_placeholders() -> None:
     assert "{locator: $s}" in text
 
 
+def test_keys_into_map_values_are_renamed() -> None:
+    text = text_of(
+        "MATCH (n:Note) WITH n, {marker_key_9b2c: n.title} AS m RETURN n.title, m.marker_key_9b2c"
+    )
+    assert "marker_key_9b2c" not in text
+    assert "v1.title" in text
+    assert ".p1 AS" in text
+
+
 def test_keys_of_map_values_are_renamed() -> None:
     text = text_of("MATCH (n:Note) RETURN {marker_key_7f3a: n.title, other: 1} AS m")
     assert "marker_key_7f3a" not in text
