@@ -39,9 +39,11 @@ every required query triple matches a triple of the function, (3) every
 required triple of the function matches a required triple of the query (a
 relationship only the function requires drops the rows without it: the
 function answers a narrower question), and (4) the function returns what the
-query returns: every property key the query projects is projected by
-the function, and a query that aggregates meets a function that aggregates (the
-function's rows cannot be regrouped client-side). Matching is subclass-aware
+query returns: every property key the query projects is projected by the
+function (but the ``id`` or ``alias`` of an anchor: the caller gave it, and a
+run per value knows which value its rows belong to), and a query that
+aggregates meets a function that aggregates (the function's rows cannot be
+regrouped client-side). Matching is subclass-aware
 (a query node of a subclass fits a function node of its superclass, not the
 other way round); a wildcard fits anything; relation types of the query must
 be among those of the function. A query without anchor or without any
@@ -169,6 +171,7 @@ class Cover:
 class _Anchor:
     classes: Classes
     value: Const | ListExpr | Parameter
+    variable: str | None
 
 
 def _node_classes(
@@ -241,7 +244,7 @@ def _where_anchors(
         if found is not None:
             (variable, key), data = found
             if only is None or key in only:
-                yield _Anchor(known.get(variable), data)
+                yield _Anchor(known.get(variable), data, variable)
             continue
         branches = [_equality(d) for d in _disjuncts(conjunct)]
         if len(branches) > 1 and all(b is not None for b in branches):
@@ -249,7 +252,7 @@ def _where_anchors(
             if len(same) == 1:  # ``v.k = a OR v.k = b``: an ``IN``
                 ((variable, key), _) = next(b for b in branches if b is not None)
                 if only is None or key in only:
-                    yield _Anchor(known.get(variable), ListExpr(()))
+                    yield _Anchor(known.get(variable), ListExpr(()), variable)
 
 
 def _anchors(
@@ -265,7 +268,7 @@ def _anchors(
                     for key, value in node.properties.entries:
                         data = _data(value, allow_list=False)
                         if data is not None and (only is None or key in only):
-                            yield _Anchor(_classes(node, known), data)
+                            yield _Anchor(_classes(node, known), data, node.variable)
             if clause.where is not None:
                 yield from _where_anchors(clause.where, known, only)
         elif isinstance(clause, With) and clause.where is not None:
@@ -309,7 +312,9 @@ def _negated(clause: Clause) -> frozenset[int]:
     )
 
 
-def _output(query: Query) -> Output:
+def _output(query: Query, anchored: frozenset[str] = frozenset()) -> Output:
+    """``anchored``: variables whose ``id`` and ``alias`` are left out: the caller gave them,
+    and a run per value knows which value its rows belong to."""
     last = query.clauses[-1]
     if not isinstance(last, Return):
         return NO_OUTPUT
@@ -320,7 +325,10 @@ def _output(query: Query) -> Output:
             keys.add("*")
         for e in subexpressions(item.expr):
             if isinstance(e, Property):
-                keys.add(e.key)
+                subject = e.subject
+                given = isinstance(subject, Variable) and subject.name in anchored
+                if not (given and e.key in REF_FIELDS):
+                    keys.add(e.key)
             elif isinstance(e, CountStar) or (isinstance(e, FunctionCall) and e.name in AGGREGATES):
                 aggregates = True
     return Output(frozenset(keys), aggregates)
@@ -341,13 +349,15 @@ def _is_required(clause: Clause, part: PatternPart) -> bool:
 def query_signature(resolved: ResolvedQuery) -> QuerySignature:
     """Anchors and triples of an ad-hoc query; ``--param`` values count as literals."""
     known = _node_classes(resolved)
+    found = [a for a in _anchors(resolved.query, known, REF_FIELDS) if a.classes is not None]
     anchors = tuple(
         QueryAnchor(a.classes, _is_list(a.value, resolved.parameters))
-        for a in _anchors(resolved.query, known, REF_FIELDS)
-        if a.classes is not None
+        for a in found
+        if a.classes is not None  # narrowed for the type checker; ``found`` has no None
     )
+    anchored = frozenset(a.variable for a in found if a.variable is not None)
     required, every = _triples(resolved.query, known)
-    return QuerySignature(anchors, required, every, _output(resolved.query))
+    return QuerySignature(anchors, required, every, _output(resolved.query, anchored))
 
 
 def _is_list(data: Const | ListExpr | Parameter, parameters: Mapping[str, object]) -> bool:

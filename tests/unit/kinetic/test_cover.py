@@ -125,6 +125,14 @@ def test_a_step_of_a_function_that_is_required_there_covers_it() -> None:
     assert names(chain) == ["reporting_chain"]
 
 
+def test_returning_the_anchor_key_the_caller_gave_still_covers() -> None:
+    batch = f"{MEMBERS} WHERE u.alias IN ['a', 'b'] RETURN u.alias, p.name, q.title"
+    assert "members_of_unit" in names(batch)
+    # another entity's alias is data the function does not return
+    other = f"{MEMBERS} WHERE u.alias IN ['a', 'b'] RETURN p.alias, p.name"
+    assert "members_of_unit" not in names(other)
+
+
 def test_a_list_anchor_on_a_single_ref_parameter_does_not_fit() -> None:
     (cover, *_) = found(f"{MEMBERS} WHERE u.alias IN ['a', 'b', 'c'] RETURN p.name")
     assert cover.function == "members_of_unit" and not cover.list_fit
