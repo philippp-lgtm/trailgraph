@@ -459,6 +459,13 @@ a next-page hint). Text output is a table with entities as `alias type`.
 the variables each binds with their possible types, the columns, the
 parameters used and the fields with their base types) and runs nothing.
 
+When a published function you may run covers the query (it takes the same
+kind of reference and returns what the query returns), the answer carries up
+to two hints, best first and before the next-page hint, also with
+`--explain`: the function's summary and a `graph run` command. The hint says
+whether the parameter takes one value or a list; a function that takes one
+value per run is named as such. A hint is never a rewrite of the query.
+
 Work is bounded: more than 100 000 candidate nodes, edges or rows end the
 query with `query.too_large`, naming the clause; add labels, a property map
 or a `LIMIT`. Errors carry `line` and `column`: `query.syntax` (exit 2, with

@@ -384,8 +384,9 @@ class TestStructure:
     def test_size_budgets(self) -> None:
         files = committed_files()
         # functions: command rows, guidance; lookup --for; actions: the do and two describe
-        # rows, the action guidance in the write step; get --affordances (223)
-        assert len(files["SKILL.md"].splitlines()) <= 223
+        # rows, the action guidance in the write step; get --affordances (223); the
+        # covering-function hint line (224)
+        assert len(files["SKILL.md"].splitlines()) <= 224
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB
