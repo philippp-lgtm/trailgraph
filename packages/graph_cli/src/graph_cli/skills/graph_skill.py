@@ -892,7 +892,9 @@ def _actions(doc: _Model) -> list[str]:
         "",
         f"More: `graph describe actions --module <module> --graph {name}`; find one:"
         f" `graph describe search <text> --kind action --graph {name} --json`; preconditions and"
-        f" use: `graph describe action <action> --graph {name}`.",
+        f" use: `graph describe action <action> --graph {name}`. For an entity you already have,"
+        f" `graph get <id> --affordances --graph {name}` lists the actions that fit it, whether"
+        " each applies and what blocks it.",
     ]
     return lines
 
