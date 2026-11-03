@@ -75,6 +75,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.kernel.skill_marker import SKILLS_DIR
 from graph_cli.kernel.timing import Timings
+from graph_cli.kernel.usage import UsageNote
 from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
@@ -239,6 +240,7 @@ class AppServices:
     cwd: Path
     executable: str | None = None  # the running program's own path (sys.argv[0]), F6
     timings: Timings = field(default_factory=Timings)
+    usage: UsageNote = field(default_factory=UsageNote)
     request: RequestScope | None = None  # set by the server, one per request
     compat: Callable[[], str] | None = None  # this program's compatibility id (B14.16)
     _context: AppContext | None = field(default=None, init=False, repr=False)
@@ -440,6 +442,7 @@ class AppServices:
             stdout_bytes=stdout_bytes,
             spilled_bytes=spilled_bytes,
             timing=self.timings.to_json(),
+            query=self.usage.query,
         )
         AccessLogFile(context.roots.state_root).append(record)
 
@@ -504,6 +507,7 @@ class AppServices:
             env=env,
             activity=activity,
             timings=self.timings,
+            usage=self.usage,
         )
         context = AppContext(
             roots=roots,

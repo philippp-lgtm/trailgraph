@@ -259,7 +259,7 @@ def test_as_of_the_empty_graph(svc: ServiceEnv, roles: Roles) -> None:
     assert warning.details["ontology_version"] is None
     assert reader.find(view, FindSpec(include_inactive=True))[1].total == 0
     parsed = reader.parse_query("MATCH (n) RETURN count(n) AS n")
-    data, _ = reader.query(view, parsed, QuerySpec(include_inactive=True))
+    data, *_ = reader.query(view, parsed, QuerySpec(include_inactive=True))
     assert data["items"] == [{"n": 0}]
     entity = svc.all_revisions()[0]
     with pytest.raises(GraphCliError) as info:
@@ -570,10 +570,10 @@ def test_signals_name_command_actor_and_walked_edges(svc: ServiceEnv, roles: Rol
     source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
     near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
     walked = [item["edge"]["edge_id"] for item in near["items"]]  # type: ignore[index, union-attr]
-    rows, _ = reader.query(
+    rows, *_ = reader.query(
         view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=2)
     )
-    everything, _ = reader.query(
+    everything, *_ = reader.query(
         view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=500)
     )
     reader.query(view, reader.parse_query("MATCH (n) RETURN n.alias AS alias"), QuerySpec())

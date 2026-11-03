@@ -78,7 +78,7 @@ def busiest_location(svc: ServiceEnv, reader: ReadService) -> Any:
         "MATCH (i:Item)-[:located_in]->(l:Location) "
         "RETURN l.id AS id, count(i) AS n ORDER BY n DESC"
     )
-    data, _ = reader.query(view, reader.parse_query(text), QuerySpec({}, False, False, 10, 0))
+    data, *_ = reader.query(view, reader.parse_query(text), QuerySpec({}, False, False, 10, 0))
     first = data["items"][0]  # type: ignore[index]
     assert first["n"] > 1  # type: ignore[index]
     return next(r for r in ids_of(svc, "inv:Location") if str(r.id) == first["id"])  # type: ignore[index]
@@ -93,7 +93,7 @@ def test_a_run_equals_the_query_of_its_normalized_text(svc: ServiceEnv) -> None:
     ran, page, warnings = reader.run(
         view, "items_in_location", [("location", str(location.id))], limit=50, offset=0
     )
-    expected, expected_page = reader.query(
+    expected, expected_page, _ = reader.query(
         view,
         reader.parse_query(function.query),
         QuerySpec({"location": str(location.id)}, False, False, 50, 0),

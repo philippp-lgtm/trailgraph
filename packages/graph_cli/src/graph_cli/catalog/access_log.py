@@ -4,8 +4,10 @@ Opt-in with ``[audit] access_log``. One line per ``graph`` command that
 opened the installation, reads and writes alike: when, who, which command
 on which graph state, the outcome, and how many bytes the caller received
 on stdout, and how long it took, per phase. A ``run`` also names its function
-and a ``do`` its action (``{name, hash}``). Never a value, an argument, a
-parameter value, an entity id or a message (B5.8): the size of a read is
+and a ``do`` its action (``{name, hash}``); a ``query`` its shape (model terms and
+placeholders, hash) and the functions that cover it, as far as the caller may run
+them. Never a value, an argument, a parameter value, an entity id or a message
+(B5.8): the size of a read is
 recorded, not what was read.
 
 Not chained and not audited: anyone who can write the state dir can edit
@@ -39,6 +41,7 @@ def access_record(
     stdout_bytes: int,
     timing: Mapping[str, JsonValue],
     spilled_bytes: int | None = None,
+    query: Mapping[str, JsonValue] | None = None,
 ) -> dict[str, JsonValue]:
     """One line of the access log, from the envelope the command wrote (B9.2)."""
     graph = document.get("graph")
@@ -68,6 +71,8 @@ def access_record(
     action = _named(document, "do", "action")
     if action is not None:
         record["action"] = action
+    if query is not None and document.get("command") == "query":
+        record["query"] = dict(query)
     return record
 
 

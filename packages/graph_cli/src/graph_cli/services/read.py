@@ -59,6 +59,7 @@ from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStor
 from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMeta, Revision
 from graph_cli.kernel.timing import Timings
+from graph_cli.kernel.usage import UsageNote
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.affordances import actions_for, functions_for
 from graph_cli.kinetic.bind import bind_cli
@@ -99,6 +100,7 @@ from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
 
 if TYPE_CHECKING:
+    from graph_cli.kinetic.cover import Cover, SignatureCache
     from graph_cli.query.cypher.ast import Query as CypherQuery
     from graph_cli.query.cypher.resolve import ResolvedQuery
 
@@ -295,6 +297,7 @@ class ReadService:
         env: EnvInfo,
         activity: ActivitySink = NULL_ACTIVITY,
         timings: Timings | None = None,
+        usage: UsageNote | None = None,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
@@ -304,6 +307,8 @@ class ReadService:
         self._ids = ids
         self._env = env
         self.timings = timings if timings is not None else Timings()
+        self.usage = usage if usage is not None else UsageNote()
+        self._signatures: SignatureCache | None = None  # built with the first query
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
         self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
@@ -981,18 +986,45 @@ class ReadService:
 
     def query(
         self, view: GraphRead, query: CypherQuery, spec: QuerySpec
-    ) -> tuple[dict[str, JsonValue], Page | None]:
+    ) -> tuple[dict[str, JsonValue], Page | None, tuple[Cover, ...]]:
         """A parsed query resolved against the graph's model and, unless ``explain``,
-        run over its snapshot; the rows are paged like ``find``."""
+        run over its snapshot; the rows are paged like ``find``. The third item is the
+        functions the caller may run that cover the query, best first (usage shapes U2,
+        U5); the shape and the first three are noted for the access log."""
         from graph_cli.query.cypher.resolve import resolve
 
         with self.timings.phase("resolve"):
             resolved = resolve(query, view.model, spec.parameters)
+        found = self._note_shape(view, resolved)
         if spec.explain:
-            return {"plan": resolved.explain()}, None
-        return self._rows(
+            return {"plan": resolved.explain()}, None, found
+        data, page = self._rows(
             view, resolved, spec.include_inactive, spec.budget, spec.limit, spec.offset
         )
+        return data, page, found
+
+    def _note_shape(self, view: GraphRead, resolved: ResolvedQuery) -> tuple[Cover, ...]:
+        """Note the query's shape for the access log and find the functions that cover it,
+        over the functions the caller may see only: a hidden function is never hinted or
+        logged. Before the query runs, so a failing execution still logs its shape."""
+        from graph_cli.kinetic.cover import SignatureCache, covers, query_signature
+        from graph_cli.query.cypher.shape import shape
+
+        with self.timings.phase("shape"):
+            found: tuple[Cover, ...] = ()
+            visible = self.functions(view.actor, view.entry)
+            if visible:
+                if self._signatures is None:
+                    self._signatures = SignatureCache()
+                pairs = self._signatures.pairs(visible, view.model)
+                found = covers(query_signature(resolved), pairs, view.model)
+            described = shape(resolved)
+            self.usage.query = {
+                "shape_hash": described.hash,
+                "shape": described.text,
+                "covered_by": [{"name": c.function, "list_fit": c.list_fit} for c in found[:3]],
+            }
+        return found
 
     def _rows(
         self,

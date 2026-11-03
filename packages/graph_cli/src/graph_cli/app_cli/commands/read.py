@@ -571,7 +571,7 @@ def query(
     }
     view = _open(state, graph, "read.query", "query", args, point)
     spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
-    data, page = reader.query(view, parsed, spec)
+    data, page, _ = reader.query(view, parsed, spec)
     if page is None:
         return Result(data=data, graph=view.envelope_graph())
     page_json = page.to_json()
