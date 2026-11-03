@@ -52,7 +52,7 @@ from graph_cli.query.plan import (
     split_assignment,
 )
 from graph_cli.query.search import SearchSpec
-from graph_cli.services.read import GraphRead, QuerySpec
+from graph_cli.services.read import GraphRead, QuerySpec, refuse_affordances_with_rev
 from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
 
 REF_ERRORS: Final = (
@@ -118,11 +118,16 @@ def get(
     ref: str,
     rev: int | None,
     fields: tuple[str, ...],
+    affordances: bool,
     graph: str | None,
     as_of: str | None,
 ) -> Result:
+    if affordances and rev is not None:
+        raise refuse_affordances_with_rev()
     point = _as_of(as_of)
     args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
+    if affordances:
+        args["affordances"] = True  # only when set: the log and audit args stay as they were
     view = _open(state, graph, "read.get", "get", args, point)
     ctx = context(state)
     if rev is not None and point is None:
@@ -132,7 +137,7 @@ def get(
         ctx.reader.authorize(
             ctx.actor, "read.history", f"graph:{view.entry.id}", request, view.entry
         )
-    data, warnings = ctx.reader.get(view, ref, rev=rev, fields=fields)
+    data, warnings = ctx.reader.get(view, ref, rev=rev, fields=fields, affordances=affordances)
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
 
@@ -654,7 +659,8 @@ GET_OUTPUT: Final = obj(
         "current_rev": INTEGER,
         "superseded_by": STRINGS,
         "retracted_by": STRINGS,
-    }
+    },
+    {"affordances": obj(extra=ANY)},  # only with --affordances
 )
 HISTORY_OUTPUT: Final = obj(
     {
@@ -806,17 +812,29 @@ SPECS: Final = (
         summary="Show one entity by id, alias or id suffix.",
         description=(
             "With --rev, the entity as it was at that revision; that also needs the "
-            "permission to read history."
+            "permission to read history. --affordances adds what the current state allows; "
+            "transitions and relations are model-level (not filtered by write rights), actions "
+            "and functions are listed as describe actions and describe functions list them."
         ),
         params=(
             REF,
             ParamSpec("--rev", "integer", "Show this earlier revision instead of the current one."),
             FIELDS,
+            ParamSpec(
+                "--affordances",
+                "flag",
+                "Also show what the entity can do next: lifecycle transitions with their guards,"
+                " relations with room left, and the actions and functions that take it as a"
+                " parameter. Not with --rev.",
+            ),
             GRAPH,
             AS_OF,
         ),
         examples=(
             Example("graph get <id>", "Show one entity."),
+            Example(
+                "graph get <id> --affordances --json", "The entity and what applies to it next."
+            ),
             Example("graph get <id> --graph <graph> --json", "The entity as JSON."),
             Example("graph get <id> --rev 2 --json", "The entity as it was at revision 2."),
             Example("graph get <id> --fields <attr>,edges --json", "Only one field and the edges."),

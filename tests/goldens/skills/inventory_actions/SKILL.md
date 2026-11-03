@@ -38,7 +38,7 @@ Built-in modules, shared by every graph: `core`.
 
 - `move_item(item: ref inv:Item, location: ref inv:Location)`: Store an item in another location.
 
-More: `graph describe actions --module <module> --graph example_graph`; find one: `graph describe search <text> --kind action --graph example_graph --json`; preconditions and use: `graph describe action <action> --graph example_graph`.
+More: `graph describe actions --module <module> --graph example_graph`; find one: `graph describe search <text> --kind action --graph example_graph --json`; preconditions and use: `graph describe action <action> --graph example_graph`. For an entity you already have, `graph get <id> --affordances --graph example_graph` lists the actions that fit it, whether each applies and what blocks it.
 
 ## Names and ids
 
