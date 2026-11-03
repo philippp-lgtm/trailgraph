@@ -161,6 +161,42 @@ def test_token_scopes_keep_the_surfaces_apart(installation: dict[str, Any], tmp_
     assert command(app, "view", tokens["root"]).status == 404
 
 
+def test_usage_report_is_served_from_the_servers_access_log_and_gated(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """The report runs on the server and reads the state root there; it is no project command."""
+    from graph_cli_server.admin_api import PROJECT_COMMANDS
+
+    assert "usage report" not in PROJECT_COMMANDS
+    app = served(installation, tmp_path)
+    root = installation["tokens"]["root"]
+    empty = command(app, "usage/report", root)
+    assert empty.status == 200, empty.json
+    assert empty.json["data"]["access_log"] is False
+    graph = command(app, "graph/show", root, args={"ref": "example_graph"}).json["data"]
+    log = Path(installation["env"]["XDG_STATE_HOME"]) / "graph_cli" / "logs" / "access.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "schema": "graph_cli.access/1",
+        "ts": "2026-11-02T10:00:00.000Z",
+        "command": "query",
+        "actor": {"session": {"assurance": "asserted", "id": "s1"}},
+        "graph": {"id": graph["id"], "name": "example_graph", "seq": 1},
+        "result": {"status": "ok"},
+        "query": {"shape_hash": "sha256:a", "shape": "MATCH (v1:Item) RETURN v1", "covered_by": []},
+    }
+    log.write_text(json.dumps(entry) + "\nnot json\n")
+    served_report = command(app, "usage/report", root, args={"graph": "example_graph"})
+    assert served_report.status == 200, served_report.json
+    data = served_report.json["data"]
+    assert data["access_log"] is True and data["skipped_lines"] == 1
+    assert data["graphs"][0]["queries"] == 1
+    assert str(log.parent) not in json.dumps(served_report.json)  # no server path in the answer
+    assert command(app, "usage/report", installation["tokens"]["ci"]).status == 403  # app scope
+    unknown = command(app, "usage/report", root, args={"graph": "nowhere"})
+    assert (unknown.status, unknown.error["code"]) == (404, "graph.not_found")
+
+
 def test_admin_commands_take_no_idempotency_key_and_answer_problems(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -229,7 +265,7 @@ def test_the_maintainers_decide(
     denied = command(app, "token/revoke", installation["tokens"]["root"], args={"name": "ci"})
     assert denied.status == 403, denied.json
     assert denied.error["code"] == "access.denied"
-    for path in ("token/list", "policy/show", "graph/list", "audit/verify"):
+    for path in ("token/list", "policy/show", "graph/list", "audit/verify", "usage/report"):
         read = command(app, path, installation["tokens"]["root"])
         assert (read.status, read.error["code"]) == (403, "access.denied"), (path, read.json)
     # the gate comes first: a header or an unknown argument tells a denied caller nothing
@@ -660,6 +696,9 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("files", "gc", "--graph", "example_graph", "--dry-run"),
         ("audit", "anchor"),
         ("audit", "verify"),
+        ("usage", "report"),
+        ("usage", "report", "example_graph", "--since", "2026-01-01"),
+        ("usage", "report", "missing_graph"),
     ):
         run(*args)
     seen.append(sorted(str(p.relative_to(preview)) for p in preview.rglob("*")))

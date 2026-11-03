@@ -243,7 +243,7 @@ def show(
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "slot": slot.summary() if slot is not None else None,
-        kind: _listed(slot) if slot is not None else [],
+        kind: listed(slot) if slot is not None else [],
     }
     return entry, data
 
@@ -252,14 +252,14 @@ def _names(slot: KineticSlot) -> list[JsonValue]:
     return [name.removesuffix(FILE_SUFFIX) for name in sorted(slot.files)]
 
 
-def _listed(slot: KineticSlot) -> list[JsonValue]:
+def listed(slot: KineticSlot) -> list[JsonValue]:
     """One line per entry of the compiled catalog."""
     key = slot.spec.list_key
-    listed: list[JsonValue] = []
+    rows: list[JsonValue] = []
     for item in req_list(slot.compiled, key):
         entry = as_object(item, key)
         module = entry.get("module")
-        listed.append(
+        rows.append(
             {
                 "name": req_str(entry, "name"),
                 "module": module if isinstance(module, str) else None,
@@ -269,4 +269,4 @@ def _listed(slot: KineticSlot) -> list[JsonValue]:
                 "hash": req_str(entry, "hash"),
             }
         )
-    return listed
+    return rows

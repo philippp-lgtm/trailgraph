@@ -3413,6 +3413,392 @@
           "hash_prefix"
         ]
       },
+      "usage_report_data": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "access_log": {
+            "type": "boolean"
+          },
+          "skipped_lines": {
+            "type": "integer"
+          },
+          "without_graph": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "integer"
+              },
+              "errors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": [
+              "calls",
+              "errors"
+            ]
+          },
+          "graphs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "runs": {
+                  "type": "integer"
+                },
+                "queries": {
+                  "type": "integer"
+                },
+                "unshaped_queries": {
+                  "type": "integer"
+                },
+                "function_share": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "functions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "calls": {
+                        "type": "integer"
+                      },
+                      "sessions": {
+                        "type": "integer"
+                      },
+                      "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "calls",
+                      "sessions",
+                      "errors"
+                    ]
+                  }
+                },
+                "never_run": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shapes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shape_hash": {
+                        "type": "string"
+                      },
+                      "shape": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "calls": {
+                        "type": "integer"
+                      },
+                      "sessions": {
+                        "type": "integer"
+                      },
+                      "errors": {
+                        "type": "integer"
+                      },
+                      "error_share": {
+                        "type": "integer"
+                      },
+                      "covered_by": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "list_fit": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "list_fit"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "shape_hash",
+                      "shape",
+                      "calls",
+                      "sessions",
+                      "errors",
+                      "error_share",
+                      "covered_by"
+                    ]
+                  }
+                },
+                "discovery_misses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shape_hash": {
+                        "type": "string"
+                      },
+                      "shape": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "calls": {
+                        "type": "integer"
+                      },
+                      "sessions": {
+                        "type": "integer"
+                      },
+                      "errors": {
+                        "type": "integer"
+                      },
+                      "error_share": {
+                        "type": "integer"
+                      },
+                      "covered_by": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "list_fit": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "list_fit"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "shape_hash",
+                      "shape",
+                      "calls",
+                      "sessions",
+                      "errors",
+                      "error_share",
+                      "covered_by"
+                    ]
+                  }
+                },
+                "batch_gaps": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shape_hash": {
+                        "type": "string"
+                      },
+                      "shape": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "calls": {
+                        "type": "integer"
+                      },
+                      "sessions": {
+                        "type": "integer"
+                      },
+                      "errors": {
+                        "type": "integer"
+                      },
+                      "error_share": {
+                        "type": "integer"
+                      },
+                      "covered_by": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "list_fit": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "list_fit"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "shape_hash",
+                      "shape",
+                      "calls",
+                      "sessions",
+                      "errors",
+                      "error_share",
+                      "covered_by"
+                    ]
+                  }
+                },
+                "candidates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shape_hash": {
+                        "type": "string"
+                      },
+                      "shape": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "calls": {
+                        "type": "integer"
+                      },
+                      "sessions": {
+                        "type": "integer"
+                      },
+                      "errors": {
+                        "type": "integer"
+                      },
+                      "error_share": {
+                        "type": "integer"
+                      },
+                      "covered_by": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "list_fit": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "list_fit"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "shape_hash",
+                      "shape",
+                      "calls",
+                      "sessions",
+                      "errors",
+                      "error_share",
+                      "covered_by"
+                    ]
+                  }
+                },
+                "functions_more": {
+                  "type": "integer"
+                },
+                "never_run_more": {
+                  "type": "integer"
+                },
+                "shapes_more": {
+                  "type": "integer"
+                },
+                "discovery_misses_more": {
+                  "type": "integer"
+                },
+                "batch_gaps_more": {
+                  "type": "integer"
+                },
+                "candidates_more": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "runs",
+                "queries",
+                "unshaped_queries",
+                "function_share",
+                "functions",
+                "never_run",
+                "shapes",
+                "discovery_misses",
+                "batch_gaps",
+                "candidates"
+              ]
+            }
+          }
+        },
+        "required": [
+          "since",
+          "access_log",
+          "skipped_lines",
+          "without_graph",
+          "graphs"
+        ]
+      },
       "warning": {
         "type": "object",
         "properties": {
@@ -13805,6 +14191,315 @@
           }
         },
         "x-graph-cli-kind": "write",
+        "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/admin/commands/usage/report": {
+      "post": {
+        "operationId": "usage_report",
+        "summary": "Report function runs and query shapes from the access log, per graph.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/usage_report_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "graph": {
+                        "type": "string",
+                        "description": "Report on this graph only (name or id); without it, on every graph."
+                      },
+                      "since": {
+                        "type": "string",
+                        "description": "Count only lines from this ISO date (midnight UTC) or RFC 3339 timestamp on, inclusive."
+                      },
+                      "--since": {
+                        "type": "string",
+                        "description": "The inventory name of since; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": []
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
         "x-graph-cli-remote": "server"
       }
     }

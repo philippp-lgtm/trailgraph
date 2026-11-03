@@ -2620,6 +2620,77 @@
     },
     {
       "path": [
+        "usage",
+        "report"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": null,
+      "summary": "Report function runs and query shapes from the access log, per graph.",
+      "args": [
+        {
+          "name": "graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Report on this graph only (name or id); without it, on every graph."
+        }
+      ],
+      "options": [
+        {
+          "name": "--since",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Count only lines from this ISO date (midnight UTC) or RFC 3339 timestamp on, inclusive."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin usage report",
+          "summary": "Every graph, all lines of the access log."
+        },
+        {
+          "command": "graph-admin usage report <graph> --since 2026-01-01",
+          "summary": "One graph, from a date on."
+        },
+        {
+          "command": "graph-admin usage report --json",
+          "summary": "The report as JSON."
+        }
+      ],
+      "errors": [
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
         "view"
       ],
       "kind": "read",

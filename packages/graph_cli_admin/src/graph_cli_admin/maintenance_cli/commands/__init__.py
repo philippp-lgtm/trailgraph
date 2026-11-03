@@ -18,6 +18,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         self_update,
         skills,
         token,
+        usage,
         view,
         workspace,
     )
@@ -33,6 +34,7 @@ def all_specs() -> tuple[CommandSpec, ...]:
         *policy.SPECS,
         *token.SPECS,
         *enroll.SPECS,
+        *usage.SPECS,
         *view.SPECS,
         *self_update.SPECS,
         *skills.SPECS,
