@@ -235,6 +235,7 @@ class KeyStore:
         self._data_version = self._pragma_data_version()
         self._checked_at = time.monotonic()
         self._shreds = self._shred_count()
+        self._generation = 0  # bumped whenever the caches are dropped for shreds
 
     @classmethod
     def create(
@@ -396,6 +397,10 @@ class KeyStore:
         """Pick up shreds and removals by other connections now, e.g. when a read begins."""
         with self._lock, _sqlite_errors(self.path):
             self._sync_cache(now=True)
+
+    @property
+    def generation(self) -> int:
+        return self._generation
 
     # Maintenance
 
@@ -571,12 +576,14 @@ class KeyStore:
             self._keys.clear()
             self._wrapped = None
             self._subjects.clear()
+            self._generation += 1
 
     def _forget(self) -> None:
         self._keys.clear()
         self._wrapped = None
         self._subjects.clear()
         self._shreds = self._shred_count()
+        self._generation += 1
 
     def _bump_shreds(self, conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = ?", (_SHREDS,))

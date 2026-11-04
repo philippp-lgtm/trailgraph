@@ -168,3 +168,21 @@ def test_a_sealed_graph_needs_its_key_store(files: ServiceEnv) -> None:
     with pytest.raises(GraphCliError) as info:
         FileCatalog(files.root).store_for(files.entry.id)
     assert info.value.code == "config.invalid"
+
+
+def test_a_long_lived_store_drops_what_it_opened_once_a_key_is_shredded(svc: ServiceEnv) -> None:
+    """A server keeps one store: its replay cache must not keep serving purged values."""
+    subject = topic(svc, "cached value")
+    store: Any = svc.store
+    seq = store.head().seq
+
+    def cached() -> Any:  # the replay view a store keeps between reads
+        return store.view_at(seq).current(subject) if hasattr(store, "view_at") else None
+
+    before = store.snapshot().get(subject)
+    assert before is not None and before.sealed is not None
+    assert cached() is None or cached().attrs["label"] == "cached value"
+    store.key_ring().shred([before.sealed.kid], EventId(parse_id(str(svc.ids.new_id()))))
+    after = store.snapshot().get(subject)  # a read begins: the store refreshes its keys
+    assert after is not None and after.shredded and after.attrs == {}
+    assert cached() is None or cached().shredded

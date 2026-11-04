@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from graph_cli.kernel.authz import AuthorizedTx
+from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EventId, GraphId
+from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import (
     CAPABILITY_SNAPSHOT_AT_SEQ,
@@ -59,6 +61,8 @@ class InMemoryStore:
         self._head = EMPTY_HEAD
         self._lock = threading.Lock()
         self._blobs: dict[str, bytes] = {}
+        self._lines: list[bytes] = []  # the sealed tx lines, to open again after a shred
+        self._generation = self.codec.ring.generation
 
     # ---- read port -----------------------------------------------------
 
@@ -72,6 +76,7 @@ class InMemoryStore:
         return self.codec.ring
 
     def snapshot(self, *, at_seq: int | None = None) -> ViewSnapshot:
+        self._refresh_keys()
         return ViewSnapshot(self._view.at(resolve_at_seq(at_seq, self._head.seq)))
 
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]:
@@ -117,12 +122,25 @@ class InMemoryStore:
                 f"lock not acquired within {timeout_s} s",
                 details={"timeout_ms": round(timeout_s * 1000)},
             )
+        self._refresh_keys()
         session = MemorySession(self)
         try:
             yield session
         finally:
             session.close()
             self._lock.release()
+
+    def _refresh_keys(self) -> None:
+        """After a shred the view holds records opened under keys that are gone: open the
+        stored lines again (T16)."""
+        ring = self.codec.ring
+        ring.refresh()
+        if ring.generation == self._generation:
+            return
+        view = GraphView()
+        for line in self._lines:
+            view.apply(self.codec.parse_tx(as_object(parse_json(line), "tx")))
+        self._view, self._generation = view, ring.generation
 
     def _apply(self, record: TxRecord) -> None:
         self._view.apply(record)
@@ -216,13 +234,14 @@ class MemorySession:
             blob_exists=store._blobs.__contains__,
             codec=store.codec,
         )
-        record, _ = seal_tx(tx, ChainLink(head.seq, head.hash), store.codec)
+        record, line = seal_tx(tx, ChainLink(head.seq, head.hash), store.codec)
         try:
             fire(store._faults, CrashPoint.TX_BEFORE_WRITE)
             fire(store._faults, CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC)
         except OSError as exc:
             raise GraphCliError("backend.unavailable", f"tx append failed: {exc}") from exc
         store._apply(record)
+        store._lines.append(line)
         self._used.add(receipt.event_id)
         warnings: list[WarningRecord] = []
         try:

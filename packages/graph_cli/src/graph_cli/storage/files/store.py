@@ -256,6 +256,7 @@ class FileStore:
         self.txlog = SegmentedLog(self.layout.txlog, TX_SEGMENT_PREFIX, segment_bytes)
         self.auditlog = SegmentedLog(self.layout.audit, AUDIT_SEGMENT_PREFIX, segment_bytes)
         self._cache = _ViewCache(self.txlog, self.codec)
+        self._generation = self.codec.ring.generation
 
     # ---- read port -----------------------------------------------------
 
@@ -278,7 +279,7 @@ class FileStore:
         return blobs.local_path(self.layout, digest)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
-        self.codec.ring.refresh()
+        self._refresh_keys()
         # The index is opened before the log is read: it is published after its txs
         # are committed, so it never runs ahead of the log read afterwards.
         reader, problem = self._open_index()
@@ -309,7 +310,7 @@ class FileStore:
         self._require_layout()
         lock = acquire(self.layout.lock, timeout_s=timeout_s)
         try:
-            self.codec.ring.refresh()
+            self._refresh_keys()
             session = FileSession(self)
             try:
                 yield session
@@ -326,6 +327,15 @@ class FileStore:
         )
 
     # ---- shared internals ----------------------------------------------
+
+    def _refresh_keys(self) -> None:
+        """Pick up shreds; after one, the replay cache holds records opened under keys that
+        are gone, so it is rebuilt from the log (T16)."""
+        ring = self.codec.ring
+        ring.refresh()
+        if ring.generation != self._generation:
+            self._cache = _ViewCache(self.txlog, self.codec)
+            self._generation = ring.generation
 
     def view_at(self, seq: int) -> ViewAt:
         return self._cache.view_through(seq).at(seq)

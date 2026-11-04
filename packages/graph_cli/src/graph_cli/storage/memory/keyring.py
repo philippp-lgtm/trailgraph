@@ -33,6 +33,7 @@ class MemoryKeyRing:
         self._keys: dict[Kid, bytes] = {}
         self._subjects: dict[tuple[KeyScope, UUID], Kid] = {}
         self._shredded: dict[Kid, EventId] = {}
+        self._generation = 0
 
     def entity_key(self, entity: EntityId) -> Kid:
         return self._subject_key("entity", entity)
@@ -72,9 +73,14 @@ class MemoryKeyRing:
             for kid in targets:
                 if self._keys.pop(kid, None) is not None:
                     self._shredded[kid] = purge_event
+            self._generation += 1
 
     def refresh(self) -> None:
         pass
+
+    @property
+    def generation(self) -> int:
+        return self._generation
 
     def _subject_key(self, scope: KeyScope, subject: UUID) -> Kid:
         with self._lock:

@@ -141,6 +141,12 @@ class KeyRing(Protocol):
         """Pick up shreds by other processes now; called when a read or write begins."""
         ...
 
+    @property
+    def generation(self) -> int:
+        """Changes whenever keys were shredded, here or (seen by ``refresh``) elsewhere:
+        a cache of records opened before must be dropped."""
+        ...
+
 
 class PlainKeyRing:
     """The key ring of an unsealed graph (store format 1): no keys, plain hashes."""
@@ -174,6 +180,10 @@ class PlainKeyRing:
 
     def refresh(self) -> None:
         pass
+
+    @property
+    def generation(self) -> int:
+        return 0
 
 
 def _b64encode(data: bytes) -> str:

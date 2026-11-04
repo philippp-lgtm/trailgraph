@@ -162,7 +162,9 @@ the codec `kernel.record_codec`, the cipher primitives `storage.common.crypto`
   change set and no reason); a key missing from the key store, or an
   envelope that does not authenticate, is `backend.corrupt`. A snapshot and
   a write session refresh the key store first, so a shred by another process
-  is seen by the next read.
+  is seen by the next read; when keys were shredded since, a store drops the
+  records it opened before (its replay cache) and opens the stored ones again
+  (`KeyRing.generation`).
 - **Key stores.** `KeyRings` opens one key store per graph and process from
   the `[keys]` settings ([Keys of sealed graphs](configuration.md#keys-of-sealed-graphs)).
   `graph create` creates the key store before it publishes the graph
