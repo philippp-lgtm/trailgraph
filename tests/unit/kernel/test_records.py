@@ -18,6 +18,7 @@ from graph_cli.kernel.records import (
     RequestMeta,
     Revision,
     TxRecord,
+    content_hash,
     revision_content_hash,
     revision_from_json,
     revision_meta,
@@ -168,3 +169,33 @@ def test_request_meta_digest_covers_command_and_args() -> None:
     assert meta.args_digest == hash_value({"command": "get", "args": {"graph": "g", "ref": "x"}})
     assert RequestMeta.of("get", {"ref": "x", "graph": "g"}) == meta
     assert RequestMeta.of("find", {"graph": "g", "ref": "x"}).args_digest != meta.args_digest
+
+
+MAC_KEY = bytes(range(32))
+
+
+def test_content_hash_is_plain_by_default_and_keyed_on_request() -> None:
+    revision = make_revision()
+    assert revision.content_hash == revision_content_hash(revision, None)
+    keyed = revision_content_hash(revision, MAC_KEY)
+    assert keyed != revision.content_hash
+    # Deterministic, so no-op detection keeps working on sealed graphs.
+    assert keyed == revision_content_hash(make_revision(), MAC_KEY)
+    assert keyed == content_hash(
+        {
+            "type": revision.type,
+            "record_status": revision.record_status,
+            "alias": "THING-0001",
+            "attrs": dict(revision.attrs),
+            "edges": [edge.to_json() for edge in revision.edges],
+        },
+        MAC_KEY,
+    )
+
+
+def test_shredded_is_not_persisted_in_a_format_1_revision() -> None:
+    revision = make_revision()
+    assert revision.shredded is False
+    data = revision_to_json(replace(revision, shredded=True))
+    assert "shredded" not in data
+    assert revision_from_json(data) == revision

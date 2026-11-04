@@ -26,7 +26,7 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Final
 
 from graph_cli.kernel.actions import Action
-from graph_cli.kernel.canonical import CanonicalError, JsonValue, hash_value, parse_json
+from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
 from graph_cli.kernel.clock import format_timestamp, parse_date, parse_timestamp
 from graph_cli.kernel.errors import EMPTY, GraphCliError
 from graph_cli.kernel.ids import (
@@ -43,6 +43,7 @@ from graph_cli.kernel.ids import (
     ref_text,
 )
 from graph_cli.kernel.records import EdgeRecord
+from graph_cli.kernel.sealing import keyed_hash
 
 CHANGESET_SCHEMA: Final = "graph_cli.changeset/1"
 MAX_OPS: Final = 1000
@@ -778,6 +779,7 @@ def changeset_to_json(cs: ChangeSet) -> dict[str, JsonValue]:
     return data
 
 
-def changeset_hash(cs: ChangeSet) -> str:
-    """C.2 over the canonical form (B4.4)."""
-    return hash_value(changeset_to_json(cs))
+def changeset_hash(cs: ChangeSet, key: bytes | None = None) -> str:
+    """C.2 over the canonical form (B4.4); keyed under the tx's MAC key in a sealed graph
+    (``kernel.sealing``)."""
+    return keyed_hash(changeset_to_json(cs), key)

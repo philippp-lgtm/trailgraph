@@ -13,7 +13,7 @@ from typing import Final, Literal
 from uuid import UUID
 
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.canonical import HASH_RE, JsonObject, JsonValue, hash_value
+from graph_cli.kernel.canonical import HASH_RE, JsonObject, JsonValue
 from graph_cli.kernel.clock import format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import EMPTY, GraphCliError
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, TermRef, TxId, parse_id
@@ -29,6 +29,7 @@ from graph_cli.kernel.json_access import (
     req_obj,
     req_str,
 )
+from graph_cli.kernel.sealing import keyed_hash
 
 REVISION_SCHEMA: Final = "graph_cli.revision/1"
 TX_SCHEMA: Final = "graph_cli.tx/1"
@@ -86,10 +87,16 @@ class RequestMeta:
 
     @classmethod
     def of(
-        cls, command: str, args: Mapping[str, JsonValue], action: ActionRef | None = None
+        cls,
+        command: str,
+        args: Mapping[str, JsonValue],
+        action: ActionRef | None = None,
+        *,
+        key: bytes | None = None,
     ) -> RequestMeta:
-        """C.10: the digest covers the request DTO, not raw argv."""
-        return cls(command, hash_value({"command": command, "args": dict(args)}), action)
+        """C.10: the digest covers the request DTO, not raw argv; keyed under the tx's MAC
+        key in a sealed graph (``kernel.sealing``)."""
+        return cls(command, keyed_hash({"command": command, "args": dict(args)}, key), action)
 
     def to_json(self) -> dict[str, JsonValue]:
         """The ``request`` object of an audit event or a tx record; ``action`` only when set,
@@ -176,6 +183,7 @@ class Revision:
     tx_seq: int
     ontology_version: str
     content_hash: str
+    shredded: bool = False  # its key is shredded: attrs and qualifiers read as empty (T16)
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,12 +219,13 @@ def content_projection(
     return data
 
 
-def content_hash(projection: Mapping[str, JsonValue]) -> str:
-    """C.9: hash of a content projection."""
-    return hash_value(projection)
+def content_hash(projection: Mapping[str, JsonValue], key: bytes | None = None) -> str:
+    """C.9: hash of a content projection; keyed under the entity's MAC key in a sealed
+    graph (``kernel.sealing``)."""
+    return keyed_hash(projection, key)
 
 
-def revision_content_hash(revision: Revision) -> str:
+def revision_content_hash(revision: Revision, key: bytes | None = None) -> str:
     return content_hash(
         content_projection(
             type=revision.type,
@@ -226,7 +235,8 @@ def revision_content_hash(revision: Revision) -> str:
             edges=revision.edges,
             valid_from=revision.valid_from,
             valid_to=revision.valid_to,
-        )
+        ),
+        key,
     )
 
 
