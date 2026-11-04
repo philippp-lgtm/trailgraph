@@ -4,7 +4,7 @@ The access log (contract B5.10, addendum) records one shape per ``query`` call
 so that T3 stage 2 can mine which questions recur across sessions. Literals
 and ``--param`` values are data and must never reach the log, so the shape
 strips them; what stays are model terms (types, relations and property keys as
-CURIEs, so ``Topic`` and ``vt:Topic`` agree), functions and operators.
+CURIEs, so ``Note`` and ``nas:Note`` agree), functions and operators.
 
 - Variables become ``v1, v2, ...`` and projection aliases ``c1, c2, ...`` in
   order of first appearance; the names and column texts as written are gone.

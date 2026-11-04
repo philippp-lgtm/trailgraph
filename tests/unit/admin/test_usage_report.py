@@ -116,7 +116,7 @@ def test_error_share_and_function_share() -> None:
 
 
 def test_derived_lists() -> None:
-    covered = [("tasks_on_topic", True)]
+    covered = [("items_in_location", True)]
     gap = [("members_of_unit", False), ("other", True)]
     lines = [
         line("query", shape="sha256:covered", covered=covered, session="s1"),
