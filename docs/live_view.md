@@ -6,7 +6,7 @@ whole graph as dots and lines, with labels, and a list of recent
 activity. Besides the graph itself, the page shows the graph's types as
 a graph, its ontology, its named functions and its policies (see
 [Type graph, model, functions and policies](#type-graph-model-functions-and-policies)). `--graph <graph>` opens the page on that graph; without it the
-page opens on none. It serves until Ctrl+C (`--port`, `--host`,
+page opens on none, with the list of graphs open. It serves until Ctrl+C (`--port`, `--host`,
 `--no-open`, `--token-file`).
 
 ## Switching graphs
@@ -14,7 +14,7 @@ page opens on none. It serves until Ctrl+C (`--port`, `--host`,
 The side bar lists every graph you may read (`read.get`), archived ones
 marked, with name and title; a graph you may not read is left out, and
 listing it is not audited as a denial. A graph is a folder: clicking it
-shows it and opens it in the side bar, which then lists its views
+shows its type graph and opens it in the side bar, which then lists its views
 instead of the graphs; "Back" at the top left returns to the list and
 leaves the shown graph as it is. Clicking the shown graph again opens
 its folder without changing the view. The
@@ -37,7 +37,8 @@ pin the program cannot read) print on stderr once.
 The folder of a graph lists its views in this order: Type graph, Model,
 Functions, Policies and Graph; while the side bar is folded, a bar at
 the top of the page lists them. The address names the view as `tab=`
-(`types`, `model`, `functions` or `policies`; none for the graph) and
+(`model`, `functions`, `policies` or `graph`; none for the type graph,
+which a graph opens with) and
 what it shows as `item=`, so a reload, a bookmark or Back and Forward
 keep both. Type graph, model and functions read what `graph describe`
 prints, for the graph's current ontology; nothing in these views
@@ -62,7 +63,8 @@ streams, a reload shows a change.
   description next to the graph, clicking an arrow its relations. The
   side bar hides modules, inheritance and sizes, shows the relation
   names and searches types; drag to pan or move a type, wheel to zoom,
-  double-click to fit.
+  double-click to fit (on a touch screen see
+  [Using the view](#using-the-view)).
 - **Functions**: the named functions by module, each with its summary,
   when to use it, the `graph run` command, parameters, returned columns,
   example questions, the types and relations it reads, and its query
@@ -245,7 +247,9 @@ and the history of its source entity. For a stored file (`files:File`)
 the panel offers a preview of PDFs and images in the page and the
 original as a download; reading the bytes needs `read.get` on the file's
 type, as for `file path`. Click an activity entry to jump to its entity;
-Escape closes the panel. The search box dims everything whose label,
+Escape closes the panel; on a wide screen the button at its top right
+folds the panel to a strip and back, and the browser remembers the choice (clicking a node
+opens it again). The search box dims everything whose label,
 alias or type does not contain the text (Enter opens the first match);
 "hide entities that do not match" removes those instead, and one
 checkbox per type hides whole types. Attribute values are not searched.
@@ -253,7 +257,12 @@ checkbox per type hides whole types. Attribute values are not searched.
 their edge count, relative to the most connected visible node.
 
 On a narrow screen (720 pixels or less, such as a phone) the list of
-graphs starts folded and opens over the graph; picking a graph opens its
+graphs starts folded while a graph is shown and opens over the graph; picking a graph opens its
 folder there, and picking a view or Escape folds it again. The panel becomes a sheet at the bottom that shows the
 graph's name and counts; "Details" opens it, and clicking a node opens
 it with that entity.
+
+On a touch screen (a phone or a tablet) the graph and the type graph
+follow the fingers: one finger pans or moves a node, two fingers pinch
+to zoom around their midpoint and move to pan, a double tap fits the
+graph into view, and a tap picks a node or an edge.
