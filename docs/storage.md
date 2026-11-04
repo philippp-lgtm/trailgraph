@@ -7,7 +7,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 
 | Package | Content |
 | --- | --- |
-| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`) |
+| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`), the cipher primitives of sealed graphs (`storage.common.crypto`, below) |
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
@@ -120,7 +120,8 @@ POSIX only, local filesystems only.
 `kernel.sealing` defines how a sealed graph will hold its instance data:
 every value encrypted under a data key of its entity, its tx or its stored
 file, so that destroying the keys erases the data. Storage does not use it
-yet; every graph is unsealed (store format 1).
+yet; every graph is unsealed (store format 1). The cipher primitives are in
+`storage.common.crypto`, the only module that imports `cryptography`.
 
 - A data key has an id (`Kid`, a UUIDv7). A sealed envelope is
   `{kid, nonce, ct}`, `nonce` and `ct` in unpadded base64url; the record
@@ -137,3 +138,14 @@ yet; every graph is unsealed (store format 1).
   byte-identical to those of earlier versions.
 - `Revision.shredded` marks a revision whose key is shredded. It is never
   persisted.
+- Envelopes are AES-256-GCM under a random 96-bit nonce. A data key yields
+  two subkeys by HKDF-SHA256: `enc` for the cipher, `mac` for the keyed
+  hashes. Data keys are wrapped with AES-KW (RFC 3394) under a 256-bit
+  key-encryption key.
+- A stored file of a sealed graph is a header `GCBLOB\x00\x01 || kid (16
+  bytes) || nonce prefix (7 bytes)`, then chunks of 64 KiB of plaintext (the
+  last one may be shorter, and is empty only for an empty file), each with a
+  16-byte tag. Chunk `i` is sealed with AES-256-GCM under the nonce
+  `prefix || i (4 bytes, big-endian) || last (1 byte, 1 on the final chunk)`
+  and the header as associated data, so reordered, dropped, repeated or
+  appended chunks and a changed header fail to decrypt.

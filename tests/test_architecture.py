@@ -5,6 +5,7 @@ and imports must follow the layer contracts in pyproject.toml.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -56,6 +57,10 @@ POSITIVE_CONTROLS = {
         "graph_cli/app_cli/__init__.py",
         "import graph_cli_server.uploads\n",
     ),
+    "Only the crypto primitives import the cipher library": (
+        "graph_cli/storage/files/__init__.py",
+        "import cryptography.hazmat.primitives.ciphers.aead\n",
+    ),
 }
 # Allowed by the same contracts: admin may use the maintenance port, the server's
 # composition root may load the admin API.
@@ -87,10 +92,12 @@ def test_contracts_catch_violations(tmp_path: Path) -> None:
         text=True,
         timeout=120,
     )
+    # "<name> BROKEN", with " (<n> ignored import(s))" for contracts that ignore some.
     broken = {
-        line.removesuffix(" BROKEN")
-        for line in result.stdout.splitlines()
-        if line.endswith(" BROKEN")
+        match[1]
+        for match in re.finditer(
+            r"^(.+) BROKEN(?: \(\d+ ignored imports?\))?$", result.stdout, re.M
+        )
     }
     assert result.returncode != 0
     assert broken == set(POSITIVE_CONTROLS), result.stdout

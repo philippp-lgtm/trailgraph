@@ -38,7 +38,7 @@ Dependencies point down only. Enforced by import-linter
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
 `graph_cli_admin`. `graph_cli_server` depends on `graph_cli`,
 `graph_cli_admin` and `waitress`; of its modules only `admin_api` imports
-`graph_cli_admin`; `graph_cli` never imports `graph_cli_server`, and only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli` sits above
+`graph_cli_admin`; `graph_cli` never imports `graph_cli_server`, and only the server imports `waitress`. Only `storage.common.crypto` imports the cipher library `cryptography`. Within `graph_cli_admin`, `maintenance_cli` sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
