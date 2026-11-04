@@ -3,6 +3,7 @@ B11, B12.4, B12.7; plan M7, M8)."""
 
 import json
 import re
+import stat
 import tomllib
 from pathlib import Path
 
@@ -23,7 +24,11 @@ def test_init_creates_root_and_config(run_cli: CliRunner, isolated_env: dict[str
     assert outcome.code == 0
     data_root = xdg(isolated_env, "XDG_DATA_HOME")
     config_file = xdg(isolated_env, "XDG_CONFIG_HOME") / "config.toml"
-    assert outcome.data["created"] == {"data_root": True, "config": True}
+    assert outcome.data["created"] == {"data_root": True, "config": True, "kek": True}
+    kek = xdg(isolated_env, "XDG_CONFIG_HOME") / "kek"
+    assert outcome.data["kek_file"] == str(kek)
+    assert stat.S_IMODE(kek.stat().st_mode) == 0o600
+    assert len(kek.read_text().strip()) == 64
     assert (outcome.data["data_root"], outcome.data["root_source"]) == (
         str(data_root.resolve()),
         "default",
@@ -39,8 +44,9 @@ def test_init_is_idempotent_and_keeps_the_config(run_cli: CliRunner) -> None:
     first = admin(run_cli, "init")
     second = admin(run_cli, "init", "--device-name", "ignored")
     assert second.code == 0
-    assert second.data["created"] == {"data_root": False, "config": False}
+    assert second.data["created"] == {"data_root": False, "config": False, "kek": False}
     assert second.data["device_id"] == first.data["device_id"]
+    assert second.data["kek_file"] == first.data["kek_file"]
 
 
 def test_init_persists_a_flag_root(run_cli: CliRunner, tmp_path: Path) -> None:

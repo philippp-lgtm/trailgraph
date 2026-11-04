@@ -1,4 +1,8 @@
-"""InMemoryStore: read and write ports over one live replay view (contracts B4, B13)."""
+"""InMemoryStore: read and write ports over one live replay view (contracts B4, B13).
+
+With a key ring the store holds sealed records (store format 2, plan T16), as a
+FileStore of a sealed graph does; the view keeps the decoded records.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +28,9 @@ from graph_cli.kernel.ports.storage import (
     StagedBlob,
     WriteSession,
 )
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import BlobInfo, TxRecord
+from graph_cli.kernel.sealing import KeyRing
 from graph_cli.storage.common.chain import ChainLink
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
@@ -42,8 +48,10 @@ class InMemoryStore:
         *,
         audit: InMemoryAuditLog | None = None,
         faults: FaultHook | None = None,
+        ring: KeyRing | None = None,
     ) -> None:
         self.graph_id = graph_id
+        self.codec = RecordCodec(graph_id, ring)
         self.audit = audit if audit is not None else InMemoryAuditLog(faults=faults)
         self._faults = faults
         self._stream = graph_stream(str(graph_id))
@@ -59,6 +67,9 @@ class InMemoryStore:
 
     def head(self) -> Head:
         return self._head
+
+    def key_ring(self) -> KeyRing:
+        return self.codec.ring
 
     def snapshot(self, *, at_seq: int | None = None) -> ViewSnapshot:
         return ViewSnapshot(self._view.at(resolve_at_seq(at_seq, self._head.seq)))
@@ -203,8 +214,9 @@ class MemorySession:
             head=head,
             view=store._view.at(head.seq),
             blob_exists=store._blobs.__contains__,
+            codec=store.codec,
         )
-        record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))
+        record, _ = seal_tx(tx, ChainLink(head.seq, head.hash), store.codec)
         try:
             fire(store._faults, CrashPoint.TX_BEFORE_WRITE)
             fire(store._faults, CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC)

@@ -114,7 +114,7 @@ def test_a_tx_naming_an_unstored_blob_is_refused(env: StoreEnv) -> None:
 def test_local_path_is_a_capability_of_the_file_store(env: StoreEnv) -> None:
     env.write_blobs(lambda d: d.create(), [CONTENT])
     path = env.store.blob_local_path(DIGEST)
-    if env.backend == "memory":
+    if env.backend.startswith("memory"):
         assert CAPABILITY_BLOB_LOCAL_PATH not in env.store.capabilities()
         assert path is None
         return

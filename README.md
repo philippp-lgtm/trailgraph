@@ -66,6 +66,11 @@ uv run graph-admin init
 uv run graph-admin graph create notes --ontology tests/fixtures/ontologies/notes_and_sources/1.1.0
 ```
 
+`init` also creates the key-encryption key; the graph's values are stored
+encrypted under keys of its own. Back up the key file and the key stores
+apart from the data root: without them the data cannot be read
+([Keys of sealed graphs](docs/configuration.md#keys-of-sealed-graphs)).
+
 In a project directory, a pointer file names the graphs the project uses:
 
 ```toml

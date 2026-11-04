@@ -43,6 +43,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
             "activity",
             "server",
             "remote",
+            "keys",
         }
     ),
     "device": frozenset({"id", "name"}),
@@ -56,6 +57,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "activity": frozenset({"signal_reads"}),
     "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist", "public_url"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
+    "keys": frozenset({"dir", "kek_file", "previous_kek_file"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
@@ -98,6 +100,10 @@ class Config:
     client_builds: Literal["compatible", "exact", "warn"] = "compatible"
     dist: bool = True  # [server]: graph-server hands out the programs it was built from
     public_url: str | None = None  # [server]: the URL clients use, without a trailing /
+    # [keys]: as written, absolute or "~/..."; None = the default (catalog.resolve.resolve_keys)
+    keys_dir: str | None = None
+    kek_file: str | None = None
+    previous_kek_file: str | None = None
 
 
 def load_config(path: Path) -> tuple[Config, tuple[WarningRecord, ...]]:
@@ -216,6 +222,12 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
             "server.public_url",
             "must be an http(s) URL without credentials, query or fragment",
         )
+    keys_paths = {}
+    for key in ("dir", "kek_file", "previous_kek_file"):
+        value = get(f"keys.{key}", str, "a string")
+        if value is not None and not value.startswith(("/", "~/")):
+            raise _invalid(path, f"keys.{key}", "must be an absolute path or start with ~/")
+        keys_paths[key] = value
     file_roots = _file_roots(path, tables.get("roots", {}))
     defaults = Config(path)
     config = Config(
@@ -250,6 +262,9 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         remote_timeout_s=float(remote_timeout)
         if remote_timeout is not None
         else defaults.remote_timeout_s,
+        keys_dir=keys_paths["dir"],
+        kek_file=keys_paths["kek_file"],
+        previous_kek_file=keys_paths["previous_kek_file"],
     )
     return config, tuple(warnings)
 

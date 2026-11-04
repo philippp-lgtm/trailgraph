@@ -31,7 +31,7 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.write import WriteRequest
 from graph_cli.temporal_knowledge import finding_codes as temporal_codes
 
-REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("apply", {})
 
 DATA_DIRS = sorted(p for p in BROKEN.iterdir() if p.is_dir() and p.name.startswith("data."))
 

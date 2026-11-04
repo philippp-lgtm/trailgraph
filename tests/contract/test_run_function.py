@@ -21,7 +21,7 @@ from graph_cli.kinetic.entries import load_entries
 from graph_cli.services.describe import SKILL_FUNCTION_KEYS
 from graph_cli.services.read import GraphRead, QuerySpec, ReadService
 
-REQUEST = RequestMeta("run", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("run", {})
 SOURCES = FUNCTIONS.parent / "inventory" / "valid"
 
 

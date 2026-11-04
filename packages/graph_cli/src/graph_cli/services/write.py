@@ -111,6 +111,7 @@ from graph_cli.kernel.ports.storage import (
     WriteSession,
 )
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
+from graph_cli.kernel.sealing import KeyRing, KeyUnavailable
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.expand import check_preconditions, expand
@@ -450,12 +451,12 @@ class WriteService:
                 decisions = self._authorize(request, entry, pairs)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
-            digest = changeset_hash(cs)
+            ring = prepared.read.key_ring()
             if cs.idempotency_key is not None:  # W.7
                 principal = request.actor.principal.id or ""
                 previous = session.lookup_idempotency(cs.idempotency_key, principal)
                 if previous is not None:
-                    if _same_request(request, previous, digest):
+                    if _same_request(request, previous, cs, ring):
                         return _replay(previous, entry, resolution.warnings)
                     raise refusal(
                         GraphCliError(
@@ -488,6 +489,7 @@ class WriteService:
                     alias_counters=session.alias_counters(),
                     alias_prefixes=entry.alias_prefixes,
                     default_language=entry.language,
+                    entity_mac=lambda entity: ring.mac_key(ring.entity_key(entity)),
                 )
             with self.timings.phase("validate"):
                 stored = _blob_check(request, prepared.read)
@@ -507,6 +509,8 @@ class WriteService:
                     warnings=resolution.warnings,
                     findings=findings,
                 )
+            # the tx's key exists only once the tx will be written (T16)
+            tx_mac = ring.mac_key(ring.tx_key(tx_id))
             tx = AuthorizedTx(
                 graph_id=entry.id,
                 tx_id=tx_id,
@@ -516,14 +520,14 @@ class WriteService:
                 actor=request.actor,
                 decisions=decisions,
                 changeset=changeset_to_json(cs),
-                changeset_hash=digest,
+                changeset_hash=changeset_hash(cs, tx_mac),
                 resolution=working.resolution,
                 revisions=tuple(working.revisions.values()),
                 alias_allocations=working.alias_allocations,
                 ontology=entry.pin,
                 reason=cs.reason,
                 idempotency_key=cs.idempotency_key,
-                request=request.request,
+                request=request.request if tx_mac is None else request.request.keyed(tx_mac),
                 blobs=_tx_blobs(model, working),
             )
             listed = frozenset(tx.blobs)
@@ -591,6 +595,7 @@ class WriteService:
                 alias_prefixes=prepared.entry.alias_prefixes,
                 allocate_aliases=False,
                 default_language=prepared.entry.language,
+                entity_mac=_existing_macs(prepared.read.key_ring(), snapshot),
             )
         hidden = placeholders.issued
         with self.timings.phase("validate"):
@@ -749,16 +754,37 @@ def _plan_pairs(plan: ActionPlan) -> tuple[tuple[Action, TermRef], ...]:
     return tuple(sorted({(Action(n.action), TermRef(n.type)) for n in plan.entry.needs}))
 
 
-def _same_request(request: WriteRequest, previous: TxRecord, digest: str) -> bool:
+def _same_request(request: WriteRequest, previous: TxRecord, cs: ChangeSet, ring: KeyRing) -> bool:
     """Whether a retry with the same idempotency key asks for what ``previous`` recorded: an
     action matches on the request digest and the action (its expansion depends on the state),
-    a change set on its hash."""
+    a change set on its hash. In a sealed graph both are keyed under the previous tx's key;
+    once a purge shredded it, nothing matches."""
+    try:
+        key = ring.mac_key(previous.sealed.kid) if previous.sealed is not None else None
+    except KeyUnavailable as exc:
+        if exc.reason != "shredded":
+            raise
+        return False
     if request.plan is None:
-        return previous.changeset_hash == digest
+        return previous.changeset_hash == changeset_hash(cs, key)
+    asked = request.request if key is None else request.request.keyed(key)
     return (
-        previous.request.args_digest == request.request.args_digest
+        previous.request.args_digest == asked.args_digest
         and previous.request.action == request.request.action
     )
+
+
+def _existing_macs(ring: KeyRing, snapshot: Snapshot) -> Callable[[EntityId], bytes | None]:
+    """MAC keys for a dry run: an existing entity's from its stored revision, so unchanged
+    content is still found; none for a new entity, whose key a dry run does not create."""
+
+    def mac(entity: EntityId) -> bytes | None:
+        current = snapshot.get(entity)
+        if current is None or current.sealed is None:
+            return None
+        return ring.mac_key(current.sealed.kid)
+
+    return mac
 
 
 def _not_recorded(exc: GraphCliError) -> WarningRecord:

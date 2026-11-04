@@ -9,7 +9,7 @@ from support.services import ServiceEnv
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.write import WriteRequest, WriteResult
 
-REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("apply", {})
 
 
 def topic(local: str, label: str) -> dict[str, Any]:

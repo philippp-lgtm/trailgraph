@@ -4,7 +4,8 @@
 timestamps, aliases. Storage assigns only ``prev_hash`` and ``hash`` and
 checks structural invariants. A violation is a bug in the caller, so every
 check raises ``internal.error`` with ``details.rule``. No ontology semantics
-are checked here.
+are checked here. In a sealed graph the content hashes are keyed and
+``seal_tx`` seals the record through the graph's ``RecordCodec`` (plan T16).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import ALIAS_RE, EntityId, EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt, AuditStream
 from graph_cli.kernel.ports.storage import Head
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import (
     RECORD_STATUSES,
     Revision,
@@ -65,6 +67,7 @@ def check_tx(
     head: Head,
     view: StateView,
     blob_exists: Callable[[str], bool],
+    codec: RecordCodec,
 ) -> None:
     """Structural preconditions of a commit against the state at ``head`` (D6)."""
     if tx.graph_id != graph_id:
@@ -83,7 +86,7 @@ def check_tx(
         if revision.id in touched:
             raise _violation("one_revision", "an entity has two revisions in one tx (B3.6)")
         touched[revision.id] = revision
-        _check_revision(revision, tx=tx, previous=view.current(revision.id))
+        _check_revision(revision, tx=tx, previous=view.current(revision.id), codec=codec)
     for revision in tx.revisions:
         for edge in revision.edges:
             if edge.target not in touched and view.current(edge.target) is None:
@@ -122,7 +125,9 @@ def _check_decisions(tx: AuthorizedTx) -> None:
             raise _violation("decisions", f"no allow decision for {action}", action=action)
 
 
-def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision | None) -> None:
+def _check_revision(
+    revision: Revision, *, tx: AuthorizedTx, previous: Revision | None, codec: RecordCodec
+) -> None:
     entity = str(revision.id)
     if (revision.tx_id, revision.tx_seq) != (tx.tx_id, tx.seq):
         raise _violation("revision_tx", "revision tx_id or tx_seq differs", entity=entity)
@@ -142,7 +147,7 @@ def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision 
             raise _violation("created_at", "created_at changed", entity=entity)
         if revision.type != previous.type:
             raise _violation("type_changed", "the entity type is immutable (B1.6)", entity=entity)
-    if revision_content_hash(revision) != revision.content_hash:
+    if revision_content_hash(revision, codec.entity_mac(revision.id)) != revision.content_hash:
         raise _violation("content_hash", "content_hash does not match (C.9)", entity=entity)
     edge_ids = [edge.edge_id for edge in revision.edges]
     if len(edge_ids) != len(set(edge_ids)):
@@ -175,8 +180,9 @@ def _check_aliases(tx: AuthorizedTx, touched: dict[EntityId, Revision], view: St
         raise _violation("alias_unallocated", "a new alias needs an allocation", entity=str(entity))
 
 
-def seal_tx(tx: AuthorizedTx, prev: ChainLink) -> tuple[TxRecord, bytes]:
-    """Chain the tx after ``prev`` and return the record with its JSONL line (B4.4, B4.5)."""
+def seal_tx(tx: AuthorizedTx, prev: ChainLink, codec: RecordCodec) -> tuple[TxRecord, bytes]:
+    """Chain the tx after ``prev`` and return the record with its JSONL line (B4.4, B4.5);
+    a sealed graph's record carries its envelopes (the chain covers the sealed bytes)."""
     record = TxRecord(
         graph_id=tx.graph_id,
         tx_id=tx.tx_id,
@@ -197,6 +203,7 @@ def seal_tx(tx: AuthorizedTx, prev: ChainLink) -> tuple[TxRecord, bytes]:
         hash="",
         blobs=tx.blobs,
     )
+    record = codec.seal(record)
     body = {k: v for k, v in tx_to_json(record).items() if k not in CHAIN_KEYS}
     try:
         document, line = seal(body, prev)

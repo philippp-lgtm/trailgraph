@@ -13,7 +13,7 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.lookup import LookupSpec
 from graph_cli.services.read import GraphRead, ReadService
 
-REQUEST = RequestMeta("lookup", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("lookup", {})
 
 
 @pytest.fixture(params=("company",))

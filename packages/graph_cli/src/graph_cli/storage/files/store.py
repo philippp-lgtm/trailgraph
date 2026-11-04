@@ -15,6 +15,11 @@ replay the tx log into a view that is cached per store instance and
 extended incrementally (plan D5). Reads never write anything; writers
 update the index after the checkpoint.
 
+A sealed graph (store format 2, plan T16) reads and writes every record
+through its ``RecordCodec``: the tx log, the revision files and the index
+hold sealed records only. Snapshots and write sessions refresh the key ring
+first, so a purge by another process is seen by the next read.
+
 Writers read the index too, once the SHA-256 digest of the log up to the
 index position matches the one recorded with it; they verify only the txs
 after it (``WriterView``, plan "Incremental writer checks"). Without a
@@ -54,17 +59,17 @@ from graph_cli.kernel.ports.storage import (
 )
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.query_eval import run_neighbors, run_query
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import (
     BlobInfo,
     EdgeRecord,
     Revision,
     RevisionMeta,
     TxRecord,
-    revision_from_json,
     revision_meta,
     revision_to_json,
-    tx_from_json,
 )
+from graph_cli.kernel.sealing import KeyRing
 from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, ChainLink, link_of, seal
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
@@ -128,10 +133,10 @@ def corruption_details(damage: LogCorruption) -> dict[str, JsonValue]:
     }
 
 
-def parse_tx(document: Mapping[str, JsonValue]) -> TxRecord:
+def parse_tx(document: Mapping[str, JsonValue], codec: RecordCodec) -> TxRecord:
     """A hash-valid tx line with a bad shape is damage, not a user error."""
     try:
-        return tx_from_json(document)
+        return codec.parse_tx(document)
     except JsonShapeError as exc:
         raise _corrupt(f"tx record has a bad shape: {exc}") from None
 
@@ -177,8 +182,9 @@ class WriterIndex:
 class _ViewCache:
     """The replay view of this store instance, extended as the log grows (plan D5)."""
 
-    def __init__(self, txlog: SegmentedLog) -> None:
+    def __init__(self, txlog: SegmentedLog, codec: RecordCodec) -> None:
         self._txlog = txlog
+        self._codec = codec
         self._lock = threading.Lock()
         self._view = GraphView()
         self._spans: list[TxSpan] = []  # where each tx of the view lies in the log
@@ -205,7 +211,7 @@ class _ViewCache:
             self._view, self._spans, self._link, self._position = GraphView(), [], GENESIS, None
             result = self._txlog.scan()
         for record in result.records:
-            self._view.apply(parse_tx(record.document))
+            self._view.apply(parse_tx(record.document, self._codec))
             self._spans.append(TxSpan(record.start, record.end))
         self._link, self._position = result.end, result.position
         if self._view.seq < seq:
@@ -236,8 +242,10 @@ class FileStore:
         oplog: OpLog | None = None,
         use_index: bool = True,
         full_check_every: int = FULL_CHECK_EVERY,
+        codec: RecordCodec | None = None,
     ) -> None:
         self.layout = GraphLayout(graph_dir)
+        self.codec = codec if codec is not None else RecordCodec(graph_id)
         self.use_index = use_index
         self.full_check_every = full_check_every
         self.oplog = oplog
@@ -247,7 +255,7 @@ class FileStore:
         self.faults = faults
         self.txlog = SegmentedLog(self.layout.txlog, TX_SEGMENT_PREFIX, segment_bytes)
         self.auditlog = SegmentedLog(self.layout.audit, AUDIT_SEGMENT_PREFIX, segment_bytes)
-        self._cache = _ViewCache(self.txlog)
+        self._cache = _ViewCache(self.txlog, self.codec)
 
     # ---- read port -----------------------------------------------------
 
@@ -256,6 +264,9 @@ class FileStore:
 
     def head(self) -> Head:
         return self.read_state().head
+
+    def key_ring(self) -> KeyRing:
+        return self.codec.ring
 
     def blob(self, digest: str) -> BlobInfo | None:
         return blobs.info(self.layout, digest)
@@ -267,6 +278,7 @@ class FileStore:
         return blobs.local_path(self.layout, digest)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
+        self.codec.ring.refresh()
         # The index is opened before the log is read: it is published after its txs
         # are committed, so it never runs ahead of the log read afterwards.
         reader, problem = self._open_index()
@@ -297,6 +309,7 @@ class FileStore:
         self._require_layout()
         lock = acquire(self.layout.lock, timeout_s=timeout_s)
         try:
+            self.codec.ring.refresh()
             session = FileSession(self)
             try:
                 yield session
@@ -336,6 +349,10 @@ class FileStore:
             faults=self.faults,
         )
 
+    def open_index(self) -> IndexReader | None:
+        """The index file read through this graph's codec; ``IndexUnusable`` when broken."""
+        return IndexReader.open(self.layout.index, self.codec)
+
     def writer_index(self, state: LogState) -> tuple[WriterIndex | None, str | None]:
         """The index a writer may read at the end of the log, or ``None`` to replay.
 
@@ -345,7 +362,7 @@ class FileStore:
         if not self.use_index:
             return None, None
         try:
-            reader = IndexReader.open(self.layout.index)
+            reader = self.open_index()
         except IndexUnusable:
             return None, None
         if reader is None:
@@ -379,7 +396,7 @@ class FileStore:
         if not self.use_index:
             return None, None
         try:
-            return IndexReader.open(self.layout.index), None
+            return self.open_index(), None
         except IndexUnusable as exc:
             return None, str(exc)
 
@@ -430,7 +447,7 @@ class FileStore:
             if not scan.records or scan.end.seq < seq:
                 raise mismatch
             records = scan.records
-            tail = tuple(parse_tx(record.document) for record in records)
+            tail = tuple(parse_tx(record.document, self.codec) for record in records)
         return [(tx, TxSpan(r.start, r.end)) for tx, r in zip(tail, records, strict=True)]
 
     def _require_layout(self) -> None:
@@ -477,7 +494,7 @@ class FileStore:
             reasons.append("the tx log is damaged; reads stop before the damage")
             details = corruption_details(scan.corruption)
         warnings = (WarningRecord(_PENDING, "; ".join(reasons), details),) if reasons else ()
-        tail = tuple(parse_tx(record.document) for record in scan.records)
+        tail = tuple(parse_tx(record.document, self.codec) for record in scan.records)
         return LogState(checkpoint, tail, scan, warnings)
 
     def scan_audit(self, checkpoint: HeadFile | None) -> LogScan:
@@ -514,7 +531,7 @@ class FileStore:
         except OSError as exc:
             raise _unavailable("cannot read a revision file", exc) from exc
         try:
-            revision = revision_from_json(as_object(parse_json(data), "revision"))
+            revision = self.codec.parse_revision(as_object(parse_json(data), "revision"))
         except (CanonicalError, JsonShapeError) as exc:
             raise _corrupt(f"revision file is unreadable: {exc}", entity=str(entity)) from None
         if (revision.id, revision.rev) != (entity, rev):
@@ -899,8 +916,9 @@ class FileSession:
             head=self._head,
             view=self._view(),
             blob_exists=lambda digest: blobs.info(store.layout, digest) is not None,
+            codec=store.codec,
         )
-        record, line = seal_tx(tx, self._end)
+        record, line = seal_tx(tx, self._end, store.codec)
         pending: PendingAppend | None = None
         try:
             fire(store.faults, CrashPoint.TX_BEFORE_WRITE)

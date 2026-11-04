@@ -19,7 +19,7 @@ from graph_cli.audit.verify import StreamReport, verify_graph
 from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.catalog.identity import IdentityInputs, resolve_actor
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
-from graph_cli.kernel.canonical import JsonValue, hash_value
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet, parse_changeset, read_documents
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
@@ -29,6 +29,7 @@ from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, KineticSlo
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import EnvInfo, OntologyPin, RequestMeta, TxRecord
+from graph_cli.kernel.sealing import KeyRing
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.services.files import FileService, Origins
 from graph_cli.services.read import ReadService
@@ -41,18 +42,19 @@ from graph_cli.services.write import (
 )
 from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
+from graph_cli.storage.memory.keyring import MemoryKeyRing
 from graph_cli.storage.memory.store import InMemoryStore
-from support.admin_context import admin_context
+from support.admin_context import admin_context, key_rings
 from support.audit_events import allow
 from support.clock import StepClock
 from support.fixtures import EXAMPLES, FIXTURES, ONTOLOGIES, compiled_model, example_model
 from support.graphs import pin_of, release_files
 from support.ids import SeededIdProvider
-from support.stores import ALL_STATUSES, FaultSwitch
+from support.stores import ALL_STATUSES, SEALED_BACKENDS, FaultSwitch
 
 ENV = EnvInfo(data_root="<data root>", root_source="default")
 SEEDS = FIXTURES / "seeds"
-SEED_REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
+SEED_REQUEST = RequestMeta.of("apply", {})
 
 
 def app_actor(uid: int = 501, user: str = "tester") -> ActorContext:
@@ -85,15 +87,23 @@ class MemoryCatalog:
         self.functions: dict[GraphId, FunctionsSlot] = {}
         self.actions: dict[GraphId, KineticSlot] = {}
 
-    def add(self, entry: GraphEntry, model: CompiledModel, event_id: EventId) -> None:
+    def add(
+        self,
+        entry: GraphEntry,
+        model: CompiledModel,
+        event_id: EventId,
+        ring: KeyRing | None = None,
+    ) -> None:
         self.entries[entry.id] = entry
-        self.stores[entry.id] = InMemoryStore(entry.id, audit=self.audit, faults=self.faults)
+        self.stores[entry.id] = InMemoryStore(
+            entry.id, audit=self.audit, faults=self.faults, ring=ring
+        )
         for name, data in release_files(model).items():
             self.files[(entry.id, model.bundle_version, name)] = data
         genesis = events.graph_genesis(
             actor=app_actor(),
             decisions=[allow("maint.graph_create", "installation")],
-            request=RequestMeta("graph create", hash_value({"name": entry.name})),
+            request=RequestMeta.of("graph create", {"args": {"name": entry.name}}),
             ts=StepClock().now(),
             event_id=event_id,
             env=ENV,
@@ -218,7 +228,7 @@ class ServiceEnv:
         self.ids = SeededIdProvider(self.clock, 5)
         self.factory = OpsFactory(self.model)
         self.actor = app_actor()
-        if self.backend == "memory":
+        if self.backend in ("memory", "memory-sealed"):
             memory = MemoryCatalog(self.faults)
             entry = GraphEntry(
                 GraphId(self.ids.new_id()),
@@ -228,8 +238,10 @@ class ServiceEnv:
                 alias_prefixes(self.model),
                 (),
                 language=self.language,
+                sealed=self.sealed,
             )
-            memory.add(entry, self.model, EventId(self.ids.new_id()))
+            ring = MemoryKeyRing(self.ids) if self.sealed else None
+            memory.add(entry, self.model, EventId(self.ids.new_id()), ring)
             self.catalog: MemoryCatalog | FileCatalog = memory
             self.audit: AuditSink = memory.audit
         else:
@@ -247,11 +259,16 @@ class ServiceEnv:
                 module=self.ontology if len(list(source.glob("*.yaml"))) > 1 else None,
                 title=None,
                 language=self.language,
+                sealed=self.sealed,
             )
-            self.catalog = FileCatalog(self.root, faults=self.faults)
+            self.catalog = FileCatalog(self.root, faults=self.faults, rings=key_rings(self.root))
             self.audit = FileAuditLog(self.root, faults=self.faults)
         self.entry = self.catalog.resolve(self.name)
         self.service = self.make_service()
+
+    @property
+    def sealed(self) -> bool:
+        return self.backend in SEALED_BACKENDS
 
     def make_service(self, policy: Any = None, **config: Any) -> WriteService:
         return WriteService(
@@ -304,7 +321,7 @@ class ServiceEnv:
             graph=self.name,
             changeset=self.changeset(*ops, **top),
             dry_run=dry_run,
-            request=RequestMeta("apply", hash_value({"ops": len(ops)})),
+            request=RequestMeta.of("apply", {"ops": len(ops)}),
             bindings=bindings or {},
         )
 

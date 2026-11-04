@@ -321,7 +321,7 @@ def test_abbreviated_cli_references(svc: ServiceEnv, roles: Roles) -> None:
         graph=str(svc.entry.id),
         changeset=ChangeSet(ops=(UpdateOp(AbbrevRef(entity.hex[-12:]), {attr: "x"}),)),
         dry_run=False,
-        request=RequestMeta("update", "sha256:" + "0" * 64),
+        request=RequestMeta.of("update", {}),
         allow_abbrev=True,
     )
     result = svc.service.apply(request)

@@ -24,6 +24,7 @@ from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import FunctionsSlot, KineticSlot, ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.records import BlobInfo, EdgeRecord, Revision, RevisionMeta, TxRecord
+from graph_cli.kernel.sealing import KeyRing
 
 CAPABILITY_SNAPSHOT_AT_SEQ = "snapshot_at_seq"
 CAPABILITY_BLOB_LOCAL_PATH = "blob_local_path"
@@ -113,6 +114,10 @@ class GraphStoreRead(Protocol):
     def capabilities(self) -> frozenset[str]: ...
 
     def head(self) -> Head: ...
+
+    def key_ring(self) -> KeyRing:
+        """The graph's data keys (plan T16); a ``PlainKeyRing`` for an unsealed graph."""
+        ...
 
     def snapshot(self, *, at_seq: int | None = None) -> Snapshot:
         """Lock-free and isolated (B4.10)."""

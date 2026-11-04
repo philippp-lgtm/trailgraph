@@ -31,6 +31,7 @@ from graph_cli.kernel.records import (
     content_hash,
     content_projection,
 )
+from graph_cli.kernel.sealing import KeyRing, keyed_hash
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 
 SUPERSEDES = TermRef("core:supersedes")
@@ -281,7 +282,7 @@ class TxDraft:
             actor=actor(principal),
             decisions=allow_ops(builder.graph_id, self.ops),
             changeset=changeset,
-            changeset_hash=hash_value(changeset),
+            changeset_hash=keyed_hash(changeset, builder.tx_mac(tx_id)),
             resolution={"locals": {}, "refs": {}},
             revisions=revisions,
             alias_allocations=tuple(self.allocations),
@@ -319,7 +320,7 @@ class TxDraft:
             tx_id=tx_id,
             tx_seq=seq,
             ontology_version=self.builder.model.bundle_version,
-            content_hash=content_hash(projection),
+            content_hash=content_hash(projection, self.builder.entity_mac(work.id)),
         )
 
 
@@ -332,8 +333,10 @@ class TxBuilder:
         ids: IdProvider,
         clock: Clock,
         seed: int = 0,
+        ring: KeyRing | None = None,
     ) -> None:
         self.model = model
+        self.ring = ring  # a sealed store's keys: the hashes are keyed under them (T16)
         self.graph_id = graph_id
         self.ids = ids
         self.clock = clock
@@ -341,6 +344,12 @@ class TxBuilder:
         self.pin = OntologyPin(model.bundle_id, model.bundle_version, model.artifact_hash)
         self.concrete_classes = sorted(c for c, d in model.classes.items() if not d.abstract)
         self._number = 0
+
+    def entity_mac(self, entity: EntityId) -> bytes | None:
+        return None if self.ring is None else self.ring.mac_key(self.ring.entity_key(entity))
+
+    def tx_mac(self, tx: TxId) -> bytes | None:
+        return None if self.ring is None else self.ring.mac_key(self.ring.tx_key(tx))
 
     def begin(self, state: State, head: Head, alias_counters: Mapping[str, int]) -> TxDraft:
         return TxDraft(self, state, head, dict(alias_counters))

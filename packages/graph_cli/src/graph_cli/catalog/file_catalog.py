@@ -29,6 +29,7 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
+from graph_cli.storage.files.keyrings import KeyRings, check_store_format, codec_for
 from graph_cli.storage.files.kinetic_slot import read_slot
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
@@ -36,8 +37,6 @@ from graph_cli.storage.files.segments import OpLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileStore
 
-FILES_BACKEND = "files"
-FILES_FORMAT = 1  # [store] format_version of the FileStore layout (section 5)
 UNREADABLE = frozenset({"config.invalid", "format.unsupported_version", "backend.unavailable"})
 
 
@@ -57,10 +56,12 @@ class FileCatalog:
         settings: StorageSettings | None = None,
         oplog: OpLog | None = None,
         faults: FaultHook | None = None,
+        rings: KeyRings | None = None,
     ) -> None:
         self.data_root = data_root
         self.settings = settings or StorageSettings()
         self.oplog = oplog
+        self.rings = rings  # the key stores of sealed graphs (plan T16)
         self.faults = faults  # crash tests only; production passes None (K.d)
         self._warnings: dict[tuple[str, str], WarningRecord] = {}
 
@@ -155,21 +156,14 @@ class FileCatalog:
 
     def file_store(self, graph: GraphId) -> FileStore:
         info = self.manifest(graph).store
-        if (info.backend, info.format_version) != (FILES_BACKEND, FILES_FORMAT):
-            raise GraphCliError(
-                "format.unsupported_version",
-                f"graph {graph} uses store {info.backend}/{info.format_version}",
-                details={
-                    "expected": f"{FILES_BACKEND}/{FILES_FORMAT}",
-                    "actual": f"{info.backend}/{info.format_version}",
-                },
-            )
+        check_store_format(graph, info.backend, info.format_version)
         return FileStore(
             self._layout(graph).root,
             graph,
             durability=self.settings.durability,
             oplog=self.oplog,
             faults=self.faults,
+            codec=codec_for(graph, info.format_version, self.rings),
         )
 
     def _layout(self, graph: GraphId) -> GraphLayout:

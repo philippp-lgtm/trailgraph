@@ -55,7 +55,7 @@ def test_valid_tx_passes_and_seals(log: MemLog) -> None:
     draft = log.draft()
     draft.create()
     tx = draft.build()
-    record, line = seal_tx(tx, GENESIS)
+    record, line = seal_tx(tx, GENESIS, log.codec)
     assert record.prev_hash == GENESIS.hash
     document = verify_line(line, GENESIS)
     assert document["hash"] == record.hash == hash_document(document)
@@ -253,7 +253,7 @@ def test_non_canonical_changeset_is_refused(log: MemLog) -> None:
     draft.create()
     tx = replace(draft.build(), changeset={"ops": [], "ratio": 0.5})  # type: ignore[dict-item]
     with pytest.raises(GraphCliError) as info:
-        seal_tx(tx, GENESIS)
+        seal_tx(tx, GENESIS, log.codec)
     assert info.value.details["rule"] == "canonical"
 
 
@@ -261,7 +261,7 @@ def test_seal_continues_the_given_link(log: MemLog) -> None:
     _seeded(log)
     draft = log.draft()
     draft.create()
-    record, line = seal_tx(draft.build(), ChainLink(log.head.seq, log.head.hash))
+    record, line = seal_tx(draft.build(), ChainLink(log.head.seq, log.head.hash), log.codec)
     assert record.prev_hash == log.head.hash
     verify_line(line, ChainLink(log.head.seq, log.head.hash))
 
@@ -324,6 +324,7 @@ def test_check_tx_needs_the_view_at_head(log: MemLog) -> None:
             head=log.head,
             view=log.at(0),
             blob_exists=log.blobs.__contains__,
+            codec=log.codec,
         )
     assert info.value.details["rule"] == "view_seq"
 

@@ -24,7 +24,8 @@ OUTPUT: Final = obj(  # services_admin.init.init
         "root_source": enum(*get_args(RootSource)),
         "config_file": STRING,
         "device_id": nullable(STRING),
-        "created": obj({"data_root": BOOLEAN, "config": BOOLEAN}),
+        "kek_file": nullable(STRING),
+        "created": obj({"data_root": BOOLEAN, "config": BOOLEAN, "kek": BOOLEAN}),
     }
 )
 
@@ -35,7 +36,7 @@ SPECS: Final = (
         kind="write",
         surface="act",
         action=None,
-        summary="Create the data root and, if missing, the config file with a device id.",
+        summary="Create the data root and, if missing, the config file and the key-encryption key.",
         params=(
             ParamSpec(
                 "--device-name",

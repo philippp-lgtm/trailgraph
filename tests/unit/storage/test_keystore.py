@@ -13,7 +13,13 @@ from support.ids import SeededIdProvider
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TxId, is_uuid7
-from graph_cli.kernel.sealing import MAC_KEY_BYTES, KeyRing, KeyUnavailable, Kid
+from graph_cli.kernel.sealing import (
+    MAC_KEY_BYTES,
+    EnvelopeInvalid,
+    KeyRing,
+    KeyUnavailable,
+    Kid,
+)
 from graph_cli.storage.common import crypto
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files import keystore
@@ -219,7 +225,7 @@ def test_seal_and_open_round_trip_across_instances(env: Env) -> None:
         assert again.open(sealed, AAD) == b'{"name":"marker"}'
         assert again.mac_key(kid) == mac
         assert mac is not None and len(mac) == MAC_KEY_BYTES
-        with pytest.raises(crypto.CryptoError):
+        with pytest.raises(EnvelopeInvalid):
             again.open(sealed, b"another place")
 
 

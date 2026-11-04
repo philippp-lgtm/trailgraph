@@ -15,7 +15,7 @@ from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.describe import SKILL_ACTION_KEYS
 
-REQUEST = RequestMeta("skills", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("skills", {})
 SOURCES = FIXTURES / "actions" / "inventory" / "valid"
 
 
