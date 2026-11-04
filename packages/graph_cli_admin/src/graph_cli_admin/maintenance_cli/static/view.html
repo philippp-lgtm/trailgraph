@@ -211,6 +211,14 @@ body.browsing #stage, body.browsing #panel { display: none; }
 #browse_nav label { display: flex; gap: 6px; align-items: center; padding: 2px 14px; color: var(--text-secondary); }
 #browse_nav input[type="search"] { width: calc(100% - 28px); margin: 8px 14px 4px; font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; }
 #browse_nav .note { padding: 6px 14px 0; font-size: 12px; }
+/* The type graph's search with, on a narrow screen, the button that folds its options. */
+#browse_nav[data-built="types"] { padding: 0; }
+#browse_nav .bar { display: flex; gap: 6px; align-items: center; padding: 8px 14px 4px; }
+#types_options { padding-bottom: 14px; }
+#browse_nav .bar input[type="search"] { flex: 1; min-width: 0; width: auto; margin: 0; }
+#types_fold { display: none; flex: none; align-items: center; gap: 4px; }
+#types_fold svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; transition: transform 0.15s; }
+#types_fold[aria-expanded="true"] svg { transform: rotate(180deg); }
 .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; background: var(--node); }
 .swatch.open { background: none; border: 1.5px dashed var(--node); }
 .doc { max-width: 960px; padding: 18px 26px 48px; }
@@ -300,7 +308,11 @@ body.no-graph canvas, body.no-graph #panel { display: none; }
   #browse_nav, #browse_side { width: auto; border: 0; border-bottom: 1px solid var(--border); }
   #browse_nav { max-height: 38%; flex: none; }
   #browse_main { flex: none; overflow: visible; }
-  body.tab-types #browse_main { height: 60vh; flex: none; }
+  /* The type graph takes the room the folded options leave, at least 60 % of the screen. */
+  body.tab-types #browse_main { flex: 1 0 auto; height: auto; min-height: 60vh; }
+  #browse_nav .bar { position: sticky; top: 0; z-index: 1; background: var(--surface-2); padding-bottom: 8px; }
+  #types_fold { display: flex; }
+  #types_options.folded { display: none; }
   #browse_side { order: 3; overflow: visible; }
   .doc { padding: 14px 14px 32px; }
   .doc table { display: block; overflow-x: auto; }
@@ -2112,12 +2124,21 @@ function buildTypeGraph() {
   requestAnimationFrame(() => tgFrame(self));
 }
 
+const TYPES_OPTIONS_KEY = "graph-view.types-options";
+
+// A narrow screen folds the type graph's options below its search, at first and as the user
+// left them; a wide one always shows them.
+function typesOptionsOpen() {
+  try { return localStorage.getItem(TYPES_OPTIONS_KEY) === "open"; } catch (error) { return false; }
+}
+
 function buildTypesNav() {
   browseNav.dataset.built = "types";
   browseNav.replaceChildren();
   const search = el("input");
   search.type = "search";
   search.placeholder = "Search types";
+  search.value = tg.query;
   search.setAttribute("aria-label", "Search types");
   search.addEventListener("input", () => {
     tg.query = search.value.trim().toLowerCase();
@@ -2128,39 +2149,66 @@ function buildTypesNav() {
     const first = [...tg.nodes.values()].find(node => tgMatches(node));
     if (first) go(first.id, false);
   });
-  browseNav.append(search, el("h2", null, "Modules"));
+  const fold = el("button");
+  fold.type = "button";
+  fold.id = "types_fold";
+  fold.setAttribute("aria-controls", "types_options");
+  const options = el("div");
+  options.id = "types_options";
+  const chevron = svgEl("svg", {viewBox: "0 0 12 12", "aria-hidden": "true"});
+  svgEl("polyline", {points: "2.5,4.5 6,8 9.5,4.5"}, chevron);
+  // the button names the hidden modules, so a folded filter does not go unnoticed
+  const label = () => {
+    const hidden = tg.hiddenModules.size;
+    fold.replaceChildren(hidden ? `Options · ${hidden} hidden` : "Options", chevron);
+  };
+  const setOpen = (open, remember) => {
+    options.classList.toggle("folded", !open);
+    fold.setAttribute("aria-expanded", String(open));
+    if (remember) {
+      try { localStorage.setItem(TYPES_OPTIONS_KEY, open ? "open" : "folded"); } catch (error) { /* storage off */ }
+    }
+  };
+  fold.addEventListener("click", () => setOpen(options.classList.contains("folded"), true));
+  label();
+  setOpen(typesOptionsOpen(), false);
+  const bar = el("div", "bar");
+  bar.append(search, fold);
+  browseNav.append(bar, options);
+  options.append(el("h2", null, "Modules"));
   for (const m of model.modules.filter(x => x.types > 0)) {
-    const label = el("label");
+    const row = el("label");
     const input = el("input");
     input.type = "checkbox";
     input.checked = !tg.hiddenModules.has(m.id);
     input.addEventListener("change", () => {
       if (input.checked) tg.hiddenModules.delete(m.id); else tg.hiddenModules.add(m.id);
+      label();
       tg.alpha = Math.max(tg.alpha, 0.3);
       tg.autoFit = true;
       tg.dirty = true;
     });
-    label.append(input, swatch(m.id), el("span", null, m.id), el("span", "count", String(m.types)));
-    browseNav.append(label);
+    row.append(input, swatch(m.id), el("span", null, m.id), el("span", "count", String(m.types)));
+    options.append(row);
   }
-  browseNav.append(el("h2", null, "Show"));
+  options.append(el("h2", null, "Show"));
   const toggle = (text, checked, onChange) => {
-    const label = el("label");
+    const row = el("label");
     const input = el("input");
     input.type = "checkbox";
     input.checked = checked;
     input.addEventListener("change", () => { onChange(input.checked); tg.dirty = true; });
-    label.append(input, text);
-    browseNav.append(label);
+    row.append(input, text);
+    options.append(row);
   };
   toggle("inheritance (extends)", tg.inherit, on => { tg.inherit = on; tg.alpha = Math.max(tg.alpha, 0.3); });
   toggle("size by active entities", tg.sizes, on => { tg.sizes = on; tgRadii(); });
-  toggle("relation names", false, on => tg.box.classList.toggle("names", on));
-  browseNav.append(el("div", "note muted", "Arrows run from the type a relation starts at to the type it points to; dashed arrows to the type a type extends. Hollow dots are abstract types. Drag to pan, wheel or pinch to zoom, double-click or double-tap to fit."));
+  toggle("relation names", tg.box.classList.contains("names"), on => tg.box.classList.toggle("names", on));
+  options.append(el("div", "note muted", "Arrows run from the type a relation starts at to the type it points to; dashed arrows to the type a type extends. Hollow dots are abstract types. Drag to pan, wheel or pinch to zoom, double-click or double-tap to fit."));
   if (tg.open.length) {
     const note = el("div", "note muted", "Not drawn, open to any type: ");
     tg.open.forEach((r, index) => note.append(index ? ", " : "", code(r.curie)));
-    browseNav.append(note);
+    options.append(note);
   }
 }
 
