@@ -142,10 +142,10 @@ yet; every graph is unsealed (store format 1). The cipher primitives are in
   two subkeys by HKDF-SHA256: `enc` for the cipher, `mac` for the keyed
   hashes. Data keys are wrapped with AES-KW (RFC 3394) under a 256-bit
   key-encryption key.
-- A stored file of a sealed graph is a header `GCBLOB\x00\x01 || kid (16
-  bytes) || nonce prefix (7 bytes)`, then chunks of 64 KiB of plaintext (the
-  last one may be shorter, and is empty only for an empty file), each with a
-  16-byte tag. Chunk `i` is sealed with AES-256-GCM under the nonce
-  `prefix || i (4 bytes, big-endian) || last (1 byte, 1 on the final chunk)`
+- A stored file of a sealed graph is a header `GCBLOB\x00\x01 || kid (16 bytes) || salt (16 bytes) || nonce prefix (7 bytes)`,
+  then chunks of 64 KiB of plaintext (the last one may be shorter, and is
+  empty only for an empty file), each with a 16-byte tag. The chunk key is
+  derived by HKDF-SHA256 from the file key and the salt. Chunk `i` is sealed
+  with AES-256-GCM under the nonce `prefix || i (4 bytes, big-endian) || last (1 byte, 1 on the final chunk)`
   and the header as associated data, so reordered, dropped, repeated or
   appended chunks and a changed header fail to decrypt.

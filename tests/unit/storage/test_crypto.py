@@ -7,10 +7,11 @@ from uuid import UUID
 
 import pytest
 
-from graph_cli.kernel.sealing import Kid
+from graph_cli.kernel.sealing import MAC_KEY_BYTES, Kid
 from graph_cli.storage.common.crypto import (
     BLOB_CHUNK,
     BLOB_HEADER_BYTES,
+    KEY_BYTES,
     TAG_BYTES,
     CryptoError,
     hkdf_sha256,
@@ -152,8 +153,8 @@ def test_blob_round_trip_for_any_size_and_chunking(size: int, piece: int) -> Non
 
 def test_blob_header_names_the_key() -> None:
     blob = sealed_blob(b"x")
-    kid, prefix = parse_blob_header(blob[:BLOB_HEADER_BYTES])
-    assert kid == KID and len(prefix) == 7
+    kid, salt, prefix = parse_blob_header(blob[:BLOB_HEADER_BYTES])
+    assert (kid, len(salt), len(prefix)) == (KID, 16, 7)
     seen: list[Kid] = []
 
     def key_for(kid: Kid) -> bytes:
@@ -212,3 +213,17 @@ def test_blob_refuses_a_changed_header_flipped_bit_wrong_key() -> None:
         opened(b"plain bytes of a format-1 blob, longer than a header")
     with pytest.raises(CryptoError, match="not a sealed blob"):
         opened(blob[:10])
+    v4_kid = UUID("0192f6d4-2a10-4b43-a5f6-000000000009").bytes
+    with pytest.raises(CryptoError, match="not a sealed blob"):
+        opened(blob[:8] + v4_kid + blob[24:])
+
+
+def test_blob_arguments_are_checked_before_the_first_chunk() -> None:
+    with pytest.raises(ValueError, match="32 bytes"):
+        seal_blob(KEY[:16], KID, [b"x"])
+    with pytest.raises(CryptoError, match="not a sealed blob"):
+        open_blob(lambda kid: KEY, io.BytesIO(b"short"))
+
+
+def test_the_mac_subkey_has_the_kernel_s_mac_key_size() -> None:
+    assert KEY_BYTES == MAC_KEY_BYTES

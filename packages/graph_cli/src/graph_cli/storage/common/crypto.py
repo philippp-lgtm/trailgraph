@@ -15,7 +15,9 @@ to parse raises ``CryptoError``; nothing here returns unauthenticated plaintext.
   sealed with AES-256-GCM under the nonce ``prefix (7) || counter (4, big-endian) ||
   last (1)`` and the header as associated data (the STREAM construction). The counter
   refuses reordering, the last flag truncation and extension. The header is
-  ``BLOB_MAGIC || kid (16) || prefix (7)``.
+  ``BLOB_MAGIC || kid (16) || salt (16) || prefix (7)``; the chunk key is derived from the
+  file key and the random salt (HKDF), as in Tink's streaming AEAD, so nonces stay unique
+  even if a file key were ever used for a second blob.
 """
 
 from __future__ import annotations
@@ -31,9 +33,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.keywrap import InvalidUnwrap, aes_key_unwrap, aes_key_wrap
 
-from graph_cli.kernel.sealing import MAC_KEY_BYTES, Kid
+from graph_cli.kernel.ids import is_uuid7
+from graph_cli.kernel.sealing import Kid
 
-KEY_BYTES: Final = MAC_KEY_BYTES  # data keys, subkeys and the key-encryption key
+KEY_BYTES: Final = 32  # AES-256: data keys, subkeys and the key-encryption key
 NONCE_BYTES: Final = 12
 TAG_BYTES: Final = 16
 WRAPPED_KEY_BYTES: Final = KEY_BYTES + 8
@@ -43,8 +46,11 @@ _SUBKEY_INFO: Final = b"graph_cli.dek/1 "
 
 BLOB_MAGIC: Final = b"GCBLOB\x00\x01"
 BLOB_CHUNK: Final = 64 * 1024
+_KID_BYTES: Final = 16
+_SALT_BYTES: Final = 16
 _PREFIX_BYTES: Final = 7
-BLOB_HEADER_BYTES: Final = len(BLOB_MAGIC) + 16 + _PREFIX_BYTES
+BLOB_HEADER_BYTES: Final = len(BLOB_MAGIC) + _KID_BYTES + _SALT_BYTES + _PREFIX_BYTES
+_BLOB_KEY_INFO: Final = b"graph_cli.blob/1"
 _SEALED_CHUNK: Final = BLOB_CHUNK + TAG_BYTES
 _MAX_CHUNKS: Final = 2**32
 
@@ -111,12 +117,18 @@ def unwrap_key(kek: bytes, wrapped: bytes) -> bytes:
 def seal_blob(key: bytes, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
     """Encrypt a stream of any chunking: yields the header, then one sealed chunk per
     ``BLOB_CHUNK`` plaintext bytes. The last chunk may be full; it is empty only for an
-    empty stream."""
+    empty stream. The key is checked here, before the first chunk is asked for."""
     _check_key(key, "cipher key")
+    salt = secrets.token_bytes(_SALT_BYTES)
     prefix = secrets.token_bytes(_PREFIX_BYTES)
-    header = BLOB_MAGIC + kid.bytes + prefix
+    header = BLOB_MAGIC + kid.bytes + salt + prefix
+    return _seal_chunks(_blob_cipher(key, salt), header, prefix, chunks)
+
+
+def _seal_chunks(
+    aead: AESGCM, header: bytes, prefix: bytes, chunks: Iterable[bytes]
+) -> Iterator[bytes]:
     yield header
-    aead = AESGCM(key)
     counter = 0
     buffer = bytearray()
     for data in chunks:
@@ -124,31 +136,40 @@ def seal_blob(key: bytes, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
         start = 0
         # Strictly more than one chunk: the last one waits for the end of the stream.
         while len(buffer) - start > BLOB_CHUNK:
-            plain = bytes(buffer[start : start + BLOB_CHUNK])
-            yield aead.encrypt(_chunk_nonce(prefix, counter, last=False), plain, header)
+            with memoryview(buffer) as view, view[start : start + BLOB_CHUNK] as plain:
+                sealed = aead.encrypt(_chunk_nonce(prefix, counter, last=False), plain, header)
+            yield sealed
             start += BLOB_CHUNK
             counter += 1
         del buffer[:start]
     yield aead.encrypt(_chunk_nonce(prefix, counter, last=True), bytes(buffer), header)
 
 
-def parse_blob_header(header: bytes) -> tuple[Kid, bytes]:
-    """The key id and nonce prefix of a sealed blob's first ``BLOB_HEADER_BYTES``."""
+def parse_blob_header(header: bytes) -> tuple[Kid, bytes, bytes]:
+    """The key id, salt and nonce prefix of a sealed blob's first ``BLOB_HEADER_BYTES``."""
     if len(header) != BLOB_HEADER_BYTES or not header.startswith(BLOB_MAGIC):
         raise CryptoError("not a sealed blob")
-    kid_end = len(BLOB_MAGIC) + 16
-    return Kid(UUID(bytes=header[len(BLOB_MAGIC) : kid_end])), header[kid_end:]
+    kid_end = len(BLOB_MAGIC) + _KID_BYTES
+    salt_end = kid_end + _SALT_BYTES
+    kid = Kid(UUID(bytes=header[len(BLOB_MAGIC) : kid_end]))
+    if not is_uuid7(kid):
+        raise CryptoError("not a sealed blob")
+    return kid, header[kid_end:salt_end], header[salt_end:]
 
 
 def open_blob(key_for: Callable[[Kid], bytes], source: Reader) -> Iterator[bytes]:
     """Decrypt a sealed blob chunk by chunk. ``key_for`` maps the header's key id to the
-    cipher key. Raises ``CryptoError`` at the first chunk that does not authenticate, so a
-    consumer must discard what it received when the iteration fails."""
+    file key. The header and the key are checked here, before the first chunk; a chunk
+    that does not authenticate raises ``CryptoError`` during the iteration, so a consumer
+    must discard what it received when the iteration fails."""
     header = _read_full(source, BLOB_HEADER_BYTES)
-    kid, prefix = parse_blob_header(header)
+    kid, salt, prefix = parse_blob_header(header)
     key = key_for(kid)
     _check_key(key, "cipher key")
-    aead = AESGCM(key)
+    return _open_chunks(_blob_cipher(key, salt), header, prefix, source)
+
+
+def _open_chunks(aead: AESGCM, header: bytes, prefix: bytes, source: Reader) -> Iterator[bytes]:
     counter = 0
     current = _read_full(source, _SEALED_CHUNK)
     while True:
@@ -159,6 +180,10 @@ def open_blob(key_for: Callable[[Kid], bytes], source: Reader) -> Iterator[bytes
             return
         current = following
         counter += 1
+
+
+def _blob_cipher(key: bytes, salt: bytes) -> AESGCM:
+    return AESGCM(hkdf_sha256(key, salt=salt, info=_BLOB_KEY_INFO, length=KEY_BYTES))
 
 
 def _open_chunk(
@@ -173,8 +198,8 @@ def _open_chunk(
 
 
 def _chunk_nonce(prefix: bytes, counter: int, *, last: bool) -> bytes:
-    if counter >= _MAX_CHUNKS:
-        raise CryptoError("blob has too many chunks")
+    if counter >= _MAX_CHUNKS:  # 256 TiB, far beyond the stored-file limit
+        raise ValueError("a sealed blob holds at most 2**32 chunks")
     return prefix + counter.to_bytes(4, "big") + (b"\x01" if last else b"\x00")
 
 
