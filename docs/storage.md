@@ -114,3 +114,26 @@ POSIX only, local filesystems only.
   damaged one is `actions.slot_invalid`. The slots are verified against the
   audit trail ([Slot verification](audit.md#slot-verification)); the format of a
   function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), that of an action file in the [actions authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md).
+
+## Sealing port
+
+`kernel.sealing` defines how a sealed graph will hold its instance data:
+every value encrypted under a data key of its entity, its tx or its stored
+file, so that destroying the keys erases the data. Storage does not use it
+yet; every graph is unsealed (store format 1).
+
+- A data key has an id (`Kid`, a UUIDv7). A sealed envelope is
+  `{kid, nonce, ct}`, `nonce` and `ct` in unpadded base64url; the record
+  format that holds it defines the cipher and the associated data.
+- `KeyRing` is the port to the keys of one graph: `entity_key` and `tx_key`
+  return the key of their subject and create it on first use, `file_key`
+  creates one per stored file, `mac_key` gives the key of the keyed hashes,
+  `seal` and `open` encrypt and decrypt envelopes, `shred` destroys keys and
+  records the purge event. A shredded or missing key raises `KeyUnavailable`.
+- Keyed hashes keep the `sha256:<hex>` shape: HMAC-SHA256 over the same JCS
+  bytes. `content_hash`, `changeset_hash` and `RequestMeta.of` take an
+  optional MAC key; without one they are the plain hashes (C.2). The ring of
+  an unsealed graph, `PlainKeyRing`, hands out no keys, so its hashes are
+  byte-identical to those of earlier versions.
+- `Revision.shredded` marks a revision whose key is shredded. It is never
+  persisted.
