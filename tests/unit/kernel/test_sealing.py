@@ -64,7 +64,10 @@ def test_sealed_envelope_round_trip_uses_unpadded_base64url() -> None:
     [
         ({"kid": str(KID), "nonce": "AA"}, "sealed: expected the keys"),
         ({"kid": str(KID), "nonce": "AA", "ct": "AA", "x": 1}, "sealed: expected the keys"),
-        ({"kid": "nope", "nonce": "AA", "ct": "AA"}, "kid: not a UUID"),
+        ({"kid": "nope", "nonce": "AA", "ct": "AA"}, "kid: not a UUIDv7"),
+        ({"kid": str(KID).upper(), "nonce": "AA", "ct": "AA"}, "kid: not a UUIDv7"),
+        ({"kid": f"urn:uuid:{KID}", "nonce": "AA", "ct": "AA"}, "kid: not a UUIDv7"),
+        ({"kid": "0192f6d4-2a10-4b43-a5f6-000000000009", "nonce": "AA", "ct": "AA"}, "kid: not"),
         ({"kid": str(KID), "nonce": "AA==", "ct": "AA"}, "nonce: expected unpadded base64url"),
         ({"kid": str(KID), "nonce": "AA", "ct": "+/+/"}, "ct: expected unpadded base64url"),
         ({"kid": str(KID), "nonce": "AB", "ct": "AA"}, "nonce: expected unpadded base64url"),

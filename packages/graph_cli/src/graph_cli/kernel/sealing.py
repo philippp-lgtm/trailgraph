@@ -28,7 +28,7 @@ from graph_cli.kernel.canonical import (
     hash_value,
 )
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import EntityId, EventId, TxId, parse_id
+from graph_cli.kernel.ids import EntityId, EventId, TxId, format_id, is_uuid7, parse_id
 from graph_cli.kernel.json_access import JsonShapeError, req_str
 
 Kid = NewType("Kid", UUID)  # id of one data key, a UUIDv7
@@ -69,10 +69,14 @@ class Sealed:
         if set(data) != {"kid", "nonce", "ct"}:
             where = path.removesuffix(".") or "sealed"
             raise JsonShapeError(f"{where}: expected the keys kid, nonce and ct")
+        text = req_str(data, "kid", path)
         try:
-            kid = Kid(parse_id(req_str(data, "kid", path)))
+            kid = Kid(parse_id(text))
         except GraphCliError:
-            raise JsonShapeError(f"{path}kid: not a UUID") from None
+            kid = None
+        # Canonical text only, so that the envelope's bytes survive a round trip.
+        if kid is None or format_id(kid) != text or not is_uuid7(kid):
+            raise JsonShapeError(f"{path}kid: not a UUIDv7 in canonical form")
         return cls(kid, _b64decode(data, "nonce", path), _b64decode(data, "ct", path))
 
 
@@ -100,6 +104,8 @@ class KeyRing(Protocol):
 
     ``mac_key``, ``seal`` and ``open`` raise ``KeyUnavailable`` for a shredded or
     missing key. A new key is durable before the record that uses it is written.
+    Readers and verify take the kid from the record they check, never from
+    ``entity_key`` or ``tx_key``, so a read creates no key.
     """
 
     def entity_key(self, entity: EntityId) -> Kid | None: ...
