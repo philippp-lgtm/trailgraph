@@ -260,7 +260,10 @@ On a narrow screen (720 pixels or less, such as a phone) the list of
 graphs starts folded while a graph is shown and opens over the graph; picking a graph opens its
 folder there, and picking a view or Escape folds it again. The panel becomes a sheet at the bottom that shows the
 graph's name and counts; "Details" opens it, and clicking a node opens
-it with that entity.
+it with that entity. The type graph keeps its search above the graph;
+"Options" next to it opens the modules and what to show, names how many
+modules are hidden while folded, starts folded and stays as it was
+left.
 
 On a touch screen (a phone or a tablet) the graph and the type graph
 follow the fingers: one finger pans or moves a node, two fingers pinch
