@@ -43,6 +43,11 @@ class CrashPoint(StrEnum):
     FUNCTIONS_BEFORE_RENAME = "functions.before_rename"
     ACTIONS_BEFORE_RENAME = "actions.before_rename"
     POLICY_BEFORE_RENAME = "policy.before_rename"
+    # The key store of a sealed graph (plan T16): the commit point is the SQLite commit.
+    KEYS_BEFORE_COMMIT = "keys.before_commit"
+    KEYS_AFTER_COMMIT = "keys.after_commit"
+    SHRED_BEFORE_COMMIT = "shred.before_commit"
+    SHRED_BEFORE_VACUUM = "shred.before_vacuum"
 
 
 # Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3")
@@ -67,6 +72,15 @@ MAINT_POINTS: Final = frozenset(
         CrashPoint.FUNCTIONS_BEFORE_RENAME,
         CrashPoint.ACTIONS_BEFORE_RENAME,
         CrashPoint.POLICY_BEFORE_RENAME,
+    }
+)
+# Points of the key store (plan T16), outside the write-path table.
+KEYS_POINTS: Final = frozenset(
+    {
+        CrashPoint.KEYS_BEFORE_COMMIT,
+        CrashPoint.KEYS_AFTER_COMMIT,
+        CrashPoint.SHRED_BEFORE_COMMIT,
+        CrashPoint.SHRED_BEFORE_VACUUM,
     }
 )
 
