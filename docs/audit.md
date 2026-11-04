@@ -64,6 +64,10 @@ fails:
 | `timing_us` | `{total, phases}`: how long the command took, in microseconds, and where the time went |
 | `function` | only for `run`: `{name, hash}` of the function that ran (`hash` is `null` when the run failed, except for `function.stale`); never a parameter value |
 | `action` | only for `do`: `{name, hash}` of the action that ran (`hash` is `null` when it failed, except for `action.stale`); never a parameter value |
+| `query` | only for `query` (also with `--explain`; a parse or resolve error has none): `{shape_hash, shape, covered_by}`. `shape` is the canonical [query shape](#query-shape), or `null` above 4 KiB; `covered_by` lists at most three `{name, list_fit}`, the published functions that cover the query and that the caller may run |
+
+If the envelope names no graph, `graph` still names the graph a read opened,
+and a failed `run` still names its `function`.
 
 `phases` names only the phases the command went through. Each phase counts
 its own time (a phase inside another is taken out of the outer one), a
@@ -100,6 +104,18 @@ It is not chained, so it is a record of use, not evidence: whoever can
 write the state directory can edit it. Writing it is best effort; a
 failure never fails the command. It is not rotated; rotate or delete it
 from outside. `graph-admin` does not write it (its changes are audited).
+`graph-admin usage report` reads it ([`cli_graph_admin.md`](cli_graph_admin.md)).
+
+### Query shape
+
+A shape is the query with everything the caller chose removed, so the log
+shows how queries are built and never what was asked. Model terms (types,
+relations, fields) stay; every literal and parameter becomes a typed
+placeholder: `$s` (text), `$n` (number), `$b` (boolean), `$list` (a list of
+constants or parameters) and `$map` (a map parameter). `null` stays `null`.
+Variables, aliases, map keys and property keys that are no model field are
+renamed to numbered names; `SKIP` and `LIMIT` are dropped. The shape is
+hashed (`shape_hash`) and logged as text up to 4 KiB.
 
 ## Token verification
 

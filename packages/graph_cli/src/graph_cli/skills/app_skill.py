@@ -150,6 +150,7 @@ question needs several hops, OR or NOT across relations, or counts; `find`,
 `neighbors` and `lookup` stay the simple path for one type, one hop or a
 name. `graph describe schema --json` lists the patterns a query can use.
 Read [references/query.md](references/query.md) before the first query.
+When a `query` answer names a covering function, use `graph run` for such questions.
 
 ## History and what goes into a graph
 

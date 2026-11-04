@@ -75,7 +75,7 @@ FITS: Final[dict[str, frozenset[str]]] = {
     "ref": frozenset({"string"}),
 }
 _TEXT_BASES: Final = frozenset({"string", "text", "iri"})
-_REF_FIELDS: Final = frozenset({"id", "alias"})
+REF_FIELDS: Final = frozenset({"id", "alias"})
 _COMPARISONS: Final = frozenset({"=", "<>", "<", "<=", ">", ">="})
 _TEXT_OPS: Final = frozenset({"starts_with", "ends_with", "contains"})
 
@@ -163,6 +163,16 @@ def _resolve_with_placeholders(
         else:
             values[use.name] = None  # reported as undeclared; resolve goes on
     return resolve(query, model, values)
+
+
+def resolve_stored(text: str, defn: FunctionDef, model: CompiledModel) -> ResolvedQuery:
+    """Resolve a stored (normalized) query text with placeholder parameters, as compiling does.
+
+    For callers that analyse a published function's query without running it.
+    """
+    parsed = parse(text)
+    paging = frozenset(use.name for use in parameters(parsed) if use.paging)
+    return _resolve_with_placeholders(parsed, defn, model, paging)
 
 
 def _check_stored(defn: FunctionDef, text: str, model: CompiledModel) -> Problem | None:
@@ -437,7 +447,7 @@ class _Compile:
                 if param.many
                 else "a single value cannot be compared with a list field"
             )
-        if param.type == "ref" and used.field not in _REF_FIELDS:
+        if param.type == "ref" and used.field not in REF_FIELDS:
             return "a ref can only be compared with id or alias"
         if not set(used.datatypes) & FITS[param.type]:
             return f"a {param.type} does not fit the field ({_describe_field(used)})"

@@ -181,7 +181,9 @@ directory in its folder and push.
 
 The named functions of a graph (`functions/<name>.yaml` in its folder) are
 published with the ontology and the skill by `graph-admin graph push`.
-Write them with the `authoring-graph-functions` skill, then:
+Read `graph-admin usage report <graph>` before writing or changing functions:
+its candidates and batch gaps are the input. Write them with the
+`authoring-graph-functions` skill, then:
 
 ```sh
 graph-admin graph functions publish <graph> <folder>/functions --dry-run

@@ -10,11 +10,12 @@ import json
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.app_cli.commands.common import (
     AS_OF,
     GRAPH,
+    Hint,
     command_line,
     context,
     next_page,
@@ -54,6 +55,9 @@ from graph_cli.query.plan import (
 from graph_cli.query.search import SearchSpec
 from graph_cli.services.read import GraphRead, QuerySpec, refuse_affordances_with_rev
 from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
+
+if TYPE_CHECKING:  # the cover rule pulls in the Cypher parser, which reads must not load
+    from graph_cli.kinetic.cover import Cover
 
 REF_ERRORS: Final = (
     *GRAPH_ERRORS,
@@ -543,6 +547,36 @@ def _table(columns: list[str], items: list[JsonValue]) -> str:
     )
 
 
+MAX_COVER_HINTS: Final = 2
+
+
+def _cover_hints(covers: tuple[Cover, ...], graph: str) -> tuple[Hint, ...]:
+    """Hints for the best covering functions (usage shapes plan U4): a hint, never a
+    rewrite; the agent decides whether to run the function."""
+    hints: list[Hint] = []
+    for cover in covers[:MAX_COVER_HINTS]:
+        kind = "a list: repeat --param " + cover.parameter
+        if not cover.many:
+            kind = "one " + (cover.of_class or "value") + " per run"
+        summary = cover.summary.rstrip()
+        stop = "" if summary.endswith(".") else "."
+        hints.append(
+            {
+                "text": f"Function {cover.function} covers this query: {summary}{stop} "
+                f"It takes {kind}.",
+                "command": command_line(
+                    "run",
+                    (cover.function,),
+                    graph,
+                    (("--param", (f"{cover.parameter}=<ref>",)),),
+                    (),
+                    DEFAULT_LIMIT,
+                ),
+            }
+        )
+    return tuple(hints)
+
+
 def query(
     state: CommandState,
     text: str | None,
@@ -571,9 +605,10 @@ def query(
     }
     view = _open(state, graph, "read.query", "query", args, point)
     spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
-    data, page = reader.query(view, parsed, spec)
+    data, page, covers = reader.query(view, parsed, spec)
+    cover_hints = _cover_hints(covers, view.entry.name)
     if page is None:
-        return Result(data=data, graph=view.envelope_graph())
+        return Result(data=data, graph=view.envelope_graph(), hints=cover_hints)
     page_json = page.to_json()
     positional = () if text is None else (text,)
     options = (
@@ -594,7 +629,7 @@ def query(
         data=data,
         graph=view.envelope_graph(),
         page=page_json,
-        hints=next_page(page_json, line),
+        hints=cover_hints + next_page(page_json, line),
         text=_table([str(c) for c in columns], items),
     )
 
