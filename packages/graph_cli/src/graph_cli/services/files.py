@@ -22,9 +22,14 @@ them. ``FileService.add``:
 
 Reads (``path``, ``check``) are ``read.get`` on the graph and then on
 ``graph:<id>/type:<curie>`` of the file, so a policy can deny file content
-per type. They write nothing; ``check`` hashes the origin files. Both hand
-the ids they return to the activity sink with the request's command and actor
-(see ``services.read``).
+per type. They write nothing to the graph; ``check`` hashes the origin files.
+Both hand the ids they return to the activity sink with the request's command
+and actor (see ``services.read``).
+
+A sealed graph (T16) keeps its files encrypted, so ``path`` hands out a
+decrypted copy from ``FileCopies`` (the plaintext cache of this machine)
+instead of the stored file. A process without copies (the server) answers
+``path: null`` and streams the content with ``stored_content``.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import BinaryIO, Final, Protocol
@@ -41,12 +46,12 @@ from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet, CreateOp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import TermRef
+from graph_cli.kernel.ids import EntityId, GraphId, TermRef
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, GraphStoreRead, StagedBlob
 from graph_cli.kernel.query_ast import Cmp, Query
-from graph_cli.kernel.records import RequestMeta, Revision
+from graph_cli.kernel.records import BlobInfo, RequestMeta, Revision, stored_blob
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.values import check_facets
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
@@ -71,6 +76,21 @@ class Origins(Protocol):
 
     def resolve(self, origin: Mapping[str, JsonValue]) -> Path:
         """The origin's path on this machine; ``file.root_unknown`` if its root is not set."""
+        ...
+
+
+class FileCopies(Protocol):
+    """Decrypted copies of stored files on this machine (``catalog.file_copies``)."""
+
+    def get(
+        self,
+        graph: str,
+        digest: str,
+        write: Callable[[BinaryIO], None],
+        mismatch: Callable[[], GraphCliError],
+    ) -> Path:
+        """The copy of the content ``digest``, made with ``write`` unless it is there;
+        ``mismatch()`` is raised when what ``write`` wrote does not have that hash."""
         ...
 
 
@@ -147,6 +167,7 @@ class HashedBlob:
     def __init__(self, digest: str, size: int) -> None:
         self.hash = digest
         self.size = size
+        self.stored = digest
 
     def discard(self) -> None:
         return None
@@ -225,8 +246,10 @@ class FileService:
         origins: Origins | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
         activity: ActivitySink = NULL_ACTIVITY,
+        copies: FileCopies | None = None,
     ) -> None:
         self._catalog = catalog
+        self._copies = copies
         self._writer = writer
         self._reader = reader
         self._origins: Origins = origins if origins is not None else NoOrigins()
@@ -270,13 +293,8 @@ class FileService:
         revision, warnings = self._file(view, ref, actor, request)
         read = self._catalog.store_for(view.entry.id)[0]
         digest = str(revision.attrs.get("content"))
-        stored = read.blob(digest)
-        if stored is None:
-            raise GraphCliError(
-                "backend.corrupt",
-                f"the stored copy of {ref} is missing; run graph-admin files verify",
-                details={"id": str(revision.id), "blob": digest},
-            )
+        name = stored_blob(revision, digest)
+        stored = _stored(read, revision, name, ref)
         where = self._origin(revision)
         if origin:
             if where is None:
@@ -292,17 +310,19 @@ class FileService:
                     f"the origin of {ref} is not there: {resolved}",
                     details={"id": str(revision.id), "path": str(resolved)},
                 )
-            path = str(resolved)
-        else:
-            if CAPABILITY_BLOB_LOCAL_PATH not in read.capabilities():
-                raise GraphCliError(
-                    "file.no_local_path",
-                    "this backend keeps stored files without a local path",
-                    details={"id": str(revision.id)},
-                )
-            local = read.blob_local_path(digest)
+            path: str | None = str(resolved)
+        elif CAPABILITY_BLOB_LOCAL_PATH in read.capabilities():
+            local = read.blob_local_path(name)
             assert local is not None  # the blob exists and the capability is there
             path = str(local)
+        elif view.entry.sealed:
+            path = self._copy(view.entry, read, revision, digest, name)
+        else:
+            raise GraphCliError(
+                "file.no_local_path",
+                "this backend keeps stored files without a local path",
+                details={"id": str(revision.id)},
+            )
         data: dict[str, JsonValue] = {
             "id": str(revision.id),
             "alias": revision.alias,
@@ -315,6 +335,46 @@ class FileService:
         }
         self._activity.reads(ReadSignal(view.entry.id, request.command, actor, [revision.id]))
         return data, warnings
+
+    def _copy(
+        self, entry: GraphEntry, read: GraphStoreRead, revision: Revision, digest: str, name: str
+    ) -> str | None:
+        """The decrypted copy of a sealed graph's file; ``None`` without copies (server)."""
+        if self._copies is None:
+            return None
+
+        def write(sink: BinaryIO) -> None:
+            for chunk in read.read_blob(name):
+                sink.write(chunk)
+
+        def mismatch() -> GraphCliError:
+            return GraphCliError(
+                "backend.corrupt",
+                "the stored content differs from its content hash; run graph-admin files verify",
+                details={"id": str(revision.id), "blob": name},
+            )
+
+        return str(self._copies.get(str(entry.id), digest, write, mismatch))
+
+    def stored_content(
+        self, graph: GraphId, entity: EntityId, digest: str
+    ) -> tuple[int, Iterator[bytes]]:
+        """Size and content of the file ``entity`` whose content hash is ``digest``.
+
+        Not authorized here: for the server, which streams a file right after ``path``
+        authorized the same request and answered this id and hash.
+        """
+        read = self._catalog.store_for(graph)[0]
+        revision = read.snapshot().get(entity)
+        if revision is None or revision.attrs.get("content") != digest:
+            raise GraphCliError(
+                "entity.not_found",
+                f"no stored file {entity} with content {digest}",
+                details={"id": str(entity)},
+            )
+        name = stored_blob(revision, digest)
+        stored = _stored(read, revision, name, str(entity))
+        return stored.size, read.read_blob(name)
 
     def check(
         self,
@@ -558,6 +618,17 @@ class FileService:
         )
         file = _file_json(staged.hash, staged.size, known.attrs)
         return FileAddResult(entry, entity, file, True, None, (warning,), read.head().seq)
+
+
+def _stored(read: GraphStoreRead, revision: Revision, name: str, ref: str) -> BlobInfo:
+    stored = read.blob(name)
+    if stored is None:
+        raise GraphCliError(
+            "backend.corrupt",
+            f"the stored copy of {ref} is missing; run graph-admin files verify",
+            details={"id": str(revision.id), "blob": name},
+        )
+    return stored
 
 
 def hash_file(path: Path) -> str | None:

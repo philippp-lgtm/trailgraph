@@ -20,7 +20,11 @@ graph_cli (B3.1). Steps:
 - W.11b the blobs the request staged (``WriteRequest.blobs``) and the tx
   references are published under the lock; the tx lists every ``blob``
   value of its revisions (``tx.blobs``). A ``blob`` value must name a stored
-  or staged blob (``data.referential.blob_missing``).
+  or staged blob (``data.referential.blob_missing``). In a sealed graph (T16)
+  a blob is named by its ciphertext hash, which only the request's staged
+  blobs and the previous revisions of the entities it touches know: a new
+  ``blob`` value must come from one of them, and each revision records the
+  blob of every ``blob`` value in its sealed part (``Revision.blobs``).
 - W.12 the intent (with ``before`` hashes and the published blobs' hash and
   size), W.13 the commit; storage warnings are passed on.
 
@@ -56,7 +60,7 @@ from __future__ import annotations
 
 import itertools
 import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence, Set
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence, Set
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -110,7 +114,7 @@ from graph_cli.kernel.ports.storage import (
     StagedBlob,
     WriteSession,
 )
-from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
+from graph_cli.kernel.records import EnvInfo, RequestMeta, Revision, TxRecord, stored_blob
 from graph_cli.kernel.sealing import KeyRing, KeyUnavailable
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry
@@ -492,8 +496,8 @@ class WriteService:
                     entity_mac=lambda entity: ring.mac_key(ring.entity_key(entity)),
                 )
             with self.timings.phase("validate"):
-                stored = _blob_check(request, prepared.read)
-                findings = _validate(model, base, working, stored)  # W.11
+                names = _blob_names(request, prepared.read, base, working, sealed=entry.sealed)
+                findings = _validate(model, base, working, names.__contains__)  # W.11
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
                 findings = [_scrub(f, working, working.created) for f in findings]
@@ -511,6 +515,7 @@ class WriteService:
                 )
             # the tx's key exists only once the tx will be written (T16)
             tx_mac = ring.mac_key(ring.tx_key(tx_id))
+            revisions = _with_blob_names(model, working, names, sealed=entry.sealed)
             tx = AuthorizedTx(
                 graph_id=entry.id,
                 tx_id=tx_id,
@@ -522,17 +527,17 @@ class WriteService:
                 changeset=changeset_to_json(cs),
                 changeset_hash=changeset_hash(cs, tx_mac),
                 resolution=working.resolution,
-                revisions=tuple(working.revisions.values()),
+                revisions=revisions,
                 alias_allocations=working.alias_allocations,
                 ontology=entry.pin,
                 reason=cs.reason,
                 idempotency_key=cs.idempotency_key,
                 request=request.request if tx_mac is None else request.request.keyed(tx_mac),
-                blobs=_tx_blobs(model, working),
+                blobs=_tx_blobs(model, revisions),
             )
             listed = frozenset(tx.blobs)
             published = [
-                session.publish_blob(b) for b in request.blobs if b.hash in listed
+                session.publish_blob(b) for b in request.blobs if b.stored in listed
             ]  # W.11b
             before = {}
             for revision in tx.revisions:
@@ -599,8 +604,10 @@ class WriteService:
             )
         hidden = placeholders.issued
         with self.timings.phase("validate"):
-            stored = _blob_check(request, prepared.read)
-            findings = _validate(prepared.model, snapshot, working, stored)
+            names = _blob_names(
+                request, prepared.read, snapshot, working, sealed=prepared.entry.sealed
+            )
+            findings = _validate(prepared.model, snapshot, working, names.__contains__)
         findings = [_scrub(f, working, hidden) for f in findings]
         if any(f.severity is Severity.ERROR for f in findings):
             raise _invalid(findings)
@@ -848,15 +855,70 @@ def _validate(
     return sort_findings([*working.findings, *found])
 
 
-def _blob_check(request: WriteRequest, read: GraphStoreRead) -> Callable[[str], bool]:
-    """A blob is present when the request stages it or the store holds it."""
-    staged = frozenset(b.hash for b in request.blobs)
-    return lambda digest: digest in staged or read.blob(digest) is not None
+class _StoreBlobs:
+    """Blob names of an unsealed graph: a content hash names the blob that holds it, so a
+    blob value is present when the request stages it or the store holds it."""
+
+    def __init__(self, request: WriteRequest, read: GraphStoreRead) -> None:
+        self._staged = frozenset(b.hash for b in request.blobs)
+        self._read = read
+
+    def __contains__(self, digest: object) -> bool:
+        return isinstance(digest, str) and (
+            digest in self._staged or self._read.blob(digest) is not None
+        )
 
 
-def _tx_blobs(model: CompiledModel, working: WorkingState) -> tuple[str, ...]:
-    """Every ``blob`` value of the tx's revisions, sorted and unique (tx ``blobs``)."""
-    found = {h for r in working.revisions.values() for h in blob_values(model, r)}
+def _blob_names(
+    request: WriteRequest,
+    read: GraphStoreRead,
+    base: Snapshot,
+    working: WorkingState,
+    *,
+    sealed: bool,
+) -> Container[str]:
+    """The blob values a write may use. Sealed: content hash -> blob name, from the blobs
+    the request staged and the previous revisions of the entities it changes (one of those
+    keeps its blob, so a staged copy of known content is not published)."""
+    if not sealed:
+        return _StoreBlobs(request, read)
+    names = {b.hash: b.stored for b in request.blobs}
+    for entity in working.revisions:
+        previous = base.get(entity)
+        if previous is not None:
+            names.update(previous.blobs)
+    return names
+
+
+def _with_blob_names(
+    model: CompiledModel,
+    working: WorkingState,
+    names: Container[str],
+    *,
+    sealed: bool,
+) -> tuple[Revision, ...]:
+    """The tx's revisions; in a sealed graph each records the blob of its ``blob`` values."""
+    revisions = tuple(working.revisions.values())
+    if not sealed:
+        return revisions
+    assert isinstance(names, Mapping)
+    bound = []
+    for revision in revisions:
+        values = blob_values(model, revision)
+        missing = [v for v in values if v not in names]
+        if missing:  # validation refuses a new value without a blob; an old one has one
+            raise GraphCliError(
+                "internal.error", "a blob value has no stored blob", details={"blob": missing[0]}
+            )
+        blobs = {v: names[v] for v in values}
+        bound.append(revision if blobs == revision.blobs else replace(revision, blobs=blobs))
+    return tuple(bound)
+
+
+def _tx_blobs(model: CompiledModel, revisions: Sequence[Revision]) -> tuple[str, ...]:
+    """The blob of every ``blob`` value of the tx's revisions, sorted and unique (tx
+    ``blobs``)."""
+    found = {stored_blob(r, h) for r in revisions for h in blob_values(model, r)}
     return tuple(sorted(found))
 
 

@@ -1,7 +1,9 @@
 """``graph-admin files verify`` and ``files gc``: the stored files of one graph (files slice 1).
 
 - ``verify`` reads every stored file under the graph lock: missing and
-  damaged files (errors), orphans and staging leftovers (info). It writes
+  damaged files (errors), orphans and staging leftovers (info). With
+  ``decrypt`` (sealed graphs only) it also decrypts every file a revision
+  names and compares the content with the revision's content hash. It writes
   nothing; error findings fail with ``admin.integrity_errors``.
 - ``gc`` removes stored files no tx names and staging files older than one
   hour (an add stages before it takes the lock, so a young staging file may
@@ -36,17 +38,30 @@ class FilesOutcome:
     seq: int
 
 
-def verify(ctx: AdminContext, *, graph_ref: str, rehash: bool) -> FilesOutcome:
+def verify(
+    ctx: AdminContext, *, graph_ref: str, rehash: bool, decrypt: bool = False
+) -> FilesOutcome:
     entry = ctx.resolve(graph_ref, "files verify")
-    meta = RequestMeta.of("files verify", {"graph": str(entry.id), "rehash": rehash})
+    if decrypt and not entry.sealed:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"--decrypt: {entry.name} is not sealed; its files are stored as they are"
+            " (--rehash checks them)",
+            details={"argument": "--decrypt"},
+        )
+    args: dict[str, JsonValue] = {"graph": str(entry.id), "rehash": rehash}
+    if decrypt:
+        args["decrypt"] = True
+    meta = RequestMeta.of("files verify", args)
     ctx.authorize([("maint.audit_verify", f"graph:{entry.id}")], request=meta, graph=entry.id)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
-        findings: list[Finding] = list(session.verify_blobs(rehash=rehash))
+        findings: list[Finding] = list(session.verify_blobs(rehash=rehash, decrypt=decrypt))
         stored = list(session.blobs())
         seq = ctx.maintenance.store(entry.id).head().seq
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "rehash": rehash,
+        "decrypt": decrypt,
         "stored": {"files": len(stored), "bytes": sum(b.size for b in stored)},
         "counts": counts_of(findings),
         "findings": [f.to_json() for f in findings],

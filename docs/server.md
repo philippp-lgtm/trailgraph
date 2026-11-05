@@ -190,7 +190,8 @@ removed after the command that used it, or after an hour; a token's
 pending uploads hold at most four times `[files] max_bytes`. A body larger
 than any route takes is refused before it is read. `-` (stdin) does not
 exist on the server: upload the input instead. Over the API `file path`
-answers `path: null`; the bytes come from the file endpoint. `?render=text`
+answers `path: null`; the bytes come from the file endpoint, which decrypts
+the file of a sealed graph while it streams. `?render=text`
 answers `{envelope, stdout, stderr}`, the text `graph` would print.
 
 A write that takes `--idempotency-key` also takes the key as the header
@@ -440,7 +441,8 @@ proxy that refuses requests without one lets it through.
   `[roots]`; the server stores it.
 - `file path` downloads the stored file into
   `<state>/files/<graph id>/<hash>` on this machine (read only, kept as a
-  cache) and answers that path; `--origin` and `file check` look at the
+  cache for 24 hours after its last use, see
+  [Files](files.md#sealed-graphs)) and answers that path; `--origin` and `file check` look at the
   origins on this machine, as locally.
 - `skills emit|install|check` run here; a graph skill comes from the
   server, rendered for the graph's current ontology, and must be allowed by

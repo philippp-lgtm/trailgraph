@@ -158,7 +158,7 @@ class StoreEnv:
             edit(draft)
             for blob in staged:
                 session.publish_blob(blob)
-            tx = replace(draft.build(), blobs=tuple(sorted({b.hash for b in staged})))
+            tx = replace(draft.build(), blobs=tuple(sorted({b.stored for b in staged})))
             receipt = session.append_audit(self.intent(tx, session.snapshot()))
             return tx, session.commit(tx, receipt)
 

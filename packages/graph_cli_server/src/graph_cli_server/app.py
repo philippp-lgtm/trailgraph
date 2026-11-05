@@ -76,6 +76,7 @@ from graph_cli.kernel.changeset import IDEMPOTENCY_KEY_RE, FloatLiteral, float_n
 from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.ids import EntityId, GraphId, parse_id
 from graph_cli.kernel.timing import Timings
 from graph_cli_server.dist import DIST_ENV, Served, load
 from graph_cli_server.http_status import status_for
@@ -652,17 +653,23 @@ class ServerApp:
         cached = [("ETag", tag), ("Cache-Control", "private, no-cache")]
         if _matches(environ.get("HTTP_IF_NONE_MATCH"), tag):
             return Response(304, [b""], headers=cached, content_type="application/octet-stream")
-        stored = Path(str(data["path"]))
-        handle = stored.open("rb")
-        wrapper = environ.get("wsgi.file_wrapper")
-        chunks: Iterable[bytes] = (
-            wrapper(handle, 1024 * 1024) if wrapper is not None else _chunks(handle)
-        )
+        chunks: Iterable[bytes]
+        if isinstance(data.get("path"), str):
+            stored = Path(str(data["path"]))
+            handle = stored.open("rb")
+            wrapper = environ.get("wsgi.file_wrapper")
+            chunks = wrapper(handle, 1024 * 1024) if wrapper is not None else _chunks(handle)
+            size = stored.stat().st_size
+        else:  # a sealed graph: decrypted while it streams, never copied to disk (T16)
+            try:
+                size, chunks = self._stored_content(body, token, outcome.document, data)
+            except GraphCliError as exc:
+                return self._error("file path", exc)
         return Response(
             200,
             chunks,
             headers=[
-                ("Content-Length", str(stored.stat().st_size)),
+                ("Content-Length", str(size)),
                 ("Content-Disposition", "attachment"),
                 ("Graph-Cli-Content-Hash", str(data.get("hash"))),
                 ("Graph-Cli-Media-Type", str(data.get("media_type") or "")),
@@ -670,6 +677,31 @@ class ServerApp:
                 *cached,
             ],
             content_type="application/octet-stream",
+        )
+
+    def _stored_content(
+        self,
+        body: Mapping[str, JsonValue],
+        token: TokenRecord,
+        document: Mapping[str, JsonValue],
+        data: Mapping[str, JsonValue],
+    ) -> tuple[int, Iterable[bytes]]:
+        """The content of the file ``file path`` just authorized and answered."""
+        graph = document.get("graph")
+        if not isinstance(graph, Mapping):
+            raise GraphCliError("internal.error", "file path answered no graph")
+        services = AppServices(
+            self.settings.env,
+            self.settings.cwd,
+            None,
+            Timings(),
+            request=RequestScope(**self._scope(body, token), origins={}),
+        )
+        files = services.context([], "file path").files
+        return files.stored_content(
+            GraphId(parse_id(str(graph.get("id")))),
+            EntityId(parse_id(str(data.get("id")))),
+            str(data.get("hash")),
         )
 
     def _skill(self, environ: Mapping[str, Any], graph: str, token: TokenRecord) -> Response:

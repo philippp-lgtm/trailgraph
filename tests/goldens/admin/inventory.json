@@ -475,6 +475,13 @@
           "summary": "Read every stored file and compare its hash."
         },
         {
+          "name": "--decrypt",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Sealed graphs: decrypt every stored file and compare it with its content hash."
+        },
+        {
           "name": "--data-root",
           "type": "directory",
           "required": false,

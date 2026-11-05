@@ -8,17 +8,24 @@ import json
 import shutil
 import sqlite3
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
+from support.admin_context import key_rings, key_settings
 from support.drafts import intent
 from support.graphs import publish_ontology
+from support.services import ServiceEnv
 from support.stores import StoreEnv, snapshot_state
 from support.trees import tree_hash
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt
+from graph_cli.kernel.records import RequestMeta, Revision
+from graph_cli.services import write as write_service
+from graph_cli.services.files import FileAddRequest
 from graph_cli.storage import finding_codes
 from graph_cli.storage.files.index import IndexReader
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
@@ -136,9 +143,74 @@ SCENARIOS: dict[str, Callable[[FileStore], None]] = {
 }
 
 
+# Sealed graphs (T16): codes only ``verify_blobs(decrypt=True)`` produces.
+
+SEALED_CONTENT = (b"%PDF-1.4\n% first\n", b"%PDF-1.4\n% second\n")
+
+
+def sealed_setup(tmp_path: Path) -> tuple[ServiceEnv, FileStoreMaintenance]:
+    svc = ServiceEnv("files-sealed", "notes_and_sources", tmp_path / "root", version="1.1.0")
+    add_file(svc, tmp_path, 0)
+    return svc, FileStoreMaintenance(svc.root, rings=key_rings(svc.root))
+
+
+def add_file(svc: ServiceEnv, tmp_path: Path, which: int) -> None:
+    path = tmp_path / f"input{which}.pdf"
+    path.write_bytes(SEALED_CONTENT[which])
+    request = RequestMeta.of("file add", {"args": {"path": path.name}})
+    svc.make_files().add(FileAddRequest(svc.actor, svc.name, path, request))
+
+
+def sealed_verify(maintenance: FileStoreMaintenance, graph: GraphId) -> list[str]:
+    with maintenance.maintenance_session(graph, timeout_s=5) as session:
+        codes = [f.code for f in session.verify()]
+        codes += [f.code for f in session.verify_blobs(rehash=True, decrypt=True)]
+    return list(dict.fromkeys(codes))
+
+
+def drop_file_keys(svc: ServiceEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with sqlite3.connect(key_settings(svc.root).store_path(svc.entry.id)) as db:
+        db.execute("DELETE FROM dek WHERE scope = 'file'")
+
+
+def bind_another_blob(svc: ServiceEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A writer bug: the second file's revision names the first file's blob."""
+    (first,) = svc.txs()[0].blobs
+    original = write_service._with_blob_names
+
+    def wrong(*args: Any, **kw: Any) -> tuple[Revision, ...]:
+        return tuple(replace(r, blobs=dict.fromkeys(r.blobs, first)) for r in original(*args, **kw))
+
+    monkeypatch.setattr(write_service, "_with_blob_names", wrong)
+    add_file(svc, tmp_path, 1)
+
+
+SEALED_SCENARIOS: dict[str, Callable[[ServiceEnv, Path, pytest.MonkeyPatch], None]] = {
+    finding_codes.BLOB_UNDECRYPTABLE: drop_file_keys,
+    finding_codes.BLOB_CONTENT_MISMATCH: bind_another_blob,
+}
+
+
 def test_every_storage_code_has_one_scenario() -> None:
     """R.6: registry and tamper scenarios match one to one."""
-    assert set(SCENARIOS) == {spec.code for spec in finding_codes.FINDING_CODES}
+    assert not set(SCENARIOS) & set(SEALED_SCENARIOS)
+    codes = {spec.code for spec in finding_codes.FINDING_CODES}
+    assert set(SCENARIOS) | set(SEALED_SCENARIOS) == codes
+
+
+def test_clean_sealed_graph_verifies_clean(tmp_path: Path) -> None:
+    svc, maintenance = sealed_setup(tmp_path)
+    add_file(svc, tmp_path, 1)
+    assert sealed_verify(maintenance, svc.entry.id) == []
+
+
+@pytest.mark.parametrize("code", sorted(SEALED_SCENARIOS))
+def test_sealed_tamper_scenario_triggers_only_its_code(
+    tmp_path: Path, code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc, maintenance = sealed_setup(tmp_path)
+    SEALED_SCENARIOS[code](svc, tmp_path, monkeypatch)
+    assert sealed_verify(maintenance, svc.entry.id) == [code]
 
 
 def test_clean_graph_verifies_clean(tmp_path: Path) -> None:

@@ -16,7 +16,7 @@ import binascii
 import hashlib
 import hmac
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Final, Literal, NewType, Protocol
 from uuid import UUID
@@ -58,6 +58,16 @@ class EnvelopeInvalid(Exception):
     def __init__(self, kid: Kid) -> None:
         super().__init__(f"an envelope under key {kid} does not authenticate")
         self.kid = kid
+
+
+class BlobInvalid(Exception):
+    """A sealed stored file that does not parse or authenticate (header or a chunk)."""
+
+
+class ByteSource(Protocol):
+    """Where a sealed stored file is read from, such as an open binary file."""
+
+    def read(self, size: int, /) -> bytes: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +141,18 @@ class KeyRing(Protocol):
 
     def open(self, sealed: Sealed, aad: bytes) -> bytes: ...
 
+    def seal_blob(self, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
+        """The stored form of a file under the file key ``kid``: a header naming the kid,
+        then the sealed chunks. Raises ``KeyUnavailable`` before the first chunk."""
+        ...
+
+    def open_blob(self, source: ByteSource) -> Iterator[bytes]:
+        """The bytes of a file ``seal_blob`` stored, read from ``source``; the key comes
+        from the header. Raises ``KeyUnavailable`` or ``BlobInvalid`` before the first chunk,
+        and ``BlobInvalid`` during the iteration for a chunk that does not authenticate:
+        a consumer discards what it received when the iteration fails."""
+        ...
+
     def is_shredded(self, kid: Kid) -> bool: ...
 
     def shred(self, kids: Iterable[Kid], purge_event: EventId) -> None:
@@ -170,6 +192,12 @@ class PlainKeyRing:
 
     def open(self, sealed: Sealed, aad: bytes) -> bytes:
         raise KeyUnavailable(sealed.kid, "missing")
+
+    def seal_blob(self, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
+        raise KeyUnavailable(kid, "missing")
+
+    def open_blob(self, source: ByteSource) -> Iterator[bytes]:
+        raise BlobInvalid("an unsealed graph has no sealed stored files")
 
     def is_shredded(self, kid: Kid) -> bool:
         return False

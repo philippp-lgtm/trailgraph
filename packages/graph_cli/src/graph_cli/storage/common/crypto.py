@@ -145,6 +145,16 @@ def _seal_chunks(
     yield aead.encrypt(_chunk_nonce(prefix, counter, last=True), bytes(buffer), header)
 
 
+def blob_content_size(stored_size: int) -> int:
+    """The plaintext size of a sealed blob of ``stored_size`` bytes: every chunk but the last
+    is full, and the last one is present even for an empty file."""
+    sealed = stored_size - BLOB_HEADER_BYTES
+    chunks = max(1, -(-sealed // _SEALED_CHUNK))
+    if sealed - (chunks - 1) * _SEALED_CHUNK < TAG_BYTES:
+        raise CryptoError("blob is truncated")
+    return sealed - chunks * TAG_BYTES
+
+
 def parse_blob_header(header: bytes) -> tuple[Kid, bytes, bytes]:
     """The key id, salt and nonce prefix of a sealed blob's first ``BLOB_HEADER_BYTES``."""
     if len(header) != BLOB_HEADER_BYTES or not header.startswith(BLOB_MAGIC):
@@ -167,6 +177,25 @@ def open_blob(key_for: Callable[[Kid], bytes], source: Reader) -> Iterator[bytes
     key = key_for(kid)
     _check_key(key, "cipher key")
     return _open_chunks(_blob_cipher(key, salt), header, prefix, source)
+
+
+def open_blob_or_raise(
+    key_for: Callable[[Kid], bytes], source: Reader, error: Callable[[str], Exception]
+) -> Iterator[bytes]:
+    """``open_blob`` for a key ring: every ``CryptoError``, before or during the iteration,
+    becomes ``error(message)`` (the kernel's ``BlobInvalid``); other errors pass."""
+    try:
+        chunks = open_blob(key_for, source)
+    except CryptoError as exc:
+        raise error(str(exc)) from None
+    return _reraised(chunks, error)
+
+
+def _reraised(chunks: Iterator[bytes], error: Callable[[str], Exception]) -> Iterator[bytes]:
+    try:
+        yield from chunks
+    except CryptoError as exc:
+        raise error(str(exc)) from None
 
 
 def _open_chunks(aead: AESGCM, header: bytes, prefix: bytes, source: Reader) -> Iterator[bytes]:

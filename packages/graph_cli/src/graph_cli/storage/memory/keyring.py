@@ -8,12 +8,14 @@ so the contract suite runs every sealed-format path on both backends.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from graph_cli.kernel.ids import EntityId, EventId, IdProvider, TxId
 from graph_cli.kernel.sealing import (
+    BlobInvalid,
+    ByteSource,
     EnvelopeInvalid,
     KeyRing,
     KeyScope,
@@ -60,6 +62,14 @@ class MemoryKeyRing:
             return crypto.open_sealed(key, sealed.nonce, sealed.ct, aad)
         except crypto.CryptoError:
             raise EnvelopeInvalid(sealed.kid) from None
+
+    def seal_blob(self, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
+        return crypto.seal_blob(crypto.subkey(self._key(kid), "enc"), kid, chunks)
+
+    def open_blob(self, source: ByteSource) -> Iterator[bytes]:
+        return crypto.open_blob_or_raise(
+            lambda kid: crypto.subkey(self._key(kid), "enc"), source, BlobInvalid
+        )
 
     def is_shredded(self, kid: Kid) -> bool:
         return kid in self._shredded

@@ -63,10 +63,33 @@ File bytes, names and origins are instance data like any attribute value:
 they live in the graph's `blobs/` and transaction log. How they are stored
 on disk: [Storage](storage.md).
 
+## Sealed graphs
+
+New graphs are sealed ([Storage](storage.md#sealed-graphs)): every stored
+file is encrypted under a key of its own, and its stored copy holds no
+byte of the content. In a sealed graph the audit events name the
+encrypted copy (its hash and stored size), never the `content` hash.
+
+- `file add` works as before; known content is still found by its
+  `content` hash and returns the stored file.
+- `file path` answers a decrypted, read-only (0400) copy in
+  `<state dir>/files/<graph id>/<content hex>` (the state directory of
+  [Configuration](configuration.md#locations)), the directory the remote
+  mode downloads to. A copy is made on first use and checked against the
+  `content` hash; the copies of a graph not used for 24 hours are removed
+  the next time `file path` runs for it, in local and in remote mode.
+  These copies are plaintext outside the data root: a purge does not
+  reach copies elsewhere, so read the copy and leave it.
+- Over the [server](server.md#remote-mode-of-graph) the file is decrypted
+  while it streams and never written to the server's disk.
+- `graph-admin files verify --graph <graph> --decrypt` decrypts every
+  stored file a revision names and compares it with its `content` hash.
+
 ## Backups
 
 Backups of the data root contain the stored files, so they may contain
 personal data (scans of documents). After a restore, run
 `graph-admin audit verify` (a missing stored file is an error there) and
-`graph-admin files verify --graph <graph> --rehash` (damaged bytes). Keep
+`graph-admin files verify --graph <graph> --rehash` (damaged bytes; for a
+sealed graph `--decrypt` too, which needs the restored key store). Keep
 the data root on a local file system, as for the rest of the store.

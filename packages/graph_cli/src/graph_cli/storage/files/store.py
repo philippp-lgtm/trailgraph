@@ -261,6 +261,8 @@ class FileStore:
     # ---- read port -----------------------------------------------------
 
     def capabilities(self) -> frozenset[str]:
+        if self.codec.sealed:  # its blobs hold ciphertext: no path to hand out (T16)
+            return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ})
         return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ, CAPABILITY_BLOB_LOCAL_PATH})
 
     def head(self) -> Head:
@@ -270,12 +272,19 @@ class FileStore:
         return self.codec.ring
 
     def blob(self, digest: str) -> BlobInfo | None:
+        if self.codec.sealed:
+            return blobs.content_info(self.layout, digest)
         return blobs.info(self.layout, digest)
 
     def read_blob(self, digest: str) -> Iterator[bytes]:
+        if self.codec.sealed:
+            self._refresh_keys()
+            return blobs.read_sealed(self.layout, digest, self.codec.ring)
         return blobs.read(self.layout, digest)
 
     def blob_local_path(self, digest: str) -> Path | None:
+        if self.codec.sealed:
+            return None
         return blobs.local_path(self.layout, digest)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
@@ -323,7 +332,12 @@ class FileStore:
         """KB0: hashed into ``blobs/.tmp-*`` without the lock (an in-flight add)."""
         self._require_layout()
         return blobs.stage(
-            self.layout, chunks, max_bytes=max_bytes, syncer=self.syncer, faults=self.faults
+            self.layout,
+            chunks,
+            max_bytes=max_bytes,
+            syncer=self.syncer,
+            faults=self.faults,
+            ring=self.codec.ring if self.codec.sealed else None,
         )
 
     # ---- shared internals ----------------------------------------------

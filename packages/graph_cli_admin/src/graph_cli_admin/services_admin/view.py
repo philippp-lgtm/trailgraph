@@ -73,7 +73,13 @@ from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import GraphStoreRead
 from graph_cli.kernel.query_ast import Query
-from graph_cli.kernel.records import RECORD_STATUSES, RequestMeta, Revision, TxRecord
+from graph_cli.kernel.records import (
+    RECORD_STATUSES,
+    RequestMeta,
+    Revision,
+    TxRecord,
+    stored_blob,
+)
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
@@ -346,7 +352,7 @@ def entity_json(source: ViewSource, text: str) -> dict[str, JsonValue]:
     }
     digest = revision.attrs.get("content")
     if _is_file(source, revision) and isinstance(digest, str):
-        stored = source.read.blob(digest)
+        stored = source.read.blob(stored_blob(revision, digest))
         media_type = revision.attrs.get("media_type")
         data["file"] = {
             "media_type": media_type if isinstance(media_type, str) else None,
@@ -370,24 +376,25 @@ def open_blob(source: ViewSource, text: str) -> BlobStream:
             details={"argument": "id", "actual": revision.type},
         )
     source.authorize_type(revision.type)
-    stored = source.read.blob(digest)
+    name = stored_blob(revision, digest)
+    stored = source.read.blob(name)
     if stored is None:
         raise GraphCliError(
             "backend.corrupt",
             f"the stored copy of {text} is missing; run graph-admin files verify",
-            details={"id": str(entity), "blob": digest},
+            details={"id": str(entity), "blob": name},
         )
     media_type = revision.attrs.get("media_type")
     inline = isinstance(media_type, str) and media_type in INLINE_MEDIA_TYPES
-    name = revision.attrs.get("file_name") or revision.attrs.get("title") or "file"
+    file_name = revision.attrs.get("file_name") or revision.attrs.get("title") or "file"
     return BlobStream(
         media_type=media_type
         if inline and isinstance(media_type, str)
         else "application/octet-stream",
         inline=inline,
-        file_name=str(name),
+        file_name=str(file_name),
         size=stored.size,
-        chunks=source.read.read_blob(digest),
+        chunks=source.read.read_blob(name),
     )
 
 

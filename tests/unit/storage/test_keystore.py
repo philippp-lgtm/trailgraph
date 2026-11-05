@@ -1,6 +1,7 @@
 """Key store of sealed graphs (plan T16, step 3): KEK files, key creation, sealing, shredding,
 the raw file after a shred, cache invalidation, rotation, check, collect and backup."""
 
+import io
 import os
 import sqlite3
 from datetime import timedelta
@@ -15,6 +16,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TxId, is_uuid7
 from graph_cli.kernel.sealing import (
     MAC_KEY_BYTES,
+    BlobInvalid,
     EnvelopeInvalid,
     KeyRing,
     KeyUnavailable,
@@ -227,6 +229,25 @@ def test_seal_and_open_round_trip_across_instances(env: Env) -> None:
         assert mac is not None and len(mac) == MAC_KEY_BYTES
         with pytest.raises(EnvelopeInvalid):
             again.open(sealed, b"another place")
+
+
+def test_stored_files_round_trip_under_their_file_key(env: Env) -> None:
+    with env.create() as store:
+        kid = store.file_key()
+        stored = b"".join(store.seal_blob(kid, [b"file ", b"marker"]))
+        assert b"marker" not in stored
+    with env.load() as again:
+        assert b"".join(again.open_blob(io.BytesIO(stored))) == b"file marker"
+        with pytest.raises(BlobInvalid):
+            list(again.open_blob(io.BytesIO(stored[:-1])))
+        with pytest.raises(BlobInvalid):
+            again.open_blob(io.BytesIO(b"not a sealed blob" * 4))
+        again.shred([kid], PURGE)
+        with pytest.raises(KeyUnavailable) as caught:
+            again.open_blob(io.BytesIO(stored))
+        assert caught.value.reason == "shredded"
+        with pytest.raises(KeyUnavailable):
+            again.seal_blob(kid, [b"x"])
 
 
 def test_a_missing_key_is_unavailable(env: Env) -> None:

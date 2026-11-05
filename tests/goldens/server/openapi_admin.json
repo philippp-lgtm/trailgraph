@@ -557,6 +557,9 @@
           "rehash": {
             "type": "boolean"
           },
+          "decrypt": {
+            "type": "boolean"
+          },
           "stored": {
             "type": "object",
             "properties": {
@@ -585,6 +588,7 @@
         "required": [
           "graph_id",
           "rehash",
+          "decrypt",
           "stored",
           "counts",
           "findings"
@@ -6377,6 +6381,15 @@
                       "--rehash": {
                         "type": "boolean",
                         "description": "The inventory name of rehash; never both.",
+                        "deprecated": true
+                      },
+                      "decrypt": {
+                        "type": "boolean",
+                        "description": "Sealed graphs: decrypt every stored file and compare it with its content hash."
+                      },
+                      "--decrypt": {
+                        "type": "boolean",
+                        "description": "The inventory name of decrypt; never both.",
                         "deprecated": true
                       }
                     },

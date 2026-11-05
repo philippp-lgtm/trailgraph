@@ -348,6 +348,8 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
                     self.wfile.write(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
+            except GraphCliError:  # a sealed file failed its check mid-stream: cut it short
+                self.close_connection = True
 
         def do_POST(self) -> None:
             self._send(405, b"method not allowed\n", "text/plain; charset=utf-8")

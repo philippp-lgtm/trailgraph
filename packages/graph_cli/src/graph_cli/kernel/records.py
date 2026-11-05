@@ -205,6 +205,8 @@ class Revision:
     ontology_version: str
     content_hash: str
     shredded: bool = False  # its key is shredded: attrs and qualifiers read as empty (T16)
+    # sealed graph: the stored blob of each ``blob`` value (content hash -> blob name, T16)
+    blobs: Mapping[str, str] = field(default_factory=dict)
     # the envelope it is stored with in a sealed graph; never part of equality
     sealed: Sealed | None = field(default=None, compare=False)
 
@@ -263,6 +265,13 @@ def revision_content_hash(revision: Revision, key: bytes | None = None) -> str:
     )
 
 
+def stored_blob(revision: Revision, digest: str) -> str:
+    """The name of the stored blob that holds the content ``digest`` of a ``blob`` value of
+    ``revision``. Unsealed graphs store a file under its content hash; sealed ones under the
+    hash of its ciphertext, which the revision records in its sealed part (T16)."""
+    return revision.blobs.get(digest, digest)
+
+
 def revision_meta(revision: Revision) -> RevisionMeta:
     return RevisionMeta(
         rev=revision.rev,
@@ -305,8 +314,11 @@ def revision_to_json(revision: Revision) -> dict[str, JsonValue]:
 
 
 def revision_payload(revision: Revision) -> dict[str, JsonValue]:
-    """What a sealed revision encrypts: attributes, edge qualifiers by edge id, valid times."""
+    """What a sealed revision encrypts: attributes, edge qualifiers by edge id, valid times,
+    and the stored blob of each ``blob`` value."""
     data: dict[str, JsonValue] = {"attrs": dict(revision.attrs)}
+    if revision.blobs:
+        data["blobs"] = dict(revision.blobs)
     qualifiers: dict[str, JsonValue] = {
         str(edge.edge_id): dict(edge.qualifiers) for edge in revision.edges if edge.qualifiers
     }
@@ -379,7 +391,7 @@ def revision_from_json(data: JsonObject, path: str = "", opener: Opener | None =
     )
 
 
-_PAYLOAD_KEYS: Final = frozenset({"attrs", "qualifiers", "valid_from", "valid_to"})
+_PAYLOAD_KEYS: Final = frozenset({"attrs", "blobs", "qualifiers", "valid_from", "valid_to"})
 
 
 def _sealed_revision_from_json(data: JsonObject, path: str, opener: Opener) -> Revision:
@@ -395,6 +407,7 @@ def _sealed_revision_from_json(data: JsonObject, path: str, opener: Opener) -> R
         raise JsonShapeError(f"{path}edges: qualifiers belong in the sealed part")
     payload = opener.revision_payload(entity, rev, sealed)
     attrs: Mapping[str, JsonValue] = {}
+    blobs: Mapping[str, str] = {}
     valid_from = valid_to = None
     if payload is not None:
         where = f"{path}sealed(payload)."
@@ -413,6 +426,7 @@ def _sealed_revision_from_json(data: JsonObject, path: str, opener: Opener) -> R
         )
         valid_from = opt_str(payload, "valid_from", where)
         valid_to = opt_str(payload, "valid_to", where)
+        blobs = _blob_names(opt_obj(payload, "blobs", where), f"{where}blobs")
     return Revision(
         id=entity,
         rev=rev,
@@ -431,8 +445,18 @@ def _sealed_revision_from_json(data: JsonObject, path: str, opener: Opener) -> R
         ontology_version=req_str(data, "ontology_version", path),
         content_hash=req_str(data, "content_hash", path),
         shredded=payload is None,
+        blobs=blobs,
         sealed=sealed,
     )
+
+
+def _blob_names(data: JsonObject, path: str) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for digest, name in data.items():
+        if not HASH_RE.match(digest) or not isinstance(name, str) or not HASH_RE.match(name):
+            raise JsonShapeError(f"{path}: expected sha256 hash strings")
+        names[digest] = name
+    return names
 
 
 @dataclass(frozen=True, slots=True)
