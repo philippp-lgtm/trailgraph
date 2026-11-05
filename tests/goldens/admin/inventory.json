@@ -1706,6 +1706,283 @@
     },
     {
       "path": [
+        "keys",
+        "backup"
+      ],
+      "kind": "read",
+      "surface": "act",
+      "action": null,
+      "summary": "Write a consistent copy of the key store of each sealed graph to a directory.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; without it, every sealed graph."
+        },
+        {
+          "name": "--to",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "Directory for the copies (<graph id>.sqlite each); created if missing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin keys backup --to <dir>",
+          "summary": "Back up every key store."
+        },
+        {
+          "command": "graph-admin keys backup --graph <graph> --to <dir> --json",
+          "summary": "Back up the key store of one graph."
+        }
+      ],
+      "errors": [
+        "admin.graph_not_sealed",
+        "admin.remote_mode",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "local"
+    },
+    {
+      "path": [
+        "keys",
+        "gc"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.repair",
+      "summary": "Delete the orphan keys of a sealed graph that are older than one hour.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the keys are removed; recorded in the audit."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be removed without removing it."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin keys gc --graph <graph> --dry-run",
+          "summary": "Show what would go."
+        },
+        {
+          "command": "graph-admin keys gc --graph <graph> --reason <reason> --json",
+          "summary": "Remove them, with a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.graph_not_sealed",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "keys",
+        "rotate-kek"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Rewrap the keys of each sealed graph under the current key-encryption key.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; without it, every sealed graph."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the key is rotated; recorded in the audit stream."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be rewrapped without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin keys rotate-kek --dry-run",
+          "summary": "Show what a rotation would do."
+        },
+        {
+          "command": "graph-admin keys rotate-kek --reason <reason> --json",
+          "summary": "Rewrap every key store under the new key-encryption key."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.graph_not_sealed",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "local"
+    },
+    {
+      "path": [
+        "keys",
+        "verify"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": "maint.audit_verify",
+      "summary": "Check the key store of a sealed graph against its records, files and purges.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin keys verify --graph <graph>",
+          "summary": "Check the key store."
+        },
+        {
+          "command": "graph-admin keys verify --graph <graph> --json",
+          "summary": "The findings as data."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.graph_not_sealed",
+        "admin.integrity_errors",
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
         "ontology",
         "diff"
       ],

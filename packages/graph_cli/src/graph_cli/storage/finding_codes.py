@@ -3,8 +3,8 @@
 Produced by ``MaintenanceSession.verify`` (``blob_missing`` too) and
 ``verify_blobs`` (every ``blob_*`` code; ``blob_undecryptable`` and
 ``blob_content_mismatch`` only with ``decrypt``); the ``integrity.keys.*`` codes of
-sealed graphs (T16) by ``verify_keys``. Every code has exactly one tamper scenario
-under ``tests/tamper/``.
+sealed graphs (T16) by ``verify_keys`` (``orphan`` only with ``orphans``). Every code has
+exactly one tamper scenario under ``tests/tamper/``.
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ BLOB_CONTENT_MISMATCH: Final = "integrity.storage.blob_content_mismatch"
 KEYS_MISSING: Final = "integrity.keys.missing"
 KEYS_SHREDDED_UNRECORDED: Final = "integrity.keys.shredded_unrecorded"
 KEYS_BLOB_NOT_REMOVED: Final = "integrity.keys.blob_not_removed"
+KEYS_KEK_NOT_CURRENT: Final = "integrity.keys.kek_not_current"
+KEYS_ORPHAN: Final = "integrity.keys.orphan"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("tx_chain_broken", "A tx log line is damaged or does not continue the chain."),
@@ -77,6 +79,18 @@ KEY_FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "blob_not_removed",
         "A stored file whose key is shredded is still there (an interrupted purge).",
         Severity.WARNING,
+        layer="keys",
+    ),
+    _integrity(
+        "kek_not_current",
+        "Live keys are wrapped under a key-encryption key other than the current one.",
+        Severity.WARNING,
+        layer="keys",
+    ),
+    _integrity(
+        "orphan",
+        "A live key is named by no record and no stored file (keys verify only).",
+        Severity.INFO,
         layer="keys",
     ),
 )

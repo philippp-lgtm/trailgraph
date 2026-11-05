@@ -223,6 +223,34 @@ class PurgeTargets:
         return tuple(kid for kid in self.kids if kid not in self.shredded)
 
 
+@dataclass(frozen=True, slots=True)
+class KeyWrapping:
+    """Which key-encryption key (by id) wraps how many live keys of a sealed graph (T16):
+    ``current`` wraps new keys, ``configured`` are the KEKs this process can unwrap with,
+    ``retiring`` the other KEKs a rotation still has to retire (they wrap live keys or are
+    not marked retired yet)."""
+
+    current: str
+    live: Mapping[str, int]
+    configured: frozenset[str]
+    retiring: tuple[str, ...] = ()
+
+    @property
+    def stale(self) -> dict[str, int]:
+        """Live keys per KEK other than the current one: what a rotation still rewraps."""
+        return {kek: n for kek, n in sorted(self.live.items()) if kek != self.current}
+
+
+@dataclass(frozen=True, slots=True)
+class KeyRotation:
+    """What a KEK rotation did: every live key is wrapped under ``kek_id`` now;
+    ``rewrapped`` keys changed their KEK, ``retired`` KEKs were marked retired."""
+
+    kek_id: str
+    rewrapped: int
+    retired: tuple[str, ...]
+
+
 class MaintenanceSession(WriteSession, Protocol):
     """A write session plus the maintenance effects (W.e); no recovery on open."""
 
@@ -324,9 +352,38 @@ class MaintenanceSession(WriteSession, Protocol):
         purge again completes an interrupted one."""
         ...
 
-    def verify_keys(self, purges: Mapping[EventId, Iterable[Kid]]) -> Sequence[Finding]:
+    def verify_keys(
+        self, purges: Mapping[EventId, Iterable[Kid]], *, orphans: bool = False
+    ) -> Sequence[Finding]:
         """``integrity.keys.*`` findings of a sealed graph against the keys each recorded
-        purge event names; nothing for an unsealed graph."""
+        purge event names; ``orphans`` adds the live keys nothing uses. Nothing for an
+        unsealed graph."""
+        ...
+
+    def orphan_keys(self) -> Mapping[Kid, datetime]:
+        """The live keys of a sealed graph that no record and no stored file names, with
+        their creation time; ``backend.corrupt`` when the tx log is damaged."""
+        ...
+
+    def remove_keys(
+        self, kids: Sequence[Kid], *, created_before: datetime, receipt: AuditReceipt
+    ) -> int:
+        """Delete the orphan keys among ``kids`` created before ``created_before``; refuses
+        a key that is not an orphan. ``receipt`` is the intent (W.e). Returns how many went."""
+        ...
+
+    def key_wrapping(self) -> KeyWrapping:
+        """Which KEK wraps how many live keys of a sealed graph."""
+        ...
+
+    def rotate_keys(self, receipt: AuditReceipt) -> KeyRotation:
+        """Rewrap every live key of a sealed graph under the current KEK and retire the
+        others; ``receipt`` is the intent (W.e)."""
+        ...
+
+    def backup_keys(self, dest: Path) -> None:
+        """Write a consistent copy of a sealed graph's key store to the new file ``dest``
+        (mode 0600); under the graph lock it holds the key of every committed tx."""
         ...
 
 

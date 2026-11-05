@@ -16,7 +16,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.kinetic_slot` | reading a graph's published function or action catalog, one implementation for both kinds (`<kind>/slot.json`, `<kind>/compiled/<hash>.json`, and with `sources=True` `<kind>/files/<hash>/<name>.yaml`); the app reads only the compiled document |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
-| `storage.files.keystore` | the key store of a sealed graph (below): key-encryption key files, data keys wrapped in SQLite, shredding, backup and the comparison behind key verification |
+| `storage.files.keystore` | the key store of a sealed graph (below): key-encryption key files, data keys wrapped in SQLite, shredding, KEK rotation, backup and the comparison behind key verification |
 | `storage.files.keyrings` | store formats of a graph directory, the `[keys]` settings and the open key stores of a process (`KeyRings`); imports the key store only for a sealed graph |
 | `storage.memory.keyring` | `MemoryKeyRing`: the data keys of a sealed in-memory graph |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading (sealed: decrypting and checking), listing, blob verification and removal |
@@ -268,15 +268,22 @@ key loses the data.
   cache.
 - **KEK rotation:** keys unwrap under the KEK their row names; the current
   KEK wraps new keys, earlier ones are passed along while a rotation runs.
+  `rotate` rewraps every live key not under the current KEK, records the
+  current KEK and marks every other one retired (`kek.retired_at`), in one
+  transaction (a key under a KEK that is not passed along fails it before
+  anything changes), then runs `VACUUM`; with nothing to do it writes nothing.
+  Shredded rows keep the KEK id they had. `wrapping` counts the live keys per
+  KEK and names the KEKs still to retire.
 - **Checks:** `check` compares the store with the kids the records reference
   and the kids each recorded purge names: referenced but absent (missing),
   shredded without a purge naming it (unrecorded), live but unreferenced
   (orphan). `collect` deletes orphans created before a cutoff, so the key of
-  a file staged before the lock survives until its tx is written. `backup`
-  writes a consistent copy (SQLite backup API, mode 0600).
+  a file staged before the lock survives until its tx is written; `created`
+  answers the creation time of keys. `backup` writes a consistent copy (SQLite
+  backup API, mode 0600).
 - **Fault points:** `keys.before_commit`, `keys.after_commit`,
-  `shred.before_commit`, `shred.before_vacuum`. A key or a shred exists
-  exactly when its commit returned.
+  `shred.before_commit`, `shred.before_vacuum`, `rotate.before_commit`. A key, a
+  shred or a rotation exists exactly when its commit returned.
 
 ### Purge
 
@@ -310,9 +317,32 @@ runs under the graph lock through two maintenance session methods.
   lists or a revision with a live key names (`live_blobs`). A purged file is
   therefore neither `blob_missing` once deleted nor kept by `files gc` when it
   is still there; a live entity's file in a purged shared tx still counts.
-- **`verify_keys(purges)`** compares the key store with the kids the stored
-  records and the headers of the stored files name (read without decrypting,
-  so it works on a damaged log) and with the kids each purge intent names
-  (`audit.verify.purges`): `integrity.keys.missing`,
-  `integrity.keys.shredded_unrecorded` (errors) and
-  `integrity.keys.blob_not_removed` (warning) ([Purges](audit.md#purges)).
+- **`verify_keys(purges, orphans)`** compares the key store with the kids the
+  stored records and the headers of the stored files name (read without
+  decrypting, so it works on a damaged log) and with the kids each purge intent
+  names (`audit.verify.purges`): `integrity.keys.missing`,
+  `integrity.keys.shredded_unrecorded` (errors), `integrity.keys.blob_not_removed`
+  and `integrity.keys.kek_not_current` (warnings); with `orphans` (`keys verify`)
+  also `integrity.keys.orphan` (info), left out when the log is damaged
+  ([Purges](audit.md#purges)).
+
+### Key operations
+
+`graph-admin keys verify|gc|backup|rotate-kek`
+([Keys](cli_graph_admin.md#keys-of-sealed-graphs-backup-cleanup-rotation)) run
+under the graph lock through maintenance session methods of a sealed graph.
+
+- **`orphan_keys()`**: the live keys that no record names and that are not the
+  file key of a stored file a tx lists, with their creation time;
+  `backend.corrupt` on a damaged log. The file key of a stored file no tx lists
+  (a crash between publishing and committing) is spared too, so the file stays
+  readable until `files gc` removes it.
+- **`remove_keys(kids, created_before, receipt)`** checks again that every kid
+  is an orphan, claims the intent and deletes the keys created before the cutoff
+  (`KeyStore.collect`). The admin service takes a cutoff of one hour, like
+  staging leftovers: the key of a file is created when it is staged, before the
+  lock.
+- **`key_wrapping()`** and **`rotate_keys(receipt)`**: the KEK use of the key
+  store, and the rotation after the intent is claimed.
+- **`backup_keys(dest)`**: a copy under the graph lock, so it holds the key of
+  every committed tx.

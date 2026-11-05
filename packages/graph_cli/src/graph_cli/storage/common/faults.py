@@ -48,6 +48,7 @@ class CrashPoint(StrEnum):
     KEYS_AFTER_COMMIT = "keys.after_commit"
     SHRED_BEFORE_COMMIT = "shred.before_commit"
     SHRED_BEFORE_VACUUM = "shred.before_vacuum"
+    ROTATE_BEFORE_COMMIT = "rotate.before_commit"
     PURGE_AFTER_COMMIT = "purge.after_commit"
     PURGE_AFTER_SHRED = "purge.after_shred"
 
@@ -83,6 +84,7 @@ KEYS_POINTS: Final = frozenset(
         CrashPoint.KEYS_AFTER_COMMIT,
         CrashPoint.SHRED_BEFORE_COMMIT,
         CrashPoint.SHRED_BEFORE_VACUUM,
+        CrashPoint.ROTATE_BEFORE_COMMIT,
         CrashPoint.PURGE_AFTER_COMMIT,
         CrashPoint.PURGE_AFTER_SHRED,
     }

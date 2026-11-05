@@ -48,6 +48,7 @@ HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
 FOLDER = re.compile(r"\b(example_graph|second)_[0-9a-f]{6}\b")  # workspace sync: id ends
 CODE = re.compile(r"gce_[a-z2-7]{26}")
 ENROLLMENT_ID = re.compile(r"(?<![0-9a-f-])[0-9a-f]{12}(?![0-9a-f-])")
+KEK_ID = re.compile(r'"kek_id": "[0-9a-f]{32}"')  # each installation has a KEK of its own
 
 
 @pytest.fixture
@@ -694,6 +695,8 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("enroll", "revoke", "0123456789ab"),
         ("files", "verify", "--graph", "example_graph"),
         ("files", "gc", "--graph", "example_graph", "--dry-run"),
+        ("keys", "verify", "--graph", "example_graph"),
+        ("keys", "gc", "--graph", "example_graph", "--dry-run"),
         (
             "graph",
             "purge",
@@ -740,6 +743,7 @@ def comparable(outcomes: list[Any], *homes: Path) -> Any:
     text = HASH_PREFIX.sub("<hash prefix>", SECRET.sub("<token>", text))
     text = FOLDER.sub(r"\1_<suffix>", text)
     text = ENROLLMENT_ID.sub("<enrollment>", CODE.sub("<code>", text))
+    text = KEK_ID.sub('"kek_id": "<kek id>"', text)
     return normalized(json.loads(text))
 
 

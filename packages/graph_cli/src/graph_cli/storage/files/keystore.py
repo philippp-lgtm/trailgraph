@@ -25,6 +25,9 @@ sealed graph.
   decryptions.
 - **Concurrency**: a new key is created in a ``BEGIN IMMEDIATE`` transaction that looks for
   the subject's key first, so processes racing for one subject get the same key.
+- **KEK rotation**: ``rotate`` rewraps every live key under the current KEK in one
+  transaction and marks every other KEK retired, then runs ``VACUUM``; afterwards the
+  earlier KEK unwraps nothing in the store.
 
 Imports the cipher primitives, so import it only where a graph is sealed.
 """
@@ -48,9 +51,10 @@ from types import TracebackType
 from typing import Final
 from uuid import UUID
 
-from graph_cli.kernel.clock import Clock, format_timestamp
+from graph_cli.kernel.clock import Clock, format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, IdProvider, TxId
+from graph_cli.kernel.ports.storage import KeyRotation, KeyWrapping
 from graph_cli.kernel.sealing import (
     BlobInvalid,
     ByteSource,
@@ -490,6 +494,81 @@ class KeyStore:
         finally:
             temp.unlink(missing_ok=True)
 
+    def created(self, kids: Iterable[Kid]) -> dict[Kid, datetime]:
+        """When each of ``kids`` present in the store was created."""
+        wanted = set(kids)
+        with self._lock, _sqlite_errors(self.path):
+            rows = self._conn.execute("SELECT kid, created_at FROM dek").fetchall()
+        found = {Kid(UUID(bytes=raw)): parse_timestamp(at) for raw, at in rows}
+        return {kid: at for kid, at in found.items() if kid in wanted}
+
+    def wrapping(self) -> KeyWrapping:
+        """Which KEK wraps how many live keys, and which KEKs are configured here."""
+        current = self._current.kek_id
+        with self._lock, _sqlite_errors(self.path):
+            rows = self._conn.execute(
+                "SELECT kek_id, count(*) FROM dek WHERE wrapped IS NOT NULL GROUP BY kek_id"
+            ).fetchall()
+            unretired = self._conn.execute(
+                "SELECT kek_id FROM kek WHERE retired_at IS NULL AND kek_id != ?", (current,)
+            ).fetchall()
+        live = {kek_id: count for kek_id, count in rows}
+        retiring = {kek_id for (kek_id,) in unretired} | (set(live) - {current})
+        return KeyWrapping(current, live, frozenset(self._keks), tuple(sorted(retiring)))
+
+    def rotate(self) -> KeyRotation:
+        """Rewrap every live key not wrapped under the current KEK with the current one and
+        mark every other KEK retired, in one transaction, then ``VACUUM``.
+
+        A key wrapped under a KEK that is not configured is ``config.invalid`` before anything
+        changes. Running it again after a crash completes the rotation; with nothing to do it
+        writes nothing.
+        """
+        current = self._current
+        with self._lock, _sqlite_errors(self.path):
+            now = format_timestamp(self._clock.now())
+            with self._write() as conn:
+                rows = conn.execute(
+                    "SELECT kid, kek_id, wrapped FROM dek "
+                    "WHERE wrapped IS NOT NULL AND kek_id != ? ORDER BY kid",
+                    (current.kek_id,),
+                ).fetchall()
+                retiring = [
+                    kek_id
+                    for (kek_id,) in conn.execute(
+                        "SELECT kek_id FROM kek WHERE kek_id != ? AND retired_at IS NULL "
+                        "ORDER BY kek_id",
+                        (current.kek_id,),
+                    )
+                ]
+                if not rows and not retiring:
+                    return KeyRotation(current.kek_id, 0, ())
+                rewrapped = [
+                    (
+                        crypto.wrap_key(
+                            current.key, self._unwrap(Kid(UUID(bytes=raw)), kek_id, wrapped)
+                        ),
+                        raw,
+                    )
+                    for raw, kek_id, wrapped in rows
+                ]
+                conn.execute(
+                    "INSERT OR IGNORE INTO kek (kek_id, created_at) VALUES (?, ?)",
+                    (current.kek_id, now),
+                )
+                conn.executemany(
+                    "UPDATE dek SET wrapped = ?, kek_id = ? WHERE kid = ?",
+                    [(wrapped, current.kek_id, raw) for wrapped, raw in rewrapped],
+                )
+                conn.execute(
+                    "UPDATE kek SET retired_at = ? WHERE kek_id != ? AND retired_at IS NULL",
+                    (now, current.kek_id),
+                )
+                fire(self._faults, CrashPoint.ROTATE_BEFORE_COMMIT)
+            self._wrapped = None  # the rows changed; the unwrapped keys did not
+            self._conn.execute("VACUUM")
+        return KeyRotation(current.kek_id, len(rewrapped), tuple(retiring))
+
     # Internals; callers hold ``self._lock`` and map SQLite errors.
 
     def _subject_key(self, scope: KeyScope, subject: UUID) -> Kid:
@@ -560,6 +639,11 @@ class KeyStore:
         kek_id, wrapped = row
         if wrapped is None:
             raise KeyUnavailable(kid, "shredded")
+        key = _derive(self._unwrap(kid, kek_id, wrapped))
+        self._keys[kid] = key
+        return key
+
+    def _unwrap(self, kid: Kid, kek_id: str, wrapped: bytes) -> bytes:
         kek = self._keks.get(kek_id)
         if kek is None:
             raise GraphCliError(
@@ -569,15 +653,13 @@ class KeyStore:
                 details={"file": str(self.path), "kek_id": kek_id},
             )
         try:
-            key = _derive(crypto.unwrap_key(kek.key, wrapped))
+            return crypto.unwrap_key(kek.key, wrapped)
         except crypto.CryptoError:
             raise GraphCliError(
                 "backend.corrupt",
                 f"the key store {self.path} is damaged: key {kid} does not unwrap",
                 details={"file": str(self.path)},
             ) from None
-        self._keys[kid] = key
-        return key
 
     def _sync_cache(self, *, now: bool = False) -> None:
         """Drop the caches when another connection shredded or removed keys; checks at most

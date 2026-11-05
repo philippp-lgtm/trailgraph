@@ -25,6 +25,7 @@ from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditLine, AuditReceipt, graph_stream
 from graph_cli.kernel.records import BlobInfo, OntologyPin
+from graph_cli.kernel.sealing import Kid
 
 Event = dict[str, JsonValue]
 
@@ -330,6 +331,36 @@ def test_file_removals_name_hashes_and_sizes_only() -> None:
     ):
         with pytest.raises(GraphCliError):
             Stream().maint("maint.repair", change)  # type: ignore[arg-type]
+
+
+def test_key_removals_name_key_ids_only() -> None:
+    stream = Stream()
+    kids = [Kid(stream.ids.new_id()), Kid(stream.ids.new_id())]
+    stream.maint("maint.repair", builders.keys_removed([kids[1], kids[0], kids[1]]))
+    assert stream.check(None) == []
+    for change in (
+        {"keys_removed": []},
+        {"keys_removed": [str(kids[1]), str(kids[0])]},
+        {"keys_removed": ["not a kid"]},
+    ):
+        with pytest.raises(GraphCliError):
+            Stream().maint("maint.repair", change)  # type: ignore[arg-type]
+
+
+def test_kek_rotations_name_kek_ids_only() -> None:
+    stream = Stream()
+    earlier, current = "0" * 32, "f" * 32
+    stream.maint("maint.graph_configure", builders.kek_rotated([earlier, earlier], current))
+    assert builders.kek_rotated([earlier], current) == {"kek": {"from": [earlier], "to": current}}
+    assert stream.check(None) == []
+    for change in (
+        {"kek": {"from": [earlier]}},
+        {"kek": {"from": [current, earlier], "to": current}},
+        {"kek": {"from": ["F" * 32], "to": current}},
+        {"kek": {"from": [], "to": "a" * 64}},
+    ):
+        with pytest.raises(GraphCliError):
+            Stream().maint("maint.graph_configure", change)  # type: ignore[arg-type]
 
 
 def test_reindex_intents_name_the_seq() -> None:
