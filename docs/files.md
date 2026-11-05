@@ -78,8 +78,12 @@ encrypted copy (its hash and stored size), never the `content` hash.
   mode downloads to. A copy is made on first use and checked against the
   `content` hash; the copies of a graph not used for 24 hours are removed
   the next time `file path` runs for it, in local and in remote mode.
-  These copies are plaintext outside the data root: a purge does not
-  reach copies elsewhere, so read the copy and leave it.
+  These copies are plaintext outside the data root: a purge removes them
+  only in the state directory of the machine it runs on, and does not reach
+  copies elsewhere, so read the copy and leave it.
+- A purge with `--with-files` deletes the stored files of the entities it
+  erases ([Erasing data](cli_graph_admin.md#erasing-data-purge)); afterwards
+  `file path` and `file get` of such a file fail.
 - Over the [server](server.md#remote-mode-of-graph) the file is decrypted
   while it streams and never written to the server's disk.
 - `graph-admin files verify --graph <graph> --decrypt` decrypts every

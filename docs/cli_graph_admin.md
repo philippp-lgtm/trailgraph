@@ -23,6 +23,7 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph list`, `graph show REF` | list graphs with title and language (a project admin: the graphs it maintains); show manifest, head, installed releases, the published skill and the count and hash of the published functions and actions |
 | `graph check REF` | check every entity against the pinned ontology, including what no write checks (rules with `when: batch`, `in` cardinality) and names shared by two active entities of one type family (warning `data.semantic.possible_duplicate`, once per name; only `same` names, a near spelling is reported on the write that adds it); exit 1 (`admin.data_errors`) on error findings, warnings are listed; also checks the published functions against the model (`admin.functions_broken`, for example `function.stale` after an interrupted push) and the published actions (`admin.actions_broken`, for example `action.stale`; the functions are reported first); `--ontology DIR` checks against an authored version before it is released |
 | `graph reindex REF` | rebuild the revision files, the checkpoint and the index of a graph from its transaction log (`--dry-run`, `--reason`), audited as `maint.reindex`; for derived files that `audit verify` reports as different from the log, or reads that warn `storage.index_stale` |
+| `graph purge REF ENTITY... --reason R` | erase entities of a sealed graph for good: retract them with empty values, shred the keys of their revisions and of every transaction that wrote one of them, and with `--with-files` delete the stored files only they name (`--dry-run`); audited as `maint.purge`; `admin.graph_not_sealed` for a graph in the clear ([Erasing data](#erasing-data-purge)) |
 | `graph pull REF DIR` | write the authored sources of a graph into a workspace directory: its pinned release (`--version V`: another installed one), its published skill, functions and actions, byte for byte, with the base `push` checks (`--force` replaces an earlier pull); changes nothing in the data root ([Workspaces](#workspaces-pull-and-push)) |
 | `graph push REF DIR` | release and publish what changed in a pulled directory, under one lock; refused when the graph changed since the pull (`--dry-run`, `--reason`) |
 | `workspace sync DIR` | set up or refresh a [maintainer workspace](#maintainer-workspaces): the admin skills in `DIR/.claude/skills/`, `DIR/CLAUDE.md` when there is none, and a pull of every graph that has no folder yet (`--dry-run`, `--force` for the skills) |
@@ -35,7 +36,7 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)) |
-| `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
+| `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy, and the key store of a sealed graph against its records and purges; counts shredded transactions and revisions per graph; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Each list shows 20 entries, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info; `--decrypt` (sealed graphs) decrypts every file a revision names and reports one that does not decrypt or whose content differs from its content hash |
@@ -162,6 +163,44 @@ A folder is never replaced or deleted. New graphs are drafted outside the
 graph folders, created with `graph create`, and get their folder at the
 next sync. The workflow for agents is the `maintaining-graphs` skill
 ([Admin skills](skills.md#admin-skills)).
+
+## Erasing data: purge
+
+`graph purge` withdraws instance data irreversibly, such as personal data on
+request or documents past their retention period. It works on sealed graphs
+(every graph `graph create` makes), whose values are stored encrypted under keys
+of their entity, transaction or stored file:
+
+```sh
+graph-admin graph purge <graph> <entity> --reason <ticket> --dry-run
+graph-admin graph purge <graph> <entity> <file-entity> --with-files --reason <ticket>
+```
+
+- One transaction retracts every named entity that still holds values, with
+  empty attributes, qualifiers and valid times; then the keys go: the entity
+  keys, the keys of every transaction with a revision of one of them (their
+  change sets name the values, so other entities' revisions in such a
+  transaction stay readable but its change set and reason go), and with
+  `--with-files` the keys of the stored files their revisions name, unless a
+  readable revision of another entity names the file too. Those files are
+  deleted, and so are the plaintext copies `file path` left in this machine's
+  state directory.
+- Afterwards the entities read as `shredded: true` with no attributes, in
+  `get`, `history` and `--as-of` alike; queries treat their values as absent.
+  Ids, types, aliases, lifecycle state and edges stay, and so does an edge from
+  another entity to a purged one; unlink first when the relation itself must
+  go.
+- `--reason` is stored in the clear in the audit stream and cannot be erased:
+  name a ticket, not the person.
+- Running the same purge again completes an interrupted one; a purge with
+  nothing left to do writes nothing. A key missing from the key store stops the
+  purge before it changes anything (`backend.corrupt`): restore the key store
+  from a backup first.
+- The values are gone from the data root and from every backup of it once no
+  copy of the key store from before the purge is left ([Security
+  model](security_model.md#erasure)). `audit verify` reports a purged file that
+  is still stored (`integrity.keys.blob_not_removed`) and keys shredded without
+  a purge ([Purges](audit.md#purges)).
 
 ## Auditing and releases
 

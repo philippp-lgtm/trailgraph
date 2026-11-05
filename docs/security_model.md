@@ -110,3 +110,30 @@ Audit events carry ids, types, hashes and reason text, never attribute
 values. Stored files and their origins are instance data; backups of the
 data root may therefore contain personal data (see
 [Files: backups](files.md#backups)).
+
+## Erasure
+
+A sealed graph stores every attribute value, qualifier, valid time, change
+set, write reason and stored file encrypted under a data key of its entity,
+its transaction or its file; the keys live in a key store outside the data
+root ([Sealed graphs](storage.md#sealed-graphs)). `graph-admin graph purge`
+destroys the keys of the entities it names ([Erasing
+data](cli_graph_admin.md#erasing-data-purge)). What it guarantees, and what
+not:
+
+- **Erased:** the purged entities' values, the change sets and write reasons
+  of every transaction that wrote one of them, and with `--with-files` their
+  stored files, in the data root and in every backup of it, as soon as no copy
+  of the key store from before the purge is left. Key store backups should
+  therefore be kept apart from data backups and for a short time.
+- **Kept:** ids, types, aliases, lifecycle state, edges and timestamps of the
+  purged entities, the audit trail with its keyed hashes (they match no
+  guessed value once the key is gone), and the reason of the purge and of
+  other maintenance, which is stored in the clear.
+- **Out of reach:** plaintext outside the data root, such as copies `file
+  path` left in other machines' state directories (removed 24 hours after
+  their last use), spill files, client caches and what agents kept from
+  earlier answers. A graph in the clear (store format 1) cannot be purged.
+- **Detected:** `audit verify` reports a key missing from the key store, a
+  key shredded without a purge naming it, and a purged file that is still
+  stored ([Purges](audit.md#purges)).

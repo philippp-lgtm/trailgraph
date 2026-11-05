@@ -9,7 +9,7 @@ installation stream.
 | --- | --- |
 | `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents and purge intents), `purges` (the keys each purge intent names), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -56,6 +56,31 @@ Verification compares the changeset size with the transaction log, like
 the ids and the hash; intents written before the size was recorded carry
 none and are matched without it. Reads are not audited; the size of
 what a read returns is in the [access log](#access-log), when it is on.
+
+### Purges
+
+`graph-admin graph purge` ([Purge](storage.md#purge)) appends one `maint.purge`
+intent to the graph's stream and anchors it in the installation stream.
+`change.purge` names the entities, every key it shreds (`kids`) and the stored
+files it deletes (`blobs`, `{hash, size}` of the stored copies). When the purge
+retracts entities, the intent is also the event of that transaction and names
+it like a write intent does (`tx_id`, `tx_seq`, `changeset_hash`,
+`changeset_size`); verification matches the two, and an intent naming a
+transaction that was never committed is the trace of an interrupted purge
+(info). The key store records the intent's event id with each key it shreds.
+
+Once a key is shredded, what it covered cannot be recomputed: the changeset
+size of a transaction whose key is shredded is not compared, nor are the content
+hashes of shredded revisions (storage verification). `audit verify` counts per
+graph how many transactions and revisions read as shredded (`graphs[].shredded`,
+`null` when the transaction log is damaged) and compares the key store of a
+sealed graph with its records and its purge intents:
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `integrity.keys.missing` | error | a record or a stored file names a key the key store does not have; restore the key store from a backup |
+| `integrity.keys.shredded_unrecorded` | error | a key is shredded, but no purge intent in the graph's stream names it |
+| `integrity.keys.blob_not_removed` | warning | a stored file whose key is shredded is still there: run the purge again |
 
 ## Access log
 

@@ -2535,6 +2535,9 @@
           },
           "content_hash": {
             "type": "string"
+          },
+          "shredded": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3722,6 +3725,9 @@
                     "name",
                     "hash"
                   ]
+                },
+                "shredded": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -12963,7 +12969,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: entity.not_found, file.origin_missing, file.root_unknown, graph.not_found.",
+            "description": "Not Found: entity.not_found, file.erased, file.origin_missing, file.root_unknown, graph.not_found.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -12983,6 +12989,7 @@
             },
             "x-graph-cli-error-codes": [
               "entity.not_found",
+              "file.erased",
               "file.origin_missing",
               "file.root_unknown",
               "graph.not_found"

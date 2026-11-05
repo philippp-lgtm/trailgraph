@@ -1,17 +1,16 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, check a graph's data, verify the audit trail and erase entities for good (purge). Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, data withdrawn irreversibly, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
 
-This skill is for whoever maintains graphs with `graph-admin`: it creates
-graphs, releases their ontologies and publishes their skills, named
-functions and named actions. What a graph holds is designed with the `ontology-best-practices`
-skill; the curated text of a graph skill is written with the
-`authoring-graph-skills` skill; the function files with the
-`authoring-graph-functions` skill; the action files with the
-`authoring-graph-actions` skill.
+This skill is for whoever maintains graphs with `graph-admin`: it creates graphs, releases
+their ontologies and publishes their skills, named functions and named actions. What a
+graph holds is designed with the `ontology-best-practices` skill; the curated text of a
+graph skill is written with the `authoring-graph-skills` skill; the function files with
+the `authoring-graph-functions` skill; the action files with the `authoring-graph-actions`
+skill.
 Reading and writing the data of a graph is the `graph-cli` skill.
 
 ## Before the first command
@@ -20,11 +19,10 @@ Reading and writing the data of a graph is the `graph-cli` skill.
    tells where you are: in the remote mode every command goes to the
    server, and the commands that need the data root here (`init`, `view`,
    `--data-root`) are refused with `admin.remote_mode`.
-2. Who you are decides what works. A maintainer may do everything. A
-   project admin (an admin token bound to a project) sees and changes only
-   the graphs its project maintains: release, publish, push, check. It
-   cannot create graphs, apply policies or create tokens; on
-   `access.denied` stop and tell the user.
+2. Who you are decides what works. A maintainer may do everything. A project admin (an
+   admin token bound to a project) sees and changes only the graphs its project maintains:
+   release, publish, push, check. It cannot create graphs, apply policies, create tokens
+   or purge; on `access.denied` stop and tell the user.
 3. `graph-admin describe commands --json` lists every command with its
    options; `graph-admin <command> --help` shows one.
 
@@ -42,8 +40,8 @@ Reading and writing the data of a graph is the `graph-cli` skill.
    graph show <graph>`), it may have happened.
 5. Policies, tokens and enrollment codes only when the user asks for
    them. Never print a token or a code into a file or a commit.
-6. Ask before what cannot be undone: a major release on a graph with
-   data, removing files with `files gc`.
+6. Ask before what cannot be undone: a major release on a graph with data,
+   removing files with `files gc`, erasing entities (`graph-admin graph purge`).
 
 ## The workspace
 
@@ -54,10 +52,10 @@ by one command:
 graph-admin workspace sync <dir>
 ```
 
-It installs the admin skills into `<dir>/.claude/skills/`, writes a short
-`CLAUDE.md` when there is none, and pulls every graph that has no folder
-yet into `<dir>/<graph>_<id suffix>/` (the suffix is the end of the graph
-id, so two graphs of one name on two installations never share a folder).
+It installs the admin skills into `<dir>/.claude/skills/`, writes a short `CLAUDE.md` when
+there is none, and pulls every graph that has no folder yet into `<dir>/<graph>_<id
+suffix>/` (the suffix is the end of the graph id, so two graphs of one name on two
+installations never share a folder).
 Each graph folder holds:
 
 ```
@@ -70,13 +68,11 @@ Each graph folder holds:
   .graph_cli_source.json            the base: what the folder was pulled from
 ```
 
-The answer lists every graph with an `action`: `pulled`, `present`,
-`behind` (the graph has another ontology release pinned than the folder
-was pulled from), `conflict` (the folder name is taken by something else)
-or `failed`. Folders are never replaced. A `behind` folder without
-unpushed edits is refreshed with `graph-admin graph pull <graph> <folder>
---force`; with edits, pull into another folder, carry them over and push
-from there.
+The answer lists every graph with an `action`: `pulled`, `present`, `behind` (the graph has
+another ontology release pinned than the folder was pulled from), `conflict` (the folder
+name is taken by something else) or `failed`. Folders are never replaced. A `behind`
+folder without unpushed edits is refreshed with `graph-admin graph pull <graph> <folder>
+--force`; with edits, pull into another folder, carry them over and push from there.
 
 ## Change the ontology of a graph
 
@@ -210,6 +206,10 @@ push` as above publishes; an empty `actions/` folder unpublishes all actions and
 `graph-admin graph actions show <graph>` lists them. Functions and actions share one
 namespace per graph. An action needs no policy: a caller without the write
 rights of its ops does not see it.
+
+## Erase data (purge)
+
+Only when the user asks to withdraw data for good: follow `references/purge.md`.
 
 ## Check a graph
 

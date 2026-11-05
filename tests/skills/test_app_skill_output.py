@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from harness import CliRunner
-from support.admin import init, write_documents
+from support.admin import admin, init, write_documents
 from support.app import app, create_graph
 from support.fixtures import FIXTURES
 from support.roles import load_roles
@@ -49,11 +49,20 @@ def flat(objects: list[dict[str, Any]], listed: set[str]) -> set[str]:
     return names
 
 
-def check(section: str, objects: list[dict[str, Any]], skip: frozenset[str] = frozenset()) -> None:
+# Listed fields an answer has only in some states: ``shredded`` after a purge.
+CONDITIONAL = frozenset({"shredded"})
+
+
+def check(
+    section: str,
+    objects: list[dict[str, Any]],
+    skip: frozenset[str] = frozenset(),
+    absent: frozenset[str] = frozenset(),
+) -> None:
     listed = documented()[section]
     found = flat(objects, listed) - skip
     assert found <= listed, (section, found - listed)
-    top = {f for f in listed if "." not in f}
+    top = {f for f in listed if "." not in f} - absent
     assert top <= {key for obj in objects for key in obj}, (section, top)
 
 
@@ -75,11 +84,11 @@ def test_output_reference_lists_the_fields_of_real_answers(
     assert found.code == 0, found.envelope
     check("Pages", [found.envelope["page"]])
     every = app(run_cli, "find", "--limit", "500", env=ENV)
-    check("Entities", every.data["items"])
+    check("Entities", every.data["items"], absent=CONDITIONAL)
 
     entity = found.data["items"][0]
     got = app(run_cli, "get", entity["id"], env=ENV)
-    check("Entities", [got.data["entity"]])
+    check("Entities", [got.data["entity"]], absent=CONDITIONAL)
     check("Get", [got.data], skip=frozenset({"entity"}))
 
     superseded = app(
@@ -101,4 +110,11 @@ def test_output_reference_lists_the_fields_of_real_answers(
     check("Write results", [retracted.data])
     history = app(run_cli, "history", entity["id"], env=ENV)
     assert set(history.data) == {"id", "current_rev", "items"}
+    check("History", history.data["items"], absent=CONDITIONAL)
+
+    purged = admin(run_cli, "graph", "purge", "example_graph", entity["id"], "--reason", "test")
+    assert purged.code == 0, purged.envelope
+    erased = app(run_cli, "get", entity["id"], env=ENV)
+    check("Entities", [got.data["entity"], erased.data["entity"]])
+    history = app(run_cli, "history", entity["id"], env=ENV)
     check("History", history.data["items"])

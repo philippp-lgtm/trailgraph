@@ -279,6 +279,7 @@ SPECS: Final = (
             "file.no_local_path",
             "file.root_unknown",
             "file.origin_missing",
+            "file.erased",
             "backend.corrupt",
         ),
         handler=path,

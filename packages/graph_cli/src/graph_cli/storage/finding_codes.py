@@ -2,22 +2,25 @@
 
 Produced by ``MaintenanceSession.verify`` (``blob_missing`` too) and
 ``verify_blobs`` (every ``blob_*`` code; ``blob_undecryptable`` and
-``blob_content_mismatch`` only with ``decrypt``). Every code has exactly one tamper
-scenario under ``tests/tamper/``.
+``blob_content_mismatch`` only with ``decrypt``); the ``integrity.keys.*`` codes of
+sealed graphs (T16) by ``verify_keys``. Every code has exactly one tamper scenario
+under ``tests/tamper/``.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-from graph_cli.kernel.findings import FindingCodeSpec, Severity
+from graph_cli.kernel.findings import FindingCodeSpec, Layer, Severity
 
 
-def _integrity(name: str, summary: str, severity: Severity = Severity.ERROR) -> FindingCodeSpec:
+def _integrity(
+    name: str, summary: str, severity: Severity = Severity.ERROR, *, layer: Layer = "storage"
+) -> FindingCodeSpec:
     return FindingCodeSpec(
-        code=f"integrity.storage.{name}",
+        code=f"integrity.{layer}.{name}",
         scope="integrity",
-        layer="storage",
+        layer=layer,
         default_severity=severity,
         when="verify",
         fixture="tamper",
@@ -38,6 +41,9 @@ BLOB_ORPHAN: Final = "integrity.storage.blob_orphan"
 BLOB_STAGING_LEFTOVER: Final = "integrity.storage.blob_staging_leftover"
 BLOB_UNDECRYPTABLE: Final = "integrity.storage.blob_undecryptable"
 BLOB_CONTENT_MISMATCH: Final = "integrity.storage.blob_content_mismatch"
+KEYS_MISSING: Final = "integrity.keys.missing"
+KEYS_SHREDDED_UNRECORDED: Final = "integrity.keys.shredded_unrecorded"
+KEYS_BLOB_NOT_REMOVED: Final = "integrity.keys.blob_not_removed"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("tx_chain_broken", "A tx log line is damaged or does not continue the chain."),
@@ -58,5 +64,19 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
         "blob_content_mismatch",
         "The decrypted content of a stored file differs from the content hash naming it.",
+    ),
+)
+KEY_FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
+    _integrity("missing", "A record or stored file names a key the key store lacks.", layer="keys"),
+    _integrity(
+        "shredded_unrecorded",
+        "A key is shredded, but no purge event in the graph's audit stream names it.",
+        layer="keys",
+    ),
+    _integrity(
+        "blob_not_removed",
+        "A stored file whose key is shredded is still there (an interrupted purge).",
+        Severity.WARNING,
+        layer="keys",
     ),
 )

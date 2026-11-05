@@ -574,6 +574,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("file.root_unknown", _C.NOT_FOUND, False, "The file root is not configured here."),
     ErrorSpec("file.origin_missing", _C.NOT_FOUND, False, "The origin of the file is missing."),
     ErrorSpec("file.no_local_path", _C.REFUSED, False, "The backend gives no local file path."),
+    ErrorSpec("file.erased", _C.NOT_FOUND, False, "A purge erased the file's content."),
     ErrorSpec(
         "access.project_mismatch", _C.DENIED, False, "The token is bound to another project."
     ),

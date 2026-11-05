@@ -37,6 +37,9 @@ PIN_ACTION: Final = "maint.ontology_pin"
 CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
 REINDEX_ACTION: Final = "maint.reindex"
+PURGE_ACTION: Final = "maint.purge"
+# The tx a purge writes is named in its intent like a write intent names its tx (T16).
+TX_FIELDS: Final = ("tx_id", "tx_seq", "changeset_hash", "changeset_size")
 POLICY_ACTION: Final = "maint.policy_change"
 TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke")
 _ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.format.NAME_RE
@@ -83,6 +86,20 @@ def is_ext_state_action(action: str) -> bool:
 def is_write_intent(event: Mapping[str, JsonValue]) -> bool:
     """An ``ok`` event with a ``write.*`` action: committed iff its tx exists (B5.6)."""
     return _status(event) == "ok" and any(a.startswith("write.") for a in _actions(event))
+
+
+def is_tx_intent(event: Mapping[str, JsonValue]) -> bool:
+    """A write intent, or a purge intent naming the tx that retracts what it erases (T16):
+    committed iff its tx exists."""
+    if is_write_intent(event):
+        return True
+    change = event.get("change")
+    return (
+        _status(event) == "ok"
+        and PURGE_ACTION in _actions(event)
+        and isinstance(change, Mapping)
+        and "tx_id" in change
+    )
 
 
 def is_intent(event: Mapping[str, JsonValue]) -> bool:
@@ -477,6 +494,8 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             problems.append(
                 "a file removal needs change.blobs_removed[{hash, size}] and staging_removed"
             )
+    if PURGE_ACTION in actions:
+        problems.extend(_purge_problems(entries))
     if REINDEX_ACTION in actions and "reindex" in entries:
         reindex = entries["reindex"]
         if not (
@@ -512,6 +531,48 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
                     f"a policy change needs change.{key}{{from: hash or null, to: hash}}"
                 )
     return problems
+
+
+def _purge_problems(change: Mapping[str, JsonValue]) -> list[str]:
+    """A purge intent names the entities, the keys it shreds and the stored files it deletes,
+    and, when it writes a tx, that tx's id, seq, changeset hash and size."""
+    shape = (
+        "a purge intent needs change.purge{entities, kids, blobs[{hash, size}]} and either"
+        " all or none of tx_id, tx_seq, changeset_hash, changeset_size"
+    )
+    purge = change.get("purge")
+    if not (
+        isinstance(purge, Mapping)
+        and set(purge) == {"entities", "kids", "blobs"}
+        and _is_id_list(purge["entities"])
+        and _is_id_list(purge["kids"])
+        and (purge["blobs"] == [] or is_blob_list(purge["blobs"]))
+    ):
+        return [shape]
+    named = [key for key in TX_FIELDS if key in change]
+    if set(change) - {"purge", *TX_FIELDS} or named not in ([], list(TX_FIELDS)):
+        return [shape]
+    if named:
+        seq = change["tx_seq"]
+        if not (
+            is_canonical_uuid(change["tx_id"])
+            and _is_size(seq)
+            and seq != 0
+            and _is_hash(change["changeset_hash"])
+            and _is_size(change["changeset_size"])
+        ):
+            return [shape]
+    return []
+
+
+def _is_id_list(value: JsonValue) -> bool:
+    """A non-empty list of canonical UUIDs in order, each once."""
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(is_canonical_uuid(v) for v in value)
+        and value == sorted(set(value))
+    )
 
 
 def _is_pin(pin: JsonValue) -> bool:

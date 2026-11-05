@@ -68,6 +68,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.workspace_conflict": None,  # details.folders names the folders to move away
     "admin.view_port_unavailable": _view_any_port,
     "admin.remote_mode": None,  # the message says where to run it
+    "admin.graph_not_sealed": None,  # nothing to run: a graph in the clear cannot be purged
     "admin.token_exists": _token_list,
     "admin.token_not_found": _token_list,
     "admin.enrollment_not_found": _enroll_list,

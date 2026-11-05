@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import Final
 
 from graph_cli.cli_kit.envelope import Result
-from graph_cli.cli_kit.output_schemas import BOOLEAN, INTEGER, STRING, array, obj, ref
+from graph_cli.cli_kit.output_schemas import (
+    BOOLEAN,
+    INTEGER,
+    STRING,
+    array,
+    nullable,
+    obj,
+    ref,
+)
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example
 from graph_cli_admin.maintenance_cli.commands.common import (
@@ -32,7 +40,17 @@ def anchor(state: CommandState, data_root: str | None) -> Result:
 VERIFY_OUTPUT: Final = obj(  # services_admin.audit.verify
     {
         "counts": ref("finding_counts"),
-        "graphs": array(obj({"id": STRING, "clean": BOOLEAN, "seq": INTEGER})),
+        "graphs": array(
+            obj(
+                {
+                    "id": STRING,
+                    "clean": BOOLEAN,
+                    "seq": INTEGER,
+                    # null when the tx log is damaged; counts what purges erased (T16)
+                    "shredded": nullable(obj({"txs": INTEGER, "revisions": INTEGER})),
+                }
+            )
+        ),
         "recorded": BOOLEAN,
         "findings": array(ref("finding")),
     }

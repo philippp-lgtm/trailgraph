@@ -565,6 +565,7 @@ OUTPUT_SECTIONS: Final = (
             ("tx_seq", "The transaction that wrote this revision, for `--as-of`."),
             ("ontology_version", "The ontology version it was written under."),
             ("content_hash", "Hash of the content."),
+            ("shredded", "Only present, as true, when a purge erased its values for good."),
         ),
     ),
     (
@@ -644,6 +645,7 @@ OUTPUT_SECTIONS: Final = (
                 "Names, not values: `attrs`, `edges` (`added`, `removed`, `changed`) and"
                 " `record`; null for the first revision.",
             ),
+            ("shredded", "Only present, as true, when a purge erased this revision."),
         ),
     ),
     (

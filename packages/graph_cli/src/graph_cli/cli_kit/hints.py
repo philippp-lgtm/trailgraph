@@ -333,6 +333,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "file.root_unknown": None,
     "file.origin_missing": None,
     "file.no_local_path": None,
+    "file.erased": None,  # nothing to do: the content is gone for good
     "access.project_mismatch": None,
     "remote.unreachable": None,
     "remote.unauthorized": None,  # the message names the token settings

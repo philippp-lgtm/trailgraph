@@ -34,6 +34,7 @@ from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditReceipt, grap
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import EMPTY_HEAD, Head
 from graph_cli.kernel.records import BlobInfo, Revision
+from graph_cli.kernel.sealing import Kid
 
 MARKER = "MARKER-7f3a-attribute-value"
 
@@ -256,6 +257,7 @@ def test_route_graph_scoped_maint_to_the_graph_then_an_anchor(world: World, acti
         "maint.ontology_release": events.release_change("1.0.0", pin.artifact_hash, world.graph_id),
         "maint.ontology_pin": events.pin_change(pin, pin),
         "maint.graph_configure": events.skill_change(None, pin.artifact_hash),
+        "maint.purge": events.purged([EntityId(world.graph_id)], [Kid(world.event_id())], [], None),
     }.get(action)
     graph_event = events.maintenance(
         ts=world.clock.now(),

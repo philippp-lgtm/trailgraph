@@ -149,12 +149,35 @@
                 },
                 "seq": {
                   "type": "integer"
+                },
+                "shredded": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "txs": {
+                          "type": "integer"
+                        },
+                        "revisions": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "txs",
+                        "revisions"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
                 "id",
                 "clean",
-                "seq"
+                "seq",
+                "shredded"
               ]
             }
           },
@@ -1304,6 +1327,86 @@
           "functions",
           "actions",
           "files"
+        ]
+      },
+      "graph_purge_data": {
+        "type": "object",
+        "properties": {
+          "graph_id": {
+            "type": "string"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retracted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "keys": {
+            "type": "object",
+            "properties": {
+              "entity": {
+                "type": "integer"
+              },
+              "tx": {
+                "type": "integer"
+              },
+              "file": {
+                "type": "integer"
+              },
+              "pending": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "entity",
+              "tx",
+              "file",
+              "pending"
+            ]
+          },
+          "blobs_removed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "hash",
+                "size"
+              ]
+            }
+          },
+          "copies_removed": {
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "purged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "graph_id",
+          "entities",
+          "retracted",
+          "keys",
+          "blobs_removed",
+          "copies_removed",
+          "dry_run",
+          "purged"
         ]
       },
       "graph_push_data": {
@@ -9081,6 +9184,365 @@
         },
         "x-graph-cli-kind": "read",
         "x-graph-cli-remote": "hooked"
+      }
+    },
+    "/v1/admin/commands/graph/purge": {
+      "post": {
+        "operationId": "graph_purge",
+        "summary": "Erase entities of the sealed graph REF for good (keys shredded, files deleted).",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/graph_purge_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: entity.not_found, graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "entity.not_found",
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.graph_not_sealed, admin.remote_mode, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.graph_not_sealed",
+              "admin.remote_mode",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "audit.unavailable",
+              "backend.corrupt",
+              "backend.lock_timeout",
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "description": "Graph name or id."
+                      },
+                      "entity": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Entities to erase: full id, alias or abbreviation."
+                      },
+                      "with_files": {
+                        "type": "boolean",
+                        "description": "Also erase the stored files their revisions name, unless another entity names them."
+                      },
+                      "--with-files": {
+                        "type": "boolean",
+                        "description": "The inventory name of with_files; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
+                        "type": "string",
+                        "description": "Why they are erased; recorded in the clear in the audit stream, so name a ticket, not the person."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
+                        "type": "boolean",
+                        "description": "Show what would be erased without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "entity"
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "reason"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--reason"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "write",
+        "x-graph-cli-remote": "server"
       }
     },
     "/v1/admin/commands/graph/push": {

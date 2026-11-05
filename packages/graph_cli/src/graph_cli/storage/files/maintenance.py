@@ -27,12 +27,13 @@ import hashlib
 import os
 import shutil
 import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
+from uuid import UUID
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import (
@@ -42,7 +43,7 @@ from graph_cli.kernel.canonical import (
 )
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
-from graph_cli.kernel.ids import EntityId, GraphId, format_id, parse_id
+from graph_cli.kernel.ids import EntityId, EventId, GraphId, format_id, parse_id
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
@@ -63,6 +64,7 @@ from graph_cli.kernel.ports.storage import (
     GraphStoreMaintenance,
     Head,
     MaintenanceSession,
+    PurgeTargets,
     RecoveryReport,
     RegistrySession,
     Snapshot,
@@ -75,7 +77,7 @@ from graph_cli.kernel.records import (
     revision_content_hash,
     revision_to_json,
 )
-from graph_cli.kernel.sealing import KeyUnavailable
+from graph_cli.kernel.sealing import KeyUnavailable, Kid, Sealed
 from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, link_of, seal
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
@@ -132,6 +134,9 @@ from graph_cli.storage.finding_codes import (
     BLOB_UNDECRYPTABLE,
     HEAD_INCONSISTENT,
     INDEX_INCONSISTENT,
+    KEYS_BLOB_NOT_REMOVED,
+    KEYS_MISSING,
+    KEYS_SHREDDED_UNRECORDED,
     PIN_MISMATCH,
     REVISION_HASH_MISMATCH,
     REVISION_MISSING,
@@ -587,12 +592,13 @@ class FileMaintenanceSession:
     # ---- blobs ---------------------------------------------------------
 
     def _referenced(self) -> frozenset[str] | None:
-        """Blob hashes named by any tx; ``None`` when the tx log cannot be read whole."""
+        """Blob hashes named by any tx but not erased by a purge (``live_blobs``); ``None``
+        when the tx log cannot be read whole."""
         self._check_open()
         view, damage, _ = replay(self._store)
         if damage is not None:
             return None
-        return frozenset(h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs)
+        return live_blobs(view.at().txs_since(0, limit=sys.maxsize))
 
     def blobs(self) -> Iterator[BlobInfo]:
         self._check_open()
@@ -696,6 +702,168 @@ class FileMaintenanceSession:
         except INDEX_ERRORS as exc:
             raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
 
+    # ---- purge (T16) ---------------------------------------------------
+
+    def purge_targets(self, entities: Sequence[EntityId], *, with_files: bool) -> PurgeTargets:
+        """The keys and stored files a purge of ``entities`` destroys.
+
+        Reads the whole log through the codec, so a key missing from the key store is
+        ``backend.corrupt`` here, before anything changes. With ``with_files``, a stored file
+        goes when a revision of a purged entity or a tx with one lists it and no revision
+        that is still readable names it. The txs count because the revisions of an entity
+        purged before read empty: its files can still go with a later purge.
+        """
+        store = self._store
+        if not store.codec.sealed:
+            raise GraphCliError("internal.error", "only a sealed graph can be purged")
+        snapshot = self.snapshot()
+        purged = frozenset(entities)
+        if any(snapshot.get(entity) is None for entity in purged):
+            raise GraphCliError("internal.error", "a purge names an entity that does not exist")
+        entity_keys: set[Kid] = set()
+        tx_keys: set[Kid] = set()
+        linked: dict[str, str] = {}  # blob name -> content hash, named by a purged entity
+        listed: set[str] = set()  # blobs of the txs with a revision of a purged entity
+        kept: set[str] = set()  # blobs a revision of another entity names
+        for seq in range(1, snapshot.seq + 1):
+            tx = snapshot.tx(seq)
+            assert tx is not None
+            touched = False
+            for revision in tx.revisions:
+                if revision.id in purged:
+                    touched = True
+                    entity_keys.add(_envelope_kid(revision.sealed))
+                    linked.update((name, digest) for digest, name in revision.blobs.items())
+                else:
+                    kept.update(revision.blobs.values())
+            if touched:
+                tx_keys.add(_envelope_kid(tx.sealed))
+                listed.update(tx.blobs)
+        ring = store.codec.ring
+        layout = store.layout
+        file_keys: set[Kid] = set()
+        found: list[BlobInfo] = []
+        contents: set[str] = set()
+        for name in sorted((set(linked) | listed) - kept) if with_files else ():
+            kid = blobs.sealed_kid(layout, name)
+            if kid is not None:
+                file_keys.add(kid)
+            stored = blobs.info(layout, name)
+            if stored is not None:
+                found.append(stored)
+            if name in linked:
+                contents.add(linked[name])
+        shredded: set[Kid] = set()
+        for kid in sorted(entity_keys | tx_keys | file_keys):
+            try:
+                ring.mac_key(kid)
+            except KeyUnavailable as exc:
+                if exc.reason == "missing":
+                    raise GraphCliError(
+                        "backend.corrupt",
+                        f"the key store has no key {kid}; restore it from a backup first",
+                        details={"kid": str(kid), "reason": "missing"},
+                    ) from None
+                shredded.add(kid)
+        return PurgeTargets(
+            entities=tuple(sorted(purged)),
+            entity_keys=tuple(sorted(entity_keys)),
+            tx_keys=tuple(sorted(tx_keys)),
+            file_keys=tuple(sorted(file_keys)),
+            blobs=tuple(found),
+            contents=tuple(sorted(contents)),
+            shredded=frozenset(shredded),
+        )
+
+    def purge(self, tx: AuthorizedTx | None, targets: PurgeTargets, receipt: AuditReceipt) -> None:
+        """Commit the retractions, shred, delete the stored files: in this order, so a crash
+        leaves a state that a re-run of the same purge completes."""
+        store = self._store
+        writer = self._writer()
+        if tx is not None:
+            writer.commit(tx, receipt)
+        else:
+            writer.claim_receipt(receipt)
+        ring = store.codec.ring
+        layout = store.layout
+        try:
+            fire(store.faults, CrashPoint.PURGE_AFTER_COMMIT)
+            if targets.pending:
+                ring.shred(targets.pending, receipt.event_id)
+            fire(store.faults, CrashPoint.PURGE_AFTER_SHRED)
+        except OSError as exc:
+            raise _unavailable("the purge was interrupted", exc) from exc
+        for blob in targets.blobs:  # defence in depth: never a file whose key still opens it
+            kid = blobs.sealed_kid(layout, blob.hash)
+            if kid is not None and not ring.is_shredded(kid):
+                raise GraphCliError(
+                    "internal.error", f"refusing to remove {blob.hash}: its key is not shredded"
+                )
+        names = [blob.hash for blob in targets.blobs]
+        blobs.remove(layout, names, [], referenced=frozenset(), syncer=store.syncer)
+
+    def verify_keys(self, purges: Mapping[EventId, Iterable[Kid]]) -> Sequence[Finding]:
+        """Keys the log or its stored files name but the key store lacks, shredded keys no
+        purge event names, and stored files whose key is shredded. Reads key ids from the
+        stored records and file headers, so it decrypts nothing and works on a damaged log."""
+        self._check_open()
+        store = self._store
+        ring = store.codec.ring
+        if not store.codec.sealed:
+            return []
+        from graph_cli.storage.files.keystore import KeyStore  # sealed graphs only
+
+        assert isinstance(ring, KeyStore)
+        referenced: set[Kid] = set()
+        names: set[str] = set()
+        for record in store.txlog.scan().records:
+            document = record.document
+            revisions = document.get("revisions")
+            parts = [document, *(revisions if isinstance(revisions, list) else ())]
+            referenced.update(kid for kid in map(_stored_kid, parts) if kid is not None)
+            listed = document.get("blobs")
+            if isinstance(listed, list):
+                names.update(name for name in listed if isinstance(name, str))
+        layout = store.layout
+        file_keys: dict[str, Kid] = {}
+        for stored in blobs.listing(layout):
+            kid = blobs.sealed_kid(layout, stored.hash)
+            if kid is not None:
+                file_keys[stored.hash] = kid
+        referenced.update(file_keys[name] for name in names if name in file_keys)
+        check = ring.check(referenced, purges)
+        findings = [
+            Finding(
+                Severity.ERROR,
+                KEYS_MISSING,
+                {"kid": str(kid)},
+                "a record or stored file names a key the key store does not have"
+                " (restore the key store from a backup)",
+            )
+            for kid in check.missing
+        ]
+        findings += [
+            Finding(
+                Severity.ERROR,
+                KEYS_SHREDDED_UNRECORDED,
+                {"kid": str(kid)},
+                "the key is shredded, but no purge event in the audit stream names it",
+            )
+            for kid in check.shredded_unrecorded
+        ]
+        findings += [
+            Finding(
+                Severity.WARNING,
+                KEYS_BLOB_NOT_REMOVED,
+                {"path": blobs.relative(layout, name)},
+                "the key of this stored file is shredded, but the file is still there"
+                " (run the purge again)",
+            )
+            for name, kid in sorted(file_keys.items())
+            if ring.is_shredded(kid)
+        ]
+        return sort_findings(findings)
+
 
 class Verifier:
     """Produces ``integrity.storage.*`` findings; never raises for damage it can describe."""
@@ -732,7 +900,7 @@ class Verifier:
     def _blobs(self, view: GraphView) -> None:
         """Every blob a verified tx names is stored (the full check is ``verify_blobs``)."""
         layout = self.store.layout
-        referenced = {h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs}
+        referenced = live_blobs(view.at().txs_since(0, limit=sys.maxsize))
         try:
             absent = blobs.missing(layout, referenced)
         except OSError as exc:
@@ -891,6 +1059,19 @@ class Verifier:
             self.add(HEAD_INCONSISTENT, target, "head.json audit position does not match")
 
 
+def live_blobs(txs: Iterable[TxRecord]) -> frozenset[str]:
+    """The blobs a tx names, without those a purge erased (T16): a blob counts when a tx
+    whose key lives lists it or a revision whose key lives names it, so a purged file is
+    neither missing nor kept, while a live entity's file in a purged shared tx still is."""
+    names: set[str] = set()
+    for tx in txs:
+        if not tx.shredded:
+            names.update(tx.blobs)
+        for revision in tx.revisions:
+            names.update(revision.blobs.values())  # empty when shredded
+    return frozenset(names)
+
+
 @dataclass(frozen=True, slots=True)
 class ReplayDamage:
     """Where a full replay of the tx log stopped, as a ``tx_chain_broken`` finding."""
@@ -968,6 +1149,22 @@ def _is_graph_dir_name(name: str) -> bool:
 
 def _unavailable(message: str, exc: OSError) -> GraphCliError:
     return GraphCliError("backend.unavailable", f"{message}: {exc.strerror or exc}")
+
+
+def _envelope_kid(sealed: Sealed | None) -> Kid:
+    if sealed is None:
+        raise GraphCliError("internal.error", "a record of a sealed graph has no envelope")
+    return sealed.kid
+
+
+def _stored_kid(part: JsonValue) -> Kid | None:
+    """The kid of the envelope of a stored tx or revision document, if it has a valid one."""
+    sealed = part.get("sealed") if isinstance(part, Mapping) else None
+    text = sealed.get("kid") if isinstance(sealed, Mapping) else None
+    try:
+        return Kid(UUID(text)) if isinstance(text, str) else None
+    except ValueError:
+        return None
 
 
 def _entity_of(name: str) -> EntityId | None:

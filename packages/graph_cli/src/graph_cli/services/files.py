@@ -621,6 +621,12 @@ class FileService:
 
 
 def _stored(read: GraphStoreRead, revision: Revision, name: str, ref: str) -> BlobInfo:
+    if revision.shredded:  # a purge erased it (T16): nothing to find, nothing damaged
+        raise GraphCliError(
+            "file.erased",
+            f"{ref} was erased by a purge; its content is gone",
+            details={"id": str(revision.id)},
+        )
     stored = read.blob(name)
     if stored is None:
         raise GraphCliError(

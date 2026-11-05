@@ -277,3 +277,42 @@ key loses the data.
 - **Fault points:** `keys.before_commit`, `keys.after_commit`,
   `shred.before_commit`, `shred.before_vacuum`. A key or a shred exists
   exactly when its commit returned.
+
+### Purge
+
+`graph-admin graph purge` ([Erasing data](cli_graph_admin.md#erasing-data-purge))
+runs under the graph lock through two maintenance session methods.
+
+- **`purge_targets(entities, with_files)`** reads the whole log through the codec
+  (a key missing from the key store is `backend.corrupt` before anything
+  changes) and collects the kids of the entities' revisions, of every tx with a
+  revision of one of them, and with files of every stored file that a revision
+  of a purged entity or a tx with one lists and that no readable revision of
+  another entity names (a purged entity's revisions read empty, so its txs
+  still let a later purge find its files). It reads the file kid from the blob
+  header and says which kids are shredded already.
+- **`purge(tx, targets, receipt)`** commits the retracting tx, whose event is the
+  purge intent; shreds the pending kids, recording the intent's event id; then
+  deletes the stored files, refusing one whose header names a live key. A crash
+  between the steps leaves a state the same purge completes when run again:
+  entities that hold no values need no tx, shredded keys keep their first purge
+  event. Fault points `purge.after_commit`, `purge.after_shred`.
+- **The retracting tx** has one `retract` op per entity that still holds values
+  and is built by the admin service, not by normalize: each revision is the
+  current one with `record_status: retracted`, empty attributes, qualifiers,
+  valid times and blob links, and the edges' structure. Its decisions are
+  `maint.purge`, which the commit check accepts for `retract` ops. Its own tx
+  key is minted for its changeset hash and shredded with the others.
+- **No rebuild of derived files.** Revision files and the index hold sealed
+  records only, which read as shredded once the keys are gone; the stored
+  bytes stay as they are.
+- **What counts as referenced afterwards:** a blob that a tx with a live key
+  lists or a revision with a live key names (`live_blobs`). A purged file is
+  therefore neither `blob_missing` once deleted nor kept by `files gc` when it
+  is still there; a live entity's file in a purged shared tx still counts.
+- **`verify_keys(purges)`** compares the key store with the kids the stored
+  records and the headers of the stored files name (read without decrypting,
+  so it works on a damaged log) and with the kids each purge intent names
+  (`audit.verify.purges`): `integrity.keys.missing`,
+  `integrity.keys.shredded_unrecorded` (errors) and
+  `integrity.keys.blob_not_removed` (warning) ([Purges](audit.md#purges)).

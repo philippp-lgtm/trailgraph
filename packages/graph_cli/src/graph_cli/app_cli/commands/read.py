@@ -723,7 +723,10 @@ HISTORY_OUTPUT: Final = obj(
                         )
                     ),
                 },
-                {"action": obj({"name": STRING, "hash": STRING})},  # set by a ``do``
+                {
+                    "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
+                    "shredded": BOOLEAN,  # only true: a purge erased the revision
+                },
             )
         ),
     }
