@@ -149,8 +149,13 @@ def test_do_writes_what_apply_of_the_expanded_change_set_writes(
     ops = [dict(op) for op in expanded["ops"]]  # type: ignore[union-attr, arg-type]
     second.apply(*ops)
     mine, theirs = first.txs()[-1], second.txs()[-1]
-    assert mine.changeset == theirs.changeset and mine.changeset_hash == theirs.changeset_hash
-    assert [r.content_hash for r in mine.revisions] == [r.content_hash for r in theirs.revisions]
+    assert mine.changeset == theirs.changeset
+    if not first.sealed:  # a sealed graph keys its hashes under keys of its own
+        assert mine.changeset_hash == theirs.changeset_hash
+        assert [r.content_hash for r in mine.revisions] == [
+            r.content_hash for r in theirs.revisions
+        ]
+    assert [r.attrs for r in mine.revisions] == [r.attrs for r in theirs.revisions]
     assert [(r.id, r.rev) for r in mine.revisions] == [(r.id, r.rev) for r in theirs.revisions]
     assert mine.request.command == "do" and theirs.request.command == "apply"
 
@@ -175,7 +180,7 @@ def test_a_precondition_that_became_false_after_the_dry_run_refuses_the_write(
     assert refusal["result"]["code"] == "action.precondition_failed"  # type: ignore[index]
     assert refusal["request"]["action"]["name"] == "retire_item"  # type: ignore[index]
     assert refusal["target"]["entities"] == [item]  # type: ignore[index]
-    assert refusal["reason"] == "scrapped"
+    assert refusal.get("reason") == (None if svc.sealed else "scrapped")  # T16: none if sealed
     assert not [f for f in svc.verify().findings if f.severity.value == "error"]
 
 

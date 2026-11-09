@@ -14,10 +14,14 @@ from typing import Final, Literal
 
 from graph_cli.catalog.config import Config
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.storage.files.keyrings import KeySettings
 
 RootSource = Literal["flag", "env", "config", "default"]
 APP_DIR: Final = "graph_cli"
 ROOT_ENV: Final = "GRAPH_CLI_ROOT"
+KEK_FILE_ENV: Final = "GRAPH_CLI_KEK_FILE"
+KEK_FILE: Final = "kek"
+KEYS_DIR: Final = "graph_cli_keys"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,11 +39,11 @@ def _home(env: Mapping[str, str]) -> Path:
     return Path(home)
 
 
-def _xdg(env: Mapping[str, str], name: str, fallback: str) -> Path:
+def _xdg(env: Mapping[str, str], name: str, fallback: str, app_dir: str = APP_DIR) -> Path:
     value = env.get(name, "")
     if value.startswith("/"):
-        return Path(value) / APP_DIR
-    return _home(env) / fallback / APP_DIR
+        return Path(value) / app_dir
+    return _home(env) / fallback / app_dir
 
 
 def config_path(env: Mapping[str, str]) -> Path:
@@ -91,3 +95,30 @@ def resolve_roots(
         root_source=source,
     )
     return roots, warnings
+
+
+def resolve_keys(env: Mapping[str, str], *, config: Config, cwd: Path, roots: Roots) -> KeySettings:
+    """Where the key stores and key-encryption keys of sealed graphs are (plan T16).
+
+    Key stores: ``[keys] dir``, default ``$XDG_DATA_HOME/graph_cli_keys``: as lasting as
+    the data (not state, which may be cleaned), beside the default data root, not in it,
+    so a backup of the data root holds no key. The KEK file:
+    ``GRAPH_CLI_KEK_FILE``, ``[keys] kek_file``, default ``config.toml``'s directory
+    ``/kek``. ``[keys] previous_kek_file`` only during a KEK rotation.
+    """
+
+    def expand(text: str | None) -> Path | None:
+        if text is None:
+            return None
+        return _home(env) / text[2:] if text.startswith("~/") else Path(text)
+
+    kek_file = (
+        cwd / env[KEK_FILE_ENV]
+        if env.get(KEK_FILE_ENV)
+        else expand(config.kek_file) or roots.config_file.parent / KEK_FILE
+    )
+    return KeySettings(
+        dir=expand(config.keys_dir) or _xdg(env, "XDG_DATA_HOME", ".local/share", KEYS_DIR),
+        kek_file=kek_file,
+        previous_kek_file=expand(config.previous_kek_file),
+    )

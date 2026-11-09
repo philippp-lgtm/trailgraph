@@ -21,12 +21,14 @@ from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.storage.files.keyrings import FILES_BACKEND, PLAIN_FORMAT, SEALED_FORMAT
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import Compiled, compile_source, release_files
 
-STORE = StoreInfo("files", 1)
+STORE = StoreInfo(FILES_BACKEND, SEALED_FORMAT)  # new graphs are sealed (plan T16)
+PLAIN_STORE = StoreInfo(FILES_BACKEND, PLAIN_FORMAT)
 
 
 def create(
@@ -37,8 +39,12 @@ def create(
     module: str | None,
     title: str | None,
     language: str | None,
+    sealed: bool = True,
 ) -> ManifestData:
-    """``language`` is stored in canonical case and fixed until P2 ``graph configure``."""
+    """``language`` is stored in canonical case and fixed until P2 ``graph configure``.
+
+    A new graph is sealed (store format 2, plan T16); ``sealed=False`` makes one of store
+    format 1, which stays readable and writable (no command creates one)."""
     if not GRAPH_NAME_RE.match(name):
         raise GraphCliError(
             "usage.invalid_argument",
@@ -71,8 +77,9 @@ def create(
         (),
         title,
         language,
+        sealed=sealed,
     )
-    manifest = ManifestData(entry, now, STORE)
+    manifest = ManifestData(entry, now, STORE if sealed else PLAIN_STORE)
     genesis = events.graph_genesis(
         actor=ctx.actor,
         decisions=decisions,
@@ -98,6 +105,10 @@ def create(
 
     files = release_files(compiled, previous=None, release_id=ctx.ids.new_id(), released_at=now)
     with ctx.maintenance.registry(timeout_s=ctx.lock_timeout_s) as registry:
+        if sealed:  # before anything is written: a KEK that is missing or unreadable
+            if ctx.maintenance.rings is None:
+                raise GraphCliError("config.invalid", "a sealed graph needs key store settings")
+            ctx.maintenance.rings.check()
         taken = [m.entry for m in registry.manifests() if m.entry.name == name]
         if taken:
             raise GraphCliError(

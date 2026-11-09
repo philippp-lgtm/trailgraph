@@ -16,7 +16,9 @@ registry lock ``<root>/.lock``), ``ontology/.tmp-<version>`` ->
 ``policy/installation.json.tmp`` -> ``policy/installation.json`` (under the
 registry lock, after the installation event). A failure before the rename
 leaves the staging state behind, as a kill -9 would; readers ignore
-``.tmp-*`` entries.
+``.tmp-*`` entries. A sealed graph (store format 2, plan T16) gets its key
+store before its directory is published; a store left by an interrupted
+create holds no key and names a graph id that never appears.
 """
 
 from __future__ import annotations
@@ -65,7 +67,14 @@ from graph_cli.kernel.ports.storage import (
     Snapshot,
     StagedBlob,
 )
-from graph_cli.kernel.records import BlobInfo, TxRecord, revision_content_hash, revision_to_json
+from graph_cli.kernel.records import (
+    BlobInfo,
+    Revision,
+    TxRecord,
+    revision_content_hash,
+    revision_to_json,
+)
+from graph_cli.kernel.sealing import KeyUnavailable
 from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, link_of, seal
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
@@ -81,6 +90,7 @@ from graph_cli.storage.files.durable import (
 )
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.index import INDEX_ERRORS, TxSpan, index_difference
+from graph_cli.storage.files.keyrings import PLAIN_FORMAT, SEALED_FORMAT, KeyRings, codec_for
 from graph_cli.storage.files.kinetic_slot import read_slot
 from graph_cli.storage.files.layout import (
     AUDIT_SEGMENT_PREFIX,
@@ -139,21 +149,31 @@ class FileStoreMaintenance:
         faults: FaultHook | None = None,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         oplog: OpLog | None = None,
+        rings: KeyRings | None = None,
     ) -> None:
         self.data_root = data_root
         self.syncer: Syncer = syncer if syncer is not None else OsSyncer(durability)
         self.faults = faults
         self.segment_bytes = segment_bytes
         self.oplog = oplog
+        self.rings = rings  # the key stores of sealed graphs (plan T16)
 
     def store(self, graph: GraphId) -> FileStore:
+        graph_dir = self.data_root / "graphs" / str(graph)
+        try:
+            version = read_manifest(GraphLayout(graph_dir))[0].store.format_version
+        except GraphCliError:  # verify reports the manifest; the key store tells the format
+            rings = self.rings
+            sealed = rings is not None and rings.settings.store_path(graph).exists()
+            version = SEALED_FORMAT if sealed else PLAIN_FORMAT
         return FileStore(
-            self.data_root / "graphs" / str(graph),
+            graph_dir,
             graph,
             syncer=self.syncer,
             faults=self.faults,
             segment_bytes=self.segment_bytes,
             oplog=self.oplog,
+            codec=codec_for(graph, version, self.rings),
         )
 
     @property
@@ -309,6 +329,12 @@ class FileRegistrySession:
         staging = maintenance.graphs_dir / f"{STAGING_PREFIX}{graph_id}"
         syncer = maintenance.syncer
         document, line = seal(body, GENESIS)
+        if manifest.store.format_version == SEALED_FORMAT:
+            if maintenance.rings is None:
+                raise GraphCliError(
+                    "config.invalid", "a sealed graph needs key store settings ([keys])"
+                )
+            maintenance.rings.create(graph_id)
         try:
             if staging.exists():
                 shutil.rmtree(staging)  # a leftover of an interrupted create with this id
@@ -696,7 +722,7 @@ class Verifier:
         """The index, if present, holds exactly the state at its seq (disposable, B4.1)."""
         layout = self.store.layout
         difference = index_difference(
-            layout.index, self.store.graph_id, view, spans, self.store.txlog
+            layout.index, self.store.graph_id, view, spans, self.store.txlog, self.store.codec
         )
         if difference is not None:
             target = {"path": str(layout.index.relative_to(layout.root))}
@@ -736,7 +762,7 @@ class Verifier:
                 assert revision is not None
                 known.add((entity, meta.rev))
                 target: dict[str, JsonValue] = {"id": str(entity), "rev": meta.rev}
-                if revision_content_hash(revision) != revision.content_hash:
+                if not self._content_matches(revision):
                     self.add(REVISION_HASH_MISMATCH, target, "content_hash in the tx log is wrong")
                 path = layout.revision_path(entity, meta.rev)
                 try:
@@ -762,6 +788,16 @@ class Verifier:
                     {"path": str(path.relative_to(layout.root))},
                     "revision file has no copy in the tx log",
                 )
+
+    def _content_matches(self, revision: Revision) -> bool:
+        """A shredded key cannot recompute the keyed hash; plan step 6 counts those."""
+        try:
+            key = self.store.codec.revision_mac(revision)
+        except KeyUnavailable as exc:
+            if exc.reason == "shredded":
+                return True
+            raise
+        return revision_content_hash(revision, key) == revision.content_hash
 
     def _head(self, view: GraphView, checkpoint: HeadFile | None) -> None:
         if checkpoint is None:
@@ -828,7 +864,7 @@ def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None, list[TxSpa
     spans: list[TxSpan] = []
     for record in result.records:
         try:
-            view.apply(parse_tx(record.document))
+            view.apply(parse_tx(record.document, store.codec))
         except (GraphCliError, JsonShapeError) as exc:
             path = f"data/txlog/{record.start.segment}"
             message = f"tx line has a bad shape: {exc}"

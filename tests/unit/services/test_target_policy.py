@@ -21,7 +21,7 @@ from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.write import WriteRequest, WriteResult
 
-REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("apply", {})
 
 _MODULE = """\
 format: graph_cli.ir/1

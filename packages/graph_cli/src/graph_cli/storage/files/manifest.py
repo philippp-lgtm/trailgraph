@@ -30,6 +30,7 @@ from graph_cli.kernel.ids import (
 from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.ports.catalog import GraphEntry, GraphState, ManifestData, StoreInfo
 from graph_cli.kernel.records import OntologyPin
+from graph_cli.storage.files.keyrings import SEALED_FORMAT
 from graph_cli.storage.files.tomlw import TomlTable, TomlValue, dumps
 
 MANIFEST_FILE: Final = "manifest.toml"
@@ -135,6 +136,9 @@ def parse_manifest(data: bytes, *, source: str) -> tuple[ManifestData, tuple[War
             raise reader.invalid("graph.language", "is not a well-formed BCP 47 language tag")
         if canonical != language:
             raise reader.invalid("graph.language", f"is not in canonical case ({canonical!r})")
+    store_info = StoreInfo(
+        reader.text(store, "store.backend"), reader.integer(store, "store.format_version")
+    )
     entry = GraphEntry(
         id=reader.graph_id(graph),
         name=name,
@@ -148,13 +152,12 @@ def parse_manifest(data: bytes, *, source: str) -> tuple[ManifestData, tuple[War
         extensions=tuple(enabled),
         title=title,
         language=language,
+        sealed=store_info.format_version == SEALED_FORMAT,
     )
     manifest = ManifestData(
         entry=entry,
         created_at=reader.timestamp(graph, "graph.created_at"),
-        store=StoreInfo(
-            reader.text(store, "store.backend"), reader.integer(store, "store.format_version")
-        ),
+        store=store_info,
     )
     return manifest, tuple(reader.warnings)
 

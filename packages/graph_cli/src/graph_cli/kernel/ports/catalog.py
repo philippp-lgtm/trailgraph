@@ -28,6 +28,7 @@ class GraphEntry:
     extensions: tuple[str, ...]
     title: str | None = None  # human-readable purpose, shown by `graph graphs` (P1.5)
     language: str | None = None  # BCP 47 default language of the values (Q18 stage 2)
+    sealed: bool = False  # store format 2: values stored encrypted, erasable by purge (T16)
 
 
 @dataclass(frozen=True, slots=True)

@@ -19,7 +19,6 @@ from support.services import ServiceEnv
 
 from graph_cli.catalog.activity import ActivityListener, SocketActivity
 from graph_cli.catalog.policy_source import FilePolicySource
-from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.ports.activity import ReadSignal
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
@@ -282,7 +281,7 @@ def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
             actor=env.actor,
             graph=env.name,
             path=document,
-            request=RequestMeta("file add", hash_value({"path": document.name})),
+            request=RequestMeta.of("file add", {"args": {"path": document.name}}),
         )
     )
     running = ViewServer(

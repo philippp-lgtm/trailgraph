@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from harness import CliRunner
 from support.admin import Outcome, admin, init, write_random_txs
+from support.admin_context import graph_store
 from support.clock import StepClock
 from support.fixtures import ONTOLOGIES
 from support.ids import SeededIdProvider
@@ -21,7 +22,6 @@ from graph_cli.kernel.ids import GraphId, format_id, parse_id
 from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, graph_stream
 from graph_cli.storage.files.audit_log import FileAuditLog
-from graph_cli.storage.files.store import FileStore
 
 INVENTORY = ONTOLOGIES / "inventory"
 CHAIN_KEYS = ("seq", "prev_hash", "hash")
@@ -113,7 +113,7 @@ def test_an_interrupted_write_is_info_only(inst: Installation) -> None:
     body = {k: v for k, v in as_object(parse_json(intent), "e").items() if k not in CHAIN_KEYS}
     body["event_id"] = format_id(SeededIdProvider(StepClock(), 99).new_id())
     body["change"] = {**as_object(body["change"], "change"), "tx_seq": 99}
-    store = FileStore(inst.graph_dir, GraphId(parse_id(inst.graph_id)))
+    store = graph_store(inst.root, GraphId(parse_id(inst.graph_id)))
     with store.session(timeout_s=5) as session:
         session.append_audit(AuditEventDraft(graph_stream(inst.graph_id), body))
     outcome = inst.verify()
@@ -137,7 +137,7 @@ def test_graph_stream_tamper(inst: Installation) -> None:
 def test_storage_tamper(inst: Installation) -> None:
     revision = sorted((inst.graph_dir / "data" / "entities").rglob("r*.json"))[0]
     document = json.loads(revision.read_text())
-    document["attrs"]["tampered"] = "yes"
+    document["content_hash"] = "sha256:" + "0" * 64
     revision.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
     outcome = inst.verify()
     assert outcome.code == 1

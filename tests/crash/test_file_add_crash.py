@@ -14,7 +14,6 @@ from support.procs import spawn
 from support.services import ServiceEnv
 
 from graph_cli.audit.finding_codes import INTENT_WITHOUT_EFFECT
-from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.services.files import FileAddRequest
 from graph_cli.storage import finding_codes
@@ -59,7 +58,7 @@ def test_kill_then_retry_adds_once(tmp_path: Path, point: CrashPoint) -> None:
             actor=svc.actor,
             graph=svc.name,
             path=source,
-            request=RequestMeta("file add", hash_value(spec)),
+            request=RequestMeta.of("file add", {"args": spec}),
             idempotency_key=KEY,
         )
     )

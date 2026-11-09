@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from graph_cli.catalog.config import Config
-from graph_cli.catalog.resolve import config_path, resolve_roots
+from graph_cli.catalog.resolve import config_path, resolve_keys, resolve_roots
 from graph_cli.kernel.errors import GraphCliError
 
 HOME = "/nohome/user"  # not a real path: resolve() must not follow host symlinks
@@ -64,6 +64,27 @@ def test_config_and_state_paths() -> None:
     assert resolved.state_root == Path("/s/graph_cli")
     resolved, _ = resolve_roots({"HOME": HOME}, config=Config(Path("/c")), cwd=CWD)
     assert resolved.state_root == Path(f"{HOME}/.local/state/graph_cli")
+
+
+def test_key_settings() -> None:
+    """Plan T16: key stores beside the default data root, the KEK beside config.toml."""
+
+    def keys(env: dict[str, str], **config: str) -> tuple[str, str, str | None]:
+        cfg = Config(Path("/cfg/config.toml"), **config)  # type: ignore[arg-type]
+        resolved, _ = resolve_roots({"HOME": HOME, **env}, config=cfg, cwd=CWD)
+        found = resolve_keys({"HOME": HOME, **env}, config=cfg, cwd=CWD, roots=resolved)
+        previous = str(found.previous_kek_file) if found.previous_kek_file else None
+        return str(found.dir), str(found.kek_file), previous
+
+    assert keys({}) == (f"{HOME}/.local/share/graph_cli_keys", "/cfg/kek", None)
+    assert keys({"XDG_DATA_HOME": "/d", "XDG_STATE_HOME": "/s"})[0] == "/d/graph_cli_keys"
+    assert keys({}, keys_dir="~/k", kek_file="/run/kek", previous_kek_file="~/old") == (
+        f"{HOME}/k",
+        "/run/kek",
+        f"{HOME}/old",
+    )
+    assert keys({"GRAPH_CLI_KEK_FILE": "/env/kek"}, kek_file="/run/kek")[1] == "/env/kek"
+    assert keys({"GRAPH_CLI_KEK_FILE": "rel/kek"})[1] == "/work/rel/kek"
 
 
 def test_home_is_required() -> None:

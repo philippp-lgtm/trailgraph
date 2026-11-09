@@ -6,10 +6,16 @@ stream (B5.2); storage adds ``seq``, ``prev_hash`` and ``hash``. Events carry
 ids, types, hashes and reason text only, never attribute values (B5.8).
 Every builder checks its own output against ``audit.schema``; a violation is
 ``internal.error``.
+
+Events about the data of a sealed graph (plan T16) carry no ``reason`` (a
+write's reason is sealed in its tx), and their hashes are keyed: a write
+intent's under the tx's key (the services key them), a refusal's request
+digest under a one-time key that is discarded, so it matches nothing.
 """
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -39,6 +45,7 @@ from graph_cli.kernel.ports.audit import (
 )
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import BlobInfo, EnvInfo, OntologyPin, RequestMeta
+from graph_cli.kernel.sealing import MAC_KEY_BYTES
 
 RefusalStatus = Literal["denied", "invalid", "conflict", "error"]
 
@@ -122,7 +129,7 @@ def write_intent(
         env=env,
         result={"status": "ok"},
         graph=_graph(graph, tx.ontology),
-        reason=tx.reason,
+        reason=None if graph.sealed else tx.reason,
         target={
             "entities": [str(r.id) for r in sorted(tx.revisions, key=lambda r: r.id)],
             "types": sorted({r.type for r in tx.revisions}),
@@ -185,6 +192,8 @@ def refusal(
         stream = INSTALLATION_STREAM
     else:
         stream = graph_stream(str(graph.id))
+    if graph is not None and graph.sealed:  # nothing the request carried stays readable
+        request, reason = request.keyed(secrets.token_bytes(MAC_KEY_BYTES)), None
     result: dict[str, JsonValue] = {"status": status, "code": code}
     if status == "invalid":
         result["findings"] = [

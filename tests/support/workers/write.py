@@ -17,7 +17,6 @@ from typing import Any
 
 from graph_cli.access_control.policy import BuiltinPolicySource
 from graph_cli.catalog.file_catalog import FileCatalog
-from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.clock import SystemClock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import Uuid7Provider
@@ -26,6 +25,7 @@ from graph_cli.services.files import FileAddRequest, FileService
 from graph_cli.services.write import WriteConfig, WriteRequest, WriteService
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
+from support.admin_context import rings_for
 from support.procs import wait_for
 from support.services import app_actor
 from support.workers import args, emit
@@ -41,7 +41,7 @@ def main() -> None:
             os.kill(os.getpid(), signal.SIGKILL)
 
     clock = SystemClock()
-    catalog = FileCatalog(root, faults=kill_at if target else None)
+    catalog = FileCatalog(root, faults=kill_at if target else None, rings=rings_for(root))
     service = WriteService(
         catalog=catalog,
         audit=FileAuditLog(root, durability="fsync", lock_timeout_s=60),
@@ -62,7 +62,7 @@ def main() -> None:
                 actor=actor,
                 graph=spec["graph"],
                 path=Path(spec["file"]["path"]),
-                request=RequestMeta("file add", hash_value(spec["file"])),
+                request=RequestMeta.of("file add", {"args": spec["file"]}),
                 idempotency_key=spec["file"].get("idempotency_key"),
             )
         )
@@ -73,7 +73,7 @@ def main() -> None:
             graph=spec["graph"],
             changeset=service.parse(document),
             dry_run=False,
-            request=RequestMeta("apply", hash_value(document)),
+            request=RequestMeta.of("apply", {"args": document}),
         )
         try:
             result = service.apply(request)

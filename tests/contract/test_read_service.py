@@ -26,7 +26,7 @@ from graph_cli.services import describe
 from graph_cli.services.read import GraphRead, QuerySpec, ReadService
 from graph_cli.temporal_knowledge.as_of import parse_as_of
 
-REQUEST = RequestMeta("get", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("get", {})
 ALL = frozenset({"active", "superseded", "retracted"})
 
 

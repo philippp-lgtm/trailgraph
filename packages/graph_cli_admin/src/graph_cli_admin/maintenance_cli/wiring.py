@@ -35,7 +35,7 @@ from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.identity import resolve_actor, system_inputs
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.policy_source import FilePolicySource
-from graph_cli.catalog.resolve import config_path, resolve_roots
+from graph_cli.catalog.resolve import config_path, resolve_keys, resolve_roots
 from graph_cli.cli_kit.runner import Invocation
 from graph_cli.kernel.actor import ActorContext, ClientInfo, Entrypoint
 from graph_cli.kernel.clock import SystemClock
@@ -43,6 +43,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import Uuid7Provider
 from graph_cli.kernel.records import EnvInfo
 from graph_cli.storage.files.audit_log import FileAuditLog
+from graph_cli.storage.files.keyrings import KeyRings
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli_admin import __version__
 from graph_cli_admin.services_admin.context import AdminContext
@@ -248,13 +249,16 @@ class Services:
         settings = StorageSettings(config.lock_timeout_s, config.durability)
         policy = FilePolicySource(roots.data_root, fallback=fallback)
         policy.installation()  # a broken installation policy warns on every command
+        ids = Uuid7Provider(clock)
+        keys = resolve_keys(self.env, config=config, cwd=self.cwd, roots=roots)
+        rings = KeyRings(keys, clock=clock, ids=ids)  # one per process: catalog and maintenance
         return AdminContext(
             roots=roots,
             config=config,
             actor=actor,
             clock=clock,
-            ids=Uuid7Provider(clock),
-            catalog=FileCatalog(roots.data_root, settings=settings, oplog=oplog),
+            ids=ids,
+            catalog=FileCatalog(roots.data_root, settings=settings, oplog=oplog, rings=rings),
             audit=FileAuditLog(
                 roots.data_root,
                 durability=config.durability,
@@ -262,7 +266,7 @@ class Services:
                 oplog=oplog,
             ),
             maintenance=FileStoreMaintenance(
-                roots.data_root, durability=config.durability, oplog=oplog
+                roots.data_root, durability=config.durability, oplog=oplog, rings=rings
             ),
             policy=policy,
             env=EnvInfo(

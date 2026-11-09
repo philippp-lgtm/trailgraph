@@ -55,8 +55,8 @@ def init(run_cli: CliRunner, env: dict[str, str]) -> Path:
 def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, count: int) -> None:
     """Instance data written the way item 6's write path will: real intent, then commit."""
     from graph_cli.kernel.ids import GraphId, parse_id
-    from graph_cli.storage.files.store import FileStore
     from support import audit_events
+    from support.admin_context import graph_store
     from support.clock import StepClock
     from support.fixtures import compiled_model
     from support.ids import SeededIdProvider
@@ -71,7 +71,9 @@ def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, 
         ids=SeededIdProvider(clock, 11),
         clock=clock,
     )
-    store = FileStore(root / "graphs" / graph_id, gid)
+    store = graph_store(root, gid)
+    if store.codec.sealed:
+        builder.ring = store.key_ring()
     for _ in range(count):
         with store.session(timeout_s=5) as session:
             draft = builder.begin(
@@ -88,17 +90,17 @@ def write_documents(root: Path, graph: str, documents: list[dict[str, Any]]) -> 
     """Instance data through the real WriteService on the CLI's data root; returns the seqs."""
     from graph_cli.access_control.policy import BuiltinPolicySource
     from graph_cli.catalog.file_catalog import FileCatalog
-    from graph_cli.kernel.canonical import hash_value
     from graph_cli.kernel.records import EnvInfo, RequestMeta
     from graph_cli.services.write import WriteRequest, WriteService
     from graph_cli.storage.files.audit_log import FileAuditLog
+    from support.admin_context import rings_for
     from support.clock import StepClock
     from support.ids import SeededIdProvider
     from support.services import app_actor
 
     clock = StepClock(start="2030-01-01T00:00:00Z")
     service = WriteService(
-        catalog=FileCatalog(root),
+        catalog=FileCatalog(root, rings=rings_for(root)),
         audit=FileAuditLog(root),
         policy=BuiltinPolicySource(),
         clock=clock,
@@ -107,7 +109,7 @@ def write_documents(root: Path, graph: str, documents: list[dict[str, Any]]) -> 
     )
     requests = [
         WriteRequest(
-            app_actor(), graph, service.parse(doc), False, RequestMeta("apply", hash_value(doc))
+            app_actor(), graph, service.parse(doc), False, RequestMeta.of("apply", {"args": doc})
         )
         for doc in documents
     ]

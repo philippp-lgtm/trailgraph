@@ -15,6 +15,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Final, Literal, NewType, Protocol
@@ -27,8 +28,7 @@ from graph_cli.kernel.canonical import (
     canonical_bytes,
     hash_value,
 )
-from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import EntityId, EventId, TxId, format_id, is_uuid7, parse_id
+from graph_cli.kernel.ids import EntityId, EventId, TxId
 from graph_cli.kernel.json_access import JsonShapeError, req_str
 
 Kid = NewType("Kid", UUID)  # id of one data key, a UUIDv7
@@ -37,6 +37,10 @@ KeyScope = Literal["entity", "tx", "file"]
 KEY_SCOPES: Final[tuple[KeyScope, ...]] = ("entity", "tx", "file")
 
 MAC_KEY_BYTES: Final = 32
+# lowercase 8-4-4-4-12, version 7, RFC 9562 variant: every read of a sealed record checks one
+_CANONICAL_UUID7: Final = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+)
 
 
 class KeyUnavailable(Exception):
@@ -46,6 +50,14 @@ class KeyUnavailable(Exception):
         super().__init__(f"key {kid} is {reason}")
         self.kid = kid
         self.reason = reason
+
+
+class EnvelopeInvalid(Exception):
+    """A sealed envelope does not authenticate under its key and associated data."""
+
+    def __init__(self, kid: Kid) -> None:
+        super().__init__(f"an envelope under key {kid} does not authenticate")
+        self.kid = kid
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,14 +82,10 @@ class Sealed:
             where = path.removesuffix(".") or "sealed"
             raise JsonShapeError(f"{where}: expected the keys kid, nonce and ct")
         text = req_str(data, "kid", path)
-        try:
-            kid = Kid(parse_id(text))
-        except GraphCliError:
-            kid = None
         # Canonical text only, so that the envelope's bytes survive a round trip.
-        if kid is None or format_id(kid) != text or not is_uuid7(kid):
+        if _CANONICAL_UUID7.fullmatch(text) is None:
             raise JsonShapeError(f"{path}kid: not a UUIDv7 in canonical form")
-        return cls(kid, _b64decode(data, "nonce", path), _b64decode(data, "ct", path))
+        return cls(Kid(UUID(text)), _b64decode(data, "nonce", path), _b64decode(data, "ct", path))
 
 
 def keyed_hash(value: JsonValue, key: bytes | None) -> str:
@@ -103,7 +111,8 @@ class KeyRing(Protocol):
     ``content_hash(projection, ring.mac_key(ring.entity_key(entity)))``.
 
     ``mac_key``, ``seal`` and ``open`` raise ``KeyUnavailable`` for a shredded or
-    missing key. A new key is durable before the record that uses it is written.
+    missing key; ``open`` raises ``EnvelopeInvalid`` for an envelope that does not
+    authenticate. A new key is durable before the record that uses it is written.
     Readers and verify take the kid from the record they check, never from
     ``entity_key`` or ``tx_key``, so a read creates no key.
     """
@@ -126,6 +135,16 @@ class KeyRing(Protocol):
 
     def shred(self, kids: Iterable[Kid], purge_event: EventId) -> None:
         """Destroy the key material of ``kids``, recording the purge event that did it."""
+        ...
+
+    def refresh(self) -> None:
+        """Pick up shreds by other processes now; called when a read or write begins."""
+        ...
+
+    @property
+    def generation(self) -> int:
+        """Changes whenever keys were shredded, here or (seen by ``refresh``) elsewhere:
+        a cache of records opened before must be dropped."""
         ...
 
 
@@ -158,6 +177,13 @@ class PlainKeyRing:
     def shred(self, kids: Iterable[Kid], purge_event: EventId) -> None:
         for kid in kids:
             raise KeyUnavailable(kid, "missing")
+
+    def refresh(self) -> None:
+        pass
+
+    @property
+    def generation(self) -> int:
+        return 0
 
 
 def _b64encode(data: bytes) -> str:

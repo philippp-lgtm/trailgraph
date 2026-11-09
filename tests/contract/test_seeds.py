@@ -9,6 +9,7 @@ re-run replays every document from its idempotency key.
 from pathlib import Path
 
 import pytest
+from support.admin_context import key_rings
 from support.fixtures import FIXTURES
 from support.services import ServiceEnv
 
@@ -19,7 +20,7 @@ from graph_cli.services.write import BatchResult, WriteRequest
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 
 SEEDS = FIXTURES / "seeds"
-REQUEST = RequestMeta("apply", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("apply", {})
 
 
 @pytest.fixture
@@ -57,8 +58,8 @@ def test_seed_applies_and_checks_clean(svc: ServiceEnv) -> None:
         assert set(lifecycle.state_names()) <= seen, name
     rels = {e.rel for r in revisions for e in r.edges}
     assert "core:supersedes" in rels
-    if svc.backend == "files":
-        maintenance = FileStoreMaintenance(svc.root)
+    if svc.backend.startswith("files"):
+        maintenance = FileStoreMaintenance(svc.root, rings=key_rings(svc.root))
         with maintenance.maintenance_session(svc.entry.id, timeout_s=5) as session:
             assert list(session.verify()) == []
 
