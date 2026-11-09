@@ -150,7 +150,8 @@ Only a maintainer can create a graph.
 
    `--language <tag>` sets the default language of its values; it cannot
    change later. Graph names are lowercase letters, digits and `_`, unique
-   per installation (`admin.graph_name_taken`).
+   per installation (`admin.graph_name_taken`). It is sealed: without its key
+   store and key-encryption key its data is lost; tell the user to back both up.
 4. `graph-admin workspace sync .` pulls it into its folder. Move the
    draft's `README.md` there and delete the draft.
 5. Write and publish its graph skill (below), then `graph-admin audit

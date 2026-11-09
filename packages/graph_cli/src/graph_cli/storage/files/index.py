@@ -21,6 +21,10 @@ the index ran or inherited, so only the tail after it needs verifying (plan
 "Incremental writer checks"). ``full_verified_seq`` names the last full
 replay behind the index; writers replay fully again after
 ``FULL_CHECK_EVERY`` txs.
+
+In a sealed graph (plan T16) the ``entity`` bodies are sealed revisions and the
+``edge_in`` bodies carry no qualifiers; ``incoming`` takes them from the source
+revision. The reader decodes through the graph's ``RecordCodec``.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, as_object
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import (
     EdgeRecord,
     Revision,
@@ -50,6 +55,7 @@ from graph_cli.kernel.records import (
     revision_to_json,
     tx_from_json,
 )
+from graph_cli.kernel.sealing import KeyUnavailable
 from graph_cli.storage.common.chain import GENESIS, ChainError, ChainLink, verify_line
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.view import GraphView, ViewAt, alias_parts
@@ -186,8 +192,9 @@ def _entity_row(revision: Revision) -> tuple[bytes, str, str]:
 
 
 def _edge_rows(revision: Revision) -> Iterator[tuple[bytes, bytes, bytes, str, str]]:
+    sealed = revision.sealed is not None  # qualifiers are values: they stay in the envelope
     for edge in revision.edges:
-        body = _body(edge.to_json())
+        body = _body(edge.structure_json() if sealed else edge.to_json())
         yield edge.target.bytes, revision.id.bytes, edge.edge_id.bytes, edge.rel, body
 
 
@@ -256,12 +263,15 @@ def _uuid(raw: object) -> EntityId:
 class IndexReader:
     """One open index file, read-only and immutable."""
 
-    def __init__(self, connection: sqlite3.Connection, meta: IndexMeta) -> None:
+    def __init__(
+        self, connection: sqlite3.Connection, meta: IndexMeta, codec: RecordCodec | None = None
+    ) -> None:
         self._db = connection
         self.meta = meta
+        self.codec = codec  # None: records of an unsealed graph
 
     @classmethod
-    def open(cls, path: Path) -> IndexReader | None:
+    def open(cls, path: Path, codec: RecordCodec | None = None) -> IndexReader | None:
         """The index at ``path``; ``None`` when there is none."""
         if not path.exists():
             return None
@@ -285,7 +295,7 @@ class IndexReader:
             except BaseException:
                 connection.close()
                 raise
-        return cls(connection, meta)
+        return cls(connection, meta, codec)
 
     def close(self) -> None:
         self._db.close()
@@ -296,7 +306,7 @@ class IndexReader:
 
     def revision(self, entity: EntityId) -> Revision | None:
         rows = self._rows("SELECT body FROM entity WHERE id = ?", entity.bytes)
-        return _decode(rows[0][0], entity) if rows else None
+        return self._decode(rows[0][0], entity) if rows else None
 
     def revisions(self, types: frozenset[TermRef]) -> Iterator[Revision]:
         """Current revisions in id order, only of ``types`` unless it is empty."""
@@ -308,7 +318,7 @@ class IndexReader:
             rows = self._rows("SELECT id, body FROM entity ORDER BY id")
         with _guard():
             for raw, body in rows:
-                yield _decode(body, _uuid(raw))
+                yield self._decode(body, _uuid(raw))
 
     def entity_ids(self) -> list[EntityId]:
         with _guard():
@@ -321,10 +331,23 @@ class IndexReader:
             sql = "SELECT source, body FROM edge_in WHERE target = ? AND rel = ?"
             rows = self._rows(sql, target.bytes, rel)
         with _guard():
-            return [
+            found = [
                 (_uuid(raw), EdgeRecord.from_json(as_object(json.loads(str(body)), "edge")))
                 for raw, body in rows
             ]
+        if self.codec is None or not self.codec.sealed:
+            return found
+        sources: dict[EntityId, Revision | None] = {}
+        complete = []
+        for source, edge in found:  # the qualifiers are sealed in the source revision
+            if source not in sources:
+                sources[source] = self.revision(source)
+            revision = sources[source]
+            edges = {e.edge_id: e for e in revision.edges} if revision is not None else {}
+            if edge.edge_id not in edges:
+                raise IndexUnusable(f"an incoming edge of {target} has no source revision")
+            complete.append((source, edges[edge.edge_id]))
+        return complete
 
     def alias(self, alias: str) -> tuple[EntityId, int] | None:
         rows = self._rows("SELECT entity, seq FROM alias WHERE alias = ?", alias)
@@ -379,18 +402,28 @@ class IndexReader:
                 raise IndexUnusable(f"tx {seq} is not where the index says: {exc}") from None
             if document.get("hash") != digest:
                 raise IndexUnusable(f"tx {seq} has another hash than the index says")
-            return tx_from_json(document)
+            return self.codec.parse_tx(document) if self.codec else tx_from_json(document)
 
     def table(self, name: str) -> set[tuple[object, ...]]:
         assert name in _TABLES
         return set(self._rows(f"SELECT * FROM {name}"))
 
+    def _decode(self, body: object, entity: EntityId) -> Revision:
+        data = as_object(json.loads(str(body)), "revision")
+        revision = self.codec.parse_revision(data) if self.codec else revision_from_json(data)
+        if revision.id != entity:
+            raise IndexUnusable("an index row does not match its id")
+        return revision
 
-def _decode(body: object, entity: EntityId) -> Revision:
-    revision = revision_from_json(as_object(json.loads(str(body)), "revision"))
-    if revision.id != entity:
-        raise IndexUnusable("an index row does not match its id")
-    return revision
+    def content_matches(self, revision: Revision) -> bool:
+        """Whether ``revision``'s content hash is right; a shredded key cannot say (``True``)."""
+        try:
+            key = self.codec.revision_mac(revision) if self.codec else None
+        except KeyUnavailable as exc:
+            if exc.reason == "shredded":
+                return True
+            raise IndexUnusable(f"the key of {revision.id} is missing") from None
+        return revision_content_hash(revision, key) == revision.content_hash
 
 
 class ScanView(Protocol):
@@ -464,7 +497,7 @@ class IndexedView:
             if (
                 self._check_content
                 and revision is not None
-                and revision_content_hash(revision) != revision.content_hash
+                and not self._reader.content_matches(revision)
             ):
                 raise IndexUnusable(f"the index row of {entity} does not match its content hash")
             self._decoded[entity] = revision
@@ -720,11 +753,16 @@ def _finish(db: sqlite3.Connection, meta: Sequence[tuple[str, str]]) -> None:
 
 
 def index_difference(
-    path: Path, graph_id: GraphId, view: GraphView, spans: Sequence[TxSpan], txlog: SegmentedLog
+    path: Path,
+    graph_id: GraphId,
+    view: GraphView,
+    spans: Sequence[TxSpan],
+    txlog: SegmentedLog,
+    codec: RecordCodec | None = None,
 ) -> str | None:
     """Why the index at ``path`` does not describe this log; ``None`` when it does or is absent."""
     try:
-        reader = IndexReader.open(path)
+        reader = IndexReader.open(path, codec)
     except IndexUnusable as exc:
         return str(exc)
     if reader is None:

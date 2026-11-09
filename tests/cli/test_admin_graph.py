@@ -1,5 +1,7 @@
 """S: graph-admin graph create, list and show (contracts B1.11, B5.2, B12.4, W.f; plan M7)."""
 
+import stat
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -65,6 +67,30 @@ def test_create_publishes_a_graph_with_its_events(
     assert announced["anchors"] == [{"graph_id": data["id"], "seq": 1, "hash": genesis["hash"]}]
     assert check_anchors(installation.events, {data["id"]: graph_report.events}) == []
     assert announced["env"] == {"root_source": "default", "data_root": str(root)}
+
+
+def test_a_new_graph_is_sealed_with_its_own_key_store(
+    run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
+) -> None:
+    """Plan T16: store format 2, and a key store beside the data root, never inside."""
+    data = create(run_cli, "example_graph")
+    manifest = tomllib.loads((root / "graphs" / str(data["id"]) / "manifest.toml").read_text())
+    assert manifest["store"] == {"backend": "files", "format_version": 2}
+    keys = Path(isolated_env["XDG_DATA_HOME"]) / "graph_cli_keys" / f"{data['id']}.sqlite"
+    assert keys.is_file() and stat.S_IMODE(keys.stat().st_mode) == 0o600
+    assert not keys.resolve().is_relative_to(root)
+
+
+def test_a_sealed_graph_cannot_be_created_without_a_kek(
+    run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
+) -> None:
+    (Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "kek").unlink()
+    before = tree_hash(root / "graphs")
+    outcome = admin(run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY))
+    assert (outcome.code, outcome.error["code"]) == (5, "config.invalid")
+    assert "graph-admin init" in outcome.error["message"]
+    assert tree_hash(root / "graphs") == before
+    assert not (Path(isolated_env["XDG_DATA_HOME"]) / "graph_cli_keys").exists()
 
 
 def test_alias_prefixes_are_seeded_from_display_prefixes(run_cli: CliRunner, root: Path) -> None:

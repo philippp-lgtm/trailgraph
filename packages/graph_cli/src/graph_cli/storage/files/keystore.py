@@ -38,6 +38,7 @@ import sqlite3
 import stat
 import threading
 import time
+import weakref
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
@@ -50,7 +51,7 @@ from uuid import UUID
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, IdProvider, TxId
-from graph_cli.kernel.sealing import KeyScope, KeyUnavailable, Kid, Sealed
+from graph_cli.kernel.sealing import EnvelopeInvalid, KeyScope, KeyUnavailable, Kid, Sealed
 from graph_cli.storage.common import crypto
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.files.durable import OsSyncer, Syncer
@@ -175,18 +176,35 @@ class KeyCheck:
     orphans: tuple[Kid, ...]  # live, referenced by no record
 
 
-@dataclass(frozen=True, slots=True)
 class _Key:
-    dek: bytes = field(repr=False)
-    enc: bytes = field(repr=False)
-    mac: bytes = field(repr=False)
+    """A data key and its subkeys, each derived on first use: a scan opens envelopes of
+    thousands of entities once each and needs no MAC key."""
+
+    __slots__ = ("_dek", "_enc", "_mac")
+
+    def __init__(self, dek: bytes) -> None:
+        self._dek = dek
+        self._enc: bytes | None = None
+        self._mac: bytes | None = None
+
+    @property
+    def enc(self) -> bytes:
+        if self._enc is None:
+            self._enc = crypto.subkey(self._dek, "enc")
+        return self._enc
+
+    @property
+    def mac(self) -> bytes:
+        if self._mac is None:
+            self._mac = crypto.subkey(self._dek, "mac")
+        return self._mac
 
 
 class KeyStore:
     """The ``KeyRing`` of a sealed graph, backed by its key store file.
 
-    ``open`` raises ``CryptoError`` for an envelope that does not authenticate under its
-    key and ``aad``. A key wrapped under a KEK that is not configured is ``config.invalid``,
+    ``open`` raises ``EnvelopeInvalid`` for an envelope that does not authenticate under
+    its key and ``aad``. A key wrapped under a KEK that is not configured is ``config.invalid``,
     a wrapped key that does not unwrap is ``backend.corrupt``, a failing SQLite call is
     ``backend.unavailable``. Thread-safe; one instance per graph and process.
     """
@@ -212,9 +230,12 @@ class KeyStore:
         self._keys: dict[Kid, _Key] = {}
         self._wrapped: dict[Kid, tuple[str, bytes | None]] | None = None
         self._subjects: dict[tuple[KeyScope, UUID], Kid] = {}
+        # no composition root closes a store: its connection closes when it goes away
+        weakref.finalize(self, connection.close)
         self._data_version = self._pragma_data_version()
         self._checked_at = time.monotonic()
         self._shreds = self._shred_count()
+        self._generation = 0  # bumped whenever the caches are dropped for shreds
 
     @classmethod
     def create(
@@ -331,7 +352,10 @@ class KeyStore:
     def open(self, sealed: Sealed, aad: bytes) -> bytes:
         with self._lock, _sqlite_errors(self.path):
             key = self._key(sealed.kid).enc
-        return crypto.open_sealed(key, sealed.nonce, sealed.ct, aad)
+        try:
+            return crypto.open_sealed(key, sealed.nonce, sealed.ct, aad)
+        except crypto.CryptoError:
+            raise EnvelopeInvalid(sealed.kid) from None
 
     def is_shredded(self, kid: Kid) -> bool:
         """Whether ``kid`` is shredded; ``False`` for a live or a missing key."""
@@ -373,6 +397,10 @@ class KeyStore:
         """Pick up shreds and removals by other connections now, e.g. when a read begins."""
         with self._lock, _sqlite_errors(self.path):
             self._sync_cache(now=True)
+
+    @property
+    def generation(self) -> int:
+        return self._generation
 
     # Maintenance
 
@@ -548,12 +576,14 @@ class KeyStore:
             self._keys.clear()
             self._wrapped = None
             self._subjects.clear()
+            self._generation += 1
 
     def _forget(self) -> None:
         self._keys.clear()
         self._wrapped = None
         self._subjects.clear()
         self._shreds = self._shred_count()
+        self._generation += 1
 
     def _bump_shreds(self, conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = ?", (_SHREDS,))
@@ -577,7 +607,7 @@ class KeyStore:
 
 
 def _derive(dek: bytes) -> _Key:
-    return _Key(dek, crypto.subkey(dek, "enc"), crypto.subkey(dek, "mac"))
+    return _Key(dek)
 
 
 def _connect(path: Path) -> sqlite3.Connection:

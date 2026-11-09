@@ -140,6 +140,7 @@ class _Run:
     allocate_aliases: bool
     counters: dict[str, int]
     default_language: str | None = None
+    entity_mac: Callable[[EntityId], bytes | None] = lambda _entity: None
     work: dict[EntityId, _Work] = field(default_factory=dict)
     created: dict[EntityId, None] = field(default_factory=dict)
     doc_locals: dict[str, EntityId] = field(default_factory=dict)
@@ -554,7 +555,9 @@ class _Run:
         """Touched entities whose content equals their current revision (C.9)."""
         for entity, work in self.work.items():
             previous = work.previous
-            if previous is not None and content_hash(_projection(work)) == previous.content_hash:
+            if previous is None:
+                continue
+            if content_hash(_projection(work), self.entity_mac(entity)) == previous.content_hash:
                 self.unchanged[entity] = previous
 
     def post_rev(self, entity: EntityId) -> int | None:
@@ -601,6 +604,7 @@ def _revision(
     tx_id: TxId,
     tx_seq: int,
     pin_version: str,
+    mac: bytes | None,
 ) -> Revision:
     edges = tuple(work.edges)
     projection = _projection(work)
@@ -621,7 +625,7 @@ def _revision(
         tx_id=tx_id,
         tx_seq=tx_seq,
         ontology_version=pin_version,
-        content_hash=content_hash(projection),
+        content_hash=content_hash(projection, mac),
     )
 
 
@@ -640,6 +644,7 @@ def normalize(
     alias_prefixes: Mapping[TermRef, str],
     allocate_aliases: bool = True,
     default_language: str | None = None,
+    entity_mac: Callable[[EntityId], bytes | None] | None = None,
 ) -> WorkingState:
     """Apply ``ops`` to a working copy of ``base`` (W.10).
 
@@ -648,7 +653,8 @@ def normalize(
     full ids are used as given and locals declared here are bound to the
     ids minted for their creates. ``allocate_aliases`` is false in dry-run.
     ``default_language`` is the graph language given to untagged
-    language-tagged values.
+    language-tagged values. ``entity_mac`` gives the MAC key of an entity's
+    content hash in a sealed graph (plan T16); without it the hashes are plain.
     """
     run = _Run(
         base=base,
@@ -660,6 +666,8 @@ def normalize(
         counters=dict(alias_counters),
         default_language=default_language,
     )
+    if entity_mac is not None:
+        run.entity_mac = entity_mac
     create_ids: list[EntityId] = []
     for op in ops:
         if isinstance(op, CreateOp):
@@ -697,6 +705,7 @@ def normalize(
             tx_id=tx_id,
             tx_seq=tx_seq,
             pin_version=pin_version,
+            mac=run.entity_mac(entity),
         )
         for entity, work in run.work.items()
         if entity not in run.unchanged

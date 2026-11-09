@@ -1,10 +1,12 @@
-"""``graph-admin init``: create the data root and the config file (contracts B12.4).
+"""``graph-admin init``: create the data root, the config file and the KEK file (B12.4, T16).
 
 Idempotent. An existing ``config.toml`` belongs to the user and is never
 rewritten; a new one gets a generated device id (B2.3, Decision 30). The
 data root is persisted in the new config only when it was chosen with
-``--data-root``. No audit event: init is no action of the taxonomy and
-touches no graph.
+``--data-root``. The key-encryption key of sealed graphs is created where
+``[keys] kek_file`` (or ``GRAPH_CLI_KEK_FILE``) says, only when no file is
+there: an existing KEK is never replaced. No audit event: init is no action
+of the taxonomy and touches no graph.
 """
 
 from __future__ import annotations
@@ -43,10 +45,23 @@ def init(ctx: AdminContext, *, device_name: str | None) -> dict[str, JsonValue]:
                 "config.invalid", f"cannot write {roots.config_file}: {exc.strerror or exc}"
             ) from exc
         config_created = True
+    kek_file = ctx.maintenance.rings.settings.kek_file if ctx.maintenance.rings else None
+    kek_created = False
+    if kek_file is not None and not os.path.lexists(kek_file):
+        from graph_cli.storage.files.keystore import create_kek_file  # the cipher library
+
+        try:
+            create_kek_file(kek_file, syncer=syncer)
+        except OSError as exc:
+            raise GraphCliError(
+                "config.invalid", f"cannot write {kek_file}: {exc.strerror or exc}"
+            ) from exc
+        kek_created = True
     return {
         "data_root": str(roots.data_root),
         "root_source": roots.root_source,
         "config_file": str(roots.config_file),
         "device_id": device_id,
-        "created": {"data_root": root_created, "config": config_created},
+        "kek_file": str(kek_file) if kek_file is not None else None,
+        "created": {"data_root": root_created, "config": config_created, "kek": kek_created},
     }

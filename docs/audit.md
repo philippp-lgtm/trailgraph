@@ -36,6 +36,17 @@ action in `request.action`. Not audited: `--dry-run`, an action with nothing to 
 and an unknown or hidden action. `history` shows the `action` next to the `command` of a
 revision it wrote.
 
+In a [sealed graph](storage.md#sealed-graphs) the hashes in events are keyed,
+so they cannot be checked against guessed values: `change.changeset_hash`,
+`request.args_digest` and the entities' `after` and `before` content hashes of
+a write intent are HMACs under the keys of its tx and entities, the same values
+the transaction log holds. A write intent carries no `reason` (it is sealed in
+the transaction). A refusal (`denied`, `invalid`, `conflict`) of a request to a
+sealed graph carries no `reason` either, and its `args_digest` is keyed under a
+one-time key that is discarded at once: it keeps the hash shape and matches
+nothing. Maintenance events keep their reason in the clear; it cannot be
+erased, so it should name a ticket, not a person.
+
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
 covers), and every file the write stored is listed as `{hash, size}`.

@@ -63,7 +63,7 @@ from graph_cli.catalog.pointer import (
     select_graph,
 )
 from graph_cli.catalog.policy_source import FilePolicySource
-from graph_cli.catalog.resolve import Roots, config_path, resolve_roots
+from graph_cli.catalog.resolve import Roots, config_path, resolve_keys, resolve_roots
 from graph_cli.catalog.skill_claims import SkillClaim, SkillGate, claims_header, read_claims
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint
 from graph_cli.kernel.canonical import JsonValue
@@ -78,6 +78,7 @@ from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
 from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
+from graph_cli.storage.files.keyrings import KeyRings
 
 if TYPE_CHECKING:
     from graph_cli.catalog.endpoint import Endpoint
@@ -484,10 +485,14 @@ class AppServices:
         clock = SystemClock()
         ids = Uuid7Provider(clock)
         oplog = OpLogFile(roots.state_root, clock)
+        rings = KeyRings(
+            resolve_keys(self.env, config=config, cwd=self.cwd, roots=roots), clock=clock, ids=ids
+        )
         catalog = FileCatalog(
             roots.data_root,
             settings=StorageSettings(config.lock_timeout_s, config.durability),
             oplog=oplog,
+            rings=rings,
         )
         audit = FileAuditLog(
             roots.data_root,

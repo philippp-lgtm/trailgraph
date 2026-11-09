@@ -9,7 +9,7 @@ import pytest
 from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
-from graph_cli.kernel.canonical import JsonValue, hash_value
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.records import RequestMeta
@@ -59,7 +59,7 @@ def add(service: FileService, svc: ServiceEnv, path: Path, **kw: Any) -> FileAdd
             actor=svc.actor,
             graph=svc.name,
             path=path,
-            request=RequestMeta("file add", hash_value({"path": path.name})),
+            request=RequestMeta.of("file add", {"args": {"path": path.name}}),
             **kw,
         )
     )
@@ -72,7 +72,7 @@ def refuse(service: FileService, svc: ServiceEnv, path: Path, **kw: Any) -> Grap
 
 
 def staging(svc: ServiceEnv) -> list[str]:
-    if svc.backend != "files":
+    if not svc.backend.startswith("files"):
         return []
     blobs = svc.root / "graphs" / str(svc.entry.id) / "blobs"
     return (
@@ -180,7 +180,7 @@ def test_a_model_without_the_module(tmp_path: Path, notes: Path) -> None:
 
 
 def test_dry_run_writes_nothing(svc: ServiceEnv, notes: Path) -> None:
-    before = tree_hash(svc.root) if svc.backend == "files" else None
+    before = tree_hash(svc.root) if svc.backend.startswith("files") else None
     result = add(files_of(svc, notes), svc, notes, dry_run=True)
     assert result.entity["id"] is None and result.entity["alias"] is None
     assert result.file["hash"] == DIGEST
@@ -238,13 +238,13 @@ def test_path_and_check_signal_the_files_they_read(svc: ServiceEnv, notes: Path)
     activity = RecordingActivity()
     reader = svc.make_reader()
     service = svc.make_files(reader=reader, activity=activity)
-    request = RequestMeta("file check", hash_value({}))
+    request = RequestMeta.of("file check", {"args": {}})
     view = reader.open(svc.actor, svc.entry, "read.get", request)
     service.check(view, [], limit=50, offset=0, actor=svc.actor, request=request)
     service.check(view, ["FILE-0001"], limit=50, offset=0, actor=svc.actor, request=request)
     graph = str(svc.entry.id)
     assert activity.signals == [(graph, [file_id]), (graph, [file_id])]
-    if svc.backend == "files":
+    if svc.backend.startswith("files"):
         service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
         assert activity.signals[-1] == (graph, [file_id])
     else:

@@ -250,7 +250,8 @@ def _files(base: Path) -> dict[str, bytes]:
 def test_add_writes_only_where_the_app_may(
     run_cli: CliRunner, root: Path, home: Path, isolated_env: dict[str, str]
 ) -> None:
-    """B12 invariant: graphs/<id>/{data,audit,blobs}, the installation audit, the state dir."""
+    """B12 invariant: graphs/<id>/{data,audit,blobs}, the installation audit, the state dir,
+    and the key store of the sealed graph (new keys, T16)."""
     path = write_pdf(home / "notes" / "a.pdf")
     before = _files(home)
     add(run_cli, str(path))
@@ -261,6 +262,7 @@ def test_add_writes_only_where_the_app_may(
         *(str(graph / part) for part in ("data", "audit", "blobs")),
         str(root.relative_to(home) / "audit"),
         str(Path(isolated_env["XDG_STATE_HOME"]).relative_to(home)),
+        str(root.parent.relative_to(home) / "graph_cli_keys"),
     )
     assert changed and all(name.startswith(allowed) for name in changed), sorted(changed)
     assert any(name.startswith(str(graph / "blobs")) for name in changed)
@@ -287,10 +289,13 @@ def test_file_names_origins_and_content_never_reach_audit_or_logs(
         for file, data in files.items():
             for marker in (name_marker, dir_marker, content_marker):
                 assert marker.encode() not in data, (where, file, marker)
-    # positive controls: the markers are where they belong
+    # positive controls: the markers are where they belong (the graph is sealed: the tx log
+    # holds them encrypted, so the graph shows the file name to a reader)
     assert any(content_marker.encode() in d for d in _files(graph / "blobs").values())
     txlog = b"".join(_files(graph / "data" / "txlog").values())
-    assert name_marker.encode() in txlog and dir_marker.encode() in txlog
+    assert name_marker.encode() not in txlog and dir_marker.encode() not in txlog
+    shown = app(run_cli, "get", "FILE-0001", env=ENV)
+    assert shown.data["entity"]["attrs"]["file_name"] == f"{name_marker}.pdf"
 
 
 def test_two_processes_adding_the_same_file_store_it_once(

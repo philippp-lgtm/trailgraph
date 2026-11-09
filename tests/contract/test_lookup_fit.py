@@ -20,7 +20,7 @@ from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.query.lookup import LookupSpec
 from graph_cli.services.read import GraphRead, ReadService
 
-REQUEST = RequestMeta("lookup", "sha256:" + "0" * 64)
+REQUEST = RequestMeta.of("lookup", {})
 
 FUNCTION = """\
 schema: graph_cli.function/1

@@ -13,7 +13,8 @@ from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.storage import EMPTY_HEAD, Head
-from graph_cli.kernel.records import TxRecord, tx_from_json
+from graph_cli.kernel.record_codec import RecordCodec
+from graph_cli.kernel.records import TxRecord
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.storage.common.chain import ChainLink
 from graph_cli.storage.common.commit import check_tx, seal_tx
@@ -46,6 +47,7 @@ class MemLog:
         clock = StepClock()
         ids = SeededIdProvider(clock, self.seed)
         self.graph_id = GraphId(ids.new_id())
+        self.codec = RecordCodec(self.graph_id)
         self.builder = TxBuilder(
             model(self.ontology), graph_id=self.graph_id, ids=ids, clock=clock, seed=self.seed
         )
@@ -64,12 +66,13 @@ class MemLog:
             head=self.head,
             view=self.view.at(),
             blob_exists=self.blobs.__contains__,
+            codec=self.codec,
         )
 
     def commit(self, tx: AuthorizedTx) -> TxRecord:
         self.check(tx)
-        record, line = seal_tx(tx, ChainLink(self.head.seq, self.head.hash))
-        parsed = tx_from_json(as_object(parse_json(line), "tx"))
+        record, line = seal_tx(tx, ChainLink(self.head.seq, self.head.hash), self.codec)
+        parsed = self.codec.parse_tx(as_object(parse_json(line), "tx"))
         assert parsed == record
         self.view.apply(parsed)
         self.lines.append(line)

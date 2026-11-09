@@ -11,9 +11,27 @@ XDG; macOS uses the same paths.
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
 | Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
 | State (operational log, access log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+| Key stores of sealed graphs | config `[keys] dir`, then `$XDG_DATA_HOME/graph_cli_keys`, else `~/.local/share/graph_cli_keys` |
+| Key-encryption key (KEK) | `GRAPH_CLI_KEK_FILE`, then config `[keys] kek_file`, then `kek` next to `config.toml` |
 | Tokens of a client, per server and project | `tokens/<server>/<project>/token` and `admin_token` next to `config.toml`; `<server>` is host, port and path of the endpoint (directories 0700, files 0600) |
 
 Keep the data root on a local file system (see [Storage](storage.md)).
+
+### Keys of sealed graphs
+
+A new graph is sealed: its values are stored encrypted under keys of its own,
+so that a purge can erase them. The keys of each graph are in its key store,
+`<keys dir>/<graph id>.sqlite`, wrapped by the key-encryption key (KEK).
+`graph-admin init` creates the KEK file (mode 0600) when there is none and
+never replaces one; `graph-admin graph create` creates the graph's key store.
+Both live outside the data root, so a backup of the data root holds no key.
+
+**Losing the key store or the KEK loses the data of the graph.** Back them up,
+apart from the data root. The KEK file holds 64 lowercase hex digits; it may
+be a symlink, as in container secret mounts, and may be readable by its group
+but by nobody else. Every program that reads or writes a sealed graph's data
+needs both (`graph` in local mode, `graph-admin`, `graph-server`); a client in
+remote mode needs neither. How the formats work: [Sealed graphs](storage.md#sealed-graphs).
 
 ## `config.toml`
 
@@ -46,6 +64,10 @@ limit and the read signal. The sections described elsewhere:
   the server only
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
+- `[keys]`: `dir`, the directory of the key stores; `kek_file`, the KEK
+  file; `previous_kek_file`, the KEK before a rotation, used only to unwrap
+  keys while it runs; each absolute or `~/`
+  ([Keys of sealed graphs](#keys-of-sealed-graphs))
 
 Unknown config or manifest keys are warnings; an unknown `format_version`
 or an invalid value stops the command.
@@ -114,6 +136,7 @@ The pointer only narrows what the installation policy allows (see
 | --- | --- |
 | `GRAPH_CLI_GRAPH` | the graph when `--graph` is not given ([Graph selection](cli_graph.md#graph-selection)) |
 | `GRAPH_CLI_ROOT` | the data root, with a warning ([Locations](#locations)) |
+| `GRAPH_CLI_KEK_FILE` | the key-encryption key file, before `[keys] kek_file` ([Keys of sealed graphs](#keys-of-sealed-graphs)) |
 | `GRAPH_CLI_OUTPUT` | `json` makes JSON output the default |
 | `GRAPH_CLI_SPILL_BYTES` | overrides `[output] spill_bytes`; `0` keeps every answer on stdout |
 | `GRAPH_CLI_TOKEN` | the bearer token in [remote mode](#remote-mode), before `[remote] token_file` |

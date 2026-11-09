@@ -18,6 +18,7 @@ from graph_cli.services.actions import ActionService
 from graph_cli.services.read import ReadService
 from graph_cli.services.write import WriteConfig, WriteService
 from graph_cli.storage.files.audit_log import FileAuditLog
+from support.admin_context import rings_for
 from support.procs import wait_for
 from support.services import app_actor
 from support.workers import args, emit
@@ -27,7 +28,7 @@ def main() -> None:
     spec = args()
     root = Path(spec["root"])
     clock, ids, env = SystemClock(), Uuid7Provider(SystemClock()), EnvInfo("<data root>", "flag")
-    catalog = FileCatalog(root)
+    catalog = FileCatalog(root, rings=rings_for(root))
     audit = FileAuditLog(root, durability="fsync", lock_timeout_s=60)
     policy = BuiltinPolicySource()
     reader = ReadService(catalog=catalog, audit=audit, policy=policy, clock=clock, ids=ids, env=env)

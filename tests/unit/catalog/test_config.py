@@ -50,6 +50,10 @@ public_url = "https://graph.example.org/api/"
 token_file = "~/.config/graph_cli/token"
 allow_plain_http = false
 timeout_s = 30
+[keys]
+dir = "/srv/graph_keys"
+kek_file = "/run/secrets/graph_kek"
+previous_kek_file = "~/old_kek"
 """
 
 
@@ -87,6 +91,9 @@ def test_every_key() -> None:
         public_url="https://graph.example.org/api",
         token_file="~/.config/graph_cli/token",
         remote_timeout_s=30.0,
+        keys_dir="/srv/graph_keys",
+        kek_file="/run/secrets/graph_kek",
+        previous_kek_file="~/old_kek",
     )
 
 
@@ -197,6 +204,9 @@ def test_unknown_major() -> None:
         ('format_version = 1\n[output]\nspill_dir = "spill"\n', "output.spill_dir"),
         ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
         ('format_version = 1\n[audit]\naccess_log = "yes"\n', "audit.access_log"),
+        ('format_version = 1\n[keys]\ndir = "keys"\n', "keys.dir"),
+        ('format_version = 1\n[keys]\nkek_file = "kek"\n', "keys.kek_file"),
+        ("format_version = 1\n[keys]\nprevious_kek_file = 1\n", "keys.previous_kek_file"),
     ],
 )
 def test_defects_are_config_invalid(body: str, key: str) -> None:

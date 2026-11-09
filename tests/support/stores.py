@@ -14,15 +14,19 @@ from pathlib import Path
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.ids import EntityId, GraphId
+from graph_cli.kernel.clock import SystemClock
+from graph_cli.kernel.ids import EntityId, GraphId, IdProvider
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import CommitResult, Snapshot
 from graph_cli.kernel.query_ast import Query
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
+from graph_cli.storage.files.keystore import Kek, KeyStore
 from graph_cli.storage.files.layout import init_graph_dir
 from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
+from graph_cli.storage.memory.keyring import MemoryKeyRing
 from graph_cli.storage.memory.store import InMemoryStore
 from support import audit_events
 from support.clock import StepClock
@@ -31,8 +35,10 @@ from support.ids import SeededIdProvider
 from support.memlog import model
 from support.txbuilder import FuncState, TxBuilder, TxDraft
 
+TEST_KEK = Kek.of(bytes(range(32)))
 ALL_STATUSES = frozenset({"active", "superseded", "retracted"})
-BACKENDS = ("memory", "files")
+BACKENDS = ("memory", "files", "memory-sealed", "files-sealed")
+SEALED_BACKENDS = ("memory-sealed", "files-sealed")
 
 Store = InMemoryStore | FileStore
 
@@ -105,8 +111,14 @@ class StoreEnv:
         )
         self.syncer = RecordingSyncer()
         self.store, self.audit = make_backend(
-            self.backend, self.graph_id, self.root, self.faults, self.syncer
+            self.backend, self.graph_id, self.root, self.faults, self.syncer, self.ids
         )
+        if self.sealed:
+            self.builder.ring = self.store.key_ring()
+
+    @property
+    def sealed(self) -> bool:
+        return self.backend in SEALED_BACKENDS
 
     def audit_head(self) -> tuple[int, str]:
         """Head of this graph's audit stream."""
@@ -162,14 +174,31 @@ class StoreEnv:
 
 
 def make_backend(
-    backend: str, graph_id: GraphId, root: Path, faults: FaultSwitch, syncer: RecordingSyncer
+    backend: str,
+    graph_id: GraphId,
+    root: Path,
+    faults: FaultSwitch,
+    syncer: RecordingSyncer,
+    ids: IdProvider,
 ) -> tuple[Store, AuditSink]:
-    if backend == "memory":
+    if backend in ("memory", "memory-sealed"):
         audit = InMemoryAuditLog(faults=faults)
-        return InMemoryStore(graph_id, audit=audit, faults=faults), audit
-    if backend == "files":
+        ring = MemoryKeyRing(ids) if backend == "memory-sealed" else None
+        return InMemoryStore(graph_id, audit=audit, faults=faults, ring=ring), audit
+    if backend in ("files", "files-sealed"):
         graph_dir = root / "graphs" / str(graph_id)
         init_graph_dir(graph_dir, syncer)
-        store = FileStore(graph_dir, graph_id, syncer=syncer, faults=faults)
+        codec = None
+        if backend == "files-sealed":
+            codec = RecordCodec(graph_id, sealed_key_store(root, graph_id, ids))
+        store = FileStore(graph_dir, graph_id, syncer=syncer, faults=faults, codec=codec)
         return store, FileAuditLog(root, syncer=syncer, faults=faults)
     raise AssertionError(f"unknown backend {backend!r}")
+
+
+def sealed_key_store(root: Path, graph_id: GraphId, ids: IdProvider) -> KeyStore:
+    """A key store for ``graph_id`` outside ``root``'s data, under a test KEK."""
+    path = root.parent / f"{root.name}-keys" / f"{graph_id}.sqlite"
+    if path.exists():
+        return KeyStore.load(path, graph_id, (TEST_KEK,), clock=SystemClock(), ids=ids)
+    return KeyStore.create(path, graph_id, TEST_KEK, clock=SystemClock(), ids=ids)

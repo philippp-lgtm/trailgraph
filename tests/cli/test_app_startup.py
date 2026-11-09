@@ -82,3 +82,13 @@ def test_query_loads_the_cypher_engine(
 ) -> None:
     modules = loaded(isolated_env, tmp_path, "query", "MATCH (n) RETURN count(n) AS n")
     assert {"graph_cli.query.cypher.parser", "graph_cli.query.cypher.execute"} <= modules
+
+
+def test_only_reads_of_sealed_data_load_the_cipher_library(
+    root: Path, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """Plan T16: the cipher library costs startup time; commands that open no store skip it."""
+    for args in (("graphs",), ("whoami",)):
+        assert "cryptography" not in loaded(isolated_env, tmp_path, *args), args
+    kind = load_roles(ONTOLOGY).term("lifecycle_type")
+    assert "cryptography" in loaded(isolated_env, tmp_path, "find", "--type", kind)

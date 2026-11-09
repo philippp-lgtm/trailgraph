@@ -1557,7 +1557,7 @@
       "kind": "write",
       "surface": "act",
       "action": null,
-      "summary": "Create the data root and, if missing, the config file with a device id.",
+      "summary": "Create the data root and, if missing, the config file and the key-encryption key.",
       "args": [],
       "options": [
         {

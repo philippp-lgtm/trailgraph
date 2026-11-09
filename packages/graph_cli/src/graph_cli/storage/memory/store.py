@@ -1,4 +1,8 @@
-"""InMemoryStore: read and write ports over one live replay view (contracts B4, B13)."""
+"""InMemoryStore: read and write ports over one live replay view (contracts B4, B13).
+
+With a key ring the store holds sealed records (store format 2, plan T16), as a
+FileStore of a sealed graph does; the view keeps the decoded records.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +14,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from graph_cli.kernel.authz import AuthorizedTx
+from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EventId, GraphId
+from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import (
     CAPABILITY_SNAPSHOT_AT_SEQ,
@@ -24,7 +30,9 @@ from graph_cli.kernel.ports.storage import (
     StagedBlob,
     WriteSession,
 )
+from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import BlobInfo, TxRecord
+from graph_cli.kernel.sealing import KeyRing
 from graph_cli.storage.common.chain import ChainLink
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
@@ -42,8 +50,10 @@ class InMemoryStore:
         *,
         audit: InMemoryAuditLog | None = None,
         faults: FaultHook | None = None,
+        ring: KeyRing | None = None,
     ) -> None:
         self.graph_id = graph_id
+        self.codec = RecordCodec(graph_id, ring)
         self.audit = audit if audit is not None else InMemoryAuditLog(faults=faults)
         self._faults = faults
         self._stream = graph_stream(str(graph_id))
@@ -51,6 +61,8 @@ class InMemoryStore:
         self._head = EMPTY_HEAD
         self._lock = threading.Lock()
         self._blobs: dict[str, bytes] = {}
+        self._lines: list[bytes] = []  # the sealed tx lines, to open again after a shred
+        self._generation = self.codec.ring.generation
 
     # ---- read port -----------------------------------------------------
 
@@ -60,7 +72,11 @@ class InMemoryStore:
     def head(self) -> Head:
         return self._head
 
+    def key_ring(self) -> KeyRing:
+        return self.codec.ring
+
     def snapshot(self, *, at_seq: int | None = None) -> ViewSnapshot:
+        self._refresh_keys()
         return ViewSnapshot(self._view.at(resolve_at_seq(at_seq, self._head.seq)))
 
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]:
@@ -106,12 +122,25 @@ class InMemoryStore:
                 f"lock not acquired within {timeout_s} s",
                 details={"timeout_ms": round(timeout_s * 1000)},
             )
+        self._refresh_keys()
         session = MemorySession(self)
         try:
             yield session
         finally:
             session.close()
             self._lock.release()
+
+    def _refresh_keys(self) -> None:
+        """After a shred the view holds records opened under keys that are gone: open the
+        stored lines again (T16)."""
+        ring = self.codec.ring
+        ring.refresh()
+        if ring.generation == self._generation:
+            return
+        view = GraphView()
+        for line in self._lines:
+            view.apply(self.codec.parse_tx(as_object(parse_json(line), "tx")))
+        self._view, self._generation = view, ring.generation
 
     def _apply(self, record: TxRecord) -> None:
         self._view.apply(record)
@@ -203,14 +232,16 @@ class MemorySession:
             head=head,
             view=store._view.at(head.seq),
             blob_exists=store._blobs.__contains__,
+            codec=store.codec,
         )
-        record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))
+        record, line = seal_tx(tx, ChainLink(head.seq, head.hash), store.codec)
         try:
             fire(store._faults, CrashPoint.TX_BEFORE_WRITE)
             fire(store._faults, CrashPoint.TX_AFTER_WRITE_BEFORE_SYNC)
         except OSError as exc:
             raise GraphCliError("backend.unavailable", f"tx append failed: {exc}") from exc
         store._apply(record)
+        store._lines.append(line)
         self._used.add(receipt.event_id)
         warnings: list[WarningRecord] = []
         try:
