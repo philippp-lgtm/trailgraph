@@ -16,6 +16,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.kinetic_slot` | reading a graph's published function or action catalog, one implementation for both kinds (`<kind>/slot.json`, `<kind>/compiled/<hash>.json`, and with `sources=True` `<kind>/files/<hash>/<name>.yaml`); the app reads only the compiled document |
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
+| `storage.files.keystore` | the key store of a sealed graph (below): key-encryption key files, data keys wrapped in SQLite, shredding, backup and the comparison behind key verification; not wired into any command yet |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
@@ -121,7 +122,8 @@ POSIX only, local filesystems only.
 every value encrypted under a data key of its entity, its tx or its stored
 file, so that destroying the keys erases the data. Storage does not use it
 yet; every graph is unsealed (store format 1). The cipher primitives are in
-`storage.common.crypto`, the only module that imports `cryptography`.
+`storage.common.crypto`, the only module that imports `cryptography`; the
+key store is `storage.files.keystore` ([Key store](#key-store)).
 
 - A data key has an id (`Kid`, a UUIDv7). A sealed envelope is
   `{kid, nonce, ct}`, `nonce` and `ct` in unpadded base64url; the record
@@ -149,3 +151,54 @@ yet; every graph is unsealed (store format 1). The cipher primitives are in
   with AES-256-GCM under the nonce `prefix || i (4 bytes, big-endian) || last (1 byte, 1 on the final chunk)`
   and the header as associated data, so reordered, dropped, repeated or
   appended chunks and a changed header fail to decrypt.
+
+### Key store
+
+The data keys of a sealed graph live in one SQLite file per graph,
+`<keys dir>/<graph id>.sqlite` (mode 0600, new directories 0700), outside the
+data root: a backup of the data root holds ciphertext only. `KeyStore` is
+the `KeyRing` of a sealed graph. Losing the key store or the key-encryption
+key loses the data.
+
+- **Key-encryption key (KEK) file:** 64 lowercase hex digits (32 random
+  bytes) and an optional newline. It may be a symlink to a regular file, as
+  in container secret mounts; nobody but its owner may write it and only
+  owner and group may read it. A new one is created with mode 0600 and is
+  never replaced. A KEK is named by its id, the first 16 bytes of
+  HKDF-SHA256(KEK, info `graph_cli.kek-id/1`) in hex.
+- **Schema `graph_cli.keystore/1`:** `meta(key, value)` with `format`,
+  `graph_id` and `shreds` (a counter); `kek(kek_id, created_at,
+  retired_at)`; `dek(kid, scope, subject, kek_id, wrapped, created_at,
+  shredded_at, purge_event)`. `scope` is `entity`, `tx` or `file`; `subject`
+  is the entity or tx id, unique per scope, and empty for file keys (the
+  blob header names its kid). `wrapped` is the data key under AES-KW. A
+  shredded row has no `wrapped`, but keeps kid, scope, subject and the purge
+  event as evidence.
+- **Durability:** rollback journal (no WAL), `synchronous = FULL`. A new key
+  is committed before it is handed out, so it is durable before the record
+  that uses it; a key without a record is an orphan, harmless. Processes
+  that race for the key of one subject get the same key (`BEGIN IMMEDIATE`,
+  then a lookup before the insert).
+- **Shredding:** drops `wrapped` of the named keys in one transaction (a key
+  absent from the store fails it, a key shredded before keeps its first purge
+  event), bumps `shreds`, commits and runs `VACUUM`. `secure_delete = ON`
+  zeroes the freed bytes at the commit, `temp_store = MEMORY` keeps the copy
+  `VACUUM` makes off the disk. A deleted rollback journal may leave a wrapped
+  key in free blocks of the file system, worthless once the KEK that wrapped
+  it is rotated away.
+- **Caching:** the wrapped keys are read in one query on first use and each
+  is unwrapped on its first use. A process checks `PRAGMA data_version` when
+  a read begins (`refresh`) and at most once a second otherwise; when another
+  process has shredded or removed keys since (`shreds` changed), it drops its
+  cache.
+- **KEK rotation:** keys unwrap under the KEK their row names; the current
+  KEK wraps new keys, earlier ones are passed along while a rotation runs.
+- **Checks:** `check` compares the store with the kids the records reference
+  and the kids each recorded purge names: referenced but absent (missing),
+  shredded without a purge naming it (unrecorded), live but unreferenced
+  (orphan). `collect` deletes orphans created before a cutoff, so the key of
+  a file staged before the lock survives until its tx is written. `backup`
+  writes a consistent copy (SQLite backup API, mode 0600).
+- **Fault points:** `keys.before_commit`, `keys.after_commit`,
+  `shred.before_commit`, `shred.before_vacuum`. A key or a shred exists
+  exactly when its commit returned.

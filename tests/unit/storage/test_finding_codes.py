@@ -2,7 +2,13 @@
 
 from graph_cli.kernel.findings import FINDING_CODE_RE, Severity
 from graph_cli.storage import finding_codes
-from graph_cli.storage.common.faults import EXTRA_POINTS, MAINT_POINTS, CrashPoint, fire
+from graph_cli.storage.common.faults import (
+    EXTRA_POINTS,
+    KEYS_POINTS,
+    MAINT_POINTS,
+    CrashPoint,
+    fire,
+)
 
 
 def test_codes_follow_the_grammar_and_are_unique() -> None:
@@ -42,7 +48,7 @@ def test_crash_points_cover_the_contract_table() -> None:
         "blob.after_rename",
     }
     assert {p.value for p in CrashPoint} - {
-        p.value for p in EXTRA_POINTS | MAINT_POINTS
+        p.value for p in EXTRA_POINTS | MAINT_POINTS | KEYS_POINTS
     } == contract
 
 
