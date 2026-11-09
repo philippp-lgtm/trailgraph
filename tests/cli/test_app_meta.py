@@ -174,13 +174,14 @@ def test_inventory_with_output_schemas_describes_every_answer(run_cli: CliRunner
     plain = app(run_cli, "describe", "commands").data
     typed = app(run_cli, "describe", "commands", "--output-schemas").data
     defs = typed.pop("$defs")
-    assert {"envelope", "entity", "write_result"} <= set(defs)
+    assert {"envelope", "short_envelope", "entity", "write_result"} <= set(defs)
     outputs = {tuple(c["path"]): c.pop("output") for c in typed["commands"]}
     assert all(outputs.values())
     assert typed == plain
     whoami = app(run_cli, "whoami")
     Draft202012Validator({**outputs[("whoami",)], "$defs": defs}).validate(whoami.data)
-    Draft202012Validator({**defs["envelope"], "$defs": defs}).validate(whoami.envelope)
+    # stdout holds the short envelope; the server answers with the whole one
+    Draft202012Validator({**defs["short_envelope"], "$defs": defs}).validate(whoami.envelope)
 
 
 def test_inventory_golden_and_leaks(run_cli: CliRunner) -> None:

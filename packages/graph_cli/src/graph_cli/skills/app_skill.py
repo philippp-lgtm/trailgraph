@@ -115,7 +115,8 @@ against it and audited. The CLI is on `PATH`.
    --kind function` or the graph skill's list) and run it with
    `graph run <function> --param ...` (a `ref` parameter takes an id: look
    names up with `graph lookup <value> --for <function>.<param>`); write a
-   `query` when none fits.
+   `query` when none fits. An empty value in a function's answer means
+   nothing is recorded: say so instead of searching further.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
    `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is
@@ -209,13 +210,13 @@ you take from it, never edit a stored file.
 
 Every `--json` call prints one JSON object on stdout.
 
-- Keys, always present: {envelope_keys}.
-- `ok` tells success; `data` holds the result, `page` the paging of lists.
+{keys_line}
 - Never cut an answer with `head`, a pipe or another program: ask for less.
   `--fields <attr>,<attr>` on `get`, `find` and `neighbors` keeps those
-  fields and `rev`; `RETURN` in `graph query`; `describe schema --compact`.
-- A large answer goes to a file (`output.spilled`, `details.path`; `data`
-  null): ask for less, or read parts with your file tools, never `jq`.
+  fields and `rev` (`--full` adds timestamps, `tx_seq` and edge ids);
+  `RETURN` in `graph query`; `describe schema --compact`.
+- A large answer goes to a file (`output.spilled`, `details.path`; no
+  `data`): ask for less, or read parts with your file tools, never `jq`.
 - On failure `error` holds {error_keys}. `hint` is the command to run next, or null.
 
 ## Commands
@@ -522,7 +523,7 @@ OUTPUT_SECTIONS: Final = (
     (
         "Pages",
         "`page` of every list (`find`, `lookup`, `search`, `history`, `query`, `file check`);"
-        " null for other answers.",
+        " absent from other answers.",
         (
             ("total", "All matches."),
             ("shown", "Matches on this page."),
@@ -534,7 +535,7 @@ OUTPUT_SECTIONS: Final = (
     ),
     (
         "Hints and warnings",
-        "`hints` and `warnings` of every answer.",
+        "`hints` and `warnings` of an answer that has any.",
         (
             ("hints[].text", "What the hint is for."),
             ("hints[].command", "A command to run next, such as the next page."),
@@ -545,7 +546,8 @@ OUTPUT_SECTIONS: Final = (
     ),
     (
         "Entities",
-        "`graph get` shows one in `data.entity`, `graph find` a list in `data.items`.",
+        "`graph get` shows one in `data.entity`, `graph find` a list in `data.items`,"
+        " `graph neighbors` one per item in `data.items[].entity`.",
         (
             ("id", "The id; use it in later commands."),
             ("alias", "A short readable reference, also usable in commands."),
@@ -553,16 +555,24 @@ OUTPUT_SECTIONS: Final = (
             ("rev", "The revision; pass it to `--expect`."),
             ("record_status", "`active`, `superseded` or `retracted`."),
             ("attrs", "Field values; a lifecycle state is a field too."),
-            ("edges[].edge_id", "The edge id, for `graph unlink --edge-id`."),
             ("edges[].rel", "The relation."),
             ("edges[].target", "The id the edge points to."),
             ("edges[].qualifiers", "Values on the edge; only when set."),
             ("edges[].target_rev", "The pinned target revision; only when set."),
-            ("valid_from", "Start of validity, or null."),
-            ("valid_to", "End of validity, or null."),
+            ("valid_from", "Start of validity; only when set (with `--full` also null)."),
+            ("valid_to", "End of validity; only when set (with `--full` also null)."),
+        ),
+    ),
+    (
+        "Entities with --full",
+        "`--full` on `get`, `find` and `neighbors` adds how each entity was stored (a"
+        " field named in `--fields` shows without it). `graph history` lists the"
+        " transactions of an entity for `--as-of`.",
+        (
+            ("edges[].edge_id", "The edge id, for `graph unlink --edge-id`."),
             ("created_at", "When the entity was created."),
             ("recorded_at", "When this revision was written."),
-            ("tx_seq", "The transaction that wrote this revision, for `--as-of`."),
+            ("tx_seq", "The transaction that wrote this revision."),
             ("ontology_version", "The ontology version it was written under."),
             ("content_hash", "Hash of the content."),
         ),
@@ -677,8 +687,9 @@ OUTPUT_INTRO: Final = """\
 # Output
 
 Every `--json` call prints one envelope (SKILL.md, "Output envelope").
-These are the fields an agent reads most; the answer holds them even when
-they are null."""
+These are the fields an agent reads most. The envelope leaves out `data`,
+`page` and `error` when null and `hints` and `warnings` when empty; inside
+`data` a field is there even when null unless its table says otherwise."""
 
 HISTORY_BODY: Final = """\
 # History
@@ -734,18 +745,11 @@ documents, saved web pages.
   replace the old file: `graph supersede <id> <id> --reason <value>`.
 """
 
-# B9.2 and B9.8; the docs-vs-code test compares them with the envelope renderer.
-ENVELOPE_KEYS: Final = (
-    "schema",
-    "ok",
-    "command",
-    "graph",
-    "data",
-    "page",
-    "hints",
-    "warnings",
-    "error",
-)
+# B9.2 and B9.8 as `graph --json` prints them (the short envelope); the docs-vs-code test
+# compares them with the envelope renderer.
+ALWAYS_KEYS: Final = ("schema", "ok", "command")
+GRAPH_KEYS: Final = ("name", "seq")
+OPTIONAL_KEYS: Final = ("data", "page", "hints", "warnings", "error")
 ERROR_KEYS: Final = ("code", "category", "retryable", "message", "hint", "details")
 
 
@@ -876,7 +880,11 @@ def _skill(doc: JsonObject, commands: Sequence[JsonObject], codes: Sequence[Json
     front += [f"  {key}: {_quoted(value)}" for key, value in metadata.items()]
     front.append("---")
     body = SKILL_BODY.format(
-        envelope_keys=_series(ENVELOPE_KEYS),
+        keys_line=(
+            f"- Keys: {_series(ALWAYS_KEYS)} always; `graph` with {_series(GRAPH_KEYS)};"
+            f" {_series(OPTIONAL_KEYS)} only when not null or empty. `ok` tells success;"
+            " `data` holds the result, `page` the paging of lists."
+        ),
         error_keys=_series(ERROR_KEYS),
         commands_table="\n".join(
             table(

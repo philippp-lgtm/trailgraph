@@ -10,7 +10,8 @@ reach the command as if given after it (``leaf``). After the envelope is
 written, an optional ``after`` callback learns what was delivered
 (``Completed``), for the access log; rendering and writing the envelope is
 the ``render`` phase of the given ``Timings``. A JSON envelope larger than
-the ``Invocation``'s spill limit goes to a file (``cli_kit.spill``). A
+the ``Invocation``'s spill limit goes to a file (``cli_kit.spill``); with
+``Invocation.short`` stdout gets the short envelope, everything else the whole one. A
 command whose answer was rendered elsewhere (``Result.forwarded``: the
 server, B14.10) is written as it came, after the local warnings; its exit
 code follows its error category.
@@ -32,6 +33,7 @@ from graph_cli.cli_kit.envelope import (
     envelope,
     render_json,
     render_text,
+    short_envelope,
     warning_lines,
 )
 from graph_cli.cli_kit.exit_codes import EXIT_OK, exit_code_for
@@ -50,6 +52,7 @@ class Invocation:
     json_default: bool = False  # GRAPH_CLI_OUTPUT=json or config [output] default
     debug: bool = False  # GRAPH_CLI_DEBUG=1
     spill: SpillTarget | None = None  # large JSON answers go to a file (cli_kit.spill)
+    short: bool = False  # JSON on stdout as the short envelope (envelope.short_envelope)
 
 
 @dataclass
@@ -151,9 +154,10 @@ def run(
             error_category = error.category if error is not None else None
         spilled = None
         if json_mode:
-            stdout = render_json(document)
+            shape = short_envelope if invocation.short else dict
+            stdout = render_json(shape(document))
             if invocation.spill is not None:
-                rendered = spill_json(document, stdout, invocation.spill)
+                rendered = spill_json(document, stdout, invocation.spill, shape)
                 document, stdout, spilled = (
                     rendered.document,
                     rendered.stdout,

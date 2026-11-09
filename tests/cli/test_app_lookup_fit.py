@@ -49,7 +49,7 @@ def test_for_keeps_the_candidates_that_fit(run_cli: CliRunner, root: Path) -> No
     assert (item["type"], item["facts"]) == ("nas:Topic", None)
     assert outcome.data["texts"] == [{"text": "Physics", "total": 1, "exact": 1, "excluded": 1}]
     assert outcome.data["fit"] == {"for": "about", "for_source": None, "types": ["nas:Topic"]}
-    assert outcome.envelope["hints"] == []
+    assert outcome.hints == []
     book = app(run_cli, "lookup", "Physics", "--for", "nas:cites", env=ENV)
     assert [i["type"] for i in book.data["items"]] == ["nas:Book"]
     topic = app(run_cli, "lookup", "Physics", "--for-source", "broader", env=ENV)

@@ -44,7 +44,7 @@ def store_of(root: Path) -> FileStore:
 def found(run_cli: CliRunner) -> list[str]:
     outcome = app(run_cli, "find", "--include-inactive", "--limit", "500", env=ENV)
     assert outcome.code == 0, outcome.envelope
-    assert outcome.envelope["warnings"] == []
+    assert outcome.warnings == []
     return [item["id"] for item in outcome.data["items"]]
 
 

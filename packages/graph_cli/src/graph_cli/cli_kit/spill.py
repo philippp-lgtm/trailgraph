@@ -16,7 +16,7 @@ reason}``: an answer is never lost. Text mode never spills.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -42,7 +42,14 @@ class Rendered:
     spilled_bytes: int | None = None
 
 
-def spill_json(document: Mapping[str, JsonValue], stdout: str, target: SpillTarget) -> Rendered:
+def spill_json(
+    document: Mapping[str, JsonValue],
+    stdout: str,
+    target: SpillTarget,
+    shape: Callable[[Mapping[str, JsonValue]], Mapping[str, JsonValue]] = dict,
+) -> Rendered:
+    """``stdout`` is ``document`` as printed, in the form ``shape`` gives it (the short
+    envelope); the file gets the same form, ``Rendered.document`` stays whole."""
     size = len(stdout.encode())
     limit = target.limit()
     if not limit or size <= limit:
@@ -50,7 +57,7 @@ def spill_json(document: Mapping[str, JsonValue], stdout: str, target: SpillTarg
     graph = document.get("graph")
     name = graph.get("name") if isinstance(graph, Mapping) else None
     command = document.get("command")
-    content = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+    content = json.dumps(shape(document), ensure_ascii=False, indent=2) + "\n"
     warnings = document.get("warnings")
     assert isinstance(warnings, list)
     try:
@@ -67,7 +74,7 @@ def spill_json(document: Mapping[str, JsonValue], stdout: str, target: SpillTarg
             {"bytes": size, "limit": limit, "reason": reason},
         )
         whole = {**document, "warnings": [*warnings, failed.to_json()]}
-        return Rendered(whole, render_json(whole))
+        return Rendered(whole, render_json(shape(whole)))
     spilled = WarningRecord(
         "output.spilled",
         f"the answer has {size} bytes, more than {limit}; it is in {path}",
@@ -86,4 +93,4 @@ def spill_json(document: Mapping[str, JsonValue], stdout: str, target: SpillTarg
             *hints,
         ]
     short = {**document, "data": None, "hints": hints, "warnings": [*warnings, spilled.to_json()]}
-    return Rendered(short, render_json(short), size)
+    return Rendered(short, render_json(shape(short)), size)

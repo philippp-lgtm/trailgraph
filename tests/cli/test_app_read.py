@@ -174,7 +174,8 @@ def test_find_pages_with_a_next_command(run_cli: CliRunner, root: Path, roles: R
 def test_fields_keep_only_what_is_named(run_cli: CliRunner, root: Path, roles: Roles) -> None:
     cls = roles.term("lifecycle_type")
     enum_attr = roles.term("enum_attribute").rpartition(".")[2]
-    full = app(run_cli, "find", "--type", cls, "--limit", "1", env=ENV).data["items"][0]
+    full = app(run_cli, "find", "--type", cls, "--limit", "1", "--full", env=ENV).data["items"][0]
+    lean = app(run_cli, "find", "--type", cls, "--limit", "1", env=ENV).data["items"][0]
     always = {k: full[k] for k in ("id", "alias", "type", "rev", "record_status")}
     found = app(
         run_cli, "find", "--type", cls, "--fields", f"{enum_attr},edges", "--limit", "1", env=ENV
@@ -183,7 +184,7 @@ def test_fields_keep_only_what_is_named(run_cli: CliRunner, root: Path, roles: R
     assert found.data["items"][0] == {
         **always,
         "attrs": {enum_attr: full["attrs"].get(enum_attr)},
-        "edges": full["edges"],
+        "edges": lean["edges"],
     }
     (hint,) = found.envelope["hints"]
     assert f"--fields {enum_attr},edges" in hint["command"]
@@ -201,6 +202,39 @@ def test_fields_keep_only_what_is_named(run_cli: CliRunner, root: Path, roles: R
     unknown = app(run_cli, "find", "--type", cls, "--fields", "no_such_field", env=ENV)
     assert (unknown.code, unknown.error["code"]) == (1, "term.unknown")
     assert unknown.error["details"]["kind"] == "field"
+
+
+STORED = {"created_at", "recorded_at", "tx_seq", "ontology_version", "content_hash"}
+CONTENT = {"id", "alias", "type", "rev", "record_status", "attrs", "edges"}
+
+
+def test_reads_show_the_content_and_full_adds_how_it_was_stored(
+    run_cli: CliRunner, root: Path, roles: Roles
+) -> None:
+    cls, rel = roles.term("lifecycle_type"), roles.term("required_relation")
+    lean = app(run_cli, "find", "--type", cls, "--limit", "1", env=ENV)
+    full = app(run_cli, "find", "--type", cls, "--limit", "1", "--full", env=ENV)
+    (item,), (whole,) = lean.data["items"], full.data["items"]
+    assert set(item) == CONTENT  # no validity set in the seeds of this type
+    assert set(whole) == CONTENT | STORED | {"valid_from", "valid_to"}
+    assert item["edges"] and all("edge_id" not in e for e in item["edges"])
+    assert [{k: v for k, v in e.items() if k != "edge_id"} for e in whole["edges"]] == item["edges"]
+    assert {k: whole[k] for k in CONTENT - {"edges"}} == {k: item[k] for k in CONTENT - {"edges"}}
+    assert set(app(run_cli, "get", item["id"], env=ENV).data["entity"]) == CONTENT
+    got = app(run_cli, "get", item["id"], "--full", env=ENV).data["entity"]
+    assert got == whole
+    near = app(run_cli, "neighbors", item["id"], "--rel", rel, "--direction", "out", env=ENV)
+    walked = app(
+        run_cli, "neighbors", item["id"], "--rel", rel, "--direction", "out", "--full", env=ENV
+    )
+    assert near.data["items"] and all("edge_id" not in i["edge"] for i in near.data["items"])
+    assert all("edge_id" in i["edge"] for i in walked.data["items"])
+    assert all(set(i["entity"]) == CONTENT for i in near.data["items"])
+    paged = app(run_cli, "find", "--type", cls, "--limit", "1", "--full", env=ENV)
+    (hint,) = paged.hints
+    assert "--full" in hint["command"]
+    node = app(run_cli, "query", f"MATCH (n:{cls.partition(':')[2]}) RETURN n LIMIT 1", env=ENV)
+    assert set(node.data["items"][0]["n"]) == CONTENT
 
 
 def test_find_rel_matches_any_listed_target(run_cli: CliRunner, root: Path, roles: Roles) -> None:
@@ -454,7 +488,8 @@ def test_reads_reach_a_listening_view_only_when_enabled(
             entity = found.data["items"][0]
             assert app(run_cli, "get", entity["alias"], env=env).code == 0
             (event,) = listener.receive(2.0)
-            assert (event.graph, event.ids) == (found.envelope["graph"]["id"], (entity["id"],))
+            (graph,) = app(run_cli, "graphs", env=env).data["items"]
+            assert (event.graph, event.ids) == (graph["id"], (entity["id"],))
         finally:
             listener.close()
         assert app(run_cli, "get", entity["alias"], env=env).code == 0  # no viewer left

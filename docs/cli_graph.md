@@ -30,13 +30,25 @@ JSON document with `--json` (or `GRAPH_CLI_OUTPUT=json`). Exit codes follow
 the error category (0 ok, 1 refused or invalid, 2 usage, 3 denied, 4
 conflict, 5 unavailable, 6 internal error).
 
+### The short envelope
+
+`graph --json` prints the envelope short, since every answer goes into an
+agent's context: `schema`, `ok` and `command` always, `graph` with its
+`name` and `seq` (and `state` when the graph is not active), and `data`,
+`page`, `hints`, `warnings` and `error` only when they are not null or
+empty; read a missing key as null or `[]`. The answer itself keeps every
+key: the server sends it whole (remote mode prints it short on the
+client), the access log records it whole, and `graph-admin --json` prints
+it whole. A spilled answer's file holds what stdout would have shown.
+
 ### Large answers go to a file
 
 Agent harnesses cut long tool output or put all of it into the agent's
 context. So a `graph` JSON envelope larger than `[output] spill_bytes`
 (16384 bytes by default; see [Configuration](configuration.md#configtoml))
 is written whole, pretty-printed for line-wise reading, to a new file, and
-stdout gets the same envelope with `data: null`, the warning
+stdout gets the same envelope with `data: null` (left out of the short
+envelope), the warning
 `output.spilled {path, bytes, limit}` and, on success, a first hint to ask
 for less or to read only the needed part of the file with the agent's file
 read or search tool. The hint names no command: a shell program such as
@@ -71,12 +83,12 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`. See [Actions](#actions) |
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
-| `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
+| `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
-| `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` as for `get` |
+| `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
 | `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
-| `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` as for `get` |
+| `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` and `--full` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
 | `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
@@ -234,13 +246,22 @@ and errors are checked as for any write.
 
 ## Fewer fields
 
-`get`, `find` and `neighbors` show every part of an entity by default.
+`get`, `find` and `neighbors` show an entity's content by default: `id`,
+`alias`, `type`, `rev`, `record_status`, `attrs`, its `edges` (relation,
+target, and qualifiers and pinned revision when set) and `valid_from` and
+`valid_to` when set. `--full` adds how it was stored: `created_at`,
+`recorded_at`, `tx_seq`, `ontology_version`, `content_hash`, the validity
+also when null, and the edge ids (`unlink --edge-id`); the edges
+`neighbors` walked carry their ids then too. A node that `graph query`
+returns is shown as without `--full`. Nothing an agent works with needs
+the rest: `--expect` takes `rev`, and `graph history` lists the
+transactions for `--as-of`.
 `--fields` (repeatable, comma-separated) keeps only `id`, `alias`, `type`,
 `rev` and `record_status` (always: `rev` is what `--expect` needs), `attrs`
 with the named attributes (null when an entity has no value), and the
 named entity parts: `edges` or a system field such as `tx_seq` or
-`recorded_at`. A name no type in scope has is `term.unknown`. A next-page
-command repeats `--fields`. `query ... RETURN` is the projection of
+`recorded_at`, also without `--full`. A name no type in scope has is
+`term.unknown`. A next-page command repeats `--fields` and `--full`. `query ... RETURN` is the projection of
 `graph query`; `lookup` and `search` answers are compact already.
 
 ## What an entity can do next

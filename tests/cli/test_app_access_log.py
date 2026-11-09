@@ -77,7 +77,8 @@ def test_every_command_records_what_the_caller_received(
         "get"
     ] * 3
     envelope = json.loads(got.stdout)
-    assert json_get["graph"] == {k: envelope["graph"][k] for k in ("id", "name", "seq")}
+    assert set(json_get["graph"]) == {"id", "name", "seq"}  # the whole answer is logged
+    assert {k: json_get["graph"][k] for k in ("name", "seq")} == envelope["graph"]
     size = len(got.stdout.encode())
     assert json_get["output"] == {"format": "json", "bytes": size, "spilled_bytes": None}
     size = len(text.stdout.encode())

@@ -32,7 +32,7 @@ import difflib
 import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Concatenate
+from typing import TYPE_CHECKING, Concatenate, Final
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.effective import (
@@ -177,23 +177,44 @@ def graph_json(entry: GraphEntry, seq: int | None) -> dict[str, JsonValue]:
     }
 
 
-def entity_json(revision: Revision, fields: Sequence[str] = ()) -> dict[str, JsonValue]:
-    """An entity as reads show it: every revision field, explicit nulls (C.6 envelope rule).
+# An entity's validity, shown by default only when set; the other system fields only with
+# ``full`` or by name in ``fields``.
+VALIDITY: Final = ("valid_from", "valid_to")
+
+
+def entity_json(
+    revision: Revision, fields: Sequence[str] = (), *, full: bool = False
+) -> dict[str, JsonValue]:
+    """An entity as reads show it. By default its content: the always shown keys, ``attrs``,
+    ``edges`` without their ids, and ``valid_from``/``valid_to`` when set. With ``full``
+    every revision field and edge id, explicit nulls (C.6 envelope rule).
 
     With ``fields`` (checked by ``query.plan.check_fields``) only the always shown
     keys, ``attrs`` with the named attributes (null when absent) and the named
     entity parts and system fields.
     """
-    full = _entity_json(revision)
-    if not fields:
-        return full
-    shown: dict[str, JsonValue] = {key: full[key] for key in ALWAYS_SHOWN}
-    shown["attrs"] = {n: revision.attrs.get(n) for n in fields if n not in full}
-    shown.update({n: full[n] for n in fields if n in full and n not in ALWAYS_SHOWN})
-    return shown
+    whole = _entity_json(revision, edge_ids=full)
+    if fields:
+        shown: dict[str, JsonValue] = {key: whole[key] for key in ALWAYS_SHOWN}
+        shown["attrs"] = {n: revision.attrs.get(n) for n in fields if n not in whole}
+        shown.update({n: whole[n] for n in fields if n in whole and n not in ALWAYS_SHOWN})
+        return shown
+    if full:
+        return whole
+    lean = {key: whole[key] for key in (*ALWAYS_SHOWN, "attrs", "edges")}
+    lean.update({key: whole[key] for key in VALIDITY if whole[key] is not None})
+    return lean
 
 
-def _entity_json(revision: Revision) -> dict[str, JsonValue]:
+def edge_json(edge: EdgeRecord, *, full: bool = False) -> dict[str, JsonValue]:
+    """An edge as reads show it: without its id unless ``full``."""
+    data = edge.to_json()
+    if not full:
+        del data["edge_id"]
+    return data
+
+
+def _entity_json(revision: Revision, *, edge_ids: bool) -> dict[str, JsonValue]:
     return {
         "id": str(revision.id),
         "alias": revision.alias,
@@ -201,7 +222,7 @@ def _entity_json(revision: Revision) -> dict[str, JsonValue]:
         "rev": revision.rev,
         "record_status": revision.record_status,
         "attrs": dict(revision.attrs),
-        "edges": [edge.to_json() for edge in revision.edges],
+        "edges": [edge_json(edge, full=edge_ids) for edge in revision.edges],
         "valid_from": revision.valid_from,
         "valid_to": revision.valid_to,
         "created_at": format_timestamp(revision.created_at),
@@ -613,6 +634,7 @@ class ReadService:
         rev: int | None = None,
         fields: Sequence[str] = (),
         affordances: bool = False,
+        full: bool = False,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """The current revision, or revision ``rev``; the status warnings and
         ``superseded_by``/``retracted_by`` always describe the current state.
@@ -650,7 +672,7 @@ class ReadService:
                 WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
             )
         data: dict[str, JsonValue] = {
-            "entity": entity_json(revision, shown),
+            "entity": entity_json(revision, shown, full=full),
             "current_rev": current.rev,
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
@@ -723,6 +745,7 @@ class ReadService:
         rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
         in_rel_refs: Sequence[tuple[str, Sequence[str]]] = (),
         fields: Sequence[str] = (),
+        full: bool = False,
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
         warnings: list[WarningRecord] = []
         shown = check_fields(view.model, spec.types, fields)
@@ -752,7 +775,8 @@ class ReadService:
         )
         query: Query = plan_find(view.model, spec)
         page = view.snapshot.query(query)
-        data: dict[str, JsonValue] = {"items": [entity_json(r, shown) for r in page.items]}
+        items: list[JsonValue] = [entity_json(r, shown, full=full) for r in page.items]
+        data: dict[str, JsonValue] = {"items": items}
         self._signal(view, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
 
@@ -957,6 +981,7 @@ class ReadService:
         direction: str = "both",
         depth: int = 1,
         fields: Sequence[str] = (),
+        full: bool = False,
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         shown = check_fields(view.model, (), fields)
         start, warnings = resolve_ref(ref, view.snapshot)
@@ -969,8 +994,8 @@ class ReadService:
         items: list[JsonValue] = [
             {
                 "direction": "out" if edge.target == neighbor else "in",
-                "edge": edge.to_json(),
-                "entity": entity_json(revision, shown),
+                "edge": edge_json(edge, full=full),
+                "entity": entity_json(revision, shown, full=full),
             }
             for neighbor, edge, revision in found
         ]

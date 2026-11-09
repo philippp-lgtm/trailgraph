@@ -80,6 +80,7 @@ def test_functions_and_actions_come_first_when_the_graph_has_them() -> None:
         compiled_model("company", "1.1.0"), FUNCTIONS, functions=function_catalog()
     )
     assert "run a named function when one fits" in with_functions
+    assert "An empty value in a function's answer means nothing is recorded" in with_functions
     with_actions = skill(company_model(), ACTIONS, actions=action_catalog())
     assert "run a named action when one fits" in with_actions
     assert "Otherwise preview `create`" in with_actions

@@ -28,8 +28,8 @@ STRINGS: Final = array(STRING)
 
 
 def _entity() -> Schema:
-    """``read.entity_json``: every key, or with ``--fields`` the always shown ones,
-    ``attrs`` and the named parts."""
+    """``read.entity_json``: the content (validity only when set), every key with
+    ``--full``, or with ``--fields`` the always shown ones, ``attrs`` and the named parts."""
     return obj(
         {
             "id": STRING,
@@ -198,9 +198,9 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
     kit.DEFS,
     {
         "entity": _entity(),
-        "edge": obj(
-            {"edge_id": STRING, "rel": STRING, "target": STRING},
-            {"qualifiers": obj(extra=ANY), "target_rev": INTEGER},
+        "edge": obj(  # ``services.read.edge_json``: the id with --full only
+            {"rel": STRING, "target": STRING},
+            {"edge_id": STRING, "qualifiers": obj(extra=ANY), "target_rev": INTEGER},
         ),
         "write_result": obj(WRITE_RESULT),
         "facet": _facet(),

@@ -115,6 +115,12 @@ FIELDS: Final = ParamSpec(
     " id, alias, type, rev and record_status always.",
     repeatable=True,
 )
+FULL: Final = ParamSpec(
+    "--full",
+    "flag",
+    "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq,"
+    " ontology_version, content_hash) and the edge ids, for unlink --edge-id.",
+)
 
 
 def get(
@@ -122,6 +128,7 @@ def get(
     ref: str,
     rev: int | None,
     fields: tuple[str, ...],
+    full: bool,
     affordances: bool,
     graph: str | None,
     as_of: str | None,
@@ -132,6 +139,8 @@ def get(
     args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
     if affordances:
         args["affordances"] = True  # only when set: the log and audit args stay as they were
+    if full:
+        args["full"] = True
     view = _open(state, graph, "read.get", "get", args, point)
     ctx = context(state)
     if rev is not None and point is None:
@@ -141,7 +150,9 @@ def get(
         ctx.reader.authorize(
             ctx.actor, "read.history", f"graph:{view.entry.id}", request, view.entry
         )
-    data, warnings = ctx.reader.get(view, ref, rev=rev, fields=fields, affordances=affordances)
+    data, warnings = ctx.reader.get(
+        view, ref, rev=rev, fields=fields, affordances=affordances, full=full
+    )
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
 
@@ -175,6 +186,7 @@ def find(
     include_inactive: bool,
     sort: tuple[str, ...],
     fields: tuple[str, ...],
+    full: bool,
     limit: int,
     offset: int,
     graph: str | None,
@@ -192,6 +204,8 @@ def find(
         "limit": limit,
         "offset": offset,
     }
+    if full:
+        args["full"] = True
     rels = [parse_rel_flag(text, "--rel") for text in rel]
     in_rels = [parse_rel_flag(text, "--in-rel") for text in in_rel]
     view = _open(state, graph, "read.find", "find", args, point)
@@ -204,7 +218,7 @@ def find(
         offset=offset,
     )
     data, page, warnings = context(state).reader.find(
-        view, spec, rel_refs=rels, in_rel_refs=in_rels, fields=fields
+        view, spec, rel_refs=rels, in_rel_refs=in_rels, fields=fields, full=full
     )
     state.warnings += warnings
     page_json = page.to_json()
@@ -217,7 +231,7 @@ def find(
         ("--fields", fields),
         *_pinned(view, point),
     )
-    switches = ("--include-inactive",) if include_inactive else ()
+    switches = ("--include-inactive",) * include_inactive + ("--full",) * full
 
     def line(next_offset: int) -> str:
         return command_line("find", (), view.entry.name, options, switches, limit, next_offset)
@@ -463,6 +477,7 @@ def neighbors(
     direction: str,
     depth: int,
     fields: tuple[str, ...],
+    full: bool,
     graph: str | None,
     as_of: str | None,
 ) -> Result:
@@ -474,9 +489,11 @@ def neighbors(
         "depth": depth,
         "fields": list(fields),
     }
+    if full:
+        args["full"] = True
     view = _open(state, graph, "read.traverse", "neighbors", args, point)
     data, warnings = context(state).reader.neighbors(
-        view, ref, rels=rel, direction=direction, depth=depth, fields=fields
+        view, ref, rels=rel, direction=direction, depth=depth, fields=fields, full=full
     )
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
@@ -855,6 +872,7 @@ SPECS: Final = (
             REF,
             ParamSpec("--rev", "integer", "Show this earlier revision instead of the current one."),
             FIELDS,
+            FULL,
             ParamSpec(
                 "--affordances",
                 "flag",
@@ -873,6 +891,7 @@ SPECS: Final = (
             Example("graph get <id> --graph <graph> --json", "The entity as JSON."),
             Example("graph get <id> --rev 2 --json", "The entity as it was at revision 2."),
             Example("graph get <id> --fields <attr>,edges --json", "Only one field and the edges."),
+            Example("graph get <id> --full --json", "With the system fields and the edge ids."),
             Example(
                 "graph get <id> --as-of tx:<seq> --json", "The entity as it was after that tx."
             ),
@@ -940,6 +959,7 @@ SPECS: Final = (
             ParamSpec("--include-inactive", "flag", "Include superseded and retracted entities."),
             ParamSpec("--sort", "string", "Field to sort by, optionally :desc.", repeatable=True),
             FIELDS,
+            FULL,
             ParamSpec(
                 "--limit", "integer", f"Page size, at most {MAX_LIMIT}.", default=DEFAULT_LIMIT
             ),
@@ -1136,6 +1156,7 @@ SPECS: Final = (
             ),
             ParamSpec("--depth", "integer", "Hops, 1 to 3.", default=1),
             FIELDS,
+            FULL,
             GRAPH,
             AS_OF,
         ),

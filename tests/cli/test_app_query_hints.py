@@ -89,7 +89,7 @@ def publish(run_cli: CliRunner, tmp_path: Path, *, single: bool, many: bool) -> 
 
 
 def hints(envelope: dict[str, Any]) -> list[dict[str, str]]:
-    found: list[dict[str, str]] = envelope["hints"]
+    found: list[dict[str, str]] = envelope.get("hints", [])
     return found
 
 

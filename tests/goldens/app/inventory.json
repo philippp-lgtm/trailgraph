@@ -1852,6 +1852,13 @@
           "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
         },
         {
+          "name": "--full",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
+        },
+        {
           "name": "--limit",
           "type": "integer",
           "required": false,
@@ -1972,6 +1979,13 @@
           "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
         },
         {
+          "name": "--full",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
+        },
+        {
           "name": "--affordances",
           "type": "flag",
           "required": false,
@@ -2013,6 +2027,10 @@
         {
           "command": "graph get <id> --fields <attr>,edges --json",
           "summary": "Only one field and the edges."
+        },
+        {
+          "command": "graph get <id> --full --json",
+          "summary": "With the system fields and the edge ids."
         },
         {
           "command": "graph get <id> --as-of tx:<seq> --json",
@@ -2544,6 +2562,13 @@
           "required": false,
           "repeatable": true,
           "summary": "Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always."
+        },
+        {
+          "name": "--full",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
         },
         {
           "name": "--graph",

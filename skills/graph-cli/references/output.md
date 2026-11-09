@@ -3,12 +3,13 @@
 # Output
 
 Every `--json` call prints one envelope (SKILL.md, "Output envelope").
-These are the fields an agent reads most; the answer holds them even when
-they are null.
+These are the fields an agent reads most. The envelope leaves out `data`,
+`page` and `error` when null and `hints` and `warnings` when empty; inside
+`data` a field is there even when null unless its table says otherwise.
 
 ## Pages
 
-`page` of every list (`find`, `lookup`, `search`, `history`, `query`, `file check`); null for other answers.
+`page` of every list (`find`, `lookup`, `search`, `history`, `query`, `file check`); absent from other answers.
 
 | Field | Meaning |
 |---|---|
@@ -21,7 +22,7 @@ they are null.
 
 ## Hints and warnings
 
-`hints` and `warnings` of every answer.
+`hints` and `warnings` of an answer that has any.
 
 | Field | Meaning |
 |---|---|
@@ -33,7 +34,7 @@ they are null.
 
 ## Entities
 
-`graph get` shows one in `data.entity`, `graph find` a list in `data.items`.
+`graph get` shows one in `data.entity`, `graph find` a list in `data.items`, `graph neighbors` one per item in `data.items[].entity`.
 
 | Field | Meaning |
 |---|---|
@@ -43,16 +44,23 @@ they are null.
 | `rev` | The revision; pass it to `--expect`. |
 | `record_status` | `active`, `superseded` or `retracted`. |
 | `attrs` | Field values; a lifecycle state is a field too. |
-| `edges[].edge_id` | The edge id, for `graph unlink --edge-id`. |
 | `edges[].rel` | The relation. |
 | `edges[].target` | The id the edge points to. |
 | `edges[].qualifiers` | Values on the edge; only when set. |
 | `edges[].target_rev` | The pinned target revision; only when set. |
-| `valid_from` | Start of validity, or null. |
-| `valid_to` | End of validity, or null. |
+| `valid_from` | Start of validity; only when set (with `--full` also null). |
+| `valid_to` | End of validity; only when set (with `--full` also null). |
+
+## Entities with --full
+
+`--full` on `get`, `find` and `neighbors` adds how each entity was stored (a field named in `--fields` shows without it). `graph history` lists the transactions of an entity for `--as-of`.
+
+| Field | Meaning |
+|---|---|
+| `edges[].edge_id` | The edge id, for `graph unlink --edge-id`. |
 | `created_at` | When the entity was created. |
 | `recorded_at` | When this revision was written. |
-| `tx_seq` | The transaction that wrote this revision, for `--as-of`. |
+| `tx_seq` | The transaction that wrote this revision. |
 | `ontology_version` | The ontology version it was written under. |
 | `content_hash` | Hash of the content. |
 

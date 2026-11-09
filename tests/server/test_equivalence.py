@@ -401,9 +401,9 @@ def freshness_scenario(run: Run, owner: dict[str, str], project: Path) -> list[A
 
     def call(*args: str) -> Any:
         code, document, _, _ = run(*args)
-        error = document["error"] or {}
+        error = document.get("error") or {}
         shown = json.dumps(
-            [code, error.get("code"), error.get("hint"), document["warnings"]]
+            [code, error.get("code"), error.get("hint"), document.get("warnings", [])]
         ).replace(str(project), "<project>")
         seen.append([list(args), json.loads(shown)])
         return document

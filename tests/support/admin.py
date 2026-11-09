@@ -11,23 +11,39 @@ from harness import CliRunner
 
 @dataclass(frozen=True)
 class Outcome:
+    """An envelope as printed; ``graph`` prints the short one, without null or empty keys."""
+
     code: int
     envelope: dict[str, Any]
     stderr: str
 
     @property
     def data(self) -> Any:
-        return self.envelope["data"]
+        return self.envelope.get("data")
 
     @property
     def error(self) -> dict[str, Any]:
-        error = self.envelope["error"]
+        error = self.envelope.get("error")
         assert isinstance(error, dict), self.envelope
         return error
 
     @property
+    def warnings(self) -> list[dict[str, Any]]:
+        warnings: list[dict[str, Any]] = self.envelope.get("warnings", [])
+        return warnings
+
+    @property
+    def hints(self) -> list[dict[str, Any]]:
+        hints: list[dict[str, Any]] = self.envelope.get("hints", [])
+        return hints
+
+    @property
+    def page(self) -> dict[str, Any] | None:
+        return self.envelope.get("page")
+
+    @property
     def warning_codes(self) -> list[str]:
-        return [w["code"] for w in self.envelope["warnings"]]
+        return [w["code"] for w in self.warnings]
 
 
 def parse(result: subprocess.CompletedProcess[str]) -> Outcome:

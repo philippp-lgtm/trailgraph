@@ -68,7 +68,7 @@ def test_add_then_path_and_check(run_cli: CliRunner, root: Path, home: Path) -> 
     assert data["file"]["media_type"] == "application/pdf"
     assert data["file"]["file_name"] == "report 2024.pdf"
     assert data["file"]["origin"] == {"root": "notes", "path": "scans/report 2024.pdf"}
-    assert envelope["warnings"] == []
+    assert "warnings" not in envelope
 
     shown = app(run_cli, "file", "path", "FILE-0001", env=ENV)
     assert shown.code == 0, shown.envelope
