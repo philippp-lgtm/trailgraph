@@ -160,6 +160,26 @@ class AdminContext:
         can leave out what the caller may not see without recording a denial per entry."""
         return self.decide(action, resource, graph=graph).effect != "deny"
 
+    def current_decisions(
+        self,
+        entry: GraphEntry,
+        decisions: tuple[Decision, ...],
+        meta: RequestMeta,
+        *,
+        reason: str | None = None,
+    ) -> tuple[Decision, ...]:
+        """``decisions``, made again when the graph's policy set differs from theirs: under
+        the session's lock the policy in effect decides (B6.14), with the graph's own layer."""
+        self.policy.refresh()
+        if all(d.policy_hash == self.policy.current(entry.id).hash for d in decisions):
+            return decisions
+        return self.authorize(
+            [(d.action, d.resource) for d in decisions],
+            request=meta,
+            graph=entry.id,
+            reason=reason,
+        )
+
     def intent(
         self,
         session: MaintenanceSession,
@@ -169,27 +189,21 @@ class AdminContext:
         change: Mapping[str, JsonValue],
         *,
         reason: str | None = None,
+        event_id: EventId | None = None,
     ) -> AuditReceipt:
-        """The graph-stream intent of a maintenance effect (W.e), durable on return.
+        """The graph-stream intent of a maintenance effect (W.e), durable on return;
+        ``event_id`` when the effect needs it in advance (the tx of a purge).
 
-        The decisions are made again when the graph's policy set differs from theirs:
-        under the session's lock the policy in effect decides (B6.14), with the graph's
-        own layer, as ``audit verify`` expects for a graph-stream event.
+        The decisions are made again when the graph's policy set differs from theirs
+        (``current_decisions``), as ``audit verify`` expects for a graph-stream event.
         """
-        self.policy.refresh()
-        if any(d.policy_hash != self.policy.current(entry.id).hash for d in decisions):
-            decisions = self.authorize(
-                [(d.action, d.resource) for d in decisions],
-                request=meta,
-                graph=entry.id,
-                reason=reason,
-            )
+        decisions = self.current_decisions(entry, decisions, meta, reason=reason)
         event = events.maintenance(
             actor=self.actor,
             decisions=decisions,
             request=meta,
             ts=self.clock.now(),
-            event_id=self.event_id(),
+            event_id=event_id or self.event_id(),
             env=self.env,
             graph=entry,
             change=change,

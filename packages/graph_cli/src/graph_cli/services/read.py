@@ -182,7 +182,8 @@ def entity_json(revision: Revision, fields: Sequence[str] = ()) -> dict[str, Jso
 
     With ``fields`` (checked by ``query.plan.check_fields``) only the always shown
     keys, ``attrs`` with the named attributes (null when absent) and the named
-    entity parts and system fields.
+    entity parts and system fields. A revision a purge erased adds ``shredded: true``
+    (T16); its attributes and qualifiers read as absent.
     """
     full = _entity_json(revision)
     if not fields:
@@ -190,11 +191,13 @@ def entity_json(revision: Revision, fields: Sequence[str] = ()) -> dict[str, Jso
     shown: dict[str, JsonValue] = {key: full[key] for key in ALWAYS_SHOWN}
     shown["attrs"] = {n: revision.attrs.get(n) for n in fields if n not in full}
     shown.update({n: full[n] for n in fields if n in full and n not in ALWAYS_SHOWN})
+    if revision.shredded:
+        shown["shredded"] = True
     return shown
 
 
 def _entity_json(revision: Revision) -> dict[str, JsonValue]:
-    return {
+    data: dict[str, JsonValue] = {
         "id": str(revision.id),
         "alias": revision.alias,
         "type": revision.type,
@@ -210,6 +213,9 @@ def _entity_json(revision: Revision) -> dict[str, JsonValue]:
         "ontology_version": revision.ontology_version,
         "content_hash": revision.content_hash,
     }
+    if revision.shredded:  # additive: a purge erased its values (T16)
+        data["shredded"] = True
+    return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -701,8 +707,12 @@ class ReadService:
                 "own_session": tx is not None
                 and session is not None
                 and tx.actor.session.id == session,
-                "changed": changed_names(before, after) if before and after else None,
+                "changed": changed_names(before, after)
+                if before and after and not (before.shredded or after.shredded)
+                else None,
             }
+            if after is not None and after.shredded:  # additive: a purge erased it (T16)
+                item["shredded"] = True
             if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
                 item["action"] = tx.request.action.to_json()
             items.append(item)

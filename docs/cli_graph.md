@@ -207,6 +207,13 @@ an offset is `usage.invalid_argument`. An earlier state is history, so
 `--as-of` also needs `read.history` (see
 [Access control: History](access_control.md#history)).
 
+A maintainer can erase entities for good ([Erasing
+data](cli_graph_admin.md#erasing-data-purge)). Each revision of such an entity,
+the current one and every earlier one, then carries `shredded: true` and no
+attributes or qualifiers; reads, filters and queries treat its values as
+absent, and its `history` items have no `reason` and `changed: null`. The key
+appears only on erased revisions. Ids, aliases, lifecycle state and edges stay.
+
 Every write is a change set that commits completely or not at all;
 validation findings, refusals and dry runs are described in
 [Architecture: write pipeline](architecture.md#write-pipeline).

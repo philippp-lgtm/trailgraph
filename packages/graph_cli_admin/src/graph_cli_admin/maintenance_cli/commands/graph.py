@@ -1,4 +1,4 @@
-"""``graph-admin graph create|list|show|check|reindex|pull|push``, ``graph skill
+"""``graph-admin graph create|list|show|check|reindex|purge|pull|push``, ``graph skill
 publish|render``, ``graph functions publish|show`` and ``graph actions publish|show``."""
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
 )
 from graph_cli_admin.services_admin import actions, functions, graphs, skill, sources
 from graph_cli_admin.services_admin.check import check
+from graph_cli_admin.services_admin.purge import purge
 from graph_cli_admin.services_admin.reindex import reindex
 
 REF: Final = ParamSpec("ref", "graph_ref", "Graph name or id.", required=True, positional=True)
@@ -128,6 +129,26 @@ def reindex_command(
 ) -> Result:
     outcome = reindex(
         admin_context(state, data_root), graph_ref=ref, reason=reason, dry_run=dry_run
+    )
+    return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
+
+
+def purge_command(
+    state: CommandState,
+    ref: str,
+    refs: tuple[str, ...],
+    with_files: bool,
+    reason: str,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    outcome = purge(
+        admin_context(state, data_root),
+        graph_ref=ref,
+        refs=refs,
+        with_files=with_files,
+        reason=reason,
+        dry_run=dry_run,
     )
     return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
 
@@ -320,6 +341,18 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
 )
 REINDEX_OUTPUT: Final = obj(  # services_admin.reindex.reindex
     {"graph_id": STRING, "seq": INTEGER, "dry_run": BOOLEAN, "rebuilt": BOOLEAN}
+)
+PURGE_OUTPUT: Final = obj(  # services_admin.purge.purge
+    {
+        "graph_id": STRING,
+        "entities": STRINGS,
+        "retracted": STRINGS,
+        "keys": obj({"entity": INTEGER, "tx": INTEGER, "file": INTEGER, "pending": INTEGER}),
+        "blobs_removed": array(obj({"hash": STRING, "size": INTEGER})),
+        "copies_removed": INTEGER,
+        "dry_run": BOOLEAN,
+        "purged": BOOLEAN,
+    }
 )
 # ``path`` is null in the admin API's answer, which returns the files instead; the remote
 # client writes them and answers its own path.
@@ -626,6 +659,69 @@ SPECS: Final = (
         " derived files that differ from the log, or when reads warn storage.index_stale. A"
         " damaged tx log is backend.corrupt (repair first). Reads during the rebuild may miss"
         " a revision file for a moment.",
+    ),
+    CommandSpec(
+        path=("graph", "purge"),
+        kind="write",
+        surface="act",
+        action="maint.purge",
+        summary="Erase entities of the sealed graph REF for good (keys shredded, files deleted).",
+        params=(
+            REF,
+            ParamSpec(
+                "entity",
+                "entity_ref",
+                "Entities to erase: full id, alias or abbreviation.",
+                required=True,
+                repeatable=True,
+                positional=True,
+                keyword="refs",
+            ),
+            ParamSpec(
+                "--with-files",
+                "flag",
+                "Also erase the stored files their revisions name, unless another entity names"
+                " them.",
+            ),
+            ParamSpec(
+                "--reason",
+                "string",
+                "Why they are erased; recorded in the clear in the audit stream, so name a"
+                " ticket, not the person.",
+                required=True,
+            ),
+            ParamSpec("--dry-run", "flag", "Show what would be erased without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example(
+                "graph-admin graph purge <graph> <entity> --reason <ticket> --dry-run",
+                "Show what would be erased.",
+            ),
+            Example(
+                "graph-admin graph purge <graph> <entity> <file-entity> --with-files"
+                " --reason <ticket> --json",
+                "Erase an entity and its stored file.",
+            ),
+        ),
+        errors=(
+            *GRAPH_ERRORS,
+            *CHANGE_ERRORS,
+            "admin.graph_not_sealed",
+            "entity.not_found",
+            "usage.invalid_argument",
+            "backend.corrupt",
+            "backend.unavailable",
+        ),
+        handler=purge_command,
+        output=PURGE_OUTPUT,
+        description="Retracts the entities with empty values in one tx, then destroys the keys"
+        " of their revisions and of every tx that wrote one of them, and with --with-files"
+        " deletes their stored files. Afterwards they read as shredded: true, and their values"
+        " cannot be recovered from the data root or any backup of it, once no copy of the key"
+        " store from before the purge is left. Ids, types, edges and the audit trail stay;"
+        " unlink first when a relation itself must go. Running the same purge again completes"
+        " an interrupted one. Only sealed graphs (admin.graph_not_sealed otherwise).",
     ),
     CommandSpec(
         path=("graph", "pull"),

@@ -37,6 +37,7 @@ def test_finding_code_union() -> None:
         temporal_codes.FINDING_CODES,
         audit_codes.FINDING_CODES,
         storage_codes.FINDING_CODES,
+        storage_codes.KEY_FINDING_CODES,
     )
     assert len(codes) == sum(len(specs) for specs in owners)
     assert list(codes) == sorted(codes)

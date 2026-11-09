@@ -5,9 +5,9 @@ sealed graph (T16) decrypts one here, because its stored files hold
 ciphertext. A copy is named by its content hash, written to a private
 partial file, checked against the hash, made read-only (0400) and renamed
 into place; a copy that is there and has its hash is used again. Copies are
-plaintext outside the data root, which a purge cannot reach: each use removes
-copies of the same graph not used for ``KEEP_SECONDS`` (a use renews the
-time).
+plaintext outside the data root, which a purge reaches only on the machine
+and state root it runs with (``drop``): each use removes copies of the same
+graph not used for ``KEEP_SECONDS`` (a use renews the time).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import contextlib
 import os
 import re
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import BinaryIO, Final
 
@@ -67,6 +67,18 @@ class FileCopyDir:
             with contextlib.suppress(FileNotFoundError):
                 partial.unlink()
         return target
+
+    def drop(self, graph: str, digests: Iterable[str]) -> int:
+        """Remove the copies of ``digests`` (a purge, T16); returns how many went."""
+        removed = 0
+        for digest in digests:
+            hex_digest = digest.removeprefix("sha256:")
+            if not _HEX_RE.match(hex_digest) or "/" in graph or graph in ("", ".", ".."):
+                raise GraphCliError("internal.error", f"not a file copy name: {graph}/{digest}")
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(self.root / graph / hex_digest)
+                removed += 1
+        return removed
 
     def _prune(self, directory: Path) -> None:
         cutoff = self.clock.now().timestamp() - KEEP_SECONDS

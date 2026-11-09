@@ -12,7 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Set
 from dataclasses import replace
+from typing import Final
 
+from graph_cli.kernel.actions import Action
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import HASH_RE, CanonicalError, JsonValue
 from graph_cli.kernel.changeset import OP_ACTIONS
@@ -110,12 +112,19 @@ def _check_blobs(tx: AuthorizedTx, blob_exists: Callable[[str], bool]) -> None:
             raise _violation("blobs", "a listed blob is not stored", blob=digest)
 
 
+# A purge (T16) retracts what it erases: ``maint.purge`` covers the retractions of its tx.
+_COVERED: Final[Mapping[Action, frozenset[Action]]] = {
+    Action("maint.purge"): frozenset({Action("write.retract")})
+}
+
+
 def _check_decisions(tx: AuthorizedTx) -> None:
     """B6.10: an allow decision covers the action of every op (defence in depth)."""
     ops = tx.changeset.get("ops")
     if not isinstance(ops, list | tuple):
         raise _violation("changeset", "the change set has no ops")
-    allowed = tx.allowed_actions()
+    granted = tx.allowed_actions()
+    allowed = granted.union(*(_COVERED.get(a, frozenset()) for a in granted))
     for op in ops:
         name = op.get("op") if isinstance(op, Mapping) else None
         action = OP_ACTIONS.get(name) if isinstance(name, str) else None

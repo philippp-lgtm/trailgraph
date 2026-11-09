@@ -41,9 +41,15 @@ def key_settings(root: Path) -> KeySettings:
     return KeySettings(dir=keys, kek_file=kek)
 
 
-def key_rings(root: Path, *, clock: Clock | None = None, ids: IdProvider | None = None) -> KeyRings:
+def key_rings(
+    root: Path,
+    *,
+    clock: Clock | None = None,
+    ids: IdProvider | None = None,
+    faults: FaultSwitch | None = None,
+) -> KeyRings:
     clock = clock or SystemClock()
-    return KeyRings(key_settings(root), clock=clock, ids=ids or Uuid7Provider(clock))
+    return KeyRings(key_settings(root), clock=clock, ids=ids or Uuid7Provider(clock), faults=faults)
 
 
 def rings_for(root: Path) -> KeyRings:
@@ -76,7 +82,7 @@ def admin_context(root: Path, faults: FaultSwitch | None = None) -> AdminContext
     )
     roots = Roots(root, root / "config.toml", root / "state", "flag")
     ids = SeededIdProvider(clock, 21)
-    rings = key_rings(root, ids=ids)
+    rings = key_rings(root, ids=ids, faults=faults)
     return AdminContext(
         roots=roots,
         config=Config(roots.config_file),

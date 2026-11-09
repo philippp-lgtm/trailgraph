@@ -13,8 +13,10 @@ does not cascade into findings for every later line:
 - ``hash_mismatch`` (content edited) is independent of the chain position;
   so are ``unknown_schema``, ``event_malformed`` and ``unknown_action``.
 
-``cross_check`` matches write intents with the tx log (ids, changeset hash
-and, when recorded, changeset size; B5.6, B5.12),
+``cross_check`` matches write intents, and purge intents that wrote a tx, with
+the tx log (ids, changeset hash and, when recorded and the tx's key is not
+shredded, changeset size; B5.6, B5.12), ``purges`` lists the keys each purge
+intent names (for the key store check, T16),
 ``check_maintenance`` judges maintenance intents by their effects and walks
 the pin, graph policy and skill and function catalog events against the
 manifest, the installed policy and the published slots, ``check_policy`` walks
@@ -34,6 +36,7 @@ import dataclasses
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
+from uuid import UUID
 
 from graph_cli.audit import finding_codes as codes
 from graph_cli.audit.events import changeset_size
@@ -43,10 +46,12 @@ from graph_cli.audit.schema import (
     MAINT_EFFECT_ACTIONS,
     PIN_ACTION,
     POLICY_ACTION,
+    PURGE_ACTION,
     RELEASE_ACTION,
     event_problems,
     graph_of_stream,
-    is_write_intent,
+    is_canonical_uuid,
+    is_tx_intent,
     unknown_actions,
 )
 from graph_cli.kernel.canonical import (
@@ -59,9 +64,10 @@ from graph_cli.kernel.canonical import (
     parse_json,
 )
 from graph_cli.kernel.findings import Finding
-from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditLine, AuditStream, graph_stream
 from graph_cli.kernel.records import OntologyPin, TxRecord
+from graph_cli.kernel.sealing import Kid
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,9 +231,11 @@ def cross_check(
 
     Each intent serves one tx. A retried request may repeat an event id; the
     tx then takes the latest unused intent and the earlier one stays an orphan.
+    A purge intent that names a tx is that tx's intent (T16). The size of a change
+    set whose tx key is shredded cannot be recomputed and is not compared.
     """
     stream = graph_stream(str(graph_id))
-    intents = [event for event in events if is_write_intent(event)]
+    intents = [event for event in events if is_tx_intent(event)]
     by_id: dict[JsonValue, list[int]] = {}
     for index, event in enumerate(intents):
         by_id.setdefault(event.get("event_id"), []).append(index)
@@ -251,7 +259,8 @@ def cross_check(
             "tx_seq": tx.seq,
             "changeset_hash": tx.changeset_hash,
         }
-        if "changeset_size" in change:  # intents before the size was recorded lack it
+        # intents before the size was recorded lack it; a shredded change set reads empty
+        if "changeset_size" in change and not tx.shredded:
             expected["changeset_size"] = changeset_size(tx.changeset)
         recorded = {k: change.get(k) for k in expected}
         if recorded != expected:
@@ -271,10 +280,24 @@ def cross_check(
                 _finding(
                     codes.INTENT_WITHOUT_EFFECT,
                     {"stream": stream, "seq": event.get("seq")},
-                    "write intent without a committed tx (an interrupted write)",
+                    "write intent without a committed tx (an interrupted write or purge)",
                 )
             )
     return findings
+
+
+def purges(events: Iterable[Mapping[str, JsonValue]]) -> dict[EventId, list[Kid]]:
+    """The keys each ``ok`` purge intent names, by event id (T16); malformed intents are
+    ``event_malformed`` already and name nothing here."""
+    found: dict[EventId, list[Kid]] = {}
+    for event, purge in _effects([e for e in events if _ok(e)], PURGE_ACTION, "purge"):
+        kids, event_id = purge.get("kids"), event.get("event_id")
+        if not (isinstance(kids, list) and is_canonical_uuid(event_id)):
+            continue
+        assert isinstance(event_id, str)
+        named = [Kid(UUID(kid)) for kid in kids if is_canonical_uuid(kid)]
+        found.setdefault(EventId(UUID(event_id)), []).extend(named)
+    return found
 
 
 def check_maintenance(

@@ -48,6 +48,7 @@ def _entity() -> Schema:
             "tx_seq": INTEGER,
             "ontology_version": STRING,
             "content_hash": STRING,
+            "shredded": BOOLEAN,  # only true: a purge erased its values
         },
     )
 

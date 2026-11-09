@@ -30,6 +30,7 @@ Layer = Literal[
     "rule",
     "audit",
     "storage",
+    "keys",
     "ext",
 ]
 When = Literal["release", "write", "batch", "verify"]
@@ -64,7 +65,8 @@ class FindingCodeSpec:
 
 @dataclass(frozen=True, slots=True)
 class Finding:
-    """One validation result. ``target`` keys: ``id``, ``rev``, ``type``, ``path``, ``module``."""
+    """One validation result. ``target`` keys: ``id``, ``rev``, ``type``, ``path``, ``module``,
+    ``kid`` (a data key of a sealed graph)."""
 
     severity: Severity
     code: str

@@ -74,6 +74,7 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `entity.ambiguous_ref` | refused | 1 |
 | `entity.not_found` | not_found | 1 |
 | `entity.revision_not_found` | not_found | 1 |
+| `file.erased` | not_found | 1 |
 | `file.module_missing` | refused | 1 |
 | `file.no_local_path` | refused | 1 |
 | `file.origin_missing` | not_found | 1 |

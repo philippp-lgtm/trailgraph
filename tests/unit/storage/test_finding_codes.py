@@ -22,8 +22,19 @@ def test_codes_follow_the_grammar_and_are_unique() -> None:
         assert spec.default_severity is (Severity.INFO if info else Severity.ERROR)
 
 
+def test_key_codes_follow_the_grammar_and_are_unique() -> None:
+    codes = [spec.code for spec in finding_codes.KEY_FINDING_CODES]
+    assert len(codes) == len(set(codes))
+    for spec in finding_codes.KEY_FINDING_CODES:
+        assert FINDING_CODE_RE.match(spec.code)
+        assert spec.code.startswith("integrity.keys.")
+        assert (spec.when, spec.fixture, spec.layer) == ("verify", "tamper", "keys")
+        warning = spec.code == finding_codes.KEYS_BLOB_NOT_REMOVED
+        assert spec.default_severity is (Severity.WARNING if warning else Severity.ERROR)
+
+
 def test_constants_name_registered_codes() -> None:
-    codes = {spec.code for spec in finding_codes.FINDING_CODES}
+    codes = {spec.code for spec in (*finding_codes.FINDING_CODES, *finding_codes.KEY_FINDING_CODES)}
     constants = {
         value
         for name, value in vars(finding_codes).items()

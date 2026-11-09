@@ -48,6 +48,8 @@ class CrashPoint(StrEnum):
     KEYS_AFTER_COMMIT = "keys.after_commit"
     SHRED_BEFORE_COMMIT = "shred.before_commit"
     SHRED_BEFORE_VACUUM = "shred.before_vacuum"
+    PURGE_AFTER_COMMIT = "purge.after_commit"
+    PURGE_AFTER_SHRED = "purge.after_shred"
 
 
 # Points added to the section 4.1 table by the storage plan (DECISIONS.md "P1 item 3")
@@ -74,13 +76,15 @@ MAINT_POINTS: Final = frozenset(
         CrashPoint.POLICY_BEFORE_RENAME,
     }
 )
-# Points of the key store (plan T16), outside the write-path table.
+# Points of the key store and of a purge (plan T16), outside the write-path table.
 KEYS_POINTS: Final = frozenset(
     {
         CrashPoint.KEYS_BEFORE_COMMIT,
         CrashPoint.KEYS_AFTER_COMMIT,
         CrashPoint.SHRED_BEFORE_COMMIT,
         CrashPoint.SHRED_BEFORE_VACUUM,
+        CrashPoint.PURGE_AFTER_COMMIT,
+        CrashPoint.PURGE_AFTER_SHRED,
     }
 )
 

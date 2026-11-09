@@ -40,6 +40,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.policy_lockout", _C.REFUSED, False, "The policy would lock out its maintainer."
     ),
+    ErrorSpec("admin.graph_not_sealed", _C.REFUSED, False, "The graph is not sealed: no purge."),
     ErrorSpec("admin.remote_mode", _C.REFUSED, False, "This host is a client of a server."),
     ErrorSpec("admin.token_exists", _C.REFUSED, False, "A token with this name exists."),
     ErrorSpec("admin.token_not_found", _C.NOT_FOUND, False, "There is no token with this name."),

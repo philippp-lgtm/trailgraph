@@ -20,6 +20,7 @@ _OWNERS = (
     temporal_codes.FINDING_CODES,
     audit_codes.FINDING_CODES,
     storage_codes.FINDING_CODES,
+    storage_codes.KEY_FINDING_CODES,
 )
 
 

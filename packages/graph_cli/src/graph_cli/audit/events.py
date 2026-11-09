@@ -45,7 +45,7 @@ from graph_cli.kernel.ports.audit import (
 )
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import BlobInfo, EnvInfo, OntologyPin, RequestMeta
-from graph_cli.kernel.sealing import MAC_KEY_BYTES
+from graph_cli.kernel.sealing import MAC_KEY_BYTES, Kid
 
 RefusalStatus = Literal["denied", "invalid", "conflict", "error"]
 
@@ -156,6 +156,35 @@ def changeset_size(changeset: Mapping[str, JsonValue]) -> int:
 def blobs_removed(blobs: Sequence[BlobInfo], staging: int) -> dict[str, JsonValue]:
     """``change`` of a ``maint.repair`` intent that removes stored files (``files gc``)."""
     return {"blobs_removed": blob_list(blobs) if blobs else [], "staging_removed": staging}
+
+
+def purged(
+    entities: Sequence[EntityId],
+    kids: Sequence[Kid],
+    blobs: Sequence[BlobInfo],
+    tx: AuthorizedTx | None,
+) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.purge`` intent (T16): the entities, every key it shreds and
+    the stored files it deletes (ids, key ids, hashes and sizes only). When the purge
+    retracts entities, the intent is also its tx's event and names the tx like a write
+    intent does, so ``audit verify`` matches the two."""
+    change: dict[str, JsonValue] = {
+        "purge": {
+            "entities": sorted(str(entity) for entity in set(entities)),
+            "kids": sorted(str(kid) for kid in set(kids)),
+            "blobs": blob_list(blobs),
+        }
+    }
+    if tx is not None:
+        change.update(
+            {
+                "tx_id": str(tx.tx_id),
+                "tx_seq": tx.seq,
+                "changeset_hash": tx.changeset_hash,
+                "changeset_size": changeset_size(tx.changeset),
+            }
+        )
+    return change
 
 
 def reindexed(seq: int) -> dict[str, JsonValue]:

@@ -11,15 +11,17 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
-from support.admin_context import key_rings, key_settings
+from support.admin_context import admin_context, key_rings, key_settings
 from support.drafts import intent
 from support.graphs import publish_ontology
 from support.services import ServiceEnv
 from support.stores import StoreEnv, snapshot_state
 from support.trees import tree_hash
 
+from graph_cli.audit.verify import purges
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt
@@ -30,6 +32,7 @@ from graph_cli.storage import finding_codes
 from graph_cli.storage.files.index import IndexReader
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.store import FileStore
+from graph_cli_admin.services_admin.purge import purge
 
 CONTENT = b"synthetic stored bytes\n"
 
@@ -191,11 +194,78 @@ SEALED_SCENARIOS: dict[str, Callable[[ServiceEnv, Path, pytest.MonkeyPatch], Non
 }
 
 
+# Sealed graphs (T16): the key store against the records and the purge events.
+
+
+def keys_verify(svc: ServiceEnv, maintenance: FileStoreMaintenance) -> list[str]:
+    with maintenance.maintenance_session(svc.entry.id, timeout_s=5) as session:
+        found = session.verify_keys(purges(svc.graph_events()))
+    return list(dict.fromkeys(f.code for f in found))
+
+
+def drop_tx_key(svc: ServiceEnv, tmp_path: Path) -> None:
+    with sqlite3.connect(key_settings(svc.root).store_path(svc.entry.id)) as db:
+        db.execute("DELETE FROM dek WHERE scope = 'tx'")
+
+
+def shred_without_purge(svc: ServiceEnv, tmp_path: Path) -> None:
+    (revision,) = svc.txs()[0].revisions
+    assert revision.sealed is not None
+    svc.store.key_ring().shred([revision.sealed.kid], EventId(UUID(int=7)))
+
+
+def restore_purged_blob(svc: ServiceEnv, tmp_path: Path) -> None:
+    (name,) = svc.txs()[0].blobs
+    assert isinstance(svc.store, FileStore)
+    path = svc.store.layout.blob_path(name)
+    kept = path.read_bytes()
+    (revision,) = svc.txs()[0].revisions
+    purge(
+        admin_context(svc.root),
+        graph_ref=svc.name,
+        refs=[str(revision.id)],
+        with_files=True,
+        reason="ticket 1",
+        dry_run=False,
+    )
+    path.write_bytes(kept)  # a copy put back from a backup
+
+
+KEY_SCENARIOS: dict[str, Callable[[ServiceEnv, Path], None]] = {
+    finding_codes.KEYS_MISSING: drop_tx_key,
+    finding_codes.KEYS_SHREDDED_UNRECORDED: shred_without_purge,
+    finding_codes.KEYS_BLOB_NOT_REMOVED: restore_purged_blob,
+}
+
+
+def test_clean_key_store_verifies_clean(tmp_path: Path) -> None:
+    svc, maintenance = sealed_setup(tmp_path)
+    assert keys_verify(svc, maintenance) == []
+    (revision,) = svc.txs()[0].revisions
+    purge(
+        admin_context(svc.root),
+        graph_ref=svc.name,
+        refs=[str(revision.id)],
+        with_files=True,
+        reason="ticket 1",
+        dry_run=False,
+    )
+    assert keys_verify(svc, maintenance) == []
+
+
+@pytest.mark.parametrize("code", sorted(KEY_SCENARIOS))
+def test_key_tamper_scenario_triggers_only_its_code(tmp_path: Path, code: str) -> None:
+    svc, maintenance = sealed_setup(tmp_path)
+    KEY_SCENARIOS[code](svc, tmp_path)
+    assert keys_verify(svc, maintenance) == [code]
+
+
 def test_every_storage_code_has_one_scenario() -> None:
     """R.6: registry and tamper scenarios match one to one."""
-    assert not set(SCENARIOS) & set(SEALED_SCENARIOS)
-    codes = {spec.code for spec in finding_codes.FINDING_CODES}
-    assert set(SCENARIOS) | set(SEALED_SCENARIOS) == codes
+    scenarios = (SCENARIOS, SEALED_SCENARIOS, KEY_SCENARIOS)
+    assert sum(len(s) for s in scenarios) == len(set().union(*scenarios))
+    codes = {spec.code for spec in (*finding_codes.FINDING_CODES, *finding_codes.KEY_FINDING_CODES)}
+    assert set().union(*scenarios) == codes
 
 
 def test_clean_sealed_graph_verifies_clean(tmp_path: Path) -> None:

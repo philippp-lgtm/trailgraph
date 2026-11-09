@@ -1765,6 +1765,7 @@
         "config.invalid",
         "entity.ambiguous_ref",
         "entity.not_found",
+        "file.erased",
         "file.module_missing",
         "file.no_local_path",
         "file.origin_missing",
@@ -4137,6 +4138,11 @@
     },
     {
       "code": "entity.revision_not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "file.erased",
       "category": "not_found",
       "exit": 1
     },

@@ -25,12 +25,12 @@ from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import GENESIS_HASH, JsonValue
 from graph_cli.kernel.errors import EMPTY, WarningRecord
 from graph_cli.kernel.findings import Finding
-from graph_cli.kernel.ids import EntityId, GraphId, TermRef, TxId
+from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef, TxId
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import FunctionsSlot, KineticSlot, ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
 from graph_cli.kernel.records import BlobInfo, EdgeRecord, Revision, RevisionMeta, TxRecord
-from graph_cli.kernel.sealing import KeyRing
+from graph_cli.kernel.sealing import KeyRing, Kid
 
 CAPABILITY_SNAPSHOT_AT_SEQ = "snapshot_at_seq"
 CAPABILITY_BLOB_LOCAL_PATH = "blob_local_path"
@@ -194,6 +194,35 @@ class GraphStoreWrite(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class PurgeTargets:
+    """What a purge of ``entities`` destroys in a sealed graph (T16).
+
+    The keys of the entities, of every tx with a revision of one of them and, with
+    files, of the stored files that only their revisions name; ``blobs`` are those
+    stored files still present, ``contents`` their content hashes as far as a live
+    revision still names them. ``shredded`` are the keys among them shredded already
+    (by an interrupted purge).
+    """
+
+    entities: tuple[EntityId, ...]
+    entity_keys: tuple[Kid, ...]
+    tx_keys: tuple[Kid, ...]
+    file_keys: tuple[Kid, ...] = ()
+    blobs: tuple[BlobInfo, ...] = ()
+    contents: tuple[str, ...] = ()
+    shredded: frozenset[Kid] = frozenset()
+
+    @property
+    def kids(self) -> tuple[Kid, ...]:
+        return tuple(sorted({*self.entity_keys, *self.tx_keys, *self.file_keys}))
+
+    @property
+    def pending(self) -> tuple[Kid, ...]:
+        """The keys a purge still has to shred."""
+        return tuple(kid for kid in self.kids if kid not in self.shredded)
+
+
 class MaintenanceSession(WriteSession, Protocol):
     """A write session plus the maintenance effects (W.e); no recovery on open."""
 
@@ -281,6 +310,23 @@ class MaintenanceSession(WriteSession, Protocol):
         self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
     ) -> None:
         """Delete unreferenced blobs and staging leftovers; ``receipt`` is the intent (W.e)."""
+        ...
+
+    def purge_targets(self, entities: Sequence[EntityId], *, with_files: bool) -> PurgeTargets:
+        """What purging ``entities`` destroys; ``backend.corrupt`` when the tx log is
+        damaged or a key it names is missing from the key store."""
+        ...
+
+    def purge(self, tx: AuthorizedTx | None, targets: PurgeTargets, receipt: AuditReceipt) -> None:
+        """Commit ``tx`` (the retractions, if any are left), shred ``targets.pending``
+        recording the intent's event, then delete ``targets.blobs``; ``receipt`` is the
+        purge intent and the tx's event. Each step is idempotent, so running the same
+        purge again completes an interrupted one."""
+        ...
+
+    def verify_keys(self, purges: Mapping[EventId, Iterable[Kid]]) -> Sequence[Finding]:
+        """``integrity.keys.*`` findings of a sealed graph against the keys each recorded
+        purge event names; nothing for an unsealed graph."""
         ...
 
 

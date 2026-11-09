@@ -1149,6 +1149,101 @@
     {
       "path": [
         "graph",
+        "purge"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.purge",
+      "summary": "Erase entities of the sealed graph REF for good (keys shredded, files deleted).",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "entity",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": true,
+          "summary": "Entities to erase: full id, alias or abbreviation."
+        }
+      ],
+      "options": [
+        {
+          "name": "--with-files",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also erase the stored files their revisions name, unless another entity names them."
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Why they are erased; recorded in the clear in the audit stream, so name a ticket, not the person."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Show what would be erased without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph purge <graph> <entity> --reason <ticket> --dry-run",
+          "summary": "Show what would be erased."
+        },
+        {
+          "command": "graph-admin graph purge <graph> <entity> <file-entity> --with-files --reason <ticket> --json",
+          "summary": "Erase an entity and its stored file."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.graph_not_sealed",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "entity.not_found",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "graph",
         "push"
       ],
       "kind": "write",
@@ -2882,6 +2977,7 @@
     "maint.graph_create",
     "maint.ontology_release",
     "maint.policy_change",
+    "maint.purge",
     "maint.reindex",
     "maint.repair",
     "maint.token_create",
@@ -2930,6 +3026,11 @@
     },
     {
       "code": "admin.graph_name_taken",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.graph_not_sealed",
       "category": "refused",
       "exit": 1
     },
@@ -3032,6 +3133,11 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "entity.not_found",
+      "category": "not_found",
+      "exit": 1
     },
     {
       "code": "functions.slot_invalid",

@@ -38,7 +38,7 @@ from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
 from graph_cli.kernel.records import BlobInfo
-from graph_cli.kernel.sealing import BlobInvalid, KeyRing, KeyUnavailable
+from graph_cli.kernel.sealing import BlobInvalid, KeyRing, KeyUnavailable, Kid
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.sealed_blobs import sealed_blob_error
 from graph_cli.storage.files.durable import FILE_MODE, Syncer, ensure_dir, write_all
@@ -274,6 +274,26 @@ def content_info(layout: GraphLayout, digest: str) -> BlobInfo | None:
         return BlobInfo(digest, crypto.blob_content_size(found.size))
     except crypto.CryptoError as exc:
         raise sealed_blob_error(digest, BlobInvalid(str(exc))) from None
+
+
+def sealed_kid(layout: GraphLayout, digest: str) -> Kid | None:
+    """The file key a sealed blob's header names; ``None`` for a missing blob or one whose
+    header does not parse."""
+    from graph_cli.storage.common import crypto  # sealed graphs only
+
+    if not HASH_RE.match(digest):
+        return None
+    try:
+        with open(layout.blob_path(digest), "rb") as handle:
+            header = handle.read(crypto.BLOB_HEADER_BYTES)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise _unavailable("cannot read a stored file", exc) from exc
+    try:
+        return crypto.parse_blob_header(header)[0]
+    except crypto.CryptoError:
+        return None
 
 
 def _chunks(handle: BinaryIO) -> Iterator[bytes]:

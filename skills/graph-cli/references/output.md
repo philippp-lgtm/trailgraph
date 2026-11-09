@@ -55,6 +55,7 @@ they are null.
 | `tx_seq` | The transaction that wrote this revision, for `--as-of`. |
 | `ontology_version` | The ontology version it was written under. |
 | `content_hash` | Hash of the content. |
+| `shredded` | Only present, as true, when a purge erased its values for good. |
 
 ## Get
 
@@ -118,6 +119,7 @@ they are null.
 | `reason` | The reason given, or null. |
 | `own_session` | True when your own session wrote it; the writer is not shown. |
 | `changed` | Names, not values: `attrs`, `edges` (`added`, `removed`, `changed`) and `record`; null for the first revision. |
+| `shredded` | Only present, as true, when a purge erased this revision. |
 
 ## Write results
 

@@ -11,7 +11,9 @@ maintenance effects, pin events, anchors). Order, without cascades:
 2. each graph under its maintenance lock: storage findings, then the graph
    stream with the txs (only if the tx log is clean) and the maintenance
    effects (the manifest pin only if storage found it intact, the graph's
-   installed policy, the published skill and function catalog);
+   installed policy, the published skill and function catalog), then the key
+   store of a sealed graph against its records and the keys its purge intents
+   name (T16), with the count of shredded txs and revisions;
 3. the anchors against the graph streams.
 
 Then a ``maint.audit_verify`` event anchors the heads of the graphs without
@@ -43,6 +45,7 @@ from graph_cli.audit.verify import (
     effect_anchors,
     graph_creations,
     installation_changes,
+    purges,
     verify_graph,
     verify_stream,
 )
@@ -108,11 +111,13 @@ def verify(ctx: AdminContext) -> Verification:
     graphs: list[JsonValue] = []
     clean: list[StreamReport] = []
     for graph_id in ctx.maintenance.graph_ids():
-        graph_findings, report = _verify_graph(ctx, graph_id, anchored.get(str(graph_id)))
+        graph_findings, report, shredded = _verify_graph(ctx, graph_id, anchored.get(str(graph_id)))
         reports[str(graph_id)] = report
         findings += graph_findings
         ok = not has_errors(graph_findings)
-        graphs.append({"id": str(graph_id), "clean": ok, "seq": report.head[0]})
+        graphs.append(
+            {"id": str(graph_id), "clean": ok, "seq": report.head[0], "shredded": shredded}
+        )
         if ok and report.head[0] > 0:
             clean.append(report)
     for stream_graph, report in reports.items():
@@ -209,7 +214,7 @@ def _installed(read: Callable[[], bytes | None]) -> InstalledPolicy:
 
 def _verify_graph(
     ctx: AdminContext, graph_id: GraphId, anchored: frozenset[int] | None
-) -> tuple[list[Finding], StreamReport]:
+) -> tuple[list[Finding], StreamReport, dict[str, JsonValue] | None]:
     with ctx.maintenance.maintenance_session(graph_id, timeout_s=ctx.lock_timeout_s) as session:
         storage = list(session.verify())
         codes = {f.code for f in storage}
@@ -230,7 +235,18 @@ def _verify_graph(
             txs=txs,
             effects=effects,
         )
-    return [*storage, *report.findings], report
+        keys = list(session.verify_keys(purges(report.events)))
+    return [*storage, *report.findings, *keys], report, shredded_counts(txs)
+
+
+def shredded_counts(txs: Sequence[TxRecord] | None) -> dict[str, JsonValue] | None:
+    """How many txs and revisions read as shredded (T16); ``None`` without a clean log."""
+    if txs is None:
+        return None
+    return {
+        "txs": sum(tx.shredded for tx in txs),
+        "revisions": sum(revision.shredded for tx in txs for revision in tx.revisions),
+    }
 
 
 def _installed_tokens(ctx: AdminContext) -> dict[str, Mapping[str, JsonValue]] | None:
