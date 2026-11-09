@@ -1,4 +1,4 @@
 """Domain-agnostic knowledge graph shell: server distribution (graph-server)."""
 
 # A constant, not importlib.metadata (see graph_cli/__init__.py).
-__version__ = "0.15.1"
+__version__ = "0.16.0"
