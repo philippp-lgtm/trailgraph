@@ -130,6 +130,7 @@ class _Backend:
     activity: ActivitySink
     origins: Origins
     timings: Timings
+    copies: bool  # decrypted copies of sealed graphs' files on this machine (not the server)
 
 
 @dataclass(frozen=True)
@@ -174,15 +175,20 @@ class AppContext:
 
     @functools.cached_property
     def files(self) -> FileService:
+        from graph_cli.catalog.file_copies import FileCopyDir
         from graph_cli.services.files import FileService
 
+        backend = self.backend
         return FileService(
             catalog=self.catalog,
             writer=self.writer,
             reader=self.reader,
-            origins=self.backend.origins,
+            origins=backend.origins,
             max_bytes=self.config.max_file_bytes,
-            activity=self.backend.activity,
+            activity=backend.activity,
+            copies=FileCopyDir(self.roots.state_root / "files", backend.clock)
+            if backend.copies
+            else None,
         )
 
     def select(self, flag: str | None) -> GraphEntry:
@@ -534,6 +540,7 @@ class AppServices:
                 if request is None
                 else GivenOrigins(request.origins),
                 timings=self.timings,
+                copies=request is None,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None if request is None else request.graph_env,
             command=command,

@@ -20,6 +20,7 @@ from support.files import synthetic_pdf, write_pdf
 from support.trees import tree_hash
 
 from graph_cli.kernel.ids import GraphId
+from graph_cli.storage.common.crypto import BLOB_HEADER_BYTES, TAG_BYTES
 from graph_cli.storage.files.store import FileStore
 
 pytestmark = pytest.mark.slow
@@ -53,11 +54,14 @@ def add_orphan(store: FileStore) -> None:
 
 
 def test_verify_a_clean_graph(run_cli: CliRunner, root: Path) -> None:
-    outcome = admin(run_cli, "files", "verify", "--graph", "example_graph", "--rehash")
+    outcome = admin(run_cli, "files", "verify", "--graph", "example_graph", "--rehash", "--decrypt")
     assert outcome.code == 0, outcome.envelope
     assert outcome.data["counts"] == {"error": 0, "warning": 0, "info": 0}
+    assert outcome.data["decrypt"] is True
     assert outcome.data["stored"]["files"] == 1
-    assert outcome.data["stored"]["bytes"] == len(synthetic_pdf())
+    # the graph is sealed: the stored copy is the header, the content and one tag
+    sealed = BLOB_HEADER_BYTES + len(synthetic_pdf()) + TAG_BYTES
+    assert outcome.data["stored"]["bytes"] == sealed
 
 
 def test_gc_removes_orphans_and_old_staging(run_cli: CliRunner, root: Path) -> None:
@@ -88,7 +92,7 @@ def test_gc_removes_orphans_and_old_staging(run_cli: CliRunner, root: Path) -> N
     assert done.code == 0, done.envelope
     assert done.data["removed"] is True
     assert len(stored(store)) == 1  # the referenced file stays
-    assert stored(store)[0].read_bytes() == synthetic_pdf()
+    assert stored(store)[0].read_bytes().startswith(b"GCBLOB")  # sealed: the encrypted copy
     assert sorted(p.name for p in store.layout.blobs.iterdir()) == [".tmp-young", "sha256"]
 
     stream = store.layout.audit.glob("events-*.jsonl")

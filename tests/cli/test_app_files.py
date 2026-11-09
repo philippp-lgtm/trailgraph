@@ -9,6 +9,7 @@ never reach audit events, the op log or the state dir.
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 import unicodedata
@@ -74,8 +75,10 @@ def test_add_then_path_and_check(run_cli: CliRunner, root: Path, home: Path) -> 
     assert shown.code == 0, shown.envelope
     stored = Path(shown.data["path"])
     assert stored.read_bytes() == synthetic_pdf()
-    assert stat.S_IMODE(stored.stat().st_mode) == 0o444
-    assert stored.is_relative_to(graph_dir(root) / "blobs")
+    # the graph is sealed: a decrypted copy in the state dir, never inside the data root
+    assert stat.S_IMODE(stored.stat().st_mode) == 0o400
+    assert not stored.is_relative_to(root)
+    assert stored.parent.parts[-2:] == ("files", graph_dir(root).name)
     assert shown.data["origin"] == {
         "root": "notes",
         "path": "scans/report 2024.pdf",
@@ -224,8 +227,13 @@ def test_check_reports_every_status(
 
 
 def test_reads_create_nothing(run_cli: CliRunner, root: Path, home: Path) -> None:
-    """B12.4: file path and file check write nothing anywhere in the home."""
+    """B12.4: file path and file check write nothing anywhere in the home but, in a sealed
+    graph, the decrypted copy that file path answers (T16)."""
     add(run_cli, str(write_pdf(home / "notes" / "a.pdf")))
+    copy = app(run_cli, "file", "path", "FILE-0001", env=ENV)  # made on first use
+    assert copy.code == 0, copy.envelope
+    copies = Path(copy.data["path"]).parent
+    shutil.rmtree(copies)
     before = tree_hash(home)
     for args in (
         ("file", "path", "FILE-0001"),
@@ -236,6 +244,8 @@ def test_reads_create_nothing(run_cli: CliRunner, root: Path, home: Path) -> Non
     ):
         result = run_cli("graph", *args, env=ENV)
         assert result.returncode == 0, (args, result.stdout, result.stderr)
+    assert [p.name for p in copies.iterdir()] == [Path(copy.data["path"]).name]
+    shutil.rmtree(copies)
     assert tree_hash(home) == before
 
 
@@ -282,7 +292,11 @@ def test_file_names_origins_and_content_never_reach_audit_or_logs(
     hidden = {
         "graph audit": _files(graph / "audit"),
         "installation audit": _files(root / "audit"),
-        "state dir": _files(Path(isolated_env["XDG_STATE_HOME"])),
+        "state dir": {
+            name: data
+            for name, data in _files(Path(isolated_env["XDG_STATE_HOME"])).items()
+            if "/files/" not in name  # the decrypted copy file path answers (T16)
+        },
     }
     for where, files in hidden.items():
         assert files or where == "state dir", f"positive control: {where} has files"
@@ -290,8 +304,10 @@ def test_file_names_origins_and_content_never_reach_audit_or_logs(
             for marker in (name_marker, dir_marker, content_marker):
                 assert marker.encode() not in data, (where, file, marker)
     # positive controls: the markers are where they belong (the graph is sealed: the tx log
-    # holds them encrypted, so the graph shows the file name to a reader)
-    assert any(content_marker.encode() in d for d in _files(graph / "blobs").values())
+    # and the stored file hold them encrypted; file path answered a decrypted copy)
+    assert not any(content_marker.encode() in d for d in _files(graph / "blobs").values())
+    copies = _files(Path(isolated_env["XDG_STATE_HOME"]))
+    assert any("/files/" in n and content_marker.encode() in d for n, d in copies.items())
     txlog = b"".join(_files(graph / "data" / "txlog").values())
     assert name_marker.encode() not in txlog and dir_marker.encode() not in txlog
     shown = app(run_cli, "get", "FILE-0001", env=ENV)

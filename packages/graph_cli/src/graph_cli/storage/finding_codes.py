@@ -1,7 +1,8 @@
 """Finding codes owned by storage (contracts R.4, R.6, section 1.5.2).
 
 Produced by ``MaintenanceSession.verify`` (``blob_missing`` too) and
-``verify_blobs`` (every ``blob_*`` code). Every code has exactly one tamper
+``verify_blobs`` (every ``blob_*`` code; ``blob_undecryptable`` and
+``blob_content_mismatch`` only with ``decrypt``). Every code has exactly one tamper
 scenario under ``tests/tamper/``.
 """
 
@@ -35,6 +36,8 @@ BLOB_MISSING: Final = "integrity.storage.blob_missing"
 BLOB_HASH_MISMATCH: Final = "integrity.storage.blob_hash_mismatch"
 BLOB_ORPHAN: Final = "integrity.storage.blob_orphan"
 BLOB_STAGING_LEFTOVER: Final = "integrity.storage.blob_staging_leftover"
+BLOB_UNDECRYPTABLE: Final = "integrity.storage.blob_undecryptable"
+BLOB_CONTENT_MISMATCH: Final = "integrity.storage.blob_content_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("tx_chain_broken", "A tx log line is damaged or does not continue the chain."),
@@ -48,4 +51,12 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("blob_hash_mismatch", "The bytes of a stored file differ from its hash."),
     _integrity("blob_orphan", "A stored file is referenced by no tx.", Severity.INFO),
     _integrity("blob_staging_leftover", "A staged file was never published.", Severity.INFO),
+    _integrity(
+        "blob_undecryptable",
+        "A sealed stored file does not decrypt: its key is missing or its bytes are damaged.",
+    ),
+    _integrity(
+        "blob_content_mismatch",
+        "The decrypted content of a stored file differs from the content hash naming it.",
+    ),
 )

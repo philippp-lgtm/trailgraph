@@ -7,7 +7,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 
 | Package | Content |
 | --- | --- |
-| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`), the cipher primitives of sealed graphs (`storage.common.crypto`, below) |
+| `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`), the cipher primitives of sealed graphs (`storage.common.crypto`, below) and the errors of their stored files (`storage.common.sealed_blobs`) |
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
 | `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
@@ -19,7 +19,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.keystore` | the key store of a sealed graph (below): key-encryption key files, data keys wrapped in SQLite, shredding, backup and the comparison behind key verification |
 | `storage.files.keyrings` | store formats of a graph directory, the `[keys]` settings and the open key stores of a process (`KeyRings`); imports the key store only for a sealed graph |
 | `storage.memory.keyring` | `MemoryKeyRing`: the data keys of a sealed in-memory graph |
-| `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
+| `storage.files.blobs` | stored files by hash: staging, publishing, reading (sealed: decrypting and checking), listing, blob verification and removal |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 ## FileStore
@@ -165,6 +165,27 @@ the codec `kernel.record_codec`, the cipher primitives `storage.common.crypto`
   is seen by the next read; when keys were shredded since, a store drops the
   records it opened before (its replay cache) and opens the stored ones again
   (`KeyRing.generation`).
+- **Stored files.** A sealed graph stages a file encrypted under a new file
+  key (the blob format below) and names the blob by the hash of the
+  ciphertext, so publishing, listing, `files verify --rehash`, `files gc` and
+  the tx's `blobs` work on names as before; the audit intent names the blob
+  and its stored size. The `content` value keeps the content hash; the
+  revision records the blob of each `blob` value in its sealed part
+  (`blobs`: content hash to blob name), so only a reader with the entity's key
+  can tell which blob holds which content. A new `blob` value must come from
+  a blob the request stages or from the previous revision of an entity it
+  changes; any other hash is `data.referential.blob_missing`. Every stage
+  makes a new blob, also for known content; `file add` finds known content by
+  its hash among the decrypted revisions and discards the staged copy. A read
+  decrypts and hashes the ciphertext while it streams and holds the last chunk
+  back until the hash matched the name: the name cannot be bound into the
+  ciphertext, which exists before its hash. A blob whose key is shredded or
+  missing, or whose bytes are damaged, is `backend.corrupt` (`details.reason`
+  `shredded`, `missing` or `invalid`). The store hands out no local path
+  (capability `blob_local_path`); `file path` answers a decrypted copy
+  ([Files](files.md#sealed-graphs)). `files verify --decrypt` decrypts every
+  blob a revision names and compares the content with its content hash
+  (`integrity.storage.blob_undecryptable`, `blob_content_mismatch`).
 - **Key stores.** `KeyRings` opens one key store per graph and process from
   the `[keys]` settings ([Keys of sealed graphs](configuration.md#keys-of-sealed-graphs)).
   `graph create` creates the key store before it publishes the graph
@@ -178,15 +199,20 @@ the codec `kernel.record_codec`, the cipher primitives `storage.common.crypto`
 - `KeyRing` is the port to the keys of one graph: `entity_key` and `tx_key`
   return the key of their subject and create it on first use, `file_key`
   creates one per stored file, `mac_key` gives the key of the keyed hashes,
-  `seal` and `open` encrypt and decrypt envelopes, `shred` destroys keys and
-  records the purge event. A shredded or missing key raises `KeyUnavailable`.
+  `seal` and `open` encrypt and decrypt envelopes, `seal_blob` and
+  `open_blob` stored files (`BlobInvalid` for one that does not authenticate),
+  `shred` destroys keys and records the purge event. A shredded or missing key
+  raises `KeyUnavailable`.
 - Keyed hashes keep the `sha256:<hex>` shape: HMAC-SHA256 over the same JCS
   bytes. `content_hash`, `changeset_hash` and `RequestMeta.of` take an
   optional MAC key; without one they are the plain hashes (C.2). The ring of
   an unsealed graph, `PlainKeyRing`, hands out no keys, so its hashes are
   byte-identical to those of earlier versions.
 - `Revision.shredded` and `TxRecord.shredded` mark a record whose key is
-  shredded; neither is persisted. `open` raises `EnvelopeInvalid` for an
+  shredded; neither is persisted. `Revision.blobs` maps the content hash of
+  each `blob` value to its blob name in a sealed graph (`stored_blob`); it is
+  part of the sealed payload and empty in an unsealed graph, whose blobs are
+  named by their content hash. `open` raises `EnvelopeInvalid` for an
   envelope that does not authenticate; `refresh` picks up shreds by other
   processes.
 - Envelopes are AES-256-GCM under a random 96-bit nonce. A data key yields

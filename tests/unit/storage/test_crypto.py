@@ -14,6 +14,7 @@ from graph_cli.storage.common.crypto import (
     KEY_BYTES,
     TAG_BYTES,
     CryptoError,
+    blob_content_size,
     hkdf_sha256,
     new_key,
     open_blob,
@@ -149,6 +150,20 @@ def test_blob_round_trip_for_any_size_and_chunking(size: int, piece: int) -> Non
     chunk_count = max(1, full + (1 if rest else 0))
     assert len(blob) == BLOB_HEADER_BYTES + size + chunk_count * TAG_BYTES
     assert opened(blob) == data
+
+
+@pytest.mark.parametrize("size", [0, 1, BLOB_CHUNK - 1, BLOB_CHUNK, BLOB_CHUNK + 1, 3 * BLOB_CHUNK])
+def test_the_content_size_follows_from_the_stored_size(size: int) -> None:
+    assert blob_content_size(len(sealed_blob(bytes(size)))) == size
+
+
+@pytest.mark.parametrize("last", [0, 1, TAG_BYTES - 1])
+def test_a_stored_size_without_room_for_a_tag_has_no_content_size(last: int) -> None:
+    if last:  # a last chunk shorter than its tag
+        with pytest.raises(CryptoError):
+            blob_content_size(BLOB_HEADER_BYTES + SEALED_CHUNK + last)
+    with pytest.raises(CryptoError):
+        blob_content_size(BLOB_HEADER_BYTES + last)
 
 
 def test_blob_header_names_the_key() -> None:

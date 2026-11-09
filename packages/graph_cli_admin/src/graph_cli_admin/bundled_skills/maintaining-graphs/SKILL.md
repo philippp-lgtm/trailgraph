@@ -221,7 +221,7 @@ rights of its ops does not see it.
   function or action no longer resolves (`admin.functions_broken`,
   `admin.actions_broken`).
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
-  that imports the `files` module.
+  that imports the `files` module (`--decrypt`: content against its hash).
 - `graph-admin audit verify`: every chain, log and pin of the
   installation.
 

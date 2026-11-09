@@ -23,6 +23,7 @@ create holds no key and names a graph id that never appears.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -126,7 +127,9 @@ from graph_cli.storage.files.token_files import (
     write_tokens_file,
 )
 from graph_cli.storage.finding_codes import (
+    BLOB_CONTENT_MISMATCH,
     BLOB_MISSING,
+    BLOB_UNDECRYPTABLE,
     HEAD_INCONSISTENT,
     INDEX_INCONSISTENT,
     PIN_MISMATCH,
@@ -605,10 +608,51 @@ class FileMaintenanceSession:
         self._check_open()
         return blobs.staging(self._store.layout)
 
-    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
-        """Missing, damaged, orphan and staged files; no orphans beyond tx-log damage."""
+    def verify_blobs(self, *, rehash: bool, decrypt: bool = False) -> Sequence[Finding]:
+        """Missing, damaged, orphan and staged files; no orphans beyond tx-log damage.
+        ``decrypt``: the content of every blob a revision of a sealed graph names."""
         referenced = self._referenced()
-        return sort_findings(blobs.verify(self._store.layout, referenced, rehash_all=rehash))
+        findings = blobs.verify(self._store.layout, referenced, rehash_all=rehash)
+        if decrypt:
+            findings += self._decrypted()
+        return sort_findings(findings)
+
+    def _decrypted(self) -> list[Finding]:
+        """Each (content hash, blob) pair the revisions record, read and hashed once. A
+        missing blob is ``blob_missing`` already; a shredded key is the purge's business."""
+        view, damage, _ = replay(self._store)
+        if damage is not None:
+            return []
+        pairs = {
+            pair
+            for tx in view.at().txs_since(0, limit=sys.maxsize)
+            for revision in tx.revisions
+            for pair in revision.blobs.items()
+        }
+        layout = self._store.layout
+        findings: list[Finding] = []
+        for digest, name in sorted(pairs):
+            if blobs.info(layout, name) is None:
+                continue
+            target: dict[str, JsonValue] = {"path": blobs.relative(layout, name)}
+            hasher = hashlib.sha256()
+            try:
+                for chunk in self._store.read_blob(name):
+                    hasher.update(chunk)
+            except GraphCliError as exc:
+                reason = exc.details.get("reason")
+                if exc.code != "backend.corrupt" or reason == "shredded":
+                    raise
+                message = f"the stored file does not decrypt ({reason}): {exc.message}"
+                findings.append(Finding(Severity.ERROR, BLOB_UNDECRYPTABLE, target, message))
+                continue
+            actual = "sha256:" + hasher.hexdigest()
+            if actual != digest:
+                message = "the decrypted content differs from the content hash its revision names"
+                findings.append(
+                    Finding(Severity.ERROR, BLOB_CONTENT_MISMATCH, target, message, digest, actual)
+                )
+        return findings
 
     def remove_blobs(
         self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt

@@ -355,7 +355,8 @@ def test_file_add_with_origin_and_download(
         headers={"Graph-Cli-Actor": actor_header({"agent": {"id": "agent-1"}})},
     )
     assert download.status == 200
-    assert download.body == content
+    assert download.body == content  # decrypted while it streams: the graph is sealed
+    assert download.headers["Content-Length"] == str(len(content))
     assert download.headers["Graph-Cli-Content-Hash"] == hash_bytes(content)
     assert download.headers["Content-Type"] == "application/octet-stream"
     missing = call(app, "GET", "/v1/graphs/files_graph/files/deadbeefdeadbeef", token=token)

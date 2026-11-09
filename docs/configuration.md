@@ -10,7 +10,7 @@ XDG; macOS uses the same paths.
 | --- | --- |
 | Config | `$XDG_CONFIG_HOME/graph_cli/config.toml`, else `~/.config/graph_cli/config.toml` |
 | Data root | `graph-admin --data-root` (`graph` has no such flag), then `GRAPH_CLI_ROOT` (warns), then config `[paths] data_root`, then `$XDG_DATA_HOME/graph_cli`, else `~/.local/share/graph_cli` |
-| State (operational log, access log, viewer sockets) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
+| State (operational log, access log, viewer sockets, copies of stored files in `files/`) | `$XDG_STATE_HOME/graph_cli`, else `~/.local/state/graph_cli` |
 | Key stores of sealed graphs | config `[keys] dir`, then `$XDG_DATA_HOME/graph_cli_keys`, else `~/.local/share/graph_cli_keys` |
 | Key-encryption key (KEK) | `GRAPH_CLI_KEK_FILE`, then config `[keys] kek_file`, then `kek` next to `config.toml` |
 | Tokens of a client, per server and project | `tokens/<server>/<project>/token` and `admin_token` next to `config.toml`; `<server>` is host, port and path of the endpoint (directories 0700, files 0600) |

@@ -19,8 +19,12 @@ from graph_cli_admin.maintenance_cli.output_schemas import STRINGS
 from graph_cli_admin.services_admin import files, graphs
 
 
-def verify(state: CommandState, graph_ref: str, rehash: bool, data_root: str | None) -> Result:
-    outcome = files.verify(admin_context(state, data_root), graph_ref=graph_ref, rehash=rehash)
+def verify(
+    state: CommandState, graph_ref: str, rehash: bool, decrypt: bool, data_root: str | None
+) -> Result:
+    outcome = files.verify(
+        admin_context(state, data_root), graph_ref=graph_ref, rehash=rehash, decrypt=decrypt
+    )
     return Result(data=outcome.data, graph=graphs.envelope_graph(outcome.entry, outcome.seq))
 
 
@@ -37,6 +41,7 @@ VERIFY_OUTPUT: Final = obj(  # services_admin.files.verify
     {
         "graph_id": STRING,
         "rehash": BOOLEAN,
+        "decrypt": BOOLEAN,
         "stored": obj({"files": INTEGER, "bytes": INTEGER}),
         "counts": ref("finding_counts"),
         "findings": array(ref("finding")),
@@ -63,6 +68,11 @@ SPECS: Final = (
         params=(
             GRAPH_OPTION,
             ParamSpec("--rehash", "flag", "Read every stored file and compare its hash."),
+            ParamSpec(
+                "--decrypt",
+                "flag",
+                "Sealed graphs: decrypt every stored file and compare it with its content hash.",
+            ),
             DATA_ROOT,
         ),
         examples=(
@@ -76,7 +86,9 @@ SPECS: Final = (
         handler=verify,
         output=VERIFY_OUTPUT,
         description="Exits 1 (admin.integrity_errors) on a missing or, with --rehash, damaged"
-        " file; orphans and staging leftovers are info findings (files gc removes them).",
+        " file, and with --decrypt on a file that does not decrypt or whose content differs"
+        " from its content hash; orphans and staging leftovers are info findings (files gc"
+        " removes them).",
     ),
     CommandSpec(
         path=("files", "gc"),

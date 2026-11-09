@@ -7,6 +7,7 @@ FileStore of a sealed graph does; the view keeps the decoded records.
 from __future__ import annotations
 
 import hashlib
+import io
 import threading
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -32,10 +33,11 @@ from graph_cli.kernel.ports.storage import (
 )
 from graph_cli.kernel.record_codec import RecordCodec
 from graph_cli.kernel.records import BlobInfo, TxRecord
-from graph_cli.kernel.sealing import KeyRing
+from graph_cli.kernel.sealing import BlobInvalid, KeyRing, KeyUnavailable
 from graph_cli.storage.common.chain import ChainLink
 from graph_cli.storage.common.commit import check_receipt, check_tx, seal_tx
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
+from graph_cli.storage.common.sealed_blobs import sealed_blob_error
 from graph_cli.storage.common.snapshot import ViewSnapshot, resolve_at_seq
 from graph_cli.storage.common.view import GraphView
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
@@ -84,7 +86,13 @@ class InMemoryStore:
 
     def blob(self, digest: str) -> BlobInfo | None:
         data = self._blobs.get(digest)
-        return BlobInfo(digest, len(data)) if data is not None else None
+        if data is None:
+            return None
+        if self.codec.sealed:
+            from graph_cli.storage.common import crypto
+
+            return BlobInfo(digest, crypto.blob_content_size(len(data)))
+        return BlobInfo(digest, len(data))
 
     def read_blob(self, digest: str) -> Iterator[bytes]:
         data = self._blobs.get(digest)
@@ -92,7 +100,14 @@ class InMemoryStore:
             raise GraphCliError(
                 "backend.corrupt", "a stored file is missing", details={"blob": digest}
             )
-        return iter((data,))
+        if not self.codec.sealed:
+            return iter((data,))
+        try:
+            # whole in memory and authenticated before the first chunk is handed out
+            content = b"".join(self.codec.ring.open_blob(io.BytesIO(data)))
+        except (KeyUnavailable, BlobInvalid) as exc:
+            raise sealed_blob_error(digest, exc) from None
+        return iter((content,))
 
     def blob_local_path(self, digest: str) -> Path | None:
         return None  # no capability blob_local_path: the bytes live in memory
@@ -109,8 +124,14 @@ class InMemoryStore:
                     details={"max_bytes": max_bytes},
                 )
             parts.append(chunk)
+        content = b"".join(parts)
+        stored = content
+        if self.codec.sealed:
+            kid = self.codec.ring.file_key()
+            assert kid is not None
+            stored = b"".join(self.codec.ring.seal_blob(kid, (content,)))
         fire(self._faults, CrashPoint.BLOB_AFTER_STAGE)
-        return MemoryStagedBlob(b"".join(parts), self)
+        return MemoryStagedBlob(content, stored, self)
 
     # ---- write port ----------------------------------------------------
 
@@ -148,13 +169,17 @@ class InMemoryStore:
 
 
 class MemoryStagedBlob:
-    """Staged bytes of one ``InMemoryStore``."""
+    """Staged bytes of one ``InMemoryStore``: the content, held as ``data`` (its ciphertext
+    in a sealed graph)."""
 
-    def __init__(self, data: bytes, store: InMemoryStore) -> None:
+    def __init__(self, content: bytes, data: bytes, store: InMemoryStore) -> None:
         self.data: bytes | None = data
         self.store = store
-        self.hash = "sha256:" + hashlib.sha256(data).hexdigest()
-        self.size = len(data)
+        self.hash = "sha256:" + hashlib.sha256(content).hexdigest()
+        self.size = len(content)
+        sealed = data is not content
+        self.stored = "sha256:" + hashlib.sha256(data).hexdigest() if sealed else self.hash
+        self.stored_size = len(data)
 
     def discard(self) -> None:
         self.data = None
@@ -203,17 +228,17 @@ class MemorySession:
         store = self._store
         if not isinstance(staged, MemoryStagedBlob) or staged.store is not store:
             raise GraphCliError("internal.error", "the staged blob is not from this store")
-        if staged.hash not in store._blobs:
+        if staged.stored not in store._blobs:
             if staged.data is None:
                 raise GraphCliError("internal.error", "the staged blob was discarded")
             try:
                 fire(store._faults, CrashPoint.BLOB_BEFORE_RENAME)
             except OSError as exc:
                 raise GraphCliError("backend.unavailable", f"cannot store the file: {exc}") from exc
-            store._blobs[staged.hash] = staged.data
+            store._blobs[staged.stored] = staged.data
             fire(store._faults, CrashPoint.BLOB_AFTER_RENAME)
         staged.discard()
-        return BlobInfo(staged.hash, staged.size)
+        return BlobInfo(staged.stored, staged.stored_size)
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
         self._check_open()

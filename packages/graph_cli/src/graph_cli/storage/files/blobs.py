@@ -10,6 +10,15 @@ entries. ``blobs/`` is created on first use.
 
 Which blobs are referenced is the union of the ``blobs`` lists of all txs;
 storage never needs the model for it.
+
+A sealed graph (T16) stages a file encrypted under a new file key (the chunked
+stream of ``storage.common.crypto``), counting and hashing the content on the
+way, and names the blob by the hash of the ciphertext; the revision records
+which blob holds its content hash. Everything that works on names (publish,
+listing, rehash, verify, removal) stays the same. ``read_sealed`` decrypts and
+checks the ciphertext against the name while it streams, holding the last
+chunk back until the check passed: the name cannot be bound into the
+ciphertext, which exists before its hash is known.
 """
 
 from __future__ import annotations
@@ -29,7 +38,9 @@ from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
 from graph_cli.kernel.records import BlobInfo
+from graph_cli.kernel.sealing import BlobInvalid, KeyRing, KeyUnavailable
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
+from graph_cli.storage.common.sealed_blobs import sealed_blob_error
 from graph_cli.storage.files.durable import FILE_MODE, Syncer, ensure_dir, write_all
 from graph_cli.storage.files.layout import STAGING_PREFIX, GraphLayout
 from graph_cli.storage.finding_codes import (
@@ -52,12 +63,22 @@ def _unavailable(message: str, exc: OSError) -> GraphCliError:
 
 
 class FileStagedBlob:
-    """A synced staging file below ``blobs/``; the bytes of ``hash``."""
+    """A synced staging file below ``blobs/``; the content of ``hash``, stored as ``stored``
+    (``stored_size`` bytes; the content itself unless the graph is sealed)."""
 
-    def __init__(self, path: Path, digest: str, size: int) -> None:
+    def __init__(
+        self,
+        path: Path,
+        digest: str,
+        size: int,
+        stored: str | None = None,
+        stored_size: int | None = None,
+    ) -> None:
         self.path = path
         self.hash = digest
         self.size = size
+        self.stored = stored if stored is not None else digest
+        self.stored_size = stored_size if stored_size is not None else size
 
     def discard(self) -> None:
         with contextlib.suppress(OSError):  # a leftover is reported by verify, removed by gc
@@ -79,22 +100,29 @@ def stage(
     max_bytes: int,
     syncer: Syncer,
     faults: FaultHook | None,
+    ring: KeyRing | None = None,
 ) -> FileStagedBlob:
-    """Write ``chunks`` to a new staging file, hashing and counting on the way (KB0)."""
+    """Write ``chunks`` to a new staging file, hashing and counting on the way (KB0);
+    encrypted under a new file key of ``ring`` in a sealed graph."""
     try:
         ensure_dir(layout.blobs, syncer)
         path = layout.blobs / f"{STAGING_PREFIX}{secrets.token_hex(16)}"
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, FILE_MODE)
     except OSError as exc:
         raise _unavailable("cannot stage the file", exc) from exc
-    digest, size = hashlib.sha256(), 0
+    content = _Counted(chunks, max_bytes)
+    stored, stored_size = hashlib.sha256(), 0
     try:
         try:
-            for chunk in chunks:
-                size += len(chunk)
-                if size > max_bytes:
-                    raise too_large(max_bytes)
-                digest.update(chunk)
+            if ring is None:
+                written: Iterable[bytes] = content
+            else:
+                kid = ring.file_key()
+                assert kid is not None
+                written = ring.seal_blob(kid, content)
+            for chunk in written:
+                stored_size += len(chunk)
+                stored.update(chunk)
                 write_all(fd, chunk)
             syncer.sync_file(fd)
         finally:
@@ -106,7 +134,29 @@ def stage(
         path.unlink(missing_ok=True)
         raise
     fire(faults, CrashPoint.BLOB_AFTER_STAGE)
-    return FileStagedBlob(path, f"{_ALGORITHM}:{digest.hexdigest()}", size)
+    digest = f"{_ALGORITHM}:{content.digest.hexdigest()}"
+    if ring is None:
+        return FileStagedBlob(path, digest, content.size)
+    name = f"{_ALGORITHM}:{stored.hexdigest()}"
+    return FileStagedBlob(path, digest, content.size, name, stored_size)
+
+
+class _Counted:
+    """The content of a staged file: hashed and counted against the limit as it passes."""
+
+    def __init__(self, chunks: Iterable[bytes], max_bytes: int) -> None:
+        self._chunks = chunks
+        self._max_bytes = max_bytes
+        self.digest = hashlib.sha256()
+        self.size = 0
+
+    def __iter__(self) -> Iterator[bytes]:
+        for chunk in self._chunks:
+            self.size += len(chunk)
+            if self.size > self._max_bytes:
+                raise too_large(self._max_bytes)
+            self.digest.update(chunk)
+            yield chunk
 
 
 def publish(
@@ -115,11 +165,11 @@ def publish(
     """Rename a staging file into place under the graph lock (KB1, KB2)."""
     if not isinstance(staged, FileStagedBlob) or staged.path.parent != layout.blobs:
         raise GraphCliError("internal.error", "the staged blob is not from this store")
-    target = layout.blob_path(staged.hash)
+    target = layout.blob_path(staged.stored)
     try:
         if target.exists():
             staged.discard()
-            return BlobInfo(staged.hash, target.stat().st_size)
+            return BlobInfo(staged.stored, target.stat().st_size)
         if not staged.path.exists():
             raise GraphCliError("internal.error", "the staged blob was discarded")
         ensure_dir(target.parent, syncer)
@@ -131,7 +181,7 @@ def publish(
     except OSError as exc:
         raise _unavailable("cannot store the file", exc) from exc
     fire(faults, CrashPoint.BLOB_AFTER_RENAME)
-    return BlobInfo(staged.hash, staged.size)
+    return BlobInfo(staged.stored, staged.stored_size)
 
 
 def info(layout: GraphLayout, digest: str) -> BlobInfo | None:
@@ -148,17 +198,82 @@ def info(layout: GraphLayout, digest: str) -> BlobInfo | None:
 
 def read(layout: GraphLayout, digest: str) -> Iterator[bytes]:
     """The bytes of a stored blob; opened before the first chunk is asked for."""
+    return _chunks(_open(layout, digest))
+
+
+def _open(layout: GraphLayout, digest: str) -> BinaryIO:
     if not HASH_RE.match(digest):
         raise GraphCliError("internal.error", f"not a blob hash: {digest!r}")
     try:
-        handle = open(layout.blob_path(digest), "rb")  # noqa: SIM115 - closed by _chunks
+        return open(layout.blob_path(digest), "rb")
     except FileNotFoundError:
         raise GraphCliError(
             "backend.corrupt", "a stored file is missing", details={"blob": digest}
         ) from None
     except OSError as exc:
         raise _unavailable("cannot read a stored file", exc) from exc
-    return _chunks(handle)
+
+
+def read_sealed(layout: GraphLayout, digest: str, ring: KeyRing) -> Iterator[bytes]:
+    """The content of a sealed blob; the header and the key are checked before the first
+    chunk is asked for, the ciphertext hash before the last chunk is handed out."""
+    handle = _open(layout, digest)
+    source = _Hashing(handle)
+    try:
+        chunks = ring.open_blob(source)
+    except (KeyUnavailable, BlobInvalid) as exc:
+        handle.close()
+        raise sealed_blob_error(digest, exc) from None
+    except BaseException:
+        handle.close()
+        raise
+    return _checked(handle, source, chunks, digest)
+
+
+def _checked(
+    handle: BinaryIO, source: _Hashing, chunks: Iterator[bytes], digest: str
+) -> Iterator[bytes]:
+    with handle:
+        held: bytes | None = None
+        try:
+            for chunk in chunks:
+                if held is not None:
+                    yield held
+                held = chunk
+        except BlobInvalid as exc:
+            raise sealed_blob_error(digest, exc) from None
+        except OSError as exc:
+            raise _unavailable("cannot read a stored file", exc) from exc
+        if source.read(1) or f"{_ALGORITHM}:{source.digest.hexdigest()}" != digest:
+            raise sealed_blob_error(digest, BlobInvalid("the stored bytes differ from the name"))
+        if held:
+            yield held
+
+
+class _Hashing:
+    """A reader that hashes what passes through it."""
+
+    def __init__(self, handle: BinaryIO) -> None:
+        self._handle = handle
+        self.digest = hashlib.sha256()
+
+    def read(self, size: int, /) -> bytes:
+        data = self._handle.read(size)
+        self.digest.update(data)
+        return data
+
+
+def content_info(layout: GraphLayout, digest: str) -> BlobInfo | None:
+    """``info`` with the content size of a sealed blob (computed from its stored size)."""
+    from graph_cli.storage.common import crypto  # sealed graphs only
+
+    found = info(layout, digest)
+    if found is None:
+        return None
+    try:
+        return BlobInfo(digest, crypto.blob_content_size(found.size))
+    except crypto.CryptoError as exc:
+        raise sealed_blob_error(digest, BlobInvalid(str(exc))) from None
 
 
 def _chunks(handle: BinaryIO) -> Iterator[bytes]:

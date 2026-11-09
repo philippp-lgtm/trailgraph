@@ -18,14 +18,13 @@ answer) happens on the server.
 from __future__ import annotations
 
 import base64
-import contextlib
 import json
 import os
 import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, BinaryIO, Final
 
 from graph_cli.app_cli.commands.common import services
 from graph_cli.app_cli.remote import forward, new_key
@@ -223,8 +222,9 @@ def _download(
     session: RemoteSession, state_root: Path, graph_id: str, entity: str, digest: str
 ) -> Path:
     """The stored file in this machine's cache, downloaded unless it is there already."""
+    from graph_cli.catalog.file_copies import FileCopyDir
+    from graph_cli.kernel.clock import SystemClock
     from graph_cli.kernel.ids import parse_id
-    from graph_cli.services.files import hash_file
 
     try:  # the server names what becomes a path here: only ids and a hash
         parse_id(graph_id)
@@ -233,32 +233,22 @@ def _download(
         raise protocol(200, "the answer names no graph or file id") from None
     if not DIGEST_RE.match(digest):
         raise protocol(200, "the answer names no content hash")
-    hex_digest = digest.removeprefix("sha256:")
-    directory = state_root / "files" / graph_id
-    target = directory / hex_digest
-    if hash_file(target) == digest:
-        return target
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    partial = directory / f".{hex_digest}.partial"
     actor = base64.urlsafe_b64encode(json.dumps(dict(session.actor)).encode()).decode()
-    try:
-        with partial.open("wb") as sink:
-            answer = session.client.call(
-                "GET",
-                f"/v1/graphs/{graph_id}/files/{entity}",
-                headers={ACTOR_HEADER: actor.rstrip("=")},
-                sink=sink,
-            )
+
+    def write(sink: BinaryIO) -> None:
+        answer = session.client.call(
+            "GET",
+            f"/v1/graphs/{graph_id}/files/{entity}",
+            headers={ACTOR_HEADER: actor.rstrip("=")},
+            sink=sink,
+        )
         if answer.status != 200:
             raise error_of(envelope_of(answer))
-        if hash_file(partial) != digest:
-            raise protocol(answer.status, "the downloaded file does not have its hash")
-        os.chmod(partial, 0o444)
-        os.replace(partial, target)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            partial.unlink()
-    return target
+
+    def mismatch() -> GraphCliError:
+        return protocol(200, "the downloaded file does not have its hash")
+
+    return FileCopyDir(state_root / "files", SystemClock()).get(graph_id, digest, write, mismatch)
 
 
 def file_check_hook(

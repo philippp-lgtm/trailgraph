@@ -28,22 +28,45 @@ def _staging(env: StoreEnv) -> list[str]:
 def test_stage_publish_read(env: StoreEnv) -> None:
     staged = env.store.stage_blob([CONTENT[:5], CONTENT[5:]], max_bytes=len(CONTENT))
     assert (staged.hash, staged.size) == (DIGEST, len(CONTENT))
-    assert env.store.blob(DIGEST) is None  # staged is not stored
+    name = staged.stored
+    assert (name == DIGEST) is not env.sealed  # sealed: named by the ciphertext's hash
+    assert env.store.blob(name) is None  # staged is not stored
     with env.store.session(timeout_s=5) as session:
-        assert session.publish_blob(staged) == BlobInfo(DIGEST, len(CONTENT))
-    assert env.store.blob(DIGEST) == BlobInfo(DIGEST, len(CONTENT))
-    assert b"".join(env.store.read_blob(DIGEST)) == CONTENT
+        published = session.publish_blob(staged)
+    assert published.hash == name
+    assert (published.size == len(CONTENT)) is not env.sealed  # the stored size
+    assert env.store.blob(name) == BlobInfo(name, len(CONTENT))  # the content size
+    assert b"".join(env.store.read_blob(name)) == CONTENT
     assert _staging(env) == []
+    if env.sealed:
+        assert env.store.blob(DIGEST) is None
 
 
 def test_publishing_known_content_keeps_the_stored_blob(env: StoreEnv) -> None:
     first = env.store.stage_blob([CONTENT], max_bytes=len(CONTENT))
     second = env.store.stage_blob([CONTENT], max_bytes=len(CONTENT))
     with env.store.session(timeout_s=5) as session:
-        session.publish_blob(first)
-        assert session.publish_blob(second) == BlobInfo(DIGEST, len(CONTENT))
-    assert b"".join(env.store.read_blob(DIGEST)) == CONTENT
+        stored = session.publish_blob(first)
+        if not env.sealed:
+            assert session.publish_blob(second) == stored
+    assert b"".join(env.store.read_blob(stored.hash)) == CONTENT
+    second.discard()
     assert _staging(env) == []
+
+
+def test_sealed_blobs_hold_no_content_and_a_new_key_each(env: StoreEnv) -> None:
+    if not env.sealed:
+        pytest.skip("sealed graphs only")
+    first = env.store.stage_blob([CONTENT], max_bytes=len(CONTENT))
+    second = env.store.stage_blob([CONTENT], max_bytes=len(CONTENT))
+    assert first.hash == second.hash and first.stored != second.stored
+    with env.store.session(timeout_s=5) as session:
+        session.publish_blob(first)
+    if isinstance(env.store, FileStore):
+        stored = env.store.layout.blob_path(first.stored).read_bytes()
+        assert CONTENT not in stored and b"synthetic" not in stored
+        assert "sha256:" + hashlib.sha256(stored).hexdigest() == first.stored
+    second.discard()
 
 
 def test_discarded_blobs_are_not_published(env: StoreEnv) -> None:
@@ -83,8 +106,10 @@ def test_absent_blobs(env: StoreEnv) -> None:
 def test_tx_blobs_round_trip(env: StoreEnv) -> None:
     other = b"plain text\n"
     tx, _ = env.write_blobs(lambda d: d.create(), [CONTENT, other])
-    expected = tuple(sorted({DIGEST, "sha256:" + hashlib.sha256(other).hexdigest()}))
-    assert tx.blobs == expected
+    expected = tx.blobs
+    if not env.sealed:
+        assert expected == tuple(sorted({DIGEST, "sha256:" + hashlib.sha256(other).hexdigest()}))
+    assert len(expected) == 2
     (record,) = env.store.changes_since(0)
     assert record.blobs == expected
     assert tx_to_json(record)["blobs"] == list(expected)
@@ -112,9 +137,9 @@ def test_a_tx_naming_an_unstored_blob_is_refused(env: StoreEnv) -> None:
 
 
 def test_local_path_is_a_capability_of_the_file_store(env: StoreEnv) -> None:
-    env.write_blobs(lambda d: d.create(), [CONTENT])
-    path = env.store.blob_local_path(DIGEST)
-    if env.backend.startswith("memory"):
+    tx, _ = env.write_blobs(lambda d: d.create(), [CONTENT])
+    path = env.store.blob_local_path(tx.blobs[0])
+    if env.backend.startswith("memory") or env.sealed:  # sealed: the file holds ciphertext
         assert CAPABILITY_BLOB_LOCAL_PATH not in env.store.capabilities()
         assert path is None
         return

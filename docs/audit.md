@@ -49,7 +49,9 @@ erased, so it should name a ticket, not a person.
 
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
-covers), and every file the write stored is listed as `{hash, size}`.
+covers), and every file the write stored is listed as `{hash, size}`: the
+name and size of the stored copy, which in a sealed graph is the encrypted
+copy, so the event never shows a file's content hash.
 Verification compares the changeset size with the transaction log, like
 the ids and the hash; intents written before the size was recorded carry
 none and are matched without it. Reads are not audited; the size of

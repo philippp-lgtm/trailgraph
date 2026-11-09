@@ -51,7 +51,15 @@ from uuid import UUID
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, IdProvider, TxId
-from graph_cli.kernel.sealing import EnvelopeInvalid, KeyScope, KeyUnavailable, Kid, Sealed
+from graph_cli.kernel.sealing import (
+    BlobInvalid,
+    ByteSource,
+    EnvelopeInvalid,
+    KeyScope,
+    KeyUnavailable,
+    Kid,
+    Sealed,
+)
 from graph_cli.storage.common import crypto
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.files.durable import OsSyncer, Syncer
@@ -356,6 +364,18 @@ class KeyStore:
             return crypto.open_sealed(key, sealed.nonce, sealed.ct, aad)
         except crypto.CryptoError:
             raise EnvelopeInvalid(sealed.kid) from None
+
+    def seal_blob(self, kid: Kid, chunks: Iterable[bytes]) -> Iterator[bytes]:
+        with self._lock, _sqlite_errors(self.path):
+            key = self._key(kid).enc
+        return crypto.seal_blob(key, kid, chunks)
+
+    def open_blob(self, source: ByteSource) -> Iterator[bytes]:
+        return crypto.open_blob_or_raise(self._blob_key, source, BlobInvalid)
+
+    def _blob_key(self, kid: Kid) -> bytes:
+        with self._lock, _sqlite_errors(self.path):
+            return self._key(kid).enc
 
     def is_shredded(self, kid: Kid) -> bool:
         """Whether ``kid`` is shredded; ``False`` for a live or a missing key."""

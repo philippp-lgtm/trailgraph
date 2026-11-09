@@ -3,6 +3,12 @@
 Payloads are kernel types only; no paths, SQL or backend types cross the port.
 The one exception is ``blob_local_path`` behind the capability of the same
 name (B13.2): a local backend hands out the read-only path of a stored file.
+A sealed graph's store does not have it: its blobs hold ciphertext (T16).
+
+Blobs are addressed by name: the hash of the stored bytes, which is the
+content hash in an unsealed graph and the ciphertext hash in a sealed one
+(``records.stored_blob`` maps a ``blob`` value to its name). Reads hand out
+the content.
 ``GraphStoreMaintenance`` implementations are imported only by graph_cli_admin.
 """
 
@@ -96,14 +102,24 @@ class Snapshot(Protocol):
 class StagedBlob(Protocol):
     """Bytes hashed and held by a backend before the lock; published by a write session.
 
-    Opaque to callers: a synced staging file (FileStore) or bytes (memory).
+    Opaque to callers: a synced staging file (FileStore) or bytes (memory). In a sealed
+    graph the backend holds them encrypted under a new file key.
     """
 
     @property
-    def hash(self) -> str: ...
+    def hash(self) -> str:
+        """The content hash: the ``blob`` value that names the file."""
+        ...
 
     @property
-    def size(self) -> int: ...
+    def size(self) -> int:
+        """The content size in bytes."""
+        ...
+
+    @property
+    def stored(self) -> str:
+        """The blob name it is published under; ``hash`` unless the graph is sealed."""
+        ...
 
     def discard(self) -> None:
         """Drop the staged bytes; idempotent, and a no-op after a publish."""
@@ -126,11 +142,15 @@ class GraphStoreRead(Protocol):
     def changes_since(self, seq: int, *, limit: int = 1000) -> Sequence[TxRecord]: ...
 
     def blob(self, digest: str) -> BlobInfo | None:
-        """The stored blob with this hash, lock-free; ``None`` when absent."""
+        """The stored blob with this name and the size of its content, lock-free; ``None``
+        when absent."""
         ...
 
     def read_blob(self, digest: str) -> Iterator[bytes]:
-        """The stored bytes in chunks; ``backend.corrupt`` when the blob is absent."""
+        """The content of a stored blob in chunks; ``backend.corrupt`` when the blob is
+        absent. A sealed blob is decrypted and checked against its name while it streams;
+        a damaged one raises ``backend.corrupt`` before its last chunk, so a consumer that
+        keeps the bytes only when the iteration ends has the stored content."""
         ...
 
     def blob_local_path(self, digest: str) -> Path | None:
@@ -158,7 +178,8 @@ class WriteSession(Protocol):
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult: ...
 
     def publish_blob(self, staged: StagedBlob) -> BlobInfo:
-        """Store a staged blob under its hash, durable on return (W.11b).
+        """Store a staged blob under its name, durable on return (W.11b); returns the name
+        and the stored size.
 
         A blob already stored is kept as it is; the staged copy is discarded.
         """
@@ -250,8 +271,10 @@ class MaintenanceSession(WriteSession, Protocol):
         """Blob staging leftovers: ``(name, last modified)``."""
         ...
 
-    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
-        """``integrity.storage.blob_*`` findings; ``rehash`` reads every stored blob."""
+    def verify_blobs(self, *, rehash: bool, decrypt: bool = False) -> Sequence[Finding]:
+        """``integrity.storage.blob_*`` findings; ``rehash`` reads every stored blob,
+        ``decrypt`` (sealed graphs) decrypts every blob a revision names and compares its
+        content with the revision's content hash."""
         ...
 
     def remove_blobs(
