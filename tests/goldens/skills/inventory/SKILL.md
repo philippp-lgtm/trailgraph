@@ -9,12 +9,19 @@ description: "Every generated block once, for the render goldens of the toy onto
 
 ## Is it available here?
 
+Load the `graph-cli` skill as well before your first `graph` command: it has every command with its options, the change sets of `graph apply` and the error codes. The rules of working with `graph` below hold from the first call, with or without it.
+
 Run `graph graphs --json`. Use this skill only if an item named `example_graph` is listed (title: Example graph). Pass `--graph example_graph` to every command, as the examples here do, so they work in every directory; a project whose pointer makes `example_graph` the default may leave it out.
 
-Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
+Text values are written in the graph language `en`.
 
-- Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
+Working with `graph`:
+
+- Run each call as a plain command that starts with `graph` and passes `--json`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
+- Read the answer: `ok`, then `data`; on failure `error.hint` is the command to run next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need (`graph describe schema --compact --json` lists the patterns).
+- Never guess an option, type, field, relation or state: `graph <command> --help` lists the options, `graph describe type <type> --graph example_graph --json` the fields, states and relations.
+- Preview `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then run them without; one `update`, `link` or `unlink` may run directly. Say why in `--reason`, and pass `--expect <rev>` when the write depends on what you read. A change set for `graph apply` goes into a file in the working directory.
+- Read `data.findings` of every write and tell the user about each warning.
 
 ## What is in it
 
@@ -36,34 +43,23 @@ Built-in modules, shared by every graph: `core`.
 
 Relations:
 
-| Relation | From -> to | Cardinality | Notes | Summary |
-|---|---|---|---|---|
-| `inv:in_category` | `inv:Item` -> `inv:Category` | out 0..n | inverse `has_item` | The item belongs to the category. |
-| `inv:located_in` | `inv:Item` -> `inv:Location` | out 1..1 | inverse `holds` | Where an item is stored. |
-| `inv:part_of` | `inv:Item` -> `inv:Item` | out 0..1 | acyclic, inverse `has_part` | The item is a component of a larger item. |
-| `inv:within` | `inv:Location` -> `inv:Location` | out 0..1 | acyclic, inverse `contains` | The location is inside a larger location. |
+Each relation with its pattern for `graph query` (a label matches its subtypes too):
 
-As patterns for `graph query`:
-
-```
-(:Item)-[:in_category]->(:Category)
-(:Item)-[:located_in]->(:Location)
-(:Item)-[:part_of]->(:Item)
-(:Location)-[:within]->(:Location)
-```
+- `inv:in_category` `(:Item)-[:in_category]->(:Category)` (out 0..n): The item belongs to the category.
+- `inv:located_in` `(:Item)-[:located_in]->(:Location)` (out 1..1): Where an item is stored.
+- `inv:part_of` `(:Item)-[:part_of]->(:Item)` (out 0..1, acyclic): The item is a component of a larger item.
+- `inv:within` `(:Location)-[:within]->(:Location)` (out 0..1, acyclic): The location is inside a larger location.
 
 Constraints:
 
 - `inv:Item` `status` `in_stock` -> `in_use`: Damaged items cannot be used. (guard `inv.usable`)
 - `inv:Item` `status` `ordered` or `in_stock` or `in_use` -> `retired`: An item with active parts cannot be retired. (guard `inv.no_active_parts`)
-- Write-once on `inv:Item` (set at create, never changed): `acquired_on`, `serial_number`
-- Write-once on `inv:Location` (set at create, never changed): `code`
 - Rule `inv.location_not_empty` on `inv:Location` (warning, checked in batch): A location holds items or contains other locations.
 - Rule `inv.serial_single_unit` on `inv:Item` (error, checked on every write): Serialized items have quantity 1.
 
 ## Names and ids
 
-- Aliases: `inv:Category` `CAT-0001`, `inv:Item` `ITEM-0001`, `inv:Location` `LOC-0001`. The number is zero-padded to 4 digits (`CAT-0001`, never `CAT-1`) and grows past 9999. A full id works everywhere; on the command line 8 or more trailing hex digits of it work too.
+- Aliases such as `CAT-0001`: the type table names each type's. The number is zero-padded to 4 digits (`CAT-0001`, never `CAT-1`) and grows past 9999. A full id works everywhere; on the command line 8 or more trailing hex digits of it work too.
 - No type of this graph has names (label roles), so `graph lookup` finds nothing; use `graph find --graph example_graph`.
 - `graph search <value> --graph example_graph --json` searches names and every text field, forgiving case, accents, typos and parts of words. Its results are suggestions: read one with `graph get` before you use it.
 

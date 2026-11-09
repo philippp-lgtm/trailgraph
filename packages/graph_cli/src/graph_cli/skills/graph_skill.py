@@ -17,22 +17,29 @@ author already wrote it that way.
 
 Blocks (each one optional):
 
-- ``start``: how to tell the graph is reachable, load the ``graph-cli`` skill before the
-  first command, and two of its ground rules (plain calls, ``query`` for a few fields);
-  for a model with ``files:File``, one line on the file workflow.
+- ``start``: load the ``graph-cli`` skill before the first command, how to tell the graph is
+  reachable, the graph language, and the rules of working with ``graph`` that apply from the
+  first call (plain calls, the envelope, asking for less, never guessing, functions and
+  actions first, dry runs, ``--reason`` and ``--expect``, findings), so that a graph skill
+  loaded without skill 1 still leads to safe calls (F42, F74); for a model with
+  ``files:File``, one line on the file workflow.
 - ``modules``: the subject areas (ontology modules) of the graph as a table (module, prefix,
   summary, number of types, links to other modules; built-in modules in one line) and the
   commands to read one module (``describe module``), find a term (``describe search``) and
   read a type (``describe type``). For a modular graph it takes the place of ``types`` and
   ``relations`` in the template.
 - ``types``: the entity types (types with an alias prefix; without any, every
-  concrete type) with their supertypes, fields, enum values inline (F11), and
-  states.
-- ``relations``: the relations touching those types, and the same relations as
-  ``graph query`` patterns (``(:A)-[:rel]->(:B)``, from ``describe schema``).
-- ``constraints``: transition guards, write-once fields and rules.
-- ``names``: the live alias format (F12), what ``graph lookup`` matches per
-  type (label roles) and the rule to ask when the match is not unique (F24). On a modular
+  concrete type) with their supertypes, fields (label roles named), enum values inline
+  (F11), and states.
+- ``relations``: the relations touching those types, each with its ``graph query`` pattern
+  (``(:A)-[:rel]->(:B)``, from ``describe schema``) in place of its ends; inverse labels
+  only in ``references/model.md``.
+- ``constraints``: transition guards, write-once fields (left out when the template has
+  ``types``, which marks them) and rules.
+- ``names``: the live alias format (F12; with ``types`` in the template one example, the
+  table has the rest), what ``graph lookup`` matches per
+  type (label roles; with ``types`` in the template, a pointer to the roles named there) and
+  the rule to ask when the match is not unique (F24). On a modular
   graph it names one alias and points at the module pages and ``describe type`` for the
   prefixes and name fields, so its size does not grow with the types.
 - ``model``: a pointer to ``references/model.md`` and ``graph describe``.
@@ -57,6 +64,10 @@ input document, present only when the graph has actions the reader may see; it i
 the same way: an ``Actions`` column, an ``Actions`` section on every module page and
 ``references/actions.md`` for a single-module graph. A graph without active actions renders
 exactly as before.
+
+``measure`` sizes the rendered ``SKILL.md`` against the level 0 budget of every graph
+(``L0_BUDGET`` parts, single-module graphs included) and its curated text against
+``CURATED_BUDGET``; ``graph-admin`` warns when either is exceeded and refuses nothing.
 
 A graph with two or more non-built-in modules is modular: every generated skill then also
 gets ``references/modules/<module>.md`` (level 1 of the module view as text) and
@@ -98,6 +109,12 @@ ROLE_NAMES: Final[Mapping[str, str]] = {
     "alt_label": "other names",
     "hidden_label": "hidden names, matched but never shown",
 }
+ROLE_MARKS: Final[Mapping[str, str]] = {  # the label roles as the ``types`` block names them
+    "label": "main name",
+    "alt_label": "other names",
+    "hidden_label": "hidden names",
+}
+LANG_BASES: Final = frozenset({"lang_string", "lang_text"})
 FIELD_COLUMNS: Final = (
     "Field",
     "Type",
@@ -119,20 +136,27 @@ VALUE_SHAPES: Final[Mapping[str, str]] = {
     " language",
 }
 FILE_TYPE: Final = "files:File"  # the standard module files (B7.8), not graph vocabulary
-# Level 0 of the disclosure levels: the most bytes ``SKILL.md`` of a modular graph's skill
-# should have (about 5000 tokens at 4 bytes a token, the size the Agent Skills guidance
-# suggests for a skill body). A test holds ``L0_BASE`` for 50 modules of any size; the blocks
-# of a modular graph grow with the modules only. A graph with functions may use
-# ``L0_FUNCTIONS`` more for the ``functions`` block (``FEATURED_LIMIT`` lines of a name, a
-# signature and a 100-character summary, two lines of pointers) and the ``Functions`` column;
+# Level 0 of the disclosure levels: the most bytes ``SKILL.md`` of a graph's skill should
+# have (about 5000 tokens at 4 bytes a token, the size the Agent Skills guidance suggests for
+# a skill body), single-module graphs included. A test holds ``L0_BASE`` for 50 modules of any
+# size; the blocks of a modular graph grow with the modules only, those of a single-module
+# graph with its types (past the budget, split the model into modules). A graph with
+# functions may use ``L0_FUNCTIONS`` more for the ``functions`` block (``FEATURED_LIMIT``
+# lines of a name, a signature and a 100-character summary, two lines of pointers) and the
+# ``Functions`` column;
 # a graph with actions another ``L0_ACTIONS`` for the ``actions`` block (``ACTIONS_FEATURED_LIMIT``
 # lines, the pointers and the dry-run rule) and the ``Actions`` column. ``L0_BUDGET``, the most
-# for any graph, is held by a test for 50 modules of 20 functions and 10 actions each. Not
-# checked on publish.
+# for any graph, is held by a test for 50 modules of 20 functions and 10 actions each.
+# ``graph-admin`` warns at render, publish and push when a skill exceeds the budget of its
+# graph (``measure``); it refuses nothing.
 L0_BASE: Final = 20_000
 L0_FUNCTIONS: Final = 2_500
 L0_ACTIONS: Final = 2_000
 L0_BUDGET: Final = L0_BASE + L0_FUNCTIONS + L0_ACTIONS
+# The curated text of ``SKILL.md`` (outside the frontmatter and the block markers): when to
+# use the graph and the rules no schema says. Workflow detail and more recipes go into
+# curated ``references/*.md``, read when the work needs them.
+CURATED_BUDGET: Final = 6_000
 WHEN: Final[Mapping[str, str]] = {"write": "checked on every write", "batch": "checked in batch"}
 
 
@@ -140,7 +164,7 @@ def render_graph_skill(
     template: Template, model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]
 ) -> dict[str, str]:
     """``{relative path: content}`` of the skill; ``ValueError`` on documents it cannot read."""
-    doc = _Model.of(model, graph)
+    doc = _Model.of(model, graph, _used(template))
     stamp = _stamp(doc, template)
     blocks = {name: render(doc) for name, render in _BLOCKS.items()}
     lines = template.lines
@@ -163,6 +187,62 @@ def render_graph_skill(
         ),
         **({ACTIONS_FILE: _actions_file(doc, stamp)} if doc.actions and not doc.modular else {}),
     }
+
+
+@dataclass(frozen=True, slots=True)
+class Size:
+    """The rendered ``SKILL.md`` against its budgets, in bytes of UTF-8."""
+
+    skill: int
+    budget: int  # ``L0_BASE``, plus the allowances of a graph with functions or actions
+    curated: int  # the template's ``SKILL.md`` outside the frontmatter and the markers
+    curated_budget: int
+    blocks: Mapping[str, int]  # each generated block of the template
+
+    @property
+    def over(self) -> bool:
+        return self.skill > self.budget or self.curated > self.curated_budget
+
+    def to_json(self) -> JsonObject:
+        return {
+            "skill_bytes": self.skill,
+            "budget": self.budget,
+            "curated_bytes": self.curated,
+            "curated_budget": self.curated_budget,
+            "blocks": {
+                name: size
+                for name, size in sorted(self.blocks.items(), key=lambda kv: (-kv[1], kv[0]))
+            },
+        }
+
+
+def measure(
+    template: Template, model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]
+) -> Size:
+    """``Size`` of the skill ``render_graph_skill`` makes of ``template``."""
+    doc = _Model.of(model, graph, _used(template))
+    rendered = render_graph_skill(template, model, graph)[SKILL_FILE]
+    lines = template.lines
+    marked = {index for index, _ in template.blocks}
+    body = [line for index, line in enumerate(lines) if index not in marked]
+    curated = "\n".join(body[_frontmatter_end(body) :]).strip()
+    return Size(
+        skill=_bytes(rendered),
+        budget=L0_BASE
+        + (L0_FUNCTIONS if doc.functions else 0)
+        + (L0_ACTIONS if doc.actions else 0),
+        curated=_bytes(curated),
+        curated_budget=CURATED_BUDGET,
+        blocks={name: _bytes("\n".join(_BLOCKS[name](doc))) for _, name in template.blocks},
+    )
+
+
+def _bytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _used(template: Template) -> frozenset[str]:
+    return frozenset(name for _, name in template.blocks)
 
 
 def render_checked(
@@ -209,6 +289,8 @@ def graph_block(entry: GraphEntry) -> dict[str, JsonValue]:
 class _Model:
     name: str
     title: str | None
+    language: str | None  # the graph language of the manifest (BCP 47)
+    blocks: frozenset[str]  # the blocks the template uses: one block may leave to another
     bundle: str
     version: str
     prefixes: Mapping[str, str]  # type CURIE -> alias prefix, types of the model only
@@ -221,7 +303,11 @@ class _Model:
     actions: Sequence[JsonObject]  # active action catalog entries, by module then name
 
     @staticmethod
-    def of(model: Mapping[str, JsonValue], graph: Mapping[str, JsonValue]) -> _Model:
+    def of(
+        model: Mapping[str, JsonValue],
+        graph: Mapping[str, JsonValue],
+        blocks: frozenset[str] = frozenset(),
+    ) -> _Model:
         bundle = as_object(dict(model), "model")
         listing = _document(bundle, "types")
         relations = _document(bundle, "relations")
@@ -254,6 +340,8 @@ class _Model:
         return _Model(
             name=req_str(block, "name"),
             title=opt_str(block, "title"),
+            language=opt_str(block, "language"),
+            blocks=blocks,
             bundle=req_str(ontology, "bundle"),
             version=req_str(ontology, "version"),
             prefixes=prefixes,
@@ -403,28 +491,60 @@ def _patterns_source(doc: _Model) -> str:
 
 
 def _start(doc: _Model) -> list[str]:
+    name = doc.name
     title = f" (title: {_plain(doc.title)})" if doc.title else ""
     return [
-        f"Run `graph graphs --json`. Use this skill only if an item named {_code(doc.name)} is"
-        f" listed{title}. Pass `--graph {doc.name}` to every command, as the examples here do,"
-        f" so they work in every directory; a project whose pointer makes {_code(doc.name)}"
+        "Load the `graph-cli` skill as well before your first `graph` command: it has every"
+        " command with its options, the change sets of `graph apply` and the error codes. The"
+        " rules of working with `graph` below hold from the first call, with or without it.",
+        "",
+        f"Run `graph graphs --json`. Use this skill only if an item named {_code(name)} is"
+        f" listed{title}. Pass `--graph {name}` to every command, as the examples here do,"
+        f" so they work in every directory; a project whose pointer makes {_code(name)}"
         " the default may leave it out.",
+        *_language(doc),
         "",
-        "Before your first `graph` command, load the `graph-cli` skill as well: it explains"
-        " the commands, the output envelope and safe writes. This skill says what the graph"
-        " holds. Two of its ground rules apply from the first call:",
+        "Working with `graph`:",
         "",
-        "- Run each call as a plain command that starts with `graph`: no `cd`, variables,"
-        " loops, pipes or heredocs, which a restricted harness refuses. If a call is"
-        " refused, run it again in that form before you give up.",
-        "- For a few fields, a count or a join, use `graph query` and `RETURN` only those"
-        f" columns ({_patterns_source(doc)}), or"
-        " `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering"
-        " JSON with another program.",
+        "- Run each call as a plain command that starts with `graph` and passes `--json`"
+        + (
+            " (the module views of `graph describe module` read better as text)"
+            if doc.modular
+            else ""
+        )
+        + ": no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses."
+        " If a call is refused, run it again in that form before you give up.",
+        "- Read the answer: `ok`, then `data`; on failure `error.hint` is the command to run"
+        " next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`,"
+        " `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need"
+        f" ({_patterns_source(doc)}).",
+        "- Never guess an option, type, field, relation or state: `graph <command> --help`"
+        f" lists the options, `graph describe type <type> --graph {name} --json` the fields,"
+        " states and relations.",
+        *(
+            [
+                "- For a question, run a named function when one fits (`graph run <function>"
+                " --param <name>=<value>`); write a `graph query` only when none does."
+            ]
+            if doc.functions
+            else []
+        ),
+        (
+            "- For a change, run a named action when one fits (`graph do <action> --param"
+            " <name>=<value> --dry-run`, read what it will change, then run it without"
+            " `--dry-run`). Otherwise preview"
+            if doc.actions
+            else "- Preview"
+        )
+        + " `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then"
+        " run them without; one `update`, `link` or `unlink` may run directly. Say why in"
+        " `--reason`, and pass `--expect <rev>` when the write depends on what you read. A"
+        " change set for `graph apply` goes into a file in the working directory.",
+        "- Read `data.findings` of every write and tell the user about each warning.",
         *(
             [
                 "",
-                f"The graph stores files: `graph file add <file> --graph {doc.name} --json`"
+                f"The graph stores files: `graph file add <file> --graph {name} --json`"
                 " stores one, and entities point to it with `files:from_file` and the page;"
                 " the `graph-cli` skill section Files says how.",
             ]
@@ -432,6 +552,24 @@ def _start(doc: _Model) -> list[str]:
             else []
         ),
     ]
+
+
+def _language(doc: _Model) -> list[str]:
+    """The graph language, and the tagged form when the model has language-tagged fields."""
+    if doc.language is None:
+        return []
+    text = f"Text values are written in the graph language {_code(doc.language)}."
+    tagged = any(
+        req_str(f, "base") in LANG_BASES
+        for body in doc.types.values()
+        for f in _objects(body, "fields")
+    )
+    if tagged:
+        text += (
+            " A field of base `lang_string` or `lang_text` takes another language as"
+            f" `<text>@<tag>`; without a tag it gets {_code(doc.language)}."
+        )
+    return ["", text]
 
 
 def _types(doc: _Model) -> list[str]:
@@ -489,6 +627,9 @@ def _field(field: JsonObject) -> str:
     values = _strings(field.get("values"))
     if values:
         notes.append(f"one of {_codes(values)}")
+    role = field.get("role")
+    if isinstance(role, str) and role in ROLE_MARKS:
+        notes.append(ROLE_MARKS[role])
     name = _code(req_str(field, "name"))
     return f"{name} ({', '.join(notes)})" if notes else name
 
@@ -519,22 +660,33 @@ def _attr(lifecycle: JsonObject) -> str:
 
 
 def _relations(doc: _Model) -> list[str]:
-    rows = []
+    """One line per relation: CURIE, its ``graph query`` pattern, cardinality and notes, then
+    the summary. A list, not a table: a pattern with alternative labels (``(:A|B)``) stays as
+    it is typed, where a table cell would have to escape the pipe."""
+    lines = []
     for curie in doc.touching():
         relation = doc.relations[curie]
-        rows.append(
-            [
-                _code(curie),
-                f"{_ends(relation, 'domain')} -> {_ends(relation, 'range')}",
-                _cardinality(req_obj(relation, "cardinality")),
-                _relation_notes(relation),
-                _summary(relation),
-            ]
+        ends = (
+            _code(doc.patterns[curie])
+            if curie in doc.patterns
+            else f"{_ends(relation, 'domain')} -> {_ends(relation, 'range')}"
         )
-    if not rows:
+        facts = ", ".join(
+            part
+            for part in (
+                _cardinality(req_obj(relation, "cardinality")),
+                _relation_notes(relation, inverse=False),
+            )
+            if part
+        )
+        lines.append(f"- {_code(curie)} {ends} ({facts}): {_summary(relation)}")
+    if not lines:
         return ["No relations."]
-    table = _table(["Relation", "From -> to", "Cardinality", "Notes", "Summary"], rows)
-    return [*table, *_patterns(doc, doc.touching())]
+    return [
+        "Each relation with its pattern for `graph query` (a label matches its subtypes too):",
+        "",
+        *lines,
+    ]
 
 
 def _patterns(doc: _Model, curies: Sequence[str]) -> list[str]:
@@ -561,7 +713,9 @@ _POLICY_NOTES: Final = {
 }
 
 
-def _relation_notes(relation: JsonObject) -> str:
+def _relation_notes(relation: JsonObject, *, inverse: bool = True) -> str:
+    """Characteristics, target policy, qualifiers and, unless left to level 2
+    (``references/model.md``), the inverse label, which no command takes."""
     notes = list(_strings(relation.get("characteristics")))
     policy = opt_str(relation, "on_target_inactive")
     if policy in _POLICY_NOTES:
@@ -569,9 +723,9 @@ def _relation_notes(relation: JsonObject) -> str:
     qualifiers = _strings(relation.get("qualifiers"))
     if qualifiers:
         notes.append(f"qualifiers {_codes(qualifiers)}")
-    inverse = opt_str(relation, "inverse_label")
-    if inverse:
-        notes.append(f"inverse {_code(inverse)}")
+    label = opt_str(relation, "inverse_label")
+    if label and inverse:
+        notes.append(f"inverse {_code(label)}")
     return ", ".join(notes)
 
 
@@ -593,7 +747,7 @@ def _constraints(doc: _Model) -> list[str]:
                     f"- {_code(curie)} {_code(_attr(lifecycle))} {_codes(froms, ' or ')} ->"
                     f" {_code(to)}: {summary} (guard {_code(guard_id)})"
                 )
-    for curie in doc.listed:
+    for curie in doc.listed if "types" not in doc.blocks else ():  # ``types`` marks them
         once = [
             req_str(f, "name")
             for f in _objects(doc.types[curie], "fields")
@@ -635,6 +789,8 @@ def _names(doc: _Model) -> list[str]:
                 f" `graph describe type <type> --graph {doc.name} --json` names it"
                 f" (`alias_prefix`). {padding}"
             )
+        elif "types" in doc.blocks:  # the type table names the alias of every type
+            lines.append(f"- Aliases such as {first}: the type table names each type's. {padding}")
         else:
             examples = ", ".join(
                 f"{_code(curie)} {_code(format_alias(prefix, 1))}"
@@ -658,6 +814,7 @@ def _names(doc: _Model) -> list[str]:
         f"- `graph lookup <value> --graph {doc.name} --json` finds entities by name, ignoring"
         " case; it matches"
     )
+    listed = not doc.modular and not ("types" in doc.blocks and set(labelled) <= set(doc.listed))
     if doc.modular:
         roles = "; ".join(f"{_code(role)}: {text}" for role, text in ROLE_NAMES.items())
         lines.append(
@@ -665,6 +822,9 @@ def _names(doc: _Model) -> list[str]:
             f" per type; `graph describe type <type> --graph {doc.name} --json` marks them with"
             f" `role` ({roles})."
         )
+    elif not listed:  # the ``types`` block marks the name fields of every type that has any
+        marks = ", ".join(ROLE_MARKS.values())
+        lines.append(f"{lookup} the fields the type table marks {marks}, not other text.")
     else:
         lines.append(f"{lookup} these fields, not other text:")
         for curie, fields in labelled.items():
@@ -678,7 +838,7 @@ def _names(doc: _Model) -> list[str]:
         " their names and ask which one is meant, then answer."
     )
     lines.append(search)
-    these = "a type with names" if doc.modular else "one of these types"
+    these = "one of these types" if listed else "a type with names"
     lines.append(
         f"- Before you create an entity of {these}, search for its name and its"
         " short forms. If one is the same thing, use it and add the new name to its"

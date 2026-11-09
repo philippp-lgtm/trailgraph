@@ -231,6 +231,20 @@ def test_dry_run_checks_everything_and_writes_nothing(
     assert (target / BASE).read_bytes() == written
 
 
+def test_a_skill_over_budget_is_pushed_with_a_warning(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    target = pulled(run_cli, tmp_path)
+    edit_skill(target)  # a reference page: the curated text of SKILL.md stays in its budget
+    assert push(run_cli, target, "--dry-run").warning_codes == []
+    skill_md = target / SKILL / "SKILL.md"
+    skill_md.write_text(skill_md.read_text() + "A rule that says a lot.\n" * 300)
+    outcome = push(run_cli, target, "--reason", "long rules")
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.data["skill"]["published"] is True  # warned, not refused
+    assert outcome.warning_codes == ["admin.skill_over_budget"]
+
+
 def test_a_graph_that_moved_on_is_a_conflict(
     run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
 ) -> None:

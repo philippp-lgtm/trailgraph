@@ -107,7 +107,11 @@ def test_target_policies_are_noted_on_their_relations() -> None:
     for text in (skill, reference):
 
         def notes(curie: str, text: str = text) -> str:
-            rows = [line for line in text.splitlines() if line.startswith(f"| `{curie}` | ")]
+            rows = [
+                line
+                for line in text.splitlines()
+                if line.startswith((f"| `{curie}` | ", f"- `{curie}` "))
+            ]
             return "\n".join(rows)
 
         assert refused in notes("inv:part_of")

@@ -54,12 +54,12 @@ into the graph's runtime area. Its kind follows the content:
 
 | Block | Renders |
 | --- | --- |
-| `start` | how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); load the `graph-cli` skill before the first command, and two of its ground rules repeated (plain `graph` calls, retried plainly when refused; `graph query` for a few fields, a count or a join; on a modular graph the patterns come from the module views, not the whole schema) |
+| `start` | load the `graph-cli` skill before the first command; how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); the graph language (and the `<text>@<tag>` form when the model has language-tagged fields); then the rules of working with `graph` that apply from the first call, so that the skill also works when an agent loads it without `graph-cli`: plain `graph` calls with `--json`, retried plainly when refused; `ok`, `data` and `error.hint`; never cut an answer, ask for less (`--fields`, `graph query` with a narrow `RETURN`; on a modular graph the patterns come from the module views, not the whole schema); never guess an option or a term (`--help`, `graph describe type`); a named function before a query and a named action before the write commands, when the graph has them; dry runs, `--reason`, `--expect`, change sets in a file; report `data.findings` |
 | `modules` | the subject areas (ontology modules) of the graph: one row per module that is not built in (module, prefix, summary, number of types, links to other modules with the number of relations per direction), the built-in modules in one line, then the commands to read one module (`graph describe module <module>`), to find a term (`graph describe search <text>`) and to read a type (`graph describe type <type>`). For a graph with several modules it takes the place of `types` and `relations`, which would list every type |
-| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults), states and transitions |
-| `relations` | the relations from or to those types: from -> to, cardinality, characteristics, qualifiers, inverse label; then the same relations as `graph query` patterns (`(:A)-[:rel]->(:B)`, from `describe schema`) |
-| `constraints` | transition guards, write-once fields, rules with severity |
-| `names` | the alias format (`ITEM-0001`) and the id forms that work; which fields `graph lookup` matches per type (label roles); use a candidate only on exactly one exact match, else ask. On a modular graph: one alias example, and the module pages and `graph describe type` for the prefix and name fields of each type |
+| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, the label role as main name, other names or hidden names), states and transitions |
+| `relations` | the relations from or to those types: the `graph query` pattern (`(:A)-[:rel]->(:B)`, from `describe schema`), cardinality, characteristics, qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
+| `constraints` | transition guards, rules with severity, and write-once fields unless the template also has `types`, which marks them |
+| `names` | the alias format (`ITEM-0001`; one example when the template also has `types`, whose rows name every alias) and the id forms that work; which fields `graph lookup` matches (label roles: when the template also has `types` and it lists every type with names, a pointer to the roles marked there, else per type); use a candidate only on exactly one exact match, else ask. On a modular graph: one alias example, and the module pages and `graph describe type` for the prefix and name fields of each type |
 | `model` | a pointer to `references/model.md` and `graph describe type` |
 | `functions` | the graph's named functions ([Functions](cli_graph.md#functions)): the number of active functions, then at most 12 of them, those marked `featured: true` in their file (by module, then name; further ones are not listed and nothing warns about them), one line each (`name(signature)`: summary), and the commands to run one (`graph run`), list a module's functions, search them (`graph describe search <text> --kind function`) and read one. Without published functions: one line saying so |
 | `actions` | the graph's named actions ([Actions](cli_graph.md#actions)): the number of actions the installing reader may run, the dry-run rule (`graph do <action> --param <name>=<value> --dry-run`, read, then run without), at most 8 of them, those marked `featured: true` in their file (by module, then name; the others are not listed), one line each (`name(signature)`: summary; `?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), and the commands to list a module's actions, search them (`graph describe search <text> --kind action`) and read one (`graph describe action`). Unlike the functions, the listing follows the reader's write rights: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill, and with none left the block is one line saying there are no published actions, as for a graph without any |
@@ -134,6 +134,23 @@ functions or actions keeps the base for that part): `SKILL.md` stays under
 24,500 bytes for 50 modules of 20 functions and 10 actions each, whatever
 the number of either, because the blocks list at most 12 functions and 8
 actions. Curated text adds to that.
+
+### Budgets
+
+Every generated graph skill has a level 0 budget, single-module graphs
+included: `SKILL.md` after rendering at most 20,000 bytes, plus 2,500 for a
+graph with published functions and 2,000 for one with actions, and its
+curated text (the template's `SKILL.md` outside the frontmatter and the
+block markers) at most 6,000 bytes. A single-module graph lists its whole
+model in `SKILL.md`, so it reaches the budget as its model grows; past it,
+split the model into modules. Curated text past its budget belongs in
+curated `references/*.md` that `SKILL.md` links with the situation in
+which to read them (for instance the rules for entering one kind of
+document). `graph-admin graph skill render` reports the sizes (`data.size`:
+bytes of `SKILL.md` and of the curated text, both budgets and the bytes of
+each block, largest first); render, `graph skill publish` and `graph push`
+warn `admin.skill_over_budget` when either budget is exceeded. Nothing is
+refused for its size below the hard limits of the next section.
 
 ### Publishing
 

@@ -56,6 +56,9 @@ ALLOWED_PLACEHOLDERS = {
     "<json>",
     "<seq>",
     "<dir>",
+    "<command>",
+    "<rev>",
+    "<name>",
 }
 
 

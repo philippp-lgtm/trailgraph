@@ -9,12 +9,19 @@ description: "Every generated block once, for the render goldens of the toy onto
 
 ## Is it available here?
 
+Load the `graph-cli` skill as well before your first `graph` command: it has every command with its options, the change sets of `graph apply` and the error codes. The rules of working with `graph` below hold from the first call, with or without it.
+
 Run `graph graphs --json`. Use this skill only if an item named `example_graph` is listed (title: Example graph). Pass `--graph example_graph` to every command, as the examples here do, so they work in every directory; a project whose pointer makes `example_graph` the default may leave it out.
 
-Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
+Text values are written in the graph language `en`.
 
-- Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
+Working with `graph`:
+
+- Run each call as a plain command that starts with `graph` and passes `--json`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
+- Read the answer: `ok`, then `data`; on failure `error.hint` is the command to run next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need (`graph describe schema --compact --json` lists the patterns).
+- Never guess an option, type, field, relation or state: `graph <command> --help` lists the options, `graph describe type <type> --graph example_graph --json` the fields, states and relations.
+- Preview `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then run them without; one `update`, `link` or `unlink` may run directly. Say why in `--reason`, and pass `--expect <rev>` when the write depends on what you read. A change set for `graph apply` goes into a file in the working directory.
+- Read `data.findings` of every write and tell the user about each warning.
 
 ## What is in it
 
@@ -30,28 +37,19 @@ Built-in modules, shared by every graph: `core`, `provenance`.
 
 | Type | What it is | Fields | States |
 |---|---|---|---|
-| `nas:Note` (`NOTE-0001`) | A short piece of writing about one or more topics. | `title` (required); `body` (required); `kind` (required, one of `observation`, `summary`, `question`) | `status`: `draft` <-> `published`, `draft` or `published` -> `archived`; initial `draft`; terminal `archived` |
-| `nas:Topic` (`TOPIC-0001`) | A subject that notes are about. | `label` (required, unique); `synonyms` (many); `misspellings` (many); `description` | none |
+| `nas:Note` (`NOTE-0001`) | A short piece of writing about one or more topics. | `title` (required, main name); `body` (required); `kind` (required, one of `observation`, `summary`, `question`) | `status`: `draft` <-> `published`, `draft` or `published` -> `archived`; initial `draft`; terminal `archived` |
+| `nas:Topic` (`TOPIC-0001`) | A subject that notes are about. | `label` (required, unique, main name); `synonyms` (many, other names); `misspellings` (many, hidden names); `description` | none |
 
 Other types of the model, described in `references/model.md`: `nas:Book`, `nas:Source`, `nas:WebPage`, `provenance:Claim`.
 
 Relations:
 
-| Relation | From -> to | Cardinality | Notes | Summary |
-|---|---|---|---|---|
-| `nas:about` | `nas:Note` -> `nas:Topic` | out 1..n | inverse `has_note` | The note is about the topic. |
-| `nas:asserts` | `nas:Note` -> `provenance:Claim` | out 0..n | inverse `asserted_in` | The note asserts the claim. |
-| `nas:broader` | `nas:Topic` -> `nas:Topic` | out 0..n | acyclic, transitive, inverse `narrower` | The target topic is more general than the source topic. |
-| `nas:cites` | `nas:Note` -> `nas:Source` | out 0..n | qualifiers `locator`, inverse `cited_by` | The note uses information from the source. |
+Each relation with its pattern for `graph query` (a label matches its subtypes too):
 
-As patterns for `graph query`:
-
-```
-(:Note)-[:about]->(:Topic)
-(:Note)-[:asserts]->(:Claim)
-(:Topic)-[:broader]->(:Topic)
-(:Note)-[:cites]->(:Source)
-```
+- `nas:about` `(:Note)-[:about]->(:Topic)` (out 1..n): The note is about the topic.
+- `nas:asserts` `(:Note)-[:asserts]->(:Claim)` (out 0..n): The note asserts the claim.
+- `nas:broader` `(:Topic)-[:broader]->(:Topic)` (out 0..n, acyclic, transitive): The target topic is more general than the source topic.
+- `nas:cites` `(:Note)-[:cites]->(:Source)` (out 0..n, qualifiers `locator`): The note uses information from the source.
 
 Constraints:
 
@@ -61,7 +59,7 @@ Constraints:
 
 ## Names and ids
 
-- Aliases: `nas:Note` `NOTE-0001`, `nas:Topic` `TOPIC-0001`. The number is zero-padded to 4 digits (`NOTE-0001`, never `NOTE-1`) and grows past 9999. A full id works everywhere; on the command line 8 or more trailing hex digits of it work too.
+- Aliases such as `NOTE-0001`: the type table names each type's. The number is zero-padded to 4 digits (`NOTE-0001`, never `NOTE-1`) and grows past 9999. A full id works everywhere; on the command line 8 or more trailing hex digits of it work too.
 - `graph lookup <value> --graph example_graph --json` finds entities by name, ignoring case; it matches these fields, not other text:
   - `nas:Book`: `title` (main name)
   - `nas:Note`: `title` (main name)

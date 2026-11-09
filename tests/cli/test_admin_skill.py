@@ -299,6 +299,35 @@ def test_render_writes_the_preview_and_changes_nothing(
     assert read_tree(out / "graph-example-graph")[0] == files
 
 
+def test_render_reports_the_size_and_warns_over_budget(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    from graph_cli.skills.graph_skill import CURATED_BUDGET, L0_BASE
+
+    out = tmp_path / "preview"
+    out.mkdir()
+    small = render(run_cli, TEMPLATE, out)
+    assert small.code == 0 and small.warning_codes == []
+    size = small.data["size"]
+    assert (size["budget"], size["curated_budget"]) == (L0_BASE, CURATED_BUDGET)
+    rendered = (out / "graph-example-graph" / "SKILL.md").read_bytes()
+    assert size["skill_bytes"] == len(rendered) and 0 < size["curated_bytes"] < CURATED_BUDGET
+    assert set(size["blocks"]) == {"start", "types", "relations", "constraints", "names", "model"}
+    assert render(run_cli, SKILL, out, "--force").data["size"] is None  # a static skill
+
+    wordy = copy_template(tmp_path)
+    skill_md = wordy / "SKILL.md"
+    skill_md.write_text(skill_md.read_text() + "A rule that says a lot.\n" * 300)
+    over = render(run_cli, wordy, out, "--force")
+    assert over.code == 0 and over.warning_codes == ["admin.skill_over_budget"]
+    (warning,) = over.envelope["warnings"]
+    assert "curated text" in warning["message"] and "references/" in warning["message"]
+    assert warning["details"]["curated_bytes"] > CURATED_BUDGET
+    published = publish(run_cli, wordy, "--dry-run")
+    assert published.code == 0 and published.warning_codes == ["admin.skill_over_budget"]
+    assert publish(run_cli, TEMPLATE, "--dry-run").warning_codes == []
+
+
 def test_render_reports_what_publish_would_refuse(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:

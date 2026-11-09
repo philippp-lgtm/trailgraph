@@ -21,6 +21,11 @@ archived graph (``graph.archived``) and an invalid directory
 Publishing the same files against the same pin again changes nothing.
 ``--dry-run`` stops after the checks.
 
+A template whose rendered ``SKILL.md`` exceeds the level 0 budget of its graph, or whose
+curated text exceeds its own budget (``graph_cli.skills.graph_skill.measure``), gets the
+warning ``admin.skill_over_budget`` from ``render``, ``publish`` and ``graph push``, with the
+sizes and the largest blocks; nothing is refused.
+
 ``render`` writes what ``graph skills install`` would install (without the
 marker) into a preview directory; read-only for the data root, like
 ``graph show``: no lock, no event, authorized ``maint.graph_configure``
@@ -37,14 +42,14 @@ from pathlib import Path
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot, skill_hash
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kernel.skill_marker import GENERATED, graph_skill_name
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.describe import describe_model
-from graph_cli.skills.graph_skill import graph_block, render_checked
+from graph_cli.skills.graph_skill import Size, graph_block, measure, render_checked
 from graph_cli.skills.names import check_names
 from graph_cli.skills.template import kind_of, parse_template
 from graph_cli.skills.tree import Problem, read_tree, validate, write_tree
@@ -60,18 +65,40 @@ class Published:
     entry: GraphEntry
     data: dict[str, JsonValue]
     seq: int
+    warnings: tuple[WarningRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class Checked:
     """A source directory judged against a graph: its kind, the files the slot keeps, what
     ``graph skills install`` would write from them, and the problems of the curated text
-    (``term``, ``command``, ``alias``; a template only)."""
+    (``term``, ``command``, ``alias``; a template only) and the size of its ``SKILL.md``
+    (a template only)."""
 
     kind: str
     files: dict[str, bytes]
     rendered: dict[str, bytes]
     problems: list[Problem] = field(default_factory=list)
+    size: Size | None = None
+
+    def warnings(self, entry: GraphEntry, name: str) -> tuple[WarningRecord, ...]:
+        """``admin.skill_over_budget`` when the rendered skill is over a budget."""
+        size = self.size
+        if size is None or not size.over:
+            return ()
+        parts = []
+        if size.skill > size.budget:
+            parts.append(f"SKILL.md has {size.skill} bytes of {size.budget}")
+        if size.curated > size.curated_budget:
+            parts.append(f"its curated text {size.curated} bytes of {size.curated_budget}")
+        return (
+            WarningRecord(
+                "admin.skill_over_budget",
+                f"{name} is over budget: {'; '.join(parts)}; move workflow detail and recipes"
+                " into references/, and split a growing model into modules",
+                {"graph": entry.name, "skill": name, **size.to_json()},
+            ),
+        )
 
 
 def check_source(
@@ -131,7 +158,13 @@ def check_files(
     refuse(label, entry, name, [*problems, *render_problems])
     template, _ = parse_template(files)
     assert rendered is not None and template is not None  # render_checked found no problem
-    return Checked(kind, files, rendered, check_names(template, described, graph, inventory))
+    return Checked(
+        kind,
+        files,
+        rendered,
+        check_names(template, described, graph, inventory),
+        measure(template, described, graph),
+    )
 
 
 def current_slot(session: MaintenanceSession) -> SkillSlot | None:
@@ -207,11 +240,12 @@ def publish(
         }
         seq = session.head().seq
         unchanged = current is not None and current.summary() == slot.summary()
+        warnings = checked.warnings(entry, name)
         if unchanged or dry_run:
-            return Published(entry, data, seq)
+            return Published(entry, data, seq, warnings)
         write(ctx, session, entry, decisions, meta, current, slot, reason=reason)
         data["published"] = True
-        return Published(entry, data, seq)
+        return Published(entry, data, seq, warnings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +253,7 @@ class Rendered:
     entry: GraphEntry
     data: dict[str, JsonValue]
     error: GraphCliError | None
+    warnings: tuple[WarningRecord, ...] = ()
 
 
 def render(
@@ -277,11 +312,12 @@ def render(
         "path": str(dest),
         "files": sorted(checked.rendered),
         "problems": _json(checked.problems),
+        "size": checked.size.to_json() if checked.size is not None else None,
     }
     error = None
     if checked.problems:
         error = _invalid(source, entry, name, checked.problems)
-    return Rendered(entry, data, error)
+    return Rendered(entry, data, error, checked.warnings(entry, name))
 
 
 def refuse(source: Path | str, entry: GraphEntry, name: str, problems: list[Problem]) -> None:

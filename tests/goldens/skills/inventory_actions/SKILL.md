@@ -13,12 +13,19 @@ Use it for questions about which item is stored where and for changes to that.
 
 ## Is it available here?
 
+Load the `graph-cli` skill as well before your first `graph` command: it has every command with its options, the change sets of `graph apply` and the error codes. The rules of working with `graph` below hold from the first call, with or without it.
+
 Run `graph graphs --json`. Use this skill only if an item named `example_graph` is listed (title: Example graph). Pass `--graph example_graph` to every command, as the examples here do, so they work in every directory; a project whose pointer makes `example_graph` the default may leave it out.
 
-Before your first `graph` command, load the `graph-cli` skill as well: it explains the commands, the output envelope and safe writes. This skill says what the graph holds. Two of its ground rules apply from the first call:
+Text values are written in the graph language `en`.
 
-- Run each call as a plain command that starts with `graph`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
-- For a few fields, a count or a join, use `graph query` and `RETURN` only those columns (`graph describe schema --compact --json` lists the patterns), or `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, instead of filtering JSON with another program.
+Working with `graph`:
+
+- Run each call as a plain command that starts with `graph` and passes `--json`: no `cd`, variables, loops, pipes or heredocs, which a restricted harness refuses. If a call is refused, run it again in that form before you give up.
+- Read the answer: `ok`, then `data`; on failure `error.hint` is the command to run next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`, `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need (`graph describe schema --compact --json` lists the patterns).
+- Never guess an option, type, field, relation or state: `graph <command> --help` lists the options, `graph describe type <type> --graph example_graph --json` the fields, states and relations.
+- For a change, run a named action when one fits (`graph do <action> --param <name>=<value> --dry-run`, read what it will change, then run it without `--dry-run`). Otherwise preview `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then run them without; one `update`, `link` or `unlink` may run directly. Say why in `--reason`, and pass `--expect <rev>` when the write depends on what you read. A change set for `graph apply` goes into a file in the working directory.
+- Read `data.findings` of every write and tell the user about each warning.
 
 ## Subject areas
 

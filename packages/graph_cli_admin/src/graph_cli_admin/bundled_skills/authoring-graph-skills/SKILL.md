@@ -27,12 +27,12 @@ generated from the graph's model:
 
 | Block | Renders |
 | --- | --- |
-| `start` | how to tell the graph is available here and which name to pass as `--graph`; to load the `graph-cli` skill first |
+| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` (plain calls, the envelope, never guessing, functions and actions first, dry runs, `--reason`, findings), so the skill works even when an agent loads it alone. Do not repeat them in the curated text |
 | `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, size, links to other modules) and the commands to read one module; replaces `types` and `relations` |
-| `types` | one row per entity type: name, alias example, summary, supertypes, fields, states and transitions |
-| `relations` | relations from or to those types with cardinality and qualifiers, then the same as `graph query` patterns |
-| `constraints` | transition guards, write-once fields, rules with severity |
-| `names` | the alias format and which fields `graph lookup` matches per type; on a modular graph one example and pointers, not every type |
+| `types` | one row per entity type: name, alias example, summary, supertypes, fields (with their name roles), states and transitions |
+| `relations` | relations from or to those types, each with its `graph query` pattern, cardinality and qualifiers |
+| `constraints` | transition guards and rules with severity (write-once fields too when the template has no `types`) |
+| `names` | the alias format and which fields `graph lookup` matches; next to `types` a pointer to the name roles marked there; on a modular graph one example and pointers, not every type |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
 | `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them; one line saying so when there are none |
 | `actions` | the graph's named write actions: their number, at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run) as `name(signature)` with summary, the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
@@ -110,13 +110,17 @@ description: "<What the graph holds, in the words a user would use>. Use when <t
 
 ## Rules for you
 
-- <conventions the model cannot express>
+- <conventions the model cannot express, true for every request>
+- Before you <a recurring job, such as entering one kind of document>, read
+  [references/<job>.md](references/<job>.md).
 
 ## Reading
 
+<!-- graph_cli:block functions -->
+
 <!-- graph_cli:block names -->
 
-<a few graph commands for the common questions>
+<a few graph commands for the questions no function answers>
 ```
 
 ## What the curated text is for
@@ -135,12 +139,28 @@ The blocks already say what the model says. Write what it cannot:
    data runs in this graph, with an example of each (the `graph-cli`
    skill says the work goes into `--reason`, not into entities). One rule
    per bullet, imperative, with the reason when it is not obvious.
-3. **Recipes**: the three to six questions agents ask most, each as one
-   `graph` command (`graph find`, `graph lookup`, `graph neighbors`,
-   `graph query`), and one write as `graph apply` or `graph create`. More
-   go into `references/recipes.md`, linked from `SKILL.md`.
-4. **Keep it short.** `SKILL.md` at most 500 lines (aim for well under
-   200 after rendering), the whole tree at most 256 KB.
+3. **Recipes**: the three to six questions agents ask most that no
+   function answers, each as one `graph` command (`graph find`, `graph
+   lookup`, `graph neighbors`, `graph query`), and one write as `graph
+   apply` or `graph create` when no action carries it. A question that
+   recurs is a candidate for a function (`authoring-graph-functions`), not
+   for a longer recipe list. More go into `references/recipes.md`, linked
+   from `SKILL.md`.
+4. **Keep it short.** Every generated skill has a budget: `SKILL.md` after
+   rendering at most 20,000 bytes (2,500 more with published functions,
+   2,000 more with actions), and the curated text of `SKILL.md` at most
+   6,000 bytes. `SKILL.md` is read in full every time the skill loads, so
+   keep there only what holds for every request: when to use the graph,
+   its scope, and the rules no schema says. Rules for one recurring job
+   (entering one kind of document, building one kind of entry) and
+   glossaries go into `references/<job>.md`, with one line in `SKILL.md`
+   that says when to read it. A recipe that a function covers does not
+   belong in the text at all: the `functions` block lists it. Hard limits:
+   `SKILL.md` at most 500 lines, the whole tree at most 256 KB.
+5. **Rules as criteria, not values.** Say what decides a case and give
+   the test question; do not list values from the data. A rule that pulls
+   against the model (an "always link X" for a relation the ontology
+   makes optional) misleads; say when it applies.
 
 ## What publishing checks
 
@@ -168,6 +188,11 @@ names the file and the rule):
   rule (a placeholder such as `<action>` is allowed; the actions of the same
   push count), else the rule `action` refuses the skill.
 
+Not refused, but warned (`admin.skill_over_budget`, with the sizes in
+`details` and in `data.size` of `render`): a `SKILL.md` or a curated text
+over its budget (above). Move text into references, or split a model that
+outgrew one module.
+
 When a later ontology release removes a name the curated text uses, agents
 get the warning `skills.source_unknown_names`: fix the text and push. The
 same warning follows when a function or action the text runs is later deleted.
@@ -178,6 +203,8 @@ same warning follows when a function or action the text runs is later deleted.
 2. Preview: `graph-admin graph skill render <graph> <folder>/skill/graph-<graph>
    --out <scratch dir> --force`, then read `<scratch dir>/graph-<graph>/`
    as an agent would: is it clear when to use the graph, and what to do?
+   `data.size` tells how much of the budget each block and the curated
+   text take.
 3. Fix what `render` reports (exit 1 lists the problems; the preview is
    written anyway).
 4. Publish with `graph-admin graph push <graph> <folder> --dry-run`, then
