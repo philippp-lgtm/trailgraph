@@ -199,7 +199,12 @@ APPLY: Final = CommandSpec(
     description=(
         "Each document is one transaction, in order; @local names bound by earlier "
         "documents stay usable. Everything is parsed first, so broken input writes "
-        "nothing. Processing stops at the first failing document."
+        "nothing. Processing stops at the first failing document. A document: "
+        '{"reason": "<why>", "ops": [{"op": "create", "local": "a", "type": "<type>", '
+        '"attrs": {"<attr>": "<value>"}, "edges": [{"rel": "<relation>", "target": "<id>"}]}, '
+        '{"op": "link", "id": "@a", "rel": "<relation>", "target": "<id>"}]}; '
+        "more ops: update (id, set), unlink, transition (id, to), supersede, retract. "
+        "Every key: references/changesets.md of the graph-cli skill."
     ),
     params=(
         ParamSpec(
