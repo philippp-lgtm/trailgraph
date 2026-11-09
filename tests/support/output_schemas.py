@@ -2,7 +2,8 @@
 
 A pytest plugin, registered in ``conftest.py``. In-process runs (the server in tests,
 ``cli_kit.runner.run``) render through ``envelope``, which is wrapped for the whole
-session; subprocess runs are checked by ``run_cli`` on their stdout, in-process server
+session; subprocess runs are checked by ``run_cli`` on their stdout (``graph`` prints the
+short envelope), in-process server
 calls by ``support.server.call`` on the body as sent, after the server's own additions
 (``check_text``).
 The envelope is checked against ``cli_kit.output_schemas``' definition, ``data`` against
@@ -54,8 +55,9 @@ def validator(schema: Mapping[str, JsonValue], defs: Mapping[str, JsonValue]) ->
 
 
 @functools.cache
-def _programs() -> dict[str, tuple[Any, dict[str, Any]]]:
-    """Per program: the envelope's validator and one per command that declares ``data``."""
+def _programs() -> dict[str, tuple[Any, Any, dict[str, Any]]]:
+    """Per program: the validators of the envelope and of the short envelope, and one per
+    command that declares ``data``."""
     from graph_cli.app_cli.commands import all_specs as app_specs
     from graph_cli.app_cli.output_schemas import DEFS as APP_DEFS
     from graph_cli.cli_kit.output_schemas import DEFS as KIT_DEFS
@@ -63,7 +65,7 @@ def _programs() -> dict[str, tuple[Any, dict[str, Any]]]:
     from graph_cli_admin.maintenance_cli.commands import all_specs as admin_specs
     from graph_cli_admin.maintenance_cli.output_schemas import DEFS as ADMIN_DEFS
 
-    programs: dict[str, tuple[Any, dict[str, Any]]] = {}
+    programs: dict[str, tuple[Any, Any, dict[str, Any]]] = {}
     for program, specs, defs in (
         ("graph", app_specs(), APP_DEFS),
         ("graph-admin", admin_specs(), ADMIN_DEFS),
@@ -73,15 +75,20 @@ def _programs() -> dict[str, tuple[Any, dict[str, Any]]]:
             for spec in specs
             if spec.output is not None
         }
-        programs[program] = (validator(ref("envelope"), KIT_DEFS), commands)
+        programs[program] = (
+            validator(ref("envelope"), KIT_DEFS),
+            validator(ref("short_envelope"), KIT_DEFS),
+            commands,
+        )
     return programs
 
 
-def check(program: str, document: JsonValue) -> list[str]:
-    """What is wrong with ``document``, an envelope of ``program``."""
+def check(program: str, document: JsonValue, *, short: bool = False) -> list[str]:
+    """What is wrong with ``document``, an envelope of ``program`` (``short``: as printed)."""
     if program not in _programs():
         return []
-    envelope, commands = _programs()[program]
+    whole, shortened, commands = _programs()[program]
+    envelope = shortened if short else whole
     problems = [f"envelope: {_where(e)}: {e.message}" for e in envelope.iter_errors(document)]
     if not isinstance(document, Mapping) or document.get("data") is None:
         return problems
@@ -98,12 +105,14 @@ def _where(error: Any) -> str:
     return "$" + "".join(f"[{p!r}]" if isinstance(p, int) else f".{p}" for p in error.path)
 
 
-def record(program: str, document: JsonValue) -> None:
-    FAILURES.extend(f"{program}: {problem}" for problem in check(program, document)[:5])
+def record(program: str, document: JsonValue, *, short: bool = False) -> None:
+    problems = check(program, document, short=short)[:5]
+    FAILURES.extend(f"{program}: {problem}" for problem in problems)
 
 
-def check_text(program: str, text: str) -> None:
-    """A subprocess's stdout or an HTTP answer's body, when it is one JSON envelope."""
+def check_text(program: str, text: str, *, short: bool = False) -> None:
+    """A subprocess's stdout or an HTTP answer's body, when it is one JSON envelope;
+    ``short`` for ``graph``'s stdout."""
     if not text.startswith("{"):
         return
     try:
@@ -111,7 +120,7 @@ def check_text(program: str, text: str) -> None:
     except ValueError:
         return
     if isinstance(document, dict) and document.get("schema") == "graph_cli.envelope/1":
-        record(program, document)
+        record(program, document, short=short)
 
 
 def _wrap(render: Callable[..., dict[str, JsonValue]]) -> Callable[..., dict[str, JsonValue]]:

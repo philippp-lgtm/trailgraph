@@ -2363,13 +2363,13 @@
       "edge": {
         "type": "object",
         "properties": {
-          "edge_id": {
-            "type": "string"
-          },
           "rel": {
             "type": "string"
           },
           "target": {
+            "type": "string"
+          },
+          "edge_id": {
             "type": "string"
           },
           "qualifiers": {
@@ -2381,7 +2381,6 @@
           }
         },
         "required": [
-          "edge_id",
           "rel",
           "target"
         ]
@@ -4815,6 +4814,76 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "short_envelope": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "const": "graph_cli.envelope/1"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "seq": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "seq"
+            ]
+          },
+          "data": {},
+          "page": {
+            "$ref": "#/components/schemas/page"
+          },
+          "hints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hint"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/warning"
+            }
+          },
+          "error": {
+            "$ref": "#/components/schemas/error"
+          }
+        },
+        "required": [
+          "schema",
+          "ok",
+          "command"
         ]
       },
       "skill_counts": {
@@ -13619,6 +13688,15 @@
                         "description": "The inventory name of fields; never both.",
                         "deprecated": true
                       },
+                      "full": {
+                        "type": "boolean",
+                        "description": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
+                      },
+                      "--full": {
+                        "type": "boolean",
+                        "description": "The inventory name of full; never both.",
+                        "deprecated": true
+                      },
                       "limit": {
                         "type": "integer",
                         "description": "Page size, at most 500."
@@ -13995,6 +14073,15 @@
                           "type": "string"
                         },
                         "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "full": {
+                        "type": "boolean",
+                        "description": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
+                      },
+                      "--full": {
+                        "type": "boolean",
+                        "description": "The inventory name of full; never both.",
                         "deprecated": true
                       },
                       "affordances": {
@@ -15996,6 +16083,15 @@
                           "type": "string"
                         },
                         "description": "The inventory name of fields; never both.",
+                        "deprecated": true
+                      },
+                      "full": {
+                        "type": "boolean",
+                        "description": "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id."
+                      },
+                      "--full": {
+                        "type": "boolean",
+                        "description": "The inventory name of full; never both.",
                         "deprecated": true
                       },
                       "graph": {

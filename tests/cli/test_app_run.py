@@ -254,11 +254,11 @@ def test_a_deprecated_function_runs_with_a_warning(run_cli: CliRunner, root: Pat
     unit = alias_of(run_cli, "org:Department", "Department A")
     ran = run(run_cli, "unit_members", "--param", f"unit={unit['alias']}")
     assert ran.code == 0, ran.envelope
-    (warning,) = [w for w in ran.envelope["warnings"] if w["code"] == "function.deprecated"]
+    (warning,) = [w for w in ran.warnings if w["code"] == "function.deprecated"]
     assert warning["details"] == {"name": "unit_members", "replaced_by": "members_of_unit"}
     assert "members_of_unit" in warning["message"]
     assert "function.deprecated" not in str(
-        run(run_cli, "members_of_unit", "--param", f"unit={unit['alias']}").envelope["warnings"]
+        run(run_cli, "members_of_unit", "--param", f"unit={unit['alias']}").warnings
     )
 
 

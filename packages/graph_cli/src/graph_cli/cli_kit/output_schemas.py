@@ -115,6 +115,21 @@ def _envelope() -> Schema:
     )
 
 
+def _short_envelope() -> Schema:
+    """``envelope.short_envelope``: what ``graph --json`` prints of the envelope."""
+    return obj(
+        {"schema": {"const": ENVELOPE_SCHEMA}, "ok": BOOLEAN, "command": nullable(STRING)},
+        {
+            "graph": obj({"name": STRING, "seq": nullable(INTEGER)}, {"state": STRING}),
+            "data": ANY,
+            "page": ref("page"),
+            "hints": array(ref("hint")),
+            "warnings": array(ref("warning")),
+            "error": ref("error"),
+        },
+    )
+
+
 def _param() -> Schema:
     """``cli_kit.spec.ParamSpec.to_json``."""
     return obj(
@@ -169,6 +184,7 @@ def _inventory() -> Schema:
 
 DEFS: Final[dict[str, Schema]] = {
     "envelope": _envelope(),
+    "short_envelope": _short_envelope(),
     "graph": _graph(),
     "error": obj(
         {

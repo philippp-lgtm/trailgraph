@@ -7,7 +7,7 @@ import click
 import pytest
 from support.fixtures import GOLDENS, assert_golden
 
-from graph_cli.cli_kit.envelope import Forwarded, Result, render_text
+from graph_cli.cli_kit.envelope import Forwarded, Result, render_text, short_envelope
 from graph_cli.cli_kit.hints import hint_for, known_hint_codes
 from graph_cli.cli_kit.runner import (
     CommandState,
@@ -152,6 +152,42 @@ def test_success_envelope_golden() -> None:
     assert out.endswith("}\n") and out.count("\n") == 1
     assert (document["command"], document["ok"], document["error"]) == ("thing show", True, None)
     assert_golden(GOLDENS / "cli_kit" / "envelope_ok.json", out.encode())
+
+
+def test_the_short_envelope_leaves_out_what_is_empty_and_keeps_the_document_whole() -> None:
+    out, done = io.StringIO(), []
+    invocation = Invocation("prog", short=True)
+    run(
+        prog,
+        ["thing", "show", "x", "--json"],
+        invocation,
+        out=out,
+        err=io.StringIO(),
+        after=done.append,
+    )
+    printed = json.loads(out.getvalue())
+    assert list(printed) == ["schema", "ok", "command", "graph", "data", "warnings"]
+    assert printed["graph"] == {"name": "example_graph"}
+    (whole,) = done
+    assert list(whole.document) == ENVELOPE_KEYS and whole.document["graph"]["id"] == "g"
+    assert whole.stdout_bytes == len(out.getvalue().encode())
+    failed = io.StringIO()
+    run(prog, ["thing", "fail", "--json"], invocation, out=failed, err=io.StringIO())
+    assert list(json.loads(failed.getvalue())) == ["schema", "ok", "command", "error"]
+
+
+def test_short_envelope_keeps_seq_and_a_state_other_than_active() -> None:
+    graph = {"id": "g", "name": "n", "state": "active", "ontology": {}, "seq": 0}
+    document = {"schema": "s", "ok": True, "command": None, "graph": graph, "page": None}
+    assert short_envelope(document) == {
+        "schema": "s",
+        "ok": True,
+        "command": None,
+        "graph": {"name": "n", "seq": 0},
+    }
+    archived = short_envelope({**document, "graph": {**graph, "state": "archived"}})
+    assert archived["graph"] == {"name": "n", "seq": 0, "state": "archived"}
+    assert short_envelope({**document, "data": {"items": []}})["data"] == {"items": []}
 
 
 def test_error_envelope_golden() -> None:

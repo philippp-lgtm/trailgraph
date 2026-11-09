@@ -3,7 +3,9 @@
 JSON mode writes exactly one document plus ``\\n`` to stdout. Text mode
 renders the same result: data on stdout, warnings and errors on stderr.
 Every envelope key is always present (B9.2); unused ones are ``null`` or
-``[]``.
+``[]``. A program that prints the short envelope (``graph``) leaves those out
+on stdout, and of ``graph`` what never changes within a graph (``short_envelope``);
+the document itself, which the server sends and the access log records, stays whole.
 """
 
 from __future__ import annotations
@@ -18,6 +20,10 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 
 ENVELOPE_SCHEMA: Final = "graph_cli.envelope/1"
+# What the short envelope always prints, and of its ``graph`` besides a state other than active.
+SHORT_KEYS: Final = ("schema", "ok", "command")
+SHORT_GRAPH_KEYS: Final = ("name", "seq")
+ACTIVE: Final = "active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +86,24 @@ def envelope(
         "warnings": [w.to_json() for w in all_warnings],
         "error": error_json(error, program=program) if error is not None else None,
     }
+
+
+def short_envelope(document: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The envelope as ``graph --json`` prints it: ``schema``, ``ok`` and ``command``;
+    ``graph`` with ``name`` and ``seq`` (and ``state`` when it is not active); the other
+    keys only when they hold something (not null, not ``[]``)."""
+    shown: dict[str, JsonValue] = {}
+    for key, value in document.items():
+        if key in SHORT_KEYS:
+            shown[key] = value
+        elif key == "graph" and isinstance(value, Mapping):
+            graph = {k: value[k] for k in SHORT_GRAPH_KEYS if k in value}
+            if value.get("state", ACTIVE) != ACTIVE:
+                graph["state"] = value["state"]
+            shown[key] = graph
+        elif value is not None and value != []:
+            shown[key] = value
+    return shown
 
 
 def render_json(document: Mapping[str, JsonValue]) -> str:

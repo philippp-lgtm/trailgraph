@@ -25,7 +25,13 @@ from support.fixtures import FIXTURES, GOLDENS
 from support.skills import SKILL_DIR, committed_files
 from test_vocabulary_leak import deny_list
 
-from graph_cli.cli_kit.envelope import envelope, error_json
+from graph_cli.cli_kit.envelope import (
+    SHORT_GRAPH_KEYS,
+    SHORT_KEYS,
+    envelope,
+    error_json,
+    short_envelope,
+)
 from graph_cli.kernel.changeset import (
     DOCUMENT_KEYS,
     MAX_BYTES,
@@ -226,8 +232,12 @@ class TestDocsVsCode:
 
     def test_envelope_keys(self) -> None:
         body = committed_files()["SKILL.md"]
-        (keys_line,) = [x for x in body.splitlines() if x.startswith("- Keys, always present:")]
-        assert backticked(keys_line) == list(envelope(None, program="graph").keys())
+        (keys_line,) = [x for x in body.splitlines() if x.startswith("- Keys:")]
+        whole = list(envelope(None, program="graph"))
+        optional = [k for k in whole if k not in (*SHORT_KEYS, "graph")]
+        listed = backticked(keys_line.partition(" only when not null")[0])
+        assert listed == [*SHORT_KEYS, "graph", *SHORT_GRAPH_KEYS, *optional]
+        assert list(short_envelope(envelope(None, program="graph"))) == list(SHORT_KEYS)
         marker = "On failure `error` holds"
         (fail_line,) = [x for x in body.splitlines() if marker in x]
         listed = fail_line.partition(marker)[2].partition(". ")[0]
@@ -388,8 +398,8 @@ class TestStructure:
         files = committed_files()
         # functions: command rows, guidance; lookup --for; actions: the do and two describe
         # rows, the action guidance in the write step; get --affordances (223); the
-        # covering-function hint line (224)
-        assert len(files["SKILL.md"].splitlines()) <= 224
+        # covering-function hint line (224); --full and the empty function value (225)
+        assert len(files["SKILL.md"].splitlines()) <= 225
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB

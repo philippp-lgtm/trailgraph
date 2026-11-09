@@ -64,8 +64,8 @@ def test_definitions_resolve_and_are_used(program: str) -> None:
     for name, schema in defs.items():
         Draft202012Validator.check_schema(schema)
         assert _refs(schema) <= set(defs), name
-    used = {"envelope"}
-    todo = [ref for spec in specs for ref in _refs(spec.output)] + ["envelope"]
+    used = {"envelope", "short_envelope"}
+    todo = [ref for spec in specs for ref in _refs(spec.output)] + ["envelope", "short_envelope"]
     while todo:
         name = todo.pop()
         new = _refs(defs[name]) - used

@@ -203,7 +203,7 @@ def test_neighbors(svc: ServiceEnv, roles: Roles) -> None:
     view = open_view(svc, reader)
     rel = roles.term("required_relation")
     source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
-    data, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
+    data, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out", full=True)
     items = data["items"]
     assert isinstance(items, list) and items
     assert all(i["direction"] == "out" for i in items)  # type: ignore[index]
@@ -551,7 +551,7 @@ def test_reads_signal_the_ids_they_return(svc: ServiceEnv, roles: Roles) -> None
     )  # a model may have none
     rel = roles.term("required_relation")
     source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
-    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
+    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out", full=True)
     neighbours = [item["entity"]["id"] for item in near["items"]]  # type: ignore[index, union-attr]
     assert activity.signals == [
         (graph, [str(entity.id)]),
@@ -568,7 +568,7 @@ def test_signals_name_command_actor_and_walked_edges(svc: ServiceEnv, roles: Rol
     view = open_view(svc, reader)
     rel = roles.term("required_relation")
     source = next(r for r in svc.all_revisions() if any(e.rel == rel for e in r.edges))
-    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out")
+    near, _ = reader.neighbors(view, str(source.id), rels=[rel], direction="out", full=True)
     walked = [item["edge"]["edge_id"] for item in near["items"]]  # type: ignore[index, union-attr]
     rows, *_ = reader.query(
         view, reader.parse_query("MATCH (a)-[r]->(b) RETURN a, r, b"), QuerySpec(limit=2)

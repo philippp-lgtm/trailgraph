@@ -157,7 +157,9 @@ def test_qualified_link_unlink_by_edge_id_and_text(
     linked = app(run_cli, "link", source, rel, target, "--qualifier", f"{qualifier}=p. 7", env=ENV)
     assert linked.code == 0, linked.envelope
     (edge,) = [
-        e for e in app(run_cli, "get", source, env=ENV).data["entity"]["edges"] if e["rel"] == rel
+        e
+        for e in app(run_cli, "get", source, "--full", env=ENV).data["entity"]["edges"]
+        if e["rel"] == rel
     ]
     assert edge["qualifiers"] == {qualifier: "p. 7"} and edge["target"] == target
     both = app(run_cli, "unlink", source, rel, target, "--edge-id", edge["edge_id"], env=ENV)

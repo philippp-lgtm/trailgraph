@@ -3218,6 +3218,76 @@
           "pinned"
         ]
       },
+      "short_envelope": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "const": "graph_cli.envelope/1"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "seq": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "seq"
+            ]
+          },
+          "data": {},
+          "page": {
+            "$ref": "#/components/schemas/page"
+          },
+          "hints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/hint"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/warning"
+            }
+          },
+          "error": {
+            "$ref": "#/components/schemas/error"
+          }
+        },
+        "required": [
+          "schema",
+          "ok",
+          "command"
+        ]
+      },
       "skill_summary": {
         "type": "object",
         "properties": {

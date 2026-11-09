@@ -524,7 +524,9 @@ def _start(doc: _Model) -> list[str]:
         *(
             [
                 "- For a question, run a named function when one fits (`graph run <function>"
-                " --param <name>=<value>`); write a `graph query` only when none does."
+                " --param <name>=<value>`); write a `graph query` only when none does. An empty"
+                " value in a function's answer means nothing is recorded: say so instead of"
+                " searching further."
             ]
             if doc.functions
             else []

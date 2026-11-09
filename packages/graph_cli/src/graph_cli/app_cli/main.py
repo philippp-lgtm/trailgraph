@@ -71,7 +71,7 @@ def main() -> None:
     code = run(
         cli,
         sys.argv[1:],
-        Invocation(wiring.PROGRAM, json_mode, debug, wiring.OutputSpill(services)),
+        Invocation(wiring.PROGRAM, json_mode, debug, wiring.OutputSpill(services), short=True),
         services=services,
         out=sys.stdout,
         err=sys.stderr,

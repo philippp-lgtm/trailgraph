@@ -49,11 +49,17 @@ def flat(objects: list[dict[str, Any]], listed: set[str]) -> set[str]:
     return names
 
 
-def check(section: str, objects: list[dict[str, Any]], skip: frozenset[str] = frozenset()) -> None:
+def check(
+    section: str,
+    objects: list[dict[str, Any]],
+    skip: frozenset[str] = frozenset(),
+    when_set: frozenset[str] = frozenset(),
+) -> None:
+    """``when_set``: listed fields an answer has only when they hold a value."""
     listed = documented()[section]
     found = flat(objects, listed) - skip
     assert found <= listed, (section, found - listed)
-    top = {f for f in listed if "." not in f}
+    top = {f for f in listed if "." not in f} - when_set
     assert top <= {key for obj in objects for key in obj}, (section, top)
 
 
@@ -76,10 +82,21 @@ def test_output_reference_lists_the_fields_of_real_answers(
     check("Pages", [found.envelope["page"]])
     every = app(run_cli, "find", "--limit", "500", env=ENV)
     check("Entities", every.data["items"])
+    lean = documented()["Entities"]
+    full = app(run_cli, "find", "--limit", "500", "--full", env=ENV)
+    stored = [
+        {
+            **{k: v for k, v in item.items() if k not in lean and k != "edges"},
+            "edges": [{"edge_id": edge["edge_id"]} for edge in item["edges"]],
+        }
+        for item in full.data["items"]
+    ]
+    check("Entities with --full", stored)
+    assert all({"valid_from", "valid_to"} <= set(item) for item in full.data["items"])
 
     entity = found.data["items"][0]
     got = app(run_cli, "get", entity["id"], env=ENV)
-    check("Entities", [got.data["entity"]])
+    check("Entities", [got.data["entity"]], when_set=frozenset({"valid_from", "valid_to"}))
     check("Get", [got.data], skip=frozenset({"entity"}))
 
     superseded = app(

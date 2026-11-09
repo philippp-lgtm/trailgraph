@@ -495,6 +495,7 @@ Usage: `graph find [OPTIONS]`
 | `--include-inactive` | flag | no | no | Include superseded and retracted entities. |
 | `--sort` | string | no | yes | Field to sort by, optionally :desc. |
 | `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
+| `--full` | flag | no | no | Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
@@ -528,6 +529,7 @@ Usage: `graph get REF [OPTIONS]`
 |---|---|---|---|---|
 | `--rev` | integer | no | no | Show this earlier revision instead of the current one. |
 | `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
+| `--full` | flag | no | no | Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id. |
 | `--affordances` | flag | no | no | Also show what the entity can do next: lifecycle transitions with their guards, relations with room left, and the actions and functions that take it as a parameter. Not with --rev. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
@@ -539,6 +541,7 @@ Usage: `graph get REF [OPTIONS]`
 | `graph get <id> --graph <graph> --json` | The entity as JSON. |
 | `graph get <id> --rev 2 --json` | The entity as it was at revision 2. |
 | `graph get <id> --fields <attr>,edges --json` | Only one field and the edges. |
+| `graph get <id> --full --json` | With the system fields and the edge ids. |
 | `graph get <id> --as-of tx:<seq> --json` | The entity as it was after that tx. |
 
 ## graph graphs
@@ -667,6 +670,7 @@ Usage: `graph neighbors REF [OPTIONS]`
 | `--direction` | choice | no | no | Edge direction. One of `out`, `in`, `both`. Default: `both`. |
 | `--depth` | integer | no | no | Hops, 1 to 3. Default: `1`. |
 | `--fields` | string | no | yes | Only these fields (comma-separated): attributes, edges or system fields; id, alias, type, rev and record_status always. |
+| `--full` | flag | no | no | Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq, ontology_version, content_hash) and the edge ids, for unlink --edge-id. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 

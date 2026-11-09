@@ -65,7 +65,7 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
             cwd=cwd or tmp_path,
             timeout=60,
         )
-        check_text(program, completed.stdout)
+        check_text(program, completed.stdout, short=program == "graph")
         return completed
 
     return run
