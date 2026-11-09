@@ -1,13 +1,14 @@
 """Level 0 budget of generated graph skills: ``SKILL.md`` of a modular graph stays under
 ``L0_BUDGET`` on a large synthetic ontology (50 modules, 1250 types), and its size does not
 depend on how many types a module holds; the types are on level 1 (module pages,
-``describe module``)."""
+``describe module``). ``measure`` holds every graph to the budget, single-module graphs
+included, and the curated text to ``CURATED_BUDGET``."""
 
 import json
 from typing import Any
 
 import pytest
-from support.fixtures import FIXTURES
+from support.fixtures import FIXTURES, TOY_ONTOLOGIES, compiled_model
 from support.skills import GRAPH_SKILL_NAME, render_inputs
 
 from graph_cli.ontology_layer.bundle import LayeredSource, MappingSource
@@ -15,9 +16,13 @@ from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.skills.graph_skill import (
     ACTIONS_FEATURED_LIMIT,
+    CURATED_BUDGET,
     FEATURED_LIMIT,
+    L0_ACTIONS,
     L0_BASE,
     L0_BUDGET,
+    L0_FUNCTIONS,
+    measure,
     render_graph_skill,
 )
 from graph_cli.skills.template import parse_template
@@ -25,6 +30,7 @@ from graph_cli.skills.tree import MAX_TOTAL_BYTES, SKILL_FILE, read_tree
 
 # The curated template of the modular fixture: start, modules, names, model.
 TEMPLATE = FIXTURES / "skills" / "company" / GRAPH_SKILL_NAME
+BLOCKS = FIXTURES / "skills" / "blocks" / GRAPH_SKILL_NAME  # every block, single-module toys
 MAIN = "synthetic"
 LINKS = 3  # each module links to up to this many earlier modules, one relation each
 SUMMARY_100 = (
@@ -264,3 +270,73 @@ def test_the_reference_tree_of_a_thousand_functions_fits() -> None:
     assert total <= MAX_TOTAL_BYTES, f"{total} bytes of {MAX_TOTAL_BYTES}"
     page = files["references/modules/area_07.md"]
     assert page.count("| `function_07_") == 50
+
+
+# ---- measure: every graph, and the curated text ---------------------------------------------
+
+
+def template_of(directory: Any, extra: bytes = b"") -> Any:
+    files, problems = read_tree(directory)
+    assert problems == []
+    files[SKILL_FILE] += extra
+    template, problems = parse_template(files)
+    assert problems == [] and template is not None
+    return template
+
+
+@pytest.mark.parametrize("ontology", TOY_ONTOLOGIES)
+def test_single_module_toys_stay_under_both_budgets(ontology: str) -> None:
+    documents, graph = render_inputs(compiled_model(ontology))
+    size = measure(template_of(BLOCKS), documents, graph)
+    assert size.budget == L0_BASE  # no functions, no actions
+    assert size.skill <= size.budget and size.curated <= CURATED_BUDGET and not size.over
+    rendered = render_graph_skill(template_of(BLOCKS), documents, graph)[SKILL_FILE]
+    assert size.skill == len(rendered.encode())
+
+
+def test_measure_counts_curated_text_outside_frontmatter_and_markers() -> None:
+    documents, graph = render_inputs(compiled_model("inventory"))
+    plain = measure(template_of(BLOCKS), documents, graph)
+    longer = measure(template_of(BLOCKS, b"\n" + "ü".encode() * 10 + b"\n"), documents, graph)
+    assert 20 < longer.curated - plain.curated < 25  # ten two-byte letters and line ends
+    files, _ = read_tree(BLOCKS)
+    body = files[SKILL_FILE].decode().split("\n---\n", 1)[1]
+    markers = [line for line in body.splitlines() if line.startswith("<!-- graph_cli:block")]
+    assert plain.curated < len(body.encode()) - sum(len(m) for m in markers) + 1
+    assert set(plain.blocks) == {line.split()[2] for line in markers}
+    assert sum(plain.blocks.values()) < plain.skill
+
+
+def test_curated_text_over_its_budget_is_over() -> None:
+    documents, graph = render_inputs(compiled_model("inventory"))
+    size = measure(template_of(BLOCKS, b"x" * CURATED_BUDGET), documents, graph)
+    assert size.curated > CURATED_BUDGET and size.over
+    assert size.to_json()["curated_budget"] == CURATED_BUDGET
+    blocks = list(size.to_json()["blocks"])  # largest first
+    assert blocks[0] == max(size.blocks, key=lambda name: size.blocks[name])
+
+
+def test_a_large_single_module_graph_is_over_the_budget() -> None:
+    """The budget is the signal to split a growing model into modules."""
+    documents, graph = render_inputs(compiled_model("inventory"))
+    item = documents["type"]["inv:Item"]
+    for n in range(80):
+        curie = f"inv:Synthetic{n}"
+        documents["type"][curie] = {**item, "type": {**item["type"], "curie": curie}}
+        documents["types"]["types"].append({"curie": curie, "abstract": False})
+        graph["alias_prefixes"][curie] = f"S{n}"
+    size = measure(template_of(BLOCKS), documents, graph)
+    assert size.skill > L0_BASE and size.over
+    assert next(iter(size.to_json()["blocks"])) == "types"
+
+
+def test_functions_and_actions_raise_the_budget() -> None:
+    model = synthetic_model(2, 3)
+    template = template_of(
+        TEMPLATE,
+        b"\n<!-- graph_cli:block functions -->\n\n<!-- graph_cli:block actions -->\n",
+    )
+    documents, graph = render_inputs(model, functions=catalog(2, 2), actions=action_catalog(2, 2))
+    assert measure(template, documents, graph).budget == L0_BASE + L0_FUNCTIONS + L0_ACTIONS
+    documents, graph = render_inputs(model, functions=catalog(2, 2))
+    assert measure(template, documents, graph).budget == L0_BASE + L0_FUNCTIONS

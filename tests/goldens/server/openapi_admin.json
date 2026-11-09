@@ -1818,6 +1818,43 @@
               ]
             }
           },
+          "size": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "skill_bytes": {
+                    "type": "integer"
+                  },
+                  "budget": {
+                    "type": "integer"
+                  },
+                  "curated_bytes": {
+                    "type": "integer"
+                  },
+                  "curated_budget": {
+                    "type": "integer"
+                  },
+                  "blocks": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "required": [
+                  "skill_bytes",
+                  "budget",
+                  "curated_bytes",
+                  "curated_budget",
+                  "blocks"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rendered": {
             "type": "object",
             "additionalProperties": {
@@ -1833,7 +1870,8 @@
           "model",
           "path",
           "files",
-          "problems"
+          "problems",
+          "size"
         ]
       },
       "hint": {

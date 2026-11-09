@@ -581,6 +581,8 @@ def push(
     if not dry_run:
         write_base(source, base_document(after, after.pin, final, final_functions, final_actions))
     warnings = planned.warnings if planned is not None else ()
+    if checked is not None:
+        warnings += checked.warnings(after, name)
     return Pushed(after, data, seq, warnings)
 
 

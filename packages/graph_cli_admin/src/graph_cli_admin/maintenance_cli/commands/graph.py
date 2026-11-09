@@ -154,7 +154,11 @@ def publish(
         dry_run=dry_run,
         inventory=app_inventory(),
     )
-    return Result(data=published.data, graph=graphs.envelope_graph(published.entry, published.seq))
+    return Result(
+        data=published.data,
+        graph=graphs.envelope_graph(published.entry, published.seq),
+        warnings=published.warnings,
+    )
 
 
 def publish_functions(
@@ -220,6 +224,7 @@ def render(
         data=rendered.data,
         error=rendered.error,
         graph=graphs.envelope_graph(rendered.entry, None),
+        warnings=rendered.warnings,
     )
 
 
@@ -469,6 +474,17 @@ RENDER_OUTPUT: Final = obj(  # services_admin.skill.render; ``path`` as for pull
         "path": NULLABLE_STRING,
         "files": STRINGS,
         "problems": array(obj({"rule": STRING, "path": STRING, "message": STRING})),
+        "size": nullable(
+            obj(
+                {
+                    "skill_bytes": INTEGER,
+                    "budget": INTEGER,
+                    "curated_bytes": INTEGER,
+                    "curated_budget": INTEGER,
+                    "blocks": obj(extra=INTEGER),
+                }
+            )
+        ),
     },
     {"rendered": RETURNED_FILES},
 )
