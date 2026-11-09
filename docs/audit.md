@@ -81,6 +81,15 @@ sealed graph with its records and its purge intents:
 | `integrity.keys.missing` | error | a record or a stored file names a key the key store does not have; restore the key store from a backup |
 | `integrity.keys.shredded_unrecorded` | error | a key is shredded, but no purge intent in the graph's stream names it |
 | `integrity.keys.blob_not_removed` | warning | a stored file whose key is shredded is still there: run the purge again |
+| `integrity.keys.kek_not_current` | warning | live keys are wrapped under a key-encryption key other than the current one: an unfinished rotation (`graph-admin keys rotate-kek`) |
+| `integrity.keys.orphan` | info | a live key that no record and no stored file names (`graph-admin keys verify` only; `keys gc` removes it) |
+
+Key operations are audited as maintenance intents in the graph's stream, each
+anchored in the installation stream: `keys gc` as `maint.repair` with
+`change.keys_removed` (the key ids it deletes), `keys rotate-kek` as
+`maint.graph_configure` with `change.kek {from, to}` (the ids of the KEKs it
+retires and of the current one; a KEK id is a digest that does not reveal the
+KEK). `keys backup` changes nothing and records nothing.
 
 ## Access log
 

@@ -29,8 +29,12 @@ def test_key_codes_follow_the_grammar_and_are_unique() -> None:
         assert FINDING_CODE_RE.match(spec.code)
         assert spec.code.startswith("integrity.keys.")
         assert (spec.when, spec.fixture, spec.layer) == ("verify", "tamper", "keys")
-        warning = spec.code == finding_codes.KEYS_BLOB_NOT_REMOVED
-        assert spec.default_severity is (Severity.WARNING if warning else Severity.ERROR)
+        severity = {
+            finding_codes.KEYS_BLOB_NOT_REMOVED: Severity.WARNING,
+            finding_codes.KEYS_KEK_NOT_CURRENT: Severity.WARNING,
+            finding_codes.KEYS_ORPHAN: Severity.INFO,
+        }
+        assert spec.default_severity is severity.get(spec.code, Severity.ERROR)
 
 
 def test_constants_name_registered_codes() -> None:

@@ -187,6 +187,17 @@ def purged(
     return change
 
 
+def keys_removed(kids: Sequence[Kid]) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.repair`` intent that deletes orphan keys (``keys gc``, T16)."""
+    return {"keys_removed": sorted(str(kid) for kid in set(kids))}
+
+
+def kek_rotated(retiring: Sequence[str], current: str) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that rewraps a sealed graph's keys
+    (``keys rotate-kek``, T16): the KEK ids before and the one after, never a key."""
+    return {"kek": {"from": sorted(set(retiring)), "to": current}}
+
+
 def reindexed(seq: int) -> dict[str, JsonValue]:
     """``change`` of a ``maint.reindex`` intent: the seq the derived files are rebuilt from."""
     return {"reindex": {"seq": seq}}

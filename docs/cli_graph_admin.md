@@ -41,6 +41,10 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Each list shows 20 entries, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
 | `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info; `--decrypt` (sealed graphs) decrypts every file a revision names and reports one that does not decrypt or whose content differs from its content hash |
 | `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
+| `keys verify --graph REF` | check the key store of a sealed graph against its records, stored files and purges: missing keys and shreds no purge names are errors, purged files still stored and live keys under an earlier key-encryption key warnings, orphan keys info; exit 1 on error findings ([Keys](#keys-of-sealed-graphs-backup-cleanup-rotation)) |
+| `keys gc --graph REF` | delete the orphan keys of a sealed graph older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
+| `keys backup --to DIR [--graph REF]` | write a consistent copy of the key store of every sealed graph (or of `REF`) to `DIR/<graph id>.sqlite`, mode 0600; never replaces a file; only where the data lives |
+| `keys rotate-kek [--graph REF]` | rewrap every live key of every sealed graph (or of `REF`) under the current key-encryption key and retire the earlier one (`--dry-run`, `--reason`), audited as `maint.graph_configure`; only where the data lives |
 | `policy check FILE [--graph G]` | compile an authored policy and report every problem; installs nothing |
 | `policy show [--graph G]` | the installed compiled policy and its hash (the built-in one when none is installed) |
 | `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
@@ -198,9 +202,43 @@ graph-admin graph purge <graph> <entity> <file-entity> --with-files --reason <ti
   from a backup first.
 - The values are gone from the data root and from every backup of it once no
   copy of the key store from before the purge is left ([Security
-  model](security_model.md#erasure)). `audit verify` reports a purged file that
-  is still stored (`integrity.keys.blob_not_removed`) and keys shredded without
-  a purge ([Purges](audit.md#purges)).
+  model](security_model.md#erasure)), or once the KEK that wrapped those copies
+  is rotated away and destroyed ([Keys](#keys-of-sealed-graphs-backup-cleanup-rotation)).
+  `audit verify` reports a purged file that is still stored
+  (`integrity.keys.blob_not_removed`) and keys shredded without a purge
+  ([Purges](audit.md#purges)).
+
+## Keys of sealed graphs: backup, cleanup, rotation
+
+The keys of a sealed graph are in its key store, wrapped by the
+key-encryption key (KEK) ([Keys of sealed graphs](configuration.md#keys-of-sealed-graphs)).
+Losing either loses the data; keeping old copies keeps purged data readable
+([Security model](security_model.md#erasure)).
+
+- **Backup:** `graph-admin keys backup --to <dir>` copies every key store, each
+  under its graph's lock, so a copy holds the key of every transaction
+  committed before it. Take it after the data backup it belongs to (a data
+  backup newer than its key backup holds transactions whose keys are missing),
+  name the directory by date, keep it apart from the data backups and for a
+  short time. The KEK is not copied: keep it in a secret store.
+- **Verify and clean up:** `graph-admin keys verify --graph <graph>` is the
+  check `audit verify` runs for the key store, plus orphan keys: keys no record
+  and no stored file names, left by refused writes and by files staged but not
+  kept. `graph-admin keys gc --graph <graph>` deletes those older than one hour;
+  the key of a file that is still stored stays until `files gc` has removed
+  the file.
+- **Rotate the KEK** (yearly, when a KEK may have leaked, or after a purge to
+  make older key store copies worthless):
+  1. Write a new KEK file (`openssl rand -hex 32`, mode 0600) and configure it as
+     `[keys] kek_file` (or `GRAPH_CLI_KEK_FILE`), the old one as `[keys]
+     previous_kek_file`, for every program that opens the graphs: `graph` in
+     local mode, `graph-admin` and `graph-server` (restart it).
+  2. `graph-admin keys rotate-kek --reason <ticket>`. Each graph is rewrapped in
+     one transaction; running the command again completes an interrupted
+     rotation.
+  3. `graph-admin keys verify --graph <graph>` reports no
+     `integrity.keys.kek_not_current`. Then remove `previous_kek_file`, destroy
+     the old KEK file and every copy of it, and take a new key store backup.
 
 ## Auditing and releases
 

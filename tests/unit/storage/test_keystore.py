@@ -306,6 +306,69 @@ def test_keys_unwrap_under_their_own_kek_and_new_keys_take_the_current_one(env: 
         }
 
 
+def kek_rows(env: Env) -> dict[str, bool]:
+    """KEK id -> whether it is marked retired."""
+    with sqlite3.connect(env.path) as conn:
+        rows = conn.execute("SELECT kek_id, retired_at IS NOT NULL FROM kek").fetchall()
+    return {kek_id: bool(retired) for kek_id, retired in rows}
+
+
+def test_rotate_rewraps_every_live_key_and_retires_the_earlier_kek(env: Env) -> None:
+    with env.create() as store:
+        old = store.entity_key(ENTITY)
+        shredded = store.tx_key(TX)
+        sealed = store.seal(old, b"old value", AAD)
+        store.shred([shredded], PURGE)
+        wrapped = env.wrapped(old)
+    with env.load(NEW_KEK, KEK) as rotating:
+        before = rotating.wrapping()
+        assert (before.current, dict(before.live)) == (NEW_KEK.kek_id, {KEK.kek_id: 1})
+        assert before.stale == {KEK.kek_id: 1} and before.retiring == (KEK.kek_id,)
+        assert before.configured == {KEK.kek_id, NEW_KEK.kek_id}
+        done = rotating.rotate()
+        assert (done.kek_id, done.rewrapped, done.retired) == (NEW_KEK.kek_id, 1, (KEK.kek_id,))
+        assert rotating.open(sealed, AAD) == b"old value"
+        after = rotating.wrapping()
+        assert (dict(after.live), after.stale, after.retiring) == ({NEW_KEK.kek_id: 1}, {}, ())
+        assert rotating.rotate().rewrapped == 0  # nothing left: writes nothing
+    assert kek_rows(env) == {KEK.kek_id: True, NEW_KEK.kek_id: False}
+    assert {row[0]: row[3] for row in env.rows()} == {
+        old.bytes: NEW_KEK.kek_id,
+        shredded.bytes: KEK.kek_id,  # evidence rows keep the KEK they had
+    }
+    assert wrapped not in env.path.read_bytes()
+    with env.load(NEW_KEK) as after_rotation:  # the earlier KEK is no longer needed
+        assert after_rotation.open(sealed, AAD) == b"old value"
+
+
+def test_rotate_without_the_earlier_kek_changes_nothing(env: Env) -> None:
+    with env.create() as store:
+        kid = store.entity_key(ENTITY)
+        wrapped = env.wrapped(kid)
+    with env.load(NEW_KEK) as rotating, pytest.raises(GraphCliError, match="not configured"):
+        rotating.rotate()
+    assert env.wrapped(kid) == wrapped
+    assert kek_rows(env) == {KEK.kek_id: False}
+
+
+def test_a_fault_before_the_rotation_commit_leaves_every_key_as_it_was(env: Env) -> None:
+    def fail(point: CrashPoint) -> None:
+        if point is CrashPoint.ROTATE_BEFORE_COMMIT:
+            raise OSError("disk full")
+
+    with env.create() as store:
+        kid = store.entity_key(ENTITY)
+        sealed = store.seal(kid, b"value", AAD)
+    keks = (NEW_KEK, KEK)
+    store = KeyStore.load(env.path, GRAPH, keks, clock=env.clock, ids=env.ids, faults=fail)
+    with store, pytest.raises(OSError, match="disk full"):
+        store.rotate()
+    assert {row[3] for row in env.rows()} == {KEK.kek_id}
+    with env.load(NEW_KEK, KEK) as again:
+        assert again.rotate().rewrapped == 1
+        assert again.open(sealed, AAD) == b"value"
+
+
 # Shredding
 
 
@@ -444,6 +507,15 @@ def test_collect_deletes_old_live_orphans_only(env: Env) -> None:
         assert caught.value.reason == "missing"
         store.mac_key(recent)
     assert {row[0] for row in env.rows()} == {shredded.bytes, recent.bytes}
+
+
+def test_created_answers_the_creation_time_of_present_keys(env: Env) -> None:
+    with env.create() as store:
+        first = store.file_key()
+        env.clock.advance(timedelta(minutes=5))
+        second = store.file_key()
+        found = store.created([first, second, ABSENT])
+    assert found == {first: env.clock.now() - timedelta(minutes=5), second: env.clock.now()}
 
 
 # Backup

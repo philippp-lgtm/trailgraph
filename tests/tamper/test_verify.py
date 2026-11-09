@@ -199,7 +199,7 @@ SEALED_SCENARIOS: dict[str, Callable[[ServiceEnv, Path, pytest.MonkeyPatch], Non
 
 def keys_verify(svc: ServiceEnv, maintenance: FileStoreMaintenance) -> list[str]:
     with maintenance.maintenance_session(svc.entry.id, timeout_s=5) as session:
-        found = session.verify_keys(purges(svc.graph_events()))
+        found = session.verify_keys(purges(svc.graph_events()), orphans=True)
     return list(dict.fromkeys(f.code for f in found))
 
 
@@ -231,10 +231,25 @@ def restore_purged_blob(svc: ServiceEnv, tmp_path: Path) -> None:
     path.write_bytes(kept)  # a copy put back from a backup
 
 
+def wrap_under_another_kek(svc: ServiceEnv, tmp_path: Path) -> None:
+    """A key whose row names a KEK other than the current one (a rotation not run)."""
+    earlier = "0" * 32
+    with sqlite3.connect(key_settings(svc.root).store_path(svc.entry.id)) as db:
+        db.execute("INSERT INTO kek (kek_id, created_at) VALUES (?, ?)", (earlier, "2026"))
+        db.execute("UPDATE dek SET kek_id = ? WHERE scope = 'tx'", (earlier,))
+
+
+def mint_unused_key(svc: ServiceEnv, tmp_path: Path) -> None:
+    """A file key whose staged copy was discarded: no record and no stored file names it."""
+    svc.store.key_ring().file_key()
+
+
 KEY_SCENARIOS: dict[str, Callable[[ServiceEnv, Path], None]] = {
     finding_codes.KEYS_MISSING: drop_tx_key,
     finding_codes.KEYS_SHREDDED_UNRECORDED: shred_without_purge,
     finding_codes.KEYS_BLOB_NOT_REMOVED: restore_purged_blob,
+    finding_codes.KEYS_KEK_NOT_CURRENT: wrap_under_another_kek,
+    finding_codes.KEYS_ORPHAN: mint_unused_key,
 }
 
 

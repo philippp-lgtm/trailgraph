@@ -46,6 +46,7 @@ _ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.for
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _TOKEN_PREFIX_RE: Final = re.compile(r"^sha256:[0-9a-f]{16}$")
+_KEK_ID_RE: Final = re.compile(r"[0-9a-f]{32}")
 _REQUIRED: Final = ("schema", "stream", "event_id", "ts", "actor", "actions", "authz")
 _REQUIRED_TAIL: Final = ("result", "request")
 _CHAIN: Final = ("seq", "prev_hash", "hash")
@@ -494,6 +495,20 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             problems.append(
                 "a file removal needs change.blobs_removed[{hash, size}] and staging_removed"
             )
+    keys_removed = entries.get("keys_removed")
+    if REPAIR_ACTION in actions and "keys_removed" in entries and not _is_id_list(keys_removed):
+        problems.append("a key removal needs change.keys_removed[kid]")
+    if CONFIGURE_ACTION in actions and "kek" in entries:
+        kek = entries["kek"]
+        if not (
+            isinstance(kek, Mapping)
+            and set(kek) == {"from", "to"}
+            and isinstance(kek["from"], list)
+            and all(_is_kek_id(k) for k in kek["from"])
+            and kek["from"] == sorted(set(kek["from"]))
+            and _is_kek_id(kek["to"])
+        ):
+            problems.append("a KEK rotation needs change.kek{from: [kek id], to: kek id}")
     if PURGE_ACTION in actions:
         problems.extend(_purge_problems(entries))
     if REINDEX_ACTION in actions and "reindex" in entries:
@@ -573,6 +588,11 @@ def _is_id_list(value: JsonValue) -> bool:
         and all(is_canonical_uuid(v) for v in value)
         and value == sorted(set(value))
     )
+
+
+def _is_kek_id(value: JsonValue) -> bool:
+    """A KEK id: 32 lowercase hex digits (``storage.files.keystore.Kek``)."""
+    return isinstance(value, str) and _KEK_ID_RE.fullmatch(value) is not None
 
 
 def _is_pin(pin: JsonValue) -> bool:

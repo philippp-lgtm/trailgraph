@@ -124,8 +124,15 @@ not:
 - **Erased:** the purged entities' values, the change sets and write reasons
   of every transaction that wrote one of them, and with `--with-files` their
   stored files, in the data root and in every backup of it, as soon as no copy
-  of the key store from before the purge is left. Key store backups should
-  therefore be kept apart from data backups and for a short time.
+  of the key store from before the purge can be unwrapped any more.
+- **The operator's part:** a purge is complete once every copy of the key
+  store from before it is gone, or once every KEK that wrapped such a copy is
+  destroyed together with its copies (after `graph-admin keys rotate-kek`).
+  graph_cli writes key store backups only where it is told to and never copies
+  the KEK; how long backups live is the operator's policy. Keep key store
+  backups apart from data backups and for a short time, keep the KEK in a
+  secret store, and rotate it after a purge when old key store copies cannot
+  all be found ([Keys](cli_graph_admin.md#keys-of-sealed-graphs-backup-cleanup-rotation)).
 - **Kept:** ids, types, aliases, lifecycle state, edges and timestamps of the
   purged entities, the audit trail with its keyed hashes (they match no
   guessed value once the key is gone), and the reason of the purge and of
@@ -135,5 +142,7 @@ not:
   their last use), spill files, client caches and what agents kept from
   earlier answers. A graph in the clear (store format 1) cannot be purged.
 - **Detected:** `audit verify` reports a key missing from the key store, a
-  key shredded without a purge naming it, and a purged file that is still
-  stored ([Purges](audit.md#purges)).
+  key shredded without a purge naming it, a purged file that is still stored,
+  and live keys still wrapped under a KEK other than the current one (an
+  unfinished rotation); `keys verify` also lists orphan keys
+  ([Purges](audit.md#purges)).

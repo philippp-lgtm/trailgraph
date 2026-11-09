@@ -27,7 +27,8 @@ never replaces one; `graph-admin graph create` creates the graph's key store.
 Both live outside the data root, so a backup of the data root holds no key.
 
 **Losing the key store or the KEK loses the data of the graph.** Back them up,
-apart from the data root. The KEK file holds 64 lowercase hex digits; it may
+apart from the data root (`graph-admin keys backup`; the KEK in a secret store,
+rotated with `graph-admin keys rotate-kek`: [Keys](cli_graph_admin.md#keys-of-sealed-graphs-backup-cleanup-rotation)). The KEK file holds 64 lowercase hex digits; it may
 be a symlink, as in container secret mounts, and may be readable by its group
 but by nobody else. Every program that reads or writes a sealed graph's data
 needs both (`graph` in local mode, `graph-admin`, `graph-server`); a client in
@@ -98,7 +99,8 @@ be readable by group or others. `graph-admin` sends its commands to the
 server's [admin API](server.md#admin-api) with an admin token from
 `GRAPH_CLI_ADMIN_TOKEN`, else `<config dir>/tokens/<server>/<project>/admin_token`,
 else `admin_token_file` (the same rules); what only runs where the data
-lives (`init`, `view`, `--data-root`) is refused (`admin.remote_mode`).
+lives (`init`, `view`, `keys backup`, `keys rotate-kek`, `--data-root`) is refused
+(`admin.remote_mode`).
 Tokens per project let one machine work for several projects, each folder
 with its own token, while the folder itself (whose pointer may be in git)
 holds none; keyed by the server too, a token is never sent to another

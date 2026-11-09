@@ -1,6 +1,6 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, check a graph's data, verify the audit trail and erase entities for good (purge). Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, data withdrawn irreversibly, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, check a graph's data, verify the audit trail, erase entities for good (purge) and back up, clean up or rotate the keys of sealed graphs. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, data withdrawn irreversibly, key stores backed up or the key-encryption key rotated, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
@@ -207,9 +207,10 @@ push` as above publishes; an empty `actions/` folder unpublishes all actions and
 namespace per graph. An action needs no policy: a caller without the write
 rights of its ops does not see it.
 
-## Erase data (purge)
+## Erase data (purge) and keys
 
 Only when the user asks to withdraw data for good: follow `references/purge.md`.
+Key store backups, orphan keys and a key-encryption key rotation: `references/keys.md`.
 
 ## Check a graph
 
@@ -222,8 +223,7 @@ Only when the user asks to withdraw data for good: follow `references/purge.md`.
   `admin.actions_broken`).
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
   that imports the `files` module (`--decrypt`: content against its hash).
-- `graph-admin audit verify`: every chain, log and pin of the
-  installation.
+- `graph-admin audit verify`: every chain, log, pin and key store of the installation.
 
 ## Common refusals
 

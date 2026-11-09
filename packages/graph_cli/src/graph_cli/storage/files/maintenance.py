@@ -63,6 +63,8 @@ from graph_cli.kernel.ports.storage import (
     CommitResult,
     GraphStoreMaintenance,
     Head,
+    KeyRotation,
+    KeyWrapping,
     MaintenanceSession,
     PurgeTargets,
     RecoveryReport,
@@ -135,7 +137,9 @@ from graph_cli.storage.finding_codes import (
     HEAD_INCONSISTENT,
     INDEX_INCONSISTENT,
     KEYS_BLOB_NOT_REMOVED,
+    KEYS_KEK_NOT_CURRENT,
     KEYS_MISSING,
+    KEYS_ORPHAN,
     KEYS_SHREDDED_UNRECORDED,
     PIN_MISMATCH,
     REVISION_HASH_MISMATCH,
@@ -143,6 +147,9 @@ from graph_cli.storage.finding_codes import (
     REVISION_UNEXPECTED,
     TX_CHAIN_BROKEN,
 )
+
+if TYPE_CHECKING:
+    from graph_cli.storage.files.keystore import KeyStore
 
 
 class FileStoreMaintenance:
@@ -802,36 +809,20 @@ class FileMaintenanceSession:
         names = [blob.hash for blob in targets.blobs]
         blobs.remove(layout, names, [], referenced=frozenset(), syncer=store.syncer)
 
-    def verify_keys(self, purges: Mapping[EventId, Iterable[Kid]]) -> Sequence[Finding]:
+    def verify_keys(
+        self, purges: Mapping[EventId, Iterable[Kid]], *, orphans: bool = False
+    ) -> Sequence[Finding]:
         """Keys the log or its stored files name but the key store lacks, shredded keys no
-        purge event names, and stored files whose key is shredded. Reads key ids from the
-        stored records and file headers, so it decrypts nothing and works on a damaged log."""
+        purge event names, stored files whose key is shredded and live keys under a KEK other
+        than the current one; ``orphans`` adds the live keys nothing names. Reads key ids
+        from the stored records and file headers, so it decrypts nothing and works on a
+        damaged log (orphans are then left out: what the damage hides is unknown)."""
         self._check_open()
-        store = self._store
-        ring = store.codec.ring
-        if not store.codec.sealed:
+        if not self._store.codec.sealed:
             return []
-        from graph_cli.storage.files.keystore import KeyStore  # sealed graphs only
-
-        assert isinstance(ring, KeyStore)
-        referenced: set[Kid] = set()
-        names: set[str] = set()
-        for record in store.txlog.scan().records:
-            document = record.document
-            revisions = document.get("revisions")
-            parts = [document, *(revisions if isinstance(revisions, list) else ())]
-            referenced.update(kid for kid in map(_stored_kid, parts) if kid is not None)
-            listed = document.get("blobs")
-            if isinstance(listed, list):
-                names.update(name for name in listed if isinstance(name, str))
-        layout = store.layout
-        file_keys: dict[str, Kid] = {}
-        for stored in blobs.listing(layout):
-            kid = blobs.sealed_kid(layout, stored.hash)
-            if kid is not None:
-                file_keys[stored.hash] = kid
-        referenced.update(file_keys[name] for name in names if name in file_keys)
-        check = ring.check(referenced, purges)
+        ring = self._key_store()
+        refs = self._key_refs()
+        check = ring.check(refs.referenced, purges)
         findings = [
             Finding(
                 Severity.ERROR,
@@ -851,6 +842,7 @@ class FileMaintenanceSession:
             )
             for kid in check.shredded_unrecorded
         ]
+        layout = self._store.layout
         findings += [
             Finding(
                 Severity.WARNING,
@@ -859,10 +851,109 @@ class FileMaintenanceSession:
                 "the key of this stored file is shredded, but the file is still there"
                 " (run the purge again)",
             )
-            for name, kid in sorted(file_keys.items())
+            for name, kid in sorted(refs.stored.items())
             if ring.is_shredded(kid)
         ]
+        findings += [
+            Finding(
+                Severity.WARNING,
+                KEYS_KEK_NOT_CURRENT,
+                {"kek_id": kek_id},
+                f"{count} live key(s) are wrapped under a key-encryption key other than the"
+                " current one (run graph-admin keys rotate-kek)",
+            )
+            for kek_id, count in ring.wrapping().stale.items()
+        ]
+        if orphans and refs.complete:
+            findings += [
+                Finding(
+                    Severity.INFO,
+                    KEYS_ORPHAN,
+                    {"kid": str(kid)},
+                    "no record and no stored file names this key (graph-admin keys gc"
+                    " removes it once it is an hour old)",
+                )
+                for kid in self._orphans(check.orphans, refs)
+            ]
         return sort_findings(findings)
+
+    def orphan_keys(self) -> Mapping[Kid, datetime]:
+        self._check_open()
+        ring = self._key_store()
+        refs = self._key_refs()
+        if not refs.complete:
+            raise GraphCliError("backend.corrupt", "the tx log is damaged; keys gc needs repair")
+        found = self._orphans(ring.check(refs.referenced, {}).orphans, refs)
+        return dict(sorted(ring.created(found).items()))
+
+    def remove_keys(
+        self, kids: Sequence[Kid], *, created_before: datetime, receipt: AuditReceipt
+    ) -> int:
+        """Checks again that every one of ``kids`` is an orphan before anything goes."""
+        orphans = self.orphan_keys()
+        if any(kid not in orphans for kid in kids):
+            raise GraphCliError("internal.error", "refusing to remove a key that is in use")
+        self._writer().claim_receipt(receipt)
+        return self._key_store().collect(kids, created_before=created_before)
+
+    def key_wrapping(self) -> KeyWrapping:
+        self._check_open()
+        return self._key_store().wrapping()
+
+    def rotate_keys(self, receipt: AuditReceipt) -> KeyRotation:
+        self._check_open()
+        ring = self._key_store()
+        self._writer().claim_receipt(receipt)
+        return ring.rotate()
+
+    def backup_keys(self, dest: Path) -> None:
+        self._check_open()
+        self._key_store().backup(dest, syncer=self._store.syncer)
+
+    def _key_store(self) -> KeyStore:
+        from graph_cli.storage.files.keystore import KeyStore  # sealed graphs only
+
+        ring = self._store.codec.ring
+        if not self._store.codec.sealed or not isinstance(ring, KeyStore):
+            raise GraphCliError("internal.error", "only a sealed graph has a key store")
+        return ring
+
+    def _key_refs(self) -> _KeyRefs:
+        """The kids the stored records name, the file kids of the stored files, and the
+        file kids of those a tx lists (they count as referenced)."""
+        store = self._store
+        scan = store.txlog.scan()
+        referenced: set[Kid] = set()
+        names: set[str] = set()
+        for record in scan.records:
+            document = record.document
+            revisions = document.get("revisions")
+            parts = [document, *(revisions if isinstance(revisions, list) else ())]
+            referenced.update(kid for kid in map(_stored_kid, parts) if kid is not None)
+            listed = document.get("blobs")
+            if isinstance(listed, list):
+                names.update(name for name in listed if isinstance(name, str))
+        layout = store.layout
+        stored: dict[str, Kid] = {}
+        for found in blobs.listing(layout):
+            kid = blobs.sealed_kid(layout, found.hash)
+            if kid is not None:
+                stored[found.hash] = kid
+        referenced.update(stored[name] for name in names if name in stored)
+        return _KeyRefs(frozenset(referenced), stored, scan.corruption is None)
+
+    def _orphans(self, unreferenced: Iterable[Kid], refs: _KeyRefs) -> list[Kid]:
+        """Unreferenced live keys, sparing those of stored files no tx lists: a file that
+        is still there stays readable until ``files gc`` removes it."""
+        spared = set(refs.stored.values())
+        return [kid for kid in unreferenced if kid not in spared]
+
+
+@dataclass(frozen=True, slots=True)
+class _KeyRefs:
+    referenced: frozenset[Kid]
+    stored: Mapping[str, Kid]  # stored file -> the file key its header names
+    complete: bool  # the tx log reads to its end without damage
 
 
 class Verifier:
