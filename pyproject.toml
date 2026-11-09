@@ -114,6 +114,14 @@ type = "forbidden"
 source_modules = ["graph_cli", "graph_cli_admin"]
 forbidden_modules = ["waitress"]
 
+# Plan T16: every cipher call sits in one module, reviewable in one place.
+[[tool.importlinter.contracts]]
+name = "Only the crypto primitives import the cipher library"
+type = "forbidden"
+source_modules = ["graph_cli", "graph_cli_admin", "graph_cli_server"]
+forbidden_modules = ["cryptography"]
+ignore_imports = ["graph_cli.storage.common.crypto -> cryptography"]
+
 # Storage adapters see kernel types only (no ontology semantics, no query
 # planning). The query AST lives in the kernel for this reason.
 [[tool.importlinter.contracts]]
