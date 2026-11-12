@@ -730,6 +730,8 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("policy", "show"),
         ("policy", "explain", "--graph", "example_graph", "--project", "example_project"),
         ("policy", "explain", "--graph", "example_graph", "--file", "policy.yaml"),
+        ("policy", "explain", "--graph", "example_graph", "--role", "reader", "--role", "nobody"),
+        ("policy", "explain", "--graph", "example_graph", "--role", "reader", "--token", "root"),
         ("token", "create", "agent", "--project", "example_project"),
         ("token", "create", "agent"),
         ("token", "list"),

@@ -70,6 +70,7 @@ def explain(
     type_curie: str | None,
     file: str | None,
     token: str | None,
+    role: tuple[str, ...],
     data_root: str | None,
 ) -> Result:
     outcome = policy.explain(
@@ -80,6 +81,7 @@ def explain(
         type_curie=type_curie,
         file=path(file),
         token=token,
+        roles=role,
     )
     return Result(data=outcome.data, warnings=outcome.warnings)
 
@@ -141,6 +143,7 @@ EXPLAIN_OUTPUT: Final = obj(
         "graph": STRING,
         "project": NULLABLE_STRING,
         "token": NULLABLE_STRING,
+        "roles": STRINGS,  # the roles explained for; a token's own for --token
         "scope": NULLABLE_STRING,
         "policy_hash": STRING,
         "level": enum(*ACCESS_LEVELS),
@@ -244,7 +247,7 @@ SPECS: Final = (
         kind="read",
         surface="meta",
         action=None,
-        summary="What an app caller from a project would get on a graph, and by which rule.",
+        summary="What an app caller, a token or a role would get on a graph, and by which rule.",
         params=(
             GRAPH_OPTION,
             ParamSpec("--project", "string", "The project of the caller; without it: no project."),
@@ -253,6 +256,14 @@ SPECS: Final = (
                 "string",
                 "The name of a token (never the token): a server request with it instead, its"
                 " project verified; for an admin token the project admin's actions.",
+            ),
+            ParamSpec(
+                "--role",
+                "string",
+                "A server token that holds these roles instead (repeatable); with --project its"
+                " project is verified. Excludes --token. A role the policy does not declare warns.",
+                repeatable=True,
+                keyword="role",
             ),
             ParamSpec(
                 "--action", "string", "One action, e.g. write.create; without it: every app action."
@@ -274,6 +285,11 @@ SPECS: Final = (
             Example(
                 "graph-admin policy explain --graph <graph> --action write.create --type <type>",
                 "One action on one type.",
+            ),
+            Example(
+                "graph-admin policy explain --graph <graph> --role <value> --role <value>"
+                " --project <value>",
+                "What a server token of a project that holds roles gets.",
             ),
             Example(
                 "graph-admin policy explain --graph <graph> --token <value>",

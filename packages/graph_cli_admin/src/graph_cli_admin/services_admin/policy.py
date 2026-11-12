@@ -23,8 +23,11 @@ nothing.
 
 ``check``, ``show``, ``diff`` and ``explain`` write nothing and take no
 lock. ``explain`` asks ``authorize()`` what an app caller from a project, or
-from no project, or a request with a given server token would get: with the
-installed policy or with a file.
+from no project, or a request with a given server token, or a server token that holds
+given roles (with the project verified when one is named), would get: with the installed
+policy or with a file. Roles the policy used for the explanation does not declare warn
+with ``policy.role_unknown`` but are explained all the same, so that a policy file can be
+tried before it is applied.
 
 ``for_graph`` is what the live view shows of one graph: the rules of both
 installed layers that can decide on it, the obligations, the graph's type
@@ -96,7 +99,7 @@ from graph_cli.storage.files.policy_files import installation_policy_path, read_
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
-from graph_cli_admin.services_admin.tokens import check_name, server_actor
+from graph_cli_admin.services_admin.tokens import check_name, check_roles, server_actor
 
 ACTION: Final = "maint.policy_change"
 APP_PROGRAM: Final = "graph"
@@ -294,6 +297,7 @@ def explain(
     type_curie: str | None,
     file: Path | None,
     token: str | None = None,
+    roles: Sequence[str] = (),
 ) -> Outcome:
     if token is not None and project is not None:
         raise GraphCliError(
@@ -301,6 +305,13 @@ def explain(
             "--token and --project exclude each other: a token names its own project",
             details={"argument": "project"},
         )
+    if token is not None and roles:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--token and --role exclude each other: a token has its own roles",
+            details={"argument": "role"},
+        )
+    held = check_roles(roles, "--role")
     entry = ctx.resolve(graph_ref, "policy explain")
     installation = ctx.policy.current(None).documents[0]
     layer = _installed(ctx, entry)
@@ -318,12 +329,16 @@ def explain(
         else:
             layer = source.compiled.document
     policy = policy_set(installation, layer)
+    unknown = sorted(set(held) - declared_roles(installation))
+    if unknown:
+        warnings = (*warnings, _roles_not_declared(unknown))
     record = _token(ctx, token) if token is not None else None
-    caller = (
-        server_actor(record, ctx.actor.client.version)
-        if record is not None
-        else _app_caller(ctx.actor, project)
-    )
+    if held:
+        caller = _role_caller(ctx.actor, project, held)
+    elif record is not None:
+        caller = server_actor(record, ctx.actor.client.version)
+    else:
+        caller = _app_caller(ctx.actor, project)
     if record is not None:
         project = record.project
     resource = f"graph:{entry.id}" + (f"/type:{type_curie}" if type_curie is not None else "")
@@ -348,6 +363,7 @@ def explain(
         "graph": entry.name,
         "project": project,
         "token": token,
+        "roles": list(caller.roles),
         "scope": scope_of(caller, policy),
         "policy_hash": policy.hash,
         "level": graph_level(caller, entry.id, policy),
@@ -397,6 +413,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
                 "token": record.name,
                 "project": record.project,
                 "scope": record.scope,
+                "roles": list(record.roles),
                 "expired": not record.valid_on(today),
                 **_access(caller, entry, policy),
             }
@@ -587,6 +604,32 @@ def _app_caller(maintainer: ActorContext, project: str | None) -> ActorContext:
         session=ABSENT,
         project=facet,
         client=ClientInfo(APP_PROGRAM, maintainer.client.version, Entrypoint.APP),
+    )
+
+
+def _role_caller(
+    maintainer: ActorContext, project: str | None, roles: tuple[str, ...]
+) -> ActorContext:
+    """A request of an app token that holds ``roles``, bound to ``project`` when one is named:
+    what ``server_actor`` makes of a token record. The token's name is no valid token name,
+    so no rule naming a real token matches it."""
+    if project is not None and not is_valid_asserted_value(project):
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"--project {project}: not a valid project name",
+            details={"argument": "project"},
+        )
+    preview = TokenRecord("(roles)", "", project=project, roles=roles)
+    return server_actor(preview, maintainer.client.version)
+
+
+def _roles_not_declared(roles: Sequence[str]) -> WarningRecord:
+    return WarningRecord(
+        "policy.role_unknown",
+        "the installation policy used here does not declare role(s) "
+        + ", ".join(roles)
+        + "; they are explained all the same, but tokens can be given only declared roles",
+        {"roles": list(roles)},
     )
 
 

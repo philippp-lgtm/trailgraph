@@ -809,6 +809,7 @@ function actorText(actor) {
     const facet = actor[name];
     if (facet) parts.push(`${name} ${facet.name || ""}${facet.assurance === "asserted" ? " (asserted)" : ""}`.trim());
   }
+  if (actor.roles) parts.push(`roles ${actor.roles.join(", ")}`);
   return parts.length ? parts.join(" · ") : actor.label;
 }
 
@@ -1927,7 +1928,9 @@ function accessLevel(caller) {
 function callerName(caller) {
   if (caller.token) {
     return frag("token ", code(caller.token), caller.scope === "admin" ? " " : null, caller.scope === "admin" ? badge("admin") : null,
-      caller.expired ? " " : null, caller.expired ? badge("expired", true) : null);
+      caller.expired ? " " : null, caller.expired ? badge("expired", true) : null,
+      caller.roles && caller.roles.length ? " " : null,
+      caller.roles && caller.roles.length ? el("span", "small", `roles ${caller.roles.join(", ")}`) : null);
   }
   return caller.project ? frag("you from project ", code(caller.project)) : el("span", null, "you without a project");
 }

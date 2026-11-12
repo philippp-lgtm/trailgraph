@@ -2063,7 +2063,7 @@
       "kind": "read",
       "surface": "meta",
       "action": null,
-      "summary": "What an app caller from a project would get on a graph, and by which rule.",
+      "summary": "What an app caller, a token or a role would get on a graph, and by which rule.",
       "args": [],
       "options": [
         {
@@ -2086,6 +2086,13 @@
           "required": false,
           "repeatable": false,
           "summary": "The name of a token (never the token): a server request with it instead, its project verified; for an admin token the project admin's actions."
+        },
+        {
+          "name": "--role",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "A server token that holds these roles instead (repeatable); with --project its project is verified. Excludes --token. A role the policy does not declare warns."
         },
         {
           "name": "--action",
@@ -2124,6 +2131,10 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action write.create --type <type>",
           "summary": "One action on one type."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --role <value> --role <value> --project <value>",
+          "summary": "What a server token of a project that holds roles gets."
         },
         {
           "command": "graph-admin policy explain --graph <graph> --token <value>",

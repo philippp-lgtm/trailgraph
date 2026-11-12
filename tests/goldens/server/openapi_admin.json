@@ -2962,6 +2962,12 @@
               }
             ]
           },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "scope": {
             "anyOf": [
               {
@@ -3059,6 +3065,7 @@
           "graph",
           "project",
           "token",
+          "roles",
           "scope",
           "policy_hash",
           "level",
@@ -12816,7 +12823,7 @@
     "/v1/admin/commands/policy/explain": {
       "post": {
         "operationId": "policy_explain",
-        "summary": "What an app caller from a project would get on a graph, and by which rule.",
+        "summary": "What an app caller, a token or a role would get on a graph, and by which rule.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -13122,6 +13129,21 @@
                       "--token": {
                         "type": "string",
                         "description": "The inventory name of token; never both.",
+                        "deprecated": true
+                      },
+                      "role": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "A server token that holds these roles instead (repeatable); with --project its project is verified. Excludes --token. A role the policy does not declare warns."
+                      },
+                      "--role": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of role; never both.",
                         "deprecated": true
                       },
                       "action": {
