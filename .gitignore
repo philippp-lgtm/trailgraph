@@ -1,15 +1,16 @@
+# BEGIN MANAGED by meta: profile project; blocks untracked_user_files, secrets_env, data_untracked, python, node, playwright_cli, os_editor; sha256 eb4c00a0e272. Do not edit up to END MANAGED: change the blocks in meta.
 # User-specific, untracked files — never commit these
 CLAUDE.local.md
 local/
 .claude/
 
-# Project data (kept locally, not tracked)
-data/
-
 # Secrets and environment
 .env
 .env.*
 !.env.example
+
+# Project data (kept locally, not tracked)
+data/
 
 # Python
 .venv/
@@ -24,14 +25,19 @@ __pycache__/
 htmlcov/
 build/
 dist/
-# written by scripts/build_id.py for a build, removed after
-packages/*/src/*/_build_id
 
 # Node
 node_modules/
+
+# Tool output
+.playwright-cli/
 
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
 *.swp
+# END MANAGED
+
+# written by scripts/build_id.py for a build, removed after
+packages/*/src/*/_build_id
