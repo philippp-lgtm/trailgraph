@@ -70,22 +70,20 @@ Each graph folder holds:
   .graph_cli_source.json            the base: what the folder was pulled from
 ```
 
-The answer lists every graph with an `action`: `pulled`, `present`,
-`behind` (the graph has another ontology release pinned than the folder
-was pulled from), `conflict` (the folder name is taken by something else)
-or `failed`. Folders are never replaced. A `behind` folder without
-unpushed edits is refreshed with `graph-admin graph pull <graph> <folder>
---force`; with edits, pull into another folder, carry them over and push
-from there.
+The answer lists every graph with an `action`: `pulled`, `present`, `behind`
+(the graph has another ontology release pinned than the folder was pulled
+from), `conflict` (the folder name is taken by something else) or `failed`.
+Folders are never replaced. A `behind` folder without unpushed edits is
+refreshed with `graph-admin graph pull <graph> <folder> --force`; with edits,
+pull into another folder, carry them over and push from there.
 
 ## Change the ontology of a graph
 
 1. Copy the highest version directory to the new version
    (`ontology/1.2.0/` to `ontology/1.3.0/`) and set `module.version` of
    the main module and of every module you change there. Never change a released version directory.
-2. Edit it with the `ontology-best-practices` skill;
-   `graph-admin ontology validate <folder>/ontology/<new>` until it
-   reports no findings.
+2. Edit it with the `ontology-best-practices` skill; `graph-admin ontology
+   validate <folder>/ontology/<new>` until it reports no findings.
 3. `graph-admin ontology diff <folder>/ontology/<new> --graph <graph>`
    classifies the change and says whether the version bump is enough; the
    warning `admin.module_bump_insufficient` names a changed module whose
@@ -102,28 +100,24 @@ from there.
    generated graph skill renders the new model on its own; they run
    `graph self update` (or `graph skills install`) where they work.
 
-A graph with several ontology modules is released the same way. Give
-`--module <main>` to `graph-admin ontology validate`,
-`graph-admin ontology diff`, `graph-admin ontology release`,
-`graph-admin graph create` and `graph-admin graph check` (with its
-`--ontology` option) whenever the directory holds more than one module;
-`graph-admin graph push` needs none. The rules (every module file in each
-version directory, the bump of the main module, moving terms) are in
-`ontology-best-practices`, `references/versioning_and_release.md`
-(section "Releasing a modular graph").
+A graph with several ontology modules is released the same way. Give `--module
+<main>` to `graph-admin ontology validate`, `graph-admin ontology diff`,
+`graph-admin ontology release`, `graph-admin graph create` and `graph-admin
+graph check` (with its `--ontology` option) whenever the directory holds more
+than one module; `graph-admin graph push` needs none. The rules (every module
+file in each version directory, the bump of the main module, moving terms) are
+in `ontology-best-practices`, `references/versioning_and_release.md` (section
+"Releasing a modular graph").
 
-Published functions must resolve under the new version. `ontology diff
---graph` warns `admin.functions_affected` with the functions the new
-version would break, and a release (also a minor or patch) that would
-break one is refused with `admin.functions_broken`. Do not release around
-it: change or delete the affected files in the folder's `functions/` (see
-the `authoring-graph-functions` skill) and push them together with the new
-ontology version, in the same `graph-admin graph push`; both are checked against the
-model the graph will have.
-
-Actions follow the same rule (`admin.actions_affected`,
-`admin.actions_broken`): fix or delete the files in `actions/` and push them
-with the new version.
+Published functions and actions must resolve under the new version.
+`ontology diff --graph` warns `admin.functions_affected` and
+`admin.actions_affected` for the ones it would break, and a release (also a
+minor or patch) that would break one is refused with `admin.functions_broken`
+or `admin.actions_broken`. Do not release around it: change or delete the
+affected files in the folder's `functions/` or `actions/` (see the
+`authoring-graph-functions` and `authoring-graph-actions` skills) and push
+them together with the new ontology version, in the same `graph-admin graph
+push`; both are checked against the model the graph will have.
 
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from
@@ -134,14 +128,12 @@ the change `ontology diff` found.
 
 Only a maintainer can create a graph.
 
-1. Draft it outside the graph folders, for example in
-   `drafts/<graph>/`: a `README.md` with the purpose and 5 to 10
-   competency questions, and `ontology/1.0.0/<module>.yaml` (the
-   `ontology-best-practices` skill).
+1. Draft it outside the graph folders, for example in `drafts/<graph>/`: a
+   `README.md` with the purpose and 5 to 10 competency questions, and
+   `ontology/1.0.0/<module>.yaml` (the `ontology-best-practices` skill).
 2. `graph-admin ontology validate drafts/<graph>/ontology/1.0.0` until it
-   reports no findings. Where a local data root is at hand, try the model
-   on a throwaway graph first (`ontology-best-practices`, versioning and
-   release).
+   reports no findings. Where a local data root is at hand, try the model on a
+   throwaway graph first (`ontology-best-practices`, versioning and release).
 3. Create it:
 
    ```sh
@@ -153,8 +145,7 @@ Only a maintainer can create a graph.
    per installation (`admin.graph_name_taken`).
 4. `graph-admin workspace sync .` pulls it into its folder. Move the
    draft's `README.md` there and delete the draft.
-5. Write and publish its graph skill (below), then `graph-admin audit
-   verify`.
+5. Write and publish its graph skill (below), then `graph-admin audit verify`.
 6. Agents reach the graph only when the policy lets their project use it
    and their project's `.graph_cli.toml` lists it. Tell the user what is
    missing; change the policy only when asked (`graph-admin policy diff
@@ -210,19 +201,29 @@ push` as above publishes; an empty `actions/` folder unpublishes all actions and
 namespace per graph. An action needs no policy: a caller without the write
 rights of its ops does not see it.
 
+## Give an app a role
+
+Roles let apps of one project differ. Declare the role under `roles:` in the
+installation policy, name it in grants (`principal: {role: <role>}` with
+`entrypoint: server`) and deny rules (`role: [<role>]`), then `graph-admin
+policy apply <file> --reason "<why>"`. Give it to an app token with
+`graph-admin token create <name> --role <role>` or `graph-admin token role add
+<name> <role>` (`token role remove` takes it away), or to a client with
+`graph-admin enroll create --project <project> --role <role>`. App tokens only;
+`admin.role_unknown` means the policy does not declare it. `graph-admin policy
+explain --graph <graph> --role <role>` shows what a token with it gets.
+
 ## Check a graph
 
 - `graph-admin graph show <graph>`: manifest, head, releases, skill, the
   number of published functions and actions.
-- `graph-admin graph check <graph>`: every entity against the pinned
-  ontology, including what no write checks, and the published functions
-  and actions against the same model; exit 1 on error findings or when a
-  function or action no longer resolves (`admin.functions_broken`,
-  `admin.actions_broken`).
+- `graph-admin graph check <graph>`: every entity against the pinned ontology,
+  including what no write checks, and the published functions and actions
+  against the same model; exit 1 on error findings or when a function or action
+  no longer resolves (`admin.functions_broken`, `admin.actions_broken`).
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
   that imports the `files` module.
-- `graph-admin audit verify`: every chain, log and pin of the
-  installation.
+- `graph-admin audit verify`: every chain, log and pin of the installation.
 
 ## Common refusals
 

@@ -29,6 +29,14 @@ maintainer authorized it by creating the code (`maint.token_create`), and
 its event names the enrollment as principal (`enrollment:<id>`, source
 `enrollment`) and decision rule.
 
+An app token may hold **roles** (see [Roles](#roles)). A request with it
+carries them in the actor, as `actor.roles` (sorted, left out when the token
+has none), and they are verified: they come from the server's token record, a
+client cannot assert them (a request whose `actor` object names `roles` is
+refused as `usage.invalid_input`). A local invocation and an admin token have
+none. `graph whoami` over the server shows them in `actor`, and so do the
+audit events and the transaction records of the request.
+
 Requests to the admin API (`graph-admin` commands over HTTP, an admin
 token) have the entrypoint `maint` and the principal `token:<name>`: the
 installation policy's `maintainers` decide as for a local maintainer, so
@@ -60,9 +68,9 @@ project comes from the pointer and is only asserted, so a local
   obligations name write actions. A type limit matches the exact type, so it
   must name concrete types (or `prefix:*`); an abstract type or one with
   subclasses is refused.
-- Deny rules may name the agent type, agent, session, device or project;
-  grants only the verified principal and a verified project. An explicit
-  deny wins, the default is deny.
+- Deny rules may name the agent type, agent, session, device, project or
+  role; grants only the verified principal, a verified project and a role.
+  An explicit deny wins, the default is deny.
 - A grant is for `graph` (`entrypoint: app`, the default), for the server
   API (`entrypoint: server`) or for both (`entrypoint: [app, server]`).
   Scopes and deny rules apply to every entrypoint. `principal: {id:
@@ -70,19 +78,38 @@ project comes from the pointer and is only asserted, so a local
   token bound to that project (only a bound token verifies a project, so
   such a grant needs `entrypoint: server`): a new token for the project
   needs no policy change.
+- A **role** is a subject like a token or a project, and its rights are the
+  rules that name it. The installation policy declares the roles (`roles:`,
+  each with a required `description`; a name is lowercase letters, digits and
+  `_`, up to 64 characters). A grant names one in `principal: {role: <name>}`,
+  alone or with `name`, `id` or `project` (all must match); only a server
+  token carries roles, so the grant needs `entrypoint: server`. A deny rule of
+  either layer names one or several in `role: [<name>, ...]`. A rule naming
+  roles matches when the token holds at least one of them. Roles grant, scopes
+  and deny rules narrow, and an explicit deny wins, as for every subject. A
+  role the installation policy names in a grant or deny rule without declaring
+  it is `policy.invalid`. A graph policy is applied independently, so a role
+  that the installed installation policy does not declare is only the warning
+  `policy.role_unknown` (on `policy check` and `policy apply`). A policy
+  without roles compiles to the same document and hash as before roles existed.
 
 ```yaml
 schema: graph_cli.policy/1
 id: installation
+roles:
+  reader: {description: "Reporting apps: read every graph"}
+  importer: {description: "Importers: write into example_graph"}
 grants:
   - {principal: {name: owner_name}, graphs: "*", level: write}
-  - {entrypoint: server, graphs: "*", level: write}
+  - {entrypoint: server, principal: {role: reader}, graphs: "*", level: read}
+  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}
   - {entrypoint: server, principal: {project: example_project}, graphs: [example_graph], level: write}
 scopes:
   example_project: {example_graph: maintain, other_graph: read}
 no_project: {"*": read}
 deny:
   - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
+  - {id: importer_no_retract, role: [importer], action: ["write.retract", "write.supersede"]}
 ```
 
 ```yaml
@@ -92,7 +119,46 @@ types:
   "files:File": read
 obligations:
   - {action: ["write.*"], max_batch: 200}
+deny:
+  - {id: importer_no_files, role: [importer], action: ["write.*"], type: ["files:File"]}
 ```
+
+## Roles
+
+Roles make two apps of one project differ, and one set of rights apply across
+projects, without a policy edit for every new app. The policy declares the
+roles and grants and denies by them ([Policy layers](#policy-layers)); the
+graph admin gives them to tokens:
+
+- `graph-admin token create NAME --role R` (repeatable) creates an app token
+  with roles, and `enroll create --project P --role R` a code whose token
+  gets them ([Enrollment](server.md#enrollment)). `token role add NAME ROLE...`
+  and `token role remove NAME ROLE...` change a token later. A token holds at
+  most 16 roles.
+- A role is assigned only when the installed installation policy declares it,
+  else `admin.role_unknown` (the answer lists the declared roles and the
+  closest names): declare it, `policy apply`, then assign. Removing a role
+  needs no declaration, so one the policy dropped can still be taken off.
+- Roles are for app tokens. An admin token has none (`usage.invalid_argument`).
+- A change that changes nothing, such as adding a role the token holds,
+  writes no event and answers `changed: false`.
+- Every change is audited as `maint.token_update` and counts from the next
+  request ([Security model](security_model.md#prevention)).
+- `policy apply` of an installation policy that no longer declares a role
+  that a token holds, or that an installed graph policy names, warns
+  `admin.role_orphaned`: the membership stays, but no rule matches it until
+  the role is declared again or taken off.
+- `token list` shows each token's `roles`, `token list --role R` only the
+  tokens that hold `R`, and `enroll list` the roles of each code.
+- `graph-admin policy explain --graph G --role R` (repeatable, with an
+  optional `--project P`, which is then verified as for a bound token) shows
+  what a server token with these roles gets and by which rule; it excludes
+  `--token`, which already includes the token's own roles. A role that the
+  installation policy used for the explanation does not declare warns
+  `policy.role_unknown` and is explained all the same, so a policy file
+  (`--file`) can be tried before it is applied. The answer names the `roles`.
+- The [live view](live_view.md) shows a token's roles in the access list of a
+  graph and next to the principal of a revision.
 
 ## Project admins
 

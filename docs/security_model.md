@@ -60,11 +60,21 @@ prevents depends on what is verified:
   grant to the project (`principal: {project: P}`) reaches it; without a
   binding the client asserts the project, the scope stays a guardrail and
   no project grant or `maintain` level applies.
+- Roles ([Roles](access_control.md#roles)) are verified only through a
+  server token: the server reads them from the token record, a client cannot
+  assert them, and a local invocation has none, so a rule naming a role holds
+  only with the server. Assigning roles is maintenance
+  (`maint.token_update`, `token role add|remove`, `--role` of `token create`
+  and `enroll create`), so whoever holds an admin token can widen what an app
+  token may do within what the policy grants to roles; an app token cannot
+  assign any, and a project admin is kept from it by its ceiling. A role
+  change counts from the next request, as a revoke does, and every change is
+  audited ([Audit](audit.md#token-verification)).
 - Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
   secrets too, but narrow ones: one use, at most 24 hours, always bound to
   a project, so a code never yields an unbound token (a maintainer's). Who
-  holds a code gets that project's token, app or project admin as the
-  maintainer chose; hand it over like a password, out of band, and revoke
+  holds a code gets that project's token, app or project admin, with the
+  roles of an app code, as the maintainer chose; hand it over like a password, out of band, and revoke
   it (`enroll revoke`) when unsure. The holder picks only a label: the
   token is named `<project>.<label>` and never takes a name a policy rule
   grants something to. The exchange needs no token, answers the same for

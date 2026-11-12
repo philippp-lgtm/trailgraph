@@ -71,7 +71,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 
 | Command | What it does |
 | --- | --- |
-| `whoami` | the acting identity (principal, agent, session, project) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types and write obligations |
+| `whoami` | the acting identity (principal, agent, session, project and, over the server, the roles of the token) and what the policy allows: the project scope and, per graph, the level, the actions a deny rule withholds below it, read-only types and write obligations |
 | `graphs` | the graphs this project may see and use, with the title that says what each is for and the default language of their values (BCP 47, null when unset) |
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
