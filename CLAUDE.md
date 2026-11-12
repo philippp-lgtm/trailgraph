@@ -1,5 +1,6 @@
 # CLAUDE.md
 
+<!-- BEGIN MANAGED by meta: profile project; blocks language, documentation, user_specific, naming; sha256 3412d697026c. Do not edit up to END MANAGED: change the blocks in meta. -->
 ## Language
 
 All content in git-tracked files is written in English:
@@ -51,8 +52,14 @@ user-specific content as examples. Prefer neutral placeholders (e.g.
 - Directory names are always lowercase.
 - No spaces in directory names.
 - Use `_` as the word separator instead of `-` (e.g. `data_models`).
-- Exception: skill directories (under `skills/` and the bundled admin skills
-  of `graph_cli_admin`) use `-` as the word separator (e.g.
-  `skills/example-skill/`). The Agent Skills specification allows only
+- Exception: skill directories under `skills/` use `-` as the word separator
+  (e.g. `skills/example-skill/`). The Agent Skills specification allows only
   lowercase letters, digits and hyphens in a skill `name`, and the `name` must
   match its directory name.
+<!-- END MANAGED -->
+
+## Naming: bundled admin skills
+
+The skill exception above also covers the admin skills bundled with
+`graph_cli_admin`: their directories use `-` as the word separator, like
+those under `skills/`.
