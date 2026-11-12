@@ -200,6 +200,13 @@
           "summary": "How long the code works: <n>m or <n>h, at most 24h; default 15m."
         },
         {
+          "name": "--role",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "A role of the token the code yields (app scope only); repeatable."
+        },
+        {
           "name": "--reason",
           "type": "string",
           "required": false,
@@ -220,6 +227,10 @@
           "summary": "A code for one client."
         },
         {
+          "command": "graph-admin enroll create --project <value> --role <value>",
+          "summary": "A code whose token holds a role."
+        },
+        {
           "command": "graph-admin enroll create --project <value> --scope admin --expires-in <value> --json",
           "summary": "A code for a project admin, valid longer."
         }
@@ -227,6 +238,7 @@
       "errors": [
         "access.denied",
         "admin.remote_mode",
+        "admin.role_unknown",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -258,7 +270,7 @@
       "kind": "read",
       "surface": "meta",
       "action": null,
-      "summary": "List the codes not used yet: id, project, scope, expiry, a hash prefix.",
+      "summary": "List the codes not used yet: id, project, scope, roles, expiry, a hash prefix.",
       "args": [],
       "options": [
         {
@@ -2437,6 +2449,13 @@
           "default": "app"
         },
         {
+          "name": "--role",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "A role of the token; repeatable."
+        },
+        {
           "name": "--reason",
           "type": "string",
           "required": false,
@@ -2461,6 +2480,10 @@
           "summary": "A token bound to a project, valid until a date."
         },
         {
+          "command": "graph-admin token create <value> --project <value> --role <value> --role <value>",
+          "summary": "An app token that holds roles the policy grants and denies by."
+        },
+        {
           "command": "graph-admin token create <value> --scope admin",
           "summary": "A token for the admin API."
         },
@@ -2472,6 +2495,7 @@
       "errors": [
         "access.denied",
         "admin.remote_mode",
+        "admin.role_unknown",
         "admin.token_exists",
         "audit.unavailable",
         "backend.lock_timeout",
@@ -2504,9 +2528,16 @@
       "kind": "read",
       "surface": "meta",
       "action": null,
-      "summary": "List the tokens: name, scope, project, expiry, creation time, a hash prefix.",
+      "summary": "List the tokens: name, scope, project, roles, expiry, creation time, hash prefix.",
       "args": [],
       "options": [
+        {
+          "name": "--role",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the tokens that hold this role."
+        },
         {
           "name": "--data-root",
           "type": "directory",
@@ -2519,6 +2550,10 @@
         {
           "command": "graph-admin token list",
           "summary": "Every token."
+        },
+        {
+          "command": "graph-admin token list --role <value>",
+          "summary": "The tokens that hold a role."
         },
         {
           "command": "graph-admin token list --json",
@@ -2588,6 +2623,165 @@
         },
         {
           "command": "graph-admin token revoke <value> --reason <value> --json",
+          "summary": "With a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.token_not_found",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "token",
+        "role",
+        "add"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_update",
+      "summary": "Give an app token roles; a request with it is decided by them from the next on.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Token name: lowercase letters, digits, _ . -"
+        },
+        {
+          "name": "roles",
+          "type": "string",
+          "required": true,
+          "repeatable": true,
+          "summary": "Roles, declared by the installed installation policy when added."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin token role add <value> <value>",
+          "summary": "Give a token one role."
+        },
+        {
+          "command": "graph-admin token role add <value> <value> <value> --reason <value> --json",
+          "summary": "Give it two, with a reason."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.role_unknown",
+        "admin.token_not_found",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "token",
+        "role",
+        "remove"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.token_update",
+      "summary": "Take roles from an app token; the next request with it no longer has them.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Token name: lowercase letters, digits, _ . -"
+        },
+        {
+          "name": "roles",
+          "type": "string",
+          "required": true,
+          "repeatable": true,
+          "summary": "Roles, declared by the installed installation policy when added."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why; recorded in the audit."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin token role remove <value> <value>",
+          "summary": "Take one role away."
+        },
+        {
+          "command": "graph-admin token role remove <value> <value> --reason <value> --json",
           "summary": "With a reason."
         }
       ],
@@ -2878,7 +3072,8 @@
     "maint.reindex",
     "maint.repair",
     "maint.token_create",
-    "maint.token_revoke"
+    "maint.token_revoke",
+    "maint.token_update"
   ],
   "error_codes": [
     {
@@ -2953,6 +3148,11 @@
     },
     {
       "code": "admin.remote_mode",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.role_unknown",
       "category": "refused",
       "exit": 1
     },

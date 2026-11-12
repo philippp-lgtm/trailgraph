@@ -140,6 +140,7 @@ def test_unknown_roles_in_a_graph_policy_warn(
     assert checked.code == 0, checked.envelope
     assert checked.warning_codes == ["policy.role_unknown"]
     assert checked.warnings[0]["details"] == {"roles": ["importer"]}
+    assert "matches only tokens that still hold it" in checked.warnings[0]["message"]
     declared = INSTALLATION.replace(
         "grants:",
         'roles:\n  importer: {description: "Importers"}\ngrants:',
@@ -150,6 +151,48 @@ def test_unknown_roles_in_a_graph_policy_warn(
     assert (again.code, again.warning_codes) == (0, []), again.envelope
     shown = admin(run_cli, "policy", "show").data
     assert shown["document"]["roles"] == {"importer": {"description": "Importers"}}
+
+
+def test_dropping_a_role_that_is_still_used_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``admin.role_orphaned``: one warning per dropped role that a token holds or an
+    installed graph policy names; a dropped role nothing uses does not warn."""
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    work = tmp_path / "work"
+    declared = INSTALLATION.replace(
+        "grants:",
+        'roles:\n  importer: {description: "Importers"}\n  reader: {description: "Readers"}\n'
+        '  spare: {description: "Unused"}\n  keep: {description: "Kept"}\ngrants:',
+    )
+    assert apply(run_cli, write_policy(work, "installation.yaml", declared)).warnings == []
+    graph = write_policy(
+        work,
+        "g.yaml",
+        GRAPH + "deny:\n  - {id: importer_no_retract, role: [importer], action: [write.retract]}\n",
+    )
+    assert apply(run_cli, graph, "--graph", "example_graph").warnings == []
+    for name, role in (("a", "importer"), ("b", "importer"), ("c", "reader")):
+        assert admin(run_cli, "token", "create", name, "--role", role).code == 0
+
+    narrowed = declared.replace('  importer: {description: "Importers"}\n', "")
+    narrowed = narrowed.replace('  reader: {description: "Readers"}\n', "")
+    narrowed = narrowed.replace('  spare: {description: "Unused"}\n', "")  # keep stays
+    dropped = apply(run_cli, write_policy(work, "narrow.yaml", narrowed))
+    assert dropped.code == 0, dropped.envelope
+    by_role = {w["details"]["role"]: w for w in dropped.warnings}
+    assert [w["code"] for w in dropped.warnings] == ["admin.role_orphaned"] * 2
+    assert by_role["importer"]["details"] == {
+        "role": "importer",
+        "tokens": ["a", "b"],
+        "graphs": ["example_graph"],
+    }
+    assert by_role["reader"]["details"] == {"role": "reader", "tokens": ["c"], "graphs": []}
+    assert "spare" not in by_role
+    # the membership stays, and applying the same policy again warns of nothing new
+    assert apply(run_cli, write_policy(work, "narrow.yaml", narrowed)).warnings == []
+    assert admin(run_cli, "audit", "verify").code == 0
 
 
 def test_a_type_limit_on_a_superclass_is_refused(

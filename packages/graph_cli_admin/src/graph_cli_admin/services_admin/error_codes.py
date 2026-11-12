@@ -43,12 +43,16 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.remote_mode", _C.REFUSED, False, "This host is a client of a server."),
     ErrorSpec("admin.token_exists", _C.REFUSED, False, "A token with this name exists."),
     ErrorSpec("admin.token_not_found", _C.NOT_FOUND, False, "There is no token with this name."),
+    ErrorSpec("admin.role_unknown", _C.REFUSED, False, "The policy does not declare this role."),
     ErrorSpec(
         "admin.enrollment_not_found", _C.NOT_FOUND, False, "There is no unused code with this id."
     ),
     ErrorSpec("admin.token_not_granted", _C.WARNING, False, "The policy grants the token nothing."),
     ErrorSpec(
         "admin.token_not_maintainer", _C.WARNING, False, "The policy lets the token not maintain."
+    ),
+    ErrorSpec(
+        "admin.role_orphaned", _C.WARNING, False, "A role is no longer declared but still used."
     ),
     ErrorSpec("admin.verify_not_recorded", _C.WARNING, False, "The verification was not audited."),
     ErrorSpec("admin.alias_prefix_taken", _C.WARNING, False, "A new type gets no alias prefix."),

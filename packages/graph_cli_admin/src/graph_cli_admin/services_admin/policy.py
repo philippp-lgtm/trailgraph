@@ -8,7 +8,10 @@ role warns with ``policy.role_unknown``). Its ``id``
 says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
-``apply`` is ``maint.policy_change``. The installation policy is an
+``apply`` is ``maint.policy_change``. An installation policy that no longer declares a role
+that a token still holds, or an installed graph policy names, warns with
+``admin.role_orphaned`` (one warning per role; the membership stays but matches no rule).
+The installation policy is an
 installation event (the intent), the file switch under the registry lock
 and a confirmation event without ``change``; a graph policy follows W.e:
 the intent in the graph stream, the file switch under the graph lock, the
@@ -195,6 +198,9 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
     decisions = ctx.authorize(
         [(ACTION, resource)], request=meta, graph=entry.id if entry else None, reason=reason
     )
+    warnings = (
+        source.warnings if entry is not None else (*source.warnings, *_orphaned(ctx, compiled))
+    )
     data: dict[str, JsonValue] = {
         "layer": compiled.layer,
         "graph": _graph_name(entry),
@@ -209,7 +215,7 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
             if old != compiled.hash or _unmirrored(ctx, old):
                 _apply_installation(ctx, registry, compiled, old, decisions, meta, reason)
                 data["applied"] = True
-        return Outcome(data, source.warnings)
+        return Outcome(data, warnings)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         old = _hash_of(session.read_policy())
@@ -221,6 +227,62 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
             ctx.anchor(entry, decisions, meta, receipt, reason=reason)
             data["applied"] = True
     return Outcome(data, source.warnings)
+
+
+def _orphaned(ctx: AdminContext, compiled: Compiled) -> tuple[WarningRecord, ...]:
+    """A warning for each role the installed installation policy declares, the new one does
+    not, and a token still holds or an installed graph policy names."""
+    dropped = declared_roles(ctx.policy.current(None).documents[0]) - declared_roles(
+        compiled.document
+    )
+    if not dropped:
+        return ()
+    records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
+    source = FilePolicySource(ctx.roots.data_root)
+    named: dict[str, list[str]] = {}
+    for entry in ctx.catalog.list_graphs(include_archived=True):
+        document = source.graph(entry.id)
+        for role in _roles_named(document) if document is not None else ():
+            named.setdefault(role, []).append(entry.name)
+    warnings: list[WarningRecord] = []
+    for role in sorted(dropped):
+        held = sorted(r.name for r in records if role in r.roles)
+        graphs = sorted(named.get(role, []))
+        if held or graphs:
+            warnings.append(
+                WarningRecord(
+                    "admin.role_orphaned",
+                    f"the new installation policy no longer declares role {role}, which"
+                    f" {_holders(held, graphs)}; the membership stays but matches no rule"
+                    " until the role is declared again or taken off",
+                    {"role": role, "tokens": held, "graphs": graphs},
+                )
+            )
+    return tuple(warnings)
+
+
+def _holders(tokens: Sequence[str], graphs: Sequence[str]) -> str:
+    parts = []
+    if tokens:
+        parts.append("tokens still hold (" + ", ".join(tokens) + ")")
+    if graphs:
+        parts.append("graph policies still name (" + ", ".join(graphs) + ")")
+    return " and ".join(parts)
+
+
+def _roles_named(value: JsonValue) -> set[str]:
+    """The role names a compiled graph policy's rules and conditions name."""
+    found: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key == "role":
+                found |= {item} if isinstance(item, str) else set(strings(value, "role"))
+            else:
+                found |= _roles_named(item)
+    elif isinstance(value, list):
+        for item in value:
+            found |= _roles_named(item)
+    return found
 
 
 def explain(
@@ -392,7 +454,8 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             "policy.role_unknown",
             "the installed installation policy does not declare role(s) "
             + ", ".join(compiled.unknown_roles)
-            + "; a rule naming one matches no token until it is declared",
+            + "; tokens can be given only declared roles, so a rule naming one matches only"
+            " tokens that still hold it",
             {"roles": list(compiled.unknown_roles)},
         ),
     )

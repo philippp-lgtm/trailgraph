@@ -48,6 +48,8 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `token create NAME [--project P] [--expires DATE] [--scope S] [--reason R]` | create a bearer token for the server API, audited as `maint.token_create`; the token is shown only once and stored as a hash; `--scope admin` makes it a token of the [admin API](server.md#admin-api), with `--project` a [project admin](access_control.md#project-admins); warns when the policy grants an app token nothing or does not let an admin token maintain (a project admin: no graph) |
 | `token list` | the tokens: name, scope, project, expiry, creation time, hash prefix; never the token |
 | `token revoke NAME [--reason R]` | revoke a token, audited as `maint.token_revoke`; the server refuses it from the next request on |
+| `token role add NAME ROLE... [--reason R]` | give an app token roles declared by the installed installation policy, audited as `maint.token_update`; changes nothing (no event, `changed: false`) for roles it holds |
+| `token role remove NAME ROLE... [--reason R]` | take roles from an app token, audited as `maint.token_update`; a role the policy no longer declares can be removed too |
 | `enroll create --project P [--scope app\|admin] [--expires-in D] [--reason R]` | a one-time code a client exchanges (`graph connect`) for a token bound to `P`; shown once, valid 15 minutes or `D` (`<n>m`, `<n>h`, at most 24h), audited as `maint.token_create`; see [Enrollment](server.md#enrollment) |
 | `enroll list` | the codes not used yet: id, project, scope, expiry, creation time, hash prefix; never the code |
 | `enroll revoke ID [--reason R]` | revoke an unused code, audited as `maint.token_revoke` |

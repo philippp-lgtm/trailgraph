@@ -464,6 +464,48 @@ def test_policy_explain_names_what_a_token_gets(
     assert mistaken.code == 2 and secret not in json.dumps(mistaken.envelope)
 
 
+def test_roles_are_assigned_through_the_admin_api(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """``token role add|remove`` run from their command specs like every admin command: for
+    an admin token only, audited as ``maint.token_update`` with the actor of the token."""
+    declared = SERVER_POLICY + 'roles:\n  reader: {description: "Readers"}\n'
+    grant_server(run_cli, tmp_path, declared)
+    assert admin(run_cli, "token", "create", "svc").code == 0
+    app = served(installation, tmp_path)
+    tokens = installation["tokens"]
+    refused = command(
+        app, "token/role/add", tokens["ci"], args={"name": "svc", "roles": ["reader"]}
+    )
+    assert refused.status == 403
+    added = command(
+        app, "token/role/add", tokens["root"], args={"name": "svc", "roles": ["reader"]}
+    )
+    assert added.status == 200, added.json
+    assert added.json["data"]["roles"] == ["reader"] and added.json["data"]["changed"] is True
+    again = command(
+        app, "token/role/add", tokens["root"], args={"name": "svc", "roles": ["reader"]}
+    )
+    assert again.json["data"]["changed"] is False
+    unknown = command(
+        app, "token/role/add", tokens["root"], args={"name": "svc", "roles": ["nobody"]}
+    )
+    assert unknown.error["code"] == "admin.role_unknown"
+    assert unknown.error["details"]["known"] == ["reader"]
+    listed = command(app, "token/list", tokens["root"], args={"role": "reader"})
+    assert [t["name"] for t in listed.json["data"]["tokens"]] == ["svc"]
+    removed = command(
+        app, "token/role/remove", tokens["root"], args={"name": "svc", "roles": ["reader"]}
+    )
+    assert removed.json["data"]["roles"] == [] and removed.json["data"]["changed"] is True
+    updates = [
+        e for e in audit_events(installation["root"]) if e["actions"] == ["maint.token_update"]
+    ]
+    assert [e["change"]["token"]["roles"] for e in updates] == [["reader"], []]
+    assert all(e["actor"]["principal"]["id"] == "token:root" for e in updates)
+    assert admin(run_cli, "audit", "verify").code == 0
+
+
 def test_no_request_names_a_path_on_the_server(
     installation: dict[str, Any], tmp_path: Path
 ) -> None:
@@ -579,7 +621,11 @@ def test_a_hand_edited_scope_is_found(run_cli: CliRunner, installation: dict[str
 
 # ---- graph-admin in remote mode ---------------------------------------------------------
 
-POLICY = SERVER_POLICY + "scopes:\n  example_project: {example_graph: read}\n"
+POLICY = (
+    SERVER_POLICY
+    + "scopes:\n  example_project: {example_graph: read}\n"
+    + 'roles:\n  reader: {description: "Reporting apps"}\n  importer: {description: "Importers"}\n'
+)
 
 
 def prepare(env: dict[str, str], cwd: Path) -> str:
@@ -688,6 +734,26 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("token", "create", "agent"),
         ("token", "list"),
         ("token", "revoke", "agent", "--reason", "done"),
+        ("token", "create", "worker", "--role", "reader", "--role", "importer"),
+        ("token", "role", "remove", "worker", "importer", "--reason", "no more imports"),
+        ("token", "role", "remove", "worker", "importer"),
+        ("token", "role", "add", "worker", "importer", "reader"),
+        ("token", "role", "add", "worker", "importr"),
+        ("token", "role", "add", "root", "reader"),
+        ("token", "role", "add", "nobody", "reader"),
+        ("token", "list", "--role", "importer"),
+        ("token", "revoke", "worker"),
+        ("enroll", "create", "--project", "example_project", "--role", "reader"),
+        (
+            "enroll",
+            "create",
+            "--project",
+            "example_project",
+            "--scope",
+            "admin",
+            "--role",
+            "reader",
+        ),
         ("enroll", "create", "--project", "example_project", "--reason", "a laptop"),
         ("enroll", "create", "--project", "example_project", "--scope", "admin"),
         ("enroll", "list"),
