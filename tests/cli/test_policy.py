@@ -123,6 +123,35 @@ def test_unknown_types_warn(run_cli: CliRunner, root: Path, tmp_path: Path) -> N
     assert checked.warning_codes == ["admin.policy_unknown_type"]
 
 
+def test_unknown_roles_in_a_graph_policy_warn(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A graph policy is applied independently: a role the installed installation policy
+    does not declare is a warning (``policy.role_unknown``), a declared one is not."""
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    work = tmp_path / "work"
+    graph = write_policy(
+        work,
+        "g.yaml",
+        GRAPH + "deny:\n  - {id: importer_no_retract, role: [importer], action: [write.retract]}\n",
+    )
+    checked = admin(run_cli, "policy", "check", str(graph), "--graph", "example_graph")
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["policy.role_unknown"]
+    assert checked.warnings[0]["details"] == {"roles": ["importer"]}
+    declared = INSTALLATION.replace(
+        "grants:",
+        'roles:\n  importer: {description: "Importers"}\ngrants:',
+    )
+    installed = write_policy(work, "installation.yaml", declared)
+    assert apply(run_cli, installed).code == 0
+    again = admin(run_cli, "policy", "check", str(graph), "--graph", "example_graph")
+    assert (again.code, again.warning_codes) == (0, []), again.envelope
+    shown = admin(run_cli, "policy", "show").data
+    assert shown["document"]["roles"] == {"importer": {"description": "Importers"}}
+
+
 def test_a_type_limit_on_a_superclass_is_refused(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

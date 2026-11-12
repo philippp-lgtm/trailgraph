@@ -2,7 +2,9 @@
 
 An authored policy file is compiled against this installation: graph names
 resolve to ids, and a graph policy is checked against the graph's pinned
-model (an unknown type warns with ``admin.policy_unknown_type``). Its ``id``
+model (an unknown type warns with ``admin.policy_unknown_type``) and its deny
+rules against the roles the installed installation policy declares (an unknown
+role warns with ``policy.role_unknown``). Its ``id``
 says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
@@ -42,6 +44,7 @@ from graph_cli.access_control.documents import (
     GRAPH_LAYER,
     INSTALLATION_LAYER,
     RESOURCE_RE,
+    declared_roles,
     glob,
     rules,
     strings,
@@ -380,6 +383,18 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         )
         if classes is not None
         else frozenset(),
+        # A graph policy is applied independently of the installation policy: its role
+        # names are checked against the installed one (a warning, like an unknown type).
+        roles=declared_roles(ctx.policy.current(None).documents[0]) if entry is not None else None,
+    )
+    role_warning = (
+        WarningRecord(
+            "policy.role_unknown",
+            "the installed installation policy does not declare role(s) "
+            + ", ".join(compiled.unknown_roles)
+            + "; a rule naming one matches no token until it is declared",
+            {"roles": list(compiled.unknown_roles)},
+        ),
     )
     warnings = tuple(
         WarningRecord(
@@ -389,7 +404,7 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         )
         for name in compiled.unknown_types
     )
-    return _Source(compiled, entry, warnings)
+    return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
 
 
 def _read(file: Path) -> bytes:

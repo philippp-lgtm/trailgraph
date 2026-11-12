@@ -1,7 +1,9 @@
 """Actor context: who is acting and how sure we are (contracts B2).
 
 Built once per invocation by the composition root; immutable; serialized
-identically into tx records and audit events (B2.9).
+identically into tx records and audit events (B2.9). ``roles`` are the roles
+of the server token a request came with (policy subjects, B6.7); every other
+actor has none, and an actor without roles serializes exactly as before.
 """
 
 from __future__ import annotations
@@ -14,9 +16,17 @@ from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.json_access import opt_int, opt_str, req_obj, req_str
+from graph_cli.kernel.json_access import (
+    JsonShapeError,
+    opt_int,
+    opt_list,
+    opt_str,
+    req_obj,
+    req_str,
+)
 
 ASSERTED_VALUE_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+ROLE_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}\Z")
 
 _FACET_KEYS: Final = ("id", "name", "type", "parent", "source")
 _FACETS: Final = ("principal", "agent", "session", "device", "project")
@@ -37,6 +47,11 @@ class Entrypoint(StrEnum):
 def is_valid_asserted_value(value: str) -> bool:
     """B2.4 grammar for asserted facet values."""
     return ASSERTED_VALUE_RE.match(value) is not None
+
+
+def is_valid_role_name(value: str) -> bool:
+    """Grammar of a role name (B6.7): lowercase letters, digits and ``_``, up to 64."""
+    return ROLE_NAME_RE.match(value) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +106,11 @@ class ActorContext:
     project: Facet
     client: ClientInfo
     pid: int | None
+    roles: tuple[str, ...] = ()  # sorted, unique
 
     def to_json(self) -> dict[str, JsonValue]:
-        """Every facet key is present; an absent facet is ``{"assurance": "absent"}``."""
+        """Every facet key is present; an absent facet is ``{"assurance": "absent"}``.
+        ``roles`` is present only when the actor holds any."""
         data: dict[str, JsonValue] = {name: getattr(self, name).to_json() for name in _FACETS}
         data["client"] = {
             "name": self.client.name,
@@ -102,6 +119,8 @@ class ActorContext:
         }
         if self.pid is not None:
             data["pid"] = self.pid
+        if self.roles:
+            data["roles"] = list(self.roles)
         return data
 
     def label(self) -> str:
@@ -144,6 +163,7 @@ class ActorContext:
             session=facet("session"),
             device=facet("device"),
             project=facet("project"),
+            roles=_roles(data),
         )
 
 
@@ -153,3 +173,15 @@ def _assurance(value: str) -> Assurance:
     except ValueError:
         # Closed enum in a persisted document (V.5).
         raise GraphCliError("format.unsupported_version", f"unknown assurance {value!r}") from None
+
+
+def _roles(data: Mapping[str, JsonValue]) -> tuple[str, ...]:
+    """The optional ``roles`` list: role names, sorted and unique as written."""
+    names: list[str] = []
+    for item in opt_list(data, "roles"):
+        if not isinstance(item, str) or not is_valid_role_name(item):
+            raise JsonShapeError(f"roles: {item!r} is not a role name")
+        names.append(item)
+    if names != sorted(set(names)):
+        raise JsonShapeError("roles: must be sorted and unique")
+    return tuple(names)

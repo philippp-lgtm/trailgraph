@@ -2620,6 +2620,19 @@
                         }
                       ]
                     },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
                     "project": {
                       "anyOf": [
                         {
@@ -2722,6 +2735,19 @@
                             ]
                           },
                           "principal_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "role": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -2840,6 +2866,20 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "roles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "description"
+              ]
             }
           },
           "types": {

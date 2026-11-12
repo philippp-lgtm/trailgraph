@@ -108,6 +108,7 @@ def _policy_document() -> Schema:
             "layer": LAYER,
             "graph": STRING,
             "projects": STRINGS,
+            "roles": obj(extra=obj({"description": STRING})),
             "types": obj(extra=enum(*TYPE_LIMITS)),
             "obligations": array(obligation),
         },

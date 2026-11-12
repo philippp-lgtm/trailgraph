@@ -22,7 +22,8 @@ graph's own policy). Only the installation layer grants; every other rule
 narrows, so "the installation allows and the graph allows" is "some allow
 rule matches and no deny rule does" (Cedar's permit/forbid). A rule matches
 when every ``principal`` key matches the actor (an absent facet matches
-nothing), an ``action`` glob matches, a ``resource`` glob matches and no
+nothing; the multi-valued ``role`` matches when the actor holds at least one of
+the named roles), an ``action`` glob matches, a ``resource`` glob matches and no
 ``unless`` condition matches. Allow rules match verified facets and the
 entrypoint only (B6.7). A document outside the ``graph_cli.policy/1``
 grammar is ``internal.error``: installed documents are checked when they
@@ -36,6 +37,7 @@ from typing import Final
 
 from graph_cli.access_control.documents import (
     RESOURCE_RE,
+    Fact,
     document_problems,
     glob,
     principal_facts,
@@ -128,8 +130,8 @@ def is_project_admin(actor: ActorContext) -> bool:
 
 def _matches(
     rule: Mapping[str, JsonValue],
-    facts: Mapping[str, str | None],
-    conditions: Mapping[str, str | None],
+    facts: Mapping[str, Fact],
+    conditions: Mapping[str, Fact],
     action: str,
     resource: str,
 ) -> bool:
@@ -145,13 +147,18 @@ def _matches(
     )
 
 
-def _principal_matches(principal: JsonValue, facts: Mapping[str, str | None]) -> bool:
+def _principal_matches(principal: JsonValue, facts: Mapping[str, Fact]) -> bool:
     assert isinstance(principal, Mapping)  # guaranteed by _checked_document
     for key, expected in principal.items():
         value = facts.get(key)
         if value is None:
             return False
-        if value not in (expected if isinstance(expected, list) else [expected]):
+        wanted = expected if isinstance(expected, list) else [expected]
+        # A multi-valued fact (the roles) matches when the actor holds one of the expected.
+        if isinstance(value, tuple):
+            if not any(v in wanted for v in value):
+                return False
+        elif value not in wanted:
             return False
     return True
 
@@ -164,7 +171,7 @@ def _resource_matches(patterns: JsonValue, resource: str) -> bool:
 
 
 def _condition_matches(
-    condition: Mapping[str, JsonValue], facts: Mapping[str, str | None], resource: str
+    condition: Mapping[str, JsonValue], facts: Mapping[str, Fact], resource: str
 ) -> bool:
     """An ``unless`` condition: every part it has must match."""
     if "principal" in condition and not _principal_matches(condition["principal"], facts):

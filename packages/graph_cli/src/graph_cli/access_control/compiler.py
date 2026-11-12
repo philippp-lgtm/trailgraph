@@ -2,13 +2,22 @@
 
 Two authored forms, told apart by ``id``:
 
-- ``installation``: ``grants`` (who may use which graphs at which level,
+- ``installation``: optional ``roles`` (the declared role names, each with a
+  description), ``grants`` (who may use which graphs at which level,
   through the app or, with ``entrypoint: server``, the server API; a grant
-  may name a project, which only a token bound to it verifies), optional
-  ``maintainers``, project ``scopes``, the required ``no_project`` scope,
-  ``deny`` rules and ``obligations``;
+  may name a project, which only a token bound to it verifies, or a role,
+  which only a server token holding it carries), optional ``maintainers``,
+  project ``scopes``, the required ``no_project`` scope, ``deny`` rules and
+  ``obligations``;
 - ``graph``: one graph's ``types`` limits, ``obligations`` and ``deny``
   rules. It only narrows.
+
+A role is a subject like a token or a project: its rights are the rules that
+name it. Grants and deny rules of the installation layer may name only declared
+roles (a typo is ``policy.invalid``); a graph layer is applied independently, so
+a role the installed installation policy does not declare is reported, not
+refused (``Compiled.unknown_roles``), like an unknown type. A policy without
+roles compiles to the same document, hence the same hash, as before roles existed.
 
 Levels expand to action globs here (``kernel.actions``), graph names to ids,
 so the compiled document says exactly what it means and its hash names that
@@ -53,7 +62,7 @@ from graph_cli.kernel.actions import (
     actions_above,
     level_actions,
 )
-from graph_cli.kernel.actor import is_valid_asserted_value
+from graph_cli.kernel.actor import is_valid_asserted_value, is_valid_role_name
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GraphId
@@ -72,12 +81,22 @@ BASE_OBLIGATION: Final[Mapping[str, JsonValue]] = {
 }
 ALL: Final = "*"
 _INSTALLATION_KEYS: Final = frozenset(
-    {"schema", "id", "grants", "maintainers", "scopes", "no_project", "deny", "obligations"}
+    {
+        "schema",
+        "id",
+        "roles",
+        "grants",
+        "maintainers",
+        "scopes",
+        "no_project",
+        "deny",
+        "obligations",
+    }
 )
 _GRAPH_KEYS: Final = frozenset({"schema", "id", "types", "obligations", "deny"})
 _PRINCIPAL_KEYS: Final = frozenset({"name", "id"})
-_GRANT_PRINCIPAL_KEYS: Final = frozenset({*_PRINCIPAL_KEYS, "project"})
-_MATCHERS: Final = ("entrypoint", "principal_id", "principal_name", *ASSERTED_KEYS)
+_GRANT_PRINCIPAL_KEYS: Final = frozenset({*_PRINCIPAL_KEYS, "project", "role"})
+_MATCHERS: Final = ("entrypoint", "principal_id", "principal_name", *ASSERTED_KEYS, "role")
 _DENY_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 # The entrypoints a grant may name; the maintenance entrypoint is for maintainers only.
 GRANT_ENTRYPOINTS: Final = ("app", "server")
@@ -89,6 +108,7 @@ class Compiled:
     hash: str
     layer: str
     unknown_types: tuple[str, ...] = ()
+    unknown_roles: tuple[str, ...] = ()
 
 
 @dataclass
@@ -97,8 +117,12 @@ class _Context:
     graph: GraphId | None
     known_types: frozenset[str] | None
     extended_types: frozenset[str] = frozenset()
+    # Graph layer: the roles of the installed installation policy (``None``: not checked).
+    # Installation layer: the roles this policy declares (set by ``_roles``).
+    known_roles: frozenset[str] | None = None
     problems: list[Problem] = field(default_factory=list)
     unknown_types: set[str] = field(default_factory=set)
+    unknown_roles: set[str] = field(default_factory=set)
 
     def add(self, path: str, message: str) -> None:
         self.problems.append(Problem(path, message))
@@ -125,13 +149,16 @@ def compile_policy(
     graph: GraphId | None = None,
     known_types: frozenset[str] | None = None,
     extended_types: frozenset[str] = frozenset(),
+    roles: frozenset[str] | None = None,
 ) -> Compiled:
     """Compile one authored document. ``graphs`` maps every graph name to its id,
     ``graph`` is the graph a graph policy is compiled for, ``known_types`` the type
     CURIEs of that graph's pinned model (``None``: not checked), ``extended_types``
     those that are abstract or have subclasses: a limit matches the exact type only,
-    so naming one of them would miss its subclasses' entities."""
-    ctx = _Context(graphs, graph, known_types, extended_types)
+    so naming one of them would miss its subclasses' entities. ``roles`` are the roles
+    the installed installation policy declares (``None``: not checked); a graph policy's
+    deny rules naming others are collected in ``unknown_roles``."""
+    ctx = _Context(graphs, graph, known_types, extended_types, roles)
     try:
         root = load_strict(data)
     except YamlError as exc:
@@ -159,7 +186,13 @@ def compile_policy(
     if leftover:
         raise GraphCliError("internal.error", f"compiled policy is malformed: {leftover[0]}")
     layer_name = str(document.get("layer"))
-    return Compiled(document, hash_value(document), layer_name, tuple(sorted(ctx.unknown_types)))
+    return Compiled(
+        document,
+        hash_value(document),
+        layer_name,
+        tuple(sorted(ctx.unknown_types)),
+        tuple(sorted(ctx.unknown_roles)),
+    )
 
 
 # ---- installation --------------------------------------------------------------
@@ -167,6 +200,7 @@ def compile_policy(
 
 def _installation(root: YamlMap, ctx: _Context) -> dict[str, JsonValue]:
     _unknown_keys(root, _INSTALLATION_KEYS, "", ctx)
+    roles = _roles(root.items.get("roles"), ctx)
     rules: list[JsonValue] = []
     grants = _seq(root.items.get("grants"), "grants", ctx, required=True)
     if grants is not None and not grants:
@@ -198,7 +232,7 @@ def _installation(root: YamlMap, ctx: _Context) -> dict[str, JsonValue]:
         rules += _scope_rules(levels, "no_project", {}, unless, ctx)
     rules += _deny_rules(root.items.get("deny"), None, ctx)
     obligations = [dict(BASE_OBLIGATION), *_obligations(root.items.get("obligations"), ctx)]
-    return {
+    document: dict[str, JsonValue] = {
         "schema": POLICY_SCHEMA,
         "id": INSTALLATION_LAYER,
         "layer": INSTALLATION_LAYER,
@@ -206,6 +240,29 @@ def _installation(root: YamlMap, ctx: _Context) -> dict[str, JsonValue]:
         "rules": rules,
         "obligations": obligations,
     }
+    if roles:
+        document["roles"] = roles
+    return document
+
+
+def _roles(node: YamlNode | None, ctx: _Context) -> dict[str, JsonValue]:
+    """The declared roles, ``{name: {description}}``; sets ``ctx.known_roles``."""
+    declared: dict[str, JsonValue] = {}
+    for name, item in sorted((_map(node, "roles", ctx) or {}).items()):
+        path = f"roles.{name}"
+        if not is_valid_role_name(name):
+            ctx.add(path, "is not a role name (lowercase letters, digits and _, up to 64)")
+        entry = _map(item, path, ctx, required=True)
+        if entry is None:
+            continue
+        _unknown_keys(item, frozenset({"description"}), path, ctx)
+        description = _text(entry.get("description"), f"{path}.description", ctx)
+        if description is not None and not description.strip():
+            ctx.add(f"{path}.description", "must not be empty")
+        elif description is not None and is_valid_role_name(name):
+            declared[name] = {"description": description}
+    ctx.known_roles = frozenset(declared)
+    return declared
 
 
 def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonValue]:
@@ -218,13 +275,17 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     if "principal" in entry:
         found = _principal(entry["principal"], f"{path}.principal", ctx, _GRANT_PRINCIPAL_KEYS)
         principal.update(found or {})
-        if "project" in principal and "server" not in (
-            entrypoints if isinstance(entrypoints, list) else [entrypoints]
-        ):
+        served = "server" in (entrypoints if isinstance(entrypoints, list) else [entrypoints])
+        if "project" in principal and not served:
             ctx.add(
                 f"{path}.entrypoint",
                 "a grant to a project needs entrypoint: server (only a token bound to the"
                 " project verifies it)",
+            )
+        if "role" in principal and not served:
+            ctx.add(
+                f"{path}.entrypoint",
+                "a grant to a role needs entrypoint: server (only a server token carries roles)",
             )
     resources = _graph_resources(entry.get("graphs"), f"{path}.graphs", ctx, required=True)
     level = _level(entry.get("level"), f"{path}.level", ctx, allowed=("read", "write"))
@@ -272,11 +333,19 @@ def _principal(
         return None
     _unknown_keys(node, keys, path, ctx)
     found: dict[str, JsonValue] = {}
-    for key, facet in (("name", "principal_name"), ("id", "principal_id"), ("project", "project")):
+    for key, facet in (
+        ("name", "principal_name"),
+        ("id", "principal_id"),
+        ("project", "project"),
+        ("role", "role"),
+    ):
         if key in entry and key in keys:
             value = _text(entry[key], f"{path}.{key}", ctx)
             if value is not None and key == "project" and not is_valid_asserted_value(value):
                 ctx.add(f"{path}.project", "is not a valid project name")
+            elif value is not None and key == "role":
+                if _role_named(value, f"{path}.role", ctx):
+                    found[facet] = value
             elif value is not None:
                 found[facet] = value
     if not entry:
@@ -400,7 +469,13 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
         for key in _MATCHERS:
             if key in entry:
                 values = _texts(entry[key], f"{path}.{key}", ctx)
-                if values is not None:
+                if values is not None and key == "role":
+                    values = [
+                        v
+                        for v in values
+                        if _role_named(v, f"{path}.role", ctx, graph_layer=graph is not None)
+                    ]
+                if values:
                     principal[key] = sorted(set(values))
         if graph is not None:
             types = _texts(entry["type"], f"{path}.type", ctx) if "type" in entry else None
@@ -505,6 +580,22 @@ def _graph_resources(
             ctx.add(path, "names no graph")
         return None
     return sorted({_graph_glob(ctx.graphs[n]) for n in names})
+
+
+def _role_named(name: str, path: str, ctx: _Context, *, graph_layer: bool = False) -> bool:
+    """Whether a rule may name role ``name``. The installation layer names declared roles
+    only; a graph layer's unknown role is collected for a warning, not refused."""
+    if not is_valid_role_name(name):
+        ctx.add(path, f"{name!r} is not a role name (lowercase letters, digits and _)")
+        return False
+    known = ctx.known_roles
+    if not graph_layer:
+        if known is None or name not in known:
+            ctx.add(path, f"role {name!r} is not declared under roles")
+            return False
+    elif known is not None and name not in known:
+        ctx.unknown_roles.add(name)
+    return True
 
 
 def _type_glob(name: str, path: str, ctx: _Context) -> bool:
