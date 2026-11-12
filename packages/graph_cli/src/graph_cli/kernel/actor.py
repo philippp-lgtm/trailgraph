@@ -27,6 +27,7 @@ from graph_cli.kernel.json_access import (
 
 ASSERTED_VALUE_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 ROLE_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}\Z")
+MAX_ROLES: Final = 16  # per token or enrollment code
 
 _FACET_KEYS: Final = ("id", "name", "type", "parent", "source")
 _FACETS: Final = ("principal", "agent", "session", "device", "project")

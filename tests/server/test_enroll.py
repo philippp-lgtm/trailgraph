@@ -272,3 +272,50 @@ def test_enroll_create_refuses_and_warns(run_cli: CliRunner, installation: dict[
     assert gone.error["hint"] == "graph-admin enroll list"
     pasted = admin(run_cli, "enroll", "revoke", idle.data["code"])
     assert pasted.code == 2 and idle.data["code"] not in json.dumps(pasted.envelope)
+
+
+def test_the_exchange_gives_the_new_token_the_roles_of_its_code(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.21, B6.7: the token holds the code's roles, the exchange event names them, and a
+    request with the token has them as ``actor.roles``. Roles are added to the listed code
+    by hand here (the command that creates one with roles comes with the admin commands),
+    so ``audit verify`` must call the exchange what it is: not what the code's event said."""
+    app, _ = served(installation, tmp_path)
+    root = installation["root"]
+    created = code(run_cli, "--project", "p1")
+    document = json.loads(enrollments_path(root).read_text())
+    document["enrollments"][0]["roles"] = ["importer", "reader"]
+    enrollments_path(root).write_text(json.dumps(document))
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": created["code"], "label": "laptop"})
+    assert exchanged.status == 200, exchanged.json
+    token = exchanged.json["data"]["token"]
+    (record,) = json.loads(tokens_path(root).read_text())["tokens"]
+    assert record["roles"] == ["importer", "reader"]
+    (event,) = [
+        e for e in installation_events(root) if e["request"]["command"] == "enroll exchange"
+    ]
+    assert event["change"]["token"]["roles"] == ["importer", "reader"]
+    whoami = call(app, "POST", "/v1/commands/whoami", token=token, body={})
+    assert whoami.status == 200, whoami.json
+    assert whoami.json["data"]["actor"]["roles"] == ["importer", "reader"]
+    verified = admin(run_cli, "audit", "verify")
+    assert verified.code != 0
+    findings = verified.error["details"]["findings"]
+    assert [f["code"] for f in findings] == ["integrity.audit.enrollment_mismatch"]
+
+
+def test_a_code_without_roles_gives_a_token_without_roles(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    app, _ = served(installation, tmp_path)
+    root = installation["root"]
+    secret = code(run_cli, "--project", "p1")["code"]
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": secret, "label": "laptop"})
+    assert exchanged.status == 200, exchanged.json
+    (record,) = json.loads(tokens_path(root).read_text())["tokens"]
+    assert "roles" not in record
+    whoami = call(
+        app, "POST", "/v1/commands/whoami", token=exchanged.json["data"]["token"], body={}
+    )
+    assert "roles" not in whoami.json["data"]["actor"]

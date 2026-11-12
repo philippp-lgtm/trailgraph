@@ -162,7 +162,7 @@ def revoke(ctx: AdminContext, *, name: str, reason: str | None) -> Outcome:
 
 def server_actor(record: TokenRecord, version: str) -> ActorContext:
     """The actor a request with this token would have, without asserted facets: the
-    entrypoint ``server`` for an app token, ``maint`` for an admin token."""
+    entrypoint ``server`` for an app token, ``maint`` for an admin token, the token's roles."""
     project = (
         Facet(Assurance.VERIFIED, id=record.project, source=TOKEN_SOURCE)
         if record.project is not None
@@ -180,6 +180,7 @@ def server_actor(record: TokenRecord, version: str) -> ActorContext:
             Entrypoint.MAINT if record.scope == ADMIN_SCOPE else Entrypoint.SERVER,
         ),
         pid=None,
+        roles=record.roles,
     )
 
 

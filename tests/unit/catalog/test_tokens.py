@@ -117,3 +117,56 @@ def test_document_round_trip() -> None:
         sorted(records, key=lambda r: r.name)
     )
     assert parse_tokens(None) == ()
+
+
+HASH = "sha256:" + "3" * 64
+
+
+def test_roles_are_listed_only_when_a_token_has_any() -> None:
+    """B14.11: a token without roles serializes exactly as before roles existed."""
+    plain = TokenRecord("web", HASH)
+    assert "roles" not in plain.to_json()
+    held = TokenRecord("ci", HASH, "example_project", roles=("importer", "reader"))
+    assert held.to_json()["roles"] == ["importer", "reader"]
+    document = tokens_document((plain, held))
+    assert parse_tokens(json.dumps(document).encode()) == (held, plain)
+    old = {"schema": TOKENS_SCHEMA, "tokens": [{"name": "web", "hash": HASH, "project": None}]}
+    assert parse_tokens(json.dumps(old).encode()) == (plain,)
+    many = tuple(f"role_{n:02d}" for n in range(16))
+    assert (
+        parse_tokens(json.dumps(tokens_document((TokenRecord("ci", HASH, roles=many),))).encode())[
+            0
+        ].roles
+        == many
+    )
+
+
+@pytest.mark.parametrize(
+    "roles",
+    [
+        "reader",  # not a list
+        [],  # a token without roles has no key
+        ["Reader"],
+        ["reader", 1],
+        ["reader", "reader"],
+        ["reader", "importer"],  # not sorted
+        [f"role_{n:02d}" for n in range(17)],  # more than 16
+    ],
+)
+def test_malformed_roles_fail_closed(roles: object) -> None:
+    entry = {"name": "ci", "hash": HASH, "roles": roles}
+    with pytest.raises(GraphCliError) as info:
+        parse_tokens(json.dumps({"schema": TOKENS_SCHEMA, "tokens": [entry]}).encode())
+    assert info.value.code == "backend.unavailable"
+    assert "roles" in info.value.message
+
+
+def test_the_store_returns_the_roles(tmp_path: Path) -> None:
+    store = TokenStore(tmp_path)
+    secret = new_token()
+    install(tmp_path, TokenRecord("ci", token_hash(secret), roles=("reader",)))
+    found = store.lookup(secret, NOW)
+    assert found is not None and found.roles == ("reader",)
+    install(tmp_path, TokenRecord("ci", token_hash(secret), roles=("importer", "reader")))
+    found = store.lookup(secret, NOW)  # a role change takes effect with the next request
+    assert found is not None and found.roles == ("importer", "reader")

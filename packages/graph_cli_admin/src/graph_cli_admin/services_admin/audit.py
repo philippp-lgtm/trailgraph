@@ -245,6 +245,7 @@ def _installed_tokens(ctx: AdminContext) -> dict[str, Mapping[str, JsonValue]] |
             "project": r.project,
             "expires": r.expires,
             "scope": r.scope,
+            "roles": list(r.roles),
         }
         for r in records
     }
@@ -262,6 +263,7 @@ def _installed_enrollments(ctx: AdminContext) -> dict[str, Mapping[str, JsonValu
             "project": r.project,
             "scope": r.scope,
             "expires_at": r.expires_at,
+            "roles": list(r.roles),
         }
         for r in records
     }

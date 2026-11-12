@@ -91,3 +91,17 @@ def test_shape_errors_are_usage_errors(asserted: Any) -> None:
     with pytest.raises(GraphCliError) as info:
         request_actor(asserted, token=TOKEN, client=CLIENT)
     assert info.value.code == "usage.invalid_input"
+
+
+def test_the_actor_holds_the_roles_of_its_token() -> None:
+    """B6.7: roles come from the token record only; a client cannot assert them."""
+    held = TokenRecord("ci", "sha256:" + "0" * 64, roles=("importer", "reader"))
+    data, warnings = actor_json(None, held)
+    assert warnings == [] and data["roles"] == ["importer", "reader"]
+    actor, _ = request_actor(None, token=held, client=CLIENT)
+    assert actor.roles == ("importer", "reader")
+    assert "roles" not in actor_json(None)[0]  # a token without roles: the actor is as before
+    for asserted in ({"roles": ["reader"]}, {"agent": {"id": "a-1", "roles": ["reader"]}}):
+        with pytest.raises(GraphCliError) as info:
+            request_actor(asserted, token=TOKEN, client=CLIENT)
+        assert info.value.code == "usage.invalid_input"

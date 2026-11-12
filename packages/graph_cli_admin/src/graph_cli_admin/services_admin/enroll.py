@@ -17,9 +17,9 @@ code without a lock first, so a wrong code takes no lock and writes nothing.
 Under the lock it checks the code again and refuses one the installation
 stream already used or revoked (an exchange cut short before the file
 changed). The token is named ``<project>.<label>``, the client choosing only
-the label; a name that is taken or that a policy rule names leaves the code
-unused. The code leaves the file before the token is written. A check
-(``check: true``) only says what the code is for; nothing is written.
+the label, and it gets the roles of the code; a name that is taken or that a
+policy rule names leaves the code unused. The code leaves the file before the token is
+written. A check (``check: true``) only says what the code is for; nothing is written.
 """
 
 from __future__ import annotations
@@ -126,6 +126,7 @@ def create(
             project=project,
             scope=scope,
             expires_at=record.expires_at,
+            roles=record.roles,
         )
         receipt = ctx.audit.append_installation(
             events.maintenance(
@@ -220,6 +221,7 @@ def exchange(
             project=record.project,
             created_at=format_timestamp(ctx.clock.now()),
             scope=record.scope,
+            roles=record.roles,
         )
         decision = Decision(
             "allow",
@@ -235,6 +237,7 @@ def exchange(
             expires=None,
             created=True,
             scope=record.scope,
+            roles=record.roles,
         )
         receipt = ctx.audit.append_installation(
             events.maintenance(
@@ -369,7 +372,9 @@ def _usable_graphs(ctx: AdminContext, token: TokenRecord) -> list[JsonValue]:
 def _probe(record: EnrollmentRecord) -> TokenRecord:
     """A token as the code would yield it, to ask the policy what it would get."""
     name = default_token_name(record.project, record.id)
-    return TokenRecord(name, record.hash, project=record.project, scope=record.scope)
+    return TokenRecord(
+        name, record.hash, project=record.project, scope=record.scope, roles=record.roles
+    )
 
 
 def _described(record: EnrollmentRecord) -> dict[str, JsonValue]:

@@ -547,3 +547,82 @@ def test_enrollment_changes_name_the_code_by_id(world: World) -> None:
     for action, change in bad:
         with pytest.raises(GraphCliError):
             append(action, change)
+
+
+def test_token_events_carry_roles(world: World) -> None:
+    """B14.11: a created token and a created code name their roles when they have any; an
+    update names the token's full role set after the change, possibly empty."""
+    digest = "sha256:" + "c" * 64
+    prefix = digest[:23]
+    plain = events.token_change("ci", digest, created=True, project="p1")
+    assert "roles" not in plain["token"]  # type: ignore[operator]
+    held = events.token_change("ci", digest, created=True, roles=("reader",))
+    assert held == {
+        "token": {
+            "name": "ci",
+            "hash_prefix": prefix,
+            "project": None,
+            "expires": None,
+            "roles": ["reader"],
+        }
+    }
+    assert events.token_update_change("ci", digest, ()) == {
+        "token": {"name": "ci", "hash_prefix": prefix, "roles": []}
+    }
+    code = events.enrollment_change(
+        "0123456789ab",
+        digest,
+        project="p1",
+        scope="app",
+        expires_at="2026-10-25T12:00:00.000Z",
+        roles=("reader",),
+    )
+    assert code["roles"] == ["reader"]
+    used = events.enrollment_change("0123456789ab", digest)
+    exchanged = events.token_change("p1.a", digest, created=True, project="p1", roles=("reader",))
+
+    def update(**token: object) -> dict[str, object]:
+        return {"token": {"name": "ci", "hash_prefix": prefix, **token}}
+
+    good: list[tuple[str, dict[str, object]]] = [
+        ("maint.token_create", held),
+        ("maint.token_create", {"enrollment": code}),
+        ("maint.token_create", {**exchanged, "enrollment": used}),
+        ("maint.token_update", events.token_update_change("ci", digest, ("importer", "reader"))),
+        ("maint.token_update", events.token_update_change("ci", digest, ())),
+    ]
+    many = [f"role_{n:02d}" for n in range(17)]
+    bad: list[tuple[str, dict[str, object]]] = [
+        # an update names the full role set, and nothing else
+        ("maint.token_update", update()),
+        ("maint.token_update", update(roles=["b", "a"])),
+        ("maint.token_update", update(roles=["a", "a"])),
+        ("maint.token_update", update(roles=["Bad"])),
+        ("maint.token_update", update(roles="a")),
+        ("maint.token_update", update(roles=["a"], project=None)),
+        ("maint.token_update", {"enrollment": used}),
+        ("maint.token_update", {}),
+        # a created token or code lists roles only when it has some, sorted, at most 16
+        ("maint.token_create", {"token": {**plain["token"], "roles": []}}),  # type: ignore[dict-item]
+        ("maint.token_create", {"token": {**held["token"], "roles": many}}),  # type: ignore[dict-item]
+        ("maint.token_create", {"enrollment": {**code, "roles": []}}),
+        ("maint.token_create", {"enrollment": {**code, "roles": ["b", "a"]}}),
+        ("maint.token_revoke", update(roles=["a"])),
+    ]
+
+    def append(action: str, change: dict[str, object]) -> object:
+        return events.maintenance(
+            actor=maint_actor(),
+            decisions=[allow(action, "installation")],
+            request=REQUEST,
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            env=ENV,
+            change=change,  # type: ignore[arg-type]
+        )
+
+    for action, change in good:
+        assert append(action, change).stream == INSTALLATION_STREAM  # type: ignore[attr-defined]
+    for action, change in bad:
+        with pytest.raises(GraphCliError):
+            append(action, change)

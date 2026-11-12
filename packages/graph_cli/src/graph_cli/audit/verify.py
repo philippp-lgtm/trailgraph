@@ -347,6 +347,13 @@ def check_policy(
 TOKENS_FILE: Final = "tokens/tokens.json"
 TOKEN_CREATE: Final = "maint.token_create"
 TOKEN_REVOKE: Final = "maint.token_revoke"
+TOKEN_UPDATE: Final = "maint.token_update"
+
+
+def _roles_of(entry: Mapping[str, JsonValue]) -> list[JsonValue]:
+    """The ``roles`` of a file entry or an event's token or code; a missing key is none."""
+    roles = entry.get("roles")
+    return list(roles) if isinstance(roles, list) else []
 
 
 def check_tokens(
@@ -355,12 +362,14 @@ def check_tokens(
 ) -> list[Finding]:
     """The token file against the installation stream's token events (B14.11, B5.12).
 
-    Replaying ``maint.token_create`` and ``maint.token_revoke`` in seq order gives the
-    live tokens. ``installed`` maps each name in the file to ``{hash_prefix, project,
-    expires, scope}``; ``None`` when the file cannot be read. An event without a scope
-    created an app token. A file token that is not live,
+    Replaying ``maint.token_create``, ``maint.token_update`` (which assigns the token's
+    roles) and ``maint.token_revoke`` in seq order gives the live tokens. ``installed``
+    maps each name in the file to ``{hash_prefix, project, expires, scope, roles}``;
+    ``None`` when the file cannot be read. An event without a scope created an app token,
+    one without roles a token without roles. A file token that is not live,
     or differs, was added by hand or survived an interrupted revoke
-    (``token_mismatch``); a live token missing from the file is an interrupted create.
+    (``token_mismatch``); so does one whose roles were edited by hand. A live token
+    missing from the file is an interrupted create.
     """
     live: dict[str, tuple[JsonValue, Mapping[str, JsonValue]]] = {}
     for event in events:
@@ -371,6 +380,9 @@ def check_tokens(
         name = str(token["name"])
         if event.get("actions") == [TOKEN_CREATE]:
             live[name] = (event.get("seq"), token)
+        elif event.get("actions") == [TOKEN_UPDATE] and name in live:
+            seq, created = live[name]
+            live[name] = (seq, {**created, "roles": _roles_of(token)})
         elif event.get("actions") == [TOKEN_REVOKE]:
             live.pop(name, None)
     where: dict[str, JsonValue] = {"stream": INSTALLATION_STREAM, "path": TOKENS_FILE}
@@ -387,11 +399,13 @@ def check_tokens(
     for name, entry in sorted(installed.items()):
         actual = {key: entry.get(key) for key in ("hash_prefix", "project", "expires")}
         actual["scope"] = entry.get("scope") or "app"
+        actual["roles"] = _roles_of(entry)
         found = live.get(name)
         expected = None
         if found is not None:
             expected = {key: found[1].get(key) for key in actual}
             expected["scope"] = found[1].get("scope") or "app"
+            expected["roles"] = _roles_of(found[1])
         if expected != actual:
             findings.append(
                 _finding(
@@ -428,11 +442,11 @@ def check_enrollments(
     Replaying in seq order: ``maint.token_create`` with ``change.enrollment`` alone lists a
     code; ``maint.token_revoke`` with it, or an exchange (``maint.token_create`` with
     ``change.token`` too), removes it. ``installed`` maps each id in the file to
-    ``{hash_prefix, project, scope, expires_at}``; ``None`` when the file cannot be read.
-    A listed code that is not live, or differs, was added by hand or survived an
-    interrupted exchange or revoke (``enrollment_mismatch``); so is an exchange of a code
-    that was not live, of another project or scope, or after the code expired. A live
-    code missing from the file is an interrupted create.
+    ``{hash_prefix, project, scope, expires_at, roles}``; ``None`` when the file cannot be
+    read. A listed code that is not live, or differs (its roles included), was added by
+    hand or survived an interrupted exchange or revoke (``enrollment_mismatch``); so is an
+    exchange of a code that was not live, of another project, scope or set of roles, or
+    after the code expired. A live code missing from the file is an interrupted create.
     """
     live: dict[str, tuple[JsonValue, Mapping[str, JsonValue]]] = {}
     findings = []
@@ -472,8 +486,12 @@ def check_enrollments(
     keys = ("hash_prefix", "project", "scope", "expires_at")
     for enrollment_id, item in sorted(installed.items()):
         actual = {key: item.get(key) for key in keys}
+        actual["roles"] = _roles_of(item)
         found = live.get(enrollment_id)
-        expected = {key: found[1].get(key) for key in keys} if found is not None else None
+        expected = None
+        if found is not None:
+            expected = {key: found[1].get(key) for key in keys}
+            expected["roles"] = _roles_of(found[1])
         if expected != actual:
             findings.append(
                 _finding(
@@ -505,7 +523,8 @@ def _exchange_problem(
     code: Mapping[str, JsonValue] | None,
 ) -> str | None:
     """Why an exchange event does not follow from its code: the code was not live, or the
-    token it created has another project or scope, or it came after the code expired."""
+    token it created has another project, scope or set of roles, or it came after the code
+    expired."""
     if code is None:
         return "used a code that was not live (never created, used or revoked before)"
     token = change.get("token")
@@ -515,6 +534,8 @@ def _exchange_problem(
         code.get("scope") or "app"
     ):
         return "created a token of another project or scope than the code's"
+    if _roles_of(token) != _roles_of(code):
+        return "created a token with other roles than the code's"
     ts, expires = event.get("ts"), code.get("expires_at")
     if isinstance(ts, str) and isinstance(expires, str) and ts >= expires:
         return "came after the code expired"

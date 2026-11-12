@@ -9,6 +9,9 @@ of the admin API). The file names the scope of admin tokens only, so a
 server that predates scopes fails closed on it instead of taking an admin
 token for an app token. An admin token bound to a project is a project
 admin: it maintains the graphs the project's scope says ``maintain`` for.
+``roles`` (sorted, unique, at most 16 names) are the roles policy rules may name
+for the token (B6.7); the file lists them only when there are any, so an older
+server fails closed on the key, as with ``scope``.
 ``TokenStore`` is the server's lock-free reader: it parses the file again
 only when its mtime, size or inode changed, and fails closed on an
 unreadable or invalid file (``backend.unavailable``). A token is valid
@@ -28,7 +31,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Final
 
-from graph_cli.kernel.actor import is_valid_asserted_value
+from graph_cli.kernel.actor import MAX_ROLES, is_valid_asserted_value, is_valid_role_name
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
@@ -38,7 +41,7 @@ TOKEN_PREFIX: Final = "gct_"
 TOKEN_NAME_RE: Final = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")
 _HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 _DATE_RE: Final = re.compile(r"^\d{4}-\d{2}-\d{2}\Z")
-_KEYS: Final = frozenset({"name", "hash", "project", "expires", "created_at", "scope"})
+_KEYS: Final = frozenset({"name", "hash", "project", "expires", "created_at", "scope", "roles"})
 PREFIX_HEX: Final = 16
 APP_SCOPE: Final = "app"
 ADMIN_SCOPE: Final = "admin"
@@ -53,6 +56,7 @@ class TokenRecord:
     expires: str | None = None  # YYYY-MM-DD, valid through that day (UTC)
     created_at: str | None = None
     scope: str = APP_SCOPE  # the surface it reaches: app or admin
+    roles: tuple[str, ...] = ()  # sorted, unique: the roles policy rules may name
 
     @property
     def hash_prefix(self) -> str:
@@ -71,7 +75,21 @@ class TokenRecord:
         }
         if self.scope != APP_SCOPE:
             data["scope"] = self.scope
+        if self.roles:
+            data["roles"] = list(self.roles)
         return data
+
+
+def parse_roles(value: JsonValue) -> tuple[str, ...] | None:
+    """The roles of a token or an enrollment code: a non-empty list of at most
+    ``MAX_ROLES`` role names, sorted and unique as the writer leaves them. ``None`` for
+    anything else; an absent key is the caller's empty tuple."""
+    if not isinstance(value, list) or not value or len(value) > MAX_ROLES:
+        return None
+    names = [item for item in value if isinstance(item, str) and is_valid_role_name(item)]
+    if len(names) != len(value) or names != sorted(set(names)):
+        return None
+    return tuple(names)
 
 
 def new_token() -> str:
@@ -136,7 +154,15 @@ def _record(entry: JsonValue, index: int) -> TokenRecord:
     if scope not in SCOPES:
         raise _invalid(f"tokens[{index}].scope is not one of {', '.join(SCOPES)}")
     assert isinstance(scope, str)
-    return TokenRecord(name, digest, project, expires, created, scope)
+    roles: tuple[str, ...] = ()
+    if "roles" in entry:
+        found = parse_roles(entry["roles"])
+        if found is None:
+            raise _invalid(
+                f"tokens[{index}].roles is not a sorted list of at most {MAX_ROLES} role names"
+            )
+        roles = found
+    return TokenRecord(name, digest, project, expires, created, scope, roles)
 
 
 def _is_date(text: str) -> bool:

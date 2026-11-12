@@ -92,10 +92,10 @@ def _facet() -> Schema:
 
 
 def _actor() -> Schema:
-    """``kernel.actor.ActorContext.to_json``."""
+    """``kernel.actor.ActorContext.to_json``; ``roles`` only for a token that holds some."""
     facets = {name: ref("facet") for name in ("principal", "agent", "session", "device", "project")}
     client = obj({"name": STRING, "version": STRING, "entrypoint": STRING})
-    return obj({**facets, "client": client}, {"pid": INTEGER})
+    return obj({**facets, "client": client}, {"pid": INTEGER, "roles": STRINGS})
 
 
 def _program_step() -> Schema:
