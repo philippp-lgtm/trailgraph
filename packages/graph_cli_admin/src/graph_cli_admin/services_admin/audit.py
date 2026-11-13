@@ -52,6 +52,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, has_errors, sort_findings
 from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, graph_stream
 from graph_cli.kernel.ports.catalog import KineticSlot, SkillSlot
 from graph_cli.kernel.ports.storage import GraphStoreRead, MaintenanceSession
@@ -207,6 +208,17 @@ def _installed(read: Callable[[], bytes | None]) -> InstalledPolicy:
         return InstalledPolicy(UNREADABLE)
 
 
+def _migration_marker(ctx: AdminContext, graph_id: GraphId) -> MigrationMarker | None:
+    """The graph's migration marker; an unreadable one counts as none (reads and the next
+    release report it, ``audit verify`` must not stop at it)."""
+    try:
+        return ctx.maintenance.store(graph_id).migration_marker()
+    except GraphCliError as exc:
+        if exc.code != "backend.corrupt":
+            raise
+        return None
+
+
 def _verify_graph(
     ctx: AdminContext, graph_id: GraphId, anchored: frozenset[int] | None
 ) -> tuple[list[Finding], StreamReport]:
@@ -220,6 +232,7 @@ def _verify_graph(
             anchored=anchored or frozenset(),
             policy=_installed(session.read_policy),
             slots=_installed_slots(session),
+            migration_marker=_migration_marker(ctx, graph_id),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

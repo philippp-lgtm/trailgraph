@@ -18,13 +18,19 @@ from support.audit_events import (
 from support.clock import StepClock
 from support.fixtures import GOLDENS, assert_golden
 from support.ids import SeededIdProvider
-from support.memlog import model
+from support.memlog import MemLog, model
 from support.txbuilder import FuncState, TxBuilder, actor
 
 from graph_cli.audit import events
 from graph_cli.audit.schema import event_problems
 from graph_cli.kernel.authz import AuthorizedTx
-from graph_cli.kernel.canonical import JsonValue, canonical_bytes, hash_document, parse_json
+from graph_cli.kernel.canonical import (
+    JsonValue,
+    canonical_bytes,
+    hash_document,
+    hash_value,
+    parse_json,
+)
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
@@ -229,6 +235,20 @@ def test_route_graph_create_to_installation_plus_genesis(world: World) -> None:
     ]
 
 
+def _migration_change() -> dict[str, JsonValue]:
+    """The ``change`` of a ``maint.migrate`` intent of a tx on the memory log."""
+    log = MemLog("inventory")
+    draft = log.draft()
+    entity = draft.create()
+    log.commit(draft.build())
+    migration = log.migration()
+    migration.revise(entity)
+    tx = migration.build()
+    return events.migration_change(
+        tx, revisions_hash=events.revisions_hash(tx.revisions), counts={"entities": 1, "edges": 0}
+    )
+
+
 @pytest.mark.parametrize(
     "action",
     [
@@ -256,6 +276,7 @@ def test_route_graph_scoped_maint_to_the_graph_then_an_anchor(world: World, acti
         "maint.ontology_release": events.release_change("1.0.0", pin.artifact_hash, world.graph_id),
         "maint.ontology_pin": events.pin_change(pin, pin),
         "maint.graph_configure": events.skill_change(None, pin.artifact_hash),
+        "maint.migrate": _migration_change(),
     }.get(action)
     graph_event = events.maintenance(
         ts=world.clock.now(),
@@ -626,3 +647,197 @@ def test_token_events_carry_roles(world: World) -> None:
     for action, change in bad:
         with pytest.raises(GraphCliError):
             append(action, change)
+
+
+# ---- migration events and sibling keys (plan M5) -------------------------------
+
+
+def test_release_and_pin_changes_are_byte_identical_without_the_sibling_keys(
+    world: World,
+) -> None:
+    pin = world.graph.pin
+    release_id = world.graph_id
+    assert events.release_change("1.0.0", pin.artifact_hash, release_id) == {
+        "release": {
+            "version": "1.0.0",
+            "artifact_hash": pin.artifact_hash,
+            "release_id": str(release_id),
+        }
+    }
+    assert events.release_change("1.0.0", pin.artifact_hash, release_id, None) == (
+        events.release_change("1.0.0", pin.artifact_hash, release_id)
+    )
+    plain = events.pin_change(pin, pin)
+    assert plain == {"pin": {"from": pin.to_json(), "to": pin.to_json()}}
+    assert events.pin_change(pin, pin, None) == plain
+    lines = [
+        canonical_bytes(events.release_change("1.0.0", pin.artifact_hash, release_id)),
+        canonical_bytes(plain),
+    ]
+    assert all(b"migration_hash" not in line and b"alias_prefixes" not in line for line in lines)
+
+
+def test_the_sibling_keys_sit_beside_release_and_pin_never_inside(world: World) -> None:
+    pin = world.graph.pin
+    release = events.release_change(
+        "2.0.0", pin.artifact_hash, world.graph_id, "sha256:" + "a" * 64
+    )
+    assert set(release) == {"release", "migration_hash"}
+    assert set(release["release"]) == {"version", "artifact_hash", "release_id"}  # type: ignore[call-overload]
+    prefixes: dict[str, JsonValue] = {
+        "added": {},
+        "moved": {"area_b:Thing": {"from": "area_a:Thing", "prefix": "TH"}},
+    }
+    moved = events.pin_change(pin, pin, prefixes)
+    assert set(moved) == {"pin", "alias_prefixes"}
+    assert set(moved["pin"]) == {"from", "to"}  # type: ignore[call-overload]
+    assert moved["alias_prefixes"] == prefixes
+    for change in (release, moved):  # a builder refuses nothing here: the event is checked whole
+        draft = events.maintenance(
+            actor=maint_actor(),
+            decisions=[
+                allow(
+                    "maint.ontology_pin" if "pin" in change else "maint.ontology_release", "graph"
+                )
+            ],
+            request=REQUEST,
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            env=ENV,
+            graph=world.graph,
+            change=change,
+        )
+        assert draft.body["change"] == change
+
+
+def test_a_malformed_sibling_key_is_refused_by_the_builder(world: World) -> None:
+    pin = world.graph.pin
+    with pytest.raises(GraphCliError) as info:
+        events.maintenance(
+            actor=maint_actor(),
+            decisions=[allow("maint.ontology_pin", "graph")],
+            request=REQUEST,
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            env=ENV,
+            graph=world.graph,
+            change=events.pin_change(pin, pin, {"added": {}}),
+        )
+    assert info.value.code == "internal.error"
+
+
+def test_revisions_hash_is_order_independent_and_covers_id_rev_and_content(
+    world: World,
+) -> None:
+    first, second, _ = world.create_and_update()
+    revisions = [*first.revisions, *second.revisions]
+    digest = events.revisions_hash(revisions)
+    assert digest == events.revisions_hash(reversed(revisions))
+    expected = hash_value(
+        [
+            [str(r.id), r.rev, r.content_hash]
+            for r in sorted(revisions, key=lambda r: (str(r.id), r.rev))
+        ]
+    )
+    assert digest == expected
+    changed = dataclasses.replace(revisions[0], content_hash="sha256:" + "0" * 64)
+    assert events.revisions_hash([changed, *revisions[1:]]) != digest
+    assert (
+        events.revisions_hash([dataclasses.replace(revisions[0], rev=9), *revisions[1:]]) != digest
+    )
+    assert events.revisions_hash(revisions[1:]) != digest
+
+
+def test_migration_change_names_the_tx_and_nothing_per_entity() -> None:
+    log = MemLog("inventory")
+    draft = log.draft()
+    entities = [draft.create(), draft.create()]
+    log.commit(draft.build())
+    migration = log.migration()
+    for entity in entities:
+        migration.revise(entity)
+    tx = migration.build()
+    change = events.migration_change(
+        tx, revisions_hash=events.revisions_hash(tx.revisions), counts={"entities": 2, "edges": 5}
+    )
+    record = tx.changeset["migration"]
+    assert isinstance(record, dict)
+    assert change == {
+        "migration": {
+            "tx_id": str(tx.tx_id),
+            "tx_seq": tx.seq,
+            "changeset_hash": tx.changeset_hash,
+            "changeset_size": events.changeset_size(tx.changeset),
+            "from": record["from"],
+            "to": record["to"],
+            "migration_hash": record["migration_hash"],
+            "revisions_hash": events.revisions_hash(tx.revisions),
+            "counts": {"entities": 2, "edges": 5},
+        }
+    }
+    assert all(str(e) not in str(change) for e in entities)
+    committed = log.commit(tx, migration=True)  # the record of the commit names the same
+    assert (
+        events.migration_change(
+            committed,
+            revisions_hash=events.revisions_hash(committed.revisions),
+            counts={"entities": 2, "edges": 5},
+        )
+        == change
+    )
+
+
+def test_the_migration_intent_routes_to_the_graph_stream_with_the_tx_event_id(
+    world: World,
+) -> None:
+    log = MemLog("inventory")
+    draft = log.draft()
+    entity = draft.create()
+    log.commit(draft.build())
+    migration = log.migration()
+    migration.revise(entity)
+    tx = migration.build()
+    draft_event = events.maintenance(
+        actor=maint_actor(),
+        decisions=[allow("maint.migrate", f"graph:{log.graph_id}")],
+        request=REQUEST,
+        ts=world.clock.now(),
+        event_id=tx.event_id,
+        env=ENV,
+        graph=graph_entry(log.graph_id, tx.ontology),
+        change=events.migration_change(
+            tx,
+            revisions_hash=events.revisions_hash(tx.revisions),
+            counts={"entities": 1, "edges": 0},
+        ),
+    )
+    assert draft_event.stream == graph_stream(str(log.graph_id))
+    assert draft_event.body["event_id"] == str(tx.event_id)
+    assert draft_event.body["actions"] == ["maint.migrate"]
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [{"entities": 1}, {"entities": -1, "edges": 0}, {"entities": 1, "edges": None}],
+)
+def test_migration_change_refuses_counts_that_do_not_fit(counts: dict[str, int]) -> None:
+    log = MemLog("inventory")
+    draft = log.draft()
+    entity = draft.create()
+    log.commit(draft.build())
+    migration = log.migration()
+    migration.revise(entity)
+    tx = migration.build()
+    with pytest.raises(GraphCliError) as info:
+        events.migration_change(
+            tx, revisions_hash=events.revisions_hash(tx.revisions), counts=counts
+        )
+    assert info.value.code == "internal.error"
+
+
+def test_migration_change_refuses_a_tx_that_is_not_a_migration(world: World) -> None:
+    first, _, _ = world.create_and_update()
+    with pytest.raises(GraphCliError):
+        events.migration_change(
+            first, revisions_hash="sha256:" + "0" * 64, counts={"entities": 1, "edges": 0}
+        )

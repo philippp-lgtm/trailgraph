@@ -41,6 +41,11 @@ POLICY_HASH_UNCHECKED: Final = "integrity.audit.policy_hash_unchecked"
 TOKEN_MISMATCH: Final = "integrity.audit.token_mismatch"
 ENROLLMENT_MISMATCH: Final = "integrity.audit.enrollment_mismatch"
 SLOT_MISMATCH: Final = "integrity.audit.slot_mismatch"
+MIGRATION_CHANGED_IDENTITY: Final = "integrity.audit.migration_changed_identity"
+MIGRATION_VERSION_MISMATCH: Final = "integrity.audit.migration_version_mismatch"
+MIGRATION_REVISIONS_MISMATCH: Final = "integrity.audit.migration_revisions_mismatch"
+MIGRATION_UNPINNED: Final = "integrity.audit.migration_unpinned"
+MIGRATION_INCOMPLETE: Final = "integrity.audit.migration_incomplete"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -106,5 +111,30 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "slot_mismatch",
         Severity.ERROR,
         "A published skill or function catalog differs from the recorded change events.",
+    ),
+    _integrity(
+        "migration_changed_identity",
+        Severity.ERROR,
+        "A migration revision changes an alias, status, creation time or valid time.",
+    ),
+    _integrity(
+        "migration_version_mismatch",
+        Severity.ERROR,
+        "A migration tx, its revisions and its intent do not name the same target version.",
+    ),
+    _integrity(
+        "migration_revisions_mismatch",
+        Severity.ERROR,
+        "A migration intent's revisions digest or entity count differs from its tx.",
+    ),
+    _integrity(
+        "migration_unpinned",
+        Severity.ERROR,
+        "A migration tx is not followed by a pin to its target version.",
+    ),
+    _integrity(
+        "migration_incomplete",
+        Severity.WARNING,
+        "A migration tx is committed but its pin switch has not happened yet.",
     ),
 )

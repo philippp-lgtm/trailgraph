@@ -3,7 +3,16 @@
 import dataclasses
 from collections.abc import Callable
 
-from support.audit_events import ENV, REQUEST, allow, intent, maint_actor, sealed_lines
+import pytest
+from support.audit_events import (
+    ENV,
+    REQUEST,
+    allow,
+    graph_entry,
+    intent,
+    maint_actor,
+    sealed_lines,
+)
 from support.memlog import MemLog
 from support.txbuilder import TxDraft
 
@@ -149,6 +158,130 @@ def test_damaged_tx_log_skips_the_cross_check() -> None:
     graph.write(graph.log.builder.random_tx, commit=False)
     report = verify_graph(graph.raw(), graph_id=graph.graph_id, txs=None)
     assert report.findings == ()
+
+
+# ---- migration txs ----------------------------------------------------------
+
+
+def _migrated() -> tuple[Graph, TxRecord]:
+    """A graph with two write txs and a migration tx of its first entity, with all intents."""
+    graph = Graph()
+    graph.random(2)
+    entity = next(iter(graph.txs[0].revisions)).id
+    draft = graph.log.migration()
+    draft.revise(entity)
+    tx = draft.build()
+    graph.drafts.append(
+        builders.maintenance(
+            actor=maint_actor(),
+            decisions=[allow("maint.migrate", f"graph:{graph.graph_id}")],
+            request=REQUEST,
+            ts=graph.log.builder.clock.now(),
+            event_id=tx.event_id,
+            env=ENV,
+            graph=graph_entry(graph.graph_id, tx.ontology),
+            change=builders.migration_change(
+                tx,
+                revisions_hash=builders.revisions_hash(tx.revisions),
+                counts={"entities": 1, "edges": 0},
+            ),
+        )
+    )
+    record = graph.log.commit(tx, migration=True)
+    graph.txs.append(record)
+    return graph, record
+
+
+def test_a_migration_intent_serves_its_migration_tx() -> None:
+    graph, _ = _migrated()
+    assert cross_check(graph.graph_id, graph.events(), graph.txs) == []
+
+
+def test_a_migration_tx_without_its_intent() -> None:
+    graph, record = _migrated()
+    events = graph.events()[:-1]
+    (finding,) = cross_check(graph.graph_id, events, graph.txs)
+    assert finding.code == codes.TX_WITHOUT_INTENT
+    assert finding.target == {"graph_id": str(graph.graph_id), "tx_seq": record.seq}
+    assert "migration intent" in finding.message
+
+
+@pytest.mark.parametrize("key", ["tx_id", "tx_seq", "changeset_hash", "changeset_size"])
+def test_a_migration_intent_that_does_not_match_its_tx(key: str) -> None:
+    graph, record = _migrated()
+    events = graph.events()
+    change = as_object(events[-1]["change"], "change")
+    migration = dict(as_object(change["migration"], "migration"))
+    migration[key] = {"tx_id": str(graph.graph_id), "tx_seq": 99, "changeset_size": 1}.get(
+        key, "sha256:" + "f" * 64
+    )
+    events[-1] = {**events[-1], "change": {"migration": migration}}
+    (finding,) = cross_check(graph.graph_id, events, graph.txs)
+    assert finding.code == codes.TX_WITHOUT_INTENT
+    assert finding.target == {"graph_id": str(graph.graph_id), "tx_seq": record.seq}
+    assert isinstance(finding.expected, dict) and list(finding.expected) == [key]
+
+
+def test_an_orphan_migration_intent_is_info() -> None:
+    graph, _ = _migrated()
+    (finding,) = cross_check(graph.graph_id, graph.events(), graph.txs[:-1])
+    assert (finding.code, finding.severity) == (codes.INTENT_WITHOUT_EFFECT, Severity.INFO)
+    assert "migration intent" in finding.message
+
+
+def test_a_migration_tx_with_a_write_intent_differs_in_kind() -> None:
+    """The intent with the tx's event id is of the other kind: the tx has none, the intent
+    serves no tx."""
+    graph, record = _migrated()
+    events = graph.events()
+    write = graph.events()[0]
+    events[-1] = {**write, "event_id": str(record.event_id), "seq": events[-1]["seq"]}
+    findings = cross_check(graph.graph_id, events, graph.txs)
+    assert sorted(f.code for f in findings) == [
+        codes.INTENT_WITHOUT_EFFECT,
+        codes.TX_WITHOUT_INTENT,
+    ]
+    (without_intent,) = [f for f in findings if f.code == codes.TX_WITHOUT_INTENT]
+    assert "differs in kind" in without_intent.message
+    assert (without_intent.expected, without_intent.actual) == ("migration", "write")
+
+
+def test_a_write_tx_with_a_migration_intent_differs_in_kind() -> None:
+    graph, record = _migrated()
+    events = graph.events()
+    migration = events[-1]
+    write_tx = graph.txs[0]
+    events[0] = {**migration, "event_id": str(write_tx.event_id), "seq": events[0]["seq"]}
+    findings = cross_check(graph.graph_id, events[:1], [write_tx])
+    assert sorted(f.code for f in findings) == [
+        codes.INTENT_WITHOUT_EFFECT,
+        codes.TX_WITHOUT_INTENT,
+    ]
+    (without_intent,) = [f for f in findings if f.code == codes.TX_WITHOUT_INTENT]
+    assert (without_intent.expected, without_intent.actual) == ("write", "migration")
+    assert record.seq == 3
+
+
+def test_a_retried_migration_intent_leaves_one_orphan() -> None:
+    graph, record = _migrated()
+    events = graph.events()
+    retry = {**events[-1], "seq": len(events) + 1}
+    findings = cross_check(graph.graph_id, [*events, retry], graph.txs)
+    assert [f.code for f in findings] == [codes.INTENT_WITHOUT_EFFECT]
+    assert findings[0].target["seq"] == events[-1]["seq"]
+    assert record.seq == 3
+
+
+def test_write_findings_keep_their_text() -> None:
+    graph = Graph()
+    graph.random(2)
+    events = graph.events()
+    del events[0]
+    (finding,) = cross_check(graph.graph_id, events, graph.txs)
+    assert finding.message == f"no write intent {graph.txs[0].event_id}"
+    graph.write(graph.log.builder.random_tx, commit=False)
+    (orphan,) = cross_check(graph.graph_id, graph.events(), graph.txs)
+    assert orphan.message == "write intent without a committed tx (an interrupted write)"
 
 
 # ---- anchors -----------------------------------------------------------------

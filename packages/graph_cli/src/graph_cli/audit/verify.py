@@ -13,8 +13,9 @@ does not cascade into findings for every later line:
 - ``hash_mismatch`` (content edited) is independent of the chain position;
   so are ``unknown_schema``, ``event_malformed`` and ``unknown_action``.
 
-``cross_check`` matches write intents with the tx log (ids, changeset hash
-and, when recorded, changeset size; B5.6, B5.12),
+``cross_check`` matches write and migration intents with the tx log (ids, changeset hash
+and, when recorded, changeset size; B5.6, B5.12), ``check_migrations`` judges the
+migration txs (kept identity, versions, digest, the pin that follows),
 ``check_maintenance`` judges maintenance intents by their effects and walks
 the pin, graph policy and skill and function catalog events against the
 manifest, the installed policy and the published slots, ``check_policy`` walks
@@ -33,10 +34,11 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Final
 
 from graph_cli.audit import finding_codes as codes
-from graph_cli.audit.events import changeset_size
+from graph_cli.audit.events import changeset_size, revisions_hash
 from graph_cli.audit.schema import (
     AUDIT_SCHEMA,
     CONFIGURE_ACTION,
@@ -46,7 +48,8 @@ from graph_cli.audit.schema import (
     RELEASE_ACTION,
     event_problems,
     graph_of_stream,
-    is_write_intent,
+    is_migration_intent,
+    is_tx_intent,
     unknown_actions,
 )
 from graph_cli.kernel.canonical import (
@@ -59,7 +62,8 @@ from graph_cli.kernel.canonical import (
     parse_json,
 )
 from graph_cli.kernel.findings import Finding
-from graph_cli.kernel.ids import GraphId
+from graph_cli.kernel.ids import EntityId, GraphId
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditLine, AuditStream, graph_stream
 from graph_cli.kernel.records import OntologyPin, TxRecord
 
@@ -115,7 +119,9 @@ class MaintEffects:
     (``effect_anchors``): a companion is appended only after its effect, so
     an anchored intent is committed (W.e). ``policy`` is the graph's installed
     policy; ``None`` skips the policy walk. ``slots`` are the published skill
-    and function catalog; ``None`` skips the slot walks.
+    and function catalog; ``None`` skips the slot walks. ``migration_marker`` is the
+    graph's migration marker (``None`` without one): a migration tx it names is in the
+    incomplete state, a warning instead of ``migration_unpinned`` (plan M3, M5).
     """
 
     manifest_pin: OntologyPin | None
@@ -123,6 +129,7 @@ class MaintEffects:
     anchored: frozenset[int] = frozenset()
     policy: InstalledPolicy | None = None
     slots: InstalledSlots | None = None
+    migration_marker: MigrationMarker | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,13 +228,16 @@ def verify_stream(
 def cross_check(
     graph_id: GraphId, events: Iterable[Mapping[str, JsonValue]], txs: Iterable[TxRecord]
 ) -> list[Finding]:
-    """Every tx has its ``ok`` write intent; every write intent has its tx or is benign.
+    """Every tx has its ``ok`` intent; every intent has its tx or is benign.
 
-    Each intent serves one tx. A retried request may repeat an event id; the
-    tx then takes the latest unused intent and the earlier one stays an orphan.
+    A write tx is served by a write intent, a migration tx (its changeset has a
+    ``migration`` key) by a migration intent (``maint.migrate`` with ``change.migration``);
+    an intent of the other kind with the tx's event id does not serve it. Each intent
+    serves one tx. A retried request may repeat an event id; the tx then takes the latest
+    unused intent and the earlier one stays an orphan.
     """
     stream = graph_stream(str(graph_id))
-    intents = [event for event in events if is_write_intent(event)]
+    intents = [event for event in events if is_tx_intent(event)]
     by_id: dict[JsonValue, list[int]] = {}
     for index, event in enumerate(intents):
         by_id.setdefault(event.get("event_id"), []).append(index)
@@ -235,23 +245,41 @@ def cross_check(
     findings = []
     for tx in txs:
         target: dict[str, JsonValue] = {"graph_id": str(graph_id), "tx_seq": tx.seq}
+        migration_tx = _is_migration_tx(tx)
+        kind = "migration" if migration_tx else "write"
         free = [i for i in by_id.get(str(tx.event_id), ()) if i not in used]
         if not free:
             findings.append(
-                _finding(codes.TX_WITHOUT_INTENT, target, f"no write intent {tx.event_id}")
+                _finding(codes.TX_WITHOUT_INTENT, target, f"no {kind} intent {tx.event_id}")
             )
             continue
-        used.add(free[-1])
-        event = intents[free[-1]]
+        fitting = [i for i in free if is_migration_intent(intents[i]) == migration_tx]
+        if not fitting:
+            other = "write" if migration_tx else "migration"
+            findings.append(
+                _finding(
+                    codes.TX_WITHOUT_INTENT,
+                    target,
+                    f"{other} intent {tx.event_id} differs in kind (the tx is a {kind} tx)",
+                    expected=kind,
+                    actual=other,
+                )
+            )
+            continue  # the intent serves no tx: it stays an orphan below
+        used.add(fitting[-1])
+        event = intents[fitting[-1]]
         change = event.get("change")
         if not isinstance(change, Mapping):
             change = {}  # a malformed intent: event_malformed already, and no match here
+        if migration_tx:
+            record = change.get("migration")
+            change = record if isinstance(record, Mapping) else {}
         expected: dict[str, JsonValue] = {
             "tx_id": str(tx.tx_id),
             "tx_seq": tx.seq,
             "changeset_hash": tx.changeset_hash,
         }
-        if "changeset_size" in change:  # intents before the size was recorded lack it
+        if migration_tx or "changeset_size" in change:  # old write intents lack the size
             expected["changeset_size"] = changeset_size(tx.changeset)
         recorded = {k: change.get(k) for k in expected}
         if recorded != expected:
@@ -260,20 +288,232 @@ def cross_check(
                 _finding(
                     codes.TX_WITHOUT_INTENT,
                     target,
-                    f"write intent {tx.event_id} differs in {', '.join(differing)}",
+                    f"{kind} intent {tx.event_id} differs in {', '.join(differing)}",
                     expected={k: expected[k] for k in differing},
                     actual={k: recorded[k] for k in differing},
                 )
             )
     for index, event in enumerate(intents):
         if index not in used:
+            what = (
+                "migration intent without a committed tx (an interrupted migration)"
+                if is_migration_intent(event)
+                else "write intent without a committed tx (an interrupted write)"
+            )
             findings.append(
                 _finding(
                     codes.INTENT_WITHOUT_EFFECT,
                     {"stream": stream, "seq": event.get("seq")},
-                    "write intent without a committed tx (an interrupted write)",
+                    what,
                 )
             )
+    return findings
+
+
+def _is_migration_tx(tx: TxRecord) -> bool:
+    return "migration" in tx.changeset
+
+
+MAX_LISTED_REVISIONS: Final = 20
+
+
+@dataclass(frozen=True, slots=True)
+class _Identity:
+    """What a migration may not change of an entity's previous revision."""
+
+    alias: str | None
+    record_status: str
+    created_at: datetime
+    valid_from: str | None
+    valid_to: str | None
+
+
+def check_migrations(
+    graph_id: GraphId,
+    events: Iterable[Mapping[str, JsonValue]],
+    txs: Iterable[TxRecord],
+    *,
+    marker: MigrationMarker | None = None,
+    check_pin: bool = True,
+) -> list[Finding]:
+    """Migration txs against their intents, their predecessors and the pin (plan M4, M5).
+
+    Walking the txs in order with the latest revision of every entity: a migration revision
+    keeps the previous revision's alias, record status, creation time and valid time
+    (``migration_changed_identity``; a revision without a previous one is the same finding).
+    Every revision's ``ontology_version``, the tx's pin and the changeset's ``migration.to``
+    are one version, and the intent's ``from`` and ``to`` are the changeset's
+    (``migration_version_mismatch``). The intent's ``revisions_hash`` and ``counts.entities``
+    are those of the tx (``migration_revisions_mismatch``). A migration is followed by an
+    ``ok`` pin intent to ``to`` in the stream; without one it is ``migration_incomplete``
+    (warning) when ``marker`` names the tx (the crash between commit and pin switch), else
+    ``migration_unpinned``. Judging the pin needs the marker, so ``check_pin=False`` skips it.
+    A tx without its intent is ``tx_without_intent`` already: only the checks that need no
+    intent run for it. Individual findings list at most ``MAX_LISTED_REVISIONS`` revisions.
+    """
+    ok = [e for e in events if _ok(e)]
+    intents: dict[JsonValue, Mapping[str, JsonValue]] = {}
+    for intent in ok:
+        if is_migration_intent(intent):
+            intents[intent.get("event_id")] = intent  # a retry's latest intent serves the tx
+    pins = _effects(ok, PIN_ACTION, "pin")
+    latest: dict[EntityId, _Identity] = {}
+    findings: list[Finding] = []
+    for tx in txs:
+        migrating = _is_migration_tx(tx)
+        target: dict[str, JsonValue] = {"graph_id": str(graph_id), "tx_seq": tx.seq}
+        offending: list[JsonValue] = []
+        total = 0
+        for revision in tx.revisions:
+            identity = _Identity(
+                revision.alias,
+                revision.record_status,
+                revision.created_at,
+                revision.valid_from,
+                revision.valid_to,
+            )
+            previous = latest.get(revision.id)
+            latest[revision.id] = identity
+            if not migrating:
+                continue
+            if previous is None:
+                fields = ["previous_revision"]
+            else:
+                fields = [
+                    name
+                    for name in _IDENTITY_FIELDS
+                    if getattr(previous, name) != getattr(identity, name)
+                ]
+            if fields:
+                total += 1
+                if len(offending) < MAX_LISTED_REVISIONS:
+                    offending.append(
+                        {"id": str(revision.id), "rev": revision.rev, "fields": fields}
+                    )
+        if not migrating:
+            continue
+        if total:
+            findings.append(
+                _finding(
+                    codes.MIGRATION_CHANGED_IDENTITY,
+                    target,
+                    f"{total} migrated revisions change what a migration keeps (alias, record "
+                    "status, created_at, valid time) or have no previous revision",
+                    actual=offending,
+                )
+            )
+        findings += _migration_checks(
+            tx, target, intents.get(str(tx.event_id)), pins, marker=marker, check_pin=check_pin
+        )
+    return findings
+
+
+def _pinned_after(
+    pins: Sequence[tuple[Mapping[str, JsonValue], Mapping[str, JsonValue]]],
+    seq: JsonValue,
+    version: str,
+) -> bool:
+    """Whether a pin intent to ``version`` follows the stream event ``seq``."""
+    if not isinstance(seq, int):
+        return False
+    for event, pin in pins:
+        later, new = event.get("seq"), pin.get("to")
+        if (
+            isinstance(later, int)
+            and later > seq
+            and isinstance(new, Mapping)
+            and new.get("version") == version
+        ):
+            return True
+    return False
+
+
+_IDENTITY_FIELDS: Final = ("alias", "record_status", "created_at", "valid_from", "valid_to")
+
+
+def _migration_checks(
+    tx: TxRecord,
+    target: Mapping[str, JsonValue],
+    event: Mapping[str, JsonValue] | None,
+    pins: Sequence[tuple[Mapping[str, JsonValue], Mapping[str, JsonValue]]],
+    *,
+    marker: MigrationMarker | None,
+    check_pin: bool,
+) -> list[Finding]:
+    """The version, digest and pin checks of one migration tx."""
+    findings: list[Finding] = []
+    record = tx.changeset.get("migration")
+    record = record if isinstance(record, Mapping) else {}
+    to = record.get("to")
+    intent_change = event.get("change") if event is not None else None
+    stated = intent_change.get("migration") if isinstance(intent_change, Mapping) else None
+    stated = stated if isinstance(stated, Mapping) else None
+
+    expected: dict[str, JsonValue] = {"to": to}
+    actual: dict[str, JsonValue] = {}
+    if tx.ontology.version != to:
+        actual["tx.ontology.version"] = tx.ontology.version
+    wrong = sorted({r.ontology_version for r in tx.revisions if r.ontology_version != to})
+    if wrong:
+        actual["revisions.ontology_version"] = list(wrong)
+    if stated is not None:
+        for key in ("from", "to"):
+            if stated.get(key) != record.get(key):
+                actual[f"intent.{key}"] = stated.get(key)
+                expected[f"intent.{key}"] = record.get(key)
+    if not isinstance(to, str) or actual:
+        findings.append(
+            _finding(
+                codes.MIGRATION_VERSION_MISMATCH,
+                target,
+                "the migration's target version differs between its changeset, tx pin, "
+                "revisions and intent",
+                expected=expected,
+                actual=actual or {"changeset.migration.to": to},
+            )
+        )
+    if stated is not None:
+        counts = stated.get("counts")
+        entities = counts.get("entities") if isinstance(counts, Mapping) else None
+        differs: dict[str, JsonValue] = {}
+        if stated.get("revisions_hash") != revisions_hash(tx.revisions):
+            differs["revisions_hash"] = stated.get("revisions_hash")
+        if entities != len(tx.revisions):
+            differs["counts.entities"] = entities
+        if differs:
+            findings.append(
+                _finding(
+                    codes.MIGRATION_REVISIONS_MISMATCH,
+                    target,
+                    "the migration intent's revisions digest or entity count differs from its tx",
+                    expected={
+                        "revisions_hash": revisions_hash(tx.revisions),
+                        "counts.entities": len(tx.revisions),
+                    },
+                    actual=differs,
+                )
+            )
+    if check_pin and event is not None and isinstance(to, str):
+        pinned = _pinned_after(pins, event.get("seq"), to)
+        if not pinned:
+            if marker is not None and marker.tx_id == tx.tx_id:
+                findings.append(
+                    _finding(
+                        codes.MIGRATION_INCOMPLETE,
+                        target,
+                        f"the migration to {to} is committed but not pinned (an interrupted "
+                        "release: run the release again to complete it)",
+                    )
+                )
+            else:
+                findings.append(
+                    _finding(
+                        codes.MIGRATION_UNPINNED,
+                        target,
+                        f"no pin intent to {to} follows the migration and no migration marker "
+                        "names it",
+                    )
+                )
     return findings
 
 
@@ -1019,7 +1259,15 @@ def verify_graph(
     report = verify_stream(lines, stream=graph_stream(str(graph_id)), ext_actions=ext_actions)
     extra = []
     if txs is not None:
-        extra += cross_check(graph_id, report.events, txs)
+        records = list(txs)
+        extra += cross_check(graph_id, report.events, records)
+        extra += check_migrations(
+            graph_id,
+            report.events,
+            records,
+            marker=effects.migration_marker if effects is not None else None,
+            check_pin=effects is not None,
+        )
     if effects is not None:
         extra += check_maintenance(graph_id, report.events, effects)
     return dataclasses.replace(report, findings=(*report.findings, *extra))

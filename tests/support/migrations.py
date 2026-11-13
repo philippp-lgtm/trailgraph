@@ -25,10 +25,12 @@ def allow_migrate(graph_id: GraphId) -> tuple[Decision, ...]:
     return (Decision("allow", Action("maint.migrate"), f"graph:{graph_id}", "test.allow", POLICY),)
 
 
-def migration_record(summary: str = "example migration") -> dict[str, JsonValue]:
+def migration_record(
+    summary: str = "example migration", *, from_version: str = "1.0.0", to_version: str = "2.0.0"
+) -> dict[str, JsonValue]:
     return {
-        "from": "1.0.0",
-        "to": "2.0.0",
+        "from": from_version,
+        "to": to_version,
         "migration_hash": hash_value({"summary": summary}),
         "summary": summary,
         "renames": {"classes": {}, "relations": {}, "attributes": []},

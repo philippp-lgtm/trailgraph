@@ -22,11 +22,12 @@ from graph_cli.audit.schema import (
     MAX_RESULT_FINDINGS,
     event_problems,
     is_ext_state_action,
+    is_migration_change,
 )
 from graph_cli.kernel.actions import Action, require_known_action
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthorizedTx, Decision
-from graph_cli.kernel.canonical import JsonValue, canonical_bytes
+from graph_cli.kernel.canonical import JsonValue, canonical_bytes, hash_value
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, sort_findings
@@ -38,7 +39,7 @@ from graph_cli.kernel.ports.audit import (
     graph_stream,
 )
 from graph_cli.kernel.ports.catalog import GraphEntry
-from graph_cli.kernel.records import BlobInfo, EnvInfo, OntologyPin, RequestMeta
+from graph_cli.kernel.records import BlobInfo, EnvInfo, OntologyPin, RequestMeta, Revision
 
 RefusalStatus = Literal["denied", "invalid", "conflict", "error"]
 
@@ -54,6 +55,23 @@ class Anchorable(Protocol):
 
     @property
     def hash(self) -> str: ...
+
+
+class TxIdentity(Protocol):
+    """The fields of a tx an intent names: an ``AuthorizedTx`` before its commit or the
+    ``TxRecord`` after it."""
+
+    @property
+    def tx_id(self) -> UUID: ...
+
+    @property
+    def seq(self) -> int: ...
+
+    @property
+    def changeset(self) -> Mapping[str, JsonValue]: ...
+
+    @property
+    def changeset_hash(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,24 +309,79 @@ def graph_genesis(
     return _checked(body)
 
 
-def release_change(version: str, artifact_hash: str, release_id: UUID) -> dict[str, JsonValue]:
-    """``change`` of a ``maint.ontology_release`` intent: the release it installs."""
-    return {
+def release_change(
+    version: str, artifact_hash: str, release_id: UUID, migration_hash: str | None = None
+) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.ontology_release`` intent: the release it installs.
+
+    ``migration_hash`` (the hash of the release's migration file) is a sibling of
+    ``release`` at the top of ``change`` and present only when the release has a migration:
+    the key set of ``release`` itself is fixed for older verifiers."""
+    change: dict[str, JsonValue] = {
         "release": {
             "version": version,
             "artifact_hash": artifact_hash,
             "release_id": format_id(release_id),
         }
     }
+    if migration_hash is not None:
+        change["migration_hash"] = migration_hash
+    return change
 
 
-def pin_change(old: OntologyPin, new: OntologyPin) -> dict[str, JsonValue]:
+def pin_change(
+    old: OntologyPin, new: OntologyPin, alias_prefixes: Mapping[str, JsonValue] | None = None
+) -> dict[str, JsonValue]:
     """``change`` of a ``maint.ontology_pin`` intent: the manifest pin before and after.
 
     ``from`` is read under the graph lock, so consecutive pin intents chain
-    (``audit.verify`` walks them against the manifest, B5.12).
+    (``audit.verify`` walks them against the manifest, B5.12). ``alias_prefixes``
+    (``{added: {curie: prefix}, moved: {curie: {from, prefix}}}``) is a sibling of ``pin``
+    at the top of ``change`` and present only when given: the key set of ``pin`` itself is
+    fixed for older verifiers.
     """
-    return {"pin": {"from": old.to_json(), "to": new.to_json()}}
+    change: dict[str, JsonValue] = {"pin": {"from": old.to_json(), "to": new.to_json()}}
+    if alias_prefixes is not None:
+        change["alias_prefixes"] = dict(alias_prefixes)
+    return change
+
+
+def revisions_hash(revisions: Iterable[Revision]) -> str:
+    """The digest of a migration's result: the hash of ``[id, rev, content_hash]`` per
+    revision, sorted by id. Constant size, so the intent needs no per-entity list; the
+    verifier recomputes it from the tx."""
+    entries: list[JsonValue] = [
+        [str(r.id), r.rev, r.content_hash]
+        for r in sorted(revisions, key=lambda r: (str(r.id), r.rev))
+    ]
+    return hash_value(entries)
+
+
+def migration_change(
+    tx: TxIdentity, *, revisions_hash: str, counts: Mapping[str, int]
+) -> dict[str, JsonValue]:
+    """``change`` of the ``maint.migrate`` intent of a migration tx, built from the
+    ``AuthorizedTx`` before it commits (or its ``TxRecord``): the tx, and the versions and the
+    migration file from its changeset, ``revisions_hash`` (see ``revisions_hash``) and
+    ``counts`` ``{entities, edges}`` (revisions written, edges changed). The intent's
+    ``event_id`` is the tx's."""
+    record = tx.changeset.get("migration")
+    if not isinstance(record, Mapping):
+        raise _internal("the changeset of a migration tx has no migration record")
+    migration: dict[str, JsonValue] = {
+        "tx_id": str(tx.tx_id),
+        "tx_seq": tx.seq,
+        "changeset_hash": tx.changeset_hash,
+        "changeset_size": changeset_size(tx.changeset),
+        "from": record.get("from"),
+        "to": record.get("to"),
+        "migration_hash": record.get("migration_hash"),
+        "revisions_hash": revisions_hash,
+        "counts": {"entities": counts.get("entities"), "edges": counts.get("edges")},
+    }
+    if not is_migration_change(migration):
+        raise _internal("the migration record does not fit change.migration")
+    return {"migration": migration}
 
 
 def skill_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:
