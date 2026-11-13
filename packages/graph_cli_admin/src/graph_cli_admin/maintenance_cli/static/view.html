@@ -1922,7 +1922,17 @@ function shortHash(hash) {
 function accessLevel(caller) {
   const box = frag(code(caller.level));
   if (caller.withheld.length) box.append(" ", el("span", "small", "withheld: "), frag(...caller.withheld.flatMap((a, i) => i ? [", ", code(a)] : [code(a)])));
+  if (caller.reads) box.append(readsText(caller.reads));
   if (caller.writes) box.append(writesText(caller.writes));
+  return box;
+}
+
+// The types a caller sees when a read limit leaves it some of them only.
+function readsText(reads) {
+  const box = el("span", "small", "reads:");
+  box.append(el("br"));
+  if (!reads.length) box.append("no type");
+  reads.forEach((type, index) => box.append(...(index ? [", "] : []), code(type)));
   return box;
 }
 

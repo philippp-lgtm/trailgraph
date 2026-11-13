@@ -157,9 +157,11 @@ EXPLAIN_OUTPUT: Final = obj(
         "decisions": array(_DECISION),
     },
     {
-        # with --attribute or --relation: the decision on the type for the same action;
-        # without --action, for a caller a write allow list applies to: what it may write
+        # with --attribute or --relation: the decision on the type for the same action
         "type_decision": _DECISION,
+        # without --action: for a caller a read limit leaves some types, the types it sees; for
+        # a caller a write allow list applies to, what it may write (over the types it sees)
+        "reads": STRINGS,
         "writes": obj(extra=obj(extra={"anyOf": [{"const": True}, array(STRING)]})),
     },
 )
@@ -326,9 +328,11 @@ SPECS: Final = (
         errors=(*SOURCE_ERRORS, "admin.token_not_found"),
         handler=explain,
         output=EXPLAIN_OUTPUT,
-        description="Records nothing. Without --action, the answer gains `writes` for a caller"
-        " whose write allow list applies: per type the verbs it may write and, for create,"
-        " update, link, unlink and transition, `true` or the allowed attributes or relations.",
+        description="Records nothing. Without --action, the answer gains `reads` for a caller who"
+        " sees only some types of a read-limited graph (the types it sees) and `writes` for a"
+        " caller whose write allow list applies, over the types it sees: per type the verbs it may"
+        " write and, for create, update, link, unlink and transition, `true` or the allowed"
+        " attributes or relations.",
         remote="hooked",
     ),
 )

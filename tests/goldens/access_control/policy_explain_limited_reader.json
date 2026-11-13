@@ -1,0 +1,22 @@
+{
+  "level": "read",
+  "reads": [
+    "nas:Note",
+    "nas:Scan",
+    "nas:WebPage",
+    "provenance:Claim"
+  ],
+  "withheld": [],
+  "writes": {
+    "nas:Note": {
+      "create": [
+        "body",
+        "kind",
+        "title"
+      ],
+      "link": [
+        "nas:cites"
+      ]
+    }
+  }
+}

@@ -12,7 +12,7 @@ of ``authorize()`` calls.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Final
 
 from graph_cli.access_control.authorize import allow_rule_holds, authorize
@@ -235,6 +235,19 @@ def read_allowance(
     every type; see ``visibility``)."""
     visible = visibility(actor, graph, policy, concrete_types)
     return None if visible is None else sorted(visible)
+
+
+def visible_limits(limits: Mapping[str, JsonValue], classes: Iterable[str]) -> dict[str, JsonValue]:
+    """The type limits of ``type_limits`` that name a type of ``classes`` (the classes a caller
+    sees, abstract ones included), for a caller who sees only some types: a limit on a hidden
+    type, or on a prefix none of whose types is seen, is left out, so no hidden type is named.
+    A key is a CURIE or ``prefix:*`` (a glob by prefix, as in a rule)."""
+    names = tuple(classes)
+    return {
+        key: value
+        for key, value in limits.items()
+        if any(name.startswith(key[:-1]) if key.endswith("*") else name == key for name in names)
+    }
 
 
 def _verb_terms(verb: str, known: TypeTerms | None) -> tuple[str, list[str]] | None:

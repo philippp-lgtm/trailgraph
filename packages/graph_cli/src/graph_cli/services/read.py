@@ -39,6 +39,7 @@ from graph_cli.access_control.effective import (
     graph_level,
     scope_of,
     type_limits,
+    visible_limits,
     withheld_actions,
     write_allowance,
     write_grant_types,
@@ -1367,15 +1368,25 @@ class ReadService:
                 continue
             layered = self._policy.current(entry.id)
             level = graph_level(actor, entry.id, layered)
+            limits = type_limits(layered)
             item: dict[str, JsonValue] = {
                 "graph": entry.name,
                 "level": level,
                 "withheld": withheld_actions(actor, entry.id, layered),
-                "types": type_limits(layered),
+                "types": limits,
                 "obligations": write_obligations(actor, entry.id, layered),
             }
-            # The model is read only for a caller a write allow list names types for
-            terms = self._term_model(entry) if write_grant_types(actor, entry.id, layered) else None
+            visible = self._seen_types(actor, entry)
+            if visible is None:
+                # The model is read only for a caller a write allow list names types for
+                granted = write_grant_types(actor, entry.id, layered)
+                terms = self._term_model(entry) if granted else None
+            else:
+                # A caller who sees some types only gets everything over the types it sees:
+                # no hidden type, relation or attribute is named (V8)
+                terms = self._visible_terms(entry, visible)
+                item["reads"] = sorted(visible)
+                item["types"] = visible_limits(limits, terms.types)
             writes = write_allowance(actor, entry.id, layered, terms, level=level)
             if writes is not None:
                 item["writes"] = writes
@@ -1391,6 +1402,22 @@ class ReadService:
                 "graphs": graphs,
             },
         }
+
+    def _seen_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
+        """The types ``actor`` sees in the graph (``None``: all), for ``whoami``. A graph whose
+        model cannot be read is shown as seen by nobody: fail closed, ``whoami`` still answers."""
+        try:
+            return self._visible_set(actor, entry)
+        except GraphCliError:
+            return frozenset()
+
+    def _visible_terms(self, entry: GraphEntry, visible: frozenset[str]) -> TermModel:
+        """The terms of the model view for ``visible``; none when the model cannot be read."""
+        try:
+            model, _ = self._models.load_for_read(entry)
+        except GraphCliError:
+            return TermModel({})
+        return term_model(self._visibility.model(entry, model, visible))
 
     def _term_model(self, entry: GraphEntry) -> TermModel | None:
         """The graph's pinned model condensed to what term rules need, cached per pin;

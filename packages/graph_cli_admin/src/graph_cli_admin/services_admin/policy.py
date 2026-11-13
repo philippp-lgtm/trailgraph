@@ -57,6 +57,7 @@ from graph_cli.access_control.documents import (
     RESOURCE_RE,
     declared_roles,
     glob,
+    read_limited,
     rules,
     strings,
 )
@@ -64,6 +65,7 @@ from graph_cli.access_control.effective import (
     graph_level,
     maintains,
     project_warning,
+    read_allowance,
     scope_of,
     withheld_actions,
     write_allowance,
@@ -104,7 +106,14 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.services.term_model import FILE_ADD_ATTRIBUTES, extended_types, term_model
+from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.term_model import (
+    FILE_ADD_ATTRIBUTES,
+    concrete_types,
+    extended_types,
+    term_model,
+)
+from graph_cli.services.visibility import filter_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
@@ -418,27 +427,39 @@ def explain(
     if type_decision is not None:
         data["type_decision"] = _decision_json(type_decision)
     if action is None:
-        writes = _writes(ctx, entry, caller, policy, data["level"])
-        if writes is not None:
-            data["writes"] = writes
+        data.update(_allowances(ctx, entry, caller, policy, data["level"]))
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
 
 
-def _writes(
+def _allowances(
     ctx: AdminContext,
     entry: GraphEntry,
     caller: ActorContext,
     policy: PolicySet,
     level: JsonValue,
-) -> dict[str, JsonValue] | None:
-    """What ``whoami`` shows of the caller's write allow list: over the graph's pinned model
-    (types only when it cannot be read), read only for a caller a list names types for."""
-    if not write_grant_types(caller, entry.id, policy):
-        return None
-    terms: TermModel | None = None
+) -> dict[str, JsonValue]:
+    """What ``whoami`` shows of what the caller may read and write, as extra keys: ``reads``
+    (the types it sees, when it sees only some) and ``writes`` (its write allow list, over the
+    types it sees). The graph's pinned model is read only for a caller a read limit or a write
+    allow list applies to; when it cannot be read, ``writes`` is decided on the types alone
+    and there is no ``reads``."""
+    limited = read_limited(policy.documents, entry.id)
+    if not limited and not write_grant_types(caller, entry.id, policy):
+        return {}
+    model: CompiledModel | None = None
     with contextlib.suppress(GraphCliError):
-        terms = term_model(pinned_model(ctx.catalog, entry))
-    return write_allowance(caller, entry.id, policy, terms, level=str(level))
+        model = pinned_model(ctx.catalog, entry)
+    found: dict[str, JsonValue] = {}
+    terms = None if model is None else term_model(model)
+    if limited and model is not None:
+        visible = read_allowance(caller, entry.id, policy, concrete_types(model.classes))
+        if visible is not None:
+            found["reads"] = list(visible)
+            terms = term_model(filter_model(model, frozenset(visible)))
+    writes = write_allowance(caller, entry.id, policy, terms, level=str(level))
+    if writes is not None:
+        found["writes"] = writes
+    return found
 
 
 def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
@@ -864,9 +885,7 @@ def _access(
         "withheld": withheld_actions(caller, entry.id, policy),
         "maintains": maintains(caller, entry.id, policy),
     }
-    writes = _writes(ctx, entry, caller, policy, access["level"])
-    if writes is not None:
-        access["writes"] = writes
+    access.update(_allowances(ctx, entry, caller, policy, access["level"]))
     return access
 
 

@@ -561,5 +561,69 @@ def test_the_policies_show_the_write_grants_and_what_each_caller_may_write(
     assert "writes" not in access["plain", None]  # no list: the answer is as before
 
 
+READS_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  reporting: {description: "Reporting"}
+  auditor: {description: "Auditors"}
+grants:
+  - entrypoint: server
+    principal: {role: reporting}
+    graphs: [GRAPH]
+    level: read
+    reads: [nas:Note, nas:WebPage]
+  - entrypoint: server
+    principal: {role: auditor}
+    graphs: [GRAPH]
+    level: read
+  - entrypoint: app
+    graphs: [GRAPH]
+    level: read
+no_project: {"*": write}
+"""
+READS_GRAPH_POLICY = """\
+schema: graph_cli.policy/1
+id: graph
+types:
+  nas:WebPage: none
+"""
+
+
+def test_the_policies_show_the_types_each_caller_sees(tmp_path: Path) -> None:
+    env = ServiceEnv("files", "notes_and_sources", tmp_path / "root")
+    ctx = admin_context(env.root)
+    authored = tmp_path / "installation.yaml"
+    authored.write_text(READS_POLICY.replace("GRAPH", env.name))
+    policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+    installed = dataclasses.replace(ctx, policy=FilePolicySource(env.root))  # sees the roles
+    for name, roles in (("narrow", ["reporting"]), ("wide", ["reporting", "auditor"])):
+        tokens.create(installed, name=name, project=None, expires=None, reason=None, roles=roles)
+    rules = {r["id"]: r for r in policies_json(ctx, source_of_env(env))["layers"][0]["rules"]}  # type: ignore[index]
+    # the compiled read rules are grants, as the write ones are
+    assert rules["grant.1.reads"]["kind"] == "grant"
+    assert rules["grant.1.reads"]["action"] == ["read.get"]
+
+    def callers() -> dict[str | None, dict[str, JsonValue]]:
+        data = policies_json(ctx, source_of_env(env))
+        return {c.get("token"): c for c in data["callers"]}  # type: ignore[union-attr, index, misc]
+
+    access = callers()
+    assert access["narrow"]["reads"] == ["nas:Note", "nas:WebPage"]
+    assert "reads" not in access["wide"] and "reads" not in access[None]
+    # a graph layer that takes a type away limits every caller, and the limit of it is a type limit
+    graph_policy = tmp_path / "graph.yaml"
+    graph_policy.write_text(READS_GRAPH_POLICY)
+    policy.apply(ctx, file=graph_policy, graph_ref=env.name, reason="test")
+    access = callers()
+    assert access["narrow"]["reads"] == ["nas:Note"]
+    assert "nas:WebPage" not in access["wide"]["reads"]  # type: ignore[operator]
+    assert "nas:Note" in access["wide"]["reads"]  # type: ignore[operator]
+    assert access[None]["reads"] == access["wide"]["reads"]
+    data = policies_json(ctx, source_of_env(env))
+    own = data["layers"][1]["rules"]  # type: ignore[index]
+    assert {r["id"]: r["kind"] for r in own}["type.nas:WebPage"] == "type_limit"  # type: ignore[index]
+
+
 def source_of_env(env: ServiceEnv) -> view.ViewSource:
     return open_view(admin_context(env.root), graph_ref=env.name)

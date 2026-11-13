@@ -20,6 +20,7 @@ from graph_cli.access_control.documents import document_problems, read_limited
 from graph_cli.access_control.effective import (
     read_allowance,
     visibility,
+    visible_limits,
     write_grant_types,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
@@ -684,3 +685,24 @@ def test_named_read_types_are_the_exact_types_of_reads_grants_and_read_denies() 
     )
     assert named_read_types([installation, layer], OTHER) == ()
     assert named_read_types(BUILTIN_POLICY_SET.documents, EXAMPLE) == ()
+
+
+# ---- visible_limits (V8) -------------------------------------------------------------------
+
+
+def test_visible_limits_keep_only_the_limits_that_name_a_visible_class() -> None:
+    limits: dict[str, JsonValue] = {
+        "nas:Note": "read",
+        "nas:Topic": "none",
+        "files:*": "write",
+        "provenance:*": "read",
+        "nas:Gone": "read",
+    }
+    seen = ["nas:Note", "nas:Source", "provenance:Claim"]
+    assert visible_limits(limits, seen) == {"nas:Note": "read", "provenance:*": "read"}
+    assert visible_limits(limits, []) == {}
+    assert visible_limits(limits, ["files:File", "nas:Topic"]) == {
+        "nas:Topic": "none",
+        "files:*": "write",
+    }
+    assert visible_limits({}, seen) == {}
