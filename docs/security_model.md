@@ -80,8 +80,21 @@ prevents depends on what is verified:
   resources, and `audit verify` checks their policy hash as for any decision. A
   `writes` grant cannot exceed what scopes and deny rules allow, because they
   narrow it and an explicit deny wins. Reading is not limited by it: whoever
-  may write a type may still read all of the graph, and what a writer cannot
-  see is no topic until read limits exist (a later stage).
+  may write a type may still read what the read rules leave, which is all of the
+  graph unless it has read limits (next item).
+- Read limits ([Read limits](access_control.md#read-limits)) hide whole types
+  from a subject: for it the graph reads as if their entities, relations and
+  names did not exist ([What a caller can
+  see](access_control.md#what-a-caller-can-see)). They hold like any rule: only
+  through server tokens, where the caller cannot edit the policy or the data;
+  locally they are a guardrail that stops well-behaved agents and mistakes,
+  and an agent with a shell can read the files. They narrow inside a graph the
+  caller may see; whether a graph is visible at all (`graph.not_found`) is
+  unchanged. The maintainers, the `graph-admin` commands, project admin tokens
+  and the [live view](live_view.md) are not limited: they read everything
+  because they maintain the graph, so their findings, usage report and
+  views show hidden data. What a limit still shows is listed under [Type read
+  limits](#type-read-limits).
 - Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
   secrets too, but narrow ones: one use, at most 24 hours, always bound to
   a project, so a code never yields an unbound token (a maintainer's). Who
@@ -125,6 +138,53 @@ Claude Code settings:
 
 plus `Edit`/`Write` denies for the data root. Such settings are not
 installed by `graph`.
+
+## Type read limits
+
+A limited caller is answered as if the hidden types did not exist
+([What a caller can see](access_control.md#what-a-caller-can-see)). The
+protection is complete for data: no entity, id, alias, label, value, edge,
+count or term of a hidden type reaches it through a read command, a file
+download, a function, an action, the generated skill or `whoami`. What is left
+tells that something exists or that something happened, never what it is. These
+are accepted and known:
+
+- **Integrity refusals tell that something hidden exists.** Validation judges the
+  whole graph, because judging the filtered state would let a caller write
+  data that breaks the graph. A write can therefore be refused because of what
+  the caller cannot see: a unique value, an alias or the exact bytes of a file
+  held by a hidden entity, a retract blocked by a hidden referrer, a cycle
+  through hidden entities, a cardinality that hidden edges have reached, a rule
+  that counts a relation reaching a hidden type. The refusal keeps its code and
+  severity and says "conflicts with data you cannot see"; it never names the
+  entity, type, relation or value, and `file add` of bytes a hidden file holds is
+  a concealed `unique_violation` on the content, never `file.already_present`
+  with the holder. This is the covert channel of row-level security in
+  databases (PostgreSQL documents the same for unique constraints). A caller
+  can probe for the existence of a value by trying to write it; it learns
+  nothing else.
+- **A required relation with a hidden range blocks creates.** When a type must
+  have an edge to a type the caller cannot see (a cardinality minimum on a
+  relation whose range is hidden), every create of that type is refused for the
+  caller, because it cannot give a target. Hide such types together, or give
+  the caller a role that sees the range.
+- **Activity shows, data does not.** The envelope's `seq` counts every
+  transaction of the graph, hidden ones included. A revision whose only change
+  was an edge to a hidden entity appears in `history` with an empty `changed`.
+  The `reason` of a revision is the writer's text and shown as written, and so
+  is the `action` name of a history item, even when the action is hidden from
+  the caller. The `superseded_by` of an entity that a
+  hidden entity superseded is empty. Timing differences are not hidden either.
+- **Prose is not filtered.** The summary and description of an ontology term
+  that stays visible, the text of a curated graph skill and the `reason` of
+  a change are text the maintainers and writers wrote, shown as they wrote
+  them. If that text names a hidden type, the caller reads the name. Write
+  ontology prose and curated skill text so that it holds for every reader
+  ([Skills](skills.md#blocks)); the generated blocks are rendered per reader
+  and name nothing hidden.
+- **What it does not cover.** Single attributes and rows of a visible type are
+  visible to whoever sees the type; read limits stop at whole types. A type
+  cannot be write-only: a caller writes only types it sees.
 
 ## Data in backups and audit events
 

@@ -55,6 +55,16 @@ records the decisions on types alone, so its events are unchanged. The shape che
 resource string, and the policy hash of these decisions is verified like that of any other
 ([Policy verification](#policy-verification)).
 
+For a graph with [read limits](access_control.md#read-limits) a write also decides
+`read.get` on the type of every operation (the visibility of the type, see [What a caller
+can see](access_control.md#what-a-caller-can-see)) and records it next to the write decision;
+other graphs record none, so their events are unchanged. A write of a hidden type is refused
+as for a type that does not exist, and the event is a `denied` event in the installation
+stream with the decisions that hid the type, even when the caller was answered with the
+validation error `data.structural.unknown_type`: the caller is told nothing about the type,
+the audit says why. A refusal as `write.invalid` (an `invalid` event) records the findings
+the caller was shown, so a finding about hidden data is recorded concealed as well.
+
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
 covers), and every file the write stored is listed as `{hash, size}`.

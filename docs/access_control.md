@@ -60,15 +60,17 @@ project comes from the pointer and is only asserted, so a local
   scope may also say `maintain` for a named graph: `write` for the
   project's callers, plus maintenance by the project's admin tokens.
 - A **graph policy** narrows inside one graph for everyone: types that are
-  read-only, obligations (`require_reason`, `max_batch`) and deny rules.
-  `max_batch` bounds the operations of one change set, that is one
+  read-only or hidden, obligations (`require_reason`, `max_batch`) and deny
+  rules. `max_batch` bounds the operations of one change set, that is one
   transaction, not the total: a larger batch is split into several
   documents, each committed on its own.
-  Types are checked for writes only, so type limits, deny rules on types and
-  obligations name write actions. A type limit matches the exact type, so it
-  must name concrete types (or `prefix:*`); an abstract type or one with
-  subclasses is refused. A deny rule may also name single attributes or
-  relations of a type ([Write allow lists](#write-allow-lists)).
+  Type limits and obligations name write actions, and so do deny rules on
+  attributes and relations. A deny rule on a type may also name `read.get`,
+  which is whether the type is visible ([Read limits](#read-limits)). A type
+  limit matches the exact type, so it must name concrete types (or
+  `prefix:*`); an abstract type or one with subclasses is refused. A deny rule
+  may also name single attributes or relations of a type
+  ([Write allow lists](#write-allow-lists)).
 - Deny rules may name the agent type, agent, session, device, project or
   role; grants only the verified principal, a verified project and a role.
   An explicit deny wins, the default is deny.
@@ -95,7 +97,8 @@ project comes from the pointer and is only asserted, so a local
   without roles compiles to the same document and hash as before roles existed.
 - A grant with `level: read` may carry **`writes`**, an allow list of exactly
   what its subject may write, down to attributes and relations
-  ([Write allow lists](#write-allow-lists)).
+  ([Write allow lists](#write-allow-lists)), and **`reads`**, an allow list of
+  the types its subject sees ([Read limits](#read-limits)).
 
 ```yaml
 schema: graph_cli.policy/1
@@ -242,6 +245,96 @@ not silently take writes away. It also warns `admin.policy_unknown_type` when a
 type named in a `writes` grant becomes abstract or gains subclasses: the exact
 rule then misses their entities, so grant the subclasses too.
 
+### Read limits
+
+A grant reads a whole graph: every entity of every type. To let a subject see
+only some types, give its grant `reads`, or hide a type in the graph policy. For
+a caller the graph then reads as if the other types, and their entities, did not
+exist ([What a caller can see](#what-a-caller-can-see)).
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+roles:
+  reporting: {description: "Reporting apps: findings and sources of example_graph"}
+  auditor: {description: "Auditors: every type of example_graph"}
+grants:
+  - entrypoint: server
+    principal: {role: reporting}
+    graphs: [example_graph]
+    level: read
+    reads: [ex:Finding, ex:Source]
+  - {entrypoint: server, principal: {role: auditor}, graphs: [example_graph], level: read}
+scopes:
+  example_project: {example_graph: read}
+no_project: {"*": none}
+```
+
+A token with the role `reporting` reads `ex:Finding` and `ex:Source` entities
+and nothing else; a token with `auditor` reads everything; a token with both
+sees everything, because rights add up.
+
+- **`reads` on a grant.** A list of concrete type CURIEs, or `prefix:*` for
+  every type of a module. The grant still reads the graph as a whole (every
+  read command is decided as before) and sees the listed types. It needs
+  `level: read` (`level: write` reads every type, so the combination is
+  `policy.invalid`), graphs named one by one (`"*"` is refused) and a non-empty
+  list. A type that is abstract or has subclasses is `policy.invalid` once the
+  graph's model shows it, as for `writes`, because the rule matches the exact
+  type: such a type cannot be listed, name its concrete subtypes. A type the
+  graph does not have only warns (`admin.policy_unknown_type`). A grant with
+  `reads` and `writes` must list every `writes` type in `reads`: a grant cannot
+  write a type it hides.
+- **Rights add up.** The types a subject sees are those of every grant that
+  names it. A subject with an unlimited grant (or `level: write`) sees every
+  type, so a role with `reads` narrows only subjects that hold no broader
+  grant. Scopes and deny rules narrow the result, and an explicit deny wins.
+- **New types stay hidden.** An ontology release that adds a type changes
+  nothing for a subject with `reads`: the new type is not in its list. A
+  subject without a limit sees the new type at once.
+- **Hide a type for everyone.** In the graph policy, `types: {ex:Person: none}`
+  hides the type from every caller of `graph` and of the server API, for reads
+  and writes. Maintenance is not hit: the `graph-admin` commands, project admin
+  tokens and the [live view](live_view.md) read everything, because they
+  maintain the graph.
+- **Hide a type for some subjects.** A deny rule of the graph policy with
+  `type` may name `read.get` (alone or with write actions) and the usual
+  subject keys:
+
+  ```yaml
+  schema: graph_cli.policy/1
+  id: graph
+  deny:
+    - {id: hide_people, role: [reporting], action: ["read.get"], type: ["ex:Person"]}
+  ```
+
+  Concrete types only, as for type limits. A deny rule that names a type with
+  `read.get` hides it from the subjects it matches, whatever their grants say.
+- **Visibility is one decision per type.** A type is visible to a caller when
+  `read.get` on `graph:<id>/type:<curie>` is allowed to it: the decision that
+  already decides the content of a stored file. No rule may name another read
+  action on a type (`policy.invalid`); the rules on attributes and relations
+  stay write-only.
+- **A deny of `read.get` on a whole graph.** A rule that denies `read.get` on
+  the graph (no `type`) matches every type of it as well. It only withheld the
+  `get` command so far; once some rule decides the visibility of a type in the
+  graph, it hides every type from the subjects it names. Check such rules
+  before adding a read limit to the graph.
+- **Compiled rules.** A grant with `reads` keeps its read rule as
+  `grant.<n>` but on the graph itself instead of the glob `graph:<id>*`, which
+  would cover every type, and gains `grant.<n>.reads`: `read.get` on each type
+  resource. `none` compiles to the deny rule `type.<curie>` with `read.get` and
+  `write.*` for the entrypoints `app` and `server`. A graph without any such
+  rule is not read-limited: nothing is filtered, and its answers, events and
+  hashes are what they were. The compiled document never depends on a model.
+- **Warnings.** `policy check`, `diff`, `apply` and `explain --file` warn
+  `admin.policy_unknown_type` for a type in `reads`, `none` or a `read.get`
+  deny rule that the graph does not have, and `ontology release` warns when the
+  new version drops a named type, when a type in `reads` becomes abstract or
+  gains subclasses (the subclass stays hidden: grant it too) and when a type
+  hidden by a deny rule gains subclasses (the deny names the exact type, so the
+  subclass is visible: deny it too).
+
 ## Roles
 
 Roles make two apps of one project differ, and one set of rights apply across
@@ -386,7 +479,9 @@ type allow it. Callers with level `write`, or without a list, get no `writes`
 key, so their answers stay as they were; a term deny on such a caller is not
 shown by `whoami` (`policy explain` shows it, and the refusal names the term).
 `obligations` also covers the allowed types, so a limited writer sees its
-`require_reason` and `max_batch`.
+`require_reason` and `max_batch`. For a caller with [read limits](#read-limits)
+`writes` lists only the visible types and the terms that exist for it
+([Inspecting what a caller sees](#inspecting-what-a-caller-sees)).
 
 `graph-admin policy explain` answers the same for roles, tokens and projects:
 without `--action` the answer gains `writes`, and `--attribute A` or
@@ -395,6 +490,111 @@ reports `type_decision`, the decision on the type, next to it
 ([`graph-admin`](cli_graph_admin.md)). The [live view](live_view.md) lists the
 rules `grant.<n>.<verb>` with their resources and shows `writes` next to the
 level of a caller.
+
+## What a caller can see
+
+A caller whose reads are limited to some types ([Read limits](#read-limits))
+sees the graph as if the other types did not exist: no entity of them, no edge
+into them, no name, count or term. Anything it asks about a hidden entity, type
+or relation is answered as about one that does not exist, with the same code,
+message and details, so the answer cannot tell "hidden" from "not there". A
+caller that sees every type, and every graph without read rules, is answered
+exactly as before. The graph itself stays as visible as the grant makes it
+(`graph.not_found` is unchanged); a limit narrows inside a visible graph.
+
+- **Entities.** `get`, `find`, `lookup`, `search`, `neighbors`, `query` and
+  `run` return entities of visible types only, and totals count what is left. A
+  hidden entity is `entity.not_found` in every form of reference: id, alias and
+  the end of an id (a suffix that matches only hidden ids is unknown, and the
+  candidates an ambiguous suffix lists are visible ones). A filter with a hidden
+  id (`find --rel <relation>=<id>`) is an empty page, as with an id that is not
+  there.
+- **Edges.** An entity is shown without its edges into hidden entities, and
+  `get --full` shows a content hash computed over what is shown, so nothing
+  marks an entity as having hidden edges. Edges from hidden entities are not
+  incoming edges, a relation filter or an `exists` test counts an edge to a
+  hidden entity as absent, and `neighbors` never walks onto or through a hidden
+  entity, at any depth.
+- **Cypher.** A label or relationship type of a hidden type is an unknown
+  term (`term.unknown`, with suggestions from what the caller sees). Matches,
+  counts, paths and variable-length patterns run over the visible entities, and
+  a returned node has no hidden edges.
+- **Time.** Visibility is decided under the policy installed now and the
+  ontology pinned now, also for `--as-of`, `get --rev` and `history` (like every
+  read, [History](#history)). An entity is visible in a past state when its type
+  there is visible, and the history of a hidden entity is
+  `entity.not_found`.
+- **The model.** `describe types|type|fields|relations|lifecycle|modules|
+  module|schema|search` show a model without the hidden types and what only they
+  carry: a relation whose domain or range has no visible type, attributes
+  declared only on hidden types, an abstract type with no visible subtype, enum
+  values, lifecycles and modules nothing visible uses. Where a relation or an
+  abstract type names several types, only the visible ones are listed. A hidden
+  type, relation or field is unknown, and the suggestions of `term.unknown`,
+  the fit hints of `lookup --for` and the relations and transitions of
+  `get --affordances` come from what the caller sees. The descriptive text of a term that
+  stays (its summary and description) is the maintainer's prose and shown as
+  written ([Security model](security_model.md#type-read-limits)).
+- **Files.** A hidden stored file is `entity.not_found` for `file path`,
+  `file check` and the download route, before any message that would name its
+  type. A caller that sees none of the file types is answered as for a graph
+  without the files module.
+- **Writes need visibility.** A caller writes only types it sees, and a
+  reference to an entity it cannot see is `entity.not_found`. An edge to a
+  hidden entity given by its id is a missing target (`target_missing`), not a
+  range violation that would name its type. A create of a hidden type is
+  answered as a create of a type the graph does not have: `access.denied` with
+  `default.deny` for a caller whose write rights come from `writes` grants only,
+  else `write.invalid` with `data.structural.unknown_type` (its `expected` list
+  holds visible types). The refusal is audited with the real decisions,
+  including the deny of `read.get` on the type ([Audit](audit.md)). An update
+  keeps the entity's edges to hidden entities, an `unlink` never matches such an
+  edge, and `graph do` with `unlink ... all: true` removes visible edges only,
+  because the caller cannot touch what it cannot see. The entities a write
+  reports are the ones of visible types.
+- **Integrity holds for the whole graph.** Validation judges the graph as it
+  is, so a write can fail because of what the caller cannot see: a unique value,
+  an alias or a file's bytes held by a hidden entity, a retract blocked by a
+  hidden referrer, a cardinality reached by hidden edges. Such a finding keeps
+  its code and severity and says only "conflicts with data you cannot see": no
+  id, alias, type, name or value of the hidden entity. `possible_duplicate`
+  warnings about hidden entities are dropped, and the values of a rule finding
+  are dropped when it counts a relation that reaches a hidden type. What this
+  still shows is in the [security model](security_model.md#type-read-limits).
+- **Skills.** The generated graph skill is rendered per reader
+  ([Skills](skills.md#blocks)).
+
+### Functions and actions of a limited reader
+
+A named function or action is shown to a limited caller only when it fits what
+the caller sees; to everyone else it does not exist.
+
+- **Functions** are hidden when a type or relation they touch, the class of a
+  `ref` parameter, an enum parameter or the module that holds them is hidden, or
+  when they compile only against the full model (an unlabelled node that reads
+  an attribute only a hidden type has). A hidden function is not listed or
+  described, not featured in the skill, not counted in `describe modules`, not
+  suggested by `did_you_mean`, and `run` of it is `function.not_found`. Every
+  other function runs over what the caller sees, so its answer holds visible
+  entities only.
+- **Actions** need, for each of their needs, a visible type: a need is met only
+  through a type the caller sees and may write ([Actions](#actions)). An action
+  is also hidden when a parameter class, enum or relation it names is hidden, so
+  `describe action` and the skill never name a hidden term. `do` and
+  `describe action` of a hidden action are `action.not_found`.
+
+### Inspecting what a caller sees
+
+- **`graph whoami`** gains, per graph, `reads`: the sorted concrete types the
+  caller sees, when the graph has read limits and the caller does not see every
+  type. `types` lists only limits of visible types, and `writes` only visible
+  types and terms. A caller that sees every type gets no `reads` key, so its
+  answer is unchanged. A hidden type is never named to the caller that cannot see it.
+- **`graph-admin policy explain`** answers the same for roles, tokens and
+  projects: without `--action` the answer gains `reads`, and `--type T --action
+  read.get` explains whether `T` is visible. The compiled rules `grant.<n>.reads`
+  show as grants, `type.<curie>` of a `none` as a type limit.
+- The [live view](live_view.md) shows `reads` next to the level of a caller.
 
 ## History
 
@@ -408,7 +608,11 @@ under the policy installed now, not the one in effect when a revision was
 written. `history` shows of the writer only whether it was the caller's
 own session; who wrote a revision is shown by `graph-admin` (the
 [live view](live_view.md) and the audit). Retracting keeps earlier values
-readable; hiding history is not a way to remove data.
+readable; hiding history is not a way to remove data. A caller with
+[read limits](#read-limits) reads the history of the entities it sees, over
+their revisions without edges into hidden entities: a revision whose only change
+was such an edge shows an empty `changed` ([What a caller can
+see](#what-a-caller-can-see)).
 
 ## Queries
 
@@ -434,10 +638,15 @@ own action, `read.function`, in the `read` level.
   who may `read.function` on the graph. For everyone else the graph reads
   as if it had none, and a function is `function.not_found`. Listing is no
   recorded decision: it writes no denial event, like `graph graphs`.
-- **Graph skill.** The generated graph skill is the same for every reader of
-  the graph (it is read with `read.describe`) and lists the featured
-  functions: their names and summaries are schema-level text like type
-  names. Running one still needs `read.function`.
+- **Graph skill.** The generated graph skill lists the featured functions:
+  their names and summaries are schema-level text like type names. It is the
+  same for every reader of the graph (it is read with `read.describe`) unless
+  the reader has [read limits](#read-limits): then it lists the functions that
+  reader sees and none that names a hidden term. Running one still needs
+  `read.function`.
+- **Read limits.** A caller who sees only some types does not see a function
+  that names a hidden term, and the others run over what the caller sees
+  ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
 - **Separate from queries.** A deny rule on `read.function` withholds the
   functions and leaves ad-hoc queries readable (`whoami` names the action
   in `withheld`); a deny on `read.query` leaves the functions. This allows
@@ -475,7 +684,8 @@ after an update.
   the type, an op needs the attributes and relations its template names (a
   transition without `attr` the lifecycle attribute of the type, from the
   model), and an optional parameter's entry counts as written. `describe action`
-  shows the needs as published.
+  shows the needs as published. For a caller with [read limits](#read-limits)
+  a need is also met only through a type the caller sees.
 - **Listing.** `describe actions`, `describe action`, `describe module`,
   `describe modules` and `describe search` show an action only when, for each
   need, at least one of its concrete types allows it, with the attributes and
@@ -487,7 +697,9 @@ after an update.
   obligations do not hide an action: one that needs `--reason` is listed.
   For everyone else the graph reads as if it had no such action, and `do`
   or `describe action` of it is `action.not_found` with `did_you_mean` over
-  the visible actions only.
+  the visible actions only. An action that names a hidden type, relation or
+  enum is hidden from a caller with read limits in the same way
+  ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
 - **Graph skill.** Unlike the functions, the generated graph skill lists
   only the featured actions the installing reader may run
   ([Skills](skills.md#blocks)).

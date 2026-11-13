@@ -211,11 +211,33 @@ the admin skills ([Skills](skills.md#admin-skills)).
 | Module | Content |
 | --- | --- |
 | `access_control.authorize` | `authorize()`: ceiling, deny rules, allow rules, obligations |
-| `access_control.documents` | the compiled `graph_cli.policy/1` grammar, checked with a path per problem, and `fine_types` (the types some rule names terms of) |
+| `access_control.documents` | the compiled `graph_cli.policy/1` grammar, checked with a path per problem, `fine_types` (the types some rule names terms of) and `read_limited` (whether some rule decides the visibility of types) |
 | `access_control.compiler` | authored YAML to compiled documents |
 | `access_control.policy` | the built-in policy, `policy_set` (the layers of one decision and their hash) |
-| `access_control.terms` | what the compiler needs of a graph's model (`TermModel`: per type its attributes, relations and lifecycle flags) and what it finds out (unknown types and terms, unusable writes); the resources of attributes and relations (`term_resource`) and which types and terms installed rules name (`named_terms`, for the checks of an ontology release) |
-| `access_control.effective` | level per graph, the actions withheld below it, write obligations, scope and the unknown-project warning, and `write_allowance` (what a write allow list lets a caller write, per type and verb), for `whoami` and `policy explain` |
+| `access_control.terms` | what the compiler needs of a graph's model (`TermModel`: per type its attributes, relations and lifecycle flags) and what it finds out (unknown types and terms, unusable writes); the resources of attributes and relations (`term_resource`) and which types and terms installed rules name (`named_terms` and `named_read_types`, for the checks of an ontology release) |
+| `access_control.effective` | level per graph, the actions withheld below it, write obligations, scope and the unknown-project warning, `write_allowance` (what a write allow list lets a caller write, per type and verb), `visibility` (the concrete types a caller sees, one `read.get` decision per type) and `read_allowance`, for `whoami` and `policy explain` |
+
+## Read views of limited callers
+
+A caller with [read limits](access_control.md#read-limits) reads through views
+that are opened in one place, `ReadService.open` (and `_snapshot_as_of` for
+`--as-of`), and handed to every read command in `GraphRead`. A graph without
+read rules gets the raw snapshot and model, so nothing is filtered and nothing
+is paid.
+
+| Module | Content |
+| --- | --- |
+| `services.visibility` | `Visibility`: the visible concrete types per actor and graph (one `access_control.effective.visibility` decision per type, no decision recorded), cached per policy hash, pin and actor facts; `VisibleSnapshot`, a `Snapshot` that answers for a hidden entity as for a missing one, strips every revision it hands out and sets `Query.visible`; `filter_model`, the model without hidden types and what depends on them |
+| `services.visible_catalog` | which functions and actions a limited caller sees: those whose terms and parameter classes all exist in the filtered model and that still compile against it |
+| `kernel.query_eval`, `kernel.records` | `Query.visible` and `NeighborQuery.visible`, honoured in one place for every store (subjects, relation ends, traversal, totals), and `strip_hidden_edges`, which drops the edges into hidden entities from a revision and recomputes its content hash |
+| `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
+
+The write path keeps two snapshots for such a caller: the raw one is the truth
+(normalizing, the conflict check, validation, the `before` hashes) and a
+`VisibleSnapshot` of it serves what the caller reaches (references, action
+expansion, preconditions, file lookups). `access_control.authorize.authorize_unlisted_type`
+decides the answer to a create of a hidden type, so a limit never shows in the
+refusal.
 
 ## Write pipeline
 
