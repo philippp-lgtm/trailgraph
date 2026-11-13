@@ -13,7 +13,9 @@ installation event anchoring the intent:
    ``admin.alias_prefix_taken``).
 
 Refused before any event: archived graph (``graph.archived``), the version
-installed with other content (``admin.release_exists``), a bump smaller
+installed with other content (``admin.release_exists``), a ``renamed_from`` that
+does not fit the pinned release (``ontology.rename_invalid``; a leftover of the
+previous release is the warning ``ontology.rename_stale``), a bump smaller
 than the changes (``admin.version_bump_insufficient``, also downgrades),
 a higher major on a graph whose data has error findings under the new
 version (``check_graph`` under the lock, B7.14: ``admin.migration_required``
@@ -58,11 +60,12 @@ from graph_cli.kinetic.action_compile import check_actions
 from graph_cli.kinetic.compile import check_catalog
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
+from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.graphs import merged_alias_prefixes
+from graph_cli_admin.services_admin.graphs import PrefixChanges, merged_alias_prefixes
 from graph_cli_admin.services_admin.ontology import (
     COMPILED_FILE,
     Compiled,
@@ -71,6 +74,7 @@ from graph_cli_admin.services_admin.ontology import (
     diff,
     module_bump_warnings,
     release_files,
+    rename_warnings,
 )
 
 MAX_FINDINGS = 20
@@ -103,6 +107,7 @@ class Planned:
     data: dict[str, JsonValue]
     seq: int
     warnings: tuple[WarningRecord, ...]
+    prefix_changes: PrefixChanges | None = None  # ``None`` when nothing is released
 
     @property
     def unchanged(self) -> bool:
@@ -191,6 +196,7 @@ def plan(
     )
     report, bump = diff(old_model, compiled.model)
     data["diff"] = report.to_json()
+    rename_notes = rename_warnings(old_model, compiled.model)  # refuses an invalid renamed_from
     bump_details: dict[str, JsonValue] = {
         "from": current.version,
         "to": target.version,
@@ -217,7 +223,7 @@ def plan(
             broken = catalog_problems(actions, compiled.model, function_names=function_names)
             if broken:
                 raise actions_broken(broken, bump_details)
-    warnings = module_bump_warnings(old_model, compiled.model, report)
+    warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
     if bump == "excessive":
         warnings += (
@@ -227,7 +233,10 @@ def plan(
                 bump_details,
             ),
         )
-    prefixes, skipped = merged_alias_prefixes(entry.alias_prefixes, compiled)
+    changes = merged_alias_prefixes(
+        entry.alias_prefixes, compiled, renames=derive_renames(old_model, compiled.model)
+    )
+    prefixes, skipped = changes.merged, changes.skipped
     data["alias_prefixes_added"] = {
         str(curie): prefix
         for curie, prefix in prefixes.items()
@@ -244,7 +253,7 @@ def plan(
     )
     old = PinnedModel(old_model, current.artifact_hash)
     install = target.version not in installed
-    return Planned(manifest, compiled, old, install, prefixes, data, head.seq, warnings)
+    return Planned(manifest, compiled, old, install, prefixes, data, head.seq, warnings, changes)
 
 
 def write(

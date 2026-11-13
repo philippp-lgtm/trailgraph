@@ -1,7 +1,9 @@
 """Admin-only error and warning codes (contracts R.1, section 1.5.1 "Admin-only codes").
 
 They live in the maintenance distribution, so the app distribution carries
-no maintenance vocabulary. The admin composition root registers them.
+no maintenance vocabulary. The admin composition root registers them. Most are
+``admin.*``; the ``ontology.rename_*`` codes belong to the release checks that
+only maintainers run.
 """
 
 from __future__ import annotations
@@ -20,6 +22,13 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.release_exists", _C.REFUSED, False, "The version exists with other content."),
     ErrorSpec("admin.graph_name_taken", _C.REFUSED, False, "The graph name is already used."),
     ErrorSpec("admin.migration_required", _C.REFUSED, False, "The change needs a migration."),
+    ErrorSpec("ontology.rename_invalid", _C.INVALID, False, "A renamed_from does not fit."),
+    ErrorSpec(
+        "ontology.rename_stale",
+        _C.WARNING,
+        False,
+        "A renamed_from was applied by the previous release.",
+    ),
     ErrorSpec("admin.integrity_errors", _C.INVALID, False, "Verification found errors."),
     ErrorSpec("admin.data_errors", _C.INVALID, False, "The data has error findings."),
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),

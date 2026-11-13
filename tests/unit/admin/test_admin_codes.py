@@ -5,10 +5,12 @@ from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, all_error_c
 from graph_cli_admin.maintenance_cli import hints
 from graph_cli_admin.services_admin import error_codes
 
+MAINTAINER_PREFIXES = ("admin.", "ontology.rename_")
+
 
 def test_admin_codes_live_in_the_admin_distribution() -> None:
-    assert all(spec.code.startswith("admin.") for spec in error_codes.ADMIN_CODES)
-    assert not [code for code in ERROR_CODES if code.startswith("admin.")]
+    assert all(spec.code.startswith(MAINTAINER_PREFIXES) for spec in error_codes.ADMIN_CODES)
+    assert not [code for code in ERROR_CODES if code.startswith(MAINTAINER_PREFIXES)]
 
 
 def test_every_registered_error_code_has_a_hint_entry() -> None:

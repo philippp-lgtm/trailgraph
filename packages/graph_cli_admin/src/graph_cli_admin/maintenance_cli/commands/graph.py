@@ -729,6 +729,7 @@ SPECS: Final = (
             "graph.archived",
             "admin.source_conflict",
             "admin.model_invalid",
+            "ontology.rename_invalid",
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",

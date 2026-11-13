@@ -14,7 +14,8 @@ docs/                                   documentation
 
 The kernel holds ids, canonical JSON, registries and the ports. The
 ontology layer holds the schema IR `graph_cli.ir/1`: loader, validator,
-compiler, semver classifier, JSON Schema export and data validation.
+compiler, semver classifier (with the rename checks), the migration file format,
+JSON Schema export and data validation.
 
 ## Layers
 

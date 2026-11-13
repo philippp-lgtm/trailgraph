@@ -189,8 +189,9 @@ How to cut:
 - **Moving a term to another module changes its CURIE.** That is a removal
   plus an addition, so a major change with a data migration: add the term
   in the new module, move the data, then remove the old term.
-  `renamed_from` does not help here: it is a local name and only renames a
-  term within its own module
+  For a class or relation, `renamed_from` may name the old term by its CURIE
+  (`renamed_from: old:Name`), which `ontology diff` reports as a rename
+  instead of a removal plus an addition
   ([versioning](versioning_and_release.md#releasing-a-modular-graph)).
 
 ## Anti-patterns

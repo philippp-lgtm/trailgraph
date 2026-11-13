@@ -1229,6 +1229,7 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
         "remote.protocol",
@@ -1680,6 +1681,7 @@
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1765,6 +1767,7 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
         "remote.protocol",
@@ -3279,6 +3282,11 @@
       "code": "ontology.artifact_missing",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "ontology.rename_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "policy.invalid",

@@ -53,7 +53,9 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _model("structural", "unknown_datatype", "An attribute or datatype names an unknown type."),
     _model("structural", "cardinality_min_gt_max", "A cardinality minimum exceeds its maximum."),
     _model("structural", "invalid_pattern", "A pattern is not anchored or does not compile."),
-    _model("structural", "reserved_name", "An attribute or qualifier uses a reserved name."),
+    _model(
+        "structural", "reserved_name", "An attribute, qualifier or module uses a reserved name."
+    ),
     _model("structural", "invalid_default", "A default value does not fit its attribute."),
     _model("structural", "facet_not_applicable", "A facet does not apply to the base type."),
     # referential: names that must resolve

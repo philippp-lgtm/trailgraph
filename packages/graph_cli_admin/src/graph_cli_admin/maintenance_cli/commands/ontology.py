@@ -76,10 +76,11 @@ def diff_command(
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
     report, bump = ontology.diff(old, new.model)
+    renames = ontology.rename_warnings(old, new.model)  # refuses an invalid renamed_from
     return Result(
         data={**report.to_json(), "bump": bump},
         graph=graph,
-        warnings=(*ontology.module_bump_warnings(old, new.model, report), *affected),
+        warnings=(*ontology.module_bump_warnings(old, new.model, report), *renames, *affected),
     )
 
 
@@ -155,10 +156,18 @@ SPECS: Final = (
                 "Compare with a graph's pinned release.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, "access.denied", "usage.missing_argument", "admin.model_invalid"),
+        errors=(
+            *GRAPH_ERRORS,
+            "access.denied",
+            "usage.missing_argument",
+            "admin.model_invalid",
+            "ontology.rename_invalid",
+        ),
         handler=diff_command,
         output=DIFF_OUTPUT,
         description="Reports whether the declared version bump suffices; release enforces it."
+        " A renamed_from that names nothing, whose source still exists, whose target existed"
+        " before or that two terms share is ontology.rename_invalid."
         " With --graph, authorized maint.graph_configure on the graph; published functions and"
         " actions the release would break are warnings.",
         remote="hooked",
@@ -194,6 +203,7 @@ SPECS: Final = (
             *CHANGE_ERRORS,
             "graph.archived",
             "admin.model_invalid",
+            "ontology.rename_invalid",
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",

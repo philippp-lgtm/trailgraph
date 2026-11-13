@@ -145,7 +145,7 @@ enums:
 | `is_a` | one parent class (single inheritance); attributes and relations are inherited |
 | `abstract` | `true`: no entities of this class itself, only of subclasses |
 | `display_prefix` | alias prefix of new entities (`REC` gives `REC-0001`); not inherited, ignored on abstract classes; a class without one gets no aliases; unique among concrete classes (`validate` refuses a duplicate); a class renamed with `renamed_from` keeps the prefix of its old name, and a release does not give out a prefix another class holds (warning `admin.alias_prefix_taken`, the class gets no aliases) |
-| `renamed_from` | the old name of a renamed class (major) |
+| `renamed_from` | the old name of a renamed class (major): a local name for a class of the same module, or the CURIE `prefix:Name` of the old term to move a class to another module (no import is needed; the old module may be gone) |
 
 A subclass may not redefine an inherited attribute. A class may extend an
 imported class (`is_a: files:File`).
@@ -187,7 +187,7 @@ relations:
 | `on_target_inactive` | what a write meets that retracts or supersedes a target while active entities still point at it over the relation: `allow` (default), `warn`, `refuse`; see [rules_and_lifecycles.md](rules_and_lifecycles.md#edges-to-inactive-targets) |
 | `inverse_label` | name for reading the relation backwards (`has_step`); unique across the bundle |
 | `qualifiers` | name to `{type, required, many}` plus documentation; values on the edge; not `blob` or `local_path` |
-| `renamed_from` | the old name of a renamed relation (major) |
+| `renamed_from` | the old name of a renamed relation (major): a local name or, for a move to another module, the CURIE `prefix:name` of the old term |
 
 `out` cardinality is checked on every write. `in` cardinality is checked
 only in a batch check, `graph-admin graph check` or a major release (see

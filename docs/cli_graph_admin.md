@@ -33,8 +33,8 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph actions show GRAPH` | the published action catalog: hash, ontology pin it was published against, and one line per action |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`) and the size against the [budgets](skills.md#budgets) (`data.size`, warning `admin.skill_over_budget`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
-| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break |
-| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (existing prefixes never change: a class renamed with `renamed_from` keeps the prefix of its old name, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)) |
+| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; a `renamed_from` that does not fit the older version is `ontology.rename_invalid` (a leftover the previous release applied already is the warning `ontology.rename_stale`); with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (a prefix stays with its entities: a class renamed with `renamed_from` (a local name, or the CURIE of the old term when it moves to another module) takes the prefix of its old name and replaces that entry, a removed class keeps its prefix, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)) |
 | `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Each list shows 20 entries, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
@@ -112,7 +112,9 @@ change is audited as by the single commands, with the push's `--reason`.
 
 ## Ontologies with several modules
 
-An authored version directory holds one `<module>.yaml` per module, and a
+An authored version directory holds one `<module>.yaml` per module (the name
+`migration` is reserved: `migration.yaml` is no module, it is the migration file
+of a major release), and a
 graph's release is one bundle: the version of the bundle is the version of
 the main module (the one that imports the others). When a directory holds
 more than one module file, name the main module with `--module <module>` on

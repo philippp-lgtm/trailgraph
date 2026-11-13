@@ -59,6 +59,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.release_exists": None,
     "admin.graph_name_taken": _graph_list,
     "admin.migration_required": None,
+    "ontology.rename_invalid": None,  # details.problems names each renamed_from to fix
     "admin.integrity_errors": None,
     "admin.data_errors": None,  # the entities to fix are in details.findings
     "admin.policy_lockout": None,  # details.rule names the rule that locks out

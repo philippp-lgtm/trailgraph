@@ -15,7 +15,12 @@ refuses less. A larger bump than needed is a warning.
 | major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a facet, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; `on_target_inactive` changed to `refuse` |
 
 Renames are recognized only with `renamed_from`; without it a rename is a
-removal plus an addition.
+removal plus an addition. `ontology diff` and `ontology release` refuse a
+`renamed_from` that does not fit the pinned release (`ontology.rename_invalid`:
+the old term does not exist, still exists, the new term existed already, two
+terms name the same old one, or the old term is a `core:` or built-in module
+term); one the previous release applied already only warns
+(`ontology.rename_stale`), so a copied version directory still releases.
 
 ## Major versions on a graph with data
 
@@ -72,11 +77,11 @@ version of the bundle is the version of the main (umbrella) module.
   not cover the changes to the area's terms (the release still goes on).
 - Adding a module is a minor change: a new file plus a new import in the
   main module (or in the module that builds on it).
-- Moving a term to another module changes its CURIE, which `ontology diff`
-  sees as a removal plus an addition. `renamed_from` is a local name
-  and only works within one module, so it cannot carry the move. It is a
-  major release with a data migration: add the term in the new module,
-  move the data, then remove the old term (see the major versions above).
+- Moving a term to another module changes its CURIE. Without a hint
+  `ontology diff` sees a removal plus an addition. A class or relation
+  names its old CURIE in `renamed_from` (`renamed_from: old:Name`, kept as
+  written, no import needed) and the diff reports a rename; a local name
+  still means the same module. Either way it is a major release.
 - Removing an import is major.
 - After the release, check what agents will see: `graph describe modules`
   and `graph describe module <module>`, and the generated graph skill

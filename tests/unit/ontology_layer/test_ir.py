@@ -354,3 +354,56 @@ def test_guards_check_sums_and_attr_right_sides() -> None:
             "declare it on every class there or narrow with where.type",
         )
     ]
+
+
+def test_renamed_from_of_a_class_or_relation_is_a_name_or_a_curie() -> None:
+    outcome = compile_text(
+        HEADER
+        + """classes:
+  Thing:
+    summary: A thing.
+    renamed_from: old:Item
+  Other:
+    summary: Another thing.
+    renamed_from: Item
+relations:
+  next: {summary: Next thing., domain: Thing, range: Thing, renamed_from: "old:link"}
+  prev: {summary: Previous thing., domain: Thing, range: Thing, renamed_from: link}
+"""
+    )
+    assert outcome.model is not None, [f.to_json() for f in outcome.findings]
+    # kept as written: a local name is not turned into a CURIE (the artifact hash depends on it)
+    assert outcome.model.classes["smp:Thing"].renamed_from == "old:Item"
+    assert outcome.model.classes["smp:Other"].renamed_from == "Item"
+    assert outcome.model.relations["smp:next"].renamed_from == "old:link"
+    assert outcome.model.relations["smp:prev"].renamed_from == "link"
+
+
+def test_renamed_from_rejects_a_curie_with_the_wrong_name_grammar() -> None:
+    for kind, bad in (("class", "old:item"), ("class", "item"), ("relation", "old:Link")):
+        extra = f"    renamed_from: {bad}\n"
+        body = (
+            f"classes:\n  Thing:\n    summary: A thing.\n{extra}"
+            if kind == "class"
+            else THING.replace("range: Thing}", "range: Thing, renamed_from: " + bad + "}")
+        )
+        outcome = compile_text(HEADER + body)
+        assert outcome.model is None, bad
+        assert [f.code for f in outcome.findings] == ["model.structural.invalid_value"], bad
+
+
+def test_attributes_keep_local_names_only() -> None:
+    outcome = compile_text(
+        HEADER + "classes:\n  Thing:\n    summary: A thing.\n    attributes:\n"
+        "      a: {summary: A., type: string, renamed_from: 'old:b'}\n"
+    )
+    assert [f.code for f in outcome.findings] == ["model.structural.invalid_value"]
+
+
+def test_migration_is_a_reserved_module_id() -> None:
+    text = HEADER.replace("id: sample, prefix: smp", "id: migration, prefix: mig")
+    outcome = compile_bundle(
+        "migration", LayeredSource(MappingSource({"migration": text.encode()}))
+    )
+    assert outcome.model is None
+    assert [f.code for f in outcome.findings] == ["model.structural.reserved_name"]
