@@ -103,6 +103,7 @@ from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
+from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
 
@@ -137,6 +138,9 @@ class GraphRead:
     warnings: tuple[WarningRecord, ...]
     actor: ActorContext
     command: str
+    # The concrete types the actor sees when the graph is type limited (``model`` and
+    # ``snapshot`` are then the filtered views), else ``None``: the raw model and snapshot.
+    visible: frozenset[str] | None = None
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)
@@ -336,7 +340,9 @@ class ReadService:
         self._env = env
         self.timings = timings if timings is not None else Timings()
         self.usage = usage if usage is not None else UsageNote()
-        self._signatures: SignatureCache | None = None  # built with the first query
+        # Function signatures depend on the model they were derived from, so a type-limited
+        # reader (a filtered model) never shares them with another; ``None``: the raw model.
+        self._signatures: dict[frozenset[str] | None, SignatureCache] = {}
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
         self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
@@ -345,6 +351,7 @@ class ReadService:
         # (compiled hash, pin) -> the needs of each action on concrete types (W9)
         self._action_needs: dict[tuple[str, OntologyPin], dict[str, tuple[NeedOptions, ...]]] = {}
         self._fine = FineTypes()
+        self._visibility = Visibility()
         self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
 
     # ---- authorization -------------------------------------------------
@@ -584,9 +591,17 @@ class ReadService:
             if as_of is not None:
                 snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
                 warnings += (warning,)
+        # Type read limits: a limited caller reads views of the model and the snapshot. They
+        # wrap the as-of snapshot after it read the raw tx metadata.
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            visible = self._visibility.of(actor, entry, policy, model)
+        if visible is not None:
+            model = self._visibility.model(entry, model, visible)
+            snapshot = VisibleSnapshot(snapshot, visible)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
-        return GraphRead(entry, model, snapshot, warnings, actor, request.command)
+        return GraphRead(entry, model, snapshot, warnings, actor, request.command, visible)
 
     def skill(
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
@@ -1065,9 +1080,8 @@ class ReadService:
             found: tuple[Cover, ...] = ()
             visible = self.functions(view.actor, view.entry)
             if visible:
-                if self._signatures is None:
-                    self._signatures = SignatureCache()
-                pairs = self._signatures.pairs(visible, view.model)
+                signatures = self._signatures.setdefault(view.visible, SignatureCache())
+                pairs = signatures.pairs(visible, view.model)
                 found = covers(query_signature(resolved), pairs, view.model)
             described = shape(resolved)
             self.usage.query = {
