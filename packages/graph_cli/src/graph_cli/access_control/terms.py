@@ -7,14 +7,17 @@ file) and passes it through ``compile_policy(models=...)``. What the compiler fi
 collected, never raised, because a later release may add the term: the caller warns.
 
 - ``UnknownWriteType``: a type of a ``writes`` grant the graph's model does not have;
+- ``UnknownReadType``: a type (or ``prefix:*`` that matches none) of a ``reads`` grant the
+  graph's model does not have;
 - ``UnknownTerm``: an attribute, relation or lifecycle attribute a ``writes`` grant or a
   term deny rule names that the type does not have (nobody can write it: fail closed);
 - ``UnusableWrite``: a ``writes`` entry no write can satisfy (``update`` of a lifecycle
   attribute; a ``create`` list that leaves out an attribute a create must give).
 
 ``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
-reads back which types and terms the installed documents name for one graph (an ontology
-release checks them against the new model).
+and ``named_read_types`` read back which types and terms, and which types a read rule
+names, the installed documents name for one graph (an ontology release checks them against
+the new model).
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.access_control.documents import CURIE_RE, NAME_RE, rules, strings
+from graph_cli.access_control.documents import CURIE_RE, NAME_RE, glob, rules, strings
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import GraphId
 
@@ -55,6 +58,12 @@ class TermModel:
 class UnknownWriteType:
     graph: GraphId
     type: str
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class UnknownReadType:
+    graph: GraphId
+    type: str  # a type CURIE or a ``prefix:*`` glob
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -139,4 +148,43 @@ def named_terms(
                         "relation" if kind == "rel" else "lifecycle" if lifecycle else "attribute"
                     )
                     found.add(NamedTerm(curie, named, term, grant))
+    return tuple(sorted(found))
+
+
+_READS_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.reads$")
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class NamedReadType:
+    """A concrete type an installed rule decides the visibility of in one graph."""
+
+    type: str
+    grant: bool  # named by a ``reads`` grant (an allow list); otherwise hidden by a deny rule
+
+
+def named_read_types(
+    documents: Sequence[Mapping[str, JsonValue]], graph: GraphId
+) -> tuple[NamedReadType, ...]:
+    """The exact types the ``grant.<n>.reads`` rules (installation layer) and the deny rules of
+    the graph layer that cover ``read.get`` name under ``graph:<graph>/type:``, sorted and
+    unique. A glob of types names no single type and is left out."""
+    prefix = f"graph:{graph}/type:"
+    found: set[NamedReadType] = set()
+    for document in documents:
+        layer = document.get("layer")
+        for rule in rules(document):
+            rule_id = rule.get("id")
+            grant = (
+                layer == "installation"
+                and isinstance(rule_id, str)
+                and _READS_RULE_RE.match(rule_id) is not None
+            )
+            hidden = layer == "graph" and rule.get("effect") == "deny"
+            if not (grant or hidden) or not any(
+                glob(pattern, "read.get") for pattern in strings(rule, "action")
+            ):
+                continue
+            for resource in strings(rule, "resource"):
+                if resource.startswith(prefix) and CURIE_RE.match(resource[len(prefix) :]):
+                    found.add(NamedReadType(resource[len(prefix) :], grant))
     return tuple(sorted(found))

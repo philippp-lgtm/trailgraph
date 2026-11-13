@@ -20,6 +20,14 @@ a role the installed installation policy does not declare is reported, not
 refused (``Compiled.unknown_roles``), like an unknown type. A policy without
 roles compiles to the same document, hence the same hash, as before roles existed.
 
+``reads`` is a grant's read allow list: type CURIEs (or ``prefix:*``) the grant's callers may see
+(``read.get`` on the type is its visibility, B6.9). The grant's read rule ``grant.<n>`` then
+names the exact ``graph:<id>`` instead of the glob ``graph:<id>*`` (which would cover every type
+resource) and one more allow rule, ``grant.<n>.reads`` (action ``read.get``), names the type
+resources of every named graph, sorted. It needs ``level: read`` and named graphs, like
+``writes``; with both, every ``writes`` type must be covered by ``reads``. A grant without
+``reads`` compiles as before, to the same hash.
+
 ``writes`` is a grant's write allow list: concrete type CURIEs, each mapping verbs
 (``create``, ``update``, ``link``, ``unlink``, ``transition``, ``supersede``, ``retract``,
 ``alias``) to ``true``, ``false`` or, for the first five, a non-empty list of attribute names
@@ -34,6 +42,11 @@ link right on its relation). Resources are ``graph:<id>/type:<T>`` plus ``/attr:
 ``/attr:<a>`` (create, update, transition) or ``/rel:*`` or ``/rel:<r>`` (link, unlink),
 across every named graph and type that grants the verb, sorted. The compiled document never
 depends on a model.
+
+``types: {T: none}`` of a graph layer hides ``T`` from the app and server entrypoints: the deny
+rule ``type.<T>`` names ``read.get`` and ``write.*`` on the exact type and carries
+``principal: {entrypoint: [app, server]}``, so a maintainer is not hit. A graph deny rule with
+``type`` may name ``read.get`` (alone or with write actions); it compiles as written.
 
 A graph deny rule with ``type`` and ``attribute`` (or ``relation``) denies on
 ``graph:<id>/type:<T>/attr:<a>`` (``/rel:<r>``) for every listed type instead of on the type;
@@ -54,7 +67,7 @@ document always carries the built-in reason obligation.
 Validation is total: every problem is collected with its path and the
 compile fails with ``policy.invalid`` listing all of them. Types and terms are
 checked against the graph's pinned model when the caller passes it (``known_types``
-and ``extended_types`` for type limits, ``models`` for ``writes`` and term deny rules);
+and ``extended_types`` for type limits, ``models`` for ``reads``, ``writes`` and term deny rules);
 an abstract or extended type is an error, an unknown type or term is not (it may come
 with a later release), the caller warns.
 """
@@ -77,11 +90,13 @@ from graph_cli.access_control.documents import (
     Problem,
     document_problems,
     is_action_glob,
+    is_type_action_glob,
     is_write_glob,
 )
 from graph_cli.access_control.terms import (
     TermModel,
     TypeTerms,
+    UnknownReadType,
     UnknownTerm,
     UnknownWriteType,
     UnusableWrite,
@@ -167,6 +182,7 @@ class Compiled:
     unknown_roles: tuple[str, ...] = ()
     # Found against the models of ``compile_policy(models=...)``; all sorted.
     unknown_write_types: tuple[UnknownWriteType, ...] = ()
+    unknown_read_types: tuple[UnknownReadType, ...] = ()
     unknown_terms: tuple[UnknownTerm, ...] = ()
     unusable_writes: tuple[UnusableWrite, ...] = ()
 
@@ -191,6 +207,7 @@ class _Context:
     unknown_types: set[str] = field(default_factory=set)
     unknown_roles: set[str] = field(default_factory=set)
     unknown_write_types: set[UnknownWriteType] = field(default_factory=set)
+    unknown_read_types: set[UnknownReadType] = field(default_factory=set)
     unknown_terms: set[UnknownTerm] = field(default_factory=set)
     unusable_writes: set[UnusableWrite] = field(default_factory=set)
     _models: dict[GraphId, TermModel | None] = field(default_factory=dict)
@@ -241,10 +258,10 @@ def compile_policy(
     so naming one of them would miss its subclasses' entities. ``roles`` are the roles
     the installed installation policy declares (``None``: not checked); a graph policy's
     deny rules naming others are collected in ``unknown_roles``. ``models`` is asked,
-    lazily and once per graph, for the term model of each graph a ``writes`` grant names
-    and of the graph of a graph policy that has term deny rules (``None``, or no model for
-    a graph: not checked); abstract or extended write types are problems, unknown types
-    and terms and unusable writes are collected."""
+    lazily and once per graph, for the term model of each graph a ``reads`` or ``writes`` grant
+    names and of the graph of a graph policy that has term deny rules (``None``, or no model
+    for a graph: not checked); abstract or extended read and write types are problems, unknown
+    types and terms and unusable writes are collected."""
     ctx = _Context(graphs, graph, known_types, extended_types, roles, models)
     try:
         root = load_strict(data)
@@ -280,6 +297,7 @@ def compile_policy(
         tuple(sorted(ctx.unknown_types)),
         tuple(sorted(ctx.unknown_roles)),
         tuple(sorted(ctx.unknown_write_types)),
+        tuple(sorted(ctx.unknown_read_types)),
         tuple(sorted(ctx.unknown_terms)),
         tuple(sorted(ctx.unusable_writes)),
     )
@@ -360,7 +378,10 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     if entry is None:
         return []
     _unknown_keys(
-        node, frozenset({"principal", "entrypoint", "graphs", "level", "writes"}), path, ctx
+        node,
+        frozenset({"principal", "entrypoint", "graphs", "level", "writes", "reads"}),
+        path,
+        ctx,
     )
     entrypoints = _entrypoints(entry, path, ctx)
     principal: dict[str, JsonValue] = {"entrypoint": entrypoints}
@@ -390,22 +411,101 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
                 f"{path}.graphs",
                 'must name graphs, not "*", when writes is given: terms belong to an ontology',
             )
+    reads = _reads(entry["reads"], f"{path}.reads", ctx) if "reads" in entry else None
+    if "reads" in entry:
+        if level == "write":
+            ctx.add(f"{path}.reads", "needs level: read; level write already reads every type")
+        if resources == ["graph:*"]:
+            ctx.add(
+                f"{path}.graphs",
+                'must name graphs, not "*", when reads is given: types belong to an ontology',
+            )
+    if reads is not None and writes:
+        for name in sorted(writes):
+            if not _covered(name, reads):
+                ctx.add(
+                    f"{path}.writes.{name}",
+                    f"{name} is not in reads; a grant cannot write a type it hides",
+                )
     if level is None or resources is None:
         return []
+    named = resources != ["graph:*"]
+    graphs = (
+        sorted({ctx.graphs[n] for n in _texts(entry["graphs"], "", ctx) or ()}) if named else []
+    )
+    limited = bool(reads) and named
     rules: list[JsonValue] = [
         {
             "id": f"grant.{number}",
             "effect": "allow",
             "principal": principal,
             "action": list(level_actions(level)),
-            "resource": resources,
+            # A glob would cover every type resource, whose visibility ``reads`` decides.
+            "resource": [f"graph:{g}" for g in graphs] if limited else resources,
         }
     ]
-    if writes and resources != ["graph:*"]:
-        graphs = sorted({ctx.graphs[n] for n in _texts(entry["graphs"], "", ctx) or ()})
+    if reads and limited:
+        _check_reads(reads, graphs, f"{path}.reads", ctx)
+        rules.append(_reads_rule(number, principal, graphs, reads))
+    if writes and named:
         _check_writes(writes, graphs, f"{path}.writes", ctx)
         rules += _write_rules(number, principal, graphs, writes)
     return rules
+
+
+def _reads(node: YamlNode, path: str, ctx: _Context) -> tuple[str, ...] | None:
+    """The ``reads`` of a grant: type CURIEs or ``prefix:*`` globs, in the order written."""
+    names = _texts(node, path, ctx)
+    if names is None:
+        return None
+    valid = True
+    for index, name in enumerate(names):
+        if not TYPE_GLOB_RE.match(name):
+            ctx.add(f"{path}[{index}]", f"{name!r} is not a type CURIE or prefix:*")
+            valid = False
+    return tuple(names) if valid else None
+
+
+def _covered(name: str, reads: Sequence[str]) -> bool:
+    """Whether a read entry names type ``name``: itself or a ``prefix:*`` that matches it."""
+    return any(r == name or (r.endswith("*") and name.startswith(r[:-1])) for r in reads)
+
+
+def _check_reads(reads: Sequence[str], graphs: Sequence[GraphId], path: str, ctx: _Context) -> None:
+    """The model checks of ``reads`` against every graph the grant names: an abstract or
+    extended type is a problem (a rule on the exact type would hide the subclasses), a type
+    or prefix the model lacks is collected."""
+    for graph in graphs:
+        model = ctx.model_of(graph)
+        if model is None:
+            continue
+        for index, name in enumerate(reads):
+            if name.endswith("*"):
+                if not any(t.startswith(name[:-1]) for t in model.types):
+                    ctx.unknown_read_types.add(UnknownReadType(graph, name))
+                continue
+            found = model.types.get(name)
+            if found is None:
+                ctx.unknown_read_types.add(UnknownReadType(graph, name))
+            elif found.extended:
+                ctx.add(
+                    f"{path}[{index}]",
+                    f"{name} is abstract or has subclasses in graph {ctx.graph_name(graph)}; "
+                    "name the concrete types",
+                )
+
+
+def _reads_rule(
+    number: int, principal: Mapping[str, JsonValue], graphs: Sequence[GraphId], reads: Sequence[str]
+) -> dict[str, JsonValue]:
+    """``grant.<n>.reads``: ``read.get`` on every named type of every named graph."""
+    return {
+        "id": f"grant.{number}.reads",
+        "effect": "allow",
+        "principal": dict(principal),
+        "action": ["read.get"],
+        "resource": sorted({f"graph:{g}/type:{name}" for g in graphs for name in reads}),
+    }
 
 
 def _writes(node: YamlNode, path: str, ctx: _Context) -> _Writes | None:
@@ -692,12 +792,20 @@ def _graph(root: YamlMap, graph: GraphId, ctx: _Context) -> dict[str, JsonValue]
         if not _type_glob(name, path, ctx):
             continue
         level = _level(node, path, ctx, allowed=ACCESS_LEVELS)
-        if level == "none":
-            ctx.add(path, "type-level read limits are not supported yet; use read or write")
-        elif level is not None:
+        if level is not None:
             types[name] = level
             if level == "read":
                 rules.append(_deny(f"type.{name}", ("write.*",), [_type_glob_of(graph, name)], {}))
+            elif level == "none":
+                # Hidden from the callers of the app and the server; a maintainer is not hit.
+                rules.append(
+                    _deny(
+                        f"type.{name}",
+                        ("read.get", "write.*"),
+                        [_type_glob_of(graph, name)],
+                        {"entrypoint": list(GRANT_ENTRYPOINTS)},
+                    )
+                )
     rules += _deny_rules(root.items.get("deny"), graph, ctx)
     return {
         "schema": POLICY_SCHEMA,
@@ -747,8 +855,15 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
                     principal[key] = sorted(set(values))
         if graph is not None:
             types = _texts(entry["type"], f"{path}.type", ctx) if "type" in entry else None
-            if types is not None and actions is not None and not all(map(is_write_glob, actions)):
-                ctx.add(f"{path}.action", "a deny rule on types applies to writes only")
+            if (
+                types is not None
+                and actions is not None
+                and not all(map(is_type_action_glob, actions))
+            ):
+                ctx.add(
+                    f"{path}.action",
+                    "a deny rule on types names write actions, read.get or read.*",
+                )
                 actions = None
             names = (
                 None

@@ -338,11 +338,14 @@ def test_layer_of_source() -> None:
             "grants[0].principal.agent_type",
         ),
         (INSTALLATION.replace(b"id: no_explore_writes", b"id: No-Explore"), "deny[0].id"),
-        (GRAPH_POLICY.replace(b'"files:File": read', b'"files:File": none'), "types.files:File"),
+        (GRAPH_POLICY.replace(b'"files:File": read', b'"files:File": hidden'), "types.files:File"),
         (GRAPH_POLICY.replace(b"max_batch: 200", b"max_batch: 0"), "obligations[1].max_batch"),
         (GRAPH_POLICY.replace(b'type: ["inv:*"]', b'graph: "*"'), "deny[0].graph"),
-        # types and obligations are checked for writes only: anything else would not hold
-        (GRAPH_POLICY.replace(b"action: [write.retract]", b'action: ["read.*"]'), "deny[0].action"),
+        # a type decides writes and read.get only, obligations decide writes only
+        (
+            GRAPH_POLICY.replace(b"action: [write.retract]", b"action: [read.find]"),
+            "deny[0].action",
+        ),
         (GRAPH_POLICY.replace(b"action: [write.retract]", b'action: ["*"]'), "deny[0].action"),
         (GRAPH_POLICY.replace(b'action: ["write.*"]', b'action: ["*"]'), "obligations[1].action"),
         (

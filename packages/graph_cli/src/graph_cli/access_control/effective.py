@@ -4,13 +4,15 @@ Pure helpers over ``authorize()`` for ``graph whoami``, ``graph-admin
 policy explain`` and the admin API: the access level per graph, whether an
 actor maintains a graph, the actions a deny rule withholds below it, the
 obligations of the allowed writes, what a write allow list lets a caller write
-(``write_allowance``), the project scope that applies and the warning for a project the
-installation policy has no scope for. Nothing here decides on its own; every answer is a set
+(``write_allowance``), which types a caller sees (``visibility``, ``read_allowance``), the
+project scope that applies and the warning for a project the installation policy has no scope
+for. Nothing here decides on its own; every answer is a set
 of ``authorize()`` calls.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Final
 
 from graph_cli.access_control.authorize import allow_rule_holds, authorize
@@ -19,7 +21,9 @@ from graph_cli.access_control.documents import (
     CURIE_RE,
     INSTALLATION_LAYER,
     fine_types,
+    is_write_glob,
     layer_of,
+    read_limited,
     rules,
     strings,
 )
@@ -119,13 +123,19 @@ def write_obligations(
 def write_grant_types(actor: ActorContext, graph: GraphId, policy: PolicySet) -> tuple[str, ...]:
     """The types a write allow list names for ``actor`` in ``graph``, sorted: the concrete
     type resources (``graph:<id>/type:<curie>``) of the allow rules whose principal matches
-    the actor as ``authorize`` matches it. Only ``writes`` grants produce such rules. Pure
-    and cheap (no decision is made), so a caller can ask before loading a model."""
+    the actor as ``authorize`` matches it. Only ``writes`` grants produce such rules: a rule
+    counts when it names a write action, so the ``grant.<n>.reads`` rules (``read.get``) are
+    no write grants. Pure and cheap (no decision is made), so a caller can ask before loading
+    a model."""
     prefix = f"graph:{graph}/type:"
     found: set[str] = set()
     for document in policy.documents:
         for rule in rules(document):
-            if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
+            if (
+                rule.get("effect") != "allow"
+                or not any(is_write_glob(a) for a in strings(rule, "action"))
+                or not allow_rule_holds(rule, actor)
+            ):
                 continue
             for resource in strings(rule, "resource"):
                 if resource.startswith(prefix) and CURIE_RE.match(resource[len(prefix) :]):
@@ -193,6 +203,38 @@ def write_allowance(
         if verbs:
             found[type_curie] = verbs
     return found or None
+
+
+def visibility(
+    actor: ActorContext, graph: GraphId, policy: PolicySet, concrete_types: Iterable[str]
+) -> frozenset[str] | None:
+    """The concrete types ``actor`` sees in ``graph`` (type limits plan V4), or ``None`` for no
+    limit: the graph is not ``read_limited`` or every type in ``concrete_types`` is visible.
+
+    A type is visible when ``authorize`` allows ``read.get`` on ``graph:<id>/type:<T>``, one
+    probe per type and none recorded (like the action listing). ``concrete_types`` are the
+    types of the graph's pinned model entities can have; a type outside it is not in the
+    answer, so a caller that gets a set does not see it (fail closed). The caller caches the
+    answer per policy hash, actor facts and pin."""
+    if not read_limited(policy.documents, graph):
+        return None
+    types = frozenset(concrete_types)
+    visible = frozenset(
+        t
+        for t in types
+        if authorize(actor, "read.get", f"graph:{graph}/type:{t}", _PROBE, policy).effect == "allow"
+    )
+    return None if visible == types else visible
+
+
+def read_allowance(
+    actor: ActorContext, graph: GraphId, policy: PolicySet, concrete_types: Iterable[str]
+) -> list[str] | None:
+    """What a read limit lets ``actor`` see in ``graph``, for ``whoami`` and ``policy explain``:
+    the sorted visible concrete types, or ``None`` when there is nothing to say (the actor sees
+    every type; see ``visibility``)."""
+    visible = visibility(actor, graph, policy, concrete_types)
+    return None if visible is None else sorted(visible)
 
 
 def _verb_terms(verb: str, known: TypeTerms | None) -> tuple[str, list[str]] | None:

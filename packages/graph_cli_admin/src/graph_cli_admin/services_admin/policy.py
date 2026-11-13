@@ -4,9 +4,9 @@ An authored policy file is compiled against this installation: graph names
 resolve to ids, and a graph policy is checked against the graph's pinned
 model (an unknown type warns with ``admin.policy_unknown_type``) and its deny
 rules against the roles the installed installation policy declares (an unknown
-role warns with ``policy.role_unknown``). An installation policy's ``writes`` grants are
-checked against the pinned model of each graph they name, and a graph policy's term deny
-rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
+role warns with ``policy.role_unknown``). An installation policy's ``reads`` and ``writes``
+grants are checked against the pinned model of each graph they name, and a graph policy's term
+deny rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
 attribute or relation the type lacks with ``admin.policy_unknown_term``, a write no call
 can satisfy with ``admin.policy_unusable_write``; an abstract type is ``policy.invalid``.
 Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
@@ -571,6 +571,15 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
                 {"graph": names[w.graph], "type": w.type},
             )
             for w in compiled.unknown_write_types
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unknown_type",
+                f"the model of graph {names[r.graph]} has no type {r.type}; the read allow list"
+                " lets nobody see it until it has",
+                {"graph": names[r.graph], "type": r.type},
+            )
+            for r in compiled.unknown_read_types
         ),
         *(
             WarningRecord(

@@ -30,6 +30,12 @@ def extended_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
     )
 
 
+def concrete_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
+    """The types an entity can have (every class that is not abstract), whether or not it has
+    subclasses: what ``access_control.effective.visibility`` probes."""
+    return frozenset(name for name, cls in classes.items() if not cls.abstract)
+
+
 def term_model(model: CompiledModel) -> TermModel:
     """What the policy compiler needs of ``model``: per type its attributes (is it a
     lifecycle; must a create give it), the relations whose domain covers it, and whether

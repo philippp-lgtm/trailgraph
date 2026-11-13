@@ -391,6 +391,85 @@ def test_a_release_that_gives_a_granted_type_subclasses_warns(
     assert "subclasses" in text and "misses" in text
 
 
+READ_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  reporting: {description: "Reporting: categories and suppliers"}
+grants:
+  - entrypoint: server
+    principal: {role: reporting}
+    graphs: [example_graph]
+    level: read
+    reads: [inv:Category, inv:Supplier]
+no_project: {"*": read}
+"""
+READ_DENY = """\
+schema: graph_cli.policy/1
+id: graph
+types:
+  inv:Item: none
+deny:
+  - {id: hide_locations, action: [read.get], type: [inv:Location]}
+"""
+
+
+def test_a_release_that_gives_a_read_allow_list_type_subclasses_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A ``reads`` entry is an exact rule: the subclass of its type stays hidden (fail closed)."""
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, READ_POLICY, READ_DENY)
+    subclass = (
+        "  Tag:\n    summary: A kind of category.\n    is_a: Category\n    display_prefix: TAG\n"
+    )
+    outcome = release(run_cli, authored(tmp_path, [("relations:\n", subclass + "\nrelations:\n")]))
+    assert outcome.code == 0, outcome.envelope
+    ((code, details),) = policy_warnings(outcome)
+    assert (code, details) == (
+        "admin.policy_unknown_type",
+        {"graph": "example_graph", "type": "inv:Category"},
+    )
+    text = next(w["message"] for w in outcome.warnings if w["code"] == code)
+    assert "read allow list (reads)" in text and "subclasses stay hidden" in text
+
+
+def test_a_release_that_gives_a_hidden_type_subclasses_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A read deny names its type exactly: the subclass of the hidden type is visible."""
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, READ_POLICY, READ_DENY)
+    subclass = "  Shelf:\n    summary: A shelf.\n    is_a: Location\n    display_prefix: SHELF\n"
+    source = authored(tmp_path, [("relations:\n", subclass + "\nrelations:\n")])
+    candidate = admin(run_cli, "ontology", "diff", str(source), "--graph", "example_graph")
+    outcome = release(run_cli, source)
+    assert outcome.code == 0, outcome.envelope
+    expected = [("admin.policy_unknown_type", {"graph": "example_graph", "type": "inv:Location"})]
+    assert policy_warnings(outcome) == expected
+    assert policy_warnings(candidate) == expected
+    text = next(w["message"] for w in outcome.warnings if w["code"] == expected[0][0])
+    assert "read deny" in text and "visible" in text
+
+
+def test_a_release_that_drops_a_type_a_read_allow_list_names_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, READ_POLICY, READ_DENY)
+    supplier = "  Supplier:\n    summary: A company that delivers items.\n"
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    block = text[text.index(supplier) : text.index("  Category:\n")]
+    relation = text[text.index("  supplied_by:\n") : text.index("  in_category:\n")]
+    outcome = release(run_cli, authored(tmp_path, [(block, ""), (relation, "")]))
+    assert outcome.code == 0, outcome.envelope
+    assert policy_warnings(outcome) == [
+        ("admin.policy_unknown_type", {"graph": "example_graph", "type": "inv:Supplier"})
+    ]
+    text = outcome.warnings[0]["message"]
+    assert "read allow list (reads)" in text and "lets nobody see the type" in text
+
+
 def test_a_release_without_term_rules_installed_warns_nothing(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

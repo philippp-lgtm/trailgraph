@@ -431,7 +431,7 @@ def test_a_deny_rule_on_terms_denies_the_terms_instead_of_the_type() -> None:
         (
             "type: [nas:Note], relation: [nas:about], action: [read.get]",
             "deny[0].action",
-            "writes only",
+            "never decides a relation",
         ),
         ("type: [nas:Note], attribute: [], action: [write.update]", "deny[0].attribute", "list"),
     ],

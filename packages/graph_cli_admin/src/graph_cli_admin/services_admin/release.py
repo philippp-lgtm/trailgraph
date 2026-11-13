@@ -42,7 +42,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
-from graph_cli.access_control.terms import named_terms
+from graph_cli.access_control.terms import named_read_types, named_terms
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
@@ -434,10 +434,17 @@ def policies_affected(
     grant that is now abstract or has subclasses (an exact rule misses the entities of its
     subclasses);
     ``admin.policy_unknown_term`` for an attribute, relation or lifecycle attribute the type
-    lacks (fail closed: the entry has no effect until a release adds it). A policy without
-    write grants and term rules gives none."""
+    lacks (fail closed: the entry has no effect until a release adds it).
+
+    The read rules (type read limits plan V2, V3) get their own messages under the same code:
+    a type of a ``reads`` allow list that is unknown, or now abstract or with subclasses (the
+    subclasses stay hidden: fail closed, but probably not meant), and a type a deny rule hides
+    that is unknown or now abstract or with subclasses (the subclasses are visible: the deny
+    names the exact type). A policy without write grants, term rules and read rules gives
+    none."""
     named = named_terms(policy.documents, entry.id)
-    if not named:
+    read_named = named_read_types(policy.documents, entry.id)
+    if not named and not read_named:
         return ()
     terms = term_model(model).types
     extended = extended_types(model.classes)
@@ -498,6 +505,40 @@ def policies_affected(
                         },
                     )
                 )
+    for read in read_named:
+        details: dict[str, JsonValue] = {"graph": entry.name, "type": read.type}
+        if read.type not in terms:
+            text = (
+                "a read allow list (reads) of an installed policy names it; it lets nobody see"
+                " the type until a release has it"
+                if read.grant
+                else "an installed policy hides it; the deny applies to nothing until a release"
+                " has it"
+            )
+            warnings.append(
+                WarningRecord(
+                    "admin.policy_unknown_type",
+                    f"release {version} has no type {read.type} in graph {entry.name}, which"
+                    f" {text}",
+                    details,
+                )
+            )
+        elif read.type in extended:
+            text = (
+                "its read allow list (reads) is an exact rule and the subclasses stay hidden"
+                " (fail closed); list their types too"
+                if read.grant
+                else "the read deny of an installed policy is an exact rule and now leaves the"
+                " entities of the subclasses visible; hide their types too"
+            )
+            warnings.append(
+                WarningRecord(
+                    "admin.policy_unknown_type",
+                    f"type {read.type} of graph {entry.name} is abstract or has subclasses in"
+                    f" release {version}: {text}",
+                    details,
+                )
+            )
     return tuple(warnings)
 
 

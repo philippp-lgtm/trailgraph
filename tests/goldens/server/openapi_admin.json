@@ -2902,7 +2902,8 @@
               "type": "string",
               "enum": [
                 "read",
-                "write"
+                "write",
+                "none"
               ]
             }
           },
