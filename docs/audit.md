@@ -45,6 +45,16 @@ action in `request.action`. Not audited: `--dry-run`, an action with nothing to 
 and an unknown or hidden action. `history` shows the `action` next to the `command` of a
 revision it wrote.
 
+The decisions of an event (`authz.decisions`: action, resource, effect, rule) name
+resources of a graph, a type or, below a type, one attribute (`graph:<id>/type:<curie>/attr:<name>`)
+or one relation (`.../rel:<curie>`). A write is decided on the attributes and relations it
+touches for the types some rule names terms of ([Decisions on attributes and
+relations](access_control.md#decisions-on-attributes-and-relations)), and the intent or the
+refusal records those decisions next to the one on the type; a policy without such rules
+records the decisions on types alone, so its events are unchanged. The shape check takes any
+resource string, and the policy hash of these decisions is verified like that of any other
+([Policy verification](#policy-verification)).
+
 A write intent records how much the write stored: `change.changeset_size`
 is the byte length of the canonical changeset (the form `changeset_hash`
 covers), and every file the write stored is listed as `{hash, size}`.

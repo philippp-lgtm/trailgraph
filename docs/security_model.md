@@ -70,6 +70,18 @@ prevents depends on what is verified:
   assign any, and a project admin is kept from it by its ceiling. A role
   change counts from the next request, as a revoke does, and every change is
   audited ([Audit](audit.md#token-verification)).
+- Write allow lists ([Write allow lists](access_control.md#write-allow-lists))
+  narrow what a subject may write to the attributes and relations its grant
+  names. They hold like any rule: only through server tokens, where the
+  caller cannot edit the policy or the data; locally they are a guardrail that
+  stops well-behaved agents and mistakes, and an agent with a shell can edit the
+  files. Decisions on attributes and relations are audited like decisions on
+  types: the events of a write and of its refusal record them, with their
+  resources, and `audit verify` checks their policy hash as for any decision. A
+  `writes` grant cannot exceed what scopes and deny rules allow, because they
+  narrow it and an explicit deny wins. Reading is not limited by it: whoever
+  may write a type may still read all of the graph, and what a writer cannot
+  see is no topic until read limits exist (a later stage).
 - Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
   secrets too, but narrow ones: one use, at most 24 hours, always bound to
   a project, so a code never yields an unbound token (a maintainer's). Who
