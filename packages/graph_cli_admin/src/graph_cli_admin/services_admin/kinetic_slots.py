@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from graph_cli.audit import events
-from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_bool, req_list, req_str
@@ -27,9 +25,11 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli_admin.services_admin import catalog_follow
+from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
-from graph_cli_admin.services_admin.release import DAMAGED, check_state, current_catalog, names_of
+from graph_cli_admin.services_admin.release import DAMAGED, check_state, current_catalog
 
 SINGULAR: Final[dict[SlotKind, str]] = {"functions": "function", "actions": "action"}
 INVALID_FILE: Final[dict[SlotKind, str]] = {
@@ -120,26 +120,7 @@ def other_kind(kind: SlotKind) -> SlotKind:
     return "actions" if kind == "functions" else "functions"
 
 
-def write(
-    ctx: AdminContext,
-    session: MaintenanceSession,
-    entry: GraphEntry,
-    decisions: tuple[Decision, ...],
-    meta: RequestMeta,
-    current: KineticSlot | None,
-    slot: KineticSlot,
-    *,
-    reason: str | None,
-) -> None:
-    """Switch the slot from ``current`` to ``slot`` in the W.e shape."""
-    build = events.functions_change if slot.kind == "functions" else events.actions_change
-    change = build(current.hash if current is not None else None, slot.hash, slot.compiled_hash)
-    receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
-    if slot.kind == "functions":
-        session.replace_functions(slot, receipt)
-    else:
-        session.replace_actions(slot, receipt)
-    ctx.anchor(entry, decisions, meta, receipt, reason=reason)
+write = catalog_follow.write  # one definition: a release that republishes writes the same way
 
 
 def slot_of(checked: Checked, entry: GraphEntry, kind: SlotKind) -> KineticSlot:

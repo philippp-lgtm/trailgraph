@@ -5,13 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final, get_args
 
+from graph_cli.access_control.terms import rule_entries
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import STRING, array, enum, obj, ref
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.ontology_layer.diff import BumpCheck
+from graph_cli.ontology_layer.diff import BumpCheck, derive_renames
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -19,13 +21,21 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     MIGRATION_ERRORS,
     admin_context,
 )
-from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
-from graph_cli_admin.services_admin import graphs, ontology
+from graph_cli_admin.maintenance_cli.output_schemas import (
+    DIFF,
+    REFERENCES,
+    RELEASE,
+    RELEASE_OPTIONAL,
+    STRINGS,
+)
+from graph_cli_admin.services_admin import graphs, ontology, renamed_terms
+from graph_cli_admin.services_admin.migration import has_renames
 from graph_cli_admin.services_admin.release import (
-    actions_affected,
-    functions_affected,
+    catalog_affected,
+    follow_published,
     policies_affected,
     release,
+    republished_json,
 )
 
 SOURCE: Final = ParamSpec(
@@ -57,6 +67,7 @@ def diff_command(
     new = ontology.compile_source(Path(source), module)
     graph = None
     affected: tuple[WarningRecord, ...] = ()
+    graph_data: dict[str, JsonValue] = {}
     if graph_ref is not None:
         ctx = admin_context(state, data_root)
         entry = ctx.resolve(graph_ref, "ontology diff")
@@ -67,21 +78,45 @@ def diff_command(
         )
         old = ontology.pinned_model(ctx.catalog, entry)
         graph = graphs.envelope_graph(entry)
-        published = ctx.catalog.read_functions(entry.id)
-        affected = (
-            *functions_affected(published, new.model),
-            *actions_affected(ctx.catalog.read_actions(entry.id), published, new.model),
-            *policies_affected(ctx.policy.current(entry.id), entry, new.model),
+        functions = ctx.catalog.read_functions(entry.id, sources=True)
+        actions = ctx.catalog.read_actions(entry.id, sources=True)
+        renames = derive_renames(old, new.model)
+        # what the release would do with the catalogs: publish them again (renames or a
+        # migration file) or leave them broken (plan M8)
+        recompile = ontology.read_migration(Path(source)) is not None or has_renames(renames)
+        followed_functions, followed_actions = follow_published(
+            functions, actions, new.model, new.pin, recompile=recompile
         )
+        version = new.model.bundle_version
+        entries = rule_entries(ctx.policy.current(entry.id).documents)
+        hazards = renamed_terms.hazards(entries, entry.id, renames, (), new.model)
+        affected = (
+            *catalog_affected("functions", followed_functions.problems, version),
+            *catalog_affected("actions", followed_actions.problems, version),
+            *policies_affected(ctx.policy.current(entry.id), entry, new.model),
+            *renamed_terms.warning(hazards, version),
+        )
+        republished = republished_json(followed_functions, followed_actions)
+        if republished:
+            graph_data["republished"] = republished
+        references = renamed_terms.references(
+            entries, entry.id, renames, new.model, functions=functions, actions=actions
+        )
+        if references:
+            graph_data["references"] = references
     else:
         assert against is not None
         old = ontology.compile_source(Path(against), module).model
     report, bump = ontology.diff(old, new.model)
-    renames = ontology.rename_warnings(old, new.model)  # refuses an invalid renamed_from
+    renames_warnings = ontology.rename_warnings(old, new.model)  # refuses an invalid renamed_from
     return Result(
-        data={**report.to_json(), "bump": bump},
+        data={**report.to_json(), "bump": bump, **graph_data},
         graph=graph,
-        warnings=(*ontology.module_bump_warnings(old, new.model, report), *renames, *affected),
+        warnings=(
+            *ontology.module_bump_warnings(old, new.model, report),
+            *renames_warnings,
+            *affected,
+        ),
     )
 
 
@@ -119,7 +154,10 @@ VALIDATE_OUTPUT: Final = obj(  # services_admin.ontology.summary
         "findings": array(ref("finding")),
     }
 )
-DIFF_OUTPUT: Final = obj({**DIFF, "bump": enum(*get_args(BumpCheck))})
+DIFF_OUTPUT: Final = obj(
+    {**DIFF, "bump": enum(*get_args(BumpCheck))},
+    {"republished": ref("republished"), "references": REFERENCES},  # only with --graph
+)
 RELEASE_OUTPUT: Final = obj({"graph_id": STRING, **RELEASE}, RELEASE_OPTIONAL)
 
 
@@ -183,7 +221,9 @@ SPECS: Final = (
         " A renamed_from that names nothing, whose source still exists, whose target existed"
         " before or that two terms share is ontology.rename_invalid."
         " With --graph, authorized maint.graph_configure on the graph; published functions and"
-        " actions the release would break are warnings.",
+        " actions the release would break and deny rules it would fail open are warnings, and the"
+        " answer lists where renamed terms are named (references) and the catalogs the release"
+        " would publish again (republished).",
         remote="hooked",
     ),
     CommandSpec(
@@ -243,7 +283,10 @@ SPECS: Final = (
         output=RELEASE_OUTPUT,
         description="The version bump must cover the changes against the pinned release, and"
         " every published function and action must still resolve under the new one (any bump:"
-        " admin.functions_broken, admin.actions_broken; fix it with graph push); re-running a"
+        " admin.functions_broken, admin.actions_broken; fix it with graph push; a release with"
+        " renames or a migration file publishes the catalogs again by itself when their sources"
+        " still compile against the new version); a deny rule of the installed policy that"
+        " names a renamed term and no new one is admin.policy_renamed_term; re-running a"
         " release that is already pinned changes nothing. A major release may carry a data"
         " migration, the file migration.yaml in SOURCE: it is part of the release (the same"
         " version with another file is admin.release_exists), needs maint.migrate (maintainers"

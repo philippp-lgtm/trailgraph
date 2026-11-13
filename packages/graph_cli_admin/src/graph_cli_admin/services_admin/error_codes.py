@@ -103,6 +103,18 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.actions_affected", _C.WARNING, False, "A release would break published actions."
     ),
+    ErrorSpec(
+        "admin.policy_renamed_term",
+        _C.REFUSED,
+        False,
+        "A deny rule would stop applying: the release renames a term it names.",
+    ),
+    ErrorSpec(
+        "admin.policy_renamed_term_affected",
+        _C.WARNING,
+        False,
+        "A release would be refused: a deny rule names a term it renames.",
+    ),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
     ErrorSpec(
         "admin.policy_unknown_term",

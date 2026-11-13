@@ -37,7 +37,9 @@ will have is checked against the ontology it will have; whenever the
 ontology or the functions change, so are the functions: the new files
 against the model the graph will have, or, when the push does not touch
 them, the published catalog (``admin.functions_broken`` in the release); the
-actions likewise (``admin.actions_broken``). Functions and actions share one
+actions likewise (``admin.actions_broken``); a release with renames or a migration file
+publishes a catalog it does not replace again when its sources still compile against the new
+model (``release.plan``, ``data.ontology.republished``). Functions and actions share one
 namespace: each kind is checked against the names of the other kind the graph
 will have. Every check runs before the first write; the new base is written into the
 directory afterwards (``dry_run``: answered, not written).
@@ -73,6 +75,7 @@ from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
 from graph_cli_admin.services_admin import actions, functions, kinetic_slots, release, skill
+from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     RELEASE_FILE,
@@ -452,10 +455,8 @@ def push(
         publishing_actions = actions_changed and current_actions != pushed_actions
         # One namespace per graph: each kind is checked against the names of the other kind
         # the graph will have (the pushed files if the push publishes them, else the published).
-        function_names = (
-            _stems(function_files) if publishing_functions else release.names_of(published)
-        )
-        action_names = _stems(action_files) if publishing_actions else release.names_of(catalog)
+        function_names = _stems(function_files) if publishing_functions else names_of(published)
+        action_names = _stems(action_files) if publishing_actions else names_of(catalog)
         planned = (
             release.plan(
                 ctx,
@@ -556,8 +557,11 @@ def push(
             }
         )
         final = slot if slot is not None else current
-        final_functions = function_slot if function_slot is not None else published
-        final_actions = action_slot if action_slot is not None else catalog
+        # a catalog the release compiles again (plan M8) is the same sources, compiled anew
+        again_functions = planned.functions if planned is not None else None
+        again_actions = planned.actions if planned is not None else None
+        final_functions = function_slot or (again_functions.slot if again_functions else published)
+        final_actions = action_slot or (again_actions.slot if again_actions else catalog)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},

@@ -953,6 +953,9 @@
           },
           "migration": {
             "$ref": "#/components/schemas/migration_preview"
+          },
+          "republished": {
+            "$ref": "#/components/schemas/republished"
           }
         },
         "required": [
@@ -2366,6 +2369,112 @@
               "insufficient",
               "excessive"
             ]
+          },
+          "republished": {
+            "$ref": "#/components/schemas/republished"
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "class",
+                    "relation",
+                    "attribute"
+                  ]
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "functions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "explicit": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "explicit"
+                    ]
+                  }
+                },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "explicit": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "explicit"
+                    ]
+                  }
+                },
+                "policy": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "layer": {
+                        "type": "string"
+                      },
+                      "rule": {
+                        "type": "string"
+                      },
+                      "effect": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "covered": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "layer",
+                      "rule",
+                      "effect",
+                      "resource",
+                      "covered"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "from",
+                "to",
+                "functions",
+                "actions",
+                "policy"
+              ]
+            }
           }
         },
         "required": [
@@ -2443,6 +2552,9 @@
           },
           "migration": {
             "$ref": "#/components/schemas/migration_preview"
+          },
+          "republished": {
+            "$ref": "#/components/schemas/republished"
           }
         },
         "required": [
@@ -3520,6 +3632,9 @@
           },
           "migration": {
             "$ref": "#/components/schemas/migration_preview"
+          },
+          "republished": {
+            "$ref": "#/components/schemas/republished"
           }
         },
         "required": [
@@ -3528,6 +3643,79 @@
           "released",
           "pinned"
         ]
+      },
+      "republished": {
+        "type": "object",
+        "properties": {
+          "functions": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "compiled_hash": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "names",
+              "compiled_hash"
+            ]
+          },
+          "actions": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "compiled_hash": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "names",
+              "compiled_hash"
+            ]
+          }
+        }
       },
       "short_envelope": {
         "type": "object",
@@ -7742,7 +7930,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.remote_mode, migration.invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.remote_mode, migration.invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -7768,6 +7956,7 @@
               "admin.migration_required",
               "admin.migration_unexpected",
               "admin.model_invalid",
+              "admin.policy_renamed_term",
               "admin.remote_mode",
               "migration.invalid",
               "remote.client_outdated"
@@ -9779,7 +9968,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -9807,6 +9996,7 @@
               "admin.migration_required",
               "admin.migration_unexpected",
               "admin.model_invalid",
+              "admin.policy_renamed_term",
               "admin.release_exists",
               "admin.remote_mode",
               "admin.skill_invalid",
@@ -11893,7 +12083,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -11919,6 +12109,7 @@
               "admin.migration_required",
               "admin.migration_unexpected",
               "admin.model_invalid",
+              "admin.policy_renamed_term",
               "admin.release_exists",
               "admin.remote_mode",
               "admin.version_bump_insufficient",

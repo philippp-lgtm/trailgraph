@@ -95,6 +95,14 @@ its prefix reserved.
    raise `[remote] timeout_s` above the duration.
 5. `graph-admin audit verify` must report no errors.
 
+Before step 4, check what a rename does around the data: `graph-admin ontology diff <dir> --graph
+<graph>` lists per renamed term the functions, actions and policy rules that name the old one.
+A deny rule (`types: {T: none}`, a `deny` entry) that names only the old term is refused
+(`admin.policy_renamed_term`): apply a policy naming both terms first, release, then drop the
+old name. Published functions whose files name the class by its bare name (and a `module:`
+line) are compiled again and published with the release; those that name the old CURIE or a
+renamed attribute are fixed in the same push (`admin.functions_broken`).
+
 Only maintainers may migrate (`maint.migrate`); a project admin's release that migrates is
 refused with `access.ceiling`. The file is part of the release: the same version with another
 file is `admin.release_exists`.

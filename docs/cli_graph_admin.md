@@ -33,8 +33,8 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `graph actions show GRAPH` | the published action catalog: hash, ontology pin it was published against, and one line per action |
 | `graph skill render GRAPH DIR --out OUT` | preview: write what `graph skills install` would install into `OUT/graph-<graph>/` and report what publish would refuse (`--force`) and the size against the [budgets](skills.md#budgets) (`data.size`, warning `admin.skill_over_budget`); changes nothing in the data root |
 | `ontology validate DIR` | compile and check an authored ontology |
-| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; a `renamed_from` that does not fit the older version is `ontology.rename_invalid` (a leftover the previous release applied already is the warning `ontology.rename_stale`); with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break |
-| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (a prefix stays with its entities: a class renamed with `renamed_from` (a local name, or the CURIE of the old term when it moves to another module) takes the prefix of its old name and replaces that entry, a removed class keeps its prefix, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)); a major release may carry a data migration (`migration.yaml`, [below](#releasing-with-a-data-migration)); `--dry-run` makes every check and shows the migration without writing, `--reason` is recorded with the release and the migration |
+| `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; a `renamed_from` that does not fit the older version is `ontology.rename_invalid` (a leftover the previous release applied already is the warning `ontology.rename_stale`); with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break, `admin.policy_renamed_term_affected` for deny rules that would fail open, and lists `references` (where functions, actions and policy name each renamed term) and the catalogs the release would publish again (`republished`) |
+| `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (a prefix stays with its entities: a class renamed with `renamed_from` (a local name, or the CURIE of the old term when it moves to another module) takes the prefix of its old name and replaces that entry, a removed class keeps its prefix, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)), unless the release has renames and they can be compiled again (`republished`); a deny rule that names a renamed term and no new one is `admin.policy_renamed_term`; a major release may carry a data migration (`migration.yaml`, [below](#releasing-with-a-data-migration)); `--dry-run` makes every check and shows the migration without writing, `--reason` is recorded with the release and the migration |
 | `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Each list shows 20 entries, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
@@ -89,9 +89,34 @@ of the `ontology-best-practices` skill.
   `migration` block of the answer, the counts per derived rename and per step (entities,
   edges, by type, three sample ids), the findings that remain and the steps that matched
   nothing. Nothing is written, not even a marker.
+- **Policy and catalogs** follow or block. A release that renames or retypes a term is
+  refused with `admin.policy_renamed_term` while an installed deny rule (a graph policy's
+  `deny` entry, `types: {T: none}` or `read`, a glob such as `prefix:*`) names the old term and
+  no deny rule names the new one for the same actions: it would apply to nothing, so it would
+  fail open. Apply a policy that names both (a policy may name terms that do not exist yet),
+  release, then drop the old names; allow lists (`reads`, `writes`) fail closed and only warn.
+  An unfinished migration is completed whatever the policy says. Published functions and
+  actions that no longer resolve are compiled again from their sources: when those compile
+  cleanly against the new model (a function that names a class without a prefix, a
+  relation that kept its name), the catalog is published again with the release, the same
+  sources with a new compiled document, audited like a publish (`maint.graph_configure`,
+  `change.functions.from` equal to `to`, only `compiled_hash` differs); the answer lists it in
+  `republished`. Those that name an old CURIE, or an attribute that was renamed, stay
+  `admin.functions_broken` / `admin.actions_broken` unless the same `graph push` brings the
+  fixed files. A function without a `module:` line on a graph that the release splits into
+  several modules needs that line (`function.module_required`), so it is fixed in the push
+  too. A release without renames or migration file is unchanged. `ontology diff --graph`
+  lists per renamed term the functions, actions and policy rules that name the old one
+  (`references`; a function or action is `explicit` when its own file names the old CURIE) and
+  the catalogs the release would publish again (`republished`); a deny rule the release would
+  be refused for is the warning `admin.policy_renamed_term_affected`. `graph check --ontology`
+  gives the same refusals and `republished`.
 - **The release** runs under the graph lock: it installs the release, writes the migration
   marker, appends the `maint.migrate` intent (`--reason` recorded), commits the migration as
-  one transaction, switches the pin and the alias prefixes, and removes the marker. The answer
+  one transaction, publishes the catalogs again, switches the pin and the alias prefixes, and
+  removes the marker. The republish sits before the pin switch so that the incomplete state,
+  which reads see under the target model, has catalogs compiled for it, and a release run
+  again publishes what a crash left. The answer
   reports `migrated` (entities, edges, entities per step), the transaction's `tx_seq` and the
   duration. App writers wait for the lock, up to `lock_timeout_s`, and are judged by the new
   model when they get it; run a large migration in a quiet moment.
@@ -225,7 +250,9 @@ with `admin.functions_broken` (the first 20 problems with the function
 names in `details`); `ontology diff --graph` warns about them beforehand
 (`admin.functions_affected`). The published actions get the same check
 (`admin.actions_broken`, `admin.actions_affected`). Fix or delete the
-functions and actions in the same `graph push` as the ontology. Verification reports an
+functions and actions in the same `graph push` as the ontology; a release with renames
+compiles those whose sources still compile and publishes them again by itself
+([Releasing with a data migration](#releasing-with-a-data-migration)). Verification reports an
 interrupted operation as info and anchors only graphs without errors.
 
 Related guides: [Ontology authoring](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md)

@@ -739,6 +739,7 @@
         "admin.migration_required",
         "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
@@ -1224,6 +1225,7 @@
         "admin.migration_required",
         "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.release_exists",
         "admin.remote_mode",
         "admin.skill_invalid",
@@ -1790,6 +1792,7 @@
         "admin.migration_required",
         "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.release_exists",
         "admin.remote_mode",
         "admin.version_bump_insufficient",
@@ -3219,6 +3222,11 @@
     },
     {
       "code": "admin.policy_lockout",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.policy_renamed_term",
       "category": "refused",
       "exit": 1
     },

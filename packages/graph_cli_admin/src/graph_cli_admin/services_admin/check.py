@@ -25,6 +25,11 @@
   migration leaves shows as findings. A migration that is committed but not pinned (an
   interrupted release) is the warning ``graph.migration_incomplete``; the data is checked
   under its target version.
+- The same preview shows what the release does with the policy and the catalogs (plan M8): a
+  deny rule that names a renamed term and no new one fails with ``admin.policy_renamed_term``,
+  as the release would; published functions and actions that would be compiled again and
+  published with the release are listed in ``republished``; those that cannot be are
+  ``admin.functions_broken`` / ``admin.actions_broken`` as before.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from graph_cli.access_control.terms import rule_entries
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, has_errors
@@ -41,10 +47,12 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import GraphStoreRead, Snapshot
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.data_validator import check_graph
-from graph_cli.ontology_layer.diff import derive_renames
+from graph_cli.ontology_layer.diff import Renames, derive_renames
+from graph_cli.ontology_layer.migration import Retype
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli_admin.services_admin import migration as migrations
+from graph_cli_admin.services_admin import renamed_terms
 from graph_cli_admin.services_admin.audit import counts_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
@@ -55,9 +63,9 @@ from graph_cli_admin.services_admin.ontology import (
 )
 from graph_cli_admin.services_admin.release import (
     actions_broken,
-    catalog_problems,
+    follow_published,
     functions_broken,
-    names_of,
+    republished_json,
 )
 
 
@@ -96,28 +104,32 @@ def check(
                 },
             ),
         )
+    pin = entry.pin
+    renames: Renames | None = None
+    retypes: tuple[Retype, ...] = ()
+    file: migrations.Migration | None = None
     if source is None:
         model = _migrated_model(ctx, entry, interrupted) or pinned_model(ctx.catalog, entry)
         findings = check_graph(model, snapshot)
     else:
         compiled = compile_source(source, module)
-        model = compiled.model
-        findings, block, extra = _authored(
-            ctx,
-            entry,
-            compiled.pin.version,
-            model,
-            read_migration(source),
-            read,
-            snapshot,
-            interrupted,
-        )
+        model, pin = compiled.model, compiled.pin
+        if pin.version != entry.pin.version and interrupted is None:
+            old = pinned_model(ctx.catalog, entry)
+            renames = derive_renames(old, model)
+            file = migrations.parse(read_migration(source))
+            retypes = migrations.retypes(file)
+        findings, block, extra = _authored(ctx, entry, model, file, renames, read, snapshot)
         warnings += extra
     codes = Counter(f.code for f in findings)
-    slot = ctx.catalog.read_functions(entry.id)
-    problems = catalog_problems(slot, model)
-    published = ctx.catalog.read_actions(entry.id)
-    action_problems = catalog_problems(published, model, function_names=names_of(slot))
+    slot = ctx.catalog.read_functions(entry.id, sources=True)
+    published = ctx.catalog.read_actions(entry.id, sources=True)
+    # what the release would do with the catalogs: publish them again or leave them broken
+    recompile = file is not None or (renames is not None and migrations.has_renames(renames))
+    followed_functions, followed_actions = follow_published(
+        slot, published, model, pin, recompile=recompile
+    )
+    problems, action_problems = followed_functions.problems, followed_actions.problems
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "ontology": {"bundle": model.bundle_id, "version": model.bundle_version},
@@ -136,20 +148,25 @@ def check(
     }
     if block is not None:
         data["migration"] = block
+    republished = republished_json(followed_functions, followed_actions)
+    if republished:
+        data["republished"] = republished
     if has_errors(findings):
         raise GraphCliError(
             "admin.data_errors",
             f"the data of {entry.name} has errors under {model.bundle_version}: {data['counts']}",
             details={k: data[k] for k in ("ontology", "counts", "codes", "findings")},
         )
+    bump: dict[str, JsonValue] = {"to": model.bundle_version, "pinned": source is None}
+    if renames is not None and (migrations.has_renames(renames) or retypes):
+        entries = rule_entries(ctx.policy.current(entry.id).documents)
+        found = renamed_terms.hazards(entries, entry.id, renames, retypes, model)
+        if found:
+            raise renamed_terms.refusal(found, bump)
     if problems:
-        raise functions_broken(
-            problems, {"to": model.bundle_version, "pinned": source is None}, advice=""
-        )
+        raise functions_broken(problems, bump, advice="")
     if action_problems:
-        raise actions_broken(
-            action_problems, {"to": model.bundle_version, "pinned": source is None}, advice=""
-        )
+        raise actions_broken(action_problems, bump, advice="")
     return CheckOutcome(entry, data, snapshot.seq, warnings)
 
 
@@ -169,22 +186,19 @@ def _migrated_model(
 def _authored(
     ctx: AdminContext,
     entry: GraphEntry,
-    version: str,
     new: CompiledModel,
-    raw: bytes | None,
+    file: migrations.Migration | None,
+    renames: Renames | None,
     read: GraphStoreRead,
     snapshot: Snapshot,
-    interrupted: MigrationMarker | None,
 ) -> tuple[list[Finding], dict[str, JsonValue] | None, tuple[WarningRecord, ...]]:
     """The data under an authored ontology: the findings, the ``migration`` block and its
-    warnings. A version other than the pin is checked after its migration, if it has one."""
-    if version == entry.pin.version or interrupted is not None:
+    warnings. A version other than the pin is checked after its migration, if it has one
+    (``file`` and ``renames`` are set only for such a version)."""
+    if file is None or renames is None:
         return check_graph(new, snapshot), None, ()  # nothing to migrate: the data is as it is
-    file = migrations.parse(raw)
-    if file is None:
-        return check_graph(new, snapshot), None, ()  # no migration: the data as it is
     old = pinned_model(ctx.catalog, entry)
-    renames = derive_renames(old, new)
+    version = new.bundle_version
     major = Version.parse(version).major > Version.parse(entry.pin.version).major
     migrations.validate(
         file,

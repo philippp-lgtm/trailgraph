@@ -58,6 +58,11 @@ def _check_ontology(details: Mapping[str, JsonValue], program: str) -> str | Non
     return f"{program} graph check <graph> --ontology <dir>"
 
 
+def _policy_apply(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Name the old and the new term in the graph's policy before the release."""
+    return f"{program} policy apply <file> --graph <graph> --reason <reason>"
+
+
 def _release_again(details: Mapping[str, JsonValue], program: str) -> str | None:
     """Finish an interrupted migration with the release that started it."""
     return f"{program} ontology release <graph> <dir>"
@@ -72,6 +77,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.migration_unexpected": None,  # the message names the versions: bump the major
     "admin.migration_from_mismatch": None,  # details.expected is the version for from:
     "admin.migration_incomplete": _release_again,
+    "admin.policy_renamed_term": _policy_apply,
     "migration.invalid": None,  # details.problems names each path to fix
     "ontology.rename_invalid": None,  # details.problems names each renamed_from to fix
     "admin.integrity_errors": None,

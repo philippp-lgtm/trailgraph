@@ -82,7 +82,51 @@ RELEASE_OPTIONAL: Final = {
     "alias_prefixes_added": obj(extra=STRING),
     "dry_run": BOOLEAN,  # only for --dry-run
     "migration": ref("migration_preview"),  # only for a release with a migration file
+    "republished": ref("republished"),  # only when a catalog is compiled again (plan M8)
 }
+
+
+def _republished() -> Schema:
+    """``services_admin.release.republished_json``: the published catalogs a release compiles
+    again from their sources; the compiled hash is the only thing that changes."""
+    one = obj(
+        {
+            "count": INTEGER,
+            "names": STRINGS,
+            "compiled_hash": obj({"from": STRING, "to": STRING}),
+        }
+    )
+    return obj({}, {"functions": one, "actions": one})
+
+
+def _references() -> Schema:
+    """``services_admin.renamed_terms.references``: per renamed term the functions, actions and
+    policy rules that name the old one (``ontology diff --graph``)."""
+    named = obj({"name": STRING, "explicit": BOOLEAN})
+    rule = obj(
+        {
+            "layer": STRING,
+            "rule": STRING,
+            "effect": STRING,
+            "resource": STRING,
+            "covered": nullable(BOOLEAN),
+        }
+    )
+    return array(
+        obj(
+            {
+                "kind": enum("class", "relation", "attribute"),
+                "from": STRING,
+                "to": STRING,
+                "functions": array(named),
+                "actions": array(named),
+                "policy": array(rule),
+            }
+        )
+    )
+
+
+REFERENCES: Final = _references()
 
 
 def _migration_effect() -> Schema:
@@ -200,6 +244,7 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         ),
         "ontology_diff": obj(DIFF),
         "release": obj(RELEASE, RELEASE_OPTIONAL),
+        "republished": _republished(),
         "migration_effect": _migration_effect(),
         "migration_preview": _migration_preview(),
         "finding_counts": obj(  # services_admin.audit.counts_of

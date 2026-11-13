@@ -29,11 +29,11 @@ lock and ``check_graph`` judges the data after them, so ``admin.migration_requir
 the data does not fit *after* the migration (or a rename rewrites data and there is no file).
 ``write`` runs the sequence of plan M3 under the lock it holds: install the release (the file
 is part of its identity), write the migration marker, append the ``maint.migrate`` intent,
-commit the migration tx, switch the pin and the alias prefixes, remove the marker. A crash
-before the commit leaves the old state (a stale marker is ignored and overwritten); a crash
-after it leaves the incomplete state, which reads see under the target model, which refuses
-writes, and which the same release run again finishes (``admin.migration_incomplete`` for any
-other).
+commit the migration tx, publish the catalogs again (below), switch the pin and the alias
+prefixes, remove the marker. A crash before the commit leaves the old state (a stale marker is
+ignored and overwritten); a crash after it leaves the incomplete state, which reads see under
+the target model, which refuses writes, and which the same release run again finishes
+(``admin.migration_incomplete`` for any other).
 
 Every bump also re-checks the published function catalog against the new
 model (``graph_cli.kinetic.check_catalog``, K5): a function that no longer
@@ -43,6 +43,19 @@ problems in the details). The published action catalog gets the same check
 will have. The fix is ``graph push`` with the ontology and the fixed or deleted
 files together; ``plan`` then leaves the replaced catalog to the push, which checks
 the new files against the same model.
+
+A release with renames or a migration file (plan M8) first compiles such a catalog again from
+its published sources: when they compile cleanly (bare names, CURIEs that still exist), the
+catalog is published again with the release, the same sources with a new compiled document
+(``catalog_follow``; ``data.republished``, audited as a ``maint.graph_configure`` publish with
+``change.<kind>.from`` equal to ``to``). The republish sits after the migration tx and before
+the pin switch: in the incomplete state, which a crash after the tx leaves, reads already use
+the target model and the catalogs compiled for it, and the release run again finds the
+catalogs it still has to publish. A release without renames and file is unchanged. Before
+any of it, a release that renames or retypes a term is refused while an installed deny rule
+names the old term and none the new one (``admin.policy_renamed_term``, ``renamed_terms``):
+no deny rule fails open across a release; an unfinished migration is completed whatever the
+policy says.
 
 ``plan`` makes every check under the lock and ``write`` writes, so
 ``graph push`` (``sources``) runs a release, a skill publish and a function and
@@ -56,29 +69,35 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
-from graph_cli.access_control.terms import named_read_types, named_terms
+from graph_cli.access_control.terms import named_read_types, named_terms, rule_entries
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ids import TermRef, TxId
-from graph_cli.kernel.json_access import as_object, req_list, req_str
 from graph_cli.kernel.migration_marker import MigrationMarker, marker_committed
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, ManifestData, SlotKind
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import Head, MaintenanceSession
 from graph_cli.kernel.records import OntologyPin, RequestMeta
-from graph_cli.kinetic.action_compile import check_actions
-from graph_cli.kinetic.compile import check_catalog
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.diff import Renames, derive_renames
+from graph_cli.ontology_layer.migration import Retype
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli_admin.services_admin import migration as migrations
+from graph_cli_admin.services_admin import renamed_terms
+from graph_cli_admin.services_admin.catalog_follow import (
+    Followed,
+    Republish,
+    follow,
+    names_of,
+)
+from graph_cli_admin.services_admin.catalog_follow import write as write_catalog
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.graphs import PrefixChanges, merged_alias_prefixes
 from graph_cli_admin.services_admin.migration import MigrationRun
@@ -129,6 +148,8 @@ class Planned:
     prefix_changes: PrefixChanges | None = None  # ``None`` when nothing is released
     migration: MigrationRun | None = None  # ``None`` for a release without a data migration
     clear_marker: bool = False  # a marker no migration needs any more: stale, or finished
+    functions: Republish | None = None  # the function catalog compiled again for the release
+    actions: Republish | None = None  # the action catalog compiled again for the release
 
     @property
     def unchanged(self) -> bool:
@@ -140,6 +161,9 @@ class Decisions:
     release: tuple[Decision, ...]
     pin: tuple[Decision, ...]
     migrate: tuple[Decision, ...] = ()  # ``maint.migrate``, decided when the release migrates
+    # ``maint.graph_configure``, decided with it: a release that renames terms publishes the
+    # catalogs again like a publish does
+    configure: tuple[Decision, ...] = ()
 
 
 def authorize(
@@ -152,18 +176,22 @@ def authorize(
 ) -> Decisions:
     """The decisions of a release, before the lock (B6.3). ``migrate``: the release carries
     a migration file or renames, so ``maint.migrate`` is decided too (plan M4; a project
-    admin has no such right: ``access.ceiling``)."""
+    admin has no such right: ``access.ceiling``), and ``maint.graph_configure`` for the
+    catalogs the release may publish again (plan M8)."""
     resource = f"graph:{entry.id}"
     pairs = [("maint.ontology_release", resource)]
     release = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     pairs = [("maint.ontology_pin", resource)]
     pin = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     migration: tuple[Decision, ...] = ()
+    configure: tuple[Decision, ...] = ()
     if migrate:
         pairs = [("maint.migrate", resource)]
         migration = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
+        pairs = [("maint.graph_configure", resource)]
+        configure = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     ctx.read_data(entry, meta)  # a release checks the data; its findings quote values
-    return Decisions(release, pin, migration)
+    return Decisions(release, pin, migration, configure)
 
 
 def wants_migration(
@@ -303,6 +331,9 @@ def plan(
         ):
             raise migrations.incomplete(marker, current.version)
         completing, clear = marker, False  # the data is migrated: only the pin is left
+    retypes = migrations.retypes(file)
+    if completing is None:  # an unfinished migration is finished first, whatever the policy
+        _check_policy(ctx, entry, renames, retypes, compiled.model, bump_details)
     run: MigrationRun | None = None
     if major and head.seq:
         run = _check_data(
@@ -320,19 +351,30 @@ def plan(
         )
     elif file is not None:
         run = MigrationRun(file, renames, None, None, completing)
+    # Catalogs that no longer resolve: a release with renames or a migration compiles their
+    # sources again and publishes them with the release (plan M8); the others block.
+    recompile = file is not None or migrations.has_renames(renames)
     functions = current_catalog(session, "functions")
+    followed_functions = Followed(None, [])
     if not functions_replaced and functions is not None:
-        broken = catalog_problems(functions, compiled.model)
-        if broken:
-            raise functions_broken(broken, bump_details)
+        followed_functions = follow(functions, compiled.model, target, recompile=recompile)
+        if followed_functions.problems:
+            raise functions_broken(followed_functions.problems, bump_details)
+    followed_actions = Followed(None, [])
     if not actions_replaced:
         actions = current_catalog(session, "actions")
         if actions is not None:
             if function_names is None:
                 function_names = names_of(functions)
-            broken = catalog_problems(actions, compiled.model, function_names=function_names)
-            if broken:
-                raise actions_broken(broken, bump_details)
+            followed_actions = follow(
+                actions,
+                compiled.model,
+                target,
+                recompile=recompile,
+                function_names=function_names,
+            )
+            if followed_actions.problems:
+                raise actions_broken(followed_actions.problems, bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
     if bump == "excessive":
@@ -346,6 +388,9 @@ def plan(
     if run is not None and file is not None:
         warnings += migrations.unused_steps(run)
         data["migration"] = migrations.preview(file, run.plan, completing=completing is not None)
+    republished = republished_json(followed_functions, followed_actions)
+    if republished:
+        data["republished"] = republished
     changes = merged_alias_prefixes(
         entry.alias_prefixes, compiled, renames=renames, retypes=migrations.retypes(file)
     )
@@ -367,8 +412,50 @@ def plan(
     old = PinnedModel(old_model, current.artifact_hash)
     install = target.version not in installed
     return Planned(
-        manifest, compiled, old, install, prefixes, data, head.seq, warnings, changes, run, clear
+        manifest,
+        compiled,
+        old,
+        install,
+        prefixes,
+        data,
+        head.seq,
+        warnings,
+        changes,
+        run,
+        clear,
+        followed_functions.republish,
+        followed_actions.republish,
     )
+
+
+def republished_json(functions: Followed, actions: Followed) -> dict[str, JsonValue]:
+    """The ``republished`` block of an answer: the catalogs a release compiles again."""
+    block: dict[str, JsonValue] = {}
+    if functions.republish is not None:
+        block["functions"] = functions.republish.to_json()
+    if actions.republish is not None:
+        block["actions"] = actions.republish.to_json()
+    return block
+
+
+def _check_policy(
+    ctx: AdminContext,
+    entry: GraphEntry,
+    renames: Renames,
+    retypes: tuple[Retype, ...],
+    model: CompiledModel,
+    bump: dict[str, JsonValue],
+) -> None:
+    """No deny rule fails open across a release (plan M8): a release that renames or retypes a
+    term is refused (``admin.policy_renamed_term``) while an installed deny rule names the old
+    term and none names the new one. The policy is read again under the lock."""
+    if not (migrations.has_renames(renames) or retypes):
+        return
+    ctx.policy.refresh()
+    entries = rule_entries(ctx.policy.current(entry.id).documents)
+    found = renamed_terms.hazards(entries, entry.id, renames, retypes, model)
+    if found:
+        raise renamed_terms.refusal(found, bump)
 
 
 def _check_identity(
@@ -475,6 +562,11 @@ def write(
     target = planned.compiled.pin
     run = planned.migration
     writes = run is not None and run.writes
+    republish = [r for r in (planned.functions, planned.actions) if r is not None]
+    configure = decisions.configure
+    if republish and not configure:  # authorized before the first write, like the others
+        pairs = [("maint.graph_configure", f"graph:{entry.id}")]
+        configure = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     if planned.clear_marker and not writes:
         session.remove_migration_marker()  # stale, or the migration it names is finished
     file = run.migration if run is not None else None
@@ -499,6 +591,12 @@ def write(
         planned.data["released"] = True
     if run is not None and writes:
         _migrate(ctx, session, planned, run, decisions, meta, reason)
+    # The catalogs follow before the pin switches: in the incomplete state, which a crash here
+    # leaves, reads use the target model, and the same release run again finds what is left.
+    for found in republish:
+        write_catalog(
+            ctx, session, entry, configure, meta, found.current, found.slot, reason=reason
+        )
     changes = planned.prefix_changes
     moved = changes is not None and bool(changes.moved)
     change = events.pin_change(
@@ -587,29 +685,6 @@ def current_catalog(session: MaintenanceSession, kind: SlotKind) -> KineticSlot 
         return None
 
 
-def names_of(slot: KineticSlot | None) -> frozenset[str]:
-    """The names in a published catalog (deprecated ones too: they still hold the name)."""
-    if slot is None:
-        return frozenset()
-    key = slot.spec.list_key
-    return frozenset(req_str(as_object(e, key), "name") for e in req_list(slot.compiled, key))
-
-
-def catalog_problems(
-    slot: KineticSlot | None,
-    model: CompiledModel,
-    *,
-    function_names: frozenset[str] | None = None,
-) -> list[Problem]:
-    """The problems a published catalog has against ``model``; none for a missing one.
-    ``function_names`` are the functions the graph has: an action may not share a name."""
-    if slot is None:
-        return []
-    if slot.kind == "functions":
-        return check_catalog(slot.compiled, model)
-    return check_actions(slot.compiled, model, function_names=function_names or frozenset())
-
-
 def catalog_broken(
     kind: SlotKind,
     problems: list[Problem],
@@ -660,24 +735,20 @@ def _would_not_resolve(kind: SlotKind, names: list[str], version: str) -> str:
 
 
 def catalog_affected(
-    kind: SlotKind,
-    slot: KineticSlot | None,
-    model: CompiledModel,
-    *,
-    function_names: frozenset[str] | None = None,
+    kind: SlotKind, problems: list[Problem], version: str
 ) -> tuple[WarningRecord, ...]:
-    """``admin.<kind>_affected`` when the published catalog would not resolve under
-    ``model`` (what ``ontology diff --graph`` shows before a release refuses)."""
-    problems = catalog_problems(slot, model, function_names=function_names)
+    """``admin.<kind>_affected`` when the published catalog would not resolve under release
+    ``version`` and the release would not publish it again (what ``ontology diff --graph``
+    shows before a release refuses with ``admin.<kind>_broken``)."""
     if not problems:
         return ()
     names = sorted({p.name for p in problems})
     return (
         WarningRecord(
             f"admin.{kind}_affected",
-            _would_not_resolve(kind, names, model.bundle_version),
+            _would_not_resolve(kind, names, version),
             {
-                "to": model.bundle_version,
+                "to": version,
                 "count": len(problems),
                 kind: list[JsonValue](names[:MAX_FINDINGS]),
                 "problems": [p.to_json() for p in problems[:MAX_FINDINGS]],
@@ -686,16 +757,20 @@ def catalog_affected(
     )
 
 
-def functions_affected(slot: KineticSlot | None, model: CompiledModel) -> tuple[WarningRecord, ...]:
-    return catalog_affected("functions", slot, model)
-
-
-def actions_affected(
-    actions: KineticSlot | None, functions: KineticSlot | None, model: CompiledModel
-) -> tuple[WarningRecord, ...]:
-    """The action twin of ``functions_affected``; the action names are checked against the
-    published functions."""
-    return catalog_affected("actions", actions, model, function_names=names_of(functions))
+def follow_published(
+    functions: KineticSlot | None,
+    actions: KineticSlot | None,
+    model: CompiledModel,
+    pin: OntologyPin,
+    *,
+    recompile: bool,
+) -> tuple[Followed, Followed]:
+    """The published catalogs against the model of a release (the functions first, the actions
+    against their names): what ``plan`` decides, for the previews of ``ontology diff --graph``
+    and ``graph check --ontology``."""
+    followed = follow(functions, model, pin, recompile=recompile)
+    names = names_of(functions)
+    return followed, follow(actions, model, pin, recompile=recompile, function_names=names)
 
 
 def policies_affected(

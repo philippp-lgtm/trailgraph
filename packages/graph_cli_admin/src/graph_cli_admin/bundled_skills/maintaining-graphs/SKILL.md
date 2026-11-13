@@ -109,13 +109,13 @@ in `ontology-best-practices`, `references/versioning_and_release.md` (section
 
 Published functions and actions must resolve under the new version.
 `ontology diff --graph` warns `admin.functions_affected` and
-`admin.actions_affected` for the ones it would break, and a release (also a
-minor or patch) that would break one is refused with `admin.functions_broken`
-or `admin.actions_broken`. Do not release around it: change or delete the
-affected files in the folder's `functions/` or `actions/` (see the
-`authoring-graph-functions` and `authoring-graph-actions` skills) and push
-them together with the new ontology version, in the same `graph-admin graph
-push`; both are checked against the model the graph will have.
+`admin.actions_affected` for the ones it would break and lists where renamed
+terms are named; a release that would break one is refused with
+`admin.functions_broken` or `admin.actions_broken`, unless it has renames and
+the sources still compile (published again with it). Fix the rest in
+`functions/` or `actions/` (`authoring-graph-functions`, `authoring-graph-actions`)
+and push them with the ontology in one push. A deny rule naming only a
+renamed term is refused (`admin.policy_renamed_term`): apply a policy naming both first.
 
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from

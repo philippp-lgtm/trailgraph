@@ -32,6 +32,7 @@ MIGRATION_ERRORS: Final = (
     "admin.migration_unexpected",
     "admin.migration_from_mismatch",
     "admin.migration_incomplete",
+    "admin.policy_renamed_term",
 )
 
 
