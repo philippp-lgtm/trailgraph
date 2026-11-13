@@ -22,6 +22,7 @@ from graph_cli.kernel.records import (
     revision_from_json,
     revision_meta,
     revision_to_json,
+    strip_hidden_edges,
     tx_from_json,
     tx_to_json,
 )
@@ -77,6 +78,25 @@ def test_content_hash_excludes_tx_metadata() -> None:
     assert a.content_hash == b.content_hash
     assert make_revision(attrs={"count": 1, "name": "one"}).content_hash == a.content_hash
     assert make_revision(attrs={"name": "two"}).content_hash != a.content_hash
+
+
+def test_strip_hidden_edges_keeps_the_rest_and_rehashes() -> None:
+    keep = EdgeRecord(EdgeId(uid(2)), TermRef("ex:rel"), EntityId(uid(3)), {"page": "4"})
+    drop = EdgeRecord(EdgeId(uid(5)), TermRef("ex:rel"), EntityId(uid(6)))
+    last = EdgeRecord(EdgeId(uid(7)), TermRef("ex:other"), EntityId(uid(8)))
+    revision = make_revision(edges=(keep, drop, last), rev=3, prev_rev=2, tx_seq=9)
+    stripped = strip_hidden_edges(revision, lambda target: target != EntityId(uid(6)))
+    assert stripped.edges == (keep, last)  # original order, ids and qualifiers
+    expected = make_revision(edges=(keep, last), rev=3, prev_rev=2, tx_seq=9)
+    assert stripped == expected  # including the recomputed content hash
+    assert stripped.content_hash != revision.content_hash
+    assert strip_hidden_edges(revision, lambda target: False).edges == ()
+
+
+def test_strip_hidden_edges_returns_the_same_object_when_nothing_is_dropped() -> None:
+    revision = make_revision()
+    assert strip_hidden_edges(revision, lambda target: True) is revision
+    assert strip_hidden_edges(make_revision(edges=()), lambda target: False).edges == ()
 
 
 def test_revision_meta() -> None:

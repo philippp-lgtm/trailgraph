@@ -35,6 +35,19 @@ are sibling layers. The rules:
 - **Neighbors** walk breadth-first up to ``depth`` hops; each entity is
   reported once, at its smallest depth, reached by the smallest
   ``(neighbor id, edge id)`` candidate; the start is never reported.
+- **Visibility.** ``visible`` set on a ``Query`` or ``NeighborQuery`` limits
+  what the caller may see to entities whose current type is in it (record
+  status does not matter); ``None`` is no limit and changes nothing. An
+  entity that does not exist is not visible. Subjects of other types are
+  skipped: ``types`` is intersected with ``visible`` (and ``visible`` replaces
+  an empty ``types``), pushed down to the backend as the type hint, and an
+  empty result of that is an empty page, never "any type". A ``RelConstraint``
+  end that is not visible counts as absent (``out`` targets, ``in`` sources),
+  so ``exists: false`` matches an entity whose only edge goes to a hidden
+  entity. ``total`` counts what is left. A hidden or missing start has no
+  neighbors; the walk never steps onto or through a hidden node at any depth.
+  The revisions handed out (page items, neighbor revisions) lose their edges to
+  hidden targets (``strip_hidden_edges``), after paging.
 """
 
 from __future__ import annotations
@@ -61,7 +74,7 @@ from graph_cli.kernel.query_ast import (
     QueryPage,
     RelConstraint,
 )
-from graph_cli.kernel.records import EdgeRecord, Revision
+from graph_cli.kernel.records import EdgeRecord, Revision, strip_hidden_edges
 
 _ORDERING_OPS: Final = frozenset({"lt", "le", "gt", "ge"})
 _NUMERIC_OPS: Final = _ORDERING_OPS | {"eq", "ne", "in"}
@@ -273,15 +286,36 @@ def matches(revision: Revision, pred: Pred) -> bool:
     raise _invalid(f"unknown predicate {type(pred).__name__}")
 
 
-def _match_rel(universe: Universe, revision: Revision, rel: RelConstraint) -> bool:
+class _Sight:
+    """Which entities a ``visible`` set lets through, asked once per entity and call."""
+
+    def __init__(self, universe: Universe, visible: frozenset[TermRef]) -> None:
+        self._universe = universe
+        self._visible = visible
+        self._seen: dict[EntityId, bool] = {}
+
+    def sees(self, entity: EntityId) -> bool:
+        found = self._seen.get(entity)
+        if found is None:
+            current = self._universe.current(entity)
+            found = current is not None and current.type in self._visible
+            self._seen[entity] = found
+        return found
+
+
+def _match_rel(
+    universe: Universe, revision: Revision, rel: RelConstraint, sight: _Sight | None = None
+) -> bool:
     if rel.direction == "out":
         found = any(
-            edge.rel == rel.rel and (not rel.targets or edge.target in rel.targets)
+            edge.rel == rel.rel
+            and (not rel.targets or edge.target in rel.targets)
+            and (sight is None or sight.sees(edge.target))
             for edge in revision.edges
         )
     elif rel.direction == "in":
         found = any(
-            not rel.targets or source in rel.targets
+            (not rel.targets or source in rel.targets) and (sight is None or sight.sees(source))
             for source, _ in universe.incoming(revision.id, rel.rel)
         )
     else:
@@ -329,6 +363,12 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
     if query.as_of is not None:
         raise _invalid("as_of must be None at the port (B8.8)")
     types = frozenset(query.types)
+    sight: _Sight | None = None
+    if query.visible is not None:
+        types = types & query.visible if types else query.visible
+        if not types:  # nothing visible: never fall back to "any type"
+            return QueryPage(items=(), total=0, limit=query.limit, offset=query.offset)
+        sight = _Sight(universe, query.visible)
     found = []
     for revision in universe.current_revisions(types):
         if types and revision.type not in types:
@@ -339,7 +379,7 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
             continue
         if query.where is not None and not matches(revision, query.where):
             continue
-        if not all(_match_rel(universe, revision, rel) for rel in query.rels):
+        if not all(_match_rel(universe, revision, rel, sight) for rel in query.rels):
             continue
         found.append(revision)
     rows = [
@@ -351,13 +391,16 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
     ]
     rows.sort(key=_row_key(query.order))
     page = tuple(row[0] for row in rows[query.offset : query.offset + query.limit])
+    if sight is not None:
+        page = tuple(strip_hidden_edges(revision, sight.sees) for revision in page)
     return QueryPage(items=page, total=len(rows), limit=query.limit, offset=query.offset)
 
 
 def run_neighbors(
     universe: Universe, query: NeighborQuery
 ) -> list[tuple[EntityId, EdgeRecord, Revision]]:
-    if universe.current(query.start) is None:
+    sight = None if query.visible is None else _Sight(universe, query.visible)
+    if universe.current(query.start) is None or (sight is not None and not sight.sees(query.start)):
         return []
     rels = None if query.rels is None else frozenset(query.rels)
     visited = {query.start}
@@ -384,11 +427,19 @@ def run_neighbors(
         for neighbor, edge in sorted(candidates, key=lambda c: (c[0], c[1].edge_id)):
             if neighbor in visited:
                 continue
+            if sight is not None and not sight.sees(neighbor):
+                continue
             target = universe.current(neighbor)
             if target is None:
                 continue
             visited.add(neighbor)
-            level.append((neighbor, edge, target))
+            level.append(
+                (
+                    neighbor,
+                    edge,
+                    target if sight is None else strip_hidden_edges(target, sight.sees),
+                )
+            )
         result += level
         frontier = [neighbor for neighbor, _, _ in level]
         if not frontier:

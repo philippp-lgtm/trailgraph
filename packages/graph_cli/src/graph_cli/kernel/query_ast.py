@@ -96,6 +96,10 @@ class Query:
     offset: int = 0
     fields: tuple[FieldName, ...] | None = None  # rendering hint for services; ignored by storage
     as_of: AsOf | None = None  # v1: must be None (B8.8, services enforce)
+    # Entity types the caller may see; None = no limit. An empty set sees nothing. Narrows
+    # ``types`` (never widens it), hides edge ends of other types and strips the revisions
+    # handed out (``query_eval`` "Visibility").
+    visible: frozenset[TermRef] | None = None
 
     def __post_init__(self) -> None:
         if self.limit < 0 or self.offset < 0:
@@ -116,6 +120,7 @@ class NeighborQuery:
     rels: tuple[TermRef, ...] | None
     direction: Literal["out", "in", "both"]
     depth: int = 1
+    visible: frozenset[TermRef] | None = None  # as ``Query.visible``: hidden nodes are not walked
 
     def __post_init__(self) -> None:
         if not 1 <= self.depth <= MAX_NEIGHBOR_DEPTH:
