@@ -33,6 +33,12 @@ _ALL: Query = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 
 
 @dataclass(frozen=True, slots=True)
+class _ReverseEdges:
+    built_from: Mapping[EntityId, Revision]
+    index: dict[EntityId, list[tuple[EntityId, EdgeRecord]]]
+
+
+@dataclass(frozen=True, slots=True)
 class WorkingState:
     """Base snapshot plus the new revision of every changed entity."""
 
@@ -101,13 +107,26 @@ class WorkingState:
             for source, edge in self.base.incoming(entity, rel)
             if source not in self.revisions
         ]
-        for source, revision in self.revisions.items():
-            found += [
-                (source, edge)
-                for edge in revision.edges
-                if edge.target == entity and rel in (None, edge.rel)
-            ]
+        found += [
+            (source, edge)
+            for source, edge in self._reverse_edges().get(entity, ())
+            if rel in (None, edge.rel)
+        ]
         return sorted(found, key=lambda pair: (pair[0], pair[1].edge_id))
+
+    def _reverse_edges(self) -> Mapping[EntityId, list[tuple[EntityId, EdgeRecord]]]:
+        """The overlay's edges by target, built on first use (a large overlay, such as a
+        migration's, would make a scan per call quadratic). The cache entry remembers the
+        ``revisions`` it was built from: ``replace`` copies ``_cache`` along with them."""
+        cached = self._cache.get("incoming")
+        if isinstance(cached, _ReverseEdges) and cached.built_from is self.revisions:
+            return cached.index
+        index: dict[EntityId, list[tuple[EntityId, EdgeRecord]]] = {}
+        for source, revision in self.revisions.items():
+            for edge in revision.edges:
+                index.setdefault(edge.target, []).append((source, edge))
+        self._cache["incoming"] = _ReverseEdges(self.revisions, index)
+        return index
 
     def resolve_alias(self, alias: str) -> tuple[EntityId, bool] | None:
         for entity, allocated in self.alias_allocations:

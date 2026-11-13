@@ -90,15 +90,63 @@ def test_a_curie_renamed_from_is_a_rename_across_modules() -> None:
         ("classes.ex:Beta", "rename"),
         ("modules.area_a", "add_import"),
         ("relations.ex:link", "rename"),
-        # the relation's own domain and range name the moved classes by their new CURIEs
-        ("relations.ex:link.domain", "change_domain"),
-        ("relations.ex:link.range", "change_range"),
+        # the relation's domain and range name the moved classes: compared through the rename
     ]
     assert report.level == "major"
     assert check_renames(old, new) == ()
     assert derive_renames(old, new) == Renames(
         {"ex:Alpha": "aa:Alpha", "ex:Beta": "aa:Beta"}, {"ex:link": "aa:link"}, {}
     )
+
+
+def test_a_pure_move_shows_only_renames() -> None:
+    """Domain, range and ``extends`` naming a renamed class follow it: no change report."""
+    sub = "  Delta:\n    summary: Third.\n    is_a: Alpha\n"
+    old = single("1.0.0", body(more=sub))
+    moved_sub = "  Delta:\n    summary: Third.\n    is_a: Alpha\n    renamed_from: ex:Delta\n"
+    area = header("area_a", "aa", "1.0.0") + body(
+        alpha_from="ex:Alpha", beta_from="ex:Beta", link_from='"ex:link"', more=moved_sub
+    )
+    new = compile_modules("example", {"example": MOVED_MAIN, "area_a": area})
+    assert new.classes["aa:Delta"].extends == "aa:Alpha"
+    assert kinds(classify(old, new)) == [
+        ("classes.ex:Alpha", "rename"),
+        ("classes.ex:Beta", "rename"),
+        ("classes.ex:Delta", "rename"),
+        ("modules.area_a", "add_import"),
+        ("relations.ex:link", "rename"),
+    ]
+
+
+def test_a_real_change_next_to_a_rename_still_shows() -> None:
+    """The comparison is through the rename, not blind to the references."""
+    sub = "  Delta:\n    summary: Third.\n    is_a: Alpha\n"
+    old = single("1.0.0", body(more=sub))
+    moved = single(
+        "2.0.0",
+        body(
+            alpha="Gamma",
+            alpha_from="Alpha",
+            link="link",
+            more="  Delta:\n    summary: Third.\n    is_a: Beta\n",
+        ),
+    )
+    changes = {(c.path, c.kind): c.detail for c in classify(old, moved).changes}
+    assert ("classes.ex:Alpha", "rename") in changes
+    assert changes[("classes.ex:Delta", "change_extends")] == {
+        "from": "ex:Gamma",
+        "to": "ex:Beta",
+    }
+    assert ("relations.ex:link.domain", "change_domain") not in changes
+
+
+def test_a_rename_without_other_changes_keeps_references_quiet() -> None:
+    old = old_model()
+    new = new_model(alpha="Gamma", alpha_from="Alpha", beta="Delta", beta_from="Beta")
+    assert kinds(classify(old, new)) == [
+        ("classes.ex:Alpha", "rename"),
+        ("classes.ex:Beta", "rename"),
+    ]
 
 
 def test_the_curie_is_stored_verbatim_and_a_local_name_stays_local() -> None:

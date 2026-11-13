@@ -4,7 +4,9 @@
 change with its level; the report level is the maximum. Renames are
 recognized only when declared with ``renamed_from`` (a local name, or for classes
 and relations the CURIE of a term of the old model); anything else shows up as remove
-plus add. Inherited attributes are compared once, at the class that declares them.
+plus add. References to a renamed class (``extends``, relation domain and range) are
+compared through the rename, so a pure move shows only ``rename``. Inherited attributes
+are compared once, at the class that declares them.
 ``classify`` ignores a ``renamed_from`` that names nothing; ``check_renames`` judges the
 declarations and ``derive_renames`` returns the renames ``classify`` reports.
 
@@ -147,7 +149,7 @@ def module_bumps(old: CompiledModel, new: CompiledModel, report: DiffReport) -> 
 
 
 def classify(old: CompiledModel, new: CompiledModel) -> DiffReport:
-    differ = _Differ()
+    differ = _Differ(_effective_renames(old.classes, new.classes))
     differ.modules(old, new)
     differ.section("datatypes", old.datatypes, new.datatypes, differ.datatype)
     differ.section("enums", old.enums, new.enums, differ.enum)
@@ -417,8 +419,15 @@ _SINGULAR = {
 
 
 class _Differ:
-    def __init__(self) -> None:
+    def __init__(self, class_renames: Mapping[str, str]) -> None:
         self.changes: list[Change] = []
+        # Old class CURIE to new: references to a renamed class (``extends``, domain and
+        # range) are compared through it, so a pure move shows only its ``rename``.
+        self.class_renames = class_renames
+
+    def mapped(self, curies: tuple[str, ...]) -> tuple[str, ...]:
+        """Old class CURIEs under their new names."""
+        return tuple(self.class_renames.get(c, c) for c in curies)
 
     def add(self, path: str, kind: str, level: ChangeLevel, **detail: JsonValue) -> None:
         self.changes.append(Change(path, kind, level, detail))
@@ -581,8 +590,9 @@ class _Differ:
     def class_(self, path: str, new_curie: str, old: ClassDef, new: ClassDef) -> None:
         self.doc(path, old.doc, new.doc)
         old_curie = path.partition(".")[2]
-        if old.extends != new.extends:
-            self.add(path, "change_extends", "major", **{"from": old.extends, "to": new.extends})
+        old_extends = None if old.extends is None else self.mapped((old.extends,))[0]
+        if old_extends != new.extends:
+            self.add(path, "change_extends", "major", **{"from": old_extends, "to": new.extends})
         self.flag(path, "abstract", old.abstract, new.abstract, on="major", off="minor")
         if old.display_prefix != new.display_prefix:
             self.add(path, "change_display_prefix", "patch")
@@ -641,7 +651,10 @@ class _Differ:
 
     def relation(self, path: str, _curie: str, old: RelationDef, new: RelationDef) -> None:
         self.doc(path, old.doc, new.doc)
-        for key, a, b in (("domain", old.domain, new.domain), ("range", old.range, new.range)):
+        for key, a, b in (
+            ("domain", self.mapped(old.domain), new.domain),
+            ("range", self.mapped(old.range), new.range),
+        ):
             if set(a) == set(b):
                 continue
             wider = not b or (bool(a) and set(a) <= set(b))

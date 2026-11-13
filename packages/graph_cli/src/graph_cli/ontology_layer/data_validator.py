@@ -274,6 +274,46 @@ class _Problem:
     expected: JsonValue | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _SameGroup:
+    """The entities carrying one name: ``members`` as ``same_names`` orders them, ``lowest``
+    the (up to) two smallest entity ids as text."""
+
+    members: list[tuple[_Name, str]]
+    lowest: tuple[str, ...]
+
+
+def _matches(
+    checker: _Checker,
+    name: _Name,
+    attribute: AttributeDef,
+    family: frozenset[str],
+    found: Sequence[tuple[_Name, str]],
+    *,
+    skip_self: bool = True,
+) -> list[tuple[_Name, str]]:
+    """The candidates of ``found`` that count as another entity's name: one per entity (the
+    first), of the attribute's family, visible to the caller, not a ``unique`` clash that
+    ``unique_violation`` reports; ``same`` first. ``skip_self`` leaves out the entity of
+    ``name`` (a group cache keeps it and drops it per entity)."""
+    seen: dict[EntityId, tuple[_Name, str]] = {}
+    for other, match in found:
+        entity = other.revision.id
+        if skip_self and entity == name.revision.id:
+            continue
+        if entity in seen or other.revision.type not in family:
+            continue
+        if checker.view is not None and not checker.view.sees(entity):
+            continue  # a name only an entity the caller cannot see carries
+        if attribute.unique and other.attr == name.attr and other.stored == name.stored:
+            continue  # unique_violation reports it
+        seen[entity] = (other, match)
+    return sorted(
+        seen.values(),
+        key=lambda m: (m[1] != "same", m[0].revision.alias or "", str(m[0].revision.id)),
+    )
+
+
 @dataclass
 class _Checker:
     model: CompiledModel
@@ -281,7 +321,13 @@ class _Checker:
     local_names: Mapping[EntityId, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     view: CallerView | None = None
-    _bare: list[Finding] = field(default_factory=list, init=False, repr=False)
+    _bare: dict[tuple[str, str, str, str], list[Finding]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _families: dict[str, frozenset[str]] = field(default_factory=dict, init=False, repr=False)
+    _groups: dict[tuple[str, str, tuple[str, bytes] | None], _SameGroup] = field(
+        default_factory=dict, init=False, repr=False
+    )
     _connecting: dict[tuple[str, str], JsonValue | None] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -324,9 +370,14 @@ class _Checker:
             ):
                 finding = self.concealed(finding, path, own_hidden)
                 connect = None
-        if finding in self._bare:  # two ops may name the same problem
+        # Two ops may name the same problem. Equal findings share the bucket key, so only
+        # those are compared (a long list of findings stays linear).
+        same = self._bare.setdefault(
+            (code, str(target.get("id")), str(target.get("path")), message), []
+        )
+        if finding in same:
             return
-        self._bare.append(finding)
+        same.append(finding)
         if connect is not None:
             finding = replace(finding, connecting=self.connecting(*connect))
         self.findings.append(finding)
@@ -685,31 +736,54 @@ class _Checker:
     ) -> list[tuple[_Name, str]]:
         """Other active entities of the attribute's family carrying the name (``same``)
         or, with ``similar``, a near spelling of it; one each, ``same`` first."""
+        if not similar:
+            group = self.same_group(name, cls)
+            return [m for m in group.members if m[0].revision.id != name.revision.id]
         attribute = cls.attributes[name.attr]
-        family = set(self.model.subtypes(attribute.declared_in))
+        family = self.family(attribute.declared_in)
         found = [(other, "same") for other in self.name_index.get(name.key, ())]
-        if similar:
-            found += [
-                (other, "similar")
-                for key, others in self.name_index.items()
-                if key != name.key
-                for other in others
-                if _similar(name.words, other.words)
-            ]
-        seen: dict[EntityId, tuple[_Name, str]] = {}
-        for other, match in found:
-            entity = other.revision.id
-            if entity == name.revision.id or entity in seen or other.revision.type not in family:
-                continue
-            if self.view is not None and not self.view.sees(entity):
-                continue  # a name only an entity the caller cannot see carries
-            if attribute.unique and other.attr == name.attr and other.stored == name.stored:
-                continue  # unique_violation reports it
-            seen[entity] = (other, match)
-        return sorted(
-            seen.values(),
-            key=lambda m: (m[1] != "same", m[0].revision.alias or "", str(m[0].revision.id)),
-        )
+        found += [
+            (other, "similar")
+            for key, others in self.name_index.items()
+            if key != name.key
+            for other in others
+            if _similar(name.words, other.words)
+        ]
+        return _matches(self, name, attribute, family, found)
+
+    def family(self, class_curie: str) -> frozenset[str]:
+        """The class and its subclasses, computed once per class."""
+        found = self._families.get(class_curie)
+        if found is None:
+            found = self._families[class_curie] = frozenset(self.model.subtypes(class_curie))
+        return found
+
+    def same_group(self, name: _Name, cls: ClassDef) -> _SameGroup:
+        """The entities carrying ``name`` exactly, ``name``'s own entity not excluded: what
+        ``same_names`` answers for every entity with the same name (computed once per group,
+        so a batch over many entities does not rebuild it for each)."""
+        attribute = cls.attributes[name.attr]
+        # The answer depends on the entity only through the name and, for a unique attribute,
+        # through the attribute and the stored value (``unique_violation`` reports those).
+        unique = (name.attr, canonical_bytes(name.stored)) if attribute.unique else None
+        key = (name.key, attribute.declared_in, unique)
+        group = self._groups.get(key)
+        if group is None:
+            found = [(other, "same") for other in self.name_index.get(name.key, ())]
+            members = _matches(
+                self, name, attribute, self.family(attribute.declared_in), found, skip_self=False
+            )
+            ids = sorted(str(m[0].revision.id) for m in members)
+            group = self._groups[key] = _SameGroup(members, tuple(ids[:2]))
+        return group
+
+    def leads_duplicates(self, name: _Name, cls: ClassDef) -> bool:
+        """Whether other entities carry ``name`` and this entity has the smallest id among
+        them and itself (the one a batch check reports)."""
+        group = self.same_group(name, cls)
+        own = str(name.revision.id)
+        others = [i for i in group.lowest if i != own]
+        return bool(others) and own < others[0]
 
     def duplicate_name(self, name: _Name, matches: Sequence[tuple[_Name, str]]) -> None:
         first, match = matches[0]
@@ -1319,9 +1393,8 @@ def check_graph(model: CompiledModel, snapshot: Snapshot) -> list[Finding]:
                 )
                 groups.setdefault(key, []).append(revision)
         for label in _names(model, revision):
-            matches = checker.same_names(label, cls)
-            if matches and str(revision.id) < min(str(o.revision.id) for o, _ in matches):
-                checker.duplicate_name(label, matches)
+            if checker.leads_duplicates(label, cls):
+                checker.duplicate_name(label, checker.same_names(label, cls))
         checker.rules(revision, frozenset({"write", "batch"}))
         checker.incoming_cardinality(revision)
     for (_, name, _), members in groups.items():

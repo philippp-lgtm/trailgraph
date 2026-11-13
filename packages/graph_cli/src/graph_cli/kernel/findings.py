@@ -27,6 +27,7 @@ Layer = Literal[
     "lifecycle",
     "mutability",
     "temporal",
+    "migration",
     "rule",
     "audit",
     "storage",
