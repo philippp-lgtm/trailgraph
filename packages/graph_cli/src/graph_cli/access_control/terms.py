@@ -12,7 +12,9 @@ collected, never raised, because a later release may add the term: the caller wa
 - ``UnknownTerm``: an attribute, relation or lifecycle attribute a ``writes`` grant or a
   term deny rule names that the type does not have (nobody can write it: fail closed);
 - ``UnusableWrite``: a ``writes`` entry no write can satisfy (``update`` of a lifecycle
-  attribute; a ``create`` list that leaves out an attribute a create must give).
+  attribute; a ``create`` list that leaves out an attribute a create must give);
+- ``HiddenRangeCreate``: a ``create`` of a type with a required relation whose range the
+  same grant's ``reads`` hide entirely, so a caller with only that grant cannot create it.
 
 ``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
 and ``named_read_types`` read back which types and terms, and which types a read rule
@@ -47,6 +49,10 @@ class TypeTerms:
     file: bool  # is_a the stored-file class
     attributes: Mapping[str, AttributeTerms]  # effective, including inherited
     relations: frozenset[str]  # the relations whose domain covers the type
+    # The required relations of the type (outgoing cardinality minimum >= 1) with a closed
+    # range: relation -> the concrete types of its range, subtypes expanded, sorted. A relation
+    # with an open range (any class) is left out: no reads list can hide all of it.
+    required_ranges: Mapping[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +89,14 @@ class UnusableWrite:
         str, ...
     ]  # sorted: the lifecycle attributes of an update, the missing of a create
     file: bool  # the type is a stored file: ``graph file add`` sets some attributes itself
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class HiddenRangeCreate:
+    graph: GraphId
+    type: str  # the type a ``create`` is granted for
+    relation: str  # a required relation of the type
+    range: tuple[str, ...]  # the concrete types of its range, all outside the grant's ``reads``
 
 
 def term_resource(graph: GraphId | str, type_curie: str, kind: str, term: str) -> str | None:

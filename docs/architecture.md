@@ -214,7 +214,7 @@ the admin skills ([Skills](skills.md#admin-skills)).
 | `access_control.documents` | the compiled `graph_cli.policy/1` grammar, checked with a path per problem, `fine_types` (the types some rule names terms of) and `read_limited` (whether some rule decides the visibility of types) |
 | `access_control.compiler` | authored YAML to compiled documents |
 | `access_control.policy` | the built-in policy, `policy_set` (the layers of one decision and their hash) |
-| `access_control.terms` | what the compiler needs of a graph's model (`TermModel`: per type its attributes, relations and lifecycle flags) and what it finds out (unknown types and terms, unusable writes); the resources of attributes and relations (`term_resource`) and which types and terms installed rules name (`named_terms` and `named_read_types`, for the checks of an ontology release) |
+| `access_control.terms` | what the compiler needs of a graph's model (`TermModel`: per type its attributes, relations, the ranges of its required relations and lifecycle flags) and what it finds out (unknown types and terms, unusable writes, creates blocked by a hidden range); the resources of attributes and relations (`term_resource`) and which types and terms installed rules name (`named_terms` and `named_read_types`, for the checks of an ontology release) |
 | `access_control.effective` | level per graph, the actions withheld below it, write obligations, scope and the unknown-project warning, `write_allowance` (what a write allow list lets a caller write, per type and verb), `visibility` (the concrete types a caller sees, one `read.get` decision per type) and `read_allowance`, for `whoami` and `policy explain` |
 
 ## Read views of limited callers

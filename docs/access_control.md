@@ -238,6 +238,11 @@ missing, and the policy stays closed meanwhile:
   lifecycle attribute with several initial states (`details` `graph`, `type`,
   `verb`, `attributes`). For a type that stores files the warning also names the
   attributes `graph file add` sets itself ([Decisions](#decisions-on-attributes-and-relations)).
+  The same code warns when a grant with `reads` and a `create` of a type leaves
+  that type's required relation (a cardinality minimum) with a range none of the
+  grant's own `reads` cover: a caller with only that grant sees no target, so
+  every create is refused; another grant may still supply one, as rights add up
+  across roles (`details` add `relation` and `range`).
 
 `ontology release` gives the same two warnings when the new version drops or
 renames a type or term that an installed policy names, so that a rename does

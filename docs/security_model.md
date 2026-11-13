@@ -167,7 +167,9 @@ are accepted and known:
   have an edge to a type the caller cannot see (a cardinality minimum on a
   relation whose range is hidden), every create of that type is refused for the
   caller, because it cannot give a target. Hide such types together, or give
-  the caller a role that sees the range.
+  the caller a role that sees the range. `policy check` warns about it for a
+  grant's own `reads` (`admin.policy_unusable_write`); it cannot see what other
+  grants of the same caller add.
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

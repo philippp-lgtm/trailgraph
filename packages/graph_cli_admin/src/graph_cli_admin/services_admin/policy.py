@@ -625,6 +625,23 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             )
             for u in compiled.unusable_writes
         ),
+        *(
+            WarningRecord(
+                "admin.policy_unusable_write",
+                f"a create of {h.type} in graph {names[h.graph]} needs a {h.relation} edge to a"
+                f" type the grant's reads hide ({', '.join(h.range)}); a caller with only this"
+                " grant cannot create it unless another grant (rights add up across roles) lets"
+                " it see one",
+                {
+                    "graph": names[h.graph],
+                    "type": h.type,
+                    "verb": "create",
+                    "relation": h.relation,
+                    "range": list(h.range),
+                },
+            )
+            for h in compiled.hidden_range_creates
+        ),
     )
     return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
 

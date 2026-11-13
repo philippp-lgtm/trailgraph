@@ -375,7 +375,11 @@ def installation(
         ),
         *("--reason", "type read limits"),
     )
-    assert applied.code == 0 and applied.warnings == [], applied.envelope
+    assert applied.code == 0, applied.envelope
+    # the reporting grant creates notes but reads no topics: policy check warns about it
+    assert [(w["code"], w["details"]["relation"]) for w in applied.warnings] == [
+        ("admin.policy_unusable_write", "nas:about")
+    ], applied.envelope
     tokens = {
         "a": new_token(run_cli, "app_a", "--project", "example_project", "--role", "reporting"),
         "b": new_token(

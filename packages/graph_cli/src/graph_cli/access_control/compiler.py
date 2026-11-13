@@ -94,6 +94,7 @@ from graph_cli.access_control.documents import (
     is_write_glob,
 )
 from graph_cli.access_control.terms import (
+    HiddenRangeCreate,
     TermModel,
     TypeTerms,
     UnknownReadType,
@@ -185,6 +186,7 @@ class Compiled:
     unknown_read_types: tuple[UnknownReadType, ...] = ()
     unknown_terms: tuple[UnknownTerm, ...] = ()
     unusable_writes: tuple[UnusableWrite, ...] = ()
+    hidden_range_creates: tuple[HiddenRangeCreate, ...] = ()
 
 
 # One verb's terms of a type: sorted, without duplicates; ``()`` = every term (``true``).
@@ -210,6 +212,7 @@ class _Context:
     unknown_read_types: set[UnknownReadType] = field(default_factory=set)
     unknown_terms: set[UnknownTerm] = field(default_factory=set)
     unusable_writes: set[UnusableWrite] = field(default_factory=set)
+    hidden_range_creates: set[HiddenRangeCreate] = field(default_factory=set)
     _models: dict[GraphId, TermModel | None] = field(default_factory=dict)
 
     def add(self, path: str, message: str) -> None:
@@ -300,6 +303,7 @@ def compile_policy(
         tuple(sorted(ctx.unknown_read_types)),
         tuple(sorted(ctx.unknown_terms)),
         tuple(sorted(ctx.unusable_writes)),
+        tuple(sorted(ctx.hidden_range_creates)),
     )
 
 
@@ -448,7 +452,7 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
         _check_reads(reads, graphs, f"{path}.reads", ctx)
         rules.append(_reads_rule(number, principal, graphs, reads))
     if writes and named:
-        _check_writes(writes, graphs, f"{path}.writes", ctx)
+        _check_writes(writes, graphs, reads, f"{path}.writes", ctx)
         rules += _write_rules(number, principal, graphs, writes)
     return rules
 
@@ -572,8 +576,15 @@ def _verb_terms(verb: str, node: YamlNode, path: str, ctx: _Context) -> _Terms |
     return tuple(sorted(terms)) if valid else None
 
 
-def _check_writes(writes: _Writes, graphs: Sequence[GraphId], path: str, ctx: _Context) -> None:
-    """The model checks of ``writes`` (W8) against every graph the grant names."""
+def _check_writes(
+    writes: _Writes,
+    graphs: Sequence[GraphId],
+    reads: Sequence[str] | None,
+    path: str,
+    ctx: _Context,
+) -> None:
+    """The model checks of ``writes`` (W8) against every graph the grant names; ``reads`` is
+    the grant's own allow list (``None``: it reads every type)."""
     for graph in graphs:
         model = ctx.model_of(graph)
         if model is None:
@@ -590,6 +601,8 @@ def _check_writes(writes: _Writes, graphs: Sequence[GraphId], path: str, ctx: _C
                 )
             else:
                 _check_terms(graph, name, found, verbs, ctx)
+                if reads is not None and "create" in verbs:
+                    _check_hidden_ranges(graph, name, found, reads, ctx)
 
 
 def _check_terms(
@@ -625,6 +638,17 @@ def _check_terms(
     )
     if listed and missing:
         ctx.unusable_writes.add(UnusableWrite(graph, name, "create", missing, found.file))
+
+
+def _check_hidden_ranges(
+    graph: GraphId, name: str, found: TypeTerms, reads: Sequence[str], ctx: _Context
+) -> None:
+    """A create of ``name`` needs an edge for each required relation; when the grant's own
+    ``reads`` hide every concrete type of a relation's range, a caller with only this grant
+    sees no target and every create is refused as conflicting with data it cannot see."""
+    for relation, targets in sorted(found.required_ranges.items()):
+        if not any(_covered(target, reads) for target in targets):
+            ctx.hidden_range_creates.add(HiddenRangeCreate(graph, name, relation, targets))
 
 
 def _write_rules(

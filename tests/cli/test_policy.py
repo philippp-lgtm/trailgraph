@@ -146,6 +146,51 @@ no_project: {"*": read}
 """
 
 
+HIDDEN_RANGE_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers: notes only"}
+grants:
+  - entrypoint: server
+    principal: {role: importer}
+    graphs: [example_graph]
+    level: read
+    reads: [nas:Note]
+    writes:
+      nas:Note: {create: true}
+no_project: {"*": read}
+"""
+
+
+def test_a_create_whose_required_range_is_hidden_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A note needs an ``about`` edge to a topic; a grant that reads notes only cannot create one
+    on its own, so ``policy check`` warns, and the policy still applies."""
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    path = write_policy(tmp_path / "work", "installation.yaml", HIDDEN_RANGE_POLICY)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["admin.policy_unusable_write"]
+    warning = checked.warnings[0]
+    assert warning["details"] == {
+        "graph": "example_graph",
+        "type": "nas:Note",
+        "verb": "create",
+        "relation": "nas:about",
+        "range": ["nas:Topic"],
+    }
+    assert "grant's reads hide (nas:Topic)" in warning["message"]
+    assert "another grant" in warning["message"]
+    reading_topics = HIDDEN_RANGE_POLICY.replace(
+        "reads: [nas:Note]", "reads: [nas:Note, nas:Topic]"
+    )
+    path = write_policy(tmp_path / "work", "installation.yaml", reading_topics)
+    assert admin(run_cli, "policy", "check", str(path)).warning_codes == []
+    assert apply(run_cli, path).code == 0
+
+
 def test_writes_are_checked_against_the_model_of_each_graph(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
