@@ -19,16 +19,24 @@ alias may have been renamed in between.
   set, which is what gets hashed and recorded.
 
 The result also names the (action, type) pair of every touched entity for
-authorization; types are immutable, so they are known before the lock.
+authorization; types are immutable, so they are known before the lock. ``fine`` adds the
+terms an op is decided on below its type (plan W4: ``attr`` and ``rel`` of the subject's type,
+a create's inline edges as ``write.create``); an ``unlink`` by ``edge_id`` takes the relation
+from the subject's revision on the same snapshot, and none when there is none (an ``@local``
+of this document, an unknown edge: normalize refuses the op). A ``transition`` without
+``attr`` moves the lifecycle the model names, which this module does not know:
+``bare_transitions`` lists its types and the write service fills the term in. Terms outside
+the name and CURIE grammar of resources are left out (validation reports them).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Literal
 
+from graph_cli.access_control.documents import CURIE_RE, NAME_RE
 from graph_cli.kernel.actions import Action
 from graph_cli.kernel.changeset import (
     ChangeSet,
@@ -43,11 +51,13 @@ from graph_cli.kernel.changeset import (
     UnlinkOp,
     UpdateOp,
     op_action,
+    op_attribute_names,
 )
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import (
     AbbrevRef,
     AliasRef,
+    EdgeId,
     EntityId,
     EntityRef,
     LocalRef,
@@ -64,12 +74,17 @@ MAX_CANDIDATES = 10
 NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
 
 
+FineTerm = tuple[Action, TermRef, str, str]  # (action, type, "attr" | "rel", name or CURIE)
+
+
 @dataclass(frozen=True, slots=True)
 class Resolution:
     changeset: ChangeSet  # abbreviations replaced by full ids
     refs: Mapping[str, EntityId]  # alias text and "@name" of earlier bindings -> id (normalize)
     pairs: tuple[tuple[Action, TermRef], ...]  # sorted, unique (B6.9)
     warnings: tuple[WarningRecord, ...]
+    fine: tuple[FineTerm, ...] = ()  # sorted, unique: the terms of W4, on the subject's type
+    bare_transitions: tuple[TermRef, ...] = ()  # sorted, unique: types of a transition w/o attr
 
 
 class _Resolver:
@@ -141,20 +156,34 @@ class _Resolver:
             raise _not_found(ref_text(ref), path)
         return ref
 
-    def type_of(self, ref: EntityRef) -> TermRef:
+    def entity_of(self, ref: EntityRef) -> EntityId | None:
+        """The existing entity of a rewritten reference; ``None`` for a local this document
+        creates."""
         if isinstance(ref, LocalRef):
-            if ref.name in self.declared:
-                return self.declared[ref.name]
-            entity = self.bindings[ref.name]
-        elif isinstance(ref, AliasRef):
-            entity = self.refs[ref.alias]
-        else:
-            assert not isinstance(ref, AbbrevRef)
-            entity = ref
+            return None if ref.name in self.declared else self.bindings[ref.name]
+        if isinstance(ref, AliasRef):
+            return self.refs[ref.alias]
+        assert not isinstance(ref, AbbrevRef)
+        return ref
+
+    def type_of(self, ref: EntityRef) -> TermRef:
+        if isinstance(ref, LocalRef) and ref.name in self.declared:
+            return self.declared[ref.name]
+        entity = self.entity_of(ref)
+        assert entity is not None
         revision = self.snapshot.get(entity)
         if revision is None:
             raise _not_found(ref_text(ref), "")
         return revision.type
+
+    def edge_rel(self, ref: EntityRef, edge_id: EdgeId) -> TermRef | None:
+        """The relation of edge ``edge_id`` on the subject's revision; ``None`` when the
+        subject has none here or no such edge."""
+        entity = self.entity_of(ref)
+        revision = None if entity is None else self.snapshot.get(entity)
+        if revision is None:
+            return None
+        return next((e.rel for e in revision.edges if e.edge_id == edge_id), None)
 
 
 def resolve_ref(text: str, snapshot: Snapshot) -> tuple[EntityId, tuple[WarningRecord, ...]]:
@@ -298,9 +327,54 @@ def resolve_refs(
             pairs.add((action, op.type))
         for ref in _subjects(op):
             pairs.add((action, resolver.type_of(ref)))
+    fine, bare = _fine_terms(ops, resolver)
     return Resolution(
         changeset=replace(cs, ops=ops),
         refs=dict(resolver.refs),
         pairs=tuple(sorted(pairs)),
         warnings=tuple(resolver.warnings[k] for k in sorted(resolver.warnings)),
+        fine=fine,
+        bare_transitions=bare,
     )
+
+
+def _fine_terms(
+    ops: Sequence[Op], resolver: _Resolver
+) -> tuple[tuple[FineTerm, ...], tuple[TermRef, ...]]:
+    """The terms of W4 for rewritten ops (see the module docstring)."""
+    fine: set[FineTerm] = set()
+    bare: set[TermRef] = set()
+
+    def rel(action: Action, subject: TermRef, name: TermRef | None) -> None:
+        if name is not None and CURIE_RE.match(name):
+            fine.add((action, subject, "rel", name))
+
+    for op in ops:
+        action = op_action(op)
+        match op:
+            case CreateOp():
+                for edge in op.edges:
+                    rel(action, op.type, edge.rel)
+                subject = op.type
+            case UpdateOp():
+                subject = resolver.type_of(op.id)
+            case LinkOp():
+                rel(action, resolver.type_of(op.id), op.edge.rel)
+                continue
+            case UnlinkOp():
+                found = op.rel if op.edge_id is None else resolver.edge_rel(op.id, op.edge_id)
+                rel(action, resolver.type_of(op.id), found)
+                continue
+            case TransitionOp():
+                subject = resolver.type_of(op.id)
+                if op.attr is None:
+                    bare.add(subject)
+                elif NAME_RE.match(op.attr):
+                    fine.add((action, subject, "attr", op.attr))
+                continue
+            case _:
+                continue
+        fine.update(
+            (action, subject, "attr", n) for n in op_attribute_names(op) if NAME_RE.match(n)
+        )
+    return tuple(sorted(fine)), tuple(sorted(bare))

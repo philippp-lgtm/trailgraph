@@ -11,13 +11,21 @@ collected, never raised, because a later release may add the term: the caller wa
   term deny rule names that the type does not have (nobody can write it: fail closed);
 - ``UnusableWrite``: a ``writes`` entry no write can satisfy (``update`` of a lifecycle
   attribute; a ``create`` list that leaves out an attribute a create must give).
+
+``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
+reads back which types and terms the installed documents name for one graph (an ontology
+release checks them against the new model).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Final
 
+from graph_cli.access_control.documents import CURIE_RE, NAME_RE, rules, strings
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import GraphId
 
 
@@ -66,3 +74,69 @@ class UnusableWrite:
         str, ...
     ]  # sorted: the lifecycle attributes of an update, the missing of a create
     file: bool  # the type is a stored file: ``graph file add`` sets some attributes itself
+
+
+def term_resource(graph: GraphId | str, type_curie: str, kind: str, term: str) -> str | None:
+    """``graph:<graph>/type:<type>/attr:<name>`` (``rel`` for a relation), the resource a write
+    of one term is decided on (B6.9); ``None`` for a term outside the grammar of resources,
+    which no rule can name and validation of the write reports."""
+    pattern = NAME_RE if kind == "attr" else CURIE_RE
+    if kind not in ("attr", "rel") or not pattern.match(term):
+        return None
+    return f"graph:{graph}/type:{type_curie}/{kind}:{term}"
+
+
+_GRANT_RULE_RE: Final = re.compile(
+    r"^grant\.[0-9]+\.(create|update|link|edge|unlink|transition|supersede|retract|alias)$"
+)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class NamedTerm:
+    """A type, or a term of a type, that an installed rule names for one graph."""
+
+    type: str
+    kind: str  # "type" (the type itself) | attribute | relation | lifecycle
+    term: str  # "" for the type itself
+    grant: bool  # named by a write grant; otherwise by a term deny rule of the graph layer
+
+
+def named_terms(
+    documents: Sequence[Mapping[str, JsonValue]], graph: GraphId
+) -> tuple[NamedTerm, ...]:
+    """What the write grants (``grant.<n>.<verb>`` rules of the installation layer) and the term
+    deny rules (a resource below a type, in the graph layer) of ``documents`` name under
+    ``graph:<graph>/type:``, sorted and unique. A glob below a type (``attr:*``) names no
+    single term; the type of a rule that has one is still named."""
+    prefix = f"graph:{graph}/type:"
+    found: set[NamedTerm] = set()
+    for document in documents:
+        layer = document.get("layer")
+        for rule in rules(document):
+            rule_id = rule.get("id")
+            grant = layer == "installation" and bool(
+                isinstance(rule_id, str) and _GRANT_RULE_RE.match(rule_id)
+            )
+            if not grant and layer != "graph":
+                continue
+            lifecycle = isinstance(rule_id, str) and rule_id.endswith(".transition")
+            for resource in strings(rule, "resource"):
+                if not resource.startswith(prefix):
+                    continue
+                curie, _, below = resource[len(prefix) :].partition("/")
+                if not CURIE_RE.match(curie):
+                    continue  # a glob of types
+                if not below:
+                    if grant:
+                        found.add(NamedTerm(curie, "type", "", True))
+                    continue
+                kind, _, term = below.partition(":")
+                if kind not in ("attr", "rel"):
+                    continue
+                found.add(NamedTerm(curie, "type", "", grant))
+                if term != "*":
+                    named = (
+                        "relation" if kind == "rel" else "lifecycle" if lifecycle else "attribute"
+                    )
+                    found.add(NamedTerm(curie, named, term, grant))
+    return tuple(sorted(found))

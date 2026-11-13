@@ -233,6 +233,32 @@ def op_action(op: Op) -> Action:
     return OP_ACTIONS[op.OP]
 
 
+# The maps of an op whose keys name attributes (``unset`` lists names): what a write is
+# decided on below the type (W4). ``op_attribute_names`` reads them from a parsed op or
+# from an action's op template alike, so the write path and the action needs agree.
+ATTRIBUTE_MAPS: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
+    {
+        "create": ("attrs", "attrs_text"),
+        "update": ("set", "set_text", "add", "add_text", "remove", "remove_text"),
+    }
+)
+
+
+def op_attribute_names(op: Op | Mapping[str, JsonValue]) -> tuple[str, ...]:
+    """The attribute names a create or update names, sorted and unique; none for another op."""
+    kind = op.get("op") if isinstance(op, Mapping) else op.OP
+    names: set[str] = set()
+    for key in ATTRIBUTE_MAPS.get(str(kind), ()):
+        found = op.get(key) if isinstance(op, Mapping) else getattr(op, key, None)
+        if isinstance(found, Mapping):
+            names.update(str(name) for name in found)
+    if kind == "update":
+        unset = op.get("unset") if isinstance(op, Mapping) else getattr(op, "unset", None)
+        if isinstance(unset, list | tuple):
+            names.update(item for item in unset if isinstance(item, str))
+    return tuple(sorted(names))
+
+
 @dataclass(frozen=True, slots=True)
 class OpEffect:
     """What one op did to the working copy; the validator judges it (W4).

@@ -21,7 +21,7 @@ from graph_cli.access_control.terms import (
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GraphId, parse_id
-from graph_cli_admin.services_admin.policy import term_model
+from graph_cli.services.term_model import term_model
 
 EXAMPLE = GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"))
 OTHER = GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8b"))

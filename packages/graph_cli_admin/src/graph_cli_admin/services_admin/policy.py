@@ -68,7 +68,7 @@ from graph_cli.access_control.effective import (
     withheld_actions,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
-from graph_cli.access_control.terms import AttributeTerms, TermModel, TypeTerms
+from graph_cli.access_control.terms import TermModel
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     InstalledPolicy,
@@ -102,8 +102,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.ontology_layer.model import ClassDef, CompiledModel
-from graph_cli.ontology_layer.vocabulary import FILE_TYPE
+from graph_cli.services.term_model import FILE_ADD_ATTRIBUTES, extended_types, term_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
@@ -481,7 +480,7 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         graphs=graphs,
         graph=entry.id if entry is not None else None,
         known_types=frozenset(classes) if classes is not None else None,
-        extended_types=_extended_types(classes) if classes is not None else frozenset(),
+        extended_types=extended_types(classes) if classes is not None else frozenset(),
         # A graph policy is applied independently of the installation policy: its role
         # names are checked against the installed one (a warning, like an unknown type).
         roles=declared_roles(ctx.policy.current(None).documents[0]) if entry is not None else None,
@@ -548,10 +547,9 @@ _KIND_TEXT: Final = {
     "relation": "relation",
     "lifecycle": "lifecycle attribute",
 }
+
+
 # What ``graph file add`` sets itself (services/files.py): a create list must name these.
-_FILE_ADD_ATTRIBUTES: Final = ("title", "content", "media_type", "file_name")
-
-
 def _unusable_message(
     verb: str, type_curie: str, graph: str, attributes: Sequence[str], file: bool
 ) -> str:
@@ -569,48 +567,10 @@ def _unusable_message(
     if file:
         text += (
             f". {type_curie} is a stored file: `graph file add` sets "
-            f"{', '.join(_FILE_ADD_ATTRIBUTES)} itself (and origin when a root matches), so a"
+            f"{', '.join(FILE_ADD_ATTRIBUTES)} itself (and origin when a root matches), so a"
             " create list for it must name them"
         )
     return text
-
-
-def _extended_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
-    """The types a rule on an exact type would miss entities of: abstract ones and those
-    with subclasses."""
-    return frozenset(
-        name
-        for name, cls in classes.items()
-        if cls.abstract or any(name in other.ancestors for other in classes.values())
-    )
-
-
-def term_model(model: CompiledModel) -> TermModel:
-    """What the policy compiler needs of ``model``: per type its attributes (is it a
-    lifecycle; must a create give it), the relations whose domain covers it, and whether
-    it is extended or a stored file. A stored file's create gives what ``graph file add``
-    sets itself, so those attributes count as given by the writer."""
-    extended = _extended_types(model.classes)
-    types: dict[str, TypeTerms] = {}
-    for name, cls in model.classes.items():
-        file = FILE_TYPE in model.classes and model.is_a(name, FILE_TYPE)
-        attributes: dict[str, AttributeTerms] = {}
-        for attribute, definition in cls.attributes.items():
-            lifecycle = definition.kind == "lifecycle"
-            if lifecycle:
-                must_give = len(model.lifecycles[definition.type].initial) > 1
-            else:
-                must_give = definition.required and definition.default is None
-            attributes[attribute] = AttributeTerms(
-                lifecycle, must_give or (file and attribute in _FILE_ADD_ATTRIBUTES)
-            )
-        types[name] = TypeTerms(
-            name in extended,
-            file,
-            attributes,
-            frozenset(r for r, rel in model.relations.items() if model.is_a_any(name, rel.domain)),
-        )
-    return TermModel(types)
 
 
 def _read(file: Path) -> bytes:

@@ -20,7 +20,12 @@ from graph_cli_admin.maintenance_cli.commands.common import (
 )
 from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
 from graph_cli_admin.services_admin import graphs, ontology
-from graph_cli_admin.services_admin.release import actions_affected, functions_affected, release
+from graph_cli_admin.services_admin.release import (
+    actions_affected,
+    functions_affected,
+    policies_affected,
+    release,
+)
 
 SOURCE: Final = ParamSpec(
     "source", "directory", "Directory with the authored ontology.", required=True, positional=True
@@ -65,6 +70,7 @@ def diff_command(
         affected = (
             *functions_affected(published, new.model),
             *actions_affected(ctx.catalog.read_actions(entry.id), published, new.model),
+            *policies_affected(ctx.policy.current(entry.id), entry, new.model),
         )
     else:
         assert against is not None

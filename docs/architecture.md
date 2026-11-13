@@ -181,6 +181,7 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.action_format` | `graph_cli.action/1`: the typed definition of one action file (parameters, preconditions as rule-language conditions, a template of change-set ops with `$param` placeholders and the one dynamic form `unlink ... all: true`), strict YAML loading with a `Problem` per defect |
 | `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model |
 | `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
+| `kinetic.action_needs` | `action_needs`: what an action's ops need on concrete types against a model, with the attributes and relations they write (declared classes expanded to their non-abstract subtypes, any of which meets a need); pure, no policy |
 | `kinetic.expand` | over a `Snapshot`: `check_preconditions` evaluates the preconditions on the current state (every failure in one refusal), `expand` turns bound parameters into a `ChangeSet` and replaces `all: true` by one exact unlink per current edge |
 
 The checks use the query engine without data: `query.cypher.parameters` lists the
@@ -224,12 +225,13 @@ only caller of `WriteSession.commit`.
 | Module | Content |
 | --- | --- |
 | `kernel.changeset` | change set DTOs, the keys of the document, each op and an edge as data (the parser and skill 1's `references/changesets.md` read them), strict parsing (`changeset.malformed` with `details.path`), limits (1000 ops, 8 MiB), the canonical form and its hash, JSON/JSONL input readers |
-| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; `entity_params`, the existence and class check of `ref` parameters shared by `run` and `do` |
+| `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; the (action, type) pairs and the attributes and relations an op is decided on; `entity_params`, the existence and class check of `ref` parameters shared by `run` and `do` |
+| `services.term_model`, `services.action_rights` | the app side of term rules: a compiled model condensed for the policy compiler and for the checks of an ontology release; which types a policy decides terms of (`fine_types`, cached per policy hash) and the any-of rule that lists an action and authorizes an empty expansion |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |
 | `ontology_layer.data_validator` | `validate_write` (the post-state of every touched entity, plus write rules with a `count` or `sum` aggregate on the entities at the other end of their edges) and `check_graph` (every entity, batch rules included) |
 | `ontology_layer.connecting` | the relations and two-hop paths that connect two types, from the compiled model alone; used for the `connecting` of domain and range findings |
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
-| `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot |
+| `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
 | `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path`, `check`; the built-in media type table |
 

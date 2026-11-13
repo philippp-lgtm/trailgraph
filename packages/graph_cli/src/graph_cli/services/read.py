@@ -61,6 +61,8 @@ from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMe
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
+from graph_cli.kinetic.action_needs import NeedOptions
+from graph_cli.kinetic.action_needs import action_needs as derive_needs
 from graph_cli.kinetic.affordances import actions_for, functions_for
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
@@ -93,6 +95,7 @@ from graph_cli.query.search import SearchSpec, plan_search
 from graph_cli.query.search import main_label as search_label
 from graph_cli.query.search import match_revision as search_match
 from graph_cli.query.search import rank_key as search_rank
+from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import entity_params, resolve_ref
@@ -335,6 +338,9 @@ class ReadService:
         self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
         # (compiled hash, pin) -> problem of each action that no longer fits the pin
         self._action_problems: dict[tuple[str, OntologyPin], dict[str, Problem]] = {}
+        # (compiled hash, pin) -> the needs of each action on concrete types (W9)
+        self._action_needs: dict[tuple[str, OntologyPin], dict[str, tuple[NeedOptions, ...]]] = {}
+        self._fine = FineTypes()
 
     # ---- authorization -------------------------------------------------
 
@@ -430,27 +436,41 @@ class ReadService:
         published = self.published_actions(entry)
         if published is None:
             return None
-        return self.visible_actions(actor, entry, published.entries) or None
+        return self.visible_actions(actor, entry, published) or None
 
     def visible_actions(
-        self, actor: ActorContext, entry: GraphEntry, actions: Sequence[ActionEntry]
+        self, actor: ActorContext, entry: GraphEntry, catalog: ActionCatalog
     ) -> tuple[ActionEntry, ...]:
-        """The actions the actor may run (actions plan A6): every write right the action's ops
-        need is allowed on the type it is needed for. Records nothing, like ``functions``."""
+        """The actions the actor may run (actions plan A6, write allow lists plan W9): for each
+        need of the action, some concrete type allows it, with all the attributes and relations
+        the action writes there where the policy has term rules for the type
+        (``services.action_rights``). Records nothing, like ``functions``."""
+        needs = self.action_needs(entry, catalog)
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
+            fine = self._fine.of(policy, entry.id)
             ctx = AuthzContext(op_count=1, has_reason=True, dry_run=False)
-
-            def allowed(action: ActionEntry) -> bool:
-                return all(
-                    authorize(
-                        actor, need.action, f"graph:{entry.id}/type:{need.type}", ctx, policy
-                    ).effect
-                    == "allow"
-                    for need in action.needs
+            return tuple(
+                a
+                for a in catalog.entries
+                if all(
+                    need_decisions(actor, entry.id, need, ctx, policy, fine).met
+                    for need in needs[a.name]
                 )
+            )
 
-            return tuple(a for a in actions if allowed(a))
+    def action_needs(
+        self, entry: GraphEntry, catalog: ActionCatalog
+    ) -> Mapping[str, tuple[NeedOptions, ...]]:
+        """The needs of every action of ``catalog`` against the graph's pinned model, by action
+        name; cached by (compiled hash, pin) like ``action_problem``."""
+        key = (catalog.compiled_hash, entry.pin)
+        found = self._action_needs.get(key)
+        if found is None:
+            model, _ = self._models.load_for_read(entry)
+            found = {a.name: derive_needs(a, model) for a in catalog.entries}
+            self._action_needs[key] = found
+        return found
 
     def action_problem(
         self, entry: GraphEntry, catalog: ActionCatalog, model: CompiledModel, name: str
@@ -595,7 +615,7 @@ class ReadService:
         published = self.published_actions(entry)
         if published is None:
             return None
-        names = {a.name for a in self.visible_actions(actor, entry, published.entries)}
+        names = {a.name for a in self.visible_actions(actor, entry, published)}
         if not names:
             return None
         kept = [

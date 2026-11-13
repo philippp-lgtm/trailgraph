@@ -267,14 +267,20 @@ after an update.
 
 - **Running.** `graph do` expands the action to ops and authorizes each one
   as `apply` does: one decision per (`write.*` op action, type), with the
-  `require_reason` and `max_batch` obligations of the policy. An action
+  `require_reason` and `max_batch` obligations of the policy (and, where the
+  policy has rules on the attributes or relations of a type, one more per
+  attribute or relation written). An action
   therefore never writes what the caller could not write by hand. A deny on
   the type of one op refuses the whole action with `access.denied`, audited
   like any write denial, and nothing is written; a replay or the details of
   a failed precondition do not reach a caller without the rights.
 - **Listing.** `describe actions`, `describe action`, `describe module`,
-  `describe modules` and `describe search` show an action only when every
-  op action the action needs is allowed on every type it writes. The check
+  `describe modules` and `describe search` show an action only when, for
+  each op action it needs, the declared class of the parameter (or its
+  concrete subclasses, when it is abstract or has subclasses) has a type that
+  allows it, with the attributes and relations the action writes there where
+  the policy has rules on terms of that type. A listed action can still be
+  refused for an entity of a type the caller may not write. The check
   records no decision (no denial event), like the listing of functions, and
   obligations do not hide an action: one that needs `--reason` is listed.
   For everyone else the graph reads as if it had no such action, and `do`
