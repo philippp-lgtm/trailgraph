@@ -256,9 +256,9 @@ def test_a_function_that_names_no_hidden_term_runs_over_the_view(
     limit(run_cli, tmp_path, "inv:Location", "inv:Category")  # no item is visible
     assert ok(run_cli, "run", "count_things").data["items"] == [{"things": 3}]
     # a reference parameter to a hidden entity is a reference to a missing one
-    limit(run_cli, tmp_path, "inv:Item")
+    limit(run_cli, tmp_path, "inv:Item", "inv:Location")  # the category is hidden
     where = ("run", "items_in_location", "--param")
-    asked = shown(app(run_cli, *where, f"location={ids['shelf']}", env=ENV))
+    asked = shown(app(run_cli, *where, f"location={ids['books']}", env=ENV))
     absent = shown(app(run_cli, *where, "location=0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", env=ENV))
     assert asked["error"]["code"] == "entity.not_found"
-    the_same_but_for(asked, absent, (ids["shelf"], "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"))
+    the_same_but_for(asked, absent, (ids["books"], "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"))

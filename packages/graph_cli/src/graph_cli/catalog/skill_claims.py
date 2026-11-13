@@ -4,10 +4,11 @@ An agent works from the skills installed for it. Each copy's marker
 (``.graph_cli_skill.json``) says what it was rendered from: skill 1 the
 inventory hash of the program that rendered it, a graph skill the hash of
 the graph's published slot and, for a template, the ontology release of its
-model. ``read_claims`` reads them from the project scope (``<pointer
-dir>/.claude/skills``) and the user scope; both count, because which copy an
-agent loads depends on the agent. Without an installed skill nothing is
-claimed and nothing is checked.
+model and, for a reader with type read limits, a digest of the types it sees (the template is
+rendered per reader, so a policy change that moves the set makes the copy stale).
+``read_claims`` reads them from the project scope (``<pointer dir>/.claude/skills``) and the
+user scope; both count, because which copy an agent loads depends on the agent. Without an
+installed skill nothing is claimed and nothing is checked.
 
 ``SkillGate`` judges the graph claims of one command when it selects a graph
 (``AppContext.select``): a copy rendered from another slot or model than the
@@ -58,6 +59,7 @@ class SkillClaim:
     hash: str  # skill 1: the inventory hash; a graph skill: the slot hash
     graph: str | None = None  # the graph id of a graph skill; None for skill 1
     model: tuple[str, str] | None = None  # (bundle, version) a template was rendered with
+    visible: str | None = None  # digest of the types a type limited reader saw; else None
 
 
 def read_claims(dirs: Sequence[tuple[Scope, Path]]) -> tuple[SkillClaim, ...]:
@@ -102,10 +104,14 @@ def _claim(scope: Scope, path: Path) -> SkillClaim | None:
     graph_id = graph.get("id") if isinstance(graph, dict) else None
     if doc.get("kind") != "graph" or not _is_token(graph_id) or not _is_hash(digest):
         return None
+    seen = source.get("visible")
+    if seen is not None and not _is_hash(seen):
+        return None
+    visible = None if seen is None else str(seen)
     if model is None:
-        return SkillClaim(scope, str(digest), str(graph_id))
+        return SkillClaim(scope, str(digest), str(graph_id), None, visible)
     pair = _model(model)
-    return SkillClaim(scope, str(digest), str(graph_id), pair) if pair is not None else None
+    return SkillClaim(scope, str(digest), str(graph_id), pair, visible) if pair else None
 
 
 def _model(value: object) -> tuple[str, str] | None:
@@ -130,8 +136,9 @@ def _is_token(value: object) -> bool:
 
 def claims_header(claims: Sequence[SkillClaim]) -> str | None:
     """``Graph-Cli-Skills``: one item per graph claim, ``graph=<id>;hash=<hash>``, for a
-    template ``;bundle=<bundle>;version=<version>``, then ``;scope=<scope>``; items
-    separated by ``, ``. ``None`` without a graph claim."""
+    template ``;bundle=<bundle>;version=<version>``, for a type limited reader
+    ``;visible=<digest>``, then ``;scope=<scope>``; items separated by ``, ``. ``None``
+    without a graph claim."""
     items = []
     for claim in claims:
         if claim.graph is None:
@@ -139,6 +146,8 @@ def claims_header(claims: Sequence[SkillClaim]) -> str | None:
         parts = [f"graph={claim.graph}", f"hash={claim.hash}"]
         if claim.model is not None:
             parts += [f"bundle={claim.model[0]}", f"version={claim.model[1]}"]
+        if claim.visible is not None:
+            parts.append(f"visible={claim.visible}")
         items.append(";".join([*parts, f"scope={claim.scope}"]))
     return ", ".join(items[:MAX_CLAIMS]) or None
 
@@ -159,7 +168,12 @@ def parse_claims_header(value: str | None) -> tuple[SkillClaim, ...]:
             model = _model({"bundle": params.get("bundle"), "version": params.get("version")})
             if model is None:
                 continue
-        claim = SkillClaim("project" if scope == "project" else "user", str(digest), graph, model)
+        seen = params.get("visible")
+        if seen is not None and not _is_hash(seen):
+            continue
+        claim = SkillClaim(
+            "project" if scope == "project" else "user", str(digest), graph, model, seen
+        )
         if claim not in found:
             found.append(claim)
     return tuple(found)
@@ -176,6 +190,8 @@ class SkillGate:
     write: bool  # the command is a write: a stale copy refuses it
     warnings: list[WarningRecord]  # the command's warnings
     project_dir: Path | None  # where the project scope is, for the refresh command
+    # The digest of the types the caller sees in a graph, ``None`` without a read limit
+    visible: Callable[[GraphEntry], str | None] = lambda entry: None
 
     def check(self, catalog: Catalog, entry: GraphEntry) -> None:
         claims = [c for c in self.claims() if c.graph == str(entry.id)]
@@ -187,24 +203,33 @@ class SkillGate:
             return  # a damaged slot is for the maintainer; installing reports it
         if slot is None:
             return  # unpublished: an installed copy is unavailable, not stale
-        stale = [s for c in claims if (s := graph_stale(c, entry, slot)) is not None]
+        # Only a template is rendered per reader; a static skill is the same for everyone
+        seen = self.visible(entry) if slot.kind == GENERATED else None
+        stale = [s for c in claims if (s := graph_stale(c, entry, slot, seen)) is not None]
         report(stale, write=self.write, warnings=self.warnings, project_dir=self.project_dir)
 
 
 def graph_stale(
-    claim: SkillClaim, entry: GraphEntry, slot: SkillSlot
+    claim: SkillClaim, entry: GraphEntry, slot: SkillSlot, visible: str | None = None
 ) -> dict[str, JsonValue] | None:
-    """The stale entry of a graph claim; ``None`` when the copy is what the graph has now."""
+    """The stale entry of a graph claim; ``None`` when the copy is what the graph has now.
+    ``visible`` is the digest of the types the caller sees (``None``: no read limit); a copy
+    rendered for another set is stale."""
     model = (entry.pin.bundle, entry.pin.version) if slot.kind == GENERATED else None
-    if claim.hash == slot.hash and claim.model == model:
+    if claim.hash == slot.hash and claim.model == model and claim.visible == visible:
         return None
+    installed: dict[str, JsonValue] = {"hash": claim.hash, "model": _model_json(claim.model)}
+    current: dict[str, JsonValue] = {"hash": slot.hash, "model": _model_json(model)}
+    if claim.visible is not None or visible is not None:  # only for type limited readers
+        installed["visible"] = claim.visible
+        current["visible"] = visible
     return {
         "skill": graph_skill_name(entry.name),
         "kind": "graph",
         "scope": claim.scope,
         "graph": entry.name,
-        "installed": {"hash": claim.hash, "model": _model_json(claim.model)},
-        "current": {"hash": slot.hash, "model": _model_json(model)},
+        "installed": installed,
+        "current": current,
     }
 
 

@@ -204,6 +204,15 @@ def file_types(model: CompiledModel) -> tuple[str, ...]:
     return tuple(c for c in model.subtypes(FILE_TYPE) if not model.classes[c].abstract)
 
 
+def _family_text(view: GraphRead, types: tuple[str, ...]) -> str:
+    """What the "not a stored file" message names: ``files:File``, or for a caller who does
+    not see that type (it reads the file classes it sees) those classes, so the message never
+    names a hidden type."""
+    if view.visible is None or FILE_TYPE in view.model.classes:
+        return FILE_TYPE
+    return ", ".join(types)
+
+
 def find_by_content(model: CompiledModel, read: GraphStoreRead, digest: str) -> Revision | None:
     """The active file holding ``digest``; content is unique among active files."""
     query = Query(
@@ -387,7 +396,7 @@ class FileService:
         if revision.type not in types:
             raise GraphCliError(
                 "usage.invalid_argument",
-                f"{ref} is a {revision.type}, not a stored file ({FILE_TYPE})",
+                f"{ref} is a {revision.type}, not a stored file ({_family_text(view, types)})",
                 details={"argument": "ref", "value": ref, "actual": revision.type},
             )
         self._authorize_type(view, revision.type, actor, request)

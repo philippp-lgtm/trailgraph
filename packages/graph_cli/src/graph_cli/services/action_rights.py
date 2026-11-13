@@ -15,6 +15,14 @@ authorization of an action whose expansion is empty (``WriteService``) both use 
 - empty expansion: the decisions of the first option (sorted by type) that is met; when none
   is, those of the first option, so a denial names a real resource. A need whose declared
   class has no concrete subtype is decided on the declared class, as before.
+
+For a graph with type read limits a caller can run an action only through types it sees
+(type read limits plan V7): ``need_decisions`` takes the caller's visible set (``None``: no
+limit, nothing changes) and skips every option outside it. The set is the V1 decision
+``read.get`` on ``graph:<id>/type:<T>`` taken for each concrete type (``services.visibility``),
+so membership is that decision without a second ``authorize`` per option and without new
+decision records: the decisions of a need stay exactly those of the write rights. A need
+without an option the caller sees is not met and carries no decisions.
 """
 
 from __future__ import annotations
@@ -80,15 +88,20 @@ def need_decisions(
     ctx: AuthzContext,
     policy: PolicySet,
     fine: frozenset[str],
+    visible: frozenset[str] | None = None,
 ) -> NeedResult:
     """The decisions that decide ``need`` and whether it is met (see the module docstring)."""
     if not need.options:
         if need.type is None:
             return NeedResult((), True, None)
+        if visible is not None and need.type not in visible:
+            return NeedResult((), False, need.type)
         decision = authorize(actor, need.action, f"graph:{graph}/type:{need.type}", ctx, policy)
         return NeedResult((decision,), decision.effect == "allow", need.type)
     first: NeedResult | None = None
     for type_curie, terms in need.options:
+        if visible is not None and type_curie not in visible:
+            continue
         decisions = _option_decisions(
             actor, graph, need.action, type_curie, terms, ctx, policy, fine
         )
@@ -97,5 +110,4 @@ def need_decisions(
         if met:
             return found
         first = first or found
-    assert first is not None
-    return first
+    return first if first is not None else NeedResult((), False, None)

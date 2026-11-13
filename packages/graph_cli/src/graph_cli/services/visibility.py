@@ -93,12 +93,23 @@ class Visibility:
     ) -> frozenset[str] | None:
         """The concrete types of ``model`` that ``actor`` sees in the graph, or ``None`` when the
         graph is not read limited or the actor sees every type (no filter at all)."""
+        return self.lazy(actor, entry, policy, lambda: model)
+
+    def lazy(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        policy: PolicySet,
+        load: Callable[[], CompiledModel],
+    ) -> frozenset[str] | None:
+        """``of`` for callers without the model at hand: ``load`` runs only when the graph is
+        read limited and the answer is not cached yet."""
         if not self.limited(policy, entry.id):
             return None
         key = (policy.hash, entry.id, entry.pin.artifact_hash, *actor_key(actor))
         if key in self._visible:
             return self._visible[key]
-        found = visibility(actor, entry.id, policy, concrete_types(model.classes))
+        found = visibility(actor, entry.id, policy, concrete_types(load().classes))
         _remember(self._visible, key, found, _ACTOR_CACHE_LIMIT)
         return found
 

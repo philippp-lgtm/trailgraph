@@ -959,6 +959,8 @@ def test_describing_a_hidden_term_is_describing_a_missing_one(limited: World) ->
 
 def test_a_hidden_file_is_not_found_before_any_type_message(world: World) -> None:
     run_cli, ids = world.run_cli, world.ids
+    unlimited = read(run_cli, "file", "path", ids["n"])  # the answer of a caller without limits
+    assert unlimited.error["message"].endswith("is a nas:Note, not a stored file (files:File)")
     raw_check = ok(run_cli, "file", "check")
     assert raw_check.page is not None and raw_check.page["total"] == 2
     assert ok(run_cli, "file", "path", ids["hidden_file"]).data["type"] == "files:File"
@@ -978,6 +980,9 @@ def test_a_hidden_file_is_not_found_before_any_type_message(world: World) -> Non
     # ... while a visible entity that is no file keeps the answer about its type
     note_ = read(run_cli, "file", "path", ids["n"])
     assert note_.error["code"] == "usage.invalid_argument"
+    # ... which names the file classes the caller sees, never the hidden files:File
+    assert note_.error["message"].endswith("is a nas:Note, not a stored file (nas:Scan)")
+    assert leaks(note_, world) == []
     # among several refs a hidden file fails the call as a missing one does
     mixed = twin(run_cli, lambda ref: ("file", "check", ids["scan"], ref), hidden)
     assert mixed["error"]["code"] == "entity.not_found"

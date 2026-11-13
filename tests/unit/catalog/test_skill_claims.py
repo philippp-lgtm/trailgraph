@@ -217,3 +217,79 @@ def test_the_gate_reads_the_slot_only_for_a_claimed_graph() -> None:
     for found in (None, GraphCliError("skills.source_invalid", "damaged")):
         gate.check(Catalog(found), entry())  # type: ignore[arg-type]
     assert warnings == []
+
+
+# ---- readers with type read limits (type read limits plan V7) ---------------------
+
+
+def test_a_marker_records_the_digest_of_what_a_limited_reader_saw(tmp_path: Path) -> None:
+    model = {"bundle": "inventory", "version": "1.2.0"}
+    marker(tmp_path / "a", "graph-example-graph", "graph", graph_source(model=model, visible=H2))
+    marker(tmp_path / "b", "graph-example-graph", "graph", graph_source(model=model))
+    marker(tmp_path / "c", "graph-example-graph", "graph", graph_source(visible="not a hash"))
+    assert read_claims([("user", tmp_path / "a")]) == (
+        SkillClaim("user", H1, GRAPH, ("inventory", "1.2.0"), H2),
+    )
+    # without the key the claim is the one an unlimited reader always had
+    assert read_claims([("user", tmp_path / "b")]) == (
+        SkillClaim("user", H1, GRAPH, ("inventory", "1.2.0")),
+    )
+    assert read_claims([("user", tmp_path / "c")]) == ()
+
+
+def test_the_header_carries_the_digest_only_for_a_limited_reader() -> None:
+    plain = SkillClaim("user", H1, GRAPH, ("inventory", "1.2.0"))
+    limited = SkillClaim("project", H1, GRAPH, None, H2)
+    header = claims_header((plain, limited))
+    assert header == (
+        f"graph={GRAPH};hash={H1};bundle=inventory;version=1.2.0;scope=user,"
+        f" graph={GRAPH};hash={H1};visible={H2};scope=project"
+    )
+    assert parse_claims_header(header) == (plain, limited)
+    assert parse_claims_header(f"graph={GRAPH};hash={H1};visible=nope;scope=user") == ()
+
+
+def test_a_template_is_stale_when_the_visible_set_moved() -> None:
+    generated = slot("generated")
+    model = ("inventory", "1.2.0")
+    seen = SkillClaim("user", H1, GRAPH, model, H2)
+    assert graph_stale(seen, entry(), generated, H2) is None
+    stale = graph_stale(seen, entry(), generated, H3)  # the policy changed
+    assert stale is not None
+    assert stale["installed"] == {
+        "hash": H1,
+        "model": {"bundle": "inventory", "version": "1.2.0"},
+        "visible": H2,
+    }
+    assert stale["current"]["visible"] == H3  # type: ignore[index]
+    # a copy rendered for an unlimited reader is stale for a reader the policy limits now, and
+    # the other way round
+    plain = SkillClaim("user", H1, GRAPH, model)
+    assert graph_stale(plain, entry(), generated, H2) is not None
+    assert graph_stale(seen, entry(), generated, None) is not None
+    # an unlimited reader's entry is the one it always had
+    unlimited = graph_stale(SkillClaim("user", H2, GRAPH, model), entry(), generated)
+    assert unlimited is not None and set(unlimited["installed"]) == {"hash", "model"}  # type: ignore[arg-type]
+
+
+def test_the_gate_compares_the_digest_for_a_template_only() -> None:
+    model = ("inventory", "1.2.0")
+    warnings: list[WarningRecord] = []
+    claims = [SkillClaim("user", H1, GRAPH, model, H2)]
+    gate = SkillGate(lambda: claims, False, warnings, None, lambda found: H3)
+    gate.check(Catalog(slot("generated")), entry())  # type: ignore[arg-type]
+    assert [w.code for w in warnings] == ["skills.stale"]
+    fresh: list[WarningRecord] = []
+    SkillGate(lambda: claims, False, fresh, None, lambda found: H2).check(
+        Catalog(slot("generated")),
+        entry(),  # type: ignore[arg-type]
+    )
+    assert fresh == []
+    # a static skill is the same for every reader: the policy does not make it stale
+    static: list[WarningRecord] = []
+    plain = [SkillClaim("user", H1, GRAPH)]
+    SkillGate(lambda: plain, False, static, None, lambda found: H3).check(
+        Catalog(slot("static")),
+        entry(),  # type: ignore[arg-type]
+    )
+    assert static == []

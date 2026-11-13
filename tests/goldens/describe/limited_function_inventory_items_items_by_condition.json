@@ -1,0 +1,61 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "function": {
+    "name": "items_by_condition",
+    "module": "inventory",
+    "summary": "Items in a given physical condition.",
+    "use_when": "Which items are worn or damaged; a list of items by condition.",
+    "status": "active",
+    "replaced_by": null,
+    "featured": false,
+    "signature": "condition: enum inv:Condition",
+    "params": [
+      {
+        "name": "condition",
+        "type": "enum",
+        "class": null,
+        "enum": "inv:Condition",
+        "many": false,
+        "default": null,
+        "summary": "The condition to look for."
+      }
+    ],
+    "returns": [
+      {
+        "column": "item",
+        "summary": "Name of the item."
+      },
+      {
+        "column": "condition",
+        "summary": "The condition, as asked for."
+      }
+    ],
+    "examples": [
+      {
+        "question": "Which items are damaged?",
+        "params": {
+          "condition": "damaged"
+        }
+      }
+    ],
+    "touches": {
+      "types": [
+        {
+          "curie": "inv:Item",
+          "module": "inventory"
+        }
+      ],
+      "relations": []
+    },
+    "query": "MATCH (i:`inv:Item`) WHERE (i.condition = $condition)\nRETURN i.name AS item, i.condition AS condition ORDER BY item",
+    "hash": "sha256:00a7623e4213609e4cc7f002f8eff51f8ae659792628d94822fc201f0786e8fa"
+  }
+}
