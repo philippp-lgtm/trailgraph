@@ -67,7 +67,8 @@ project comes from the pointer and is only asserted, so a local
   Types are checked for writes only, so type limits, deny rules on types and
   obligations name write actions. A type limit matches the exact type, so it
   must name concrete types (or `prefix:*`); an abstract type or one with
-  subclasses is refused.
+  subclasses is refused. A deny rule may also name single attributes or
+  relations of a type ([Write allow lists](#write-allow-lists)).
 - Deny rules may name the agent type, agent, session, device, project or
   role; grants only the verified principal, a verified project and a role.
   An explicit deny wins, the default is deny.
@@ -92,6 +93,9 @@ project comes from the pointer and is only asserted, so a local
   that the installed installation policy does not declare is only the warning
   `policy.role_unknown` (on `policy check` and `policy apply`). A policy
   without roles compiles to the same document and hash as before roles existed.
+- A grant with `level: read` may carry **`writes`**, an allow list of exactly
+  what its subject may write, down to attributes and relations
+  ([Write allow lists](#write-allow-lists)).
 
 ```yaml
 schema: graph_cli.policy/1
@@ -122,6 +126,121 @@ obligations:
 deny:
   - {id: importer_no_files, role: [importer], action: ["write.*"], type: ["files:File"]}
 ```
+
+### Write allow lists
+
+`level: write` lets a subject write everything the scopes and deny rules
+leave. A grant that should write less is `level: read` plus a `writes` block:
+the grant reads the graph and may write what the list names, nothing else.
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers: findings and their sources in example_graph"}
+grants:
+  - entrypoint: server
+    principal: {role: importer}
+    graphs: [example_graph]
+    level: read
+    writes:
+      ex:Finding:
+        create: [title, summary, status]
+        update: [status, notes]
+        link: [ex:about]
+        transition: true
+      ex:Source:
+        create: true
+        link: true
+scopes:
+  example_project: {example_graph: write}
+no_project: {"*": read}
+```
+
+An importer may create an `ex:Finding` giving `title`, `summary` and `status`
+(and an inline `ex:about` edge, see below), update its `status` and `notes`,
+link `ex:about` but not unlink it, move it through its lifecycle, and create
+and link `ex:Source`. Everything else is refused: another attribute, another
+relation, `unlink`, `retract`, any other type. The scope still has to allow
+writing: a token of no project gets `no_project`, which here denies every
+write, so the grant would write nothing.
+
+- **Grammar.** `writes` maps concrete type CURIEs to verbs (no `prefix:*`; a
+  type that is abstract or has subclasses is `policy.invalid` once the graph's
+  model shows it, as for type limits, because the rule matches the exact
+  type). `create` and `update` take `true` (every attribute) or a non-empty
+  list of attribute names, `link` and `unlink` `true` or a list of relation
+  CURIEs, `transition` `true` or a list of lifecycle attribute names;
+  `supersede`, `retract` and `alias` are `true`. An absent or `false` verb is
+  not granted, and a type entry grants at least one verb.
+- **Where it applies.** `writes` needs `level: read` (`level: write` already
+  allows every write, so the combination is `policy.invalid`) and graphs named
+  one by one (`"*"` is refused): the terms belong to an ontology, and they are
+  checked against each named graph. Extension actions (`ext.*`) are not part of
+  a `writes` grant; they write as a whole and need `level: write`.
+- **Compiled rules.** The grant keeps its read rule `grant.<n>` and gains one
+  allow rule per granted verb, `grant.<n>.<verb>`, on the type resource and,
+  for a list, on the resources of the listed attributes or relations
+  ([Decisions](#decisions-on-attributes-and-relations)). `link` adds a second
+  rule, `grant.<n>.edge`, that allows `write.create` on the listed relation
+  resources only. The compiled document never depends on a model, so an
+  ontology release does not change a policy's hash, and a policy without
+  `writes` compiles as before.
+- **Rights add up.** The rights of a subject are the grants that name it, so a
+  token with several roles may do what any of them allows (a token with the
+  roles `importer` and `tagger` may write what either grant lists), and a
+  broader grant of another role or of the token itself adds to a list rather
+  than being cut down by it. Scopes, deny rules, type limits and obligations of
+  both layers still narrow the result, and an explicit deny wins. A `writes`
+  grant therefore never exceeds what they allow.
+- **Inline edges.** An edge given with a `create` is decided as `write.create`
+  on the relation (so a broad deny on `write.link` or `write.create` still stops
+  it) and needs two rights: the create right on the created type, and the link
+  right on the relation, from the same grant or from another one of the
+  caller. A relation is thus writable by one right, whichever op adds the edge.
+  `unlink` is its own right; removing an edge by its id is decided on the
+  relation of that edge.
+
+**Deny rules on attributes and relations.** A rule of the graph layer with
+`type` may add `attribute: [names]` or `relation: [curies]` (not both, concrete
+types only). It then denies on those terms of every listed type instead of on
+the type, for the write actions that can decide them (`write.create`,
+`write.update`, `write.transition` for attributes, `write.create`,
+`write.link`, `write.unlink` for relations, or `write.*`). A `relation` rule on
+`write.link` also denies `write.create`, which adds the inline edges of a
+create. It is the natural partner of an unlimited `level: write` grant: "the
+importer may update anything but `salary`" is one rule.
+
+```yaml
+schema: graph_cli.policy/1
+id: graph
+deny:
+  - {id: no_salary, role: [importer], action: ["write.update"], type: ["ex:Person"], attribute: [salary]}
+```
+
+**Warnings.** `policy check`, `diff`, `apply` and `explain --file` load the
+pinned model of every graph a `writes` grant or term deny rule names and warn;
+these are warnings, not errors, because a later release may add what is
+missing, and the policy stays closed meanwhile:
+
+- `admin.policy_unknown_type`: a type the graph does not have (`details`
+  `graph`, `type`).
+- `admin.policy_unknown_term`: an attribute or relation the type does not
+  have, or a `transition` attribute that is no lifecycle attribute (`details`
+  `graph`, `type`, `term`, `kind`). Nobody can write a term that does not
+  exist.
+- `admin.policy_unusable_write`: a write no call can satisfy, because `update`
+  names a lifecycle attribute (a transition moves it) or a `create` list leaves
+  out an attribute the create must give: a required one without a default, or a
+  lifecycle attribute with several initial states (`details` `graph`, `type`,
+  `verb`, `attributes`). For a type that stores files the warning also names the
+  attributes `graph file add` sets itself ([Decisions](#decisions-on-attributes-and-relations)).
+
+`ontology release` gives the same two warnings when the new version drops or
+renames a type or term that an installed policy names, so that a rename does
+not silently take writes away. It also warns `admin.policy_unknown_type` when a
+type named in a `writes` grant becomes abstract or gains subclasses: the exact
+rule then misses their entities, so grant the subclasses too.
 
 ## Roles
 
@@ -206,6 +325,77 @@ does not exist, and the refusal is audited; on a visible graph a refusal is
 `graph` call (`policy.invalid`); `graph-admin` warns and decides without
 it, so the policy can be replaced.
 
+### Decisions on attributes and relations
+
+Below a type, a write is also decided on the attributes and relations it
+touches. Their resources are `graph:<id>/type:<curie>/attr:<name>` and
+`graph:<id>/type:<curie>/rel:<curie>`, on the type of the entity whose revision
+changes (for a `create` the created type, for a `link` the type that owns the
+edge). Rules on them name write actions only, like rules on types, and the
+globs `graph:<id>*`, `graph:<id>/type:*` and `graph:<id>/type:<prefix>:*` cover
+the terms of the types they cover, so scopes decide a term as they decide its
+type. Which terms an operation is decided on, in addition to its decision on the
+type, which always stays:
+
+| Operation | Decided on |
+| --- | --- |
+| `create` | each attribute given (`attrs`, `attrs_text`) as `write.create`; each inline edge as `write.create` on its relation |
+| `update` | each attribute in `set`, `set_text`, `unset`, `add`, `add_text`, `remove`, `remove_text` as `write.update` |
+| `link` | the relation of the edge as `write.link` |
+| `unlink` | the relation of the edge as `write.unlink`; an edge given by its id is read from the entity's revision (an `@local` subject, one without a revision or an unknown edge has none to decide, and the write is refused as before) |
+| `transition` | the lifecycle attribute (the op's `attr`, else the type's lifecycle) as `write.transition` |
+| `supersede`, `retract`, `set_alias` | none, the type decision decides |
+
+- **Only what the writer gives.** Attributes the caller did not choose are not
+  decided: defaults, the single initial state of a lifecycle, values the
+  normalizer derives. Attributes a command sets for the caller count as given:
+  `graph file add` sets `title`, `content`, `media_type` and `file_name` (and
+  `origin` when a root matches on that machine, `source_url` and `retrieved_at`
+  when given), so the `create` list of a file type has to name them.
+- **Recorded only where a rule can tell.** The decisions on terms are made and
+  recorded for the types some rule of the graph's policies names terms of (a
+  resource below the exact type, in either layer, allow or deny). For every
+  other type, only the type is decided and recorded, so a graph whose policies
+  have no `writes` and no term deny rules decides, records and audits exactly
+  as before.
+- **Exact type rules do not match terms.** A type limit (`types: {T: read}`)
+  or a deny rule with `type` matches the type resource only. That never changes
+  an outcome, because the decision on the type is still required, and the
+  places that report what a caller may write (`whoami`, `policy explain`) join
+  the decision on a term with the decision on its type.
+- **Refusals name the term.** A refused write is `access.denied`; `details`
+  name the action, resource and rule of the first denial, sorted by action and
+  then resource, so a type denial is named before a term denial. The audit
+  event records every decision, with the resources of the terms
+  ([Audit](audit.md)). For a limited caller (a `writes` grant, or a rule that
+  names terms of the type), an attribute the type does not have is refused as
+  `access.denied` on `attr:<name>` rather than as an unknown attribute, because
+  authorization comes before validation; `graph describe fields <type>` and
+  `graph whoami` show what exists and what is allowed.
+
+### What a caller may write
+
+`graph whoami` gains, per graph, a `writes` object when the caller's level is
+below `write` and a write allow list applies to it: per type, each verb it may
+use, as `true` when every term of the type is allowed, else the sorted list of
+the allowed attributes (for `create`, `update` and `transition`) or relations
+(`link`, `unlink`), which is empty when a deny rule leaves none. A type with no
+verb left is omitted. `create` lists attributes only: an inline edge follows the
+link right. Each term counts only when its own decision and the decision on its
+type allow it. Callers with level `write`, or without a list, get no `writes`
+key, so their answers stay as they were; a term deny on such a caller is not
+shown by `whoami` (`policy explain` shows it, and the refusal names the term).
+`obligations` also covers the allowed types, so a limited writer sees its
+`require_reason` and `max_batch`.
+
+`graph-admin policy explain` answers the same for roles, tokens and projects:
+without `--action` the answer gains `writes`, and `--attribute A` or
+`--relation R` with `--type` and `--action` explains one decision on a term and
+reports `type_decision`, the decision on the type, next to it
+([`graph-admin`](cli_graph_admin.md)). The [live view](live_view.md) lists the
+rules `grant.<n>.<verb>` with their resources and shows `writes` next to the
+level of a caller.
+
 ## History
 
 Earlier revisions are part of reading: the `read` level includes
@@ -267,14 +457,32 @@ after an update.
 
 - **Running.** `graph do` expands the action to ops and authorizes each one
   as `apply` does: one decision per (`write.*` op action, type), with the
-  `require_reason` and `max_batch` obligations of the policy. An action
-  therefore never writes what the caller could not write by hand. A deny on
-  the type of one op refuses the whole action with `access.denied`, audited
-  like any write denial, and nothing is written; a replay or the details of
-  a failed precondition do not reach a caller without the rights.
+  `require_reason` and `max_batch` obligations of the policy (and, where the
+  policy has rules on the attributes or relations of a type, one more per
+  attribute or relation written, [Decisions](#decisions-on-attributes-and-relations)).
+  An action therefore never writes what the caller could not write by hand. A
+  deny on the type or on a term of one op refuses the whole action with
+  `access.denied`, audited like any write denial, and nothing is written; a
+  replay or the details of a failed precondition do not reach a caller without
+  the rights. When the expansion has no op (an `all: true` unlink with nothing
+  to remove), the action is authorized on what it declares to need, by the rule
+  of the listing.
+- **Needs.** What an action needs is derived when its catalog is loaded
+  against the graph's pinned ontology, so nothing is republished when the
+  ontology or a policy changes. A need on an abstract class or a superclass
+  stands for its concrete subtypes; a dynamic unlink of incoming edges on a
+  relation without a domain needs `write.unlink` on every concrete type. Below
+  the type, an op needs the attributes and relations its template names (a
+  transition without `attr` the lifecycle attribute of the type, from the
+  model), and an optional parameter's entry counts as written. `describe action`
+  shows the needs as published.
 - **Listing.** `describe actions`, `describe action`, `describe module`,
-  `describe modules` and `describe search` show an action only when every
-  op action the action needs is allowed on every type it writes. The check
+  `describe modules` and `describe search` show an action only when, for each
+  need, at least one of its concrete types allows it, with the attributes and
+  relations the action writes there where the policy has rules on terms of that
+  type (any-of per need). So an action no argument could run is hidden, and a
+  listed action can still be refused for an entity of a type the caller may not
+  write; the refusal names the resource. The check
   records no decision (no denial event), like the listing of functions, and
   obligations do not hide an action: one that needs `--reason` is listed.
   For everyone else the graph reads as if it had no such action, and `do`

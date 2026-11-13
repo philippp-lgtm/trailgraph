@@ -261,6 +261,17 @@ class CompiledModel:
         """The class and every subclass, sorted."""
         return tuple(sorted(c for c in self.classes if self.is_a(c, class_curie)))
 
+    def lifecycle_attribute(self, class_curie: str) -> str | None:
+        """The one lifecycle attribute of the class (what a ``transition`` without ``attr``
+        moves); ``None`` for an unknown class, none or several."""
+        found = self.classes.get(class_curie)
+        names = (
+            []
+            if found is None
+            else [n for n, a in found.attributes.items() if a.kind == "lifecycle"]
+        )
+        return names[0] if len(names) == 1 else None
+
     def value_base(self, kind: AttributeKind, type_ref: str) -> str:
         """The base type of a value: enum values and lifecycle states are strings."""
         if kind == "datatype":

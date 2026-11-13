@@ -253,3 +253,153 @@ def test_a_module_without_its_own_bump_is_a_warning(
     )
     assert (outcome.code, outcome.data["pinned"]) == (0, True)
     assert outcome.warning_codes == ["admin.module_bump_insufficient"]
+
+
+# ---- installed policies against the new model (write allow lists plan W8) -----------------
+
+TERM_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - entrypoint: app
+    graphs: [example_graph]
+    level: read
+    writes:
+      inv:Item:
+        create: [name, quantity]
+        update: [name, note]
+        link: [inv:located_in, inv:supplied_by]
+        transition: [status]
+      inv:Supplier: {create: true}
+      inv:Category: {update: [name]}
+no_project: {"*": write}
+"""
+TERM_DENY = """\
+schema: graph_cli.policy/1
+id: graph
+deny:
+  - {id: no_note, action: [write.update], type: [inv:Item], attribute: [note]}
+  - {id: no_category_link, action: [write.link], type: [inv:Item], relation: [inv:in_category]}
+"""
+PLAIN_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: write}
+no_project: {"*": write}
+"""
+
+
+def install_terms(run_cli: CliRunner, tmp_path: Path, installation: str, graph: str = "") -> None:
+    from support.policies import write_policy
+
+    path = write_policy(tmp_path / "policies", "installation.yaml", installation)
+    applied = admin(run_cli, "policy", "apply", str(path), "--reason", "test policy")
+    assert applied.code == 0, applied.envelope
+    if graph:
+        path = write_policy(tmp_path / "policies", "graph.yaml", graph)
+        args = ("policy", "apply", str(path), "--graph", "example_graph")
+        assert admin(run_cli, *args, "--reason", "test policy").code == 0
+
+
+def authored(tmp_path: Path, edits: list[tuple[str, str]], version: str = "2.0.0") -> Path:
+    """The 1.1.0 inventory under another version with text replacements (each must occur)."""
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    text = text.replace("  version: 1.1.0\n", f"  version: {version}\n", 1)
+    for old, new in edits:
+        assert old in text, old
+        text = text.replace(old, new, 1)
+    target = tmp_path / f"edited_{version}"
+    target.mkdir(exist_ok=True)
+    (target / "inventory.yaml").write_text(text)
+    return target
+
+
+def policy_warnings(outcome: Outcome) -> list[tuple[str, dict[str, object]]]:
+    return [
+        (w["code"], w["details"]) for w in outcome.warnings if w["code"].startswith("admin.policy_")
+    ]
+
+
+def test_a_release_that_renames_an_attribute_a_policy_names_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, TERM_POLICY, TERM_DENY)
+    candidate = admin(
+        run_cli, "ontology", "diff", str(INVENTORY / "2.0.0"), "--graph", "example_graph"
+    )
+    outcome = release(run_cli, INVENTORY / "2.0.0")  # 2.0.0 renames inv:Item.name to label
+    assert outcome.code == 0, outcome.envelope
+    expected = [
+        (
+            "admin.policy_unknown_term",
+            {"graph": "example_graph", "type": "inv:Item", "term": "name", "kind": "attribute"},
+        )
+    ]
+    assert policy_warnings(outcome) == expected
+    assert policy_warnings(candidate) == expected  # ontology diff --graph shows it ahead
+    message = next(w for w in outcome.warnings if w["code"] == "admin.policy_unknown_term")
+    assert "fail closed" in message["message"] and "2.0.0" in message["message"]
+
+
+def test_a_release_that_drops_a_type_and_a_relation_a_policy_names_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, TERM_POLICY, TERM_DENY)
+    supplier = "  Supplier:\n    summary: A company that delivers items.\n"
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    block = text[text.index(supplier) : text.index("  Category:\n")]
+    relation = text[text.index("  supplied_by:\n") : text.index("  in_category:\n")]
+    source = authored(tmp_path, [(block, ""), (relation, "")])
+    outcome = release(run_cli, source)
+    assert outcome.code == 0, outcome.envelope
+    assert policy_warnings(outcome) == [  # in the order of the types
+        (
+            "admin.policy_unknown_term",
+            {
+                "graph": "example_graph",
+                "type": "inv:Item",
+                "term": "inv:supplied_by",
+                "kind": "relation",
+            },
+        ),
+        ("admin.policy_unknown_type", {"graph": "example_graph", "type": "inv:Supplier"}),
+    ]
+
+
+def test_a_release_that_gives_a_granted_type_subclasses_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A write grant is an exact rule on its type: once the type has subclasses it misses
+    their entities. The same code as for a type that is gone, with the subclass message."""
+    create(run_cli, "1.1.0")
+    install_terms(run_cli, tmp_path, TERM_POLICY, TERM_DENY)
+    subclass = (
+        "  Tag:\n    summary: A kind of category.\n    is_a: Category\n    display_prefix: TAG\n"
+    )
+    source = authored(tmp_path, [("relations:\n", subclass + "\nrelations:\n")])
+    outcome = release(run_cli, source)
+    assert outcome.code == 0, outcome.envelope
+    ((code, details),) = policy_warnings(outcome)
+    assert (code, details) == (
+        "admin.policy_unknown_type",
+        {"graph": "example_graph", "type": "inv:Category"},
+    )
+    text = next(w["message"] for w in outcome.warnings if w["code"] == code)
+    assert "subclasses" in text and "misses" in text
+
+
+def test_a_release_without_term_rules_installed_warns_nothing(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    candidate = admin(
+        run_cli, "ontology", "diff", str(INVENTORY / "2.0.0"), "--graph", "example_graph"
+    )
+    assert policy_warnings(candidate) == []
+    install_terms(run_cli, tmp_path, PLAIN_POLICY)  # a policy, but no writes grant, no term rule
+    outcome = release(run_cli, INVENTORY / "2.0.0")
+    assert outcome.code == 0, outcome.envelope
+    assert policy_warnings(outcome) == []

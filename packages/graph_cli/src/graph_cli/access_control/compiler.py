@@ -6,11 +6,12 @@ Two authored forms, told apart by ``id``:
   description), ``grants`` (who may use which graphs at which level,
   through the app or, with ``entrypoint: server``, the server API; a grant
   may name a project, which only a token bound to it verifies, or a role,
-  which only a server token holding it carries), optional ``maintainers``,
+  which only a server token holding it carries; a ``level: read`` grant on named
+  graphs may carry ``writes``, see below), optional ``maintainers``,
   project ``scopes``, the required ``no_project`` scope, ``deny`` rules and
   ``obligations``;
 - ``graph``: one graph's ``types`` limits, ``obligations`` and ``deny``
-  rules. It only narrows.
+  rules (a rule with ``type`` may add ``attribute`` or ``relation``). It only narrows.
 
 A role is a subject like a token or a project: its rights are the rules that
 name it. Grants and deny rules of the installation layer may name only declared
@@ -18,6 +19,26 @@ roles (a typo is ``policy.invalid``); a graph layer is applied independently, so
 a role the installed installation policy does not declare is reported, not
 refused (``Compiled.unknown_roles``), like an unknown type. A policy without
 roles compiles to the same document, hence the same hash, as before roles existed.
+
+``writes`` is a grant's write allow list: concrete type CURIEs, each mapping verbs
+(``create``, ``update``, ``link``, ``unlink``, ``transition``, ``supersede``, ``retract``,
+``alias``) to ``true``, ``false`` or, for the first five, a non-empty list of attribute names
+(``create``, ``update``), relation CURIEs (``link``, ``unlink``) or lifecycle attribute names
+(``transition``); an absent or ``false`` verb is not granted and a type grants at least one.
+A list is sorted and deduplicated, so duplicates are no problem. A grant keeps its read rule
+``grant.<n>`` and gains one allow rule per granted verb, ``grant.<n>.<verb>`` (action
+``write.<verb>``), in the order create, update, link, edge, unlink, transition, supersede,
+retract, alias; ``grant.<n>.edge`` carries ``write.create`` on the relation resources of the
+``link`` entries only (an inline edge of a create needs the create right on its type and the
+link right on its relation). Resources are ``graph:<id>/type:<T>`` plus ``/attr:*`` or
+``/attr:<a>`` (create, update, transition) or ``/rel:*`` or ``/rel:<r>`` (link, unlink),
+across every named graph and type that grants the verb, sorted. The compiled document never
+depends on a model.
+
+A graph deny rule with ``type`` and ``attribute`` (or ``relation``) denies on
+``graph:<id>/type:<T>/attr:<a>`` (``/rel:<r>``) for every listed type instead of on the type;
+its actions must be write actions that can decide such a term, and a ``relation`` rule on
+``write.link`` also denies ``write.create``, which adds the inline edges of a create.
 
 Levels expand to action globs here (``kernel.actions``), graph names to ids,
 so the compiled document says exactly what it means and its hash names that
@@ -31,28 +52,39 @@ findings do (``authorize`` keeps such a token from every other rule). The instal
 document always carries the built-in reason obligation.
 
 Validation is total: every problem is collected with its path and the
-compile fails with ``policy.invalid`` listing all of them. Types are checked
-against the graph's pinned model when the caller passes it; an unknown type
-is not an error (it may come with a later release), the caller warns.
+compile fails with ``policy.invalid`` listing all of them. Types and terms are
+checked against the graph's pinned model when the caller passes it (``known_types``
+and ``extended_types`` for type limits, ``models`` for ``writes`` and term deny rules);
+an abstract or extended type is an error, an unknown type or term is not (it may come
+with a later release), the caller warns.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
 from graph_cli.access_control.documents import (
     ASSERTED_KEYS,
+    CURIE_RE,
     GRAPH_LAYER,
     INSTALLATION_LAYER,
+    NAME_RE,
     POLICY_SCHEMA,
     TYPE_GLOB_RE,
     Problem,
     document_problems,
     is_action_glob,
     is_write_glob,
+)
+from graph_cli.access_control.terms import (
+    TermModel,
+    TypeTerms,
+    UnknownTerm,
+    UnknownWriteType,
+    UnusableWrite,
 )
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
@@ -80,6 +112,30 @@ BASE_OBLIGATION: Final[Mapping[str, JsonValue]] = {
     "require_reason": True,
 }
 ALL: Final = "*"
+# The verbs of a ``writes`` entry, in the order their rules are compiled.
+WRITE_VERBS: Final = (
+    "create",
+    "update",
+    "link",
+    "unlink",
+    "transition",
+    "supersede",
+    "retract",
+    "alias",
+)
+# Verbs that take a list of terms, and what the list names; the others are true or false.
+_LIST_VERBS: Final = {
+    "create": "attribute names",
+    "update": "attribute names",
+    "link": "relation CURIEs",
+    "unlink": "relation CURIEs",
+    "transition": "lifecycle attribute names",
+}
+_ATTRIBUTE_VERBS: Final = ("create", "update", "transition")
+# The write actions that can decide an attribute or a relation of a type.
+_ATTRIBUTE_ACTIONS: Final = frozenset({"write.create", "write.update", "write.transition"})
+_RELATION_ACTIONS: Final = frozenset({"write.create", "write.link", "write.unlink"})
+_KIND: Final = {"attribute": "attr", "relation": "rel"}
 _INSTALLATION_KEYS: Final = frozenset(
     {
         "schema",
@@ -109,6 +165,16 @@ class Compiled:
     layer: str
     unknown_types: tuple[str, ...] = ()
     unknown_roles: tuple[str, ...] = ()
+    # Found against the models of ``compile_policy(models=...)``; all sorted.
+    unknown_write_types: tuple[UnknownWriteType, ...] = ()
+    unknown_terms: tuple[UnknownTerm, ...] = ()
+    unusable_writes: tuple[UnusableWrite, ...] = ()
+
+
+# One verb's terms of a type: sorted, without duplicates; ``()`` = every term (``true``).
+type _Terms = tuple[str, ...]
+# type CURIE -> verb -> terms, the verbs that are granted.
+type _Writes = dict[str, dict[str, _Terms]]
 
 
 @dataclass
@@ -120,12 +186,28 @@ class _Context:
     # Graph layer: the roles of the installed installation policy (``None``: not checked).
     # Installation layer: the roles this policy declares (set by ``_roles``).
     known_roles: frozenset[str] | None = None
+    models: Callable[[GraphId], TermModel | None] | None = None
     problems: list[Problem] = field(default_factory=list)
     unknown_types: set[str] = field(default_factory=set)
     unknown_roles: set[str] = field(default_factory=set)
+    unknown_write_types: set[UnknownWriteType] = field(default_factory=set)
+    unknown_terms: set[UnknownTerm] = field(default_factory=set)
+    unusable_writes: set[UnusableWrite] = field(default_factory=set)
+    _models: dict[GraphId, TermModel | None] = field(default_factory=dict)
 
     def add(self, path: str, message: str) -> None:
         self.problems.append(Problem(path, message))
+
+    def model_of(self, graph: GraphId) -> TermModel | None:
+        """The term model of ``graph``, asked for once; ``None``: not checked."""
+        if self.models is None:
+            return None
+        if graph not in self._models:
+            self._models[graph] = self.models(graph)
+        return self._models[graph]
+
+    def graph_name(self, graph: GraphId) -> str:
+        return next((name for name, found in self.graphs.items() if found == graph), str(graph))
 
 
 def layer_of_source(data: bytes) -> str | None:
@@ -150,6 +232,7 @@ def compile_policy(
     known_types: frozenset[str] | None = None,
     extended_types: frozenset[str] = frozenset(),
     roles: frozenset[str] | None = None,
+    models: Callable[[GraphId], TermModel | None] | None = None,
 ) -> Compiled:
     """Compile one authored document. ``graphs`` maps every graph name to its id,
     ``graph`` is the graph a graph policy is compiled for, ``known_types`` the type
@@ -157,8 +240,12 @@ def compile_policy(
     those that are abstract or have subclasses: a limit matches the exact type only,
     so naming one of them would miss its subclasses' entities. ``roles`` are the roles
     the installed installation policy declares (``None``: not checked); a graph policy's
-    deny rules naming others are collected in ``unknown_roles``."""
-    ctx = _Context(graphs, graph, known_types, extended_types, roles)
+    deny rules naming others are collected in ``unknown_roles``. ``models`` is asked,
+    lazily and once per graph, for the term model of each graph a ``writes`` grant names
+    and of the graph of a graph policy that has term deny rules (``None``, or no model for
+    a graph: not checked); abstract or extended write types are problems, unknown types
+    and terms and unusable writes are collected."""
+    ctx = _Context(graphs, graph, known_types, extended_types, roles, models)
     try:
         root = load_strict(data)
     except YamlError as exc:
@@ -192,6 +279,9 @@ def compile_policy(
         layer_name,
         tuple(sorted(ctx.unknown_types)),
         tuple(sorted(ctx.unknown_roles)),
+        tuple(sorted(ctx.unknown_write_types)),
+        tuple(sorted(ctx.unknown_terms)),
+        tuple(sorted(ctx.unusable_writes)),
     )
 
 
@@ -269,7 +359,9 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     entry = _map(node, path, ctx, required=True)
     if entry is None:
         return []
-    _unknown_keys(node, frozenset({"principal", "entrypoint", "graphs", "level"}), path, ctx)
+    _unknown_keys(
+        node, frozenset({"principal", "entrypoint", "graphs", "level", "writes"}), path, ctx
+    )
     entrypoints = _entrypoints(entry, path, ctx)
     principal: dict[str, JsonValue] = {"entrypoint": entrypoints}
     if "principal" in entry:
@@ -289,9 +381,18 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
             )
     resources = _graph_resources(entry.get("graphs"), f"{path}.graphs", ctx, required=True)
     level = _level(entry.get("level"), f"{path}.level", ctx, allowed=("read", "write"))
+    writes = _writes(entry["writes"], f"{path}.writes", ctx) if "writes" in entry else None
+    if "writes" in entry:
+        if level == "write":
+            ctx.add(f"{path}.writes", "needs level: read; level write already allows every write")
+        if resources == ["graph:*"]:
+            ctx.add(
+                f"{path}.graphs",
+                'must name graphs, not "*", when writes is given: terms belong to an ontology',
+            )
     if level is None or resources is None:
         return []
-    return [
+    rules: list[JsonValue] = [
         {
             "id": f"grant.{number}",
             "effect": "allow",
@@ -300,6 +401,171 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
             "resource": resources,
         }
     ]
+    if writes and resources != ["graph:*"]:
+        graphs = sorted({ctx.graphs[n] for n in _texts(entry["graphs"], "", ctx) or ()})
+        _check_writes(writes, graphs, f"{path}.writes", ctx)
+        rules += _write_rules(number, principal, graphs, writes)
+    return rules
+
+
+def _writes(node: YamlNode, path: str, ctx: _Context) -> _Writes | None:
+    """The ``writes`` of a grant: type -> the verbs it grants (``false`` verbs dropped)."""
+    entry = _map(node, path, ctx)
+    if entry is None:
+        return None
+    if not entry:
+        ctx.add(path, "must name at least one type")
+        return None
+    found: _Writes = {}
+    for name, item in sorted(entry.items()):
+        where = f"{path}.{name}"
+        if not TYPE_GLOB_RE.match(name):
+            ctx.add(where, f"{name!r} is not a type CURIE")
+        elif name.endswith("*"):
+            ctx.add(where, f"{name!r} is a prefix; name concrete types")
+        else:
+            verbs = _type_writes(item, where, ctx)
+            if verbs:
+                found[name] = verbs
+    return found
+
+
+def _type_writes(node: YamlNode, path: str, ctx: _Context) -> dict[str, _Terms] | None:
+    entry = _map(node, path, ctx, required=True)
+    if entry is None:
+        return None
+    before = len(ctx.problems)
+    _unknown_keys(node, frozenset(WRITE_VERBS), path, ctx)
+    granted: dict[str, _Terms] = {}
+    for verb in WRITE_VERBS:
+        if verb in entry:
+            terms = _verb_terms(verb, entry[verb], f"{path}.{verb}", ctx)
+            if terms is not None:
+                granted[verb] = terms
+    if not granted and len(ctx.problems) == before:
+        ctx.add(path, f"grants no verb; name at least one of {', '.join(WRITE_VERBS)}")
+    return granted
+
+
+def _verb_terms(verb: str, node: YamlNode, path: str, ctx: _Context) -> _Terms | None:
+    """The terms a verb grants: ``()`` for ``true`` (every term), ``None`` when it is
+    ``false`` or malformed."""
+    names = _LIST_VERBS.get(verb)
+    if isinstance(node, YamlScalar) and node.as_bool() is not None:
+        return () if node.as_bool() else None
+    if names is None:
+        ctx.add(path, "must be true or false")
+        return None
+    if not isinstance(node, YamlSeq) or not node.items:
+        ctx.add(path, f"must be true, false or a non-empty list of {names}")
+        return None
+    pattern = CURIE_RE if verb in ("link", "unlink") else NAME_RE
+    terms: set[str] = set()
+    valid = True
+    for index, item in enumerate(node.items):
+        text = _scalar(item)
+        if text is None or not pattern.match(text.text):
+            ctx.add(f"{path}[{index}]", f"must be one of the {names}")
+            valid = False
+        else:
+            terms.add(text.text)
+    return tuple(sorted(terms)) if valid else None
+
+
+def _check_writes(writes: _Writes, graphs: Sequence[GraphId], path: str, ctx: _Context) -> None:
+    """The model checks of ``writes`` (W8) against every graph the grant names."""
+    for graph in graphs:
+        model = ctx.model_of(graph)
+        if model is None:
+            continue
+        for name, verbs in sorted(writes.items()):
+            found = model.types.get(name)
+            if found is None:
+                ctx.unknown_write_types.add(UnknownWriteType(graph, name))
+            elif found.extended:
+                ctx.add(
+                    f"{path}.{name}",
+                    f"{name} is abstract or has subclasses in graph {ctx.graph_name(graph)}; "
+                    "name the concrete types",
+                )
+            else:
+                _check_terms(graph, name, found, verbs, ctx)
+
+
+def _check_terms(
+    graph: GraphId, name: str, found: TypeTerms, verbs: Mapping[str, _Terms], ctx: _Context
+) -> None:
+    """Terms the type does not have, and verbs no write can satisfy."""
+
+    def unknown(term: str, kind: str) -> None:
+        ctx.unknown_terms.add(UnknownTerm(graph, name, term, kind))
+
+    for verb, terms in sorted(verbs.items()):
+        for term in terms:
+            if verb == "transition":
+                if term not in found.attributes or not found.attributes[term].lifecycle:
+                    unknown(term, "lifecycle")
+            elif verb in ("link", "unlink"):
+                if term not in found.relations:
+                    unknown(term, "relation")
+            elif term not in found.attributes:
+                unknown(term, "attribute")
+    # An update never touches a lifecycle attribute; a create without ``true`` must name
+    # every attribute it has to give (those it names are never missing).
+    locked = tuple(
+        t
+        for t in verbs.get("update", ())
+        if t in found.attributes and found.attributes[t].lifecycle
+    )
+    if locked:
+        ctx.unusable_writes.add(UnusableWrite(graph, name, "update", locked, found.file))
+    listed = verbs.get("create", ())
+    missing = tuple(
+        sorted(a for a, t in found.attributes.items() if t.must_give and a not in listed)
+    )
+    if listed and missing:
+        ctx.unusable_writes.add(UnusableWrite(graph, name, "create", missing, found.file))
+
+
+def _write_rules(
+    number: int, principal: Mapping[str, JsonValue], graphs: Sequence[GraphId], writes: _Writes
+) -> list[JsonValue]:
+    """``grant.<n>.<verb>`` per granted verb, in the order of ``WRITE_VERBS`` (``edge`` right
+    after ``link``). A resource is the type, plus the terms of the verb below it."""
+    rules: list[JsonValue] = []
+    for verb in WRITE_VERBS:
+        on: set[str] = set()
+        edges: set[str] = set()
+        for graph in graphs:
+            for name, verbs in writes.items():
+                if verb not in verbs:
+                    continue
+                base = f"graph:{graph}/type:{name}"
+                kind = "attr" if verb in _ATTRIBUTE_VERBS else "rel"
+                if verb not in _LIST_VERBS:
+                    below: list[str] = []
+                elif verbs[verb]:
+                    below = [f"{base}/{kind}:{term}" for term in verbs[verb]]
+                else:
+                    below = [f"{base}/{kind}:*"]
+                on |= {base, *below}
+                if verb == "link":
+                    edges |= set(below)
+        allowed = [(f"grant.{number}.{verb}", f"write.{verb}", on)]
+        if verb == "link":
+            allowed.append((f"grant.{number}.edge", "write.create", edges))
+        for rule_id, action, resources in allowed:
+            if resources:
+                rules.append(
+                    {
+                        "id": rule_id,
+                        "effect": "allow",
+                        "principal": dict(principal),
+                        "action": [action],
+                        "resource": sorted(resources),
+                    }
+                )
+    return rules
 
 
 def _entrypoints(entry: Mapping[str, YamlNode], path: str, ctx: _Context) -> JsonValue:
@@ -453,6 +719,8 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
     seen: set[str] = set()
     target_key = "type" if graph is not None else "graph"
     allowed = frozenset({"id", "action", target_key, *_MATCHERS})
+    if graph is not None:
+        allowed |= {"attribute", "relation"}
     for index, item in enumerate(_seq(node, "deny", ctx) or ()):
         path = f"deny[{index}]"
         entry = _map(item, path, ctx, required=True)
@@ -482,13 +750,20 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
             if types is not None and actions is not None and not all(map(is_write_glob, actions)):
                 ctx.add(f"{path}.action", "a deny rule on types applies to writes only")
                 actions = None
-            resources = (
-                [_graph_glob(graph)]
+            names = (
+                None
                 if types is None
-                else sorted(
-                    {_type_glob_of(graph, t) for t in types if _type_glob(t, f"{path}.type", ctx)}
-                )
+                else sorted({t for t in types if _type_glob(t, f"{path}.type", ctx)})
             )
+            terms = [key for key in ("attribute", "relation") if key in entry]
+            if terms:
+                resources, actions = _term_resources(entry, terms, names, actions, path, graph, ctx)
+            else:
+                resources = (
+                    [_graph_glob(graph)]
+                    if names is None
+                    else [_type_glob_of(graph, t) for t in names]
+                )
         else:
             found = _graph_resources(
                 entry.get("graph", YamlScalar(ALL, True, 0)), f"{path}.graph", ctx
@@ -499,6 +774,62 @@ def _deny_rules(node: YamlNode | None, graph: GraphId | None, ctx: _Context) -> 
         seen.add(rule_id)
         rules.append(_deny(f"deny.{rule_id}", actions, resources, principal))
     return rules
+
+
+def _term_resources(
+    entry: Mapping[str, YamlNode],
+    keys: Sequence[str],
+    types: list[str] | None,
+    actions: list[str] | None,
+    path: str,
+    graph: GraphId,
+    ctx: _Context,
+) -> tuple[list[str], list[str] | None]:
+    """The resources and actions of a deny rule with ``attribute`` or ``relation`` (W6):
+    the terms of every listed type, for the write actions that can decide them. A
+    ``write.link`` on relations also denies ``write.create``, which adds inline edges."""
+    if len(keys) > 1:
+        ctx.add(path, "names attribute or relation, not both")
+        return [], actions
+    key = keys[0]
+    where = f"{path}.{key}"
+    if types is None:
+        ctx.add(where, "needs type: an attribute or relation belongs to a type")
+    for name in types or ():
+        if name.endswith("*"):
+            ctx.add(f"{path}.type", f"{name!r} is a prefix; name concrete types with {key}")
+    pattern, label = (
+        (NAME_RE, "an attribute name") if key == "attribute" else (CURIE_RE, "a relation CURIE")
+    )
+    terms: list[str] = []
+    for term in _texts(entry[key], where, ctx) or ():
+        if pattern.match(term):
+            terms.append(term)
+        else:
+            ctx.add(where, f"{term!r} is not {label}")
+    allowed = _ATTRIBUTE_ACTIONS if key == "attribute" else _RELATION_ACTIONS
+    refused = [a for a in actions or () if a != "write.*" and a not in allowed]
+    if refused:
+        ctx.add(
+            f"{path}.action",
+            f"{refused[0]!r} never decides {'an' if key == 'attribute' else 'a'} {key}; "
+            f"name {', '.join(sorted(allowed))} or write.*",
+        )
+        actions = None
+    elif actions is not None and key == "relation" and "write.link" in actions:
+        actions = sorted({*actions, "write.create"})
+    concrete = [t for t in types or () if not t.endswith("*")]
+    model = ctx.model_of(graph)
+    if model is not None:
+        for name in concrete:
+            found = model.types.get(name)  # an unknown type is reported with the limits
+            if found is not None:
+                known = found.attributes if key == "attribute" else found.relations
+                for term in terms:
+                    if term not in known:
+                        ctx.unknown_terms.add(UnknownTerm(graph, name, term, key))
+    resources = [f"graph:{graph}/type:{t}/{_KIND[key]}:{term}" for t in concrete for term in terms]
+    return sorted(set(resources)), actions
 
 
 def _obligations(node: YamlNode | None, ctx: _Context) -> list[JsonValue]:

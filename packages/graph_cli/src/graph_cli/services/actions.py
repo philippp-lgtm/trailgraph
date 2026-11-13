@@ -77,11 +77,7 @@ class ActionService:
             request = RequestMeta.of("do", {"graph": entry.name})
             raise self._reader.refuse_hidden(actor, entry, entry.name, request)
         published = self._reader.published_actions(entry)
-        visible = (
-            ()
-            if published is None
-            else self._reader.visible_actions(actor, entry, published.entries)
-        )
+        visible = () if published is None else self._reader.visible_actions(actor, entry, published)
         action = find_action(visible, name)
         assert published is not None
         model = self._models.load(entry)

@@ -3059,6 +3059,81 @@
                 "obligations"
               ]
             }
+          },
+          "type_decision": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "effect": {
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "deny"
+                ]
+              },
+              "rule": {
+                "type": "string"
+              },
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "obligations": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "require_reason": {
+                        "type": "boolean"
+                      },
+                      "max_batch": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "require_reason"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "action",
+              "effect",
+              "rule",
+              "code",
+              "obligations"
+            ]
+          },
+          "writes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            }
           }
         },
         "required": [
@@ -13162,6 +13237,24 @@
                       "--type": {
                         "type": "string",
                         "description": "The inventory name of type; never both.",
+                        "deprecated": true
+                      },
+                      "attribute": {
+                        "type": "string",
+                        "description": "Decide on one attribute of --type (needs --action): the decision on the attribute, with the decision on the type next to it. Excludes --relation."
+                      },
+                      "--attribute": {
+                        "type": "string",
+                        "description": "The inventory name of attribute; never both.",
+                        "deprecated": true
+                      },
+                      "relation": {
+                        "type": "string",
+                        "description": "Decide on one relation of --type (needs --action), as --attribute does. Excludes --attribute."
+                      },
+                      "--relation": {
+                        "type": "string",
+                        "description": "The inventory name of relation; never both.",
                         "deprecated": true
                       },
                       "file": {

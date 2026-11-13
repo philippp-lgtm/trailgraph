@@ -70,6 +70,18 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "admin.actions_affected", _C.WARNING, False, "A release would break published actions."
     ),
     ErrorSpec("admin.policy_unknown_type", _C.WARNING, False, "The policy names an unknown type."),
+    ErrorSpec(
+        "admin.policy_unknown_term",
+        _C.WARNING,
+        False,
+        "The policy names an attribute or relation its type does not have.",
+    ),
+    ErrorSpec(
+        "admin.policy_unusable_write",
+        _C.WARNING,
+        False,
+        "A write grant of the policy can never succeed.",
+    ),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),
     ErrorSpec(
         "admin.view_port_unavailable", _C.UNAVAILABLE, True, "The view port cannot be bound."

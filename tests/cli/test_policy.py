@@ -124,6 +124,140 @@ def test_unknown_types_warn(run_cli: CliRunner, root: Path, tmp_path: Path) -> N
     assert checked.warning_codes == ["admin.policy_unknown_type"]
 
 
+WRITES_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers: notes and topics"}
+grants:
+  - entrypoint: server
+    principal: {role: importer}
+    graphs: [example_graph, other_graph]
+    level: read
+    writes:
+      nas:Note:
+        create: [title]
+        update: [body, status, nope]
+        link: [nas:broader]
+        transition: [title]
+      nas:Scan: {create: [scanned_on]}
+      inv:Item: {update: true}
+no_project: {"*": read}
+"""
+
+
+def test_writes_are_checked_against_the_model_of_each_graph(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``writes`` grants warn per graph they name: a type its model lacks, a term its type
+    lacks and a write that cannot succeed; the policy is still valid and compiles as written."""
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    create_graph(run_cli, "other_graph")  # inventory: no nas:* types
+    path = write_policy(tmp_path / "work", "installation.yaml", WRITES_POLICY)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert checked.code == 0, checked.envelope
+    assert sorted(set(checked.warning_codes)) == [
+        "admin.policy_unknown_term",
+        "admin.policy_unknown_type",
+        "admin.policy_unusable_write",
+    ]
+    by_code: dict[str, list[dict[str, Any]]] = {}
+    for warning in checked.warnings:
+        by_code.setdefault(warning["code"], []).append(warning["details"])
+    assert by_code["admin.policy_unknown_type"] == [
+        {"graph": "example_graph", "type": "inv:Item"},
+        {"graph": "other_graph", "type": "nas:Note"},
+        {"graph": "other_graph", "type": "nas:Scan"},
+    ]
+    assert by_code["admin.policy_unknown_term"] == [
+        {"graph": "example_graph", "type": "nas:Note", "term": "nas:broader", "kind": "relation"},
+        {"graph": "example_graph", "type": "nas:Note", "term": "nope", "kind": "attribute"},
+        {"graph": "example_graph", "type": "nas:Note", "term": "title", "kind": "lifecycle"},
+    ]
+    assert by_code["admin.policy_unusable_write"] == [
+        {
+            "graph": "example_graph",
+            "type": "nas:Note",
+            "verb": "create",
+            "attributes": ["body", "kind"],
+        },
+        {
+            "graph": "example_graph",
+            "type": "nas:Note",
+            "verb": "update",
+            "attributes": ["status"],
+        },
+        {
+            "graph": "example_graph",
+            "type": "nas:Scan",
+            "verb": "create",
+            "attributes": ["content", "file_name", "media_type", "title"],
+        },
+    ]
+    unknown_term = next(w for w in checked.warnings if w["code"] == "admin.policy_unknown_term")
+    assert "fail closed" in unknown_term["message"]
+    scan = next(
+        w for w in checked.warnings if "nas:Scan" in w["message"] and "create" in w["message"]
+    )
+    assert "graph file add" in scan["message"]
+    # the same warnings come with an explanation against the file
+    explained = admin(run_cli, "policy", "explain", "--graph", "example_graph", "--file", str(path))
+    assert explained.code == 0, explained.envelope
+    assert explained.warning_codes == checked.warning_codes
+    # it applies: warnings never block
+    assert apply(run_cli, path).code == 0
+
+
+def test_writes_on_an_abstract_type_are_refused(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    create_graph(run_cli, "other_graph")
+    source = WRITES_POLICY.replace("nas:Scan: {create: [scanned_on]}", "nas:Source: {create: true}")
+    checked = admin(
+        run_cli,
+        "policy",
+        "check",
+        str(write_policy(tmp_path / "work", "installation.yaml", source)),
+    )
+    assert checked.error["code"] == "policy.invalid"
+    problems = checked.error["details"]["problems"]
+    assert [p["path"] for p in problems] == ["grants[0].writes.nas:Source"]
+    assert "abstract or has subclasses in graph example_graph" in problems[0]["message"]
+
+
+def test_a_policy_without_writes_has_no_model_warnings(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    path = write_policy(tmp_path / "work", "installation.yaml", INSTALLATION)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert (checked.code, checked.warning_codes) == (0, [])
+
+
+def test_graph_term_deny_rules_warn_about_unknown_terms(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    source = (
+        "schema: graph_cli.policy/1\nid: graph\ndeny:\n"
+        "  - {id: no_body, type: [nas:Note], attribute: [body, nope], action: [write.update]}\n"
+        "  - {id: no_link, type: [nas:Gone], relation: [nas:about], action: [write.link]}\n"
+    )
+    path = write_policy(tmp_path / "work", "g.yaml", source)
+    checked = admin(run_cli, "policy", "check", str(path), "--graph", "example_graph")
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["admin.policy_unknown_type", "admin.policy_unknown_term"]
+    assert checked.warnings[0]["details"] == {"graph": "example_graph", "type": "nas:Gone"}
+    assert checked.warnings[1]["details"] == {
+        "graph": "example_graph",
+        "type": "nas:Note",
+        "term": "nope",
+        "kind": "attribute",
+    }
+
+
 def test_unknown_roles_in_a_graph_policy_warn(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

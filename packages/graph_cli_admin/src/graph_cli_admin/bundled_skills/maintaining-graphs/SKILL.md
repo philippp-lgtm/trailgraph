@@ -5,14 +5,12 @@ description: Maintain the graphs of a graph_cli installation with graph-admin, l
 
 # Maintaining graphs
 
-This skill is for whoever maintains graphs with `graph-admin`: it creates
-graphs, releases their ontologies and publishes their skills, named
-functions and named actions. What a graph holds is designed with the `ontology-best-practices`
-skill; the curated text of a graph skill is written with the
-`authoring-graph-skills` skill; the function files with the
-`authoring-graph-functions` skill; the action files with the
-`authoring-graph-actions` skill.
-Reading and writing the data of a graph is the `graph-cli` skill.
+This skill is for whoever maintains graphs with `graph-admin`: creating
+graphs, releasing their ontologies, publishing their skills, named functions
+and named actions. Design a graph with `ontology-best-practices`, write its
+graph skill with `authoring-graph-skills`, its function files with
+`authoring-graph-functions` and its action files with
+`authoring-graph-actions`. Graph data is read and written with `graph-cli`.
 
 ## Before the first command
 
@@ -21,10 +19,10 @@ Reading and writing the data of a graph is the `graph-cli` skill.
    server, and the commands that need the data root here (`init`, `view`,
    `--data-root`) are refused with `admin.remote_mode`.
 2. Who you are decides what works. A maintainer may do everything. A
-   project admin (an admin token bound to a project) sees and changes only
-   the graphs its project maintains: release, publish, push, check. It
-   cannot create graphs, apply policies or create tokens; on
-   `access.denied` stop and tell the user.
+   project admin (an admin token bound to a project) releases, publishes,
+   pushes and checks only the graphs its project maintains; it cannot create
+   graphs, apply policies or create tokens. On `access.denied` stop and tell
+   the user.
 3. `graph-admin describe commands --json` lists every command with its
    options; `graph-admin <command> --help` shows one.
 
@@ -149,7 +147,7 @@ Only a maintainer can create a graph.
 6. Agents reach the graph only when the policy lets their project use it
    and their project's `.graph_cli.toml` lists it. Tell the user what is
    missing; change the policy only when asked (`graph-admin policy diff
-   <file>`, then `graph-admin policy apply <file> --reason "<why>"`).
+   <file>` first, then apply it as under "Give an app a role").
 
 ## Publish or change a graph skill
 
@@ -164,9 +162,8 @@ graph-admin graph push <graph> <folder> --reason "<why>"
 ```
 
 `render` writes what agents would get into `<scratch dir>/graph-<graph>/`
-and lists what publishing would refuse (exit 1). Read the preview before
-pushing. A graph without a skill gets one the same way: create the
-directory in its folder and push.
+and lists what publishing would refuse (exit 1); read it before pushing. A
+graph without a skill gets one the same way: create the directory, push.
 
 ## Publish or change functions
 
@@ -206,7 +203,10 @@ rights of its ops does not see it.
 Roles let apps of one project differ. Declare the role under `roles:` in the
 installation policy, name it in grants (`principal: {role: <role>}` with
 `entrypoint: server`) and deny rules (`role: [<role>]`), then `graph-admin
-policy apply <file> --reason "<why>"`. Give it to an app token with
+policy apply <file> --reason "<why>"`. A grant with `level: read` can carry a
+`writes` list that names exactly what the role may write, down to attributes
+and relations (grammar: `docs/access_control.md`, "Write allow lists"). Give
+it to an app token with
 `graph-admin token create <name> --role <role>` or `graph-admin token role add
 <name> <role>` (`token role remove` takes it away), or to a client with
 `graph-admin enroll create --project <project> --role <role>`. App tokens only;
@@ -217,10 +217,10 @@ explain --graph <graph> --role <role>` shows what a token with it gets.
 
 - `graph-admin graph show <graph>`: manifest, head, releases, skill, the
   number of published functions and actions.
-- `graph-admin graph check <graph>`: every entity against the pinned ontology,
-  including what no write checks, and the published functions and actions
-  against the same model; exit 1 on error findings or when a function or action
-  no longer resolves (`admin.functions_broken`, `admin.actions_broken`).
+- `graph-admin graph check <graph>`: every entity against the pinned ontology
+  (also what no write checks) and the published functions and actions against
+  the same model; exit 1 on error findings or a function or action that no
+  longer resolves.
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
   that imports the `files` module.
 - `graph-admin audit verify`: every chain, log and pin of the installation.
@@ -244,7 +244,7 @@ explain --graph <graph> --role <role>` shows what a token with it gets.
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |
 | `remote.client_outdated` | this graph-admin is not the build the server runs; stop and tell the user to run `graph-admin self update` |
 
-The warning `remote.version_differs` means the server runs another build.
-With `details.compatible: true` the commands and these skills are the
-same: finish the task, then tell the user once that
-`graph-admin self update` installs the server's build.
+The warning `remote.version_differs` means the server runs another build;
+with `details.compatible: true` the commands and these skills are the same:
+finish the task, then tell the user once that `graph-admin self update`
+installs the server's build.

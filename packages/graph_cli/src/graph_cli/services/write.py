@@ -36,6 +36,16 @@ is an audited ``invalid`` refusal), then raises the held ``nothing_to_do`` (not 
 and continues with W.8 on the expanded change set, which is what the tx records. A dry-run
 does the same on its lock-free snapshot, without audit and idempotency.
 
+Terms (write allow lists plan W4, W7): besides its (action, type) decision an op is decided on
+the attributes and relations it names below its type (``Resolution.fine``), but only for a
+type some rule of the graph's policy names terms of (``fine_types``); every other type is
+decided as before, so policies without term rules produce the same decisions, events and
+records. A transition without ``attr`` is decided on the lifecycle attribute of its type in
+the model of the decision (the prepared one before the lock, the locked one under it); the
+set of terms is compared like the pairs for the re-authorization under the lock. An action
+whose expansion is empty is authorized by the any-of rule of ``services.action_rights`` on
+its derived needs.
+
 Refusals (B3.14): ``invalid`` and ``conflict`` go to the graph stream under
 the lock; if that append fails the original error is raised with warning
 ``audit.refusal_not_recorded``. Usage errors and dry-runs are not audited.
@@ -64,6 +74,7 @@ from typing import Final
 from uuid import UUID
 
 from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.terms import term_resource
 from graph_cli.audit import events
 from graph_cli.audit.events import RefusalStatus
 from graph_cli.kernel.actions import Action
@@ -73,6 +84,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import (
     MAX_BYTES,
     MAX_OPS,
+    OP_ACTIONS,
     ChangeSet,
     CreateOp,
     Op,
@@ -113,13 +125,15 @@ from graph_cli.kernel.ports.storage import (
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry
+from graph_cli.kinetic.action_needs import action_needs
 from graph_cli.kinetic.expand import check_preconditions, expand
 from graph_cli.ontology_layer.data_validator import blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
+from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
-from graph_cli.services.refs import NO_BINDINGS, Resolution, resolve_refs
+from graph_cli.services.refs import NO_BINDINGS, FineTerm, Resolution, resolve_refs
 from graph_cli.temporal_knowledge.normalize import normalize
 from graph_cli.temporal_knowledge.working import WorkingState
 
@@ -218,6 +232,15 @@ class BatchResult:
 
 
 @dataclass(frozen=True, slots=True)
+class _Wanted:
+    """What a write is authorized on: the (action, type) pairs (B6.9) and the terms below the
+    types (W4), before the policy says which types have term rules."""
+
+    pairs: tuple[tuple[Action, TermRef], ...]
+    fine: tuple[FineTerm, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class _Prepared:
     entry: GraphEntry
     model: CompiledModel
@@ -225,6 +248,7 @@ class _Prepared:
     write: GraphStoreWrite
     snapshot: Snapshot
     resolution: Resolution
+    wanted: _Wanted
     decisions: tuple[Decision, ...]
 
 
@@ -298,6 +322,7 @@ class WriteService:
         self.config = config or WriteConfig()
         self.timings = timings if timings is not None else Timings()
         self._models = ModelCache(catalog, self.timings)
+        self._fine = FineTypes()
 
     # ---- public --------------------------------------------------------
 
@@ -361,8 +386,9 @@ class WriteService:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
         resolution = self._resolve(request, snapshot)  # a plan: the empty frame, no pairs
-        decisions = self._authorize(request, entry, resolution.pairs)
-        return _Prepared(entry, model, read, write, snapshot, resolution, decisions)
+        wanted = _wanted(resolution, model)
+        decisions = self._authorize(request, entry, wanted)
+        return _Prepared(entry, model, read, write, snapshot, resolution, wanted, decisions)
 
     def _resolve(self, request: WriteRequest, snapshot: Snapshot) -> Resolution:
         with self.timings.phase("resolve"):
@@ -373,20 +399,49 @@ class WriteService:
                 allow_abbrev=request.allow_abbrev,
             )
 
-    def _authorize(
-        self,
-        request: WriteRequest,
-        entry: GraphEntry,
-        pairs: Sequence[tuple[Action, TermRef]],
-    ) -> tuple[Decision, ...]:
-        cs = request.changeset
+    def _plan_wanted(
+        self, request: WriteRequest, entry: GraphEntry, plan: ActionPlan, model: CompiledModel
+    ) -> _Wanted:
+        """What an action whose expansion is empty is authorized on: for each need of the
+        action on ``model`` the option the any-of rule picks (``services.action_rights``)."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
-            ctx = AuthzContext(
-                op_count=len(cs.ops), has_reason=cs.reason is not None, dry_run=request.dry_run
+            fine = self._fine.of(policy, entry.id)
+            ctx = _context(request)
+            pairs: set[tuple[Action, TermRef]] = set()
+            terms: set[FineTerm] = set()
+            derived = action_needs(plan.entry, model)
+            for need in derived:
+                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine)
+                if found.type is None:
+                    continue
+                pairs.add((Action(need.action), TermRef(found.type)))
+                terms.update(
+                    (Action(a), TermRef(found.type), kind, term) for a, kind, term in found.terms
+                )
+            covered = {(n.action, n.type) for n in derived}
+            for published in plan.entry.needs:  # a published need the derivation did not see
+                if (published.action, published.type) not in covered:
+                    pairs.add((Action(published.action), TermRef(published.type)))
+        return _Wanted(tuple(sorted(pairs)), tuple(sorted(terms)))
+
+    def _authorize(
+        self, request: WriteRequest, entry: GraphEntry, wanted: _Wanted
+    ) -> tuple[Decision, ...]:
+        cs = request.changeset
+        pairs = wanted.pairs
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            ctx = _context(request)
+            resources = {(a, f"graph:{entry.id}/type:{t}") for a, t in pairs}
+            fine = self._fine.of(policy, entry.id)
+            for a, t, kind, term in wanted.fine:
+                resource = term_resource(entry.id, t, kind, term) if t in fine else None
+                if resource is not None:
+                    resources.add((a, resource))
+            decisions = tuple(
+                authorize(request.actor, a, r, ctx, policy) for a, r in sorted(resources)
             )
-            resources = sorted({(a, f"graph:{entry.id}/type:{t}") for a, t in pairs})
-            decisions = tuple(authorize(request.actor, a, r, ctx, policy) for a, r in resources)
         denied = [d for d in decisions if d.effect == "deny"]
         if not denied:
             return decisions
@@ -439,15 +494,19 @@ class WriteService:
             if plan is not None:  # the action meets the state it will change
                 request, held = self._expand(request, base)
             resolution = self._resolve(request, base)
-            pairs = _plan_pairs(plan) if plan is not None and held is not None else resolution.pairs
-            decisions = prepared.decisions
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
+            if plan is not None and held is not None:
+                wanted = self._plan_wanted(request, entry, plan, model)
+            else:
+                wanted = _wanted(resolution, model)
+            pairs = wanted.pairs
+            decisions = prepared.decisions
             if (
                 plan is not None
-                or pairs != prepared.resolution.pairs
+                or wanted != prepared.wanted
                 or _stale(decisions, self._policy.current(entry.id).hash)
             ):
-                decisions = self._authorize(request, entry, pairs)
+                decisions = self._authorize(request, entry, wanted)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
             digest = changeset_hash(cs)
@@ -567,8 +626,12 @@ class WriteService:
         if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
             request, held = self._expand(request, snapshot)
             resolution = self._resolve(request, snapshot)
-            pairs = _plan_pairs(plan) if held is not None else resolution.pairs
-            self._authorize(request, prepared.entry, pairs)
+            if held is not None:
+                wanted = self._plan_wanted(request, prepared.entry, plan, prepared.model)
+            else:
+                wanted = _wanted(resolution, prepared.model)
+            pairs = wanted.pairs
+            self._authorize(request, prepared.entry, wanted)
             self._check_plan(plan, snapshot, prepared.model, None, pairs)
             if held is not None:
                 raise held
@@ -743,10 +806,22 @@ class _Refusal:
         )
 
 
-def _plan_pairs(plan: ActionPlan) -> tuple[tuple[Action, TermRef], ...]:
-    """The (action, type) pairs the action declares it needs: what authorizes an action whose
-    expansion is empty."""
-    return tuple(sorted({(Action(n.action), TermRef(n.type)) for n in plan.entry.needs}))
+def _context(request: WriteRequest) -> AuthzContext:
+    cs = request.changeset
+    return AuthzContext(
+        op_count=len(cs.ops), has_reason=cs.reason is not None, dry_run=request.dry_run
+    )
+
+
+def _wanted(resolution: Resolution, model: CompiledModel) -> _Wanted:
+    """The pairs and terms of a resolved change set; a transition without ``attr`` is decided
+    on the lifecycle attribute ``model`` gives its type (none: no term)."""
+    fine = set(resolution.fine)
+    for type_curie in resolution.bare_transitions:
+        attr = model.lifecycle_attribute(type_curie)
+        if attr is not None:
+            fine.add((OP_ACTIONS["transition"], type_curie, "attr", attr))
+    return _Wanted(resolution.pairs, tuple(sorted(fine)))
 
 
 def _same_request(request: WriteRequest, previous: TxRecord, digest: str) -> bool:

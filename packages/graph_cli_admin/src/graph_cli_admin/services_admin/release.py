@@ -42,6 +42,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
+from graph_cli.access_control.terms import named_terms
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
@@ -50,6 +51,7 @@ from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ids import TermRef
 from graph_cli.kernel.json_access import as_object, req_list, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, ManifestData, SlotKind
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.action_compile import check_actions
@@ -58,6 +60,7 @@ from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
+from graph_cli.services.term_model import extended_types, term_model
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.graphs import merged_alias_prefixes
 from graph_cli_admin.services_admin.ontology import (
@@ -215,6 +218,7 @@ def plan(
             if broken:
                 raise actions_broken(broken, bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report)
+    warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
     if bump == "excessive":
         warnings += (
             WarningRecord(
@@ -418,6 +422,83 @@ def actions_affected(
     """The action twin of ``functions_affected``; the action names are checked against the
     published functions."""
     return catalog_affected("actions", actions, model, function_names=names_of(functions))
+
+
+def policies_affected(
+    policy: PolicySet, entry: GraphEntry, model: CompiledModel
+) -> tuple[WarningRecord, ...]:
+    """What the installed policies name for ``entry`` that ``model`` no longer has (write
+    allow lists plan W8): the types and terms of the installation's write grants and of the
+    graph layer's term deny rules, with the warnings of ``policy check``:
+    ``admin.policy_unknown_type`` for a type the model lacks, and for a type named in a write
+    grant that is now abstract or has subclasses (an exact rule misses the entities of its
+    subclasses);
+    ``admin.policy_unknown_term`` for an attribute, relation or lifecycle attribute the type
+    lacks (fail closed: the entry has no effect until a release adds it). A policy without
+    write grants and term rules gives none."""
+    named = named_terms(policy.documents, entry.id)
+    if not named:
+        return ()
+    terms = term_model(model).types
+    extended = extended_types(model.classes)
+    version = model.bundle_version
+    warnings: list[WarningRecord] = []
+    unknown: set[str] = set()
+    for item in named:
+        found = terms.get(item.type)
+        if item.kind == "type":
+            if found is None:
+                if item.type in unknown:
+                    continue  # one warning per type, whichever rule names it
+                unknown.add(item.type)
+                warnings.append(
+                    WarningRecord(
+                        "admin.policy_unknown_type",
+                        f"release {version} has no type {item.type} in graph {entry.name}, which"
+                        " an installed policy names; its write grants and term rules apply to"
+                        " nothing until a release has it",
+                        {"graph": entry.name, "type": item.type},
+                    )
+                )
+            elif item.grant and item.type in extended:
+                warnings.append(
+                    WarningRecord(
+                        "admin.policy_unknown_type",
+                        f"type {item.type} of graph {entry.name} is abstract or has subclasses in"
+                        f" release {version}: its write grant is an exact rule and now misses the"
+                        " entities of the subclasses; grant their types too",
+                        {"graph": entry.name, "type": item.type},
+                    )
+                )
+        elif found is not None:
+            attribute = found.attributes.get(item.term)
+            missing = (
+                item.term not in found.relations
+                if item.kind == "relation"
+                else attribute is None or (item.kind == "lifecycle" and not attribute.lifecycle)
+            )
+            if missing:
+                what = {
+                    "relation": "relation",
+                    "attribute": "attribute",
+                    "lifecycle": "lifecycle attribute",
+                }[item.kind]
+                warnings.append(
+                    WarningRecord(
+                        "admin.policy_unknown_term",
+                        f"type {item.type} of graph {entry.name} has no {what} {item.term} in"
+                        f" release {version}, which an installed policy names; nobody can write"
+                        " a term that does not exist (fail closed), so the policy entry has no"
+                        " effect until a release adds it",
+                        {
+                            "graph": entry.name,
+                            "type": item.type,
+                            "term": item.term,
+                            "kind": item.kind,
+                        },
+                    )
+                )
+    return tuple(warnings)
 
 
 def check_state(entry: GraphEntry) -> None:

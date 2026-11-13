@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from support.snapshots import DictSnapshot, eid, revision
+from support.snapshots import DictSnapshot, edge, eid, revision
 
 from graph_cli.kernel.changeset import ChangeSet, EdgeSpec, LinkOp, UpdateOp, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
@@ -143,3 +143,128 @@ def test_ambiguous_abbreviation_lists_candidates() -> None:
     assert info.value.code == "entity.ambiguous_ref"
     candidates = info.value.details["candidates"]
     assert isinstance(candidates, list) and len(candidates) == 10
+
+
+# ---- the terms of an op (write allow lists plan W4) --------------------------------------
+
+NOTE = revision(
+    "note",
+    "ex:Thing",
+    {"name": "N"},
+    [edge("ex:near", "room", name="near"), edge("ex:in", "desk", name="in")],
+    alias="ITEM-0002",
+)
+TERM_SNAP = DictSnapshot(ROOM, DESK, NOTE)
+NEAR = str(edge("ex:near", "room", name="near").edge_id)
+
+
+def terms(*ops: dict[str, Any]) -> tuple[tuple[str, str, str, str], ...]:
+    return resolve_refs(cs(*ops), TERM_SNAP).fine
+
+
+def test_every_op_row_names_its_terms_on_the_subjects_type() -> None:
+    found = resolve_refs(
+        cs(
+            {
+                "op": "create",
+                "type": "ex:Thing",
+                "local": "a",
+                "attrs": {"name": "A"},
+                "attrs_text": {"note": "n"},
+                "edges": [{"rel": "ex:in", "target": "LOC-0002"}],
+            },
+            {
+                "op": "update",
+                "id": "ITEM-0001",
+                "set": {"a": 1},
+                "set_text": {"b": "x"},
+                "unset": ["c"],
+                "add": {"d": [1]},
+                "add_text": {"e": ["x"]},
+                "remove": {"f": [1]},
+                "remove_text": {"g": ["x"]},
+            },
+            {"op": "link", "id": "@a", "rel": "ex:near", "target": "LOC-0002"},
+            {"op": "unlink", "id": "ITEM-0002", "rel": "ex:in", "target": "ITEM-0001"},
+            {"op": "transition", "id": "ITEM-0001", "to": "done", "attr": "status"},
+            {"op": "supersede", "by": "@a", "targets": ["ITEM-0001"]},
+            {"op": "retract", "id": "ITEM-0001"},
+            {"op": "set_alias", "id": "ITEM-0001", "alias": "ITEM-0099"},
+        ),
+        TERM_SNAP,
+    )
+    attr, rel = "attr", "rel"
+    assert found.fine == tuple(
+        sorted(
+            [
+                ("write.create", "ex:Thing", attr, "name"),
+                ("write.create", "ex:Thing", attr, "note"),
+                ("write.create", "ex:Thing", rel, "ex:in"),  # an inline edge, as create
+                *(("write.update", "ex:Thing", attr, n) for n in "abcdefg"),
+                ("write.link", "ex:Thing", rel, "ex:near"),
+                ("write.unlink", "ex:Thing", rel, "ex:in"),
+                ("write.transition", "ex:Thing", attr, "status"),
+            ]
+        )
+    )
+    assert found.bare_transitions == ()
+
+
+def test_the_terms_of_an_op_sit_on_the_type_of_its_subject() -> None:
+    assert terms({"op": "update", "id": "LOC-0002", "set": {"a": 1}}) == (
+        ("write.update", "ex:Place", "attr", "a"),
+    )
+    assert terms({"op": "link", "id": "LOC-0002", "rel": "ex:near", "target": "ITEM-0001"}) == (
+        ("write.link", "ex:Place", "rel", "ex:near"),
+    )
+
+
+def test_an_unlink_by_edge_id_reads_the_relation_from_the_subjects_revision() -> None:
+    assert terms({"op": "unlink", "id": "ITEM-0002", "edge_id": NEAR}) == (
+        ("write.unlink", "ex:Thing", "rel", "ex:near"),
+    )
+
+
+def test_an_unlink_by_edge_id_without_a_readable_edge_has_no_term() -> None:
+    ghost = str(edge("ex:near", "room", name="ghost").edge_id)
+    assert terms({"op": "unlink", "id": "ITEM-0002", "edge_id": ghost}) == ()  # unknown edge
+    assert terms({"op": "unlink", "id": "LOC-0002", "edge_id": NEAR}) == ()  # not its edge
+    local = resolve_refs(
+        cs(
+            {"op": "create", "type": "ex:Thing", "local": "a"},
+            {"op": "unlink", "id": "@a", "edge_id": NEAR},
+        ),
+        TERM_SNAP,
+    )
+    assert local.fine == ()  # an @local of this document has no revision
+    bound = resolve_refs(
+        cs({"op": "unlink", "id": "@earlier", "edge_id": NEAR}),
+        TERM_SNAP,
+        bindings={"earlier": NOTE.id},
+    )
+    assert bound.fine == (("write.unlink", "ex:Thing", "rel", "ex:near"),)  # an earlier document's
+
+
+def test_a_transition_without_attr_is_left_to_the_service() -> None:
+    found = resolve_refs(
+        cs(
+            {"op": "transition", "id": "ITEM-0001", "to": "done"},
+            {"op": "transition", "id": "LOC-0002", "to": "done"},
+            {"op": "transition", "id": "ITEM-0002", "to": "done"},
+        ),
+        TERM_SNAP,
+    )
+    assert found.fine == ()  # the lifecycle attribute is the model's to name
+    assert found.bare_transitions == ("ex:Place", "ex:Thing")
+
+
+def test_terms_outside_the_resource_grammar_are_left_out() -> None:
+    """A hand-built change set may name what the parser would refuse; no resource can name
+    it, so it is no term and validation reports it."""
+    bad = ChangeSet(
+        ops=(
+            UpdateOp(DESK.id, {"Bad Name": 1, "good": 2}, unset=("also bad",)),
+            LinkOp(DESK.id, EdgeSpec(TermRef("not a curie"), ROOM.id)),
+        )
+    )
+    assert resolve_refs(bad, TERM_SNAP).fine == (("write.update", "ex:Thing", "attr", "good"),)
