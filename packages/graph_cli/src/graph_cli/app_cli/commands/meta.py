@@ -46,6 +46,7 @@ TYPE_ARG: Final = ParamSpec(
 _OBLIGATIONS: Final = obj(  # access_control.effective.write_obligations
     extra=obj(optional={"require_reason": BOOLEAN, "max_batch": INTEGER})
 )
+_VERB_RIGHT: Final = {"anyOf": [{"const": True}, array(STRING)]}  # true | the allowed terms
 WHOAMI_OUTPUT: Final = obj(
     {
         "actor": ref("actor"),
@@ -64,7 +65,9 @@ WHOAMI_OUTPUT: Final = obj(
                             "withheld": STRINGS,
                             "types": obj(extra=STRING),
                             "obligations": _OBLIGATIONS,
-                        }
+                        },
+                        # access_control.effective.write_allowance: {type: {verb: true | [term]}}
+                        {"writes": obj(extra=obj(extra=_VERB_RIGHT))},
                     )
                 ),
             }

@@ -2109,6 +2109,20 @@
           "summary": "Decide on a type of the graph, e.g. files:File."
         },
         {
+          "name": "--attribute",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one attribute of --type (needs --action): the decision on the attribute, with the decision on the type next to it. Excludes --relation."
+        },
+        {
+          "name": "--relation",
+          "type": "term",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one relation of --type (needs --action), as --attribute does. Excludes --attribute."
+        },
+        {
           "name": "--file",
           "type": "file",
           "required": false,
@@ -2131,6 +2145,10 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action write.create --type <type>",
           "summary": "One action on one type."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --action write.update --type <type> --attribute <name>",
+          "summary": "One attribute of a type, and the type decision next to it."
         },
         {
           "command": "graph-admin policy explain --graph <graph> --role <value> --role <value> --project <value>",

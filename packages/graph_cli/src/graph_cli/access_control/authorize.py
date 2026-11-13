@@ -119,6 +119,16 @@ def authorize(
     return Decision("allow", checked, resource, _text(allowed, "id"), policy.hash, obligations)
 
 
+def allow_rule_holds(rule: Mapping[str, JsonValue], actor: ActorContext) -> bool:
+    """Whether the principal of an allow ``rule`` matches ``actor`` as ``authorize`` matches it:
+    verified facets only, and for a project admin only a rule that names a project. The
+    action and resource of the rule are not looked at; callers that ask which resources a
+    caller's grants name use this to pick the rules."""
+    return _principal_matches(
+        rule.get("principal", {}), principal_facts(actor, verified_only=True)
+    ) and (not is_project_admin(actor) or "project" in _principal(rule))
+
+
 def is_project_admin(actor: ActorContext) -> bool:
     """The maintenance entrypoint acting for a verified project: an admin token bound to
     a project. Locally the project is asserted, so a local maintainer never is one."""

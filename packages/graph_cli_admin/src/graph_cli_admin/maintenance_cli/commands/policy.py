@@ -71,6 +71,8 @@ def explain(
     file: str | None,
     token: str | None,
     role: tuple[str, ...],
+    attribute: str | None,
+    relation: str | None,
     data_root: str | None,
 ) -> Result:
     outcome = policy.explain(
@@ -82,6 +84,8 @@ def explain(
         file=path(file),
         token=token,
         roles=role,
+        attribute=attribute,
+        relation=relation,
     )
     return Result(data=outcome.data, warnings=outcome.warnings)
 
@@ -151,7 +155,13 @@ EXPLAIN_OUTPUT: Final = obj(
         "maintains": BOOLEAN,
         "resource": STRING,
         "decisions": array(_DECISION),
-    }
+    },
+    {
+        # with --attribute or --relation: the decision on the type for the same action;
+        # without --action, for a caller a write allow list applies to: what it may write
+        "type_decision": _DECISION,
+        "writes": obj(extra=obj(extra={"anyOf": [{"const": True}, array(STRING)]})),
+    },
 )
 
 
@@ -274,6 +284,18 @@ SPECS: Final = (
                 "Decide on a type of the graph, e.g. files:File.",
                 keyword="type_curie",
             ),
+            ParamSpec(
+                "--attribute",
+                "string",
+                "Decide on one attribute of --type (needs --action): the decision on the"
+                " attribute, with the decision on the type next to it. Excludes --relation.",
+            ),
+            ParamSpec(
+                "--relation",
+                "term",
+                "Decide on one relation of --type (needs --action), as --attribute does."
+                " Excludes --attribute.",
+            ),
             ParamSpec("--file", "file", "Explain an authored policy instead of the installed one."),
             DATA_ROOT,
         ),
@@ -285,6 +307,11 @@ SPECS: Final = (
             Example(
                 "graph-admin policy explain --graph <graph> --action write.create --type <type>",
                 "One action on one type.",
+            ),
+            Example(
+                "graph-admin policy explain --graph <graph> --action write.update --type <type>"
+                " --attribute <name>",
+                "One attribute of a type, and the type decision next to it.",
             ),
             Example(
                 "graph-admin policy explain --graph <graph> --role <value> --role <value>"
@@ -299,7 +326,9 @@ SPECS: Final = (
         errors=(*SOURCE_ERRORS, "admin.token_not_found"),
         handler=explain,
         output=EXPLAIN_OUTPUT,
-        description="Records nothing.",
+        description="Records nothing. Without --action, the answer gains `writes` for a caller"
+        " whose write allow list applies: per type the verbs it may write and, for create,"
+        " update, link, unlink and transition, `true` or the allowed attributes or relations.",
         remote="hooked",
     ),
 )

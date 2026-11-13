@@ -398,8 +398,9 @@ class TestStructure:
         files = committed_files()
         # functions: command rows, guidance; lookup --for; actions: the do and two describe
         # rows, the action guidance in the write step; get --affordances (223); the
-        # covering-function hint line (224); --full and the empty function value (225)
-        assert len(files["SKILL.md"].splitlines()) <= 225
+        # covering-function hint line (224); --full and the empty function value (225);
+        # the `writes` object of `graph whoami` (226)
+        assert len(files["SKILL.md"].splitlines()) <= 226
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB

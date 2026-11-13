@@ -5158,6 +5158,25 @@
                           }
                         }
                       }
+                    },
+                    "writes": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "const": true
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        }
+                      }
                     }
                   },
                   "required": [

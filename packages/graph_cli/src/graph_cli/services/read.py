@@ -40,8 +40,11 @@ from graph_cli.access_control.effective import (
     scope_of,
     type_limits,
     withheld_actions,
+    write_allowance,
+    write_grant_types,
     write_obligations,
 )
+from graph_cli.access_control.terms import TermModel
 from graph_cli.audit import events
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
@@ -49,7 +52,7 @@ from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import EdgeId, EntityId, EventId, IdProvider, TermRef
+from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, IdProvider, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, req_list
 from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
 from graph_cli.kernel.ports.audit import AuditSink
@@ -99,6 +102,7 @@ from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
 from graph_cli.services.refs import entity_params, resolve_ref
+from graph_cli.services.term_model import term_model
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
 
@@ -341,6 +345,7 @@ class ReadService:
         # (compiled hash, pin) -> the needs of each action on concrete types (W9)
         self._action_needs: dict[tuple[str, OntologyPin], dict[str, tuple[NeedOptions, ...]]] = {}
         self._fine = FineTypes()
+        self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
 
     # ---- authorization -------------------------------------------------
 
@@ -1188,15 +1193,20 @@ class ReadService:
             if not self.visible(actor, entry):
                 continue
             layered = self._policy.current(entry.id)
-            graphs.append(
-                {
-                    "graph": entry.name,
-                    "level": graph_level(actor, entry.id, layered),
-                    "withheld": withheld_actions(actor, entry.id, layered),
-                    "types": type_limits(layered),
-                    "obligations": write_obligations(actor, entry.id, layered),
-                }
-            )
+            level = graph_level(actor, entry.id, layered)
+            item: dict[str, JsonValue] = {
+                "graph": entry.name,
+                "level": level,
+                "withheld": withheld_actions(actor, entry.id, layered),
+                "types": type_limits(layered),
+                "obligations": write_obligations(actor, entry.id, layered),
+            }
+            # The model is read only for a caller a write allow list names types for
+            terms = self._term_model(entry) if write_grant_types(actor, entry.id, layered) else None
+            writes = write_allowance(actor, entry.id, layered, terms, level=level)
+            if writes is not None:
+                item["writes"] = writes
+            graphs.append(item)
         return {
             "actor": actor.to_json(),
             "permissions": {
@@ -1208,6 +1218,19 @@ class ReadService:
                 "graphs": graphs,
             },
         }
+
+    def _term_model(self, entry: GraphEntry) -> TermModel | None:
+        """The graph's pinned model condensed to what term rules need, cached per pin;
+        ``None`` when the model cannot be read (``whoami`` still answers, on types alone)."""
+        key = (entry.id, entry.pin)
+        found = self._terms.get(key)
+        if found is None:
+            try:
+                model, _ = self._models.load_for_read(entry)
+            except GraphCliError:
+                return None
+            found = self._terms[key] = term_model(model)
+        return found
 
     def _listed(self) -> Sequence[GraphEntry]:
         """Every readable graph; none without a data root (``whoami`` still answers)."""

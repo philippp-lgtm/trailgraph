@@ -66,9 +66,11 @@ from graph_cli.access_control.effective import (
     project_warning,
     scope_of,
     withheld_actions,
+    write_allowance,
+    write_grant_types,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
-from graph_cli.access_control.terms import TermModel
+from graph_cli.access_control.terms import TermModel, term_resource
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     InstalledPolicy,
@@ -307,7 +309,24 @@ def explain(
     file: Path | None,
     token: str | None = None,
     roles: Sequence[str] = (),
+    attribute: str | None = None,
+    relation: str | None = None,
 ) -> Outcome:
+    if attribute is not None and relation is not None:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--attribute and --relation exclude each other: one decision on one term",
+            details={"argument": "relation"},
+        )
+    term = attribute if attribute is not None else relation
+    term_argument = "attribute" if attribute is not None else "relation"
+    for needed, value in (("type", type_curie), ("action", action)):
+        if term is not None and value is None:
+            raise GraphCliError(
+                "usage.missing_argument",
+                f"--{term_argument} decides on a term of a type: name the {needed} with --{needed}",
+                details={"argument": needed},
+            )
     if token is not None and project is not None:
         raise GraphCliError(
             "usage.invalid_argument",
@@ -363,6 +382,21 @@ def explain(
             f"--action {action}: unknown action",
             details={"argument": "action"},
         )
+    type_decision: Decision | None = None
+    if term is not None:
+        assert action is not None  # checked above
+        fine = term_resource(entry.id, str(type_curie), "attr" if attribute else "rel", term)
+        if fine is None:
+            what = "an attribute name" if attribute else "a relation CURIE"
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--{term_argument} {term}: not {what}",
+                details={"argument": term_argument},
+            )
+        # the type decision is shown next to it: an exact type rule does not match the terms
+        # below it, and a write needs both
+        type_decision = authorize(caller, action, resource, _PROBE, policy)
+        resource = fine
     admin = record is not None and record.scope == ADMIN_SCOPE
     default = list(PROJECT_ADMIN_ACTIONS) if admin else _app_actions()
     actions = [action] if action is not None else default
@@ -381,7 +415,30 @@ def explain(
         "resource": resource,
         "decisions": [_decision_json(d) for d in decisions],
     }
+    if type_decision is not None:
+        data["type_decision"] = _decision_json(type_decision)
+    if action is None:
+        writes = _writes(ctx, entry, caller, policy, data["level"])
+        if writes is not None:
+            data["writes"] = writes
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
+
+
+def _writes(
+    ctx: AdminContext,
+    entry: GraphEntry,
+    caller: ActorContext,
+    policy: PolicySet,
+    level: JsonValue,
+) -> dict[str, JsonValue] | None:
+    """What ``whoami`` shows of the caller's write allow list: over the graph's pinned model
+    (types only when it cannot be read), read only for a caller a list names types for."""
+    if not write_grant_types(caller, entry.id, policy):
+        return None
+    terms: TermModel | None = None
+    with contextlib.suppress(GraphCliError):
+        terms = term_model(pinned_model(ctx.catalog, entry))
+    return write_allowance(caller, entry.id, policy, terms, level=str(level))
 
 
 def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
@@ -410,7 +467,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
         )
     projects = strings(installation, "projects")
     callers: list[JsonValue] = [
-        {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy)}
+        {"project": p, **_access(ctx, _app_caller(ctx.actor, p), entry, policy)}
         for p in (*projects, None)  # the maintainer's own principal, through graph
     ]
     records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
@@ -424,7 +481,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
                 "scope": record.scope,
                 "roles": list(record.roles),
                 "expired": not record.valid_on(today),
-                **_access(caller, entry, policy),
+                **_access(ctx, caller, entry, policy),
             }
         )
     graphs = ctx.catalog.list_graphs(include_archived=True)
@@ -788,14 +845,20 @@ def _obligations(document: Mapping[str, JsonValue]) -> list[JsonValue]:
     return [o for o in found if isinstance(o, Mapping)] if isinstance(found, list) else []
 
 
-def _access(caller: ActorContext, entry: GraphEntry, policy: PolicySet) -> dict[str, JsonValue]:
-    return {
+def _access(
+    ctx: AdminContext, caller: ActorContext, entry: GraphEntry, policy: PolicySet
+) -> dict[str, JsonValue]:
+    access: dict[str, JsonValue] = {
         "principal": caller.principal.id,
         "entrypoint": caller.client.entrypoint.value,
         "level": graph_level(caller, entry.id, policy),
         "withheld": withheld_actions(caller, entry.id, policy),
         "maintains": maintains(caller, entry.id, policy),
     }
+    writes = _writes(ctx, entry, caller, policy, access["level"])
+    if writes is not None:
+        access["writes"] = writes
+    return access
 
 
 def _graph_name(entry: GraphEntry | None) -> str | None:

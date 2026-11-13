@@ -3,17 +3,27 @@
 Pure helpers over ``authorize()`` for ``graph whoami``, ``graph-admin
 policy explain`` and the admin API: the access level per graph, whether an
 actor maintains a graph, the actions a deny rule withholds below it, the
-obligations of the allowed writes, the project scope that applies and the
-warning for a project the installation policy has no scope for. Nothing here
-decides on its own; every answer is a set of ``authorize()`` calls.
+obligations of the allowed writes, what a write allow list lets a caller write
+(``write_allowance``), the project scope that applies and the warning for a project the
+installation policy has no scope for. Nothing here decides on its own; every answer is a set
+of ``authorize()`` calls.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-from graph_cli.access_control.authorize import authorize
-from graph_cli.access_control.documents import INSTALLATION_LAYER, layer_of, strings
+from graph_cli.access_control.authorize import allow_rule_holds, authorize
+from graph_cli.access_control.compiler import WRITE_VERBS
+from graph_cli.access_control.documents import (
+    CURIE_RE,
+    INSTALLATION_LAYER,
+    fine_types,
+    layer_of,
+    rules,
+    strings,
+)
+from graph_cli.access_control.terms import TermModel, TypeTerms, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
     PROJECT_MAINT_ACTIONS,
@@ -79,11 +89,22 @@ def withheld_actions(actor: ActorContext, graph: GraphId, policy: PolicySet) -> 
 def write_obligations(
     actor: ActorContext, graph: GraphId, policy: PolicySet
 ) -> dict[str, JsonValue]:
-    """``{action: {require_reason?, max_batch?}}`` of the writes allowed on ``graph:<id>``."""
+    """``{action: {require_reason?, max_batch?}}`` of the writes allowed on ``graph:<id>``.
+
+    A write action denied on the graph itself may still be allowed on the types a write
+    allow list names; the first such allowed type gives the obligations, so a limited writer
+    sees its ``require_reason`` and ``max_batch`` too."""
     found: dict[str, JsonValue] = {}
+    granted = write_grant_types(actor, graph, policy)
     for action in sorted(WRITE_ACTIONS):
-        decision = authorize(actor, action, f"graph:{graph}", _PROBE, policy)
-        if decision.effect != "allow":
+        resources = [f"graph:{graph}", *(f"graph:{graph}/type:{t}" for t in granted)]
+        decision = None
+        for resource in resources:
+            probe = authorize(actor, action, resource, _PROBE, policy)
+            if probe.effect == "allow":
+                decision = probe
+                break
+        if decision is None:
             continue
         entry: dict[str, JsonValue] = {}
         if decision.obligations.require_reason:
@@ -93,6 +114,98 @@ def write_obligations(
         if entry:
             found[action] = entry
     return found
+
+
+def write_grant_types(actor: ActorContext, graph: GraphId, policy: PolicySet) -> tuple[str, ...]:
+    """The types a write allow list names for ``actor`` in ``graph``, sorted: the concrete
+    type resources (``graph:<id>/type:<curie>``) of the allow rules whose principal matches
+    the actor as ``authorize`` matches it. Only ``writes`` grants produce such rules. Pure
+    and cheap (no decision is made), so a caller can ask before loading a model."""
+    prefix = f"graph:{graph}/type:"
+    found: set[str] = set()
+    for document in policy.documents:
+        for rule in rules(document):
+            if rule.get("effect") != "allow" or not allow_rule_holds(rule, actor):
+                continue
+            for resource in strings(rule, "resource"):
+                if resource.startswith(prefix) and CURIE_RE.match(resource[len(prefix) :]):
+                    found.add(resource[len(prefix) :])
+    return tuple(sorted(found))
+
+
+def write_allowance(
+    actor: ActorContext,
+    graph: GraphId,
+    policy: PolicySet,
+    terms: TermModel | None,
+    *,
+    level: str | None = None,
+) -> dict[str, JsonValue] | None:
+    """What a write allow list lets ``actor`` write in ``graph``: ``{type: {verb: true | [term]}}``,
+    or ``None`` when there is nothing to say: the level is ``write`` already, no allow rule
+    that matches the actor names a type of the graph, or none of those types allows any verb
+    (a type without a verb is left out).
+
+    Per type the rules name, and per verb in the order of ``WRITE_VERBS``, ``authorize`` is
+    probed on ``graph:<id>/type:<T>``; a verb the type decision denies is absent. The verbs
+    without terms (``supersede``, ``retract``, ``alias``) are ``true``. The others are
+    ``true`` when every term of the type of that kind is allowed (``create``, ``update``: the
+    attributes, ``update`` without the lifecycle ones, which no update may touch;
+    ``transition``: the lifecycle attributes; ``link``, ``unlink``: the relations whose
+    domain covers the type), else the sorted list of the allowed terms, possibly empty. A term
+    is allowed only when its own decision and the decision on its type are (an exact type
+    rule does not match the terms below it). A type no rule names terms of (``fine_types``)
+    is decided on the type alone, as a write is, so its term verbs are ``true`` when the
+    type is allowed. Without a model (``terms`` is ``None``) only the types are probed and
+    the term verbs are ``true`` when the type is allowed; with one, a type it lacks is left out.
+    A create lists attributes only: an inline edge follows the link right.
+
+    ``level`` is ``graph_level`` when the caller has it already."""
+    if (level if level is not None else graph_level(actor, graph, policy)) == "write":
+        return None
+    granted = write_grant_types(actor, graph, policy)
+    if not granted:
+        return None
+    fine = fine_types(policy.documents, graph)
+    found: dict[str, JsonValue] = {}
+    for type_curie in granted:
+        known = None if terms is None else terms.types.get(type_curie)
+        if terms is not None and known is None:
+            continue
+        verbs: dict[str, JsonValue] = {}
+        for verb in WRITE_VERBS:
+            action = f"write.{verb}"
+            type_resource = f"graph:{graph}/type:{type_curie}"
+            if authorize(actor, action, type_resource, _PROBE, policy).effect != "allow":
+                continue
+            names = _verb_terms(verb, known) if type_curie in fine else None
+            if names is None:
+                verbs[verb] = True
+                continue
+            kind, candidates = names
+            allowed = [
+                name
+                for name in candidates
+                if (resource := term_resource(graph, type_curie, kind, name)) is not None
+                and authorize(actor, action, resource, _PROBE, policy).effect == "allow"
+            ]
+            verbs[verb] = True if len(allowed) == len(candidates) else allowed
+        if verbs:
+            found[type_curie] = verbs
+    return found or None
+
+
+def _verb_terms(verb: str, known: TypeTerms | None) -> tuple[str, list[str]] | None:
+    """The kind (``attr`` or ``rel``) and the sorted terms a verb is decided on below a type;
+    ``None`` for a verb without terms or when there is no model to name them."""
+    if verb not in ("create", "update", "link", "unlink", "transition") or known is None:
+        return None
+    if verb in ("link", "unlink"):
+        return "rel", sorted(known.relations)
+    attributes = known.attributes
+    if verb == "transition":
+        return "attr", sorted(a for a, t in attributes.items() if t.lifecycle)
+    return "attr", sorted(a for a, t in attributes.items() if verb == "create" or not t.lifecycle)
 
 
 def type_limits(policy: PolicySet) -> dict[str, JsonValue]:

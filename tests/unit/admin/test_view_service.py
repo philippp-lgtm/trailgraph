@@ -490,3 +490,76 @@ def test_an_actor_shows_its_roles_next_to_the_principal() -> None:
     assert shown["roles"] == ["importer", "reader"]
     principal = shown["principal"]
     assert isinstance(principal, dict) and principal["name"] == plain.principal.name
+
+
+WRITES_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers"}
+grants:
+  - entrypoint: app
+    graphs: [GRAPH]
+    level: read
+    writes:
+      nas:Note: {create: [title, body, kind], link: [nas:about]}
+      nas:Topic: {update: [description]}
+  - entrypoint: server
+    principal: {role: importer}
+    graphs: [GRAPH]
+    level: read
+    writes:
+      nas:Topic: {create: true}
+no_project: {"*": write}
+"""
+
+
+def test_the_policies_show_the_write_grants_and_what_each_caller_may_write(
+    tmp_path: Path,
+) -> None:
+    env = ServiceEnv("files", "notes_and_sources", tmp_path / "root")
+    ctx = admin_context(env.root)
+    authored = tmp_path / "installation.yaml"
+    authored.write_text(WRITES_POLICY.replace("GRAPH", env.name))
+    policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+    installed = dataclasses.replace(ctx, policy=FilePolicySource(env.root))  # sees the roles
+    tokens.create(
+        installed, name="svc", project=None, expires=None, reason=None, roles=["importer"]
+    )
+    tokens.create(installed, name="plain", project=None, expires=None, reason=None)
+    data = policies_json(ctx, source_of_env(env))
+    installation, _ = data["layers"]  # type: ignore[misc]
+    rules = {r["id"]: r for r in installation["rules"]}  # type: ignore[index]
+    graph = f"graph:{env.entry.id}"
+    # the rules of the write verbs are grants, and show the resources they name
+    assert {i: r["kind"] for i, r in rules.items() if i.startswith("grant.")} == {
+        "grant.1": "grant",
+        "grant.1.create": "grant",
+        "grant.1.update": "grant",
+        "grant.1.link": "grant",
+        "grant.1.edge": "grant",
+        "grant.2": "grant",
+        "grant.2.create": "grant",
+    }
+    assert rules["grant.1.link"]["resource"] == [  # type: ignore[index]
+        f"{graph}/type:nas:Note",
+        f"{graph}/type:nas:Note/rel:nas:about",
+    ]
+    assert rules["grant.1.create"]["level"] is None  # a verb, not a level
+    assert rules["grant.2.create"]["resource"] == [  # type: ignore[index]
+        f"{graph}/type:nas:Topic",
+        f"{graph}/type:nas:Topic/attr:*",
+    ]
+    assert data["graphs"] == {str(env.entry.id): env.name}  # the view names the graph
+    access = {(c.get("token"), c["project"]): c for c in data["callers"]}  # type: ignore[union-attr, index]
+    assert access[None, None]["level"] == "read"
+    assert access[None, None]["writes"] == {
+        "nas:Note": {"create": ["body", "kind", "title"], "link": ["nas:about"]},
+        "nas:Topic": {"update": ["description"]},
+    }
+    assert access["svc", None]["writes"] == {"nas:Topic": {"create": True}}
+    assert "writes" not in access["plain", None]  # no list: the answer is as before
+
+
+def source_of_env(env: ServiceEnv) -> view.ViewSource:
+    return open_view(admin_context(env.root), graph_ref=env.name)
