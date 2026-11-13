@@ -2,9 +2,10 @@
 
 ``access_control`` imports only the kernel and never sees a compiled ontology, so the
 app side condenses a graph's pinned model into a ``TermModel`` (per type: its attributes,
-the relations whose domain covers it, whether it is extended or a stored file). The policy
-compiler checks ``writes`` grants and term deny rules against it, and an ontology release
-checks the installed ones against the new model. Pure and total.
+the relations whose domain covers it, the concrete ranges of its required relations, whether
+it is extended or a stored file). The policy compiler checks ``writes`` grants and term deny
+rules against it, and an ontology release checks the installed ones against the new model.
+Pure and total.
 """
 
 from __future__ import annotations
@@ -30,11 +31,25 @@ def extended_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
     )
 
 
+def concrete_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
+    """The types an entity can have (every class that is not abstract), whether or not it has
+    subclasses: what ``access_control.effective.visibility`` probes."""
+    return frozenset(name for name, cls in classes.items() if not cls.abstract)
+
+
+def _concrete_range(model: CompiledModel, range_: tuple[str, ...]) -> tuple[str, ...]:
+    """The concrete types a relation's closed range admits: every non-abstract subtype of
+    each range class."""
+    found = {c for r in range_ for c in model.subtypes(r) if not model.classes[c].abstract}
+    return tuple(sorted(found))
+
+
 def term_model(model: CompiledModel) -> TermModel:
     """What the policy compiler needs of ``model``: per type its attributes (is it a
-    lifecycle; must a create give it), the relations whose domain covers it, and whether
-    it is extended or a stored file. A stored file's create gives what ``graph file add``
-    sets itself, so those attributes count as given by the writer."""
+    lifecycle; must a create give it), the relations whose domain covers it, the concrete
+    ranges of its required relations, and whether it is extended or a stored file. A stored
+    file's create gives what ``graph file add`` sets itself, so those attributes count as given
+    by the writer."""
     extended = extended_types(model.classes)
     types: dict[str, TypeTerms] = {}
     for name, cls in model.classes.items():
@@ -49,10 +64,18 @@ def term_model(model: CompiledModel) -> TermModel:
             attributes[attribute] = AttributeTerms(
                 lifecycle, must_give or (file and attribute in FILE_ADD_ATTRIBUTES)
             )
+        covering = {
+            r: rel for r, rel in model.relations.items() if model.is_a_any(name, rel.domain)
+        }
         types[name] = TypeTerms(
             name in extended,
             file,
             attributes,
-            frozenset(r for r, rel in model.relations.items() if model.is_a_any(name, rel.domain)),
+            frozenset(covering),
+            {
+                r: ranged
+                for r, rel in sorted(covering.items())
+                if rel.out.min >= 1 and rel.range and (ranged := _concrete_range(model, rel.range))
+            },
         )
     return TermModel(types)

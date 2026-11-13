@@ -1,0 +1,20 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "actions": [
+    {
+      "name": "retire_item",
+      "module": "inventory",
+      "summary": "Take an item out of service for good.",
+      "signature": "item: ref inv:Item",
+      "status": "active"
+    }
+  ]
+}

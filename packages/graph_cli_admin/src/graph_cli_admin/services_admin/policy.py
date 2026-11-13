@@ -4,9 +4,9 @@ An authored policy file is compiled against this installation: graph names
 resolve to ids, and a graph policy is checked against the graph's pinned
 model (an unknown type warns with ``admin.policy_unknown_type``) and its deny
 rules against the roles the installed installation policy declares (an unknown
-role warns with ``policy.role_unknown``). An installation policy's ``writes`` grants are
-checked against the pinned model of each graph they name, and a graph policy's term deny
-rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
+role warns with ``policy.role_unknown``). An installation policy's ``reads`` and ``writes``
+grants are checked against the pinned model of each graph they name, and a graph policy's term
+deny rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
 attribute or relation the type lacks with ``admin.policy_unknown_term``, a write no call
 can satisfy with ``admin.policy_unusable_write``; an abstract type is ``policy.invalid``.
 Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
@@ -57,6 +57,7 @@ from graph_cli.access_control.documents import (
     RESOURCE_RE,
     declared_roles,
     glob,
+    read_limited,
     rules,
     strings,
 )
@@ -64,6 +65,7 @@ from graph_cli.access_control.effective import (
     graph_level,
     maintains,
     project_warning,
+    read_allowance,
     scope_of,
     withheld_actions,
     write_allowance,
@@ -104,7 +106,14 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.services.term_model import FILE_ADD_ATTRIBUTES, extended_types, term_model
+from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.term_model import (
+    FILE_ADD_ATTRIBUTES,
+    concrete_types,
+    extended_types,
+    term_model,
+)
+from graph_cli.services.visibility import filter_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
@@ -418,27 +427,39 @@ def explain(
     if type_decision is not None:
         data["type_decision"] = _decision_json(type_decision)
     if action is None:
-        writes = _writes(ctx, entry, caller, policy, data["level"])
-        if writes is not None:
-            data["writes"] = writes
+        data.update(_allowances(ctx, entry, caller, policy, data["level"]))
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
 
 
-def _writes(
+def _allowances(
     ctx: AdminContext,
     entry: GraphEntry,
     caller: ActorContext,
     policy: PolicySet,
     level: JsonValue,
-) -> dict[str, JsonValue] | None:
-    """What ``whoami`` shows of the caller's write allow list: over the graph's pinned model
-    (types only when it cannot be read), read only for a caller a list names types for."""
-    if not write_grant_types(caller, entry.id, policy):
-        return None
-    terms: TermModel | None = None
+) -> dict[str, JsonValue]:
+    """What ``whoami`` shows of what the caller may read and write, as extra keys: ``reads``
+    (the types it sees, when it sees only some) and ``writes`` (its write allow list, over the
+    types it sees). The graph's pinned model is read only for a caller a read limit or a write
+    allow list applies to; when it cannot be read, ``writes`` is decided on the types alone
+    and there is no ``reads``."""
+    limited = read_limited(policy.documents, entry.id)
+    if not limited and not write_grant_types(caller, entry.id, policy):
+        return {}
+    model: CompiledModel | None = None
     with contextlib.suppress(GraphCliError):
-        terms = term_model(pinned_model(ctx.catalog, entry))
-    return write_allowance(caller, entry.id, policy, terms, level=str(level))
+        model = pinned_model(ctx.catalog, entry)
+    found: dict[str, JsonValue] = {}
+    terms = None if model is None else term_model(model)
+    if limited and model is not None:
+        visible = read_allowance(caller, entry.id, policy, concrete_types(model.classes))
+        if visible is not None:
+            found["reads"] = list(visible)
+            terms = term_model(filter_model(model, frozenset(visible)))
+    writes = write_allowance(caller, entry.id, policy, terms, level=str(level))
+    if writes is not None:
+        found["writes"] = writes
+    return found
 
 
 def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
@@ -574,6 +595,15 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         ),
         *(
             WarningRecord(
+                "admin.policy_unknown_type",
+                f"the model of graph {names[r.graph]} has no type {r.type}; the read allow list"
+                " lets nobody see it until it has",
+                {"graph": names[r.graph], "type": r.type},
+            )
+            for r in compiled.unknown_read_types
+        ),
+        *(
+            WarningRecord(
                 "admin.policy_unknown_term",
                 f"type {t.type} of graph {names[t.graph]} has no {_KIND_TEXT[t.kind]} {t.term};"
                 " nobody can write a term that does not exist (fail closed), so the policy"
@@ -594,6 +624,23 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
                 },
             )
             for u in compiled.unusable_writes
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unusable_write",
+                f"a create of {h.type} in graph {names[h.graph]} needs a {h.relation} edge to a"
+                f" type the grant's reads hide ({', '.join(h.range)}); a caller with only this"
+                " grant cannot create it unless another grant (rights add up across roles) lets"
+                " it see one",
+                {
+                    "graph": names[h.graph],
+                    "type": h.type,
+                    "verb": "create",
+                    "relation": h.relation,
+                    "range": list(h.range),
+                },
+            )
+            for h in compiled.hidden_range_creates
         ),
     )
     return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
@@ -855,9 +902,7 @@ def _access(
         "withheld": withheld_actions(caller, entry.id, policy),
         "maintains": maintains(caller, entry.id, policy),
     }
-    writes = _writes(ctx, entry, caller, policy, access["level"])
-    if writes is not None:
-        access["writes"] = writes
+    access.update(_allowances(ctx, entry, caller, policy, access["level"]))
     return access
 
 

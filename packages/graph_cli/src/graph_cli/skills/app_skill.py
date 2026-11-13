@@ -185,10 +185,10 @@ when `graph whoami` lists `require_reason`. Details: [references/history.md](ref
 ## Access
 
 - `graph whoami --json` shows who you act as and, per graph in
-  `data.permissions.graphs`, your `level` (`read` or `write`), the actions
-  withheld anyway (`withheld`), the types you may only read and the
-  obligations (`require_reason`, `max_batch`); a `writes` object lists all
-  you may write (verbs, attributes, relations per type). Check it first.
+  `data.permissions.graphs`: your `level` (`read` or `write`), actions withheld
+  anyway (`withheld`), types you may only read, obligations (`require_reason`,
+  `max_batch`), all you may write (`writes`: verbs, attributes, relations per
+  type) and, if limited to some types, those you see (`reads`). Check it first.
 - A graph you may not use does not exist for you: `graph graphs` does not
   list it, and selecting it gives `graph.not_found`.
 - On `access.denied`, stop and tell the user what was refused

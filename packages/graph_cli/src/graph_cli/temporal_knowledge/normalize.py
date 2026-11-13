@@ -140,6 +140,7 @@ class _Run:
     allocate_aliases: bool
     counters: dict[str, int]
     default_language: str | None = None
+    sees: Callable[[EntityId], bool] | None = None
     work: dict[EntityId, _Work] = field(default_factory=dict)
     created: dict[EntityId, None] = field(default_factory=dict)
     doc_locals: dict[str, EntityId] = field(default_factory=dict)
@@ -435,13 +436,14 @@ class _Run:
             return
         current = self.peek(entity)
         assert current is not None
+        addressable = [e for e in current.edges if self.addressable(e)]
         if op.edge_id is not None:
-            matches = [e for e in current.edges if e.edge_id == op.edge_id]
+            matches = [e for e in addressable if e.edge_id == op.edge_id]
             wanted = f"edge {op.edge_id}"
         else:
             assert op.rel is not None and op.target is not None
             target = self.resolve(op.target)
-            matches = [e for e in current.edges if e.rel == op.rel and e.target == target]
+            matches = [e for e in addressable if e.rel == op.rel and e.target == target]
             wanted = f"a {op.rel} edge to {target}"
         if len(matches) != 1:
             problem = f"no {wanted}" if not matches else f"{len(matches)} edges match {wanted}"
@@ -458,6 +460,11 @@ class _Run:
         self.effects.append(
             OpEffect(index, op.OP, entity, edge_id=edge.edge_id, rel=edge.rel, edge=edge)
         )
+
+    def addressable(self, edge: EdgeRecord) -> bool:
+        """Whether an unlink may match ``edge``: an edge into an entity the caller cannot see
+        is not there for it (``sees``; without it every edge is)."""
+        return self.sees is None or edge.target in self.created or self.sees(edge.target)
 
     def transition(self, index: int, op: TransitionOp) -> None:
         entity = self.resolve(op.id)
@@ -640,6 +647,7 @@ def normalize(
     alias_prefixes: Mapping[TermRef, str],
     allocate_aliases: bool = True,
     default_language: str | None = None,
+    sees: Callable[[EntityId], bool] | None = None,
 ) -> WorkingState:
     """Apply ``ops`` to a working copy of ``base`` (W.10).
 
@@ -648,7 +656,10 @@ def normalize(
     full ids are used as given and locals declared here are bound to the
     ids minted for their creates. ``allocate_aliases`` is false in dry-run.
     ``default_language`` is the graph language given to untagged
-    language-tagged values.
+    language-tagged values. ``sees`` (a type read limit) tells which entities the caller
+    may see: an unlink matches no edge into one it does not, so such an edge is neither
+    removed nor told apart from one that never existed. Everything else runs on ``base``
+    as it is, so an update keeps the entity's other edges.
     """
     run = _Run(
         base=base,
@@ -659,6 +670,7 @@ def normalize(
         allocate_aliases=allocate_aliases,
         counters=dict(alias_counters),
         default_language=default_language,
+        sees=sees,
     )
     create_ids: list[EntityId] = []
     for op in ops:

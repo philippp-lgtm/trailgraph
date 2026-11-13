@@ -189,21 +189,44 @@ def too_large(max_bytes: int) -> GraphCliError:
     )
 
 
+def module_missing() -> GraphCliError:
+    return GraphCliError(
+        "file.module_missing",
+        "the graph's ontology does not import the files module; import files ^1.0 in it",
+        details={"type": FILE_TYPE},
+    )
+
+
 def file_types(model: CompiledModel) -> tuple[str, ...]:
     """Concrete classes of the ``files:File`` family; ``file.module_missing`` without it."""
     if FILE_TYPE not in model.classes:
-        raise GraphCliError(
-            "file.module_missing",
-            "the graph's ontology does not import the files module; import files ^1.0 in it",
-            details={"type": FILE_TYPE},
-        )
+        raise module_missing()
     return tuple(c for c in model.subtypes(FILE_TYPE) if not model.classes[c].abstract)
 
 
-def find_by_content(model: CompiledModel, read: GraphStoreRead, digest: str) -> Revision | None:
-    """The active file holding ``digest``; content is unique among active files."""
+def _family_text(view: GraphRead, types: tuple[str, ...]) -> str:
+    """What the "not a stored file" message names: ``files:File``, or for a caller who does
+    not see that type (it reads the file classes it sees) those classes, so the message never
+    names a hidden type."""
+    if view.visible is None or FILE_TYPE in view.model.classes:
+        return FILE_TYPE
+    return ", ".join(types)
+
+
+def find_by_content(
+    model: CompiledModel,
+    read: GraphStoreRead,
+    digest: str,
+    visible: frozenset[str] | None = None,
+) -> Revision | None:
+    """The active file holding ``digest``; content is unique among active files. A caller who
+    sees only some types (``visible``) finds a holder of those types only: a hidden file
+    holding the same bytes is not there for it (type read limits plan V6)."""
+    types = tuple(t for t in file_types(model) if visible is None or t in visible)
+    if not types:
+        return None
     query = Query(
-        types=tuple(TermRef(t) for t in file_types(model)),
+        types=tuple(TermRef(t) for t in types),
         where=Cmp("content", "eq", digest),
         record_status=_ACTIVE,
         limit=1,
@@ -240,7 +263,10 @@ class FileService:
         with handle:
             entry = self._catalog.resolve(request.graph)
             model = self._models.load(entry)
-            type_ref = self._type(model, request.type)
+            visible = (
+                None if self._reader is None else self._reader.visible_types(request.actor, entry)
+            )
+            type_ref = self._type(model, request.type, visible)
             self._check_media_type(model, request.media_type)
             read, write = self._catalog.store_for(entry.id)
             source = _Input(handle, request.path)
@@ -251,7 +277,7 @@ class FileService:
                 else:
                     staged = write.stage_blob(source.chunks(), max_bytes=self.max_bytes)
             try:
-                return self._add(request, entry, model, read, type_ref, source, staged)
+                return self._add(request, entry, model, read, type_ref, source, staged, visible)
             finally:
                 staged.discard()
 
@@ -337,7 +363,7 @@ class FileService:
                 revisions.append(revision)
             page = Page(len(revisions), len(revisions), max(limit, len(revisions)), 0)
         else:
-            types = file_types(view.model)
+            types = self._family(view)
             for type_ref in types:
                 self._authorize_type(view, type_ref, actor, request)
             query = Query(
@@ -373,7 +399,7 @@ class FileService:
         self, view: GraphRead, ref: str, actor: ActorContext, request: RequestMeta
     ) -> tuple[Revision, list[WarningRecord]]:
         """A ``files:File`` family entity, authorized for ``read.get`` on its type."""
-        types = file_types(view.model)
+        types = self._family(view)
         entity, found = resolve_ref(ref, view.snapshot)
         revision = view.snapshot.get(entity)
         if revision is None:
@@ -383,11 +409,24 @@ class FileService:
         if revision.type not in types:
             raise GraphCliError(
                 "usage.invalid_argument",
-                f"{ref} is a {revision.type}, not a stored file ({FILE_TYPE})",
+                f"{ref} is a {revision.type}, not a stored file ({_family_text(view, types)})",
                 details={"argument": "ref", "value": ref, "actual": revision.type},
             )
         self._authorize_type(view, revision.type, actor, request)
         return revision, list(found)
+
+    def _family(self, view: GraphRead) -> tuple[str, ...]:
+        """The concrete file classes the caller reads. The family comes from the stored model:
+        the model view of a type limited caller lost the hidden classes that visible ones extend
+        (a scan stays a file when plain files are hidden). A caller who sees none of the family
+        reads a graph without the files module."""
+        family = file_types(self._models.load_for_read(view.entry)[0])
+        if view.visible is None:
+            return family
+        seen = tuple(t for t in family if t in view.visible)
+        if not seen:
+            raise module_missing()
+        return seen
 
     def _authorize_type(
         self, view: GraphRead, type_ref: str, actor: ActorContext, request: RequestMeta
@@ -441,14 +480,31 @@ class FileService:
         except OSError as exc:
             raise unreadable(path, exc.strerror or str(exc)) from exc
 
-    def _type(self, model: CompiledModel, requested: str | None) -> str:
+    def _type(
+        self, model: CompiledModel, requested: str | None, visible: frozenset[str] | None
+    ) -> str:
+        """The class of the new file. A caller who sees only some types may name those: a
+        hidden file class is no file class to it, and the message names the ones it sees."""
         allowed = file_types(model)
+        if visible is not None:
+            allowed = tuple(t for t in allowed if t in visible)
+            if not allowed:
+                raise module_missing()
         type_ref = requested or FILE_TYPE
         if type_ref not in allowed:
+            family = (
+                f"{FILE_TYPE} or a concrete subclass of it"
+                if FILE_TYPE in allowed
+                else "one of " + ", ".join(allowed)
+            )
             raise GraphCliError(
                 "usage.invalid_argument",
-                f"--type must be {FILE_TYPE} or a concrete subclass of it",
-                details={"argument": "--type", "value": type_ref, "expected": list(allowed)},
+                f"--type must be {family}",
+                details={
+                    "argument": "--type",
+                    "value": type_ref if visible is None else requested,  # not a type it lacks
+                    "expected": list(allowed),
+                },
             )
         return type_ref
 
@@ -481,10 +537,11 @@ class FileService:
         type_ref: str,
         source: _Input,
         staged: StagedBlob,
+        visible: frozenset[str] | None,
     ) -> FileAddResult:
         file_name = request.path.name
         media_type = request.media_type or media_types.detect(source.head, file_name)
-        known = find_by_content(model, read, staged.hash)
+        known = find_by_content(model, read, staged.hash, visible)
         if known is not None:
             return self._existing(entry, read, known, staged)
         warnings: list[WarningRecord] = []
@@ -525,7 +582,7 @@ class FileService:
         try:
             result = self._writer.apply(write_request)
         except GraphCliError as exc:
-            winner = _lost_race(exc) and find_by_content(model, read, staged.hash)
+            winner = _lost_race(exc) and find_by_content(model, read, staged.hash, visible)
             if winner:
                 return self._existing(entry, read, winner, staged)
             raise

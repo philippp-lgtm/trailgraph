@@ -1,0 +1,82 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "action": {
+    "name": "retire_item",
+    "module": "inventory",
+    "summary": "Take an item out of service for good.",
+    "use_when": "An item is scrapped, written off or taken out of service.",
+    "status": "active",
+    "replaced_by": null,
+    "featured": false,
+    "reason": "required",
+    "signature": "item: ref inv:Item",
+    "params": [
+      {
+        "name": "item",
+        "type": "ref",
+        "class": "inv:Item",
+        "enum": null,
+        "many": false,
+        "default": null,
+        "summary": "The item to retire."
+      }
+    ],
+    "preconditions": [
+      {
+        "id": "not_retired",
+        "on": "item",
+        "summary": "The item is still in the inventory.",
+        "expr": {
+          "in": [
+            {
+              "attr": "status"
+            },
+            {
+              "const": [
+                "ordered",
+                "in_stock",
+                "in_use"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "examples": [
+      {
+        "request": "The old label printer is scrapped."
+      }
+    ],
+    "ops": [
+      {
+        "op": "transition",
+        "id": "$item",
+        "to": "retired"
+      }
+    ],
+    "touches": {
+      "types": [
+        {
+          "curie": "inv:Item",
+          "module": "inventory"
+        }
+      ],
+      "relations": []
+    },
+    "needs": [
+      {
+        "action": "write.transition",
+        "type": "inv:Item"
+      }
+    ],
+    "hash": "sha256:7d89cfa6b5808e64c1f3ec54f5610aa59f4f320d45b792096b82e328ce5beb1c"
+  }
+}

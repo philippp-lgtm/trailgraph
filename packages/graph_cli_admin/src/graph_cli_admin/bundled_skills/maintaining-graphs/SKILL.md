@@ -181,11 +181,10 @@ graph-admin graph functions show <graph>
 ```
 
 The dry run reports every problem of every file together
-(`admin.functions_invalid`). A missing or empty `functions/` folder
-unpublishes all functions. Agents may run the functions only when their
-policy grants `read.function`; a policy installed before that action
-existed needs `graph-admin policy apply` with the same source once. On
-`access.denied` for that, tell the user.
+(`admin.functions_invalid`); a missing or empty `functions/` folder
+unpublishes all functions. Agents run functions only with `read.function`;
+a policy installed before that action existed needs `graph-admin policy
+apply` with the same source once. `access.denied` for that: tell the user.
 
 ## Publish or change actions
 
@@ -204,14 +203,15 @@ Roles let apps of one project differ. Declare the role under `roles:` in the
 installation policy, name it in grants (`principal: {role: <role>}` with
 `entrypoint: server`) and deny rules (`role: [<role>]`), then `graph-admin
 policy apply <file> --reason "<why>"`. A grant with `level: read` can carry a
-`writes` list that names exactly what the role may write, down to attributes
-and relations (grammar: `docs/access_control.md`, "Write allow lists"). Give
-it to an app token with
-`graph-admin token create <name> --role <role>` or `graph-admin token role add
-<name> <role>` (`token role remove` takes it away), or to a client with
-`graph-admin enroll create --project <project> --role <role>`. App tokens only;
-`admin.role_unknown` means the policy does not declare it. `graph-admin policy
-explain --graph <graph> --role <role>` shows what a token with it gets.
+`writes` list (exactly what the role may write, down to attributes and
+relations) and a `reads` list (the only types it sees; the rest of the graph
+reads as if absent); grammar: `docs/access_control.md`, "Write allow lists" and
+"Read limits". Give it to an app token with `graph-admin token create <name>
+--role <role>` or `graph-admin token role add <name> <role>` (`token role
+remove` takes it away), or to a client with `graph-admin enroll create
+--project <project> --role <role>`. App tokens only; `admin.role_unknown` means
+the policy does not declare it. `graph-admin policy explain --graph <graph>
+--role <role>` shows what a token with it gets.
 
 ## Check a graph
 

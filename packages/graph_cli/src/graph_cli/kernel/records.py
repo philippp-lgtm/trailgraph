@@ -6,8 +6,8 @@ documents (B4 portability test). Absent optional values are omitted (C.6).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Final, Literal
 from uuid import UUID
@@ -228,6 +228,20 @@ def revision_content_hash(revision: Revision) -> str:
             valid_to=revision.valid_to,
         )
     )
+
+
+def strip_hidden_edges(revision: Revision, sees: Callable[[EntityId], bool]) -> Revision:
+    """``revision`` without the edges whose target ``sees`` rejects.
+
+    Returns the same object when no edge is dropped. Otherwise the kept edges keep their order
+    and ids, ``content_hash`` is recomputed over the stripped content, and every other field
+    (``rev``, ``tx_seq``, ...) stays, so nothing marks an entity as having lost edges.
+    """
+    kept = tuple(edge for edge in revision.edges if sees(edge.target))
+    if len(kept) == len(revision.edges):
+        return revision
+    stripped = replace(revision, edges=kept)
+    return replace(stripped, content_hash=revision_content_hash(stripped))
 
 
 def revision_meta(revision: Revision) -> RevisionMeta:

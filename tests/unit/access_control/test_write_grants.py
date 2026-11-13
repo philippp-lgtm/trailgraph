@@ -13,7 +13,9 @@ from support.fixtures import compiled_model
 from graph_cli.access_control.compiler import Compiled, compile_policy
 from graph_cli.access_control.documents import document_problems
 from graph_cli.access_control.terms import (
+    HiddenRangeCreate,
     TermModel,
+    TypeTerms,
     UnknownTerm,
     UnknownWriteType,
     UnusableWrite,
@@ -431,7 +433,7 @@ def test_a_deny_rule_on_terms_denies_the_terms_instead_of_the_type() -> None:
         (
             "type: [nas:Note], relation: [nas:about], action: [read.get]",
             "deny[0].action",
-            "writes only",
+            "never decides a relation",
         ),
         ("type: [nas:Note], attribute: [], action: [write.update]", "deny[0].attribute", "list"),
     ],
@@ -499,6 +501,9 @@ def test_term_model_describes_what_the_compiler_needs(model: TermModel) -> None:
         "file_name",
     }
     assert not model.types["nas:Note"].file
+    # required relations (outgoing minimum >= 1) with their concrete ranges
+    assert dict(note.required_ranges) == {"nas:about": (TOPIC,)}
+    assert not model.types[TOPIC].required_ranges
 
 
 def test_unknown_types_and_terms_are_collected_not_refused(model: TermModel) -> None:
@@ -563,12 +568,70 @@ def test_a_lifecycle_with_several_initial_states_must_be_given() -> None:
     plain = term_model(compiled_model("notes_and_sources", "1.1.0"))
     note = plain.types[NOTE]
     attributes = {**note.attributes, "status": type(note.attributes["status"])(True, True)}
-    several = TermModel({**plain.types, NOTE: type(note)(False, False, attributes, note.relations)})
+    several = TermModel(
+        {
+            **plain.types,
+            NOTE: type(note)(False, False, attributes, note.relations, note.required_ranges),
+        }
+    )
     source = writes_source("{nas:Note: {create: [title, body, kind]}}")
     compiled = compile_policy(
         source.encode(), file="p.yaml", graphs=GRAPHS, models=lambda g: several
     )
     assert compiled.unusable_writes == (UnusableWrite(EXAMPLE, NOTE, "create", ("status",), False),)
+
+
+def with_reads(reads: str | None, writes: str) -> str:
+    return writes_source(writes if reads is None else f"{writes}, reads: {reads}")
+
+
+def hidden_range_creates(source: str, model: TermModel) -> tuple[HiddenRangeCreate, ...]:
+    return compile_policy(
+        source.encode(), file="p.yaml", graphs=GRAPHS, models=lambda g: model
+    ).hidden_range_creates
+
+
+def test_a_create_whose_required_range_the_grants_reads_hide_is_collected(
+    model: TermModel,
+) -> None:
+    source = with_reads("[nas:Note]", "{nas:Note: {create: true}}")
+    assert hidden_range_creates(source, model) == (
+        HiddenRangeCreate(EXAMPLE, NOTE, "nas:about", (TOPIC,)),
+    )
+    # a warning only: the document and its hash do not depend on the model
+    compiled = compile_policy(source.encode(), file="p.yaml", graphs=GRAPHS, models=lambda g: model)
+    assert compiled.unusable_writes == ()
+    assert compiled.hash == compile_policy(source.encode(), file="p.yaml", graphs=GRAPHS).hash
+
+
+@pytest.mark.parametrize(
+    ("reads", "writes"),
+    [
+        ("[nas:Note, nas:Topic]", "{nas:Note: {create: true}}"),  # the range is read
+        ('["nas:*"]', "{nas:Note: {create: true}}"),  # a glob covers it
+        ("[nas:Note]", "{nas:Note: {update: true, link: true}}"),  # no create
+        (None, "{nas:Note: {create: true}}"),  # no reads: the grant reads every type
+        ("[nas:Topic]", "{nas:Topic: {create: true}}"),  # no required relation
+    ],
+)
+def test_no_hidden_range_when_the_range_is_read_or_nothing_is_created(
+    model: TermModel, reads: str | None, writes: str
+) -> None:
+    assert hidden_range_creates(with_reads(reads, writes), model) == ()
+
+
+def test_a_create_needs_one_visible_type_of_each_required_range() -> None:
+    """A range of several concrete types is hidden only when the reads cover none of them."""
+    terms = TypeTerms(False, False, {}, frozenset(), {"x:to": ("x:A", "x:B"), "x:via": ("x:C",)})
+    wide = TermModel({"x:Doc": terms})
+
+    def hidden(reads: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        found = hidden_range_creates(with_reads(reads, "{x:Doc: {create: true}}"), wide)
+        return tuple((h.relation, h.range) for h in found)
+
+    assert hidden("[x:Doc, x:A, x:C]") == ()  # one of x:A, x:B is enough
+    assert hidden("[x:Doc, x:B]") == (("x:via", ("x:C",)),)
+    assert hidden("[x:Doc]") == (("x:to", ("x:A", "x:B")), ("x:via", ("x:C",)))
 
 
 def test_each_graph_is_checked_with_its_own_model_and_asked_once(model: TermModel) -> None:

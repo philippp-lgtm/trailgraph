@@ -1,0 +1,28 @@
+{
+  "graph": "example_graph",
+  "level": "read",
+  "obligations": {},
+  "reads": [
+    "nas:Note",
+    "nas:Scan",
+    "nas:WebPage",
+    "provenance:Claim"
+  ],
+  "types": {
+    "nas:Scan": "read",
+    "provenance:*": "read"
+  },
+  "withheld": [],
+  "writes": {
+    "nas:Note": {
+      "create": [
+        "body",
+        "kind",
+        "title"
+      ],
+      "link": [
+        "nas:cites"
+      ]
+    }
+  }
+}

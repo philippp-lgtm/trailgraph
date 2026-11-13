@@ -146,6 +146,51 @@ no_project: {"*": read}
 """
 
 
+HIDDEN_RANGE_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers: notes only"}
+grants:
+  - entrypoint: server
+    principal: {role: importer}
+    graphs: [example_graph]
+    level: read
+    reads: [nas:Note]
+    writes:
+      nas:Note: {create: true}
+no_project: {"*": read}
+"""
+
+
+def test_a_create_whose_required_range_is_hidden_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A note needs an ``about`` edge to a topic; a grant that reads notes only cannot create one
+    on its own, so ``policy check`` warns, and the policy still applies."""
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    path = write_policy(tmp_path / "work", "installation.yaml", HIDDEN_RANGE_POLICY)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["admin.policy_unusable_write"]
+    warning = checked.warnings[0]
+    assert warning["details"] == {
+        "graph": "example_graph",
+        "type": "nas:Note",
+        "verb": "create",
+        "relation": "nas:about",
+        "range": ["nas:Topic"],
+    }
+    assert "grant's reads hide (nas:Topic)" in warning["message"]
+    assert "another grant" in warning["message"]
+    reading_topics = HIDDEN_RANGE_POLICY.replace(
+        "reads: [nas:Note]", "reads: [nas:Note, nas:Topic]"
+    )
+    path = write_policy(tmp_path / "work", "installation.yaml", reading_topics)
+    assert admin(run_cli, "policy", "check", str(path)).warning_codes == []
+    assert apply(run_cli, path).code == 0
+
+
 def test_writes_are_checked_against_the_model_of_each_graph(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
@@ -206,6 +251,76 @@ def test_writes_are_checked_against_the_model_of_each_graph(
     assert explained.warning_codes == checked.warning_codes
     # it applies: warnings never block
     assert apply(run_cli, path).code == 0
+
+
+READS_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  reporting: {description: "Reporting: notes only"}
+grants:
+  - entrypoint: server
+    principal: {role: reporting}
+    graphs: [example_graph, other_graph]
+    level: read
+    reads: [nas:Note, "zzz:*"]
+no_project: {"*": read}
+"""
+
+
+def test_reads_are_checked_against_the_model_of_each_graph(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``reads`` grants warn per graph they name for a type (or prefix) its model lacks; the
+    policy is still valid, compiles as written and applies."""
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    create_graph(run_cli, "other_graph")  # inventory: no nas:* types
+    path = write_policy(tmp_path / "work", "installation.yaml", READS_POLICY)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["admin.policy_unknown_type"] * 3
+    assert [w["details"] for w in checked.warnings] == [
+        {"graph": "example_graph", "type": "zzz:*"},
+        {"graph": "other_graph", "type": "nas:Note"},
+        {"graph": "other_graph", "type": "zzz:*"},
+    ]
+    assert "read allow list" in checked.warnings[0]["message"]
+    assert apply(run_cli, path).code == 0
+
+
+def test_reads_of_an_abstract_type_are_refused(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    create_graph(run_cli, "other_graph")
+    source = READS_POLICY.replace('[nas:Note, "zzz:*"]', "[nas:Note, nas:Source]")
+    path = write_policy(tmp_path / "work", "installation.yaml", source)
+    checked = admin(run_cli, "policy", "check", str(path))
+    assert checked.error["code"] == "policy.invalid"
+    problems = checked.error["details"]["problems"]
+    assert [p["path"] for p in problems] == ["grants[0].reads[1]"]
+    assert "abstract or has subclasses in graph example_graph" in problems[0]["message"]
+
+
+def test_a_graph_policy_that_hides_types_is_checked_against_its_model(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create_graph(run_cli, "example_graph", "notes_and_sources", version="1.1.0")
+    source = (
+        "schema: graph_cli.policy/1\nid: graph\ntypes:\n  nas:Gone: none\n  nas:Note: none\n"
+        "deny:\n  - {id: hide, action: [read.get], type: [nas:Source]}\n"
+    )
+    path = write_policy(tmp_path / "work", "g.yaml", source)
+    checked = admin(run_cli, "policy", "check", str(path), "--graph", "example_graph")
+    assert checked.error["code"] == "policy.invalid"  # nas:Source is abstract
+    problems = checked.error["details"]["problems"]
+    assert [p["path"] for p in problems] == ["deny[0].type"]
+    ok = source.replace("nas:Source", "nas:Topic")
+    path = write_policy(tmp_path / "work", "g.yaml", ok)
+    checked = admin(run_cli, "policy", "check", str(path), "--graph", "example_graph")
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["admin.policy_unknown_type"]
+    assert checked.warnings[0]["details"] == {"graph": "example_graph", "type": "nas:Gone"}
 
 
 def test_writes_on_an_abstract_type_are_refused(

@@ -104,11 +104,13 @@ class ActionService:
         bound = bind_cli("action", name, action.defn.params, pairs, model)
         read, _ = self._catalog.store_for(entry.id)
         with self.timings.phase("snapshot"):
-            snapshot = read.snapshot()
+            raw = read.snapshot()
+        # A type limited caller names entities among those it sees: a hidden one is missing.
+        snapshot, shown, _ = self._reader.limited_view(actor, entry, raw, model)
         for param in action.defn.params:
             if param.type == "ref" and param.name in bound:
                 bound[param.name], found = entity_params(
-                    snapshot, model, "action", name, param, bound
+                    snapshot, shown, "action", name, param, bound
                 )
                 warnings += found
         ref = ActionRef(name, action.hash)

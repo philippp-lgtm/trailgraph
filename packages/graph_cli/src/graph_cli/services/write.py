@@ -56,6 +56,21 @@ id and no alias, finding targets name them by ``local``. Its blobs are
 hashed only, never staged on disk; they count as present. A refused real
 write names its creates the same way: their minted ids are never committed.
 
+Type read limits (type read limits plan V6): when the graph is limited and the caller does not
+see every type (``services.visibility``), two snapshots are kept per request. The raw one is the
+truth: ``normalize`` builds the new revisions from it (an update keeps the entity's hidden
+edges), the conflict check and the ``before`` hashes read it, and validation judges the post-state
+of the whole graph. A ``VisibleSnapshot`` of it is what the caller reaches: references resolve
+through it (a hidden entity is ``entity.not_found``), so do the action expansion, the action's
+preconditions and the file lookups; an unlink matches only edges into entities the caller sees.
+The authorization also decides ``read.get`` on every type of the request and records it. A
+create of a type the caller does not see is answered as a create of a type the model lacks: the
+decisions that answer are taken on a resource no rule can name exactly
+(``authorize_unlisted_type``), so a type limit never shows in the refusal, and validation judges
+the type unknown (``CallerView``). The refusal is audited with the real decisions. Findings
+about entities the caller does not see are concealed by the validator, and the result names only
+entities of visible types. A write of any other caller is unchanged, byte for byte.
+
 The command's timings get the phases ``model``, ``snapshot``, ``resolve``,
 ``authorize``, ``lock`` (waiting for and taking the graph lock, with the
 recovery of an interrupted write), ``normalize``, ``validate``, ``audit``
@@ -73,7 +88,7 @@ from datetime import datetime
 from typing import Final
 from uuid import UUID
 
-from graph_cli.access_control.authorize import authorize
+from graph_cli.access_control.authorize import authorize, authorize_unlisted_type
 from graph_cli.access_control.terms import term_resource
 from graph_cli.audit import events
 from graph_cli.audit.events import RefusalStatus
@@ -124,20 +139,22 @@ from graph_cli.kernel.ports.storage import (
 )
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
 from graph_cli.kernel.timing import Timings
-from graph_cli.kinetic.action_entries import ActionEntry
+from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.action_needs import action_needs
 from graph_cli.kinetic.expand import check_preconditions, expand
-from graph_cli.ontology_layer.data_validator import blob_values, validate_write
+from graph_cli.ontology_layer.data_validator import CallerView, blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
 from graph_cli.services.refs import NO_BINDINGS, FineTerm, Resolution, resolve_refs
+from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.temporal_knowledge.normalize import normalize
 from graph_cli.temporal_knowledge.working import WorkingState
 
 DEFAULT_LOCK_TIMEOUT_S: Final = 10.0
+READ_GET: Final = Action("read.get")
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +267,7 @@ class _Prepared:
     resolution: Resolution
     wanted: _Wanted
     decisions: tuple[Decision, ...]
+    visible: frozenset[str] | None  # the types the caller sees; None: it sees every type
 
 
 class _Placeholders:
@@ -323,6 +341,7 @@ class WriteService:
         self.timings = timings if timings is not None else Timings()
         self._models = ModelCache(catalog, self.timings)
         self._fine = FineTypes()
+        self._visibility = Visibility()
 
     # ---- public --------------------------------------------------------
 
@@ -385,10 +404,24 @@ class WriteService:
         if snapshot is None:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
-        resolution = self._resolve(request, snapshot)  # a plan: the empty frame, no pairs
+        visible = self._visible(request, entry, model)
+        resolution = self._resolve(  # a plan: the empty frame, no pairs
+            request, _seen_by(snapshot, visible)
+        )
         wanted = _wanted(resolution, model)
-        decisions = self._authorize(request, entry, wanted)
-        return _Prepared(entry, model, read, write, snapshot, resolution, wanted, decisions)
+        decisions = self._authorize(request, entry, wanted, model, visible)
+        return _Prepared(
+            entry, model, read, write, snapshot, resolution, wanted, decisions, visible
+        )
+
+    def _visible(
+        self, request: WriteRequest, entry: GraphEntry, model: CompiledModel
+    ) -> frozenset[str] | None:
+        """The concrete types the caller sees in the graph under the current policy, ``None``
+        when the graph is not type limited or it sees every type."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            return self._visibility.of(request.actor, entry, policy, model)
 
     def _resolve(self, request: WriteRequest, snapshot: Snapshot) -> Resolution:
         with self.timings.phase("resolve"):
@@ -400,10 +433,21 @@ class WriteService:
             )
 
     def _plan_wanted(
-        self, request: WriteRequest, entry: GraphEntry, plan: ActionPlan, model: CompiledModel
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        plan: ActionPlan,
+        model: CompiledModel,
+        visible: frozenset[str] | None,
     ) -> _Wanted:
         """What an action whose expansion is empty is authorized on: for each need of the
-        action on ``model`` the option the any-of rule picks (``services.action_rights``)."""
+        action on ``model`` the option the any-of rule picks (``services.action_rights``).
+
+        A caller who does not see every type meets a need only through a type it sees. An
+        action with a need it cannot meet is hidden from it (``ActionService`` answers
+        ``action.not_found``); should one get here anyway (the policy changed meanwhile), the
+        answer is the one for an action that does not exist, never an authorization of
+        nothing."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             fine = self._fine.of(policy, entry.id)
@@ -412,7 +456,9 @@ class WriteService:
             terms: set[FineTerm] = set()
             derived = action_needs(plan.entry, model)
             for need in derived:
-                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine)
+                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine, visible)
+                if visible is not None and not found.met and not found.decisions:
+                    find_action((), plan.entry.name)  # raises action.not_found
                 if found.type is None:
                     continue
                 pairs.add((Action(need.action), TermRef(found.type)))
@@ -426,36 +472,91 @@ class WriteService:
         return _Wanted(tuple(sorted(pairs)), tuple(sorted(terms)))
 
     def _authorize(
-        self, request: WriteRequest, entry: GraphEntry, wanted: _Wanted
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        wanted: _Wanted,
+        model: CompiledModel | None = None,
+        visible: frozenset[str] | None = None,
     ) -> tuple[Decision, ...]:
-        cs = request.changeset
+        """The decisions of W.5 for ``wanted``; ``visible`` (the types the caller sees, with
+        the ``model`` they are types of) is set only for a caller under a type read limit."""
         pairs = wanted.pairs
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             ctx = _context(request)
-            resources = {(a, f"graph:{entry.id}/type:{t}") for a, t in pairs}
             fine = self._fine.of(policy, entry.id)
+            # A type the model has but the caller's view lacks answers as a type the model
+            # lacks (V6): its decisions are taken on a resource no rule names, below.
+            unseen: frozenset[str] = frozenset()
+            if visible is not None:
+                assert model is not None
+                limited = self._visibility.model(entry, model, visible)
+                unseen = frozenset(
+                    t for _, t in pairs if t in model.classes and t not in limited.classes
+                )
+            resources = {(a, f"graph:{entry.id}/type:{t}") for a, t in pairs}
             for a, t, kind, term in wanted.fine:
                 resource = term_resource(entry.id, t, kind, term) if t in fine else None
-                if resource is not None:
+                if resource is not None and t not in unseen:
                     resources.add((a, resource))
-            decisions = tuple(
-                authorize(request.actor, a, r, ctx, policy) for a, r in sorted(resources)
-            )
-        denied = [d for d in decisions if d.effect == "deny"]
+            recorded = {
+                (a, r): authorize(request.actor, a, r, ctx, policy) for a, r in sorted(resources)
+            }
+            # What the caller is answered by: the decision, or for an unseen type the one on
+            # a resource no rule names, whatever the rules say of the type itself.
+            answering = {
+                key: (
+                    authorize_unlisted_type(
+                        request.actor, key[0], entry.id, _type_of(key[1]), ctx, policy
+                    )
+                    if _type_of(key[1]) in unseen
+                    else d
+                )
+                for key, d in recorded.items()
+            }
+            if visible is not None:  # V1: the read decision of every type the request names
+                assert model is not None
+                for t in sorted({t for _, t in pairs if t in model.classes}):
+                    if t in unseen or not model.classes[t].abstract:
+                        resource = f"graph:{entry.id}/type:{t}"
+                        recorded[(READ_GET, resource)] = authorize(
+                            request.actor, READ_GET, resource, ctx, policy
+                        )
+            decisions = tuple(recorded[key] for key in sorted(recorded))
+        denied = [d for _, d in sorted(answering.items()) if d.effect == "deny"]
         if not denied:
             return decisions
         first = denied[0]
         assert first.code is not None
-        visible = authorize(request.actor, "read.list", f"graph:{entry.id}", ctx, policy)
+        visible_graph = authorize(request.actor, "read.list", f"graph:{entry.id}", ctx, policy)
         error = (
-            denial_error(first) if visible.effect == "allow" else graph_not_found(request.graph)
+            denial_error(first)
+            if visible_graph.effect == "allow"
+            else graph_not_found(request.graph)
         )  # B6.15: a graph the actor cannot see does not exist for it
         if request.dry_run:  # B3.10: a dry-run denial is not audited
             raise error
+        # The event names the decisions taken; the one that answered the caller is among them
+        # (it was taken on a resource no rule names when the type is hidden from the caller).
+        named = decisions
+        if not any(d.effect == "deny" and d.code == first.code for d in decisions):
+            named = (*decisions, first)
+        raise self._append_denial(request, entry, named, error, {t for _, t in pairs})
+
+    def _append_denial(
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        decisions: tuple[Decision, ...],
+        error: GraphCliError,
+        types: Set[str],
+    ) -> GraphCliError:
+        """Audit a denied request on the installation stream; ``error`` with the warning
+        ``audit.refusal_not_recorded`` when that fails."""
         event = events.refusal(
             status="denied",
-            code=first.code,
+            code=_denial_code(decisions, error),
             actor=request.actor,
             decisions=decisions,
             request=request.request,
@@ -463,17 +564,17 @@ class WriteService:
             event_id=EventId(self._ids.new_id()),
             env=self._env,
             graph=entry,
-            reason=cs.reason,
-            target={"types": sorted({t for _, t in pairs})},
+            reason=request.changeset.reason,
+            target={"types": sorted(types)},
         )
         try:
             with self.timings.phase("audit"):
                 self._audit.append_installation(event)
         except GraphCliError as exc:
-            raise GraphCliError(
+            return GraphCliError(
                 error.code, error.message, details=error.details, warnings=(_not_recorded(exc),)
-            ) from exc
-        raise error
+            )
+        return error
 
     # ---- W.6-W.16 ------------------------------------------------------
 
@@ -490,13 +591,16 @@ class WriteService:
             with self.timings.phase("snapshot"):
                 base = session.snapshot()
                 head = session.head()
+            self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
+            visible = self._visible(request, entry, model)
+            seen = _seen_by(base, visible)  # what the caller reaches; ``base`` stays the truth
+            limited = None if visible is None else self._visibility.model(entry, model, visible)
             plan, held = request.plan, None
             if plan is not None:  # the action meets the state it will change
-                request, held = self._expand(request, base)
-            resolution = self._resolve(request, base)
-            self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
+                request, held = self._expand(request, seen)
+            resolution = self._resolve(request, seen)
             if plan is not None and held is not None:
-                wanted = self._plan_wanted(request, entry, plan, model)
+                wanted = self._plan_wanted(request, entry, plan, model, visible)
             else:
                 wanted = _wanted(resolution, model)
             pairs = wanted.pairs
@@ -506,7 +610,7 @@ class WriteService:
                 or wanted != prepared.wanted
                 or _stale(decisions, self._policy.current(entry.id).hash)
             ):
-                decisions = self._authorize(request, entry, wanted)
+                decisions = self._authorize(request, entry, wanted, model, visible)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
             digest = changeset_hash(cs)
@@ -515,7 +619,7 @@ class WriteService:
                 previous = session.lookup_idempotency(cs.idempotency_key, principal)
                 if previous is not None:
                     if _same_request(request, previous, digest):
-                        return _replay(previous, entry, resolution.warnings)
+                        return _replay(previous, entry, resolution.warnings, visible)
                     raise refusal(
                         GraphCliError(
                             "conflict.idempotency_key_reuse",
@@ -525,7 +629,7 @@ class WriteService:
                         types=pairs,
                     )
             if plan is not None:
-                self._check_plan(plan, base, model, refusal, pairs)
+                self._check_plan(plan, seen, model, refusal, pairs)
                 if held is not None:  # nothing would change: no tx, no audit event
                     raise held
             conflict = _conflict(cs, base, head.seq, resolution.refs)  # W.8
@@ -547,10 +651,13 @@ class WriteService:
                     alias_counters=session.alias_counters(),
                     alias_prefixes=entry.alias_prefixes,
                     default_language=entry.language,
+                    sees=_sees_in(seen),
                 )
             with self.timings.phase("validate"):
                 stored = _blob_check(request, prepared.read)
-                findings = _validate(model, base, working, stored)  # W.11
+                findings = _validate(  # W.11
+                    model, base, working, stored, _caller_view(limited, visible, working)
+                )
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
                 findings = [_scrub(f, working, working.created) for f in findings]
@@ -565,6 +672,7 @@ class WriteService:
                     dry_run=False,
                     warnings=resolution.warnings,
                     findings=findings,
+                    visible=visible,
                 )
             tx = AuthorizedTx(
                 graph_id=entry.id,
@@ -610,6 +718,7 @@ class WriteService:
             dry_run=False,
             warnings=(*resolution.warnings, *committed.warnings),
             findings=findings,
+            visible=visible,
         )
 
     def _dry_run(
@@ -622,17 +731,24 @@ class WriteService:
         prepared = self._prepare(request, base)
         snapshot = prepared.snapshot
         resolution = prepared.resolution
+        visible = prepared.visible
+        seen = _seen_by(snapshot, visible)
+        limited = (
+            None
+            if visible is None
+            else self._visibility.model(prepared.entry, prepared.model, visible)
+        )
         plan = request.plan
         if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
-            request, held = self._expand(request, snapshot)
-            resolution = self._resolve(request, snapshot)
+            request, held = self._expand(request, seen)
+            resolution = self._resolve(request, seen)
             if held is not None:
-                wanted = self._plan_wanted(request, prepared.entry, plan, prepared.model)
+                wanted = self._plan_wanted(request, prepared.entry, plan, prepared.model, visible)
             else:
                 wanted = _wanted(resolution, prepared.model)
             pairs = wanted.pairs
-            self._authorize(request, prepared.entry, wanted)
-            self._check_plan(plan, snapshot, prepared.model, None, pairs)
+            self._authorize(request, prepared.entry, wanted, prepared.model, visible)
+            self._check_plan(plan, seen, prepared.model, None, pairs)
             if held is not None:
                 raise held
         cs = resolution.changeset
@@ -654,11 +770,14 @@ class WriteService:
                 alias_prefixes=prepared.entry.alias_prefixes,
                 allocate_aliases=False,
                 default_language=prepared.entry.language,
+                sees=_sees_in(seen),
             )
         hidden = placeholders.issued
         with self.timings.phase("validate"):
             stored = _blob_check(request, prepared.read)
-            findings = _validate(prepared.model, snapshot, working, stored)
+            findings = _validate(
+                prepared.model, snapshot, working, stored, _caller_view(limited, visible, working)
+            )
         findings = [_scrub(f, working, hidden) for f in findings]
         if any(f.severity is Severity.ERROR for f in findings):
             raise _invalid(findings)
@@ -672,6 +791,7 @@ class WriteService:
             warnings=resolution.warnings,
             findings=findings,
             hidden=hidden,
+            visible=visible,
         )
         return result, working
 
@@ -741,6 +861,11 @@ class WriteService:
         findings: Sequence[Finding],
         entities: Sequence[EntityId],
     ) -> GraphCliError:
+        if any(d.effect == "deny" for d in decisions):
+            # Decisions that deny were taken on a type the caller cannot see, and the answer
+            # followed from the rest of the request: the request is a denied one (the event of a
+            # refusal after authorization carries no denial).
+            return self._append_denial(request, entry, decisions, error, {t for _, t in types})
         spec = lookup_error_code(error.code)
         invalid = spec is not None and spec.category is ErrorCategory.INVALID
         status: RefusalStatus = "invalid" if invalid else "conflict"
@@ -804,6 +929,50 @@ class _Refusal:
             findings=findings,
             entities=entities,
         )
+
+
+def _denial_code(decisions: Sequence[Decision], error: GraphCliError) -> str:
+    """The code of a ``denied`` event whose answer is ``error``: the error's own code when a
+    decision denied with it, else the first denial's (the event needs one of its decisions)."""
+    codes = [d.code for d in decisions if d.effect == "deny" and d.code is not None]
+    return error.code if error.code in codes else codes[0]
+
+
+def _type_of(resource: str) -> str:
+    """The type of a ``graph:<id>/type:<curie>`` resource (these are the only ones decided
+    for an op's type; a term resource below it is cut off)."""
+    return resource.split("/type:", 1)[1].split("/", 1)[0]
+
+
+def _seen_by(snapshot: Snapshot, visible: frozenset[str] | None) -> Snapshot:
+    """What the caller reaches of ``snapshot``: all of it, or the entities of the types it
+    sees (``None``: no limit)."""
+    return snapshot if visible is None else VisibleSnapshot(snapshot, visible)
+
+
+def _sees_in(seen: Snapshot) -> Callable[[EntityId], bool] | None:
+    """The predicate of a limited view (``None``: nothing is limited)."""
+    return seen.sees if isinstance(seen, VisibleSnapshot) else None
+
+
+def _caller_view(
+    limited: CompiledModel | None, visible: frozenset[str] | None, working: WorkingState
+) -> CallerView | None:
+    """What the validator may tell the caller (``None``: everything). The caller sees the
+    entities its request creates, whatever their type: the type is judged on its own."""
+    if visible is None or limited is None:
+        return None
+    memo: dict[EntityId, bool] = {}
+
+    def sees(entity: EntityId) -> bool:
+        if entity in working.created:
+            return True
+        if entity not in memo:
+            found = working.get(entity)
+            memo[entity] = found is not None and found.type in visible
+        return memo[entity]
+
+    return CallerView(limited, visible, sees)
 
 
 def _context(request: WriteRequest) -> AuthzContext:
@@ -883,6 +1052,7 @@ def _validate(
     base: Snapshot,
     working: WorkingState,
     blob_exists: Callable[[str], bool],
+    view: CallerView | None,
 ) -> list[Finding]:
     found = validate_write(
         model,
@@ -893,6 +1063,7 @@ def _validate(
         alias_allocations=working.alias_allocations,
         local_names={entity: name for name, entity in working.locals.items()},
         blob_exists=blob_exists,
+        view=view,
     )
     return sort_findings([*working.findings, *found])
 
@@ -970,8 +1141,17 @@ def _result(
     warnings: Sequence[WarningRecord],
     findings: Sequence[Finding],
     hidden: Set[UUID] = frozenset(),
+    visible: frozenset[str] | None = None,
 ) -> WriteResult:
+    """The result of a write. A caller who does not see every type is told about entities of
+    the types it sees only: whatever else the request changed stays in the tx."""
     names = _op_names(working)
+    if visible is not None:
+        working = replace(
+            working,
+            revisions={e: r for e, r in working.revisions.items() if r.type in visible},
+            unchanged={e: r for e, r in working.unchanged.items() if r.type in visible},
+        )
     entities = tuple(
         EntityResult(
             id=None if entity in hidden else entity,
@@ -1028,8 +1208,14 @@ def _unchanged(working: WorkingState) -> WarningRecord:
     )
 
 
-def _replay(tx: TxRecord, entry: GraphEntry, warnings: Sequence[WarningRecord]) -> WriteResult:
-    """The original result of an idempotent retry, rebuilt from its tx record (B3.12)."""
+def _replay(
+    tx: TxRecord,
+    entry: GraphEntry,
+    warnings: Sequence[WarningRecord],
+    visible: frozenset[str] | None,
+) -> WriteResult:
+    """The original result of an idempotent retry, rebuilt from its tx record (B3.12); for a
+    caller who does not see every type, of the entities of the types it sees."""
     try:
         cs = parse_changeset(tx.changeset, max_ops=sys.maxsize)
         locals_raw = as_object(tx.resolution.get("locals", {}), "locals")
@@ -1058,6 +1244,7 @@ def _replay(tx: TxRecord, entry: GraphEntry, warnings: Sequence[WarningRecord]) 
     entities = tuple(
         EntityResult(r.id, r.alias, r.rev, r.type, tuple(names[r.id]), local_names.get(r.id))
         for r in tx.revisions
+        if visible is None or r.type in visible
     )
     return WriteResult(
         graph_id=entry.id,

@@ -1,0 +1,27 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "inventory",
+    "version": "1.0.0"
+  },
+  "functions": [
+    {
+      "name": "items_by_condition",
+      "module": "inventory",
+      "summary": "Items in a given physical condition.",
+      "signature": "condition: enum inv:Condition",
+      "status": "active"
+    },
+    {
+      "name": "named_by_quantity",
+      "module": "inventory",
+      "summary": "Names of the things held in a larger number.",
+      "signature": "limit: integer",
+      "status": "active"
+    }
+  ]
+}

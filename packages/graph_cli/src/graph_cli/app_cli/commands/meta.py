@@ -66,8 +66,13 @@ WHOAMI_OUTPUT: Final = obj(
                             "types": obj(extra=STRING),
                             "obligations": _OBLIGATIONS,
                         },
-                        # access_control.effective.write_allowance: {type: {verb: true | [term]}}
-                        {"writes": obj(extra=obj(extra=_VERB_RIGHT))},
+                        {
+                            # access_control.effective.write_allowance:
+                            # {type: {verb: true | [term]}}
+                            "writes": obj(extra=obj(extra=_VERB_RIGHT)),
+                            # access_control.effective.visibility: the visible concrete types
+                            "reads": STRINGS,
+                        },
                     )
                 ),
             }

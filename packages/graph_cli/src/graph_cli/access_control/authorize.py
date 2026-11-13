@@ -54,6 +54,7 @@ from graph_cli.kernel.actor import ActorContext, Assurance, Entrypoint
 from graph_cli.kernel.authz import AuthzContext, Decision, Obligations
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.policy import PolicySet
 
 CEILING_RULE: Final = "ceiling.app_no_maint"
@@ -73,10 +74,50 @@ def authorize(
         raise GraphCliError("internal.error", f"unknown action {action!r}")
     if not RESOURCE_RE.match(resource):
         raise GraphCliError("internal.error", f"malformed resource {resource!r}")
-    checked = Action(action)
+    return _decide(actor, Action(action), resource, resource, ctx, policy)
+
+
+# Appended to the resource of ``authorize_unlisted_type``: no CURIE (so no exact rule resource)
+# ends in it, while every glob that matches the type still matches.
+_UNLISTED_MARK: Final = "~"
+
+
+def authorize_unlisted_type(
+    actor: ActorContext,
+    action: str,
+    graph: GraphId,
+    type_curie: str,
+    ctx: AuthzContext,
+    policy: PolicySet,
+) -> Decision:
+    """``authorize`` for ``graph:<graph>/type:<type_curie>`` as if no rule named that type: the
+    decision a type gets that the policy does not list. Rules on the exact resource (a type
+    limit, a read allow list) do not match; the globs of the graph and of the type's prefix
+    do, as they match a type the model does not have. A caller who must not learn that a
+    type exists gets its answers from this decision (type read limits plan V6); the decision
+    names the resource as asked."""
+    if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
+        raise GraphCliError("internal.error", f"unknown action {action!r}")
+    resource = f"graph:{graph}/type:{type_curie}"
+    if not RESOURCE_RE.match(resource):
+        raise GraphCliError("internal.error", f"malformed resource {resource!r}")
+    return _decide(actor, Action(action), resource + _UNLISTED_MARK, resource, ctx, policy)
+
+
+def _decide(
+    actor: ActorContext,
+    checked: Action,
+    resource: str,
+    named: str,
+    ctx: AuthzContext,
+    policy: PolicySet,
+) -> Decision:
+    """The decision of ``authorize``; rules are matched against ``resource``, the decision
+    names ``named``."""
+    action = str(checked)
 
     def deny(rule_id: str, code: str) -> Decision:
-        return Decision("deny", checked, resource, rule_id, policy.hash, code=code)
+        return Decision("deny", checked, named, rule_id, policy.hash, code=code)
 
     ceiling = CEILINGS.get(actor.client.entrypoint.value)
     if ceiling is not None and action.startswith("maint."):
@@ -116,7 +157,7 @@ def authorize(
         return deny(REASON_RULE, "access.reason_required")
     if obligations.max_batch is not None and ctx.op_count > obligations.max_batch:
         return deny(BATCH_RULE, "access.batch_too_large")
-    return Decision("allow", checked, resource, _text(allowed, "id"), policy.hash, obligations)
+    return Decision("allow", checked, named, _text(allowed, "id"), policy.hash, obligations)
 
 
 def allow_rule_holds(rule: Mapping[str, JsonValue], actor: ActorContext) -> bool:

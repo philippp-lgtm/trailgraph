@@ -10,6 +10,12 @@ changes the render and an installed copy becomes ``stale`` without a
 republish. Its curated text is checked against that model and this
 program's inventory; problems are the warning ``skills.source_unknown_names``
 and the skill is still installed (the model part is right).
+
+A reader with type read limits gets the skill rendered from its model view (the documents
+``model``), so the check of the curated text takes the documents of the full model
+(``names``): curated text is the maintainer's prose, and a problem about a type the reader
+cannot see would name it. The marker records a digest of what the reader sees (``visible``),
+which the freshness check compares.
 """
 
 from __future__ import annotations
@@ -51,11 +57,16 @@ def graph_skill(
     program: Mapping[str, JsonValue],
     model: Mapping[str, JsonValue] | None = None,
     inventory: Mapping[str, JsonValue] | None = None,
+    names: Mapping[str, JsonValue] | None = None,
+    visible: str | None = None,
 ) -> tuple[RenderedSkill, list[WarningRecord]]:
     """The skill of ``entry`` from its slot; ``skills.source_invalid`` if it cannot be used.
 
     A ``generated`` slot needs ``model`` (the documents of the current pin) and
-    ``inventory`` (this program's, for the checks of the curated text).
+    ``inventory`` (this program's, for the checks of the curated text). For a reader with
+    type read limits ``model`` is its view, ``names`` the documents of the full model the
+    curated text is checked against (default: ``model``) and ``visible`` the digest of what
+    it sees, recorded in the marker.
     """
     name = graph_skill_name(entry.name)
     details: dict[str, JsonValue] = {"graph": entry.name, "skill": name}
@@ -73,6 +84,8 @@ def graph_skill(
         "hash": slot.hash,
         "published_against": {"bundle": pin.bundle, "version": pin.version},
     }
+    if visible is not None:
+        source["visible"] = visible
     warnings: list[WarningRecord] = []
     if slot.kind == STATIC:
         files: Mapping[str, bytes] = slot.files
@@ -91,7 +104,7 @@ def graph_skill(
             "bundle": req_str(ontology, "bundle"),
             "version": req_str(ontology, "version"),
         }
-        unknown = check_names(template, model, graph, inventory)
+        unknown = check_names(template, model if names is None else names, graph, inventory)
         if unknown:
             warnings.append(unknown_names(entry, unknown))
     return rendered(name, "graph", files, program=program, source=source), warnings

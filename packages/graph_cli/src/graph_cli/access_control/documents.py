@@ -13,15 +13,18 @@ one) or ``graph`` (one graph's own policy, ``graph`` names it). Keys:
 - ``projects`` (installation): the project names the scopes cover;
 - ``roles`` (installation): the declared roles, ``{name: {description}}``; a rule's
   ``principal`` key ``role`` names roles an actor holds (a server token's roles);
-- ``types`` (graph): the declared type limits, for display.
+- ``types`` (graph): the declared type limits (``read``, ``write``, ``none``), for display.
 
 Resources (B6.9): ``installation``, ``graph:<id>``, a type ``graph:<id>/type:<curie>`` and,
 below a type, one attribute ``.../attr:<name>`` or one relation ``.../rel:<curie>`` (the
-terms a write touches). Rules on anything below a graph name write actions only. Globs
-match by prefix, so ``graph:<id>*``, ``graph:<id>/type:*`` and ``graph:<id>/type:ex:*`` cover
-the terms of every type they cover, as ``.../type:<curie>/attr:*`` and ``.../rel:*`` cover the
-terms of one type. An exact type resource matches the type only, never its terms.
-``fine_types`` tells which types some rule names terms of.
+terms a write touches). A rule on a type names write actions, ``read.get`` or ``read.*``:
+``read.get`` on a type is the type's visibility, the one read decision below a graph (every
+other read is decided on ``graph:<id>`` itself); a rule on a term names write actions only.
+Globs match by prefix, so ``graph:<id>*``, ``graph:<id>/type:*`` and ``graph:<id>/type:ex:*``
+cover the terms of every type they cover, as ``.../type:<curie>/attr:*`` and ``.../rel:*`` cover
+the terms of one type. An exact type resource matches the type only, never its terms.
+``fine_types`` tells which types some rule names terms of; ``read_limited`` tells whether some
+rule decides the visibility of types (a rule on the glob ``graph:<id>*`` alone does not).
 
 Allow rules match verified facets and the entrypoint only (B6.7): their
 ``project`` is the project a bound token verifies, never an asserted one, and
@@ -56,7 +59,7 @@ VERIFIED_KEYS: Final = ("entrypoint", "principal_id", "principal_name", "role")
 # An allow rule may also name a project: it matches only a verified one (a bound token).
 ALLOW_KEYS: Final = (*VERIFIED_KEYS, "project")
 ASSERTED_KEYS: Final = ("agent_id", "agent_type", "session_id", "device_id", "project")
-TYPE_LIMITS: Final = ("read", "write")
+TYPE_LIMITS: Final = ("read", "write", "none")
 
 _UUID: Final = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _CURIE: Final = r"[a-z][a-z0-9_]*:[A-Za-z][A-Za-z0-9_]*"
@@ -109,9 +112,15 @@ def is_action_glob(pattern: str) -> bool:
 
 
 def is_write_glob(pattern: str) -> bool:
-    """``write.*`` or one write action: all that type resources and obligations apply to
-    (reads and extensions are checked per graph, never per type)."""
+    """``write.*`` or one write action: all that term resources and obligations apply to
+    (other reads and extensions are checked per graph, never per type)."""
     return pattern == "write.*" or (pattern.startswith("write.") and is_known_action(pattern))
+
+
+def is_type_action_glob(pattern: str) -> bool:
+    """What a rule on a type may name: a write glob, ``read.get`` (the visibility of the type)
+    or ``read.*``, which covers it. Any other read action is never decided on a type."""
+    return is_write_glob(pattern) or pattern in ("read.get", "read.*")
 
 
 def is_resource_glob(pattern: str) -> bool:
@@ -146,6 +155,25 @@ def fine_types(
                     if below:
                         found.add(curie)
     return frozenset(found)
+
+
+def read_limited(documents: Sequence[Mapping[str, JsonValue]], graph: GraphId | str) -> bool:
+    """Whether some rule of ``documents`` (any layer, any effect) decides the visibility of the
+    types of ``graph``: it names an action that covers ``read.get`` (``read.get``, ``read.*``,
+    ``*``) and a type resource of the graph (``graph:<graph>/type:<curie>`` or a glob of types),
+    as the compiled ``grant.<n>.reads`` rules, the ``type.<T>`` rules of ``none`` and graph deny
+    rules with ``read.get`` do. A rule on ``graph:<graph>*`` or ``graph:*`` does not make a graph
+    read-limited, whatever actions it names: it names no type, so no caller needs a filter
+    for it. Pure and cheap: cache it per policy hash."""
+    prefix = f"graph:{graph}/type:"
+    for document in documents:
+        for rule in rules(document):
+            if not any(glob(pattern, "read.get") for pattern in strings(rule, "action")):
+                continue
+            for pattern in strings(rule, "resource"):
+                if pattern.startswith(prefix) and "/" not in pattern[len(prefix) :]:
+                    return True
+    return False
 
 
 def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict[str, Fact]:
@@ -248,13 +276,13 @@ def check_document(
 
 def _types_problems(types: JsonValue, add: _Add) -> None:
     if not isinstance(types, Mapping):
-        add("types", "must map types to read or write")
+        add("types", "must map types to none, read or write")
         return
     for name, limit in sorted(types.items()):
         if not TYPE_GLOB_RE.match(name):
             add(f"types.{name}", "is not a type CURIE or prefix:*")
         if limit not in TYPE_LIMITS:
-            add(f"types.{name}", "must be read or write")
+            add(f"types.{name}", "must be none, read or write")
 
 
 def _projects_problems(projects: JsonValue, add: _Add) -> None:
@@ -315,10 +343,22 @@ def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
             for pattern in actions:
                 if not isinstance(pattern, str) or not is_action_glob(pattern):
                     add(f"{path}.action", f"unknown action {pattern!r}")
-            if _names_types(rule.get("resource")) and not all(
-                isinstance(p, str) and is_write_glob(p) for p in actions
+            resource = rule.get("resource")
+            if _names_terms(resource):
+                if not all(isinstance(p, str) and is_write_glob(p) for p in actions):
+                    add(
+                        f"{path}.action",
+                        "a rule on attributes or relations applies to writes only; name write"
+                        " actions",
+                    )
+            elif _names_types(resource) and not all(
+                isinstance(p, str) and is_type_action_glob(p) for p in actions
             ):
-                add(f"{path}.action", "a rule on types applies to writes only; name write actions")
+                add(
+                    f"{path}.action",
+                    "a rule on types names write actions, read.get or read.*; no other read"
+                    " is decided on a type",
+                )
         _resource_problems(rule.get("resource"), f"{path}.resource", add)
         if "unless" in rule:
             _unless_problems(rule["unless"], effect, f"{path}.unless", add)
@@ -328,6 +368,13 @@ def _names_types(resource: JsonValue) -> bool:
     patterns = [resource] if isinstance(resource, str) else resource
     return isinstance(patterns, list) and any(
         isinstance(p, str) and "/type:" in p for p in patterns
+    )
+
+
+def _names_terms(resource: JsonValue) -> bool:
+    patterns = [resource] if isinstance(resource, str) else resource
+    return isinstance(patterns, list) and any(
+        isinstance(p, str) and ("/attr:" in p or "/rel:" in p) for p in patterns
     )
 
 

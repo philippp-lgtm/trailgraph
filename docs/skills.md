@@ -135,6 +135,27 @@ functions or actions keeps the base for that part): `SKILL.md` stays under
 the number of either, because the blocks list at most 12 functions and 8
 actions. Curated text adds to that.
 
+### Per reader
+
+A generated graph skill is rendered for the reader who installs or checks it.
+For a reader with [read limits](access_control.md#read-limits) the model blocks
+and pages (`modules`, `types`, `relations`, the references), the functions and
+the actions are rendered from what that reader sees: no hidden type, relation,
+field, function or action is named, and a module with nothing left is gone. A
+reader without limits gets the skill as before. The claim of an installed
+copy records which set of types it was rendered for when the reader is
+limited, so a change of the policy that changes the set makes the copy `stale`
+(see [Stale skills](#stale-skills)) and `graph skills install` renders it
+again.
+
+Curated text is not filtered. The prose of the template and its curated
+`references/*.md` are shown to every reader as written, so they must not name a
+type, relation or function that some reader of the graph may not see. The name
+check at publish and at install runs against the full model, so a hidden name
+in curated text raises no `skills.source_unknown_names` warning that would
+itself name it. Write curated text in terms that hold for every reader, and let
+the generated blocks carry the names.
+
 ### Budgets
 
 Every generated graph skill has a level 0 budget, single-module graphs
@@ -300,7 +321,8 @@ first checks the installed copies an agent may load: those in
 `.graph_cli.toml`, and those in the user skill directory; both count. Skill
 1 is stale when it was rendered from another inventory than the running
 program's, a graph skill when the graph published another skill since or,
-for a generated one, when the graph's ontology pin moved. A new function
+for a generated one, when the graph's ontology pin moved or, for a reader with
+read limits, when the set of types the reader sees changed. A new function
 catalog changes the render of a generated skill, so `graph skills check`
 reports the installed copy as `stale` and `graph skills install` refreshes
 it; the commands above do not notice a catalog-only change.
