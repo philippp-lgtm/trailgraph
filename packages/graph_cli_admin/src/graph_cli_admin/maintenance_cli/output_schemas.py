@@ -108,6 +108,7 @@ def _policy_document() -> Schema:
             "layer": LAYER,
             "graph": STRING,
             "projects": STRINGS,
+            "roles": obj(extra=obj({"description": STRING})),
             "types": obj(extra=enum(*TYPE_LIMITS)),
             "obligations": array(obligation),
         },
@@ -124,6 +125,7 @@ TOKEN: Final = {
     "expired": BOOLEAN,
     "created_at": NULLABLE_STRING,
     "hash_prefix": STRING,
+    "roles": STRINGS,  # sorted; empty for a token without roles
 }
 
 # ``services_admin.enroll._listed``: an enrollment code as listed, never the code.
@@ -135,6 +137,7 @@ ENROLLMENT: Final = {
     "expired": BOOLEAN,
     "created_at": STRING,
     "hash_prefix": STRING,
+    "roles": STRINGS,  # the roles of the token the code yields; empty without
 }
 
 CATALOG_SUMMARY: Final[dict[str, Schema]] = {

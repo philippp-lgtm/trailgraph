@@ -66,6 +66,12 @@
           },
           "pid": {
             "type": "integer"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

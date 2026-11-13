@@ -11,10 +11,13 @@ one) or ``graph`` (one graph's own policy, ``graph`` names it). Keys:
   that lift the deny;
 - ``obligations``: ``{action, require_reason?, max_batch?}``;
 - ``projects`` (installation): the project names the scopes cover;
+- ``roles`` (installation): the declared roles, ``{name: {description}}``; a rule's
+  ``principal`` key ``role`` names roles an actor holds (a server token's roles);
 - ``types`` (graph): the declared type limits, for display.
 
 Allow rules match verified facets and the entrypoint only (B6.7): their
-``project`` is the project a bound token verifies, never an asserted one; a
+``project`` is the project a bound token verifies, never an asserted one, and
+a ``role`` is verified (it comes from the server's token record only); a
 graph layer has no allow rules, it only narrows. ``document_problems`` lists
 every violation with its path; the loader turns them into
 ``policy.invalid``, ``authorize`` into ``internal.error``.
@@ -28,13 +31,19 @@ from dataclasses import dataclass
 from typing import Final
 
 from graph_cli.kernel.actions import EXT_ACTION_RE, is_known_action
-from graph_cli.kernel.actor import ActorContext, Assurance, Facet, is_valid_asserted_value
+from graph_cli.kernel.actor import (
+    ActorContext,
+    Assurance,
+    Facet,
+    is_valid_asserted_value,
+    is_valid_role_name,
+)
 from graph_cli.kernel.canonical import JsonValue
 
 POLICY_SCHEMA: Final = "graph_cli.policy/1"
 INSTALLATION_LAYER: Final = "installation"
 GRAPH_LAYER: Final = "graph"
-VERIFIED_KEYS: Final = ("entrypoint", "principal_id", "principal_name")
+VERIFIED_KEYS: Final = ("entrypoint", "principal_id", "principal_name", "role")
 # An allow rule may also name a project: it matches only a verified one (a bound token).
 ALLOW_KEYS: Final = (*VERIFIED_KEYS, "project")
 ASSERTED_KEYS: Final = ("agent_id", "agent_type", "session_id", "device_id", "project")
@@ -52,13 +61,17 @@ _AREA_GLOBS: Final = frozenset({"*", "read.*", "write.*", "maint.*", "ext.*"})
 _EXT_GLOB_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.\*$")
 
 _DOCUMENT_KEYS: Final = frozenset(
-    {"schema", "id", "layer", "graph", "projects", "types", "rules", "obligations"}
+    {"schema", "id", "layer", "graph", "projects", "roles", "types", "rules", "obligations"}
 )
 _RULE_KEYS: Final = frozenset({"id", "effect", "principal", "action", "resource", "unless"})
 _CONDITION_KEYS: Final = frozenset({"principal", "resource"})
 _OBLIGATION_KEYS: Final = frozenset({"action", "require_reason", "max_batch"})
+_ROLE_KEYS: Final = frozenset({"description"})
 
 type _Add = Callable[[str, str], None]
+# One value of a principal fact: a single value, the values of a multi-valued fact (a
+# role matches when the actor holds at least one of the expected ones), or none.
+type Fact = str | tuple[str, ...] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,9 +110,10 @@ def glob(pattern: str, value: str) -> bool:
     return pattern == value
 
 
-def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict[str, str | None]:
+def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict[str, Fact]:
     """The values principal matchers compare with; ``None`` for an absent facet, and with
-    ``verified_only`` (allow rules) for every facet that is not verified."""
+    ``verified_only`` (allow rules) for every facet that is not verified. ``role`` is the
+    tuple of the actor's roles, ``None`` (matches nothing) when it holds none."""
 
     def asserted(facet: Facet, value: str | None) -> str | None:
         if verified_only:
@@ -110,6 +124,7 @@ def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict
         "entrypoint": actor.client.entrypoint.value,
         "principal_id": actor.principal.id,
         "principal_name": actor.principal.name,
+        "role": actor.roles or None,
         "agent_id": asserted(actor.agent, actor.agent.id),
         "agent_type": asserted(actor.agent, actor.agent.type),
         "session_id": asserted(actor.session, actor.session.id),
@@ -127,6 +142,12 @@ def rules(document: Mapping[str, JsonValue], key: str = "rules") -> list[Mapping
     """The objects of a list key; a checked document has nothing else there."""
     value = document.get(key, [])
     return [v for v in value if isinstance(v, Mapping)] if isinstance(value, list) else []
+
+
+def declared_roles(document: Mapping[str, JsonValue]) -> frozenset[str]:
+    """The role names an installation document declares (none for a graph layer)."""
+    value = document.get("roles", {})
+    return frozenset(value) if isinstance(value, Mapping) else frozenset()
 
 
 def strings(entry: Mapping[str, JsonValue], key: str) -> list[str]:
@@ -160,12 +181,15 @@ def document_problems(document: Mapping[str, JsonValue]) -> list[Problem]:
             add("graph", "a graph layer names its graph by id")
         if "projects" in document:
             add("projects", "only the installation layer has project scopes")
+        if "roles" in document:
+            add("roles", "only the installation layer declares roles")
         _types_problems(document.get("types", {}), add)
     else:
         for key in ("graph", "types"):
             if key in document:
                 add(key, "only a graph layer has this key")
         _projects_problems(document.get("projects", []), add)
+        _roles_problems(document.get("roles", {}), add)
     _rules_problems(document.get("rules"), layer == GRAPH_LAYER, add)
     _obligations_problems(document.get("obligations", []), add)
     return problems
@@ -200,6 +224,24 @@ def _projects_problems(projects: JsonValue, add: _Add) -> None:
         isinstance(p, str) and is_valid_asserted_value(p) for p in projects
     ):
         add("projects", "must list project names")
+
+
+def _roles_problems(roles: JsonValue, add: _Add) -> None:
+    if not isinstance(roles, Mapping):
+        add("roles", "must map role names to their declaration")
+        return
+    for name, declaration in sorted(roles.items()):
+        path = f"roles.{name}"
+        if not is_valid_role_name(name):
+            add(path, "is not a role name (lowercase letters, digits and _)")
+        if not isinstance(declaration, Mapping):
+            add(path, "must be an object with a description")
+            continue
+        for key in sorted(set(declaration) - _ROLE_KEYS):
+            add(f"{path}.{key}", "unknown key")
+        description = declaration.get("description")
+        if not isinstance(description, str) or not description.strip():
+            add(f"{path}.description", "must be a non-empty string")
 
 
 def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
@@ -267,6 +309,8 @@ def _principal_problems(principal: JsonValue, keys: tuple[str, ...], path: str, 
         values = expected if isinstance(expected, list) else [expected]
         if not values or not all(isinstance(v, str) and v for v in values):
             add(f"{path}.{key}", "must be a string or a non-empty list of strings")
+        elif key == "role" and not all(is_valid_role_name(str(v)) for v in values):
+            add(f"{path}.{key}", "must name roles (lowercase letters, digits and _)")
 
 
 def _resource_problems(resource: JsonValue, path: str, add: _Add) -> None:

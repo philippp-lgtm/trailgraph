@@ -5,7 +5,8 @@ anyone handing it a token: a maintainer creates the code (``maint.token_create``
 on ``installation``: whoever may create tokens may let a client create one),
 passes it on out of band, and the client exchanges it once (``graph connect``).
 A code always names a project, so it never yields an unbound token: the
-maintainer's own token stays where it is. Under the registry lock the
+maintainer's own token stays where it is. It may carry roles (declared by the installed
+installation policy, app tokens only) that its token gets. Under the registry lock the
 installation event comes first (``change.enrollment``), then the enrollment
 file is replaced, so ``audit verify`` can replay the events against it. The
 code is returned once by ``create`` and never stored, logged or audited.
@@ -17,15 +18,15 @@ code without a lock first, so a wrong code takes no lock and writes nothing.
 Under the lock it checks the code again and refuses one the installation
 stream already used or revoked (an exchange cut short before the file
 changed). The token is named ``<project>.<label>``, the client choosing only
-the label; a name that is taken or that a policy rule names leaves the code
-unused. The code leaves the file before the token is written. A check
-(``check: true``) only says what the code is for; nothing is written.
+the label, and it gets the roles of the code; a name that is taken or that a
+policy rule names leaves the code unused. The code leaves the file before the token is
+written. A check (``check: true``) only says what the code is for; nothing is written.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Final
@@ -75,6 +76,8 @@ from graph_cli_admin.services_admin.tokens import (
     CREATE,
     REVOKE,
     Outcome,
+    check_declared,
+    check_roles,
     granted,
     maintains_any,
     server_actor,
@@ -91,6 +94,7 @@ def create(
     scope: str,
     expires_in: str | None,
     reason: str | None,
+    roles: Sequence[str] = (),
 ) -> Outcome:
     if not is_valid_asserted_value(project):
         raise _usage("--project", f"{project!r} is not a project name", project)
@@ -103,10 +107,14 @@ def create(
             f"{expires_in!r} is not a duration of at most a day (<n>m or <n>h)",
             expires_in,
         )
+    held = check_roles(roles, "--role", scope)
     now = ctx.clock.now()
     args: dict[str, JsonValue] = {"project": project, "scope": scope, "expires_in": expires_in}
+    if held:
+        args["roles"] = list(held)
     meta = RequestMeta.of("enroll create", args)
     decisions = ctx.authorize([(CREATE, "installation")], request=meta, reason=reason)
+    check_declared(ctx, held)
     code = new_code()
     record = EnrollmentRecord(
         new_id(),
@@ -115,6 +123,7 @@ def create(
         scope,
         format_timestamp(now + lifetime),
         format_timestamp(now),
+        held,
     )
     with ctx.maintenance.registry(timeout_s=ctx.lock_timeout_s) as registry:
         records = parse_enrollments(registry.read_enrollments())
@@ -126,6 +135,7 @@ def create(
             project=project,
             scope=scope,
             expires_at=record.expires_at,
+            roles=record.roles,
         )
         receipt = ctx.audit.append_installation(
             events.maintenance(
@@ -220,6 +230,7 @@ def exchange(
             project=record.project,
             created_at=format_timestamp(ctx.clock.now()),
             scope=record.scope,
+            roles=record.roles,
         )
         decision = Decision(
             "allow",
@@ -235,6 +246,7 @@ def exchange(
             expires=None,
             created=True,
             scope=record.scope,
+            roles=record.roles,
         )
         receipt = ctx.audit.append_installation(
             events.maintenance(
@@ -369,7 +381,9 @@ def _usable_graphs(ctx: AdminContext, token: TokenRecord) -> list[JsonValue]:
 def _probe(record: EnrollmentRecord) -> TokenRecord:
     """A token as the code would yield it, to ask the policy what it would get."""
     name = default_token_name(record.project, record.id)
-    return TokenRecord(name, record.hash, project=record.project, scope=record.scope)
+    return TokenRecord(
+        name, record.hash, project=record.project, scope=record.scope, roles=record.roles
+    )
 
 
 def _described(record: EnrollmentRecord) -> dict[str, JsonValue]:
@@ -387,6 +401,7 @@ def _listed(record: EnrollmentRecord, now: datetime) -> dict[str, JsonValue]:
         "expired": not record.valid_at(now),
         "created_at": record.created_at,
         "hash_prefix": record.hash_prefix,
+        "roles": list(record.roles),
     }
 
 

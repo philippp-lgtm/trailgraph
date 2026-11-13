@@ -1,6 +1,7 @@
 """Enrollment codes: the document, codes, lifetimes and token names (contracts B14.21)."""
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -102,3 +103,38 @@ def test_lifetimes_are_minutes_or_hours_up_to_a_day() -> None:
 def test_default_token_names_are_token_names(project: str, label: str, expected: str) -> None:
     name = default_token_name(project, label)
     assert name == expected and TOKEN_NAME_RE.match(name)
+
+
+def test_roles_are_listed_only_when_a_code_has_any() -> None:
+    """B14.21: a code without roles serializes exactly as before roles existed."""
+    plain = record(new_code())
+    assert "roles" not in plain.to_json()
+    held = replace(record(new_code()), roles=("reader",))
+    assert held.to_json()["roles"] == ["reader"]
+    document = enrollments_document((plain, held))
+    parsed = parse_enrollments(pretty_bytes(document))
+    assert sorted(parsed, key=lambda r: r.id) == sorted((plain, held), key=lambda r: r.id)
+    old = {"schema": ENROLLMENTS_SCHEMA, "enrollments": [plain.to_json()]}
+    assert parse_enrollments(json.dumps(old).encode()) == (plain,)
+
+
+@pytest.mark.parametrize(
+    "roles",
+    [
+        "reader",
+        [],
+        ["Reader"],
+        ["reader", 1],
+        ["reader", "reader"],
+        ["reader", "importer"],
+        [f"role_{n:02d}" for n in range(17)],
+    ],
+)
+def test_malformed_roles_fail_closed(roles: object) -> None:
+    entry = {**record(new_code()).to_json(), "roles": roles}
+    with pytest.raises(GraphCliError) as caught:
+        parse_enrollments(
+            json.dumps({"schema": ENROLLMENTS_SCHEMA, "enrollments": [entry]}).encode()
+        )
+    assert caught.value.code == "backend.unavailable"
+    assert "roles" in caught.value.message

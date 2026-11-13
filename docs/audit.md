@@ -22,6 +22,15 @@ transaction is the benign trace of an interrupted write (info); a
 transaction without its intent is an error. Events carry ids, types, hashes,
 sizes and reason text, never attribute values.
 
+The actor of an event, identical to the one in the transaction record, names
+the roles of the token a server request came with: `actor.roles`, a sorted
+list of role names, present only when the token held any. Events of
+requests without roles and of local invocations have no such key and are
+unchanged. The shape check rejects malformed roles
+(`integrity.audit.event_malformed`). The roles a token holds now are the
+result of its create and role-change events, which `audit verify` replays
+against the token file ([Token verification](#token-verification)).
+
 A write by `graph do` names its action: `request.action` is `{name, hash}` in the
 intent, in a refusal event and in the transaction record (`request.command` is `do`;
 `args_digest` covers the action, its bound parameters, the dry-run flag, the reason and the
@@ -122,18 +131,25 @@ hashed (`shape_hash`) and logged as text up to 4 KiB.
 Bearer tokens of the server API live in `tokens/tokens.json` as SHA-256
 hashes; `token create` and `token revoke` append an installation event
 (`change.token{name, hash_prefix}`, a created token also with project and
-expiry, an admin token with `scope: admin`) before they replace the file,
-never the token itself. `audit verify` replays these events: a token in the
-file that they do not create, or that differs in prefix, project, expiry or
-scope, is
-`integrity.audit.token_mismatch` (added or widened by hand, or a revoke that
+expiry, an admin token with `scope: admin`, a token with
+[roles](access_control.md#roles) with `roles`, sorted) before they replace
+the file, never the token itself. `token role add|remove` appends
+`maint.token_update` with `change.token{name, hash_prefix, roles}`, where
+`roles` is the token's **full set after the change** (empty when the last
+role was taken off), so replaying it is an assignment; a change that changes
+nothing appends no event. `audit verify` replays these events: a token in the
+file that they do not create, or that differs in prefix, project, expiry,
+scope or roles, is
+`integrity.audit.token_mismatch` (added or widened by hand, roles added or
+removed by hand, or a revoke that
 was interrupted: revoke it again); a created token missing from the file is
-an interrupted create (`intent_without_effect`, info).
+an interrupted create (`intent_without_effect`, info). A missing `roles` key
+means none, in the file and in an event.
 
 Enrollment codes live in `tokens/enrollments.json` as SHA-256 hashes, by
 id, until they are used or revoked. `enroll create` appends
 `maint.token_create` with `change.enrollment{id, hash_prefix, project,
-scope, expires_at}`, `enroll revoke` `maint.token_revoke` with
+scope, expires_at}` (and `roles` when the code carries any), `enroll revoke` `maint.token_revoke` with
 `change.enrollment{id, hash_prefix}`, each before the file is replaced. An
 exchange appends one `maint.token_create` whose actor is the enrollment
 (principal `enrollment:<id>`, project verified, decision rule
@@ -141,9 +157,10 @@ exchange appends one `maint.token_create` whose actor is the enrollment
 hash_prefix}`, then removes the code and only then adds the token, so an
 interrupted exchange never leaves a code that works twice. `audit verify`
 replays these events against the file: a listed code they do not create,
-that they removed, or that differs is `integrity.audit.enrollment_mismatch`
+that they removed, or that differs (its roles included) is
+`integrity.audit.enrollment_mismatch`
 (revoke it again), and so is an exchange of a code that was not live, of
-another project or scope than the code's, or after the code expired; a
+another project, scope or set of roles than the code's, or after the code expired; a
 created code missing from the file is an interrupted create
 (`intent_without_effect`, info). The token of an exchange is replayed with
 the other tokens. The server reads the same events before an exchange: a

@@ -212,6 +212,7 @@ def test_maintain_lets_a_project_admin_maintain_named_graphs_only() -> None:
         ("maint.graph_archive", f"graph:{OTHER}"),  # destructive: maintainers only
         ("maint.repair", f"graph:{OTHER}"),
         ("maint.token_create", "installation"),
+        ("maint.token_update", "installation"),  # a role change widens rights: maintainers
         ("maint.audit_read", "installation"),
     ):
         decision = authorize(admin, action, resource, CTX, policy)

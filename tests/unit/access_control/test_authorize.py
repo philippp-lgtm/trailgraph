@@ -78,6 +78,20 @@ def test_no_maint_action_is_reachable_from_the_app() -> None:
     assert authorize(SERVER, "read.get", GRAPH, CTX, allow_all).effect == "allow"
 
 
+def test_a_role_change_is_maintenance_only() -> None:
+    """B6.5, B14.11: ``maint.token_update`` is in the taxonomy, and the ceilings of the app
+    and the server hold for it under the built-in policy and under one that allows all; the
+    maintainers' ``*`` covers it, so no policy has to be applied for it."""
+    assert "maint.token_update" in ACTIONS
+    allow_all = _policy({"id": "x", "effect": "allow", "action": ["*"], "resource": "*"})
+    for policy in (BUILTIN_POLICY_SET, allow_all):
+        for who in (APP, SERVER):
+            decision = authorize(who, "maint.token_update", "installation", CTX, policy)
+            assert (decision.effect, decision.code) == ("deny", "access.ceiling")
+    allowed = authorize(MAINT, "maint.token_update", "installation", CTX, BUILTIN_POLICY_SET)
+    assert (allowed.effect, allowed.rule_id) == ("allow", "builtin.allow_maint")
+
+
 def test_reason_obligation() -> None:
     with_reason = dataclasses.replace(CTX, has_reason=True)
     for action in ("write.supersede", "write.retract"):

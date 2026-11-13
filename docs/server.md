@@ -58,6 +58,7 @@ maintainer's own token never leaves where it is.
 ```sh
 graph-admin enroll create --project <value>                 # an app token's code, 15 minutes
 graph-admin enroll create --project <value> --scope admin --expires-in 2h   # a project admin's
+graph-admin enroll create --project <value> --role <value>  # an app token that holds a role
 graph-admin enroll list                                     # codes not used yet
 graph-admin enroll revoke <id>
 ```
@@ -67,6 +68,11 @@ locally or over the [admin API](#admin-api). The code (`gce_` and 26
 characters) is shown once and works once, for at most 24 hours (`--expires-in
 <n>m|<n>h`, default 15 minutes); the data root keeps its hash. `create`
 warns when the installed policy would give a token of the project nothing.
+An app code may carry roles (`--role`, repeatable): the token the exchange
+yields holds them, as if `token create --role` had made it. They must be
+declared by the installed installation policy
+([Roles](access_control.md#roles)), and an admin code takes none. The `graphs`
+a check or an exchange names are those the token reaches with its roles.
 
 On the client, one command sets up the machine and a folder:
 

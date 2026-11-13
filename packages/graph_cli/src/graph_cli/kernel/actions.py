@@ -64,6 +64,7 @@ MAINT_ACTIONS: Final = frozenset(
         "purge",
         "token_create",  # bearer tokens of the server API (B14.11)
         "token_revoke",
+        "token_update",  # a token's roles change (B14.11)
     )
 )
 # Names are part of the closed taxonomy now; their behaviour comes later.

@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Final
 
 from graph_cli.kernel.actions import MAINT_ACTIONS, Action, is_known_action
-from graph_cli.kernel.actor import ActorContext, Assurance
+from graph_cli.kernel.actor import MAX_ROLES, ActorContext, Assurance, is_valid_role_name
 from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.clock import format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
@@ -38,7 +38,7 @@ CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
 REINDEX_ACTION: Final = "maint.reindex"
 POLICY_ACTION: Final = "maint.policy_change"
-TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke")
+TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke", "maint.token_update")
 _ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.format.NAME_RE
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
@@ -394,19 +394,30 @@ def _is_size(value: JsonValue) -> bool:
 def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
     """B14.11, B14.21: a token event names the token and a 16-hex prefix of its hash; a
     created token also its project and expiry (each possibly null), an admin token its
-    scope. An enrollment event names the code by id and hash prefix instead; a created
-    code also its project, scope and expiry. An exchange creates a token and names the
-    enrollment it used: both."""
+    scope and a token with roles those, sorted. An update (``maint.token_update``) names
+    the token's full role set after the change. An enrollment event names the code by id
+    and hash prefix instead; a created code also its project, scope and expiry, and its
+    roles when it has any. An exchange creates a token and names the enrollment it used:
+    both."""
     created = "maint.token_create" in actions
+    updated = "maint.token_update" in actions
     entries = change if isinstance(change, Mapping) else {}
     token, enrollment = entries.get("token"), entries.get("enrollment")
     problems = []
-    if (token is not None or enrollment is None) and not _is_token_change(token, created):
-        shown = "name, hash_prefix, project, expires[, scope]" if created else "name, hash_prefix"
+    if (token is not None or enrollment is None or updated) and not _is_token_change(
+        token, created, updated
+    ):
+        shown = (
+            "name, hash_prefix, project, expires[, scope][, roles]"
+            if created
+            else "name, hash_prefix, roles"
+            if updated
+            else "name, hash_prefix"
+        )
         problems.append(f"a token event needs change.token{{{shown}}}")
     if enrollment is not None and not _is_enrollment_change(enrollment, created and token is None):
         shown = (
-            "id, hash_prefix, project, scope, expires_at"
+            "id, hash_prefix, project, scope, expires_at[, roles]"
             if created and token is None
             else "id, hash_prefix"
         )
@@ -416,10 +427,13 @@ def _token_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
     return problems
 
 
-def _is_token_change(token: JsonValue, created: bool) -> bool:
+def _is_token_change(token: JsonValue, created: bool, updated: bool = False) -> bool:
     keys = {"name", "hash_prefix", *(("project", "expires") if created else ())}
-    if created and isinstance(token, Mapping) and "scope" in token:
-        keys.add("scope")
+    if isinstance(token, Mapping):
+        if created and "scope" in token:
+            keys.add("scope")
+        if (created and "roles" in token) or updated:
+            keys.add("roles")
     return (
         isinstance(token, Mapping)
         and set(token) == keys
@@ -428,15 +442,31 @@ def _is_token_change(token: JsonValue, created: bool) -> bool:
         and isinstance(token["hash_prefix"], str)
         and _TOKEN_PREFIX_RE.match(token["hash_prefix"]) is not None
         and all(token.get(k) is None or isinstance(token[k], str) for k in ("project", "expires"))
+        and ("roles" not in token or _is_role_set(token["roles"], allow_empty=updated))
+    )
+
+
+def _is_role_set(value: JsonValue, *, allow_empty: bool) -> bool:
+    """A sorted, unique list of at most ``MAX_ROLES`` role names; empty only if allowed."""
+    return (
+        isinstance(value, list)
+        and (allow_empty or bool(value))
+        and len(value) <= MAX_ROLES
+        and all(isinstance(r, str) and is_valid_role_name(r) for r in value)
+        and value == sorted(set(str(r) for r in value))
     )
 
 
 def _is_enrollment_change(enrollment: JsonValue, created: bool) -> bool:
     keys = {"id", "hash_prefix", *(("project", "scope", "expires_at") if created else ())}
+    roles = created and isinstance(enrollment, Mapping) and "roles" in enrollment
+    if roles:
+        keys.add("roles")
     return (
         isinstance(enrollment, Mapping)
         and set(enrollment) == keys
-        and all(isinstance(enrollment[k], str) for k in keys)
+        and all(isinstance(enrollment[k], str) for k in keys - {"roles"})
+        and (not roles or _is_role_set(enrollment["roles"], allow_empty=False))
         and _TOKEN_PREFIX_RE.match(str(enrollment["hash_prefix"])) is not None
         and enrollment.get("scope", "app") in ("app", "admin")
     )

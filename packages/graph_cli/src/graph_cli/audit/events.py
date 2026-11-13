@@ -76,6 +76,7 @@ INSTALLATION_MAINT: Final = frozenset(
         "maint.audit_anchor",
         "maint.token_create",
         "maint.token_revoke",
+        "maint.token_update",
     )
 )
 # B5.15: a policy change is installation-scoped for the installation policy and
@@ -354,15 +355,30 @@ def token_change(
     project: str | None = None,
     expires: str | None = None,
     scope: str = "app",
+    roles: Sequence[str] = (),
 ) -> dict[str, JsonValue]:
     """``change`` of ``maint.token_create|revoke`` (B14.11): the token by name and a prefix
-    of its hash, never the token; a created token also names its project and expiry, and
-    its scope when it is an admin token (an app token's event is as before scopes)."""
+    of its hash, never the token; a created token also names its project and expiry, its
+    scope when it is an admin token (an app token's event is as before scopes) and its
+    roles when it has any."""
     token: dict[str, JsonValue] = {"name": name, "hash_prefix": digest[:TOKEN_HASH_PREFIX]}
     if created:
         token.update(project=project, expires=expires)
         if scope != "app":
             token["scope"] = scope
+        if roles:
+            token["roles"] = list(roles)
+    return {"token": token}
+
+
+def token_update_change(name: str, digest: str, roles: Sequence[str]) -> dict[str, JsonValue]:
+    """``change`` of ``maint.token_update`` (B14.11): the token by name and hash prefix and
+    its **full role set after the change** (possibly empty), so that replay assigns it."""
+    token: dict[str, JsonValue] = {
+        "name": name,
+        "hash_prefix": digest[:TOKEN_HASH_PREFIX],
+        "roles": list(roles),
+    }
     return {"token": token}
 
 
@@ -373,14 +389,18 @@ def enrollment_change(
     project: str | None = None,
     scope: str | None = None,
     expires_at: str | None = None,
+    roles: Sequence[str] = (),
 ) -> dict[str, JsonValue]:
     """``enrollment`` of a ``change`` (B14.21): the code by id and a prefix of its hash, never
-    the code; a created code also names its project, scope and expiry. Alone in the change
+    the code; a created code also names its project, scope and expiry, and the roles of the
+    token it yields when there are any. Alone in the change
     of ``maint.token_create`` (a code created) or ``maint.token_revoke`` (revoked), next to
     ``token`` in an exchange's ``maint.token_create`` (the code used)."""
     entry: dict[str, JsonValue] = {"id": enrollment_id, "hash_prefix": digest[:TOKEN_HASH_PREFIX]}
     if project is not None:
         entry.update(project=project, scope=scope, expires_at=expires_at)
+        if roles:
+            entry["roles"] = list(roles)
     return entry
 
 

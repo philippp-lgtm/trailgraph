@@ -2,11 +2,17 @@
 
 An authored policy file is compiled against this installation: graph names
 resolve to ids, and a graph policy is checked against the graph's pinned
-model (an unknown type warns with ``admin.policy_unknown_type``). Its ``id``
+model (an unknown type warns with ``admin.policy_unknown_type``) and its deny
+rules against the roles the installed installation policy declares (an unknown
+role warns with ``policy.role_unknown``). Its ``id``
 says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
-``apply`` is ``maint.policy_change``. The installation policy is an
+``apply`` is ``maint.policy_change``. An installation policy that no longer declares a role
+that a token still holds, or an installed graph policy names, warns with
+``admin.role_orphaned`` (one warning per role; the membership stays, no grant can name
+the role, deny rules of graph policies naming it still apply).
+The installation policy is an
 installation event (the intent), the file switch under the registry lock
 and a confirmation event without ``change``; a graph policy follows W.e:
 the intent in the graph stream, the file switch under the graph lock, the
@@ -18,8 +24,11 @@ nothing.
 
 ``check``, ``show``, ``diff`` and ``explain`` write nothing and take no
 lock. ``explain`` asks ``authorize()`` what an app caller from a project, or
-from no project, or a request with a given server token would get: with the
-installed policy or with a file.
+from no project, or a request with a given server token, or a server token that holds
+given roles (with the project verified when one is named), would get: with the installed
+policy or with a file. Roles the policy used for the explanation does not declare warn
+with ``policy.role_unknown`` but are explained all the same, so that a policy file can be
+tried before it is applied.
 
 ``for_graph`` is what the live view shows of one graph: the rules of both
 installed layers that can decide on it, the obligations, the graph's type
@@ -42,6 +51,7 @@ from graph_cli.access_control.documents import (
     GRAPH_LAYER,
     INSTALLATION_LAYER,
     RESOURCE_RE,
+    declared_roles,
     glob,
     rules,
     strings,
@@ -90,7 +100,7 @@ from graph_cli.storage.files.policy_files import installation_policy_path, read_
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
-from graph_cli_admin.services_admin.tokens import check_name, server_actor
+from graph_cli_admin.services_admin.tokens import check_name, check_roles, server_actor
 
 ACTION: Final = "maint.policy_change"
 APP_PROGRAM: Final = "graph"
@@ -192,6 +202,9 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
     decisions = ctx.authorize(
         [(ACTION, resource)], request=meta, graph=entry.id if entry else None, reason=reason
     )
+    warnings = (
+        source.warnings if entry is not None else (*source.warnings, *_orphaned(ctx, compiled))
+    )
     data: dict[str, JsonValue] = {
         "layer": compiled.layer,
         "graph": _graph_name(entry),
@@ -206,7 +219,7 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
             if old != compiled.hash or _unmirrored(ctx, old):
                 _apply_installation(ctx, registry, compiled, old, decisions, meta, reason)
                 data["applied"] = True
-        return Outcome(data, source.warnings)
+        return Outcome(data, warnings)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         old = _hash_of(session.read_policy())
@@ -220,6 +233,63 @@ def apply(ctx: AdminContext, *, file: Path, graph_ref: str | None, reason: str) 
     return Outcome(data, source.warnings)
 
 
+def _orphaned(ctx: AdminContext, compiled: Compiled) -> tuple[WarningRecord, ...]:
+    """A warning for each role the installed installation policy declares, the new one does
+    not, and a token still holds or an installed graph policy names."""
+    dropped = declared_roles(ctx.policy.current(None).documents[0]) - declared_roles(
+        compiled.document
+    )
+    if not dropped:
+        return ()
+    records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
+    source = FilePolicySource(ctx.roots.data_root)
+    named: dict[str, list[str]] = {}
+    for entry in ctx.catalog.list_graphs(include_archived=True):
+        document = source.graph(entry.id)
+        for role in _roles_named(document) if document is not None else ():
+            named.setdefault(role, []).append(entry.name)
+    warnings: list[WarningRecord] = []
+    for role in sorted(dropped):
+        held = sorted(r.name for r in records if role in r.roles)
+        graphs = sorted(named.get(role, []))
+        if held or graphs:
+            warnings.append(
+                WarningRecord(
+                    "admin.role_orphaned",
+                    f"the new installation policy no longer declares role {role}, which"
+                    f" {_holders(held, graphs)}; the membership stays and no grant can name it,"
+                    " while graph policy deny rules naming it still apply, until the role is"
+                    " declared again or taken off",
+                    {"role": role, "tokens": held, "graphs": graphs},
+                )
+            )
+    return tuple(warnings)
+
+
+def _holders(tokens: Sequence[str], graphs: Sequence[str]) -> str:
+    parts = []
+    if tokens:
+        parts.append("tokens still hold (" + ", ".join(tokens) + ")")
+    if graphs:
+        parts.append("graph policies still name (" + ", ".join(graphs) + ")")
+    return " and ".join(parts)
+
+
+def _roles_named(value: JsonValue) -> set[str]:
+    """The role names a compiled graph policy's rules and conditions name."""
+    found: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key == "role":
+                found |= {item} if isinstance(item, str) else set(strings(value, "role"))
+            else:
+                found |= _roles_named(item)
+    elif isinstance(value, list):
+        for item in value:
+            found |= _roles_named(item)
+    return found
+
+
 def explain(
     ctx: AdminContext,
     *,
@@ -229,6 +299,7 @@ def explain(
     type_curie: str | None,
     file: Path | None,
     token: str | None = None,
+    roles: Sequence[str] = (),
 ) -> Outcome:
     if token is not None and project is not None:
         raise GraphCliError(
@@ -236,6 +307,13 @@ def explain(
             "--token and --project exclude each other: a token names its own project",
             details={"argument": "project"},
         )
+    if token is not None and roles:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            "--token and --role exclude each other: a token has its own roles",
+            details={"argument": "role"},
+        )
+    held = check_roles(roles, "--role")
     entry = ctx.resolve(graph_ref, "policy explain")
     installation = ctx.policy.current(None).documents[0]
     layer = _installed(ctx, entry)
@@ -253,12 +331,16 @@ def explain(
         else:
             layer = source.compiled.document
     policy = policy_set(installation, layer)
+    unknown = sorted(set(held) - declared_roles(installation))
+    if unknown:
+        warnings = (*warnings, _roles_not_declared(unknown))
     record = _token(ctx, token) if token is not None else None
-    caller = (
-        server_actor(record, ctx.actor.client.version)
-        if record is not None
-        else _app_caller(ctx.actor, project)
-    )
+    if held:
+        caller = _role_caller(ctx.actor, project, held)
+    elif record is not None:
+        caller = server_actor(record, ctx.actor.client.version)
+    else:
+        caller = _app_caller(ctx.actor, project)
     if record is not None:
         project = record.project
     resource = f"graph:{entry.id}" + (f"/type:{type_curie}" if type_curie is not None else "")
@@ -283,6 +365,7 @@ def explain(
         "graph": entry.name,
         "project": project,
         "token": token,
+        "roles": list(caller.roles),
         "scope": scope_of(caller, policy),
         "policy_hash": policy.hash,
         "level": graph_level(caller, entry.id, policy),
@@ -332,6 +415,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
                 "token": record.name,
                 "project": record.project,
                 "scope": record.scope,
+                "roles": list(record.roles),
                 "expired": not record.valid_on(today),
                 **_access(caller, entry, policy),
             }
@@ -380,6 +464,19 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         )
         if classes is not None
         else frozenset(),
+        # A graph policy is applied independently of the installation policy: its role
+        # names are checked against the installed one (a warning, like an unknown type).
+        roles=declared_roles(ctx.policy.current(None).documents[0]) if entry is not None else None,
+    )
+    role_warning = (
+        WarningRecord(
+            "policy.role_unknown",
+            "the installed installation policy does not declare role(s) "
+            + ", ".join(compiled.unknown_roles)
+            + "; tokens can be given only declared roles, so a rule naming one matches only"
+            " tokens that still hold it",
+            {"roles": list(compiled.unknown_roles)},
+        ),
     )
     warnings = tuple(
         WarningRecord(
@@ -389,7 +486,7 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
         )
         for name in compiled.unknown_types
     )
-    return _Source(compiled, entry, warnings)
+    return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
 
 
 def _read(file: Path) -> bytes:
@@ -509,6 +606,32 @@ def _app_caller(maintainer: ActorContext, project: str | None) -> ActorContext:
         session=ABSENT,
         project=facet,
         client=ClientInfo(APP_PROGRAM, maintainer.client.version, Entrypoint.APP),
+    )
+
+
+def _role_caller(
+    maintainer: ActorContext, project: str | None, roles: tuple[str, ...]
+) -> ActorContext:
+    """A request of an app token that holds ``roles``, bound to ``project`` when one is named:
+    what ``server_actor`` makes of a token record. The token's name is no valid token name,
+    so no rule naming a real token matches it."""
+    if project is not None and not is_valid_asserted_value(project):
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"--project {project}: not a valid project name",
+            details={"argument": "project"},
+        )
+    preview = TokenRecord("(roles)", "", project=project, roles=roles)
+    return server_actor(preview, maintainer.client.version)
+
+
+def _roles_not_declared(roles: Sequence[str]) -> WarningRecord:
+    return WarningRecord(
+        "policy.role_unknown",
+        "the installation policy used here does not declare role(s) "
+        + ", ".join(roles)
+        + "; they are explained all the same, but tokens can be given only declared roles",
+        {"roles": list(roles)},
     )
 
 

@@ -411,3 +411,121 @@ def test_an_exchange_must_follow_from_its_code() -> None:
     ):
         found = check_enrollments(_enrollment_events(*steps), {})
         assert [f.code for f in found] == [codes.ENROLLMENT_MISMATCH], steps
+
+
+# ---- roles on tokens and codes replayed against their files (B14.11, B14.21) -------------
+
+
+def _token_events(*steps: tuple[str, dict[str, JsonValue]]) -> list[Event]:
+    return [
+        {
+            "seq": seq,
+            "ts": f"2026-10-25T12:{seq:02d}:00.000Z",
+            "actions": [action],
+            "result": {"status": "ok"},
+            "change": change,
+        }
+        for seq, (action, change) in enumerate(steps, start=1)
+    ]
+
+
+def _created(*roles: str) -> tuple[str, dict[str, JsonValue]]:
+    return "maint.token_create", {"token": _token(**({"roles": list(roles)} if roles else {}))}
+
+
+def _updated(*roles: str) -> tuple[str, dict[str, JsonValue]]:
+    token = {"name": "p1.a", "hash_prefix": "sha256:fedcba9876543210", "roles": list(roles)}
+    return "maint.token_update", {"token": token}
+
+
+def _file(*roles: str, **extra: JsonValue) -> dict[str, dict[str, JsonValue]]:
+    entry: dict[str, JsonValue] = {
+        "hash_prefix": "sha256:fedcba9876543210",
+        "project": "p1",
+        "expires": None,
+        "scope": "app",
+        **extra,
+    }
+    if roles:
+        entry["roles"] = list(roles)
+    return {"p1.a": entry}
+
+
+def test_token_roles_are_replayed_from_create_and_update_events() -> None:
+    from graph_cli.audit.verify import check_tokens
+
+    revoked = ("maint.token_revoke", {"token": {"name": "p1.a", "hash_prefix": "sha256:x"}})
+    ok = [
+        ([_created()], _file()),  # no roles anywhere: as before roles existed
+        ([_created("reader")], _file("reader")),
+        ([_created("reader"), _updated("importer", "reader")], _file("importer", "reader")),
+        ([_created("reader"), _updated()], _file()),  # the last role taken away
+        ([_created(), _updated("reader"), _updated("importer")], _file("importer")),
+        ([_created("reader"), revoked, _updated("importer")], {}),  # an update of a gone token
+    ]
+    for steps, installed in ok:
+        assert check_tokens(_token_events(*steps), installed) == [], steps
+    wrong = [
+        ([_created()], _file("reader")),  # roles added to the file by hand
+        ([_created("reader")], _file()),  # roles removed by hand
+        ([_created("reader")], _file("importer")),
+        ([_created("reader")], _file("importer", "reader")),
+        ([_created("reader"), _updated("importer", "reader")], _file("reader")),  # stale file
+        ([_created("reader"), _updated()], _file("reader")),
+    ]
+    for steps, installed in wrong:
+        found = check_tokens(_token_events(*steps), installed)
+        assert [f.code for f in found] == [codes.TOKEN_MISMATCH], steps
+
+
+def test_a_token_mismatch_shows_the_roles() -> None:
+    from graph_cli.audit.verify import check_tokens
+
+    (finding,) = check_tokens(_token_events(_created("reader")), _file("importer"))
+    assert finding.to_json()["expected"]["roles"] == ["reader"]  # type: ignore[index]
+    assert finding.to_json()["actual"]["roles"] == ["importer"]  # type: ignore[index]
+
+
+def test_an_exchange_carries_the_roles_of_its_code() -> None:
+    from graph_cli.audit.verify import check_enrollments
+
+    created = ("maint.token_create", {"enrollment": {**CODE, "roles": ["reader"]}})
+    plain = ("maint.token_create", {"enrollment": CODE})
+
+    def exchange(*roles: str) -> tuple[str, dict[str, JsonValue]]:
+        token = _token(**({"roles": list(roles)} if roles else {}))
+        return "maint.token_create", {"token": token, "enrollment": USED}
+
+    def run(*steps: tuple[str, dict[str, JsonValue]]) -> list[str]:
+        timed = [(a, c, f"2026-10-25T12:0{n}:00.000Z") for n, (a, c) in enumerate(steps)]
+        return [f.code for f in check_enrollments(_enrollment_events(*timed), {})]
+
+    assert run(created, exchange("reader")) == []
+    assert run(plain, exchange()) == []
+    assert run(created, exchange()) == [codes.ENROLLMENT_MISMATCH]  # a role dropped
+    assert run(plain, exchange("reader")) == [codes.ENROLLMENT_MISMATCH]  # a role added
+    assert run(created, exchange("importer")) == [codes.ENROLLMENT_MISMATCH]
+
+
+def test_enrollment_roles_are_compared_with_the_file() -> None:
+    from graph_cli.audit.verify import check_enrollments
+
+    def listed(*roles: str) -> dict[str, dict[str, JsonValue]]:
+        entry: dict[str, JsonValue] = {
+            key: CODE[key] for key in ("hash_prefix", "project", "scope", "expires_at")
+        }
+        if roles:
+            entry["roles"] = list(roles)
+        return {"0123456789ab": entry}
+
+    plain = ("maint.token_create", {"enrollment": CODE}, "2026-10-25T12:00:00.000Z")
+    held = ("maint.token_create", {"enrollment": {**CODE, "roles": ["reader"]}}, plain[2])
+    assert check_enrollments(_enrollment_events(plain), listed()) == []
+    assert check_enrollments(_enrollment_events(held), listed("reader")) == []
+    for steps, installed in (
+        ((plain,), listed("reader")),
+        ((held,), listed()),
+        ((held,), listed("x")),
+    ):
+        found = check_enrollments(_enrollment_events(*steps), installed)
+        assert [f.code for f in found] == [codes.ENROLLMENT_MISMATCH]

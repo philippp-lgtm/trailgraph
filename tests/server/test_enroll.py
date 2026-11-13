@@ -30,6 +30,9 @@ pytestmark = pytest.mark.slow
 POLICY = """\
 schema: graph_cli.policy/1
 id: installation
+roles:
+  reader: {description: "Reporting apps"}
+  importer: {description: "Importers"}
 grants:
   - {entrypoint: app, graphs: "*", level: write}
   - {entrypoint: server, principal: {project: p1}, graphs: "*", level: write}
@@ -272,3 +275,65 @@ def test_enroll_create_refuses_and_warns(run_cli: CliRunner, installation: dict[
     assert gone.error["hint"] == "graph-admin enroll list"
     pasted = admin(run_cli, "enroll", "revoke", idle.data["code"])
     assert pasted.code == 2 and idle.data["code"] not in json.dumps(pasted.envelope)
+
+
+def test_the_exchange_gives_the_new_token_the_roles_of_its_code(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """B14.21, B6.7: ``enroll create --role`` puts the roles on the code, listed and
+    audited; the token holds them, the exchange event names them, a request with the token
+    has them as ``actor.roles`` and ``audit verify`` replays code and exchange."""
+    app, _ = served(installation, tmp_path)
+    root = installation["root"]
+    created = code(run_cli, "--project", "p1", "--role", "reader", "--role", "importer")
+    assert created["roles"] == ["importer", "reader"]
+    (listed,) = admin(run_cli, "enroll", "list").data["enrollments"]
+    assert listed["roles"] == ["importer", "reader"]
+    (made,) = [e for e in installation_events(root) if e["request"]["command"] == "enroll create"]
+    assert made["change"]["enrollment"]["roles"] == ["importer", "reader"]
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": created["code"], "label": "laptop"})
+    assert exchanged.status == 200, exchanged.json
+    token = exchanged.json["data"]["token"]
+    (record,) = json.loads(tokens_path(root).read_text())["tokens"]
+    assert record["roles"] == ["importer", "reader"]
+    (event,) = [
+        e for e in installation_events(root) if e["request"]["command"] == "enroll exchange"
+    ]
+    assert event["change"]["token"]["roles"] == ["importer", "reader"]
+    whoami = call(app, "POST", "/v1/commands/whoami", token=token, body={})
+    assert whoami.status == 200, whoami.json
+    assert whoami.json["data"]["actor"]["roles"] == ["importer", "reader"]
+    assert admin(run_cli, "audit", "verify").code == 0
+
+
+def test_enroll_create_refuses_unusable_roles(
+    run_cli: CliRunner, installation: dict[str, Any]
+) -> None:
+    admin_scope = admin(
+        run_cli, "enroll", "create", "--project", "p1", "--scope", "admin", "--role", "reader"
+    )
+    assert admin_scope.code == 2 and admin_scope.error["details"]["argument"] == "--role"
+    bad = admin(run_cli, "enroll", "create", "--project", "p1", "--role", "Not A Role")
+    assert bad.code == 2 and bad.error["details"]["argument"] == "--role"
+    unknown = admin(run_cli, "enroll", "create", "--project", "p1", "--role", "reder")
+    assert unknown.code == 1 and unknown.error["code"] == "admin.role_unknown"
+    assert unknown.error["details"]["did_you_mean"] == ["reader"]
+    assert admin(run_cli, "enroll", "list").data["enrollments"] == []
+    idle = admin(run_cli, "enroll", "create", "--project", "p3", "--role", "importer")
+    assert idle.warning_codes == ["admin.token_not_granted"]  # no grant for an importer, no p3
+
+
+def test_a_code_without_roles_gives_a_token_without_roles(
+    run_cli: CliRunner, installation: dict[str, Any], tmp_path: Path
+) -> None:
+    app, _ = served(installation, tmp_path)
+    root = installation["root"]
+    secret = code(run_cli, "--project", "p1")["code"]
+    exchanged = call(app, "POST", "/v1/enroll", body={"code": secret, "label": "laptop"})
+    assert exchanged.status == 200, exchanged.json
+    (record,) = json.loads(tokens_path(root).read_text())["tokens"]
+    assert "roles" not in record
+    whoami = call(
+        app, "POST", "/v1/commands/whoami", token=exchanged.json["data"]["token"], body={}
+    )
+    assert "roles" not in whoami.json["data"]["actor"]

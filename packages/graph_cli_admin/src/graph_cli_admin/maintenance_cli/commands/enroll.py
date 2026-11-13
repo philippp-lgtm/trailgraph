@@ -26,6 +26,7 @@ def create(
     project: str,
     scope: str,
     expires_in: str | None,
+    role: tuple[str, ...],
     reason: str | None,
     data_root: str | None,
 ) -> Result:
@@ -35,6 +36,7 @@ def create(
         scope=scope,
         expires_in=expires_in,
         reason=reason,
+        roles=role,
     )
     return Result(data=outcome.data, warnings=outcome.warnings, text=outcome.text)
 
@@ -80,31 +82,43 @@ SPECS: Final = (
                 "string",
                 "How long the code works: <n>m or <n>h, at most 24h; default 15m.",
             ),
+            ParamSpec(
+                "--role",
+                "string",
+                "A role of the token the code yields (app scope only); repeatable.",
+                repeatable=True,
+                keyword="role",
+            ),
             REASON,
             DATA_ROOT,
         ),
         examples=(
             Example("graph-admin enroll create --project <value>", "A code for one client."),
             Example(
+                "graph-admin enroll create --project <value> --role <value>",
+                "A code whose token holds a role.",
+            ),
+            Example(
                 "graph-admin enroll create --project <value> --scope admin --expires-in <value>"
                 " --json",
                 "A code for a project admin, valid longer.",
             ),
         ),
-        errors=(*ROOT_ERRORS, *CHANGE_ERRORS),
+        errors=(*ROOT_ERRORS, *CHANGE_ERRORS, "admin.role_unknown"),
         handler=create,
         output=CREATE_OUTPUT,
         description="The code is shown only once and works once: graph connect <endpoint>"
         " --code <code> exchanges it for a token bound to the project and sets up the"
         " client's folder. Only a hash of the code is stored. create warns when the installed"
-        " policy would give such a token nothing.",
+        " policy would give such a token nothing. Roles must be declared by the installed"
+        " installation policy.",
     ),
     CommandSpec(
         path=("enroll", "list"),
         kind="read",
         surface="meta",
         action=None,
-        summary="List the codes not used yet: id, project, scope, expiry, a hash prefix.",
+        summary="List the codes not used yet: id, project, scope, roles, expiry, a hash prefix.",
         params=(DATA_ROOT,),
         examples=(
             Example("graph-admin enroll list", "Every unused code."),

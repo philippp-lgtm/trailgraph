@@ -4,7 +4,8 @@ The principal is the bearer token, verified by the server: ``token:<name>``.
 Agent, session, device and project are asserted by the client in the
 request's ``actor`` object (``source: client``), with the B2.4 grammar: a
 malformed value makes its facet absent with ``actor.facet_malformed`` and
-never blocks. A token bound to a project verifies the project facet; a
+never blocks. The roles of the token are the actor's roles (policy subjects, B6.7); a
+client cannot assert them. A token bound to a project verifies the project facet; a
 request that asserts another project is ``access.project_mismatch``. The
 entrypoint is ``server`` whatever the request says. Pure: no I/O.
 """
@@ -62,6 +63,7 @@ def request_actor(
             project=project,
             client=client,
             pid=None,
+            roles=token.roles,
         ),
         tuple(warnings),
     )

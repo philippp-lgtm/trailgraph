@@ -12,6 +12,7 @@ from graph_cli.kernel.actor import (
     Entrypoint,
     Facet,
     is_valid_asserted_value,
+    is_valid_role_name,
 )
 from graph_cli.kernel.canonical import canonical_bytes
 from graph_cli.kernel.errors import GraphCliError
@@ -82,3 +83,54 @@ def test_missing_facet_is_a_shape_error() -> None:
 )
 def test_asserted_value_grammar(value: str, valid: bool) -> None:
     assert is_valid_asserted_value(value) is valid
+
+
+def test_roles_are_serialized_only_when_held() -> None:
+    """B2.9: an actor without roles serializes exactly as before roles existed."""
+    plain = make_actor().to_json()
+    assert "roles" not in plain
+    held = replace(make_actor(), roles=("importer", "reader"))
+    data = held.to_json()
+    assert data["roles"] == ["importer", "reader"]
+    assert {k: v for k, v in data.items() if k != "roles"} == plain
+    assert ActorContext.from_json(data) == held
+    assert canonical_bytes(ActorContext.from_json(data).to_json()) == canonical_bytes(data)
+    assert ActorContext.from_json(plain).roles == ()
+    assert ActorContext.from_json({**plain, "roles": []}).roles == ()
+
+
+@pytest.mark.parametrize(
+    "roles",
+    [
+        ["Reader"],
+        ["reader", 3],
+        "reader",
+        ["reader", "reader"],
+        ["reader", "importer"],
+        [""],
+        ["a b"],
+    ],
+)
+def test_malformed_roles_are_a_shape_error(roles: object) -> None:
+    data = {**make_actor().to_json(), "roles": roles}
+    with pytest.raises(JsonShapeError):
+        ActorContext.from_json(data)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("value", "valid"),
+    [
+        ("reader", True),
+        ("data_importer2", True),
+        ("r" * 64, True),
+        ("r" * 65, False),
+        ("2fast", False),
+        ("_lead", False),
+        ("Upper", False),
+        ("a-b", False),
+        ("", False),
+        ("trailing\n", False),
+    ],
+)
+def test_role_name_grammar(value: str, valid: bool) -> None:
+    assert is_valid_role_name(value) is valid

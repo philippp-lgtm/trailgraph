@@ -11,6 +11,7 @@ from support.fixtures import FIXTURES, TOY_ONTOLOGIES, compiled_model
 from support.roles import load_roles
 from support.services import ServiceEnv
 from support.snapshots import revision as stored_revision
+from support.txbuilder import actor
 
 from graph_cli.catalog.activity import ActivityEvent
 from graph_cli.catalog.policy_source import FilePolicySource
@@ -42,6 +43,8 @@ FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 INSTALLATION_POLICY = """\
 schema: graph_cli.policy/1
 id: installation
+roles:
+  reader: {description: "Reporting apps"}
 grants:
   - {principal: {name: maintainer}, graphs: "*", level: write}
   - {entrypoint: server, principal: {project: example_project}, graphs: [GRAPH], level: read}
@@ -432,6 +435,8 @@ def test_the_policies_as_they_bear_on_the_graph(svc: ServiceEnv, tmp_path: Path)
         graph_ref = svc.name if name == "graph" else None
         policy.apply(ctx, file=authored, graph_ref=graph_ref, reason="test")
     tokens.create(ctx, name="ci", project="example_project", expires=None, reason=None)
+    installed = dataclasses.replace(ctx, policy=FilePolicySource(svc.root))  # sees the roles
+    tokens.create(installed, name="svc", project=None, expires=None, reason=None, roles=["reader"])
     data = policies_json(ctx, source_of(svc))
     assert data["graph"]["name"] == svc.name  # type: ignore[index, call-overload]
     assert data["graphs"] == {str(svc.entry.id): svc.name}
@@ -457,6 +462,10 @@ def test_the_policies_as_they_bear_on_the_graph(svc: ServiceEnv, tmp_path: Path)
     assert access[None, None]["withheld"] == ["read.history"]
     assert access[None, "other_project"]["withheld"] == []  # nothing to withhold from
     assert {c["level"] for c in access.values()} == {"none"}
+    assert (
+        access["svc", None]["roles"] == ["reader"]
+        and access["ci", "example_project"]["roles"] == []
+    )
     ci = access["ci", "example_project"]
     assert ci["entrypoint"] == "server" and ci["principal"] == "token:ci" and not ci["expired"]
     assert ci["withheld"] == ["read.history"] and ci["maintains"] is False
@@ -471,3 +480,13 @@ def test_the_policies_need_audit_read_on_the_installation(svc: ServiceEnv) -> No
         graphs.authorize(entry, "maint.audit_read", "installation")
     assert info.value.code == "access.denied"
     assert len(svc.installation_events()) == before + 1
+
+
+def test_an_actor_shows_its_roles_next_to_the_principal() -> None:
+    plain = actor("token:ci")
+    assert "roles" not in view._actor_json(plain)
+    held = dataclasses.replace(plain, roles=("importer", "reader"))
+    shown = view._actor_json(held)
+    assert shown["roles"] == ["importer", "reader"]
+    principal = shown["principal"]
+    assert isinstance(principal, dict) and principal["name"] == plain.principal.name

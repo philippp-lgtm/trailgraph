@@ -264,7 +264,8 @@ def _shown_attrs(model: CompiledModel, revision: Revision) -> dict[str, JsonValu
 
 
 def _actor_json(actor: ActorContext) -> dict[str, JsonValue]:
-    """Who wrote, facet by facet, with how sure the harness is about each."""
+    """Who wrote, facet by facet, with how sure the harness is about each, and the roles the
+    principal held (a server token's) when it had any."""
     data: dict[str, JsonValue] = {"label": actor.label()}
     for name in ("principal", "agent", "session"):
         facet = getattr(actor, name)
@@ -274,6 +275,8 @@ def _actor_json(actor: ActorContext) -> dict[str, JsonValue]:
                 "name": facet.name or facet.id,
                 "type": facet.type,
             }
+    if actor.roles:
+        data["roles"] = list(actor.roles)
     data["client"] = f"{actor.client.name} {actor.client.version}".strip()
     data["entrypoint"] = actor.client.entrypoint.value
     return data

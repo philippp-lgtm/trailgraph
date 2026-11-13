@@ -71,10 +71,10 @@ streams, a reload shows a change.
   text.
 - **Policies**: who may do what on the graph. "Access" lists, for each
   project of the installation policy's scopes and for no project, what
-  your own `graph` calls get, and for each token what its requests get:
-  the level, the actions a deny rule withholds below it and, for an
-  admin token, whether it maintains the graph, as `graph-admin policy
-  explain` answers. "Installation policy" and "Graph policy" list the
+  your own `graph` calls get, and for each token (with the roles it
+  holds, if any) what its requests get: the level, the actions a deny
+  rule withholds below it and, for an admin token, whether it maintains
+  the graph, as `graph-admin policy explain` answers. "Installation policy" and "Graph policy" list the
   installed rules of each layer that can decide on this graph (grants,
   maintainers, project admins, scopes, deny rules, type limits), with
   whom they match, their actions and resources, the conditions that
@@ -242,7 +242,8 @@ the graph is drawn with.
 Clicking a node loads that entity on demand: its attributes
 (hidden labels left out), edges in both directions with their
 qualifiers, and every revision with the agent, principal and session
-that wrote it. Clicking an edge shows its relation, ends and qualifiers
+that wrote it, and the roles the principal held when it was a server token
+with some. Clicking an edge shows its relation, ends and qualifiers
 and the history of its source entity. For a stored file (`files:File`)
 the panel offers a preview of PDFs and images in the page and the
 original as a download; reading the bytes needs `read.get` on the file's

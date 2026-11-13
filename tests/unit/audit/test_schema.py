@@ -90,6 +90,13 @@ def test_valid_events_have_no_problems() -> None:
     assert event_problems(denial()) == []
 
 
+def test_an_actor_may_hold_roles() -> None:
+    """A server request's actor lists the roles of its token (B2.9); the event stays valid."""
+    event = intent()
+    event["actor"] = {**actor().to_json(), "roles": ["importer", "reader"]}  # type: ignore[dict-item]
+    assert event_problems(event) == []
+
+
 def test_unknown_keys_are_allowed() -> None:
     event = intent()
     event["future_key"] = {"anything": 1}
@@ -144,6 +151,8 @@ BROKEN: dict[str, tuple[Callable[[], Event], Callable[[Event], None], str]] = {
     "ts_precision": (intent, _set("ts", "2026-10-14T19:21:05Z"), "ts is not"),
     "actor_shape": (intent, _set("actor.client", DELETE), "actor:"),
     "actor_assurance": (intent, _set("actor.principal.assurance", "asserted"), "not verified"),
+    "actor_roles": (intent, _set("actor.roles", ["Bad-Role"]), "actor: roles"),
+    "actor_roles_type": (intent, _set("actor.roles", "reader"), "actor: roles"),
     "actions_empty": (intent, _set("actions", []), "actions is not a non-empty list"),
     "actions_type": (intent, _set("actions", [1]), "actions holds a non-string"),
     "actions_order": (

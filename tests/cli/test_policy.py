@@ -4,6 +4,7 @@ Toy graphs and the neutral project names ``example_project`` and
 ``another_project`` only.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -123,6 +124,78 @@ def test_unknown_types_warn(run_cli: CliRunner, root: Path, tmp_path: Path) -> N
     assert checked.warning_codes == ["admin.policy_unknown_type"]
 
 
+def test_unknown_roles_in_a_graph_policy_warn(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """A graph policy is applied independently: a role the installed installation policy
+    does not declare is a warning (``policy.role_unknown``), a declared one is not."""
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    work = tmp_path / "work"
+    graph = write_policy(
+        work,
+        "g.yaml",
+        GRAPH + "deny:\n  - {id: importer_no_retract, role: [importer], action: [write.retract]}\n",
+    )
+    checked = admin(run_cli, "policy", "check", str(graph), "--graph", "example_graph")
+    assert checked.code == 0, checked.envelope
+    assert checked.warning_codes == ["policy.role_unknown"]
+    assert checked.warnings[0]["details"] == {"roles": ["importer"]}
+    assert "matches only tokens that still hold it" in checked.warnings[0]["message"]
+    declared = INSTALLATION.replace(
+        "grants:",
+        'roles:\n  importer: {description: "Importers"}\ngrants:',
+    )
+    installed = write_policy(work, "installation.yaml", declared)
+    assert apply(run_cli, installed).code == 0
+    again = admin(run_cli, "policy", "check", str(graph), "--graph", "example_graph")
+    assert (again.code, again.warning_codes) == (0, []), again.envelope
+    shown = admin(run_cli, "policy", "show").data
+    assert shown["document"]["roles"] == {"importer": {"description": "Importers"}}
+
+
+def test_dropping_a_role_that_is_still_used_warns(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``admin.role_orphaned``: one warning per dropped role that a token holds or an
+    installed graph policy names; a dropped role nothing uses does not warn."""
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    work = tmp_path / "work"
+    declared = INSTALLATION.replace(
+        "grants:",
+        'roles:\n  importer: {description: "Importers"}\n  reader: {description: "Readers"}\n'
+        '  spare: {description: "Unused"}\n  keep: {description: "Kept"}\ngrants:',
+    )
+    assert apply(run_cli, write_policy(work, "installation.yaml", declared)).warnings == []
+    graph = write_policy(
+        work,
+        "g.yaml",
+        GRAPH + "deny:\n  - {id: importer_no_retract, role: [importer], action: [write.retract]}\n",
+    )
+    assert apply(run_cli, graph, "--graph", "example_graph").warnings == []
+    for name, role in (("a", "importer"), ("b", "importer"), ("c", "reader")):
+        assert admin(run_cli, "token", "create", name, "--role", role).code == 0
+
+    narrowed = declared.replace('  importer: {description: "Importers"}\n', "")
+    narrowed = narrowed.replace('  reader: {description: "Readers"}\n', "")
+    narrowed = narrowed.replace('  spare: {description: "Unused"}\n', "")  # keep stays
+    dropped = apply(run_cli, write_policy(work, "narrow.yaml", narrowed))
+    assert dropped.code == 0, dropped.envelope
+    by_role = {w["details"]["role"]: w for w in dropped.warnings}
+    assert [w["code"] for w in dropped.warnings] == ["admin.role_orphaned"] * 2
+    assert by_role["importer"]["details"] == {
+        "role": "importer",
+        "tokens": ["a", "b"],
+        "graphs": ["example_graph"],
+    }
+    assert by_role["reader"]["details"] == {"role": "reader", "tokens": ["c"], "graphs": []}
+    assert "spare" not in by_role
+    # the membership stays, and applying the same policy again warns of nothing new
+    assert apply(run_cli, write_policy(work, "narrow.yaml", narrowed)).warnings == []
+    assert admin(run_cli, "audit", "verify").code == 0
+
+
 def test_a_type_limit_on_a_superclass_is_refused(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
@@ -211,6 +284,85 @@ def test_explain(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     installed = admin(run_cli, "policy", "explain", "--graph", "example_graph")
     assert (installed.data["scope"], installed.data["level"]) == (None, "write")  # built-in
     assert installed.data["withheld"] == []
+
+
+EXPLAIN_ROLES = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  reader: {description: "Reporting apps"}
+  importer: {description: "Importers"}
+grants:
+  - {entrypoint: server, principal: {role: reader}, graphs: "*", level: read}
+  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}
+  - {entrypoint: server, principal: {role: importer, project: example_project}, graphs: "*",
+     level: write}
+no_project: {"*": write}
+deny:
+  - {id: importer_no_retract, role: [importer], action: [write.retract]}
+"""
+
+
+def test_explain_for_roles(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    """``policy explain --role``: a server token that holds the roles, the project verified;
+    an undeclared role warns, a policy file that declares it does not."""
+    create_graph(run_cli, "example_graph")
+    create_graph(run_cli, "other_graph")
+    path = write_policy(tmp_path / "work", "installation.yaml", EXPLAIN_ROLES)
+
+    def explain(graph: str, *args: str, file: bool = True) -> Outcome:
+        extra = ("--file", str(path)) if file else ()
+        return admin(run_cli, "policy", "explain", "--graph", graph, *args, *extra)
+
+    reader = explain("example_graph", "--role", "reader", "--action", "write.create")
+    assert reader.code == 0, reader.envelope
+    assert reader.warnings == []  # the file declares the role
+    assert (reader.data["roles"], reader.data["level"]) == (["reader"], "read")
+    (decision,) = reader.data["decisions"]
+    assert (decision["effect"], decision["rule"]) == ("deny", "default.deny")
+    both = explain("example_graph", "--role", "reader", "--role", "importer", "--role", "reader")
+    assert both.data["roles"] == ["importer", "reader"]  # sorted, unique
+    create = explain("example_graph", "--role", "importer", "--action", "write.create")
+    (decision,) = create.data["decisions"]
+    assert (decision["effect"], decision["rule"]) == ("allow", "grant.2")
+    retract = explain("example_graph", "--role", "importer", "--action", "write.retract")
+    (decision,) = retract.data["decisions"]
+    assert (decision["effect"], decision["rule"]) == ("deny", "deny.importer_no_retract")
+    # a role grant for one project only: the project is verified like a bound token's
+    on_other = ("other_graph", "--role", "importer", "--action", "write.create")
+    bound = explain(*on_other, "--project", "example_project")
+    unbound = explain(*on_other)
+    assert bound.data["project"] == "example_project"
+    assert [d["effect"] for d in bound.data["decisions"]] == ["allow"]
+    assert [(d["effect"], d["rule"]) for d in unbound.data["decisions"]] == [
+        ("deny", "default.deny")
+    ]
+    assert explain("other_graph", "--project", "example_project").data["roles"] == []
+
+    installed = explain("example_graph", "--role", "reader", "--role", "typo", file=False)
+    assert installed.code == 0, installed.envelope  # still explained
+    assert installed.warning_codes == ["policy.role_unknown"]
+    assert installed.warnings[0]["details"] == {"roles": ["reader", "typo"]}
+    assert installed.data["roles"] == ["reader", "typo"]
+    assert explain("example_graph", "--role", "typo").warning_codes == ["policy.role_unknown"]
+
+
+@pytest.mark.parametrize(
+    ("args", "code"),
+    [
+        (("--role", "reader", "--token", "ci"), 2),
+        (("--role", "Not A Role"), 2),
+        (("--role", "gct_" + "a" * 40), 2),
+    ],
+)
+def test_explain_refuses_unusable_role_arguments(
+    run_cli: CliRunner, root: Path, args: tuple[str, ...], code: int
+) -> None:
+    create_graph(run_cli, "example_graph")
+    refused = admin(run_cli, "policy", "explain", "--graph", "example_graph", *args)
+    assert refused.code == code and refused.error["code"] == "usage.invalid_argument"
+    assert refused.error["details"]["argument"] in {"role", "--role"}
+    assert "gct_" not in json.dumps(refused.envelope)
 
 
 # ---- the app under an installed policy (B6.15, B2.10, Q3-Q5) -----------------------

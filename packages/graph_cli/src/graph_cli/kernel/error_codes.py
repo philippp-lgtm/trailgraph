@@ -603,6 +603,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "access.project_unknown", _C.WARNING, False, "The policy has no scope for this project."
     ),
+    ErrorSpec(
+        "policy.role_unknown", _C.WARNING, False, "A policy rule names a role that is not declared."
+    ),
     ErrorSpec("entity.superseded", _C.WARNING, False, "The entity is superseded."),
     ErrorSpec("entity.retracted", _C.WARNING, False, "The entity is retracted."),
     ErrorSpec("entity.alias_renamed", _C.WARNING, False, "The alias was renamed."),

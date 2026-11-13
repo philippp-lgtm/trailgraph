@@ -6,8 +6,9 @@ for a token bound to that project (``graph connect``), so the maintainer's
 own token never travels to a client. A code is ``gce_`` plus 26 base32
 characters (128 random bits), shown once. ``tokens/enrollments.json``
 (``graph_cli.enrollments/1``) keeps the codes not used yet, each by a short
-id with the SHA-256 of the code, its project, scope and expiry; a used or
-revoked code leaves the file. ``find`` compares a code's hash with every
+id with the SHA-256 of the code, its project, scope and expiry, and the roles
+its token gets when there are any (a code without roles has no key, as before);
+a used or revoked code leaves the file. ``find`` compares a code's hash with every
 listed one in constant time. Defects of the file are ``backend.unavailable``:
 only maintenance writes it.
 """
@@ -25,8 +26,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-from graph_cli.catalog.tokens import SCOPES, TOKEN_NAME_RE, hash_prefix
-from graph_cli.kernel.actor import is_valid_asserted_value
+from graph_cli.catalog.tokens import SCOPES, TOKEN_NAME_RE, hash_prefix, parse_roles
+from graph_cli.kernel.actor import MAX_ROLES, is_valid_asserted_value
 from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
 from graph_cli.kernel.clock import parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
@@ -37,6 +38,7 @@ CODE_RE: Final = re.compile(r"^gce_[a-z2-7]{26}\Z")
 ID_RE: Final = re.compile(r"^[0-9a-f]{12}\Z")
 _HASH_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}\Z")
 _KEYS: Final = frozenset({"id", "hash", "project", "scope", "expires_at", "created_at"})
+_OPTIONAL_KEYS: Final = frozenset({"roles"})
 _DURATION_RE: Final = re.compile(r"^([1-9][0-9]{0,4})([mh])\Z")
 DEFAULT_LIFETIME: Final = timedelta(minutes=15)
 MAX_LIFETIME: Final = timedelta(hours=24)
@@ -50,6 +52,7 @@ class EnrollmentRecord:
     scope: str  # the token's scope: app or admin
     expires_at: str  # RFC 3339 UTC; the code is refused from then on
     created_at: str
+    roles: tuple[str, ...] = ()  # sorted, unique: the roles of the token the code yields
 
     @property
     def hash_prefix(self) -> str:
@@ -59,7 +62,7 @@ class EnrollmentRecord:
         return now < parse_timestamp(self.expires_at)
 
     def to_json(self) -> dict[str, JsonValue]:
-        return {
+        data: dict[str, JsonValue] = {
             "id": self.id,
             "hash": self.hash,
             "project": self.project,
@@ -67,6 +70,9 @@ class EnrollmentRecord:
             "expires_at": self.expires_at,
             "created_at": self.created_at,
         }
+        if self.roles:
+            data["roles"] = list(self.roles)
+        return data
 
 
 def new_code() -> str:
@@ -150,7 +156,7 @@ def parse_enrollments(data: bytes | None) -> tuple[EnrollmentRecord, ...]:
 
 
 def _record(entry: JsonValue, index: int) -> EnrollmentRecord:
-    if not isinstance(entry, Mapping) or set(entry) != _KEYS:
+    if not isinstance(entry, Mapping) or not _KEYS <= set(entry) <= _KEYS | _OPTIONAL_KEYS:
         raise _invalid(f"enrollments[{index}] is not an enrollment")
     values = {key: entry[key] for key in _KEYS}
     if not all(isinstance(value, str) for value in values.values()):
@@ -169,6 +175,14 @@ def _record(entry: JsonValue, index: int) -> EnrollmentRecord:
             parse_timestamp(text[key])
         except (GraphCliError, ValueError):
             raise _invalid(f"enrollments[{index}].{key} is not a time") from None
+    roles: tuple[str, ...] = ()
+    if "roles" in entry:
+        found = parse_roles(entry["roles"])
+        if found is None:
+            raise _invalid(
+                f"enrollments[{index}].roles is not a sorted list of at most {MAX_ROLES} role names"
+            )
+        roles = found
     return EnrollmentRecord(
         text["id"],
         text["hash"],
@@ -176,6 +190,7 @@ def _record(entry: JsonValue, index: int) -> EnrollmentRecord:
         text["scope"],
         text["expires_at"],
         text["created_at"],
+        roles,
     )
 
 

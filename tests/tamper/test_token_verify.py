@@ -92,6 +92,25 @@ def test_an_unreadable_token_file_is_a_mismatch(run_cli: CliRunner, root: Path) 
     assert codes(run_cli) == [audit_codes.TOKEN_MISMATCH]
 
 
+def test_roles_added_to_a_token_by_hand_are_a_mismatch(run_cli: CliRunner, root: Path) -> None:
+    """A role is a right: giving one to a token without an event is what verify finds."""
+    create(run_cli, "ci", "--project", "example_project")
+    edit(root, lambda d: d["tokens"][0].update(roles=["importer", "reader"]))
+    outcome = admin(run_cli, "audit", "verify")
+    (finding,) = outcome.error["details"]["findings"]
+    assert finding["code"] == audit_codes.TOKEN_MISMATCH
+    assert finding["target"]["name"] == "ci"
+    assert finding["expected"]["roles"] == []
+    assert finding["actual"]["roles"] == ["importer", "reader"]
+
+
+def test_a_roles_key_that_is_not_a_role_list_is_a_mismatch(run_cli: CliRunner, root: Path) -> None:
+    """A file the server would refuse (``backend.unavailable``) reads as unreadable here."""
+    create(run_cli, "ci")
+    edit(root, lambda d: d["tokens"][0].update(roles=["Not A Role"]))
+    assert codes(run_cli) == [audit_codes.TOKEN_MISMATCH]
+
+
 def enroll(run_cli: CliRunner, *args: str) -> dict[str, str]:
     created = admin(run_cli, "enroll", "create", "--project", "example_project", *args)
     assert created.code == 0, created.envelope
@@ -148,3 +167,14 @@ def test_an_unreadable_enrollment_file_is_a_mismatch(run_cli: CliRunner, root: P
     enroll(run_cli)
     enrollments_path(root).write_text("not json")
     assert codes(run_cli) == [audit_codes.ENROLLMENT_MISMATCH]
+
+
+def test_roles_added_to_a_code_by_hand_are_a_mismatch(run_cli: CliRunner, root: Path) -> None:
+    """The code would yield a token with a role nobody gave it."""
+    enroll(run_cli)
+    edit(root, lambda d: d["enrollments"][0].update(roles=["reader"]), enrollments_path(root))
+    outcome = admin(run_cli, "audit", "verify")
+    (finding,) = outcome.error["details"]["findings"]
+    assert finding["code"] == audit_codes.ENROLLMENT_MISMATCH
+    assert finding["expected"]["roles"] == []
+    assert finding["actual"]["roles"] == ["reader"]
