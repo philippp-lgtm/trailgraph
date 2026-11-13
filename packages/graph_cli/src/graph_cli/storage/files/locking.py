@@ -95,3 +95,26 @@ def acquire(path: Path, *, timeout_s: float) -> HeldLock:
     except BaseException:
         os.close(fd)
         raise
+
+
+def is_held(path: Path) -> bool:
+    """Whether some process holds the lock at ``path`` right now (a lock-free probe for
+    readers: a shared, non-blocking attempt, released at once; it creates nothing, so a graph
+    that never had a writer is not held)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False  # unreadable: the probe cannot tell, and a reader must not fail on it
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)

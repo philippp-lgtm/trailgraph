@@ -493,6 +493,7 @@ class AppServices:
             roots.data_root,
             settings=StorageSettings(config.lock_timeout_s, config.durability),
             oplog=oplog,
+            follow_migration=True,
         )
         audit = FileAuditLog(
             roots.data_root,

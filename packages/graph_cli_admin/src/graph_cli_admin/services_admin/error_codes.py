@@ -2,8 +2,8 @@
 
 They live in the maintenance distribution, so the app distribution carries
 no maintenance vocabulary. The admin composition root registers them. Most are
-``admin.*``; the ``ontology.rename_*`` codes belong to the release checks that
-only maintainers run.
+``admin.*``; the ``ontology.rename_*`` and ``migration.*`` codes belong to the release
+checks that only maintainers run.
 """
 
 from __future__ import annotations
@@ -22,6 +22,31 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.release_exists", _C.REFUSED, False, "The version exists with other content."),
     ErrorSpec("admin.graph_name_taken", _C.REFUSED, False, "The graph name is already used."),
     ErrorSpec("admin.migration_required", _C.REFUSED, False, "The change needs a migration."),
+    ErrorSpec(
+        "admin.migration_unexpected",
+        _C.REFUSED,
+        False,
+        "A migration file accompanies a release that is not a major one.",
+    ),
+    ErrorSpec(
+        "admin.migration_from_mismatch",
+        _C.REFUSED,
+        False,
+        "The migration starts from another version than the graph is pinned to.",
+    ),
+    ErrorSpec(
+        "admin.migration_incomplete",
+        _C.REFUSED,
+        False,
+        "Another migration is committed but not pinned yet.",
+    ),
+    ErrorSpec("migration.invalid", _C.INVALID, False, "The migration file is invalid."),
+    ErrorSpec(
+        "admin.migration_step_unused",
+        _C.WARNING,
+        False,
+        "A migration step matches nothing in the data.",
+    ),
     ErrorSpec("ontology.rename_invalid", _C.INVALID, False, "A renamed_from does not fit."),
     ErrorSpec(
         "ontology.rename_stale",

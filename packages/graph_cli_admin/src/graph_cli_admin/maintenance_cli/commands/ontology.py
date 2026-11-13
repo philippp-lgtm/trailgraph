@@ -16,6 +16,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
     GRAPH_ERRORS,
+    MIGRATION_ERRORS,
     admin_context,
 )
 from graph_cli_admin.maintenance_cli.output_schemas import DIFF, RELEASE, RELEASE_OPTIONAL, STRINGS
@@ -85,10 +86,23 @@ def diff_command(
 
 
 def release_command(
-    state: CommandState, graph_ref: str, source: str, module: str | None, data_root: str | None
+    state: CommandState,
+    graph_ref: str,
+    source: str,
+    module: str | None,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
 ) -> Result:
     ctx = admin_context(state, data_root)
-    outcome = release(ctx, graph_ref=graph_ref, source=Path(source), module=module)
+    outcome = release(
+        ctx,
+        graph_ref=graph_ref,
+        source=Path(source),
+        module=module,
+        reason=reason,
+        dry_run=dry_run,
+    )
     return Result(
         data=outcome.data,
         graph=graphs.envelope_graph(outcome.entry, outcome.seq),
@@ -189,10 +203,24 @@ SPECS: Final = (
             ),
             SOURCE,
             MODULE,
+            ParamSpec("--reason", "string", "Why it is released; recorded in every audit event."),
+            ParamSpec(
+                "--dry-run",
+                "flag",
+                "Run every check and show the release and its migration without writing.",
+            ),
             DATA_ROOT,
         ),
         examples=(
             Example("graph-admin ontology release <graph> <dir>", "Release and pin."),
+            Example(
+                "graph-admin ontology release <graph> <dir> --dry-run --json",
+                "Show what the release and its migration would change.",
+            ),
+            Example(
+                "graph-admin ontology release <graph> <dir> --reason <reason>",
+                "Release with a reason (recorded with the migration).",
+            ),
             Example(
                 "graph-admin ontology release <graph> <dir> --module <module> --json",
                 "Release one module of several, as JSON.",
@@ -207,6 +235,7 @@ SPECS: Final = (
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",
+            *MIGRATION_ERRORS,
             "admin.functions_broken",
             "admin.actions_broken",
         ),
@@ -215,7 +244,16 @@ SPECS: Final = (
         description="The version bump must cover the changes against the pinned release, and"
         " every published function and action must still resolve under the new one (any bump:"
         " admin.functions_broken, admin.actions_broken; fix it with graph push); re-running a"
-        " release that is already pinned changes nothing.",
+        " release that is already pinned changes nothing. A major release may carry a data"
+        " migration, the file migration.yaml in SOURCE: it is part of the release (the same"
+        " version with another file is admin.release_exists), needs maint.migrate (maintainers"
+        " only), and rewrites the stored data in place in one transaction under the graph lock,"
+        " before the pin switches; the data must fit the new version after it"
+        " (admin.migration_required). The file is required whenever the release rewrites data,"
+        " renames included. An interrupted release is finished by running it again"
+        " (admin.migration_incomplete for any other release meanwhile). --dry-run makes every"
+        " check and shows the migration (counts per rename and step, samples, findings) without"
+        " writing; --reason is recorded with the release and the migration.",
         remote="hooked",
     ),
 )

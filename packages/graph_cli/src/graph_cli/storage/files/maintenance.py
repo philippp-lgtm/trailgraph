@@ -389,6 +389,10 @@ class FileMaintenanceSession:
 
     # ---- migration marker ------------------------------------------------
 
+    def migration_marker(self) -> MigrationMarker | None:
+        self._check_open()
+        return self._store.migration_marker()
+
     def write_migration_marker(self, marker: MigrationMarker) -> None:
         """Replace ``data/migration.json`` by one rename (the commit point)."""
         self._check_open()

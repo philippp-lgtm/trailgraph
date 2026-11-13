@@ -105,6 +105,7 @@ from graph_cli.query.search import SearchSpec, plan_search
 from graph_cli.query.search import main_label as search_label
 from graph_cli.query.search import match_revision as search_match
 from graph_cli.query.search import rank_key as search_rank
+from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
@@ -693,6 +694,9 @@ class ReadService:
         read, _ = self._catalog.store_for(entry.id)
         with self.timings.phase("snapshot"):
             snapshot = read.snapshot()
+            interrupted = migration_state.read_warning(entry, read, snapshot)
+            if interrupted is not None:
+                warnings += (interrupted,)
             if as_of is not None:
                 snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
                 warnings += (warning,)

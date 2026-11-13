@@ -145,6 +145,7 @@ from graph_cli.kinetic.expand import check_preconditions, expand
 from graph_cli.ontology_layer.data_validator import CallerView, blob_values, validate_write
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
+from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
@@ -404,6 +405,7 @@ class WriteService:
         if snapshot is None:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
+        migration_state.refuse_write(entry, read, snapshot)
         visible = self._visible(request, entry, model)
         resolution = self._resolve(  # a plan: the empty frame, no pairs
             request, _seen_by(snapshot, visible)
@@ -591,6 +593,8 @@ class WriteService:
             with self.timings.phase("snapshot"):
                 base = session.snapshot()
                 head = session.head()
+            # a release that crashed after its migration tx while this write waited for the lock
+            migration_state.refuse_write(entry, prepared.read, base)
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
             visible = self._visible(request, entry, model)
             seen = _seen_by(base, visible)  # what the caller reaches; ``base`` stays the truth

@@ -100,8 +100,10 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
     `renamed_from` in a major version; prefer deprecating and adding.
 12. Changes are additive by default (new optional attribute, new class,
     new enum value, looser limit = minor). Anything that can make existing
-    data invalid is major and passes only if no existing data breaks
-    ([versioning](references/versioning_and_release.md)).
+    data invalid is major and passes only if no existing data breaks, after
+    its migration if the release carries one
+    ([versioning](references/versioning_and_release.md),
+    [migrations](references/migrations.md)).
 13. Provenance is modeled, not hidden in text: where a fact came from is
     an edge (`core:source`, `files:from_file` with a page), how sure it is
     belongs to a claim (`provenance:Claim`). The model describes the
@@ -132,4 +134,5 @@ Before step 6, go through the [review checklist](references/review_checklist.md)
 | Name terms, write summaries, choose label roles and aliases | [naming_and_descriptions.md](references/naming_and_descriptions.md) |
 | Write rules and guards, decide error vs warning, write vs batch | [rules_and_lifecycles.md](references/rules_and_lifecycles.md) |
 | Choose a version bump, deprecate, try and release a change | [versioning_and_release.md](references/versioning_and_release.md) |
+| Release a major version on a graph with data: renames, moves between modules, value changes | [migrations.md](references/migrations.md) |
 | Review an ontology change before release | [review_checklist.md](references/review_checklist.md) |

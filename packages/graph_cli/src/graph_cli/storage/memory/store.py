@@ -86,6 +86,9 @@ class InMemoryStore:
     def migration_marker(self) -> MigrationMarker | None:
         return self._marker
 
+    def writer_active(self) -> bool:
+        return self._lock.locked()
+
     def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> MemoryStagedBlob:
         parts: list[bytes] = []
         size = 0

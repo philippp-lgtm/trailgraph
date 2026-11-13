@@ -95,7 +95,13 @@ POSIX only, local filesystems only.
   and removed by one unlink after the pin switch; `FileStore.migration_marker()` reads it
   lock-free. The marker's tx is committed when the tx at `marker.seq` has the marker's
   `tx_id`, not when `head.seq >= marker.seq`: after a crash before the commit an application
-  write can take that seq.
+  write can take that seq. While a marker's tx is committed and the manifest still names
+  the old version (a release running, or crashed between the tx and the pin switch), the
+  app's catalog pins the graph to the marker's version, so reads use the model whose names
+  the data has; writes are refused (`write.migration_incomplete`), and reads warn
+  `graph.migration_incomplete` when no process holds the graph lock (`writer_active`, a shared
+  non-blocking `flock` probe that creates nothing). A marker whose tx is not in the log is
+  stale: reads ignore it and the next release removes or overwrites it.
 - Every write session first recovers: it truncates a torn last line and
   writes missing derived files. Damage inside the log stops writes with
   `backend.corrupt` until repair.

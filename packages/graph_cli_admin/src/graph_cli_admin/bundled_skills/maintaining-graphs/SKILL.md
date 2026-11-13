@@ -87,8 +87,8 @@ pull into another folder, carry them over and push from there.
    warning `admin.module_bump_insufficient` names a changed module whose
    own version did not follow.
 4. For a major change: `graph-admin graph check <graph> --ontology
-   <folder>/ontology/<new>` shows which entities the new version would
-   refuse. Fix the data (with the `graph-cli` skill) or the model first.
+   <folder>/ontology/<new>` shows which entities the new version would refuse. Fix the data or the model,
+   or add a `migration.yaml` that rewrites it (`ontology-best-practices`, `references/migrations.md`); check previews it.
 5. `graph-admin graph push <graph> <folder> --dry-run`, then the same with
    `--reason "<why>"`. Push releases the highest version directory, pins
    the graph to it and publishes a changed skill, functions and actions in
@@ -239,7 +239,7 @@ the policy does not declare it. `graph-admin policy explain --graph <graph>
 | `admin.functions_broken` | a published function would not resolve; fix or delete its file and push it together with the ontology in one `graph-admin graph push` |
 | `admin.actions_invalid` | fix what `details.problems` lists, check with `graph-admin graph actions publish <graph> <folder>/actions --dry-run` |
 | `admin.actions_broken` | a published action would not compile; fix or delete its file and push it with the ontology in one `graph-admin graph push` |
-| `admin.data_errors` | the data breaks the new version; fix the entities in `details.findings` |
+| `admin.data_errors`, `admin.migration_required` | the data breaks the new version (after its migration, if there is one); fix the entities in `details.findings` or the steps of `migration.yaml` |
 | `access.denied` | not allowed for this token; stop and tell the user |
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |
 | `remote.client_outdated` | this graph-admin is not the build the server runs; stop and tell the user to run `graph-admin self update` |

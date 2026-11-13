@@ -394,7 +394,11 @@ and a `graph push` that releases also authorize it for a project admin: a
 deny rule on reads (by project, for example) holds there too. Everything
 else stays with the `maintainers`: creating, archiving
 and restoring graphs, migrations, purges and repairs, policies, tokens
-and the installation audit. `maintain` names graphs one by one (`"*":
+and the installation audit. A release that carries a migration (a
+`migration.yaml`, or renames) is also authorized `maint.migrate`, before
+the lock and for a dry run too; a project admin has no such right, so
+that release is `access.ceiling` and a project admin releases only
+versions that need no data migration. `maintain` names graphs one by one (`"*":
 maintain` is refused), so a new graph is never maintained implicitly.
 
 A project admin is held to this by a hard-coded ceiling, like the app:

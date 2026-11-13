@@ -735,12 +735,16 @@
         "admin.actions_broken",
         "admin.data_errors",
         "admin.functions_broken",
+        "admin.migration_from_mismatch",
+        "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
         "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1215,7 +1219,10 @@
         "admin.actions_invalid",
         "admin.functions_broken",
         "admin.functions_invalid",
+        "admin.migration_from_mismatch",
+        "admin.migration_incomplete",
         "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
         "admin.release_exists",
         "admin.remote_mode",
@@ -1229,6 +1236,7 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -1734,6 +1742,20 @@
           "summary": "Main module id (the file <module>.yaml); needed if SOURCE holds several."
         },
         {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why it is released; recorded in every audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run every check and show the release and its migration without writing."
+        },
+        {
           "name": "--data-root",
           "type": "directory",
           "required": false,
@@ -1747,6 +1769,14 @@
           "summary": "Release and pin."
         },
         {
+          "command": "graph-admin ontology release <graph> <dir> --dry-run --json",
+          "summary": "Show what the release and its migration would change."
+        },
+        {
+          "command": "graph-admin ontology release <graph> <dir> --reason <reason>",
+          "summary": "Release with a reason (recorded with the migration)."
+        },
+        {
           "command": "graph-admin ontology release <graph> <dir> --module <module> --json",
           "summary": "Release one module of several, as JSON."
         }
@@ -1755,7 +1785,10 @@
         "access.denied",
         "admin.actions_broken",
         "admin.functions_broken",
+        "admin.migration_from_mismatch",
+        "admin.migration_incomplete",
         "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
         "admin.release_exists",
         "admin.remote_mode",
@@ -1767,6 +1800,7 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -3159,7 +3193,22 @@
       "exit": 1
     },
     {
+      "code": "admin.migration_from_mismatch",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.migration_incomplete",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "admin.migration_required",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.migration_unexpected",
       "category": "refused",
       "exit": 1
     },
@@ -3277,6 +3326,11 @@
       "code": "internal.error",
       "category": "internal",
       "exit": 6
+    },
+    {
+      "code": "migration.invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "ontology.artifact_missing",

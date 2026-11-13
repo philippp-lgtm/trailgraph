@@ -23,6 +23,18 @@ with the counts and the first 20 findings). A larger bump than needed is a
 warning.
 Re-running a release that is already pinned changes nothing.
 
+A major release may carry a data migration (``migration.yaml`` in the version directory,
+plan M1-M5; ``services_admin.migration``): ``plan`` computes the migrated revisions under the
+lock and ``check_graph`` judges the data after them, so ``admin.migration_required`` now means
+the data does not fit *after* the migration (or a rename rewrites data and there is no file).
+``write`` runs the sequence of plan M3 under the lock it holds: install the release (the file
+is part of its identity), write the migration marker, append the ``maint.migrate`` intent,
+commit the migration tx, switch the pin and the alias prefixes, remove the marker. A crash
+before the commit leaves the old state (a stale marker is ignored and overwritten); a crash
+after it leaves the incomplete state, which reads see under the target model, which refuses
+writes, and which the same release run again finishes (``admin.migration_incomplete`` for any
+other).
+
 Every bump also re-checks the published function catalog against the new
 model (``graph_cli.kinetic.check_catalog``, K5): a function that no longer
 resolves refuses the release with ``admin.functions_broken`` (first 20
@@ -39,7 +51,7 @@ action publish under one lock, checking all before the first write.
 
 from __future__ import annotations
 
-from collections import Counter
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -50,29 +62,36 @@ from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Severity
-from graph_cli.kernel.ids import TermRef
+from graph_cli.kernel.ids import TermRef, TxId
 from graph_cli.kernel.json_access import as_object, req_list, req_str
+from graph_cli.kernel.migration_marker import MigrationMarker, marker_committed
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, ManifestData, SlotKind
 from graph_cli.kernel.ports.policy import PolicySet
-from graph_cli.kernel.ports.storage import MaintenanceSession
-from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.ports.storage import Head, MaintenanceSession
+from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kinetic.action_compile import check_actions
 from graph_cli.kinetic.compile import check_catalog
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
-from graph_cli.ontology_layer.diff import derive_renames
+from graph_cli.ontology_layer.diff import Renames, derive_renames
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
+from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
+from graph_cli_admin.services_admin import migration as migrations
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.graphs import PrefixChanges, merged_alias_prefixes
+from graph_cli_admin.services_admin.migration import MigrationRun
 from graph_cli_admin.services_admin.ontology import (
     COMPILED_FILE,
     Compiled,
     PinnedModel,
     compile_source,
     diff,
+    installed_migration,
     module_bump_warnings,
+    pinned_model,
+    read_migration,
     release_files,
     rename_warnings,
 )
@@ -108,43 +127,90 @@ class Planned:
     seq: int
     warnings: tuple[WarningRecord, ...]
     prefix_changes: PrefixChanges | None = None  # ``None`` when nothing is released
+    migration: MigrationRun | None = None  # ``None`` for a release without a data migration
+    clear_marker: bool = False  # a marker no migration needs any more: stale, or finished
 
     @property
     def unchanged(self) -> bool:
-        return self.old is None
+        return self.old is None and not self.clear_marker
 
 
 @dataclass(frozen=True, slots=True)
 class Decisions:
     release: tuple[Decision, ...]
     pin: tuple[Decision, ...]
+    migrate: tuple[Decision, ...] = ()  # ``maint.migrate``, decided when the release migrates
 
 
 def authorize(
-    ctx: AdminContext, entry: GraphEntry, meta: RequestMeta, *, reason: str | None = None
+    ctx: AdminContext,
+    entry: GraphEntry,
+    meta: RequestMeta,
+    *,
+    reason: str | None = None,
+    migrate: bool = False,
 ) -> Decisions:
+    """The decisions of a release, before the lock (B6.3). ``migrate``: the release carries
+    a migration file or renames, so ``maint.migrate`` is decided too (plan M4; a project
+    admin has no such right: ``access.ceiling``)."""
     resource = f"graph:{entry.id}"
     pairs = [("maint.ontology_release", resource)]
     release = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     pairs = [("maint.ontology_pin", resource)]
     pin = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
+    migration: tuple[Decision, ...] = ()
+    if migrate:
+        pairs = [("maint.migrate", resource)]
+        migration = ctx.authorize(pairs, request=meta, graph=entry.id, reason=reason)
     ctx.read_data(entry, meta)  # a release checks the data; its findings quote values
-    return Decisions(release, pin)
+    return Decisions(release, pin, migration)
 
 
-def release(ctx: AdminContext, *, graph_ref: str, source: Path, module: str | None) -> Released:
+def wants_migration(
+    ctx: AdminContext, entry: GraphEntry, compiled: Compiled, migration: bytes | None
+) -> bool:
+    """Whether releasing ``compiled`` may rewrite data: it has a migration file, or the models
+    (a lock-free look at the pinned release) have renames. Decides ``maint.migrate`` before the
+    lock; a release already pinned changes nothing."""
+    if compiled.pin == entry.pin:
+        return False
+    if migration is not None:
+        return True
+    renames = derive_renames(pinned_model(ctx.catalog, entry), compiled.model)
+    return migrations.has_renames(renames)
+
+
+def release(
+    ctx: AdminContext,
+    *,
+    graph_ref: str,
+    source: Path,
+    module: str | None,
+    reason: str | None = None,
+    dry_run: bool = False,
+) -> Released:
+    """Release and pin ``source``; ``dry_run`` makes every check under the lock, shows what
+    would change (``migration`` in the data) and writes nothing."""
     compiled = compile_source(source, module)
+    migration = read_migration(source)
     entry = ctx.resolve(graph_ref, "ontology release")
     check_state(entry)
-    meta = RequestMeta.of(
-        "ontology release", {"graph": str(entry.id), "ontology": compiled.pin.to_json()}
+    arguments: dict[str, JsonValue] = {"graph": str(entry.id), "ontology": compiled.pin.to_json()}
+    if dry_run:  # a real release's request stays what it was
+        arguments["dry_run"] = True
+    meta = RequestMeta.of("ontology release", arguments)
+    decisions = authorize(
+        ctx,
+        entry,
+        meta,
+        reason=reason,
+        migrate=wants_migration(ctx, entry, compiled, migration),
     )
-    decisions = authorize(ctx, entry, meta)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
-        planned = plan(ctx, session, compiled)
-        if planned.unchanged:
-            return Released(planned.manifest.entry, planned.data, planned.seq, ())
-        pinned = write(ctx, session, planned, decisions, meta)
+        planned = plan(ctx, session, compiled, migration=migration, dry_run=dry_run)
+        if planned.unchanged or dry_run:
+            return Released(planned.manifest.entry, planned.data, planned.seq, planned.warnings)
+        pinned = write(ctx, session, planned, decisions, meta, reason=reason)
         return Released(pinned, planned.data, planned.seq, planned.warnings)
 
 
@@ -153,12 +219,16 @@ def plan(
     session: MaintenanceSession,
     compiled: Compiled,
     *,
+    migration: bytes | None = None,
+    dry_run: bool = False,
     functions_replaced: bool = False,
     actions_replaced: bool = False,
     function_names: frozenset[str] | None = None,
 ) -> Planned:
     """Every check of a release, under the lock; refuses before anything is written.
 
+    ``migration`` is the bytes of the version directory's ``migration.yaml`` (``None``:
+    there is none). ``dry_run`` plans with a placeholder tx id, so a dry run draws no id.
     ``functions_replaced`` / ``actions_replaced``: the caller publishes new function or
     action files after the release and checks them against the new model itself, so the
     published catalog of that kind is not checked here. ``function_names`` are the
@@ -169,17 +239,10 @@ def plan(
     entry = manifest.entry
     check_state(entry)
     current = entry.pin
+    file = migrations.parse(migration)  # the shape: migration.invalid
     installed = session.release_hashes()
-    if installed.get(target.version, target.artifact_hash) != target.artifact_hash:
-        raise GraphCliError(
-            "admin.release_exists",
-            f"release {target.version} is installed with other content",
-            details={
-                "version": target.version,
-                "expected": installed[target.version],
-                "actual": target.artifact_hash,
-            },
-        )
+    if target.version in installed:
+        _check_identity(session, target.version, installed[target.version], target, file)
     head = session.head()
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
@@ -188,8 +251,14 @@ def plan(
         "released": False,
         "pinned": False,
     }
+    if dry_run:
+        data["dry_run"] = True
+    marker, committed = _marker(session)
     if current == target:
-        return Planned(manifest, compiled, None, False, {}, data, head.seq, ())
+        clear = marker is not None
+        if marker is not None and committed and not _finished(marker, current):
+            raise migrations.incomplete(marker, current.version)
+        return Planned(manifest, compiled, None, False, {}, data, head.seq, (), clear_marker=clear)
     old_model = load_compiled(
         session.read_release_file(current.version, COMPILED_FILE),
         expected_hash=current.artifact_hash,
@@ -208,8 +277,49 @@ def plan(
             f"{current.version} -> {target.version} does not cover {report.level} changes",
             details=bump_details,
         )
-    if Version.parse(target.version).major > Version.parse(current.version).major and head.seq:
-        _check_data(compiled.model, session, bump_details, head.seq)
+    major = Version.parse(target.version).major > Version.parse(current.version).major
+    renames = derive_renames(old_model, compiled.model)
+    if file is not None:
+        migrations.validate(
+            file,
+            old_model,
+            compiled.model,
+            renames,
+            from_version=current.version,
+            major=major,
+            language=entry.language,
+        )
+    completing: MigrationMarker | None = None
+    clear = marker is not None
+    if marker is not None and committed and not _finished(marker, current):
+        if (
+            file is None
+            or (marker.from_version, marker.to_version)
+            != (
+                current.version,
+                target.version,
+            )
+            or (marker.artifact_hash, marker.migration_hash) != (target.artifact_hash, file.hash)
+        ):
+            raise migrations.incomplete(marker, current.version)
+        completing, clear = marker, False  # the data is migrated: only the pin is left
+    run: MigrationRun | None = None
+    if major and head.seq:
+        run = _check_data(
+            ctx,
+            session,
+            old_model,
+            compiled.model,
+            renames,
+            file,
+            completing,
+            bump_details,
+            head,
+            entry,
+            dry_run=dry_run,
+        )
+    elif file is not None:
+        run = MigrationRun(file, renames, None, None, completing)
     functions = current_catalog(session, "functions")
     if not functions_replaced and functions is not None:
         broken = catalog_problems(functions, compiled.model)
@@ -233,8 +343,11 @@ def plan(
                 bump_details,
             ),
         )
+    if run is not None and file is not None:
+        warnings += migrations.unused_steps(run)
+        data["migration"] = migrations.preview(file, run.plan, completing=completing is not None)
     changes = merged_alias_prefixes(
-        entry.alias_prefixes, compiled, renames=derive_renames(old_model, compiled.model)
+        entry.alias_prefixes, compiled, renames=renames, retypes=migrations.retypes(file)
     )
     prefixes, skipped = changes.merged, changes.skipped
     data["alias_prefixes_added"] = {
@@ -253,7 +366,94 @@ def plan(
     )
     old = PinnedModel(old_model, current.artifact_hash)
     install = target.version not in installed
-    return Planned(manifest, compiled, old, install, prefixes, data, head.seq, warnings, changes)
+    return Planned(
+        manifest, compiled, old, install, prefixes, data, head.seq, warnings, changes, run, clear
+    )
+
+
+def _check_identity(
+    session: MaintenanceSession,
+    version: str,
+    installed_hash: str,
+    target: OntologyPin,
+    file: migrations.Migration | None,
+) -> None:
+    """An installed version is identified by its artifact hash and its migration file
+    (plan M1): the same version with other content or another migration is
+    ``admin.release_exists``."""
+    kept = installed_migration(lambda name: session.read_release_file(version, name))
+    kept_hash = None if kept is None else migrations.hash_of(kept)
+    wanted = None if file is None else file.hash
+    if installed_hash == target.artifact_hash and kept_hash == wanted:
+        return
+    details: dict[str, JsonValue] = {
+        "version": version,
+        "expected": installed_hash,
+        "actual": target.artifact_hash,
+    }
+    what = "other content"
+    if kept_hash != wanted:
+        details["migration_hash"] = {"expected": kept_hash, "actual": wanted}
+        what = "another migration file" if installed_hash == target.artifact_hash else what
+    raise GraphCliError(
+        "admin.release_exists", f"release {version} is installed with {what}", details=details
+    )
+
+
+def _marker(session: MaintenanceSession) -> tuple[MigrationMarker | None, bool]:
+    """The graph's migration marker and whether its tx is in the log (``marker_committed``:
+    a stale marker, whose tx never committed, is not)."""
+    marker = session.migration_marker()
+    if marker is None:
+        return None, False
+    return marker, marker_committed(session.snapshot(), marker)
+
+
+def _finished(marker: MigrationMarker, pin: OntologyPin) -> bool:
+    """The pin has reached the marker's version: only the marker is left over."""
+    return (marker.to_version, marker.artifact_hash) == (pin.version, pin.artifact_hash)
+
+
+def _check_data(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    old: CompiledModel,
+    new: CompiledModel,
+    renames: Renames,
+    file: migrations.Migration | None,
+    completing: MigrationMarker | None,
+    bump: dict[str, JsonValue],
+    head: Head,
+    entry: GraphEntry,
+    *,
+    dry_run: bool,
+) -> MigrationRun:
+    """B7.14 under the migration (plan M3): the data of a major release, after the migration
+    the release carries, must check clean. Without a file or renames that is the data as it
+    is; a release in the incomplete state has migrated it already and plans nothing."""
+    snapshot = session.snapshot()
+    plan = None
+    run = MigrationRun(file, renames, None, None, completing)
+    if completing is None and (file is not None or migrations.has_renames(renames)):
+        run = migrations.plan_data(
+            ctx,
+            snapshot,
+            head,
+            old,
+            new,
+            renames,
+            file,
+            language=entry.language,
+            dry_run=dry_run,
+        )
+        plan = run.plan
+        assert plan is not None
+        if file is None and plan.revisions:
+            raise migrations.required_for_renames(plan, check_graph(new, snapshot), bump, head.seq)
+    findings = migrations.judge(new, snapshot, plan)
+    if any(f.severity is Severity.ERROR for f in findings):
+        raise migrations.required(findings, bump, head.seq, migrated=plan is not None)
+    return run
 
 
 def write(
@@ -265,10 +465,19 @@ def write(
     *,
     reason: str | None = None,
 ) -> GraphEntry:
-    """Install (unless installed) and pin a planned release; answers the pinned entry."""
-    assert planned.old is not None, "nothing to commit"
+    """Install (unless installed), migrate and pin a planned release; answers the pinned
+    entry. The order is that of plan M3: release, marker, ``maint.migrate`` intent, the
+    migration tx, pin, marker removed."""
     entry = planned.manifest.entry
+    if planned.old is None:  # the pin is switched already: a marker is all that is left
+        session.remove_migration_marker()
+        return entry
     target = planned.compiled.pin
+    run = planned.migration
+    writes = run is not None and run.writes
+    if planned.clear_marker and not writes:
+        session.remove_migration_marker()  # stale, or the migration it names is finished
+    file = run.migration if run is not None else None
     if planned.install:
         release_id = ctx.ids.new_id()
         files = release_files(
@@ -276,13 +485,25 @@ def write(
             previous=planned.old,
             release_id=release_id,
             released_at=ctx.clock.now(),
+            migration=None if file is None else file.raw,
         )
-        change = events.release_change(target.version, target.artifact_hash, release_id)
+        change = events.release_change(
+            target.version,
+            target.artifact_hash,
+            release_id,
+            None if file is None else file.hash,
+        )
         receipt = ctx.intent(session, entry, decisions.release, meta, change, reason=reason)
         session.install_release(target.version, files, receipt)
         ctx.anchor(entry, decisions.release, meta, receipt, reason=reason)
         planned.data["released"] = True
-    change = events.pin_change(entry.pin, target)
+    if run is not None and writes:
+        _migrate(ctx, session, planned, run, decisions, meta, reason)
+    changes = planned.prefix_changes
+    moved = changes is not None and bool(changes.moved)
+    change = events.pin_change(
+        entry.pin, target, changes.to_json() if changes is not None and moved else None
+    )
     receipt = ctx.intent(session, entry, decisions.pin, meta, change, reason=reason)
     pinned = replace(
         planned.manifest, entry=replace(entry, pin=target, alias_prefixes=planned.prefixes)
@@ -290,26 +511,70 @@ def write(
     session.replace_manifest(pinned, receipt)
     ctx.anchor(entry, decisions.pin, meta, receipt, reason=reason)
     planned.data["pinned"] = True
+    if writes or (run is not None and run.completing is not None):
+        session.remove_migration_marker()
     return pinned.entry
 
 
-def _check_data(
-    model: CompiledModel, session: MaintenanceSession, bump: dict[str, JsonValue], seq: int
+def _migrate(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    planned: Planned,
+    run: MigrationRun,
+    decisions: Decisions,
+    meta: RequestMeta,
+    reason: str | None,
 ) -> None:
-    """B7.14: data under a new major must check clean, else a migration is needed."""
-    errors = [f for f in check_graph(model, session.snapshot()) if f.severity is Severity.ERROR]
-    if errors:
-        counts = Counter(f.code for f in errors)
-        raise GraphCliError(
-            "admin.migration_required",
-            f"{len(errors)} error findings under {bump['to']}; the data needs a migration",
-            details={
-                **bump,
-                "seq": seq,
-                "counts": dict(sorted(counts.items())),
-                "findings": [f.to_json() for f in errors[:MAX_FINDINGS]],
-            },
-        )
+    """The migration effect of plan M3 under the held lock: the marker (so a crash after the
+    commit is recognized), the ``maint.migrate`` intent whose event id the tx carries, the
+    commit of the migration tx."""
+    plan, stamp, file = run.plan, run.stamp, run.migration
+    assert plan is not None and stamp is not None and file is not None
+    entry, target = planned.manifest.entry, planned.compiled.pin
+    started = time.monotonic()
+    taken = ctx.decide_under_lock(entry, decisions.migrate, meta, reason=reason)
+    record = migration_record(
+        from_version=entry.pin.version,
+        to_version=target.version,
+        renames=run.renames,
+        doc=file.doc,
+    )
+    tx = build_migration_tx(
+        plan,
+        planned.compiled.model,
+        graph_id=entry.id,
+        tx_id=stamp.tx_id,
+        event_id=ctx.event_id(),
+        seq=stamp.tx_seq,
+        recorded_at=stamp.recorded_at,
+        actor=ctx.actor,
+        decisions=taken,
+        ontology=target,
+        reason=reason,
+        request=meta,
+        record=record,
+    )
+    marker = MigrationMarker(
+        seq=tx.seq,
+        tx_id=TxId(tx.tx_id),
+        from_version=entry.pin.version,
+        to_version=target.version,
+        artifact_hash=target.artifact_hash,
+        migration_hash=file.hash,
+    )
+    session.write_migration_marker(marker)
+    change = events.migration_change(
+        tx,
+        revisions_hash=events.revisions_hash(tx.revisions),
+        counts={"entities": len(tx.revisions), "edges": plan.edges_changed},
+    )
+    receipt = ctx.intent(session, entry, taken, meta, change, reason=reason, event_id=tx.event_id)
+    session.migrate(tx, receipt)
+    block = planned.data.get("migration")
+    if isinstance(block, dict):
+        block["migrated"] = migrations.migrated(plan)
+        block["tx_seq"] = tx.seq
+        block["duration_s"] = round(time.monotonic() - started, 3)
 
 
 def current_catalog(session: MaintenanceSession, kind: SlotKind) -> KineticSlot | None:

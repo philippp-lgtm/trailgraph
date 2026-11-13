@@ -24,12 +24,16 @@ term); one the previous release applied already only warns
 
 ## Major versions on a graph with data
 
-graph_cli has no data migration. A major release on a graph that holds
-data runs a batch check of all data under the new version and is refused
-if any error remains; the refusal lists the first findings. So a major
-change passes only when the existing data already fits it.
+A major release on a graph that holds data runs a batch check of all data
+under the new version and is refused if any error remains; the refusal
+lists the first findings. Without a migration a major change therefore
+passes only when the existing data already fits it. A release can carry a
+`migration.yaml` that rewrites the data in place (renames, moves between
+modules, value changes): see [migrations](migrations.md); the check then
+judges the data after the migration.
 `graph-admin graph check <graph> --ontology <dir>` runs the same check
-without releasing and also lists the warnings. In practice:
+without releasing and also lists the warnings (and previews a migration).
+Without a migration, in practice:
 
 - **Removing or renaming a term** that data uses fails (the data still has
   the old name). Deprecate it in a minor release, move the data to the

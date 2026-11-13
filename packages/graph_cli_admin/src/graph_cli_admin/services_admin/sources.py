@@ -79,6 +79,7 @@ from graph_cli_admin.services_admin.ontology import (
     Compiled,
     compile_source,
     pinned_model,
+    read_migration,
 )
 
 SOURCE_FILE: Final = ".graph_cli_source.json"
@@ -379,7 +380,8 @@ def push(
         )
     if not dry_run and not os.access(source, os.W_OK):
         raise _usage(f"{source} is not writable: push records the new base there")
-    compiled = _ontology(source, base)
+    compiled, ontology_dir = _ontology(source, base)
+    migration = read_migration(ontology_dir)
     name = graph_skill_name(entry.name)
     skill_dir = _skill_dir(source, name)
     files: dict[str, bytes] | None = None
@@ -415,7 +417,17 @@ def push(
     configure = ctx.authorize(
         [("maint.graph_configure", resource)], request=meta, graph=entry.id, reason=reason
     )
-    decisions = release.authorize(ctx, entry, meta, reason=reason) if ontology_changed else None
+    decisions = (
+        release.authorize(
+            ctx,
+            entry,
+            meta,
+            reason=reason,
+            migrate=release.wants_migration(ctx, entry, compiled, migration),
+        )
+        if ontology_changed
+        else None
+    )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         release.check_state(entry)
@@ -449,6 +461,8 @@ def push(
                 ctx,
                 session,
                 compiled,
+                migration=migration,
+                dry_run=dry_run,
                 functions_replaced=publishing_functions,
                 actions_replaced=publishing_actions,
                 function_names=function_names,
@@ -586,9 +600,9 @@ def push(
     return Pushed(after, data, seq, warnings)
 
 
-def _ontology(source: Path, base: Base) -> Compiled:
+def _ontology(source: Path, base: Base) -> tuple[Compiled, Path]:
     """The highest version directory of ``ontology/``, compiled with the base's main
-    module; its name must be the version its main module declares."""
+    module, and the directory; its name must be the version its main module declares."""
     directory = source / ONTOLOGY
     try:
         versions = sorted(
@@ -608,7 +622,7 @@ def _ontology(source: Path, base: Base) -> Compiled:
             f"{latest} declares version {declared}; name the directory after the version"
             " (bump the module version in a new directory)"
         )
-    return compiled
+    return compiled, latest
 
 
 def _kinetic_files(

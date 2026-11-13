@@ -139,6 +139,11 @@ class GraphStoreRead(Protocol):
         Whether its tx is committed is ``marker_committed`` over a snapshot."""
         ...
 
+    def writer_active(self) -> bool:
+        """Whether a writer holds the graph lock right now: a lock-free probe, creating
+        nothing. A committed migration marker with no writer is a crashed release."""
+        ...
+
 
 class WriteSession(Protocol):
     """Exists only while the graph lock is held."""
@@ -182,6 +187,10 @@ class MaintenanceSession(WriteSession, Protocol):
         """``commit`` for a migration tx (changeset key ``migration``, plan M4): the same
         commit point and materialization; it may change entity types but not identity, and
         needs an allow decision for ``maint.migrate``. ``commit`` refuses such a tx."""
+        ...
+
+    def migration_marker(self) -> MigrationMarker | None:
+        """The marker as it is now, read under the graph lock (``None`` without one)."""
         ...
 
     def write_migration_marker(self, marker: MigrationMarker) -> None:

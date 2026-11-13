@@ -10,7 +10,7 @@ pure function of its inputs.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +18,13 @@ from typing import Final
 from uuid import UUID
 
 import graph_cli
-from graph_cli.kernel.canonical import JsonValue, hash_bytes, pretty_bytes
+from graph_cli.kernel.canonical import (
+    CanonicalError,
+    JsonValue,
+    hash_bytes,
+    parse_json,
+    pretty_bytes,
+)
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, has_errors
@@ -169,6 +175,25 @@ def read_migration(directory: Path) -> bytes | None:
         ) from exc
 
 
+def installed_migration(read_file: Callable[[str], bytes]) -> bytes | None:
+    """The ``migration.yaml`` an installed release keeps (``read_file`` reads a file of its
+    directory); ``None`` for a release without one. The file is checked against the hash
+    ``release.json`` lists."""
+    try:
+        metadata = parse_json(read_file(RELEASE_FILE))
+    except CanonicalError as exc:
+        raise GraphCliError("backend.corrupt", f"{RELEASE_FILE} is unreadable: {exc}") from exc
+    listed = metadata.get("files") if isinstance(metadata, Mapping) else None
+    if not isinstance(listed, Mapping) or MIGRATION_FILE not in listed:
+        return None
+    data = read_file(MIGRATION_FILE)
+    if hash_bytes(data) != listed[MIGRATION_FILE]:
+        raise GraphCliError(
+            "backend.corrupt", f"{MIGRATION_FILE} differs from its hash in {RELEASE_FILE}"
+        )
+    return data
+
+
 def diff(old: CompiledModel, new: CompiledModel) -> tuple[DiffReport, BumpCheck]:
     report = classify(old, new)
     return report, check_bump(report)
@@ -235,8 +260,11 @@ def release_files(
     previous: PinnedModel | None,
     release_id: UUID,
     released_at: datetime,
+    migration: bytes | None = None,
 ) -> dict[str, bytes]:
-    """Every file of ``ontology/<version>/``; ``release.json`` lists the others' sha256."""
+    """Every file of ``ontology/<version>/``; ``release.json`` lists the others' sha256.
+    ``migration`` is the release's ``migration.yaml`` as authored (part of the release
+    identity, so it is listed like the other files)."""
     model = compiled.model
     files: dict[str, bytes] = {COMPILED_FILE: pretty_bytes(model.to_json())}
     metadata: dict[str, JsonValue] = {
@@ -260,6 +288,8 @@ def release_files(
         files[f"exports/jsonschema/{name}"] = pretty_bytes(schema)
     for module_id, data in compiled.sources.items():
         files[f"source/{module_id}.yaml"] = data
+    if migration is not None:
+        files[MIGRATION_FILE] = migration
     metadata["compiler"] = {
         "name": "graph_cli",
         "version": graph_cli.__version__,

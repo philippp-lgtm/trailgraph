@@ -96,7 +96,7 @@ from graph_cli.storage.files.layout import (
     TX_SEGMENT_PREFIX,
     GraphLayout,
 )
-from graph_cli.storage.files.locking import acquire
+from graph_cli.storage.files.locking import acquire, is_held
 from graph_cli.storage.files.segments import (
     LogCorruption,
     LogPosition,
@@ -118,6 +118,20 @@ def _corrupt(message: str, **details: JsonValue) -> GraphCliError:
 
 def _unavailable(message: str, exc: OSError) -> GraphCliError:
     return GraphCliError("backend.unavailable", f"{message}: {exc.strerror or exc}")
+
+
+def read_migration_marker(layout: GraphLayout) -> MigrationMarker | None:
+    """The marker of ``layout``'s graph: one failed ``open`` without one, no manifest read."""
+    try:
+        data = layout.migration_marker.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise _unavailable("cannot read the migration marker", exc) from exc
+    try:
+        return MigrationMarker.from_bytes(data)
+    except ValueError as exc:
+        raise _corrupt(f"the migration marker is unreadable: {exc}") from None
 
 
 def corruption_details(damage: LogCorruption) -> dict[str, JsonValue]:
@@ -268,16 +282,10 @@ class FileStore:
         return blobs.local_path(self.layout, digest)
 
     def migration_marker(self) -> MigrationMarker | None:
-        try:
-            data = self.layout.migration_marker.read_bytes()
-        except FileNotFoundError:
-            return None
-        except OSError as exc:
-            raise _unavailable("cannot read the migration marker", exc) from exc
-        try:
-            return MigrationMarker.from_bytes(data)
-        except ValueError as exc:
-            raise _corrupt(f"the migration marker is unreadable: {exc}") from None
+        return read_migration_marker(self.layout)
+
+    def writer_active(self) -> bool:
+        return is_held(self.layout.lock)
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
         # The index is opened before the log is read: it is published after its txs

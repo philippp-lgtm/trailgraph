@@ -53,12 +53,26 @@ def _policy_show(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} policy show"
 
 
+def _check_ontology(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Preview a migration against the data before the release."""
+    return f"{program} graph check <graph> --ontology <dir>"
+
+
+def _release_again(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Finish an interrupted migration with the release that started it."""
+    return f"{program} ontology release <graph> <dir>"
+
+
 ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.model_invalid": None,
     "admin.version_bump_insufficient": None,
     "admin.release_exists": None,
     "admin.graph_name_taken": _graph_list,
-    "admin.migration_required": None,
+    "admin.migration_required": _check_ontology,
+    "admin.migration_unexpected": None,  # the message names the versions: bump the major
+    "admin.migration_from_mismatch": None,  # details.expected is the version for from:
+    "admin.migration_incomplete": _release_again,
+    "migration.invalid": None,  # details.problems names each path to fix
     "ontology.rename_invalid": None,  # details.problems names each renamed_from to fix
     "admin.integrity_errors": None,
     "admin.data_errors": None,  # the entities to fix are in details.findings

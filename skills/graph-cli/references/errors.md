@@ -126,3 +126,4 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `usage.invalid_input` | usage | 2 |
 | `usage.missing_argument` | usage | 2 |
 | `write.invalid` | invalid | 1 |
+| `write.migration_incomplete` | unavailable | 5 |

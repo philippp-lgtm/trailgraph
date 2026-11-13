@@ -950,6 +950,9 @@
               "count",
               "problems"
             ]
+          },
+          "migration": {
+            "$ref": "#/components/schemas/migration_preview"
           }
         },
         "required": [
@@ -2088,6 +2091,159 @@
           "error_codes"
         ]
       },
+      "migration_effect": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "entities": {
+            "type": "integer"
+          },
+          "edges": {
+            "type": "integer"
+          },
+          "by_type": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "index": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "entities",
+          "edges",
+          "by_type",
+          "samples"
+        ],
+        "additionalProperties": {}
+      },
+      "migration_preview": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "boolean"
+          },
+          "migration_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completing": {
+            "type": "boolean"
+          },
+          "entities": {
+            "type": "integer"
+          },
+          "unchanged": {
+            "type": "integer"
+          },
+          "edges": {
+            "type": "integer"
+          },
+          "by_type": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "renames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/migration_effect"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/migration_effect"
+            }
+          },
+          "unused_steps": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "findings": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/finding"
+                }
+              }
+            },
+            "required": [
+              "count",
+              "items"
+            ]
+          },
+          "migrated": {
+            "type": "object",
+            "properties": {
+              "entities": {
+                "type": "integer"
+              },
+              "edges": {
+                "type": "integer"
+              },
+              "by_step": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": [
+              "entities",
+              "edges",
+              "by_step"
+            ]
+          },
+          "tx_seq": {
+            "type": "integer"
+          },
+          "duration_s": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "file",
+          "migration_hash",
+          "summary",
+          "completing"
+        ]
+      },
       "ontology_diff": {
         "type": "object",
         "properties": {
@@ -2281,6 +2437,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "migration": {
+            "$ref": "#/components/schemas/migration_preview"
           }
         },
         "required": [
@@ -3352,6 +3514,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "migration": {
+            "$ref": "#/components/schemas/migration_preview"
           }
         },
         "required": [
@@ -7574,7 +7742,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.model_invalid, admin.remote_mode, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.remote_mode, migration.invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -7596,8 +7764,12 @@
               "admin.actions_broken",
               "admin.data_errors",
               "admin.functions_broken",
+              "admin.migration_from_mismatch",
+              "admin.migration_required",
+              "admin.migration_unexpected",
               "admin.model_invalid",
               "admin.remote_mode",
+              "migration.invalid",
               "remote.client_outdated"
             ]
           },
@@ -9607,7 +9779,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -9630,13 +9802,17 @@
               "admin.actions_invalid",
               "admin.functions_broken",
               "admin.functions_invalid",
+              "admin.migration_from_mismatch",
+              "admin.migration_incomplete",
               "admin.migration_required",
+              "admin.migration_unexpected",
               "admin.model_invalid",
               "admin.release_exists",
               "admin.remote_mode",
               "admin.skill_invalid",
               "admin.version_bump_insufficient",
               "graph.archived",
+              "migration.invalid",
               "ontology.rename_invalid",
               "remote.client_outdated"
             ]
@@ -11717,7 +11893,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_required, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -11738,12 +11914,16 @@
             "x-graph-cli-error-codes": [
               "admin.actions_broken",
               "admin.functions_broken",
+              "admin.migration_from_mismatch",
+              "admin.migration_incomplete",
               "admin.migration_required",
+              "admin.migration_unexpected",
               "admin.model_invalid",
               "admin.release_exists",
               "admin.remote_mode",
               "admin.version_bump_insufficient",
               "graph.archived",
+              "migration.invalid",
               "ontology.rename_invalid",
               "remote.client_outdated"
             ]
@@ -11860,6 +12040,24 @@
                       "--module": {
                         "type": "string",
                         "description": "The inventory name of module; never both.",
+                        "deprecated": true
+                      },
+                      "reason": {
+                        "type": "string",
+                        "description": "Why it is released; recorded in every audit event."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
+                        "type": "boolean",
+                        "description": "Run every check and show the release and its migration without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
                         "deprecated": true
                       }
                     },
