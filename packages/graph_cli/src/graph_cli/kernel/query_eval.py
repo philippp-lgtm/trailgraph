@@ -47,7 +47,9 @@ are sibling layers. The rules:
   entity. ``total`` counts what is left. A hidden or missing start has no
   neighbors; the walk never steps onto or through a hidden node at any depth.
   The revisions handed out (page items, neighbor revisions) lose their edges to
-  hidden targets (``strip_hidden_edges``), after paging.
+  hidden targets (``strip_hidden_edges``), after paging; a ``where`` or ``order``
+  that reads ``content_hash`` (the one field that depends on edges) compares the
+  stripped revision.
 """
 
 from __future__ import annotations
@@ -359,6 +361,24 @@ def _row_key(keys: Sequence[OrderKey]) -> Callable[[_Row], Any]:
     return cmp_to_key(compare)
 
 
+def _pred_fields(pred: Pred) -> Iterable[str]:
+    match pred:
+        case Cmp():
+            yield pred.field
+        case And(items) | Or(items):
+            for item in items:
+                yield from _pred_fields(item)
+        case Not(item):
+            yield from _pred_fields(item)
+
+
+def _names_content_hash(query: Query) -> bool:
+    """Whether ``where`` or ``order`` reads ``content_hash``."""
+    if any(key.field == "content_hash" for key in query.order):
+        return True
+    return query.where is not None and "content_hash" in _pred_fields(query.where)
+
+
 def run_query(universe: Universe, query: Query) -> QueryPage:
     if query.as_of is not None:
         raise _invalid("as_of must be None at the port (B8.8)")
@@ -369,6 +389,8 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
         if not types:  # nothing visible: never fall back to "any type"
             return QueryPage(items=(), total=0, limit=query.limit, offset=query.offset)
         sight = _Sight(universe, query.visible)
+    # ``content_hash`` is the one field that depends on edges: compare the stripped revision.
+    strip_first = sight is not None and _names_content_hash(query)
     found = []
     for revision in universe.current_revisions(types):
         if types and revision.type not in types:
@@ -377,6 +399,9 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
             continue
         if query.changed_since_seq is not None and revision.tx_seq <= query.changed_since_seq:
             continue
+        if strip_first:
+            assert sight is not None
+            revision = strip_hidden_edges(revision, sight.sees)
         if query.where is not None and not matches(revision, query.where):
             continue
         if not all(_match_rel(universe, revision, rel, sight) for rel in query.rels):

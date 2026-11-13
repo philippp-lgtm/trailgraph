@@ -8,7 +8,6 @@ edge to a topic, with a hash that matches what is shown; a caller that sees ever
 raw answers.
 """
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,14 +15,19 @@ from typing import Any
 
 import pytest
 from harness import CliRunner
-from support.admin import Outcome, admin, init
+from support.admin import init
 from support.app import app, create_graph
-from support.policies import write_policy
+from support.read_limits import (
+    NOT_THERE,
+    install,
+    shown,
+    the_same_but_for,
+    without_suggestions,
+)
 
 from graph_cli.kernel.records import EdgeRecord, content_hash, content_projection
 
 ENV = {"GRAPH_CLI_GRAPH": "example_graph"}
-NOT_THERE = "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9"
 
 LIMITED = """\
 schema: graph_cli.policy/1
@@ -89,18 +93,6 @@ class World:
     baseline: dict[str, Any]
 
 
-def install(run_cli: CliRunner, work: Path, text: str) -> None:
-    name = f"policy_{hashlib.sha256(text.encode()).hexdigest()[:12]}.yaml"
-    path = write_policy(work, name, text)
-    applied = admin(run_cli, "policy", "apply", str(path), "--reason", "test policy")
-    assert applied.code == 0, applied.envelope
-
-
-def shown(outcome: Outcome) -> dict[str, Any]:
-    """What a caller sees of an answer: the exit code and its data or its error."""
-    return {"code": outcome.code, "data": outcome.data, "error": outcome.envelope.get("error")}
-
-
 def answers(run_cli: CliRunner, ids: dict[str, str]) -> dict[str, Any]:
     """The answers of the read commands that must not change for a caller who sees everything."""
 
@@ -143,24 +135,6 @@ def world(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> W
 def limited(run_cli: CliRunner, world: World) -> World:
     install(run_cli, world.work, LIMITED)
     return world
-
-
-def without_suggestions(answer: dict[str, Any]) -> dict[str, Any]:
-    """``answer`` without ``did_you_mean`` (it depends on the spelling of the name asked, so two
-    different names get different ones); the suggestions are checked on their own."""
-    text = json.loads(json.dumps(answer))
-    text["error"]["details"].pop("did_you_mean", None)
-    return text  # type: ignore[no-any-return]
-
-
-def the_same_but_for(
-    hidden: dict[str, Any], missing: dict[str, Any], *swaps: tuple[str, str]
-) -> None:
-    """``hidden`` equals ``missing`` once the text of the first is rewritten to the second."""
-    text = json.dumps(hidden)
-    for old, new in swaps:
-        text = text.replace(old, new)
-    assert json.loads(text) == missing, json.dumps([json.loads(text), missing], indent=1)
 
 
 def test_a_hidden_entity_is_as_missing_as_an_unknown_id(run_cli: CliRunner, limited: World) -> None:

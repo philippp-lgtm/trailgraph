@@ -589,6 +589,25 @@ def test_returned_revisions_are_stripped_after_paging() -> None:
     assert all(r is raw[r.id] for r in wide.items)
 
 
+def test_where_and_order_on_content_hash_read_the_stripped_revision() -> None:
+    universe = mixed_universe()
+    only_a = frozenset({TYPE_A})
+    stripped = {r.id: r for r in run_query(universe, Query(visible=only_a, limit=10)).items}
+    raw = {r.id: r for r in universe.revisions.values()}
+    for entity, revision in stripped.items():
+        if revision.content_hash == raw[entity].content_hash:
+            continue
+        # The raw hash would tell that hidden edges exist; only the stripped one matches.
+        hidden = Query(visible=only_a, where=Cmp("content_hash", "eq", raw[entity].content_hash))
+        shown = Query(visible=only_a, where=Cmp("content_hash", "eq", revision.content_hash))
+        assert run_query(universe, hidden).total == 0
+        assert entity in [r.id for r in run_query(universe, shown).items]
+    ordered = run_query(universe, Query(visible=only_a, order=(OrderKey("content_hash"),)))
+    assert [r.id for r in ordered.items] == sorted(
+        stripped, key=lambda e: (stripped[e].content_hash, e)
+    )
+
+
 def typed_graph(*, shortcut: bool) -> Universe:
     """A1 -> A2 -> B3 -> A6 -> A7, A5 -> A1, B3 -> A1, and optionally A1 -> A8 -> A6."""
     return Universe(

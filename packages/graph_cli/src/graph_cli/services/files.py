@@ -189,14 +189,18 @@ def too_large(max_bytes: int) -> GraphCliError:
     )
 
 
+def module_missing() -> GraphCliError:
+    return GraphCliError(
+        "file.module_missing",
+        "the graph's ontology does not import the files module; import files ^1.0 in it",
+        details={"type": FILE_TYPE},
+    )
+
+
 def file_types(model: CompiledModel) -> tuple[str, ...]:
     """Concrete classes of the ``files:File`` family; ``file.module_missing`` without it."""
     if FILE_TYPE not in model.classes:
-        raise GraphCliError(
-            "file.module_missing",
-            "the graph's ontology does not import the files module; import files ^1.0 in it",
-            details={"type": FILE_TYPE},
-        )
+        raise module_missing()
     return tuple(c for c in model.subtypes(FILE_TYPE) if not model.classes[c].abstract)
 
 
@@ -337,7 +341,7 @@ class FileService:
                 revisions.append(revision)
             page = Page(len(revisions), len(revisions), max(limit, len(revisions)), 0)
         else:
-            types = file_types(view.model)
+            types = self._family(view)
             for type_ref in types:
                 self._authorize_type(view, type_ref, actor, request)
             query = Query(
@@ -373,7 +377,7 @@ class FileService:
         self, view: GraphRead, ref: str, actor: ActorContext, request: RequestMeta
     ) -> tuple[Revision, list[WarningRecord]]:
         """A ``files:File`` family entity, authorized for ``read.get`` on its type."""
-        types = file_types(view.model)
+        types = self._family(view)
         entity, found = resolve_ref(ref, view.snapshot)
         revision = view.snapshot.get(entity)
         if revision is None:
@@ -388,6 +392,19 @@ class FileService:
             )
         self._authorize_type(view, revision.type, actor, request)
         return revision, list(found)
+
+    def _family(self, view: GraphRead) -> tuple[str, ...]:
+        """The concrete file classes the caller reads. The family comes from the stored model:
+        the model view of a type limited caller lost the hidden classes that visible ones extend
+        (a scan stays a file when plain files are hidden). A caller who sees none of the family
+        reads a graph without the files module."""
+        family = file_types(self._models.load_for_read(view.entry)[0])
+        if view.visible is None:
+            return family
+        seen = tuple(t for t in family if t in view.visible)
+        if not seen:
+            raise module_missing()
+        return seen
 
     def _authorize_type(
         self, view: GraphRead, type_ref: str, actor: ActorContext, request: RequestMeta
