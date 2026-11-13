@@ -232,6 +232,7 @@ is paid.
 | `services.visible_catalog` | which functions and actions a limited caller sees: those whose terms and parameter classes all exist in the filtered model and that still compile against it |
 | `kernel.query_eval`, `kernel.records` | `Query.visible` and `NeighborQuery.visible`, honoured in one place for every store (subjects, relation ends, traversal, totals), and `strip_hidden_edges`, which drops the edges into hidden entities from a revision and recomputes its content hash |
 | `temporal_knowledge.migrate` | `plan_migration`: the new revision of every current revision (all record statuses) that a major release's renames and migration steps change, as a pure function of the old and new model, the derived renames, the migration file and a snapshot; no-op detection by content hash, per-step counts and samples, an overlay for `check_graph` and the blobs of the migrated revisions; `WorkingState` answers `incoming` from a reverse-edge index built on first use, so a large overlay is judged in linear time |
+| `services.migration`, `kernel.migration_marker` | `build_migration_tx`: the `AuthorizedTx` of a migration plan (changeset `graph_cli.migration/1` with no ops and a `migration` record, no aliases, no idempotency key), committed only by `MaintenanceSession.migrate`; `MigrationMarker` and `marker_committed`, the note of a migration that is not finished and the identity check of whether its tx is in the log |
 | `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
 
 The write path keeps two snapshots for such a caller: the raw one is the truth
@@ -245,7 +246,8 @@ refusal.
 
 Every change to instance data is a change set (`graph_cli.changeset/1`) and
 goes through one path, `graph_cli.services.write.WriteService`; it is the
-only caller of `WriteSession.commit`.
+only caller of `WriteSession.commit`. The one other tx, a data migration, is built by
+`services.migration` and committed by `MaintenanceSession.migrate`.
 
 | Module | Content |
 | --- | --- |

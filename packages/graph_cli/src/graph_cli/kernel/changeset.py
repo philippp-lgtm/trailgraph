@@ -45,6 +45,8 @@ from graph_cli.kernel.ids import (
 from graph_cli.kernel.records import EdgeRecord
 
 CHANGESET_SCHEMA: Final = "graph_cli.changeset/1"
+# The changeset of a migration tx (plan M4): no ops, a ``migration`` record; not an input document.
+MIGRATION_CHANGESET_SCHEMA: Final = "graph_cli.migration/1"
 MAX_OPS: Final = 1000
 MAX_BYTES: Final = 8 * 1024 * 1024
 MAX_REASON: Final = 2000

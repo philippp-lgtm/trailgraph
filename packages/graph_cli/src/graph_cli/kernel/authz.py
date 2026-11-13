@@ -66,7 +66,9 @@ class AuthzContext:
 
 @dataclass(frozen=True, slots=True)
 class AuthorizedTx:
-    """Everything storage needs to commit one tx. Built only by ``services.write``."""
+    """Everything storage needs to commit one tx.
+
+    Built only by ``services.write`` and ``services.migration``."""
 
     graph_id: GraphId
     tx_id: TxId

@@ -237,6 +237,7 @@ TX_READERS = {  # the modules of the app and server distributions that read a tx
     "services/read.py",  # history: request, reason, actor session; as-of: ontology version
     "services/visibility.py",  # the wrapper itself
     "temporal_knowledge/as_of.py",  # the time of a tx
+    "kernel/migration_marker.py",  # marker_committed: the tx id at a seq, on a raw snapshot
 }
 WRITE_SIDE = {"temporal_knowledge/working.py"}  # the write path's overlay; it delegates to a base
 

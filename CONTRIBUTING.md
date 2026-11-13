@@ -202,7 +202,9 @@ through `tests/support/services.py` (an in-memory catalog, a builder with
 test clock and seeded ids, and a factory for valid creates of any class).
 `uv run python scripts/bench_store.py` (not part of the suite) times reads
 and writes of `FileStore` on a generated graph, with and without the
-writer's full replay.
+writer's full replay; with `--migration` it migrates a generated graph of about 6,300
+entities and 16,000 edges (every class and relation moves to a new module) with real fsyncs
+and prints the time of each phase and the peak memory.
 
 ### Test harness
 

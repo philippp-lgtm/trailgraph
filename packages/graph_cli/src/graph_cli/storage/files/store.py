@@ -39,6 +39,7 @@ from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json, pr
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, EventId, GraphId, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, as_object
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, graph_stream
 from graph_cli.kernel.ports.storage import (
     CAPABILITY_BLOB_LOCAL_PATH,
@@ -265,6 +266,18 @@ class FileStore:
 
     def blob_local_path(self, digest: str) -> Path | None:
         return blobs.local_path(self.layout, digest)
+
+    def migration_marker(self) -> MigrationMarker | None:
+        try:
+            data = self.layout.migration_marker.read_bytes()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise _unavailable("cannot read the migration marker", exc) from exc
+        try:
+            return MigrationMarker.from_bytes(data)
+        except ValueError as exc:
+            raise _corrupt(f"the migration marker is unreadable: {exc}") from None
 
     def snapshot(self, *, at_seq: int | None = None) -> FileSnapshot:
         # The index is opened before the log is read: it is published after its txs
@@ -684,8 +697,7 @@ class WriterView:
         if self.index is None:
             return
         try:
-            for entity in entities:
-                self.index.view.confirm(entity)
+            self.index.view.confirm_all(entities)
         except IndexUnusable as exc:
             self._fall_back(str(exc))
 
@@ -883,6 +895,13 @@ class FileSession:
     # ---- commit --------------------------------------------------------
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        return self._commit(tx, receipt, migration=False)
+
+    def migrate(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        """``commit`` of a migration tx (plan M4); the rules differ only in ``check_tx``."""
+        return self._commit(tx, receipt, migration=True)
+
+    def _commit(self, tx: AuthorizedTx, receipt: AuditReceipt, *, migration: bool) -> CommitResult:
         self._check_usable()
         store = self._store
         check_receipt(
@@ -899,6 +918,7 @@ class FileSession:
             head=self._head,
             view=self._view(),
             blob_exists=lambda digest: blobs.info(store.layout, digest) is not None,
+            migration=migration,
         )
         record, line = seal_tx(tx, self._end)
         pending: PendingAppend | None = None

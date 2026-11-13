@@ -20,6 +20,7 @@ from graph_cli.kernel.canonical import GENESIS_HASH, JsonValue
 from graph_cli.kernel.errors import EMPTY, WarningRecord
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef, TxId
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import FunctionsSlot, KineticSlot, ManifestData, SkillSlot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
@@ -132,6 +133,12 @@ class GraphStoreRead(Protocol):
         """Capability ``blob_local_path``: the read-only file of a stored blob."""
         ...
 
+    def migration_marker(self) -> MigrationMarker | None:
+        """The marker of a migration that is not finished, lock-free and cheap (one stat
+        when absent); ``None`` without one, ``backend.corrupt`` for an unreadable one.
+        Whether its tx is committed is ``marker_committed`` over a snapshot."""
+        ...
+
 
 class WriteSession(Protocol):
     """Exists only while the graph lock is held."""
@@ -170,6 +177,20 @@ class GraphStoreWrite(Protocol):
 
 class MaintenanceSession(WriteSession, Protocol):
     """A write session plus the maintenance effects (W.e); no recovery on open."""
+
+    def migrate(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        """``commit`` for a migration tx (changeset key ``migration``, plan M4): the same
+        commit point and materialization; it may change entity types but not identity, and
+        needs an allow decision for ``maint.migrate``. ``commit`` refuses such a tx."""
+        ...
+
+    def write_migration_marker(self, marker: MigrationMarker) -> None:
+        """Durably replace the marker (atomic rename); written before the migration tx."""
+        ...
+
+    def remove_migration_marker(self) -> None:
+        """Durably remove the marker; idempotent."""
+        ...
 
     def manifest(self) -> ManifestData:
         """The manifest as it is now, read under the graph lock."""

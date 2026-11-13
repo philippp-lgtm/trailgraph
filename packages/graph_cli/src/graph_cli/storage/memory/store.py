@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EventId, GraphId
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, AuditSink, graph_stream
 from graph_cli.kernel.ports.storage import (
     CAPABILITY_SNAPSHOT_AT_SEQ,
@@ -51,6 +52,7 @@ class InMemoryStore:
         self._head = EMPTY_HEAD
         self._lock = threading.Lock()
         self._blobs: dict[str, bytes] = {}
+        self._marker: MigrationMarker | None = None
 
     # ---- read port -----------------------------------------------------
 
@@ -80,6 +82,9 @@ class InMemoryStore:
 
     def blob_local_path(self, digest: str) -> Path | None:
         return None  # no capability blob_local_path: the bytes live in memory
+
+    def migration_marker(self) -> MigrationMarker | None:
+        return self._marker
 
     def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> MemoryStagedBlob:
         parts: list[bytes] = []
@@ -187,6 +192,33 @@ class MemorySession:
         return BlobInfo(staged.hash, staged.size)
 
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        return self._commit(tx, receipt, migration=False)
+
+    def migrate(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        """``commit`` of a migration tx (plan M4); the rules differ only in ``check_tx``."""
+        return self._commit(tx, receipt, migration=True)
+
+    def write_migration_marker(self, marker: MigrationMarker) -> None:
+        self._check_open()
+        try:
+            fire(self._store._faults, CrashPoint.MIGRATION_MARKER_BEFORE_RENAME)
+        except OSError as exc:
+            raise GraphCliError(
+                "backend.unavailable", f"cannot write the migration marker: {exc}"
+            ) from exc
+        self._store._marker = marker
+
+    def remove_migration_marker(self) -> None:
+        self._check_open()
+        try:
+            fire(self._store._faults, CrashPoint.MIGRATION_MARKER_BEFORE_REMOVE)
+        except OSError as exc:
+            raise GraphCliError(
+                "backend.unavailable", f"cannot remove the migration marker: {exc}"
+            ) from exc
+        self._store._marker = None
+
+    def _commit(self, tx: AuthorizedTx, receipt: AuditReceipt, *, migration: bool) -> CommitResult:
         self._check_open()
         store = self._store
         head = store.head()
@@ -203,6 +235,7 @@ class MemorySession:
             head=head,
             view=store._view.at(head.seq),
             blob_exists=store._blobs.__contains__,
+            migration=migration,
         )
         record, _ = seal_tx(tx, ChainLink(head.seq, head.hash))
         try:

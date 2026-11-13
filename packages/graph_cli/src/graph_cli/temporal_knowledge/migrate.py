@@ -195,7 +195,7 @@ def plan_migration(
     )
     items = snapshot.query(_ALL).items
     for revision in sorted(items, key=lambda r: r.id):
-        engine.migrate(revision)
+        engine.revise(revision)
     return engine.plan(len(items))
 
 
@@ -323,7 +323,7 @@ class _Engine:
 
     # ---- one entity ----------------------------------------------------------------------
 
-    def migrate(self, revision: Revision) -> None:
+    def revise(self, revision: Revision) -> None:
         original = str(revision.type)
         found = next(((i, s) for i, s in self.retypes if s.from_ == original), None)
         retype = None if found is None else found[1]

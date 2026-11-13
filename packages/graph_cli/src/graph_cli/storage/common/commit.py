@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Set
 from dataclasses import replace
+from typing import Final
 
+from graph_cli.kernel.actions import Action
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import HASH_RE, CanonicalError, JsonValue
-from graph_cli.kernel.changeset import OP_ACTIONS
+from graph_cli.kernel.changeset import MIGRATION_CHANGESET_SCHEMA, OP_ACTIONS
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import ALIAS_RE, EntityId, EventId, GraphId
 from graph_cli.kernel.ports.audit import AuditReceipt, AuditStream
@@ -28,6 +30,10 @@ from graph_cli.kernel.records import (
 )
 from graph_cli.storage.common.chain import CHAIN_KEYS, ChainLink, seal
 from graph_cli.storage.common.view import StateView
+
+MIGRATE_ACTION: Final = Action("maint.migrate")
+# What a migration revision keeps from the revision before it (B1.6, B8.3, plan M4).
+_MIGRATION_KEPT: Final = ("alias", "record_status", "created_at", "valid_from", "valid_to")
 
 
 def _violation(rule: str, message: str, **details: JsonValue) -> GraphCliError:
@@ -65,8 +71,13 @@ def check_tx(
     head: Head,
     view: StateView,
     blob_exists: Callable[[str], bool],
+    migration: bool = False,
 ) -> None:
-    """Structural preconditions of a commit against the state at ``head`` (D6)."""
+    """Structural preconditions of a commit against the state at ``head`` (D6).
+
+    ``migration`` is set by ``session.migrate`` only: a migration tx (changeset key
+    ``migration``) is refused by every other commit and every other tx by ``migrate``; it
+    may change an entity's type (B1.6) but nothing of its identity (plan M4)."""
     if tx.graph_id != graph_id:
         raise _violation("graph_id", "the tx is for another graph")
     if view.seq != head.seq:
@@ -77,13 +88,14 @@ def check_tx(
         raise _violation("recorded_at", "recorded_at moves backwards (B4.3)")
     if not tx.revisions:
         raise _violation("empty", "the tx has no revisions")
+    _check_migration_mode(tx, migration)
     _check_decisions(tx)
     touched: dict[EntityId, Revision] = {}
     for revision in tx.revisions:
         if revision.id in touched:
             raise _violation("one_revision", "an entity has two revisions in one tx (B3.6)")
         touched[revision.id] = revision
-        _check_revision(revision, tx=tx, previous=view.current(revision.id))
+        _check_revision(revision, tx=tx, previous=view.current(revision.id), migration=migration)
     for revision in tx.revisions:
         for edge in revision.edges:
             if edge.target not in touched and view.current(edge.target) is None:
@@ -107,6 +119,31 @@ def _check_blobs(tx: AuthorizedTx, blob_exists: Callable[[str], bool]) -> None:
             raise _violation("blobs", "a listed blob is not stored", blob=digest)
 
 
+def _check_migration_mode(tx: AuthorizedTx, migration: bool) -> None:
+    """A changeset with a ``migration`` key is committed by ``migrate`` and only by it."""
+    carries = "migration" in tx.changeset
+    if not migration:
+        if carries:
+            raise _violation(
+                "migration_via_commit", "a migration tx is committed with migrate, not commit"
+            )
+        return
+    changeset = tx.changeset
+    if not carries:
+        raise _violation("changeset", "a migration tx has no migration record")
+    if changeset.get("schema") != MIGRATION_CHANGESET_SCHEMA:
+        raise _violation("changeset", f"a migration tx has the schema {MIGRATION_CHANGESET_SCHEMA}")
+    ops = changeset.get("ops")
+    if not isinstance(ops, list | tuple) or ops:
+        raise _violation("changeset", "a migration tx has no ops")
+    if MIGRATE_ACTION not in tx.allowed_actions():
+        raise _violation(
+            "decisions", f"no allow decision for {MIGRATE_ACTION}", action=MIGRATE_ACTION
+        )
+    if tx.alias_allocations:
+        raise _violation("migration_aliases", "a migration tx allocates no aliases")
+
+
 def _check_decisions(tx: AuthorizedTx) -> None:
     """B6.10: an allow decision covers the action of every op (defence in depth)."""
     ops = tx.changeset.get("ops")
@@ -122,7 +159,9 @@ def _check_decisions(tx: AuthorizedTx) -> None:
             raise _violation("decisions", f"no allow decision for {action}", action=action)
 
 
-def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision | None) -> None:
+def _check_revision(
+    revision: Revision, *, tx: AuthorizedTx, previous: Revision | None, migration: bool
+) -> None:
     entity = str(revision.id)
     if (revision.tx_id, revision.tx_seq) != (tx.tx_id, tx.seq):
         raise _violation("revision_tx", "revision tx_id or tx_seq differs", entity=entity)
@@ -131,6 +170,10 @@ def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision 
     if revision.record_status not in RECORD_STATUSES:
         raise _violation("record_status", "unknown record_status (V.5)", entity=entity)
     if previous is None:
+        if migration:
+            raise _violation(
+                "migration_new_entity", "a migration tx only revises entities", entity=entity
+            )
         if (revision.rev, revision.prev_rev) != (1, None):
             raise _violation("rev", "a new entity starts at rev 1", entity=entity)
         if revision.created_at != revision.recorded_at:
@@ -138,10 +181,22 @@ def _check_revision(revision: Revision, *, tx: AuthorizedTx, previous: Revision 
     else:
         if (revision.rev, revision.prev_rev) != (previous.rev + 1, previous.rev):
             raise _violation("rev", "rev does not follow the current rev", entity=entity)
-        if revision.created_at != previous.created_at:
-            raise _violation("created_at", "created_at changed", entity=entity)
-        if revision.type != previous.type:
-            raise _violation("type_changed", "the entity type is immutable (B1.6)", entity=entity)
+        if migration:
+            for name in _MIGRATION_KEPT:
+                if getattr(revision, name) != getattr(previous, name):
+                    raise _violation(
+                        "migration_identity",
+                        f"a migration tx keeps {name}",
+                        entity=entity,
+                        field=name,
+                    )
+        else:
+            if revision.created_at != previous.created_at:
+                raise _violation("created_at", "created_at changed", entity=entity)
+            if revision.type != previous.type:
+                raise _violation(
+                    "type_changed", "the entity type is immutable (B1.6)", entity=entity
+                )
     if revision_content_hash(revision) != revision.content_hash:
         raise _violation("content_hash", "content_hash does not match (C.9)", entity=entity)
     edge_ids = [edge.edge_id for edge in revision.edges]
