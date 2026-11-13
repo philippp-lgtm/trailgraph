@@ -146,8 +146,9 @@ graph admin gives them to tokens:
   request ([Security model](security_model.md#prevention)).
 - `policy apply` of an installation policy that no longer declares a role
   that a token holds, or that an installed graph policy names, warns
-  `admin.role_orphaned`: the membership stays, but no rule matches it until
-  the role is declared again or taken off.
+  `admin.role_orphaned`: the membership stays, and no grant can name the
+  role any more, while deny rules of graph policies that name it still apply
+  to the tokens that hold it, until it is declared again or taken off.
 - `token list` shows each token's `roles`, `token list --role R` only the
   tokens that hold `R`, and `enroll list` the roles of each code.
 - `graph-admin policy explain --graph G --role R` (repeatable, with an

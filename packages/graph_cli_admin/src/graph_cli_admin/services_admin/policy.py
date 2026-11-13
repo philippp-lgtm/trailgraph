@@ -10,7 +10,8 @@ policy refuses it.
 
 ``apply`` is ``maint.policy_change``. An installation policy that no longer declares a role
 that a token still holds, or an installed graph policy names, warns with
-``admin.role_orphaned`` (one warning per role; the membership stays but matches no rule).
+``admin.role_orphaned`` (one warning per role; the membership stays, no grant can name
+the role, deny rules of graph policies naming it still apply).
 The installation policy is an
 installation event (the intent), the file switch under the registry lock
 and a confirmation event without ``change``; a graph policy follows W.e:
@@ -256,8 +257,9 @@ def _orphaned(ctx: AdminContext, compiled: Compiled) -> tuple[WarningRecord, ...
                 WarningRecord(
                     "admin.role_orphaned",
                     f"the new installation policy no longer declares role {role}, which"
-                    f" {_holders(held, graphs)}; the membership stays but matches no rule"
-                    " until the role is declared again or taken off",
+                    f" {_holders(held, graphs)}; the membership stays and no grant can name it,"
+                    " while graph policy deny rules naming it still apply, until the role is"
+                    " declared again or taken off",
                     {"role": role, "tokens": held, "graphs": graphs},
                 )
             )
