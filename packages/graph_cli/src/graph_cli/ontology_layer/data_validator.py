@@ -66,6 +66,19 @@ from here.
 - **Blobs** (write path): a new or changed ``blob`` value names a stored file
   or one the request stages (``blob_missing``); batch checks the shape only,
   storage ``verify`` covers presence.
+- **A caller who cannot see everything** (write path, ``CallerView``; type read limits plan V6):
+  integrity is judged on the whole graph, but what the findings say is limited to what the
+  caller sees. A new edge to an entity the caller cannot see is ``target_missing``; a create
+  of a type, and a new edge of a relation, outside the caller's model view are
+  ``unknown_type`` and ``unknown_relation``; ``expected``, ``connecting`` and close matches
+  come from that view; ``possible_duplicate`` ignores entities the caller cannot see. A
+  finding that names one (a value used by it, an alias it owns, a cycle or a referrer
+  through it, a count that includes its edges, a rule or guard the view does not have, a
+  relation the view lacks) keeps its code and severity, its target (when that is visible)
+  and nothing else: the message is ``CONCEALED`` and ``expected``, ``actual``, ``connecting``
+  and ``rule_id`` are gone. The ``explain`` values of a rule are dropped when an aggregate
+  counts a relation that reaches a hidden type. So a refusal can show that something hidden
+  exists, never which entity, type, relation or value.
 """
 
 from __future__ import annotations
@@ -104,6 +117,7 @@ from graph_cli.ontology_layer.model import (
     EnumDef,
     LifecycleDef,
     RelationDef,
+    RuleDef,
     TermDoc,
 )
 from graph_cli.ontology_layer.values import (
@@ -125,6 +139,23 @@ _MAX_SOURCES: Final = 20  # source ids a target_referenced finding lists
 
 
 _DIGITS: Final = re.compile(r"\d+")
+
+UNKNOWN_RELATION: Final = "data.referential.unknown_relation"
+
+# What a finding says that names something the caller cannot see.
+CONCEALED: Final = "conflicts with data you cannot see"
+
+
+@dataclass(frozen=True, slots=True)
+class CallerView:
+    """What the caller of a write sees: its filtered model (``services.visibility``), the
+    concrete types it sees and whether it sees an entity. The validator reads the graph
+    itself, never through this view, so integrity holds for the whole graph; the view only
+    decides what its findings may say. ``sees`` is true for an entity the request creates."""
+
+    model: CompiledModel
+    visible: frozenset[str]
+    sees: Callable[[EntityId], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +280,7 @@ class _Checker:
     snapshot: Snapshot
     local_names: Mapping[EntityId, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
+    view: CallerView | None = None
     _bare: list[Finding] = field(default_factory=list, init=False, repr=False)
     _connecting: dict[tuple[str, str], JsonValue | None] = field(
         default_factory=dict, init=False, repr=False
@@ -268,7 +300,12 @@ class _Checker:
         actual: JsonValue | None = None,
         rule_id: str | None = None,
         connect: tuple[str, str] | None = None,
+        names: Iterable[EntityId] = (),
+        conceal: bool = False,
     ) -> None:
+        """Report a finding on ``revision``. ``names`` are the other entities the message or the
+        values name; for a caller who cannot see one of them (or when ``conceal`` says so, or
+        the path names a relation its view lacks) the finding is ``concealed``."""
         target: dict[str, JsonValue] = {"id": str(revision.id), "type": revision.type}
         if path is not None:
             target["path"] = path
@@ -276,6 +313,17 @@ class _Checker:
         if local is not None:
             target["local"] = local
         finding = Finding(severity, code, target, message, expected, actual, rule_id)
+        view = self.view
+        if view is not None:
+            own_hidden = not view.sees(revision.id)
+            if (
+                conceal
+                or own_hidden
+                or (code != UNKNOWN_RELATION and self.relation_hidden(path))
+                or any(not view.sees(e) for e in names)
+            ):
+                finding = self.concealed(finding, path, own_hidden)
+                connect = None
         if finding in self._bare:  # two ops may name the same problem
             return
         self._bare.append(finding)
@@ -283,26 +331,54 @@ class _Checker:
             finding = replace(finding, connecting=self.connecting(*connect))
         self.findings.append(finding)
 
+    @property
+    def answer_model(self) -> CompiledModel:
+        """The model a finding names terms from: the caller's view, else the model itself."""
+        return self.model if self.view is None else self.view.model
+
+    def relation_hidden(self, path: str | None) -> bool:
+        """Whether ``path`` (``edges.<rel>...``, ``incoming.<rel>``) names a relation the
+        caller's model view does not have."""
+        if self.view is None or path is None:
+            return False
+        head, _, rest = path.partition(".")
+        if head not in ("edges", "incoming") or not rest:
+            return False
+        return rest.split(".", 1)[0] not in self.view.model.relations
+
+    def concealed(self, finding: Finding, path: str | None, own_hidden: bool) -> Finding:
+        """``finding`` as the caller may see it: code, severity and a target that names only
+        what it sees (nothing at all when the entity itself is hidden)."""
+        target: dict[str, JsonValue] = {}
+        if not own_hidden:
+            target = {k: v for k, v in finding.target.items() if k != "path"}
+            if path is not None:
+                target["path"] = path.split(".")[0] if self.relation_hidden(path) else path
+        return Finding(finding.severity, finding.code, target, CONCEALED)
+
     def connecting(self, source: str, target: str) -> JsonValue | None:
         """What would connect two types, when both exist in the model (once per pair)."""
         pair = (source, target)
         if pair not in self._connecting:
-            known = source in self.model.classes and target in self.model.classes
-            self._connecting[pair] = connecting(self.model, source, target) if known else None
+            model = self.answer_model
+            known = source in model.classes and target in model.classes
+            self._connecting[pair] = connecting(model, source, target) if known else None
         return self._connecting[pair]
 
     # ---- structure -----------------------------------------------------
 
-    def class_of(self, revision: Revision) -> ClassDef | None:
-        """The class when the entity may be checked further; reports unknown or abstract."""
+    def class_of(self, revision: Revision, *, created: bool = False) -> ClassDef | None:
+        """The class when the entity may be checked further; reports unknown or abstract. A
+        type the caller's view lacks is unknown to a create (``created``)."""
         cls = self.model.classes.get(revision.type)
-        if cls is None:
+        shown = self.answer_model
+        if cls is None or (created and revision.type not in shown.classes):
             self.add(
                 "data.structural.unknown_type",
                 revision,
                 "type",
                 f"type {revision.type} does not exist",
-                expected=_close(revision.type, self.model.classes),
+                expected=_close(revision.type, shown.classes),
                 actual=revision.type,
             )
             return None
@@ -312,8 +388,7 @@ class _Checker:
                 revision,
                 "type",
                 f"type {revision.type} is abstract; use one of its subclasses",
-                expected=[c for c in self.model.subtypes(revision.type) if c != revision.type]
-                or None,
+                expected=[c for c in shown.subtypes(revision.type) if c != revision.type] or None,
             )
             return None
         return cls
@@ -430,9 +505,12 @@ class _Checker:
 
     def edges(self, revision: Revision, *, new_edges: frozenset[EdgeId] | None) -> None:
         counts: Counter[str] = Counter()
+        unseen: Counter[str] = Counter()  # edges into entities the caller cannot see
         for edge in revision.edges:
             if self.edge(revision, edge, new=new_edges is None or edge.edge_id in new_edges):
                 counts[edge.rel] += 1
+            if self.view is not None and not self.view.sees(edge.target):
+                unseen[edge.rel] += 1
         for name, relation in self.model.relations.items():
             if not self.model.is_a_any(revision.type, relation.domain):
                 continue
@@ -450,23 +528,27 @@ class _Checker:
                     f"{count} {name} edges, expected {bound}",
                     expected=bound,
                     actual=count,
+                    conceal=unseen[name] > 0,  # the count includes edges the caller lacks
                 )
 
     def edge(self, revision: Revision, edge: EdgeRecord, *, new: bool) -> bool:
         """One edge of ``revision``; true when its relation exists (it counts)."""
         path = f"edges.{edge.rel}"
         relation = self.model.relations.get(edge.rel)
-        if relation is None:
+        view = self.view
+        # A new edge of a relation the caller's view lacks is an unknown relation to it.
+        if relation is None or (view is not None and new and edge.rel not in view.model.relations):
             self.add(
-                "data.referential.unknown_relation",
+                UNKNOWN_RELATION,
                 revision,
                 path,
                 f"relation {edge.rel} does not exist",
-                expected=_close(edge.rel, self.model.relations),
+                expected=_close(edge.rel, self.answer_model.relations),
             )
             return False
         target = self.snapshot.get(edge.target)
-        if target is None:
+        # A new edge to an entity the caller cannot see is an edge to a missing one.
+        if target is None or (view is not None and new and not view.sees(edge.target)):
             self.add(
                 "data.referential.target_missing",
                 revision,
@@ -474,28 +556,34 @@ class _Checker:
                 f"target {edge.target} does not exist",
             )
             return True
+        shown = relation if view is None else view.model.relations.get(edge.rel, relation)
         if not self.model.is_a_any(revision.type, relation.domain):
             self.add(
                 "data.referential.domain_violation",
                 revision,
                 path,
                 f"{edge.rel} does not apply to {revision.type}",
-                expected=list(relation.domain),
+                expected=list(shown.domain),
                 connect=(revision.type, target.type),
+                names=(edge.target,),
             )
-        if target.type in self.model.classes and not self.model.is_a_any(
-            target.type, relation.range
-        ):
+        # A target created by this request of a type the view lacks is of an unknown type: no
+        # range check, as for a type the model does not have.
+        judged = target.type in self.model.classes and (
+            view is None or target.type in view.model.classes or not view.sees(edge.target)
+        )
+        if judged and not self.model.is_a_any(target.type, relation.range):
             self.add(
                 "data.referential.range_violation",
                 revision,
                 path,
                 f"{edge.rel} does not accept a {target.type} target",
-                expected=list(relation.range),
+                expected=list(shown.range),
                 actual=target.type,
                 connect=(revision.type, target.type),
+                names=(edge.target,),
             )
-        self.qualifiers(revision, edge.rel, edge.qualifiers)
+        self.qualifiers(revision, edge.rel, edge.qualifiers, names=(edge.target,))
         if new and target.record_status != "active" and edge.rel not in PROVENANCE_RELATIONS:
             self.add(
                 "data.referential.target_not_active",
@@ -506,8 +594,16 @@ class _Checker:
             )
         return True
 
-    def qualifiers(self, revision: Revision, rel: str, values: Mapping[str, JsonValue]) -> None:
+    def qualifiers(
+        self,
+        revision: Revision,
+        rel: str,
+        values: Mapping[str, JsonValue],
+        *,
+        names: Iterable[EntityId] = (),
+    ) -> None:
         relation = self.model.relations[rel]
+        names = tuple(names)
         for name in sorted(values):
             path = f"edges.{rel}.qualifiers.{name}"
             qualifier = relation.qualifiers.get(name)
@@ -518,13 +614,21 @@ class _Checker:
                     path,
                     f"{rel} has no qualifier {name!r}",
                     expected=_close(name, relation.qualifiers),
+                    names=names,
                 )
                 continue
             problem = self.value_problem(
                 qualifier.kind, qualifier.type, qualifier.many, values[name], lifecycle_states=True
             )
             if problem is not None:
-                self.add(problem.code, revision, path, problem.message, expected=problem.expected)
+                self.add(
+                    problem.code,
+                    revision,
+                    path,
+                    problem.message,
+                    expected=problem.expected,
+                    names=names,
+                )
         for name, qualifier in relation.qualifiers.items():
             if qualifier.required and name not in values:
                 self.add(
@@ -532,6 +636,7 @@ class _Checker:
                     revision,
                     f"edges.{rel}.qualifiers.{name}",
                     f"required qualifier {name!r} is missing",
+                    names=names,
                 )
 
     def incoming_cardinality(self, revision: Revision) -> None:
@@ -596,6 +701,8 @@ class _Checker:
             entity = other.revision.id
             if entity == name.revision.id or entity in seen or other.revision.type not in family:
                 continue
+            if self.view is not None and not self.view.sees(entity):
+                continue  # a name only an entity the caller cannot see carries
             if attribute.unique and other.attr == name.attr and other.stored == name.stored:
                 continue  # unique_violation reports it
             seen[entity] = (other, match)
@@ -657,6 +764,7 @@ class _Checker:
                     revision,
                     f"attrs.{name}",
                     f"the value of {name!r} is already used by {others[0]}",
+                    names=others[:1],
                 )
 
     def cycle(self, start: EntityId, rel: str) -> list[EntityId] | None:
@@ -700,6 +808,7 @@ class _Checker:
                     f"edges.{rel}",
                     f"{rel} forms a cycle of {len(path) - 1} entities",
                     actual=[str(e) for e in path],
+                    names=path,
                 )
 
     @cached_property
@@ -720,15 +829,48 @@ class _Checker:
             if links is not None and self.aggregates[rule.id].isdisjoint(links):
                 continue
             if not evaluate(rule.expr, revision, self.snapshot, self.model):
+                actual = explain(rule.expr, revision, self.snapshot, self.model)
+                view = self.view
+                absent = view is not None and all(r.id != rule.id for r in view.model.rules)
+                if view is not None and actual is not None and self.reaches_hidden(rule):
+                    actual = None  # the values count entities the caller cannot see
                 self.add(
                     "data.rule.violated",
                     revision,
                     None,
                     rule.doc.summary,
                     severity=Severity(rule.severity),
-                    actual=explain(rule.expr, revision, self.snapshot, self.model),
+                    actual=actual,
                     rule_id=rule.id,
+                    conceal=absent,  # a rule the caller's view does not have
                 )
+
+    def reaches_hidden(self, rule: RuleDef) -> bool:
+        """Whether an aggregate of ``rule`` counts a relation whose far end (in the model
+        itself) covers a concrete type the caller does not see."""
+        assert self.view is not None
+        for rel, direction in self.aggregates[rule.id]:
+            relation = self.model.relations.get(rel)
+            if relation is None:
+                continue
+            ends = relation.range if direction == "out" else relation.domain
+            covered = {c for end in ends for c in self.model.subtypes(end)} if ends else None
+            for name, cls in self.model.classes.items():
+                reached = covered is None or name in covered
+                if reached and not cls.abstract and name not in self.view.visible:
+                    return True
+        return False
+
+    def guard_hidden(self, guard_id: str) -> bool:
+        """Whether the caller's model view lacks the guard (it names a term the view lacks)."""
+        if self.view is None:
+            return False
+        return not any(
+            g.id == guard_id
+            for lifecycle in self.view.model.lifecycles.values()
+            for transition in lifecycle.transitions
+            for g in transition.guards
+        )
 
 
 def blob_values(model: CompiledModel, revision: Revision) -> list[str]:
@@ -783,24 +925,27 @@ def validate_write(
     alias_allocations: Sequence[tuple[EntityId, str]] = (),
     local_names: Mapping[EntityId, str] | None = None,
     blob_exists: Callable[[str], bool] | None = None,
+    view: CallerView | None = None,
 ) -> list[Finding]:
     """L1-L4 on the post-state of every touched entity (B3.17, W.11).
 
     ``blob_exists`` tells whether a blob is stored or staged by the request;
-    without it (batch) ``blob`` values are checked for their shape only.
+    without it (batch) ``blob`` values are checked for their shape only. ``view`` limits what
+    the findings say to what the caller sees (see the module docstring); the judgment itself
+    is the same.
     """
-    checker = _Checker(model, after, dict(local_names or {}))
+    checker = _Checker(model, after, dict(local_names or {}), view=view)
     checkable: dict[EntityId, tuple[Revision, ClassDef]] = {}
     for entity in touched:
         revision = after.get(entity)
         if revision is None:
             raise GraphCliError("internal.error", f"touched entity {entity} has no revision")
-        cls = checker.class_of(revision)
+        previous = before.get(entity)
+        cls = checker.class_of(revision, created=previous is None)
         if cls is None:
             continue
         checkable[entity] = (revision, cls)
         checker.attributes(revision, cls, lifecycle_states=False)
-        previous = before.get(entity)
         old_edges = frozenset(e.edge_id for e in previous.edges) if previous else frozenset()
         new_edges = frozenset(e.edge_id for e in revision.edges) - old_edges
         checker.edges(revision, new_edges=new_edges)
@@ -891,11 +1036,12 @@ def _retired_targets(
         for name, relation in guarded:
             sources = sorted(
                 {
-                    str(source)
+                    source
                     for source, _ in after.incoming(entity, TermRef(name))
                     if (current := after.get(source)) is not None
                     and current.record_status == "active"
-                }
+                },
+                key=str,
             )
             if not sources:
                 continue
@@ -908,7 +1054,8 @@ def _retired_targets(
                 f" over {name}; relink or retract {'it' if count == 1 else 'them'} in the"
                 " same change set",
                 severity=_target_severity(relation),
-                actual={"count": count, "sources": list(sources[:_MAX_SOURCES])},
+                actual={"count": count, "sources": [str(s) for s in sources[:_MAX_SOURCES]]},
+                names=sources,
             )
 
 
@@ -946,7 +1093,12 @@ def _deprecated(
             warn(f"attrs.{name}", attribute.type, doc)
     for edge in revision.edges:
         relation = model.relations.get(edge.rel)
-        if edge.edge_id in new_edges and relation is not None and relation.doc.deprecated:
+        if (
+            edge.edge_id in new_edges
+            and relation is not None
+            and relation.doc.deprecated
+            and (checker.view is None or edge.rel in checker.view.model.relations)
+        ):
             warn(f"edges.{edge.rel}", edge.rel, relation.doc)
 
 
@@ -1045,16 +1197,17 @@ def _judge_unlink(
     if effect.problem is None:
         return
     path = "edges" if effect.rel is None else f"edges.{effect.rel}"
-    relation = None if effect.rel is None else checker.model.relations.get(effect.rel)
+    shown = checker.answer_model  # what the caller may be told about the relation
+    relation = None if effect.rel is None else shown.relations.get(effect.rel)
     if effect.rel is not None and relation is None:
         checker.add(
-            "data.referential.unknown_relation",
+            UNKNOWN_RELATION,
             revision,
             path,
             f"relation {effect.rel} does not exist",
-            expected=_close(effect.rel, checker.model.relations),
+            expected=_close(effect.rel, shown.relations),
         )
-    elif relation is not None and not checker.model.is_a_any(revision.type, relation.domain):
+    elif relation is not None and not shown.is_a_any(revision.type, relation.domain):
         checker.add(
             "data.referential.domain_violation",
             revision,
@@ -1110,6 +1263,7 @@ def _judge_transition(
                 path,
                 guard.summary,
                 rule_id=guard.id,
+                conceal=checker.guard_hidden(guard.id),
             )
 
 
@@ -1133,6 +1287,7 @@ def _aliases(
                 revision,
                 "alias",
                 f"alias {alias} is already bound to {owner}; aliases are never reused",
+                names=(owner,),
             )
         taken.setdefault(alias, entity)
 

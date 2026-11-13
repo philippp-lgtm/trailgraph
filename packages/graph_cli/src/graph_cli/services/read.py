@@ -417,6 +417,25 @@ class ReadService:
                 actor, entry, policy, lambda: self._models.load_for_read(entry)[0]
             )
 
+    def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
+        """The concrete types ``actor`` sees in the graph, ``None`` for no limit."""
+        return self._visible_set(actor, entry)
+
+    def limited_view(
+        self, actor: ActorContext, entry: GraphEntry, snapshot: Snapshot, model: CompiledModel
+    ) -> tuple[Snapshot, CompiledModel, frozenset[str] | None]:
+        """``snapshot`` and ``model`` as ``actor`` reaches them in a type limited graph, and the
+        types it sees (``None``, and both returned as given, when nothing is limited). For the
+        services that look things up for a write (action parameters, file content)."""
+        visible = self._visible_set(actor, entry)
+        if visible is None:
+            return snapshot, model, None
+        return (
+            VisibleSnapshot(snapshot, visible),
+            self._visibility.model(entry, model, visible),
+            visible,
+        )
+
     def _published_slot(
         self, entry: GraphEntry
     ) -> tuple[tuple[FunctionEntry, ...], FunctionsSlot] | None:
