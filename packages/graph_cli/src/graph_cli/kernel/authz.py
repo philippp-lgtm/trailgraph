@@ -31,7 +31,9 @@ class Obligations:
 class Decision:
     effect: Literal["allow", "deny"]
     action: Action
-    resource: str  # installation | graph:<id> | graph:<id>/type:<curie>  (B6.9)
+    # installation | graph:<id> | graph:<id>/type:<curie> (B6.9), below a type
+    # .../attr:<name> or .../rel:<curie>
+    resource: str
     rule_id: str
     policy_hash: str
     obligations: Obligations = field(default_factory=Obligations)

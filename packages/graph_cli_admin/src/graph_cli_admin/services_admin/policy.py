@@ -4,8 +4,12 @@ An authored policy file is compiled against this installation: graph names
 resolve to ids, and a graph policy is checked against the graph's pinned
 model (an unknown type warns with ``admin.policy_unknown_type``) and its deny
 rules against the roles the installed installation policy declares (an unknown
-role warns with ``policy.role_unknown``). Its ``id``
-says which layer it is; a graph policy needs ``--graph``, an installation
+role warns with ``policy.role_unknown``). An installation policy's ``writes`` grants are
+checked against the pinned model of each graph they name, and a graph policy's term deny
+rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
+attribute or relation the type lacks with ``admin.policy_unknown_term``, a write no call
+can satisfy with ``admin.policy_unusable_write``; an abstract type is ``policy.invalid``.
+Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
 ``apply`` is ``maint.policy_change``. An installation policy that no longer declares a role
@@ -64,6 +68,7 @@ from graph_cli.access_control.effective import (
     withheld_actions,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
+from graph_cli.access_control.terms import AttributeTerms, TermModel, TypeTerms
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     InstalledPolicy,
@@ -91,11 +96,14 @@ from graph_cli.kernel.actor import (
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM, AuditEventDraft, AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import RegistrySession
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.ontology_layer.model import ClassDef, CompiledModel
+from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
@@ -448,26 +456,38 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             f"{file} is the installation policy; it applies to every graph, drop --graph",
             details={"argument": "graph"},
         )
-    graphs = {e.name: e.id for e in ctx.catalog.list_graphs(include_archived=True)}
+    entries = ctx.catalog.list_graphs(include_archived=True)
+    graphs = {e.name: e.id for e in entries}
     entry = ctx.resolve(graph_ref, command) if graph_ref is not None else None
-    classes = pinned_model(ctx.catalog, entry).classes if entry is not None else None
+    own = pinned_model(ctx.catalog, entry) if entry is not None else None
+
+    def models(graph: GraphId) -> TermModel | None:
+        """The pinned model of a graph a rule names, condensed; ``None`` (not checked) for an
+        archived graph and one whose model cannot be read."""
+        found = next((e for e in entries if e.id == graph), None)
+        if found is None or found.state == "archived":
+            return None
+        if entry is not None and own is not None and found.id == entry.id:
+            return term_model(own)
+        try:
+            return term_model(pinned_model(ctx.catalog, found))
+        except GraphCliError:
+            return None
+
+    classes = own.classes if own is not None else None
     compiled = compile_policy(
         data,
         file=str(file),
         graphs=graphs,
         graph=entry.id if entry is not None else None,
         known_types=frozenset(classes) if classes is not None else None,
-        extended_types=frozenset(
-            name
-            for name, cls in (classes or {}).items()
-            if cls.abstract or any(name in other.ancestors for other in classes.values())
-        )
-        if classes is not None
-        else frozenset(),
+        extended_types=_extended_types(classes) if classes is not None else frozenset(),
         # A graph policy is applied independently of the installation policy: its role
         # names are checked against the installed one (a warning, like an unknown type).
         roles=declared_roles(ctx.policy.current(None).documents[0]) if entry is not None else None,
+        models=models,
     )
+    names = {e.id: e.name for e in entries}
     role_warning = (
         WarningRecord(
             "policy.role_unknown",
@@ -478,15 +498,119 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             {"roles": list(compiled.unknown_roles)},
         ),
     )
-    warnings = tuple(
-        WarningRecord(
-            "admin.policy_unknown_type",
-            f"the graph's model has no type {name}; the limit applies once it has",
-            {"graph": entry.name if entry else None, "type": name},
-        )
-        for name in compiled.unknown_types
+    warnings = (
+        *(
+            WarningRecord(
+                "admin.policy_unknown_type",
+                f"the graph's model has no type {name}; the limit applies once it has",
+                {"graph": entry.name if entry else None, "type": name},
+            )
+            for name in compiled.unknown_types
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unknown_type",
+                f"the model of graph {names[w.graph]} has no type {w.type}; the write grant"
+                " applies once it has",
+                {"graph": names[w.graph], "type": w.type},
+            )
+            for w in compiled.unknown_write_types
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unknown_term",
+                f"type {t.type} of graph {names[t.graph]} has no {_KIND_TEXT[t.kind]} {t.term};"
+                " nobody can write a term that does not exist (fail closed), so the policy"
+                " entry has no effect until a release adds it",
+                {"graph": names[t.graph], "type": t.type, "term": t.term, "kind": t.kind},
+            )
+            for t in compiled.unknown_terms
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unusable_write",
+                _unusable_message(u.verb, u.type, names[u.graph], u.attributes, u.file),
+                {
+                    "graph": names[u.graph],
+                    "type": u.type,
+                    "verb": u.verb,
+                    "attributes": list(u.attributes),
+                },
+            )
+            for u in compiled.unusable_writes
+        ),
     )
     return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
+
+
+_KIND_TEXT: Final = {
+    "attribute": "attribute",
+    "relation": "relation",
+    "lifecycle": "lifecycle attribute",
+}
+# What ``graph file add`` sets itself (services/files.py): a create list must name these.
+_FILE_ADD_ATTRIBUTES: Final = ("title", "content", "media_type", "file_name")
+
+
+def _unusable_message(
+    verb: str, type_curie: str, graph: str, attributes: Sequence[str], file: bool
+) -> str:
+    listed = ", ".join(attributes)
+    if verb == "update":
+        return (
+            f"update of {type_curie} in graph {graph} lists lifecycle attribute(s) {listed}; an"
+            " update never touches a lifecycle attribute, so no such write can succeed (grant"
+            " transition instead)"
+        )
+    text = (
+        f"create of {type_curie} in graph {graph} lists attributes but leaves out {listed}, which"
+        " every create must give; no such write can succeed"
+    )
+    if file:
+        text += (
+            f". {type_curie} is a stored file: `graph file add` sets "
+            f"{', '.join(_FILE_ADD_ATTRIBUTES)} itself (and origin when a root matches), so a"
+            " create list for it must name them"
+        )
+    return text
+
+
+def _extended_types(classes: Mapping[str, ClassDef]) -> frozenset[str]:
+    """The types a rule on an exact type would miss entities of: abstract ones and those
+    with subclasses."""
+    return frozenset(
+        name
+        for name, cls in classes.items()
+        if cls.abstract or any(name in other.ancestors for other in classes.values())
+    )
+
+
+def term_model(model: CompiledModel) -> TermModel:
+    """What the policy compiler needs of ``model``: per type its attributes (is it a
+    lifecycle; must a create give it), the relations whose domain covers it, and whether
+    it is extended or a stored file. A stored file's create gives what ``graph file add``
+    sets itself, so those attributes count as given by the writer."""
+    extended = _extended_types(model.classes)
+    types: dict[str, TypeTerms] = {}
+    for name, cls in model.classes.items():
+        file = FILE_TYPE in model.classes and model.is_a(name, FILE_TYPE)
+        attributes: dict[str, AttributeTerms] = {}
+        for attribute, definition in cls.attributes.items():
+            lifecycle = definition.kind == "lifecycle"
+            if lifecycle:
+                must_give = len(model.lifecycles[definition.type].initial) > 1
+            else:
+                must_give = definition.required and definition.default is None
+            attributes[attribute] = AttributeTerms(
+                lifecycle, must_give or (file and attribute in _FILE_ADD_ATTRIBUTES)
+            )
+        types[name] = TypeTerms(
+            name in extended,
+            file,
+            attributes,
+            frozenset(r for r, rel in model.relations.items() if model.is_a_any(name, rel.domain)),
+        )
+    return TermModel(types)
 
 
 def _read(file: Path) -> bytes:

@@ -93,6 +93,63 @@ PRE_ROLES_INSTALLATION_HASH = (
 )
 PRE_ROLES_GRAPH_HASH = "sha256:9bb9346e7c0b28fcdb1338df9220f26302b7817b37d5df7ddc2b0805311bc3c3"
 
+# A grant-heavy pair: app and server grants, a project and role grants, named graphs and
+# ``*``, both levels, every scope level, deny rules with and without a graph, obligations;
+# on the graph layer type limits, a prefix limit and typed deny rules. Hashes computed on the
+# code before ``writes`` and term deny rules existed: policies that use neither compile alike.
+GRANT_HEAVY_INSTALLATION = b"""\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  importer: {description: "Importers: findings in example_graph"}
+  tagger: {description: "Taggers: read every graph"}
+grants:
+  - {principal: {name: tester}, graphs: "*", level: write}
+  - {entrypoint: app, graphs: [example_graph, other_graph], level: read}
+  - {entrypoint: server, principal: {project: example_project},
+     graphs: [example_graph], level: write}
+  - {entrypoint: server, principal: {role: importer}, graphs: [example_graph], level: write}
+  - {entrypoint: server, principal: {role: tagger}, graphs: "*", level: read}
+  - {entrypoint: server, principal: {role: tagger, project: example_project},
+     graphs: [other_graph, third_graph], level: write}
+  - {entrypoint: [server, app], principal: {id: "token:ci"}, graphs: [third_graph], level: read}
+maintainers:
+  - {name: boss}
+scopes:
+  example_project: {example_graph: write, other_graph: read, third_graph: maintain}
+  another_project: {other_graph: write, "*": read}
+no_project: {"*": read, third_graph: none}
+deny:
+  - {id: no_explore_writes, agent_type: [explore], action: ["write.*"]}
+  - {id: no_server_retract, entrypoint: server, principal_name: ci,
+     action: ["write.retract"], graph: [example_graph]}
+  - {id: importer_no_retract, role: [importer], action: ["write.retract", "write.supersede"]}
+  - {id: no_device_unlink, device_id: dev-1, action: ["write.unlink"], graph: "*"}
+obligations:
+  - {action: ["write.*"], max_batch: 100}
+  - {action: ["write.retract"], require_reason: true}
+"""
+GRANT_HEAVY_GRAPH = b"""\
+schema: graph_cli.policy/1
+id: graph
+types:
+  "files:File": read
+  "inv:*": read
+  "ex:Finding": write
+obligations:
+  - {action: ["write.transition"], require_reason: true}
+deny:
+  - {id: no_retract_by_explore, agent_type: explore, action: [write.retract], type: ["inv:*"]}
+  - {id: no_decision_writes, role: [importer], action: ["write.*"],
+     type: ["ex:Decision", "ex:Note"]}
+  - {id: no_alias, agent_type: [explore], action: ["write.alias", "write.supersede"],
+     type: ["ex:*"]}
+"""
+GRANT_HEAVY_INSTALLATION_HASH = (
+    "sha256:d9a8bc9c978df9be1d65073fd5da3c956c66f2ca93c73708ec22d779ace68700"
+)
+GRANT_HEAVY_GRAPH_HASH = "sha256:b380931d2493b70746327335f9ecbb999551e91028d92c16fbcaa80469a95268"
+
 
 def token(*roles: str, project: str | None = None) -> ActorContext:
     """A server request whose token holds ``roles`` (and is bound to ``project``)."""
@@ -311,3 +368,19 @@ def test_a_policy_without_roles_compiles_to_the_same_hash_as_before() -> None:
     assert graph.hash == PRE_ROLES_GRAPH_HASH
     empty = PRE_ROLES_INSTALLATION.replace(b"grants:", b"roles: {}\ngrants:")
     assert compile_policy(empty, file="i.yaml", graphs=graphs).hash == PRE_ROLES_INSTALLATION_HASH
+
+
+def test_a_grant_heavy_policy_compiles_to_the_same_hash_as_before_writes() -> None:
+    """Pinned on the code before write allow lists: no ``writes`` and no term deny keys
+    means the same compiled document, hence the same hash."""
+    graphs = {**GRAPHS, "third_graph": THIRD}
+    installation = compile_policy(GRANT_HEAVY_INSTALLATION, file="i.yaml", graphs=graphs)
+    assert installation.hash == GRANT_HEAVY_INSTALLATION_HASH
+    graph = compile_policy(
+        GRANT_HEAVY_GRAPH,
+        file="g.yaml",
+        graphs=graphs,
+        graph=EXAMPLE,
+        roles=frozenset({"importer"}),
+    )
+    assert graph.hash == GRANT_HEAVY_GRAPH_HASH

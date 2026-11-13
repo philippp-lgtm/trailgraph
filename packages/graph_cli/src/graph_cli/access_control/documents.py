@@ -15,6 +15,14 @@ one) or ``graph`` (one graph's own policy, ``graph`` names it). Keys:
   ``principal`` key ``role`` names roles an actor holds (a server token's roles);
 - ``types`` (graph): the declared type limits, for display.
 
+Resources (B6.9): ``installation``, ``graph:<id>``, a type ``graph:<id>/type:<curie>`` and,
+below a type, one attribute ``.../attr:<name>`` or one relation ``.../rel:<curie>`` (the
+terms a write touches). Rules on anything below a graph name write actions only. Globs
+match by prefix, so ``graph:<id>*``, ``graph:<id>/type:*`` and ``graph:<id>/type:ex:*`` cover
+the terms of every type they cover, as ``.../type:<curie>/attr:*`` and ``.../rel:*`` cover the
+terms of one type. An exact type resource matches the type only, never its terms.
+``fine_types`` tells which types some rule names terms of.
+
 Allow rules match verified facets and the entrypoint only (B6.7): their
 ``project`` is the project a bound token verifies, never an asserted one, and
 a ``role`` is verified (it comes from the server's token record only); a
@@ -26,7 +34,7 @@ every violation with its path; the loader turns them into
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -39,6 +47,7 @@ from graph_cli.kernel.actor import (
     is_valid_role_name,
 )
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.ids import GraphId
 
 POLICY_SCHEMA: Final = "graph_cli.policy/1"
 INSTALLATION_LAYER: Final = "installation"
@@ -51,11 +60,17 @@ TYPE_LIMITS: Final = ("read", "write")
 
 _UUID: Final = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _CURIE: Final = r"[a-z][a-z0-9_]*:[A-Za-z][A-Za-z0-9_]*"
-RESOURCE_RE: Final = re.compile(rf"^installation$|^graph:{_UUID}(/type:{_CURIE})?$")
+# An attribute name: the lower names of the ontology layer and of change sets.
+_NAME: Final = r"[a-z][a-z0-9_]{0,63}"
+NAME_RE: Final = re.compile(rf"^{_NAME}$")
+CURIE_RE: Final = re.compile(rf"^{_CURIE}$")
+RESOURCE_RE: Final = re.compile(
+    rf"^installation$|^graph:{_UUID}(/type:{_CURIE}(/attr:{_NAME}|/rel:{_CURIE})?)?$"
+)
 TYPE_GLOB_RE: Final = re.compile(rf"^(?:{_CURIE}|[a-z][a-z0-9_]*:\*)$")
 _RESOURCE_GLOB_RE: Final = re.compile(
     rf"^(?:\*|installation|graph:\*|graph:{_UUID}(?:\*|/type:\*|/type:[a-z][a-z0-9_]*:\*"
-    rf"|/type:{_CURIE})?)$"
+    rf"|/type:{_CURIE}(?:/attr:(?:{_NAME}|\*)|/rel:(?:{_CURIE}|\*))?)?)$"
 )
 _AREA_GLOBS: Final = frozenset({"*", "read.*", "write.*", "maint.*", "ext.*"})
 _EXT_GLOB_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.\*$")
@@ -108,6 +123,29 @@ def glob(pattern: str, value: str) -> bool:
     if pattern.endswith("*"):
         return value.startswith(pattern[:-1])
     return pattern == value
+
+
+def fine_types(
+    documents: Sequence[Mapping[str, JsonValue]], graph: GraphId | str
+) -> frozenset[str]:
+    """The type CURIEs some rule of ``documents`` names terms of in ``graph``: those with a
+    resource (of any rule, any effect, ``unless`` conditions included) that starts with
+    ``graph:<graph>/type:<curie>/``. Only for these types can a decision on an attribute or
+    relation differ from the decision on the type, so a caller records term decisions for
+    them alone. Pure and cheap: cache it per policy hash."""
+    prefix = f"graph:{graph}/type:"
+    found: set[str] = set()
+    for document in documents:
+        for rule in rules(document):
+            patterns = strings(rule, "resource")
+            for condition in rules(rule, "unless"):
+                patterns += strings(condition, "resource")
+            for pattern in patterns:
+                if pattern.startswith(prefix):
+                    curie, below, _ = pattern[len(prefix) :].partition("/")
+                    if below:
+                        found.add(curie)
+    return frozenset(found)
 
 
 def principal_facts(actor: ActorContext, *, verified_only: bool = False) -> dict[str, Fact]:
