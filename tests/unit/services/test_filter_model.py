@@ -147,6 +147,23 @@ def test_a_module_without_a_term_left_goes_with_its_prefix() -> None:
     assert everything_but_core.classes == {}
 
 
+def test_a_main_module_without_terms_stays_and_an_area_that_lost_them_goes() -> None:
+    """``company``: the main module ``co`` only imports the areas. Nothing is hidden from it, so
+    it stays (the functions and actions that name it keep their module); an area whose terms
+    are all hidden still goes with its prefix."""
+    assert not any(c.startswith("co:") for c in COMPANY.classes)
+    org = {c for c in ALL_COMPANY if c.startswith("org:")}
+    assert org
+    view = filter_model(COMPANY, ALL_COMPANY - org)
+    prefixes = {m.prefix for m in view.modules}
+    assert "co" in prefixes and "ppl" in prefixes
+    assert "org" not in prefixes and "org" not in view.prefixes
+    assert "co" in view.prefixes
+    assert {m.id for m in filter_model(COMPANY, ALL_COMPANY).modules} == {
+        m.id for m in COMPANY.modules
+    }
+
+
 def test_bundle_identity_documentation_and_mappings_stay() -> None:
     model = seeing(NAS, "nas:Topic")
     assert (model.bundle_id, model.bundle_version) == (NAS.bundle_id, NAS.bundle_version)

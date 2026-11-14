@@ -8,7 +8,8 @@ hidden when:
 - a type or relation its compiled query or ops touch is missing from the filtered model, or an
   action needs a write on a type that is missing;
 - a parameter names a class (``ref``) or an enum that is missing;
-- the module it belongs to has no term left;
+- the module it belongs to lost all its terms to the filter (a main module that holds none in
+  the full model either, an umbrella, is not hidden by that);
 - it no longer compiles against the filtered model although it compiles against the full one:
   an unlabelled node can name an attribute only a hidden type has, which no ``touches`` list
   shows. A function that was already stale against the full model is not hidden by this check,

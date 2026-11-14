@@ -199,9 +199,8 @@ that name the old one.
   renamed attribute are `admin.functions_broken`: fix them in `functions/` and push them with
   the ontology. A function without a `module:` line must get one in the same push as soon as the
   release makes the graph multi-module (`function.module_required`); name a module that exists
-  before and after the split (the main module). A reader with read limits sees a function only
-  while its module has a term that reader sees: a main module without terms of its own hides
-  the function from them, so name an area module in the same push when that matters.
+  before and after the split (the main module, even when it holds no terms of its own: a reader
+  with read limits still sees the function while what it touches is visible).
 - **Actions** name their classes by CURIE, so an action that names a class that moves never
   follows (`admin.actions_broken`): fix its file in the same push.
 

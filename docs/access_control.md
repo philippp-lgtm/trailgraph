@@ -592,7 +592,8 @@ A named function or action is shown to a limited caller only when it fits what
 the caller sees; to everyone else it does not exist.
 
 - **Functions** are hidden when a type or relation they touch, the class of a
-  `ref` parameter, an enum parameter or the module that holds them is hidden, or
+  `ref` parameter, an enum parameter or the module that holds them is hidden (a module
+  whose terms are all hidden; a main module that holds no terms of its own is not), or
   when they compile only against the full model (an unlabelled node that reads
   an attribute only a hidden type has). A hidden function is not listed or
   described, not featured in the skill, not counted in `describe modules`, not

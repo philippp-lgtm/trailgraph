@@ -266,8 +266,8 @@ def test_one_release_splits_the_module_and_keeps_the_data(
     block = released.data["ontology"]["migration"]
     assert released.data["ontology"]["pinned"] is True
     assert block["unused_steps"] == [] and block["findings"]["count"] == 0
-    assert (block["entities"], block["unchanged"], block["edges"]) == (10, 1, 4)
-    assert block["migrated"]["entities"] == 10 and block["migrated"]["edges"] == 4
+    assert (block["entities"], block["unchanged"], block["edges"]) == (11, 0, 4)
+    assert block["migrated"]["entities"] == 11 and block["migrated"]["edges"] == 4
     by_step = block["migrated"]["by_step"]
     assert by_step["steps[0].retype"] == 2  # the gadgets
     assert by_step["steps[1].fill"] == 3  # every task, the retracted one included
@@ -306,7 +306,7 @@ TYPES = {
     "wk:Tool": "equip:Tool",
     "wk:Gadget": "equip:Tool",  # merged by the retype step
     "wk:Manual": "equip:Manual",
-    "wk:Site": "wk:Site",  # stays in the main module
+    "wk:Site": "equip:Site",
 }
 RELATIONS = {"wk:belongs_to": "plan:belongs_to", "wk:uses": "plan:uses"}
 
@@ -314,13 +314,9 @@ RELATIONS = {"wk:belongs_to": "plan:belongs_to", "wk:uses": "plan:uses"}
 def check_store(before: dict[str, Revision], after: dict[str, Revision], seq_before: int) -> None:
     """What the migration tx did to every revision, read from the raw store."""
     assert after.keys() == before.keys()  # same ids, none added or removed
-    moved = {e: r for e, r in after.items() if before[e].type != "wk:Site"}
-    assert {r.tx_seq for r in moved.values()} == {seq_before + 1}  # one tx
+    assert {r.tx_seq for r in after.values()} == {seq_before + 1}  # one tx
     for entity, old in before.items():
         new = after[entity]
-        if old.type == "wk:Site":
-            assert new == old  # nothing to change, so no new revision
-            continue
         # kept
         assert (new.alias, new.created_at, new.record_status) == (
             old.alias,
@@ -346,7 +342,6 @@ def check_store(before: dict[str, Revision], after: dict[str, Revision], seq_bef
         "done",
     }
     assert by_alias["BUD-0001"].attrs == {"amount": 500}
-    assert by_alias["SITE-0001"].ontology_version == "1.0.0"
     dig = by_alias["TASK-0001"]
     page = next(e for e in dig.edges if e.rel == "files:from_file")
     assert dict(page.qualifiers) == {"page": 3}  # the standard relation and its qualifier stay
@@ -453,7 +448,11 @@ def check_aliases_continue(scene: Scene) -> None:
 
 
 def check_catalog(scene: Scene, rows_before: dict[str, Any]) -> None:
-    """The functions were published again with the release and answer as before."""
+    """The functions were published again with the release and answer as before. The reader
+    has read limits (the policy hides a type) and their module, the main module, holds no term
+    of its own: they stay visible to it."""
+    listed = scene.ok("describe", "functions").data["functions"]
+    assert {f["name"] for f in listed} == set(rows_before)
     for name, rows in rows_before.items():
         assert scene.ok("run", name).data["items"] == rows
     slot = admin(scene.run_cli, "graph", "functions", "show", "example_graph").data["slot"]

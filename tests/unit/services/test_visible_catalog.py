@@ -30,6 +30,7 @@ from graph_cli.services.describe import (
     describe_modules,
 )
 from graph_cli.services.schema_search import search_model
+from graph_cli.services.term_model import concrete_types
 from graph_cli.services.visibility import filter_model
 from graph_cli.services.visible_catalog import (
     HiddenCatalog,
@@ -197,6 +198,28 @@ def test_the_module_of_an_entry_must_still_hold_a_term() -> None:
     assert not function_hidden(base, view)
     assert function_hidden(replace(base, module="notes_and_sources"), view)
     assert not function_hidden(replace(base, module=None), view)
+
+
+def test_the_module_of_an_entry_may_be_a_main_module_without_terms() -> None:
+    """A main module that holds no term of its own is no module the filter emptied: its
+    entries stay visible while what they touch is."""
+    company = compiled_model("company")
+    base = with_params(
+        replace(
+            next(f for f in FUNCTIONS if f.name == "items_by_condition"),
+            types=(),
+            relations=(),
+            module="company",
+        )
+    )
+    everything = concrete_types(company.classes)
+    assert not function_hidden(base, filter_model(company, everything))
+    org = {c for c in everything if c.startswith("org:")}
+    assert not function_hidden(base, filter_model(company, everything - org))
+    # an area whose terms are all hidden still hides what is bound to it
+    assert function_hidden(
+        replace(base, module="organization"), filter_model(company, everything - org)
+    )
 
 
 def test_an_action_hides_when_a_type_it_needs_a_write_on_is_missing() -> None:

@@ -22,7 +22,7 @@ enums:
 
 classes:
   Site:
-    summary: The place where the workshop is; stays in the main module in 2.0.0.
+    summary: The place where the workshop is.
     display_prefix: SITE
     attributes:
       name:
