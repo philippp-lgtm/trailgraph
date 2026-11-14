@@ -33,8 +33,9 @@ from graph_cli.kinetic.action_compile import compile_actions
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import kinetic_slots
+from graph_cli_admin.services_admin.catalog_follow import ProblemHints
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.kinetic_slots import Checked, ProblemHints, Published
+from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
 
 __all__ = [
     "Checked",

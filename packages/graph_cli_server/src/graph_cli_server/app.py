@@ -77,6 +77,7 @@ from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.error_codes import ErrorCategory
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.timing import Timings
+from graph_cli.services.names import NameMapCache
 from graph_cli_server.dist import DIST_ENV, Served, load
 from graph_cli_server.http_status import status_for
 from graph_cli_server.openapi import API_VERSION, openapi
@@ -229,6 +230,8 @@ class ServerApp:
         }
         self.tokens = TokenStore(settings.data_root)
         self.uploads = Uploads(settings.state_root)
+        # a request builds its services anew: what outlives it is shared here (thread safe)
+        self.name_maps = NameMapCache()
         self.admin = admin(self) if admin is not None else None
         self.enroll = enroll(self) if enroll is not None else None
         self.dist: Served | None = None
@@ -526,7 +529,14 @@ class ServerApp:
 
     def _run(self, argv: list[str], scope: RequestScope) -> Completed:
         timings = Timings()
-        services = AppServices(self.settings.env, self.settings.cwd, None, timings, request=scope)
+        services = AppServices(
+            self.settings.env,
+            self.settings.cwd,
+            None,
+            timings,
+            request=scope,
+            name_maps=self.name_maps,
+        )
         done: list[Completed] = []
 
         def after(completed: Completed) -> None:

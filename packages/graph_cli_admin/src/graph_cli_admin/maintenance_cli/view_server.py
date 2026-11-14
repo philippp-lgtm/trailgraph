@@ -30,7 +30,11 @@ One feed thread polls the store of every open graph and the activity
 socket, numbers each write and read as a step of that graph's trail and
 hands it to a bounded queue per client of that graph: a slow client loses
 events, the feed never waits; ``/trail`` gives a page the steps it missed.
-A failing poll becomes an ``error`` event and the feed goes on. A graph
+A failing poll becomes an ``error`` event and the feed goes on. A client that falls
+behind (its queue is full) and a write with too many revisions to send one by one (a data
+migration) each become one ``reload`` event: the page loads the graph again, as it does
+after a reconnect. A graph whose ontology pin moved is opened again on the next round and
+its clients get a ``reload`` too. A graph
 that clients watch is never closed (``MAX_OPEN``); a stream that lost the
 race with closing its graph ends at once and the browser reconnects. A
 stream is authorized when it connects; on every round the feed closes the
@@ -126,12 +130,19 @@ class Hub:
         for client in clients:
             try:
                 client.put_nowait(event)
-            except queue.Full:  # too slow: it reloads on reconnect
-                if event is None:  # but the stop must arrive: it takes the oldest's place
-                    with contextlib.suppress(queue.Empty):
-                        client.get_nowait()
-                    with contextlib.suppress(queue.Full):
-                        client.put_nowait(None)
+            except queue.Full:  # too slow: it loads the graph again instead of what it missed
+                self._lagging(client, stop=event is None)
+
+    @staticmethod
+    def _lagging(client: Client, *, stop: bool) -> None:
+        """Replace what a full queue holds by one ``reload`` event; a stop takes its place
+        and a stop already queued stays (the stream must end)."""
+        stopped = stop
+        with contextlib.suppress(queue.Empty):
+            while True:
+                stopped = client.get_nowait() is None or stopped
+        with contextlib.suppress(queue.Full):
+            client.put_nowait(None if stopped else {"kind": "reload", "reason": "lagging"})
 
     def close(self, graph: str) -> None:
         self.publish(graph, None)
@@ -237,11 +248,15 @@ class ViewServer:
     def _run_feed(self) -> None:
         while not self._stop.is_set():
             self.graphs.close_revoked()
+            for graph in self.graphs.refresh_models():
+                self.hub.publish(graph, {"kind": "reload", "reason": "model"})
             for view in self.graphs.opened():
                 graph = str(view.source.entry.id)
                 try:
                     for event in view.feed.poll():
-                        self.hub.publish(graph, view.trail.add(event))
+                        # a reload is no step of activity: the trail keeps what agents did
+                        sent = event if event["kind"] == "reload" else view.trail.add(event)
+                        self.hub.publish(graph, sent)
                 except GraphCliError as exc:
                     error: Event = {"kind": "error", "code": exc.code, "message": exc.message}
                     self.hub.publish(graph, error)

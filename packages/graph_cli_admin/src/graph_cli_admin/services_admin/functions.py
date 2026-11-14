@@ -37,8 +37,9 @@ from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.format import FILE_SUFFIX, Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import kinetic_slots
+from graph_cli_admin.services_admin.catalog_follow import ProblemHints
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.kinetic_slots import Checked, ProblemHints, Published
+from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
 from graph_cli_admin.services_admin.release import FUNCTIONS_DAMAGED
 
 DAMAGED = FUNCTIONS_DAMAGED

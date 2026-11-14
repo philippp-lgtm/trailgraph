@@ -405,7 +405,7 @@ class WriteService:
         if snapshot is None:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
-        migration_state.refuse_write(entry, read, snapshot)
+        migration_state.refuse_write(entry)
         visible = self._visible(request, entry, model)
         resolution = self._resolve(  # a plan: the empty frame, no pairs
             request, _seen_by(snapshot, visible)
@@ -594,7 +594,7 @@ class WriteService:
                 base = session.snapshot()
                 head = session.head()
             # a release that crashed after its migration tx while this write waited for the lock
-            migration_state.refuse_write(entry, prepared.read, base)
+            migration_state.refuse_write(entry)
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
             visible = self._visible(request, entry, model)
             seen = _seen_by(base, visible)  # what the caller reaches; ``base`` stays the truth

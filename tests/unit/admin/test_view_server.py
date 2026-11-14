@@ -533,7 +533,16 @@ def test_the_stop_reaches_a_client_with_a_full_queue(monkeypatch: pytest.MonkeyP
     hub = Hub()
     client = hub.subscribe("g")
     for n in range(3):
-        hub.publish("g", {"n": n})  # the third is lost: too slow
+        hub.publish("g", {"n": n})  # the third finds the queue full: too slow, it reloads
     assert hub.watched("g") and not hub.watched("other")
     hub.close("g")
-    assert [client.get_nowait(), client.get_nowait()] == [{"n": 1}, None]
+    assert [client.get_nowait(), client.get_nowait()] == [
+        {"kind": "reload", "reason": "lagging"},
+        None,
+    ]
+    # a stop that finds the queue full takes its place
+    behind = hub.subscribe("h")
+    for n in range(4):
+        hub.publish("h", {"n": n})
+    hub.close("h")
+    assert behind.get_nowait() is None and behind.empty()

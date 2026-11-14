@@ -25,11 +25,8 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.services.models import ModelCache
-from graph_cli.services.names import NameMaps, hinted_problems
-from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import catalog_follow
-from graph_cli_admin.services_admin.catalog_follow import names_of
+from graph_cli_admin.services_admin.catalog_follow import ProblemHints, names_of, rename_hints
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.release import DAMAGED, check_state, current_catalog
@@ -72,29 +69,6 @@ Check = Callable[
     ],
     Checked,
 ]
-# Problems of a folder with the current names of the old terms they name (migration plan M7).
-ProblemHints = Callable[[list[Problem]], list[Problem]]
-
-
-def rename_hints(
-    ctx: AdminContext, entry: GraphEntry, model: CompiledModel, pending: Hop | None = None
-) -> ProblemHints:
-    """The hints for problems checked against ``model``: from the graph's name map (its pin
-    history), with ``pending`` on top for a release made in the same push. The name map is
-    read only when there are problems."""
-
-    def hints(problems: list[Problem]) -> list[Problem]:
-        if not problems:
-            return problems
-        try:
-            name_map = NameMaps(ctx.catalog, ctx.audit, ModelCache(ctx.catalog)).of(entry)
-        except GraphCliError:
-            return problems
-        if pending is not None:
-            name_map = name_map.extended(pending)
-        return hinted_problems(problems, name_map, model)
-
-    return hints
 
 
 def read_dir(source: Path, kind: SlotKind) -> tuple[dict[str, bytes], list[Problem]]:

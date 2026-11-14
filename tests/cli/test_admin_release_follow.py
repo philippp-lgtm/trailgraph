@@ -349,6 +349,10 @@ def test_functions_with_old_curies_block_the_release(
     assert (refused.code, refused.error["code"]) == (1, "admin.functions_broken")
     assert refused.error["details"]["functions"] == ["suppliers_exact"]
     assert tree_hash(root) == before and pin(run_cli) == "1.1.0"
+    # the problem says what the old term is called under the release (its hop is not pinned yet)
+    [problem] = refused.error["details"]["problems"]
+    assert problem["details"]["renamed"][0]["to"] == "sup:Supplier"
+    assert "inv:Supplier was renamed to sup:Supplier in 2.0.0" in problem["message"]
     # the same in a push of the ontology alone, and in the check and diff previews
     checked = admin(
         run_cli,
@@ -453,6 +457,8 @@ def test_actions_with_old_curies_block_the_release(
     refused = release(run_cli, moved_source(tmp_path))
     assert (refused.code, refused.error["code"]) == (1, "admin.actions_broken")
     assert refused.error["details"]["actions"] == ["rename_supplier"]
+    [problem] = refused.error["details"]["problems"]
+    assert "was renamed to sup:Supplier in 2.0.0" in problem["message"]
     shown = admin(
         run_cli,
         "ontology",

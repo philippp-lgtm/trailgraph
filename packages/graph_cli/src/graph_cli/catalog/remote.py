@@ -74,10 +74,13 @@ class Answer:
 @dataclass(frozen=True, slots=True)
 class Write:
     """What ``remote.outcome_unknown`` names: the key a write was sent with and the
-    command line that repeats it with that key."""
+    command line that repeats it with that key. ``repeatable`` is a write without a key whose
+    repetition is safe anyway (a release: one that was applied changes nothing, one that was
+    interrupted is finished)."""
 
     idempotency_key: str | None
     argv: Sequence[str]
+    repeatable: bool = False
 
 
 class RemoteClient:
@@ -116,10 +119,13 @@ class RemoteClient:
         headers: Mapping[str, str] | None = None,
         write: Write | None = None,
         sink: BinaryIO | None = None,
+        retry: bool = True,
     ) -> Answer:
         """One request; ``write`` makes a lost answer ``outcome_unknown`` instead of a retry.
-        A ``sink`` receives the body of a 200 answer instead of ``Answer.body``."""
-        attempts = 1 if write is not None else 2
+        A ``sink`` receives the body of a 200 answer instead of ``Answer.body``. ``retry=False``
+        leaves the retry of a read to the caller, who can send more than this request again
+        (a command's uploads are used up by the first try)."""
+        attempts = 1 if write is not None or not retry else 2
         for attempt in range(attempts):
             connection = self._connection()
             try:
@@ -376,7 +382,13 @@ def protocol(status: int, why: str) -> GraphCliError:
 
 def outcome_unknown(write: Write) -> GraphCliError:
     key = write.idempotency_key
-    if key is None:
+    if key is None and write.repeatable:
+        message = (
+            "the connection was lost after the command was sent; it may have been applied."
+            " Running the same command again is safe: what was applied is not applied twice,"
+            " and an unfinished release is finished"
+        )
+    elif key is None:
         message = (
             "the connection was lost after the write was sent; it may have been applied."
             " Check the graph before running it again"
@@ -389,7 +401,10 @@ def outcome_unknown(write: Write) -> GraphCliError:
     return GraphCliError(
         "remote.outcome_unknown",
         message,
-        details={"idempotency_key": key, "argv": list(write.argv) if key is not None else None},
+        details={
+            "idempotency_key": key,
+            "argv": list(write.argv) if key is not None or write.repeatable else None,
+        },
     )
 
 
@@ -413,6 +428,7 @@ class RemoteSession:
         text: bool,
         write: Write | None,
         idempotency_key: str | None = None,
+        retry: bool = True,
     ) -> tuple[Mapping[str, JsonValue], str | None, str | None]:
         """``(envelope, stdout, stderr)`` of a command run by the server; the text only
         with ``text`` and when the server rendered it (a refusal before the command, such
@@ -421,7 +437,9 @@ class RemoteSession:
         body = self.body(args=dict(args))
         route = self.commands + "/".join(path) + ("?render=text" if text else "")
         headers = {KEY_HEADER: f'"{idempotency_key}"'} if idempotency_key is not None else None
-        answer = self.client.call("POST", route, body=body, headers=headers, write=write)
+        answer = self.client.call(
+            "POST", route, body=body, headers=headers, write=write, retry=retry
+        )
         if not text:
             return envelope_of(answer), None, None
         value = answer.json()

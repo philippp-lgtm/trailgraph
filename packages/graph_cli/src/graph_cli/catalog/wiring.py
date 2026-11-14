@@ -76,6 +76,7 @@ from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.kernel.skill_marker import SKILLS_DIR
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
+from graph_cli.services.names import NameMapCache
 from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
@@ -253,6 +254,8 @@ class AppServices:
     usage: UsageNote = field(default_factory=UsageNote)
     request: RequestScope | None = None  # set by the server, one per request
     compat: Callable[[], str] | None = None  # this program's compatibility id (B14.16)
+    # The server's name maps, shared by its requests (a request builds its services anew)
+    name_maps: NameMapCache | None = None
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _remote: RemoteSession | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
@@ -535,6 +538,7 @@ class AppServices:
             activity=activity,
             timings=self.timings,
             usage=self.usage,
+            name_maps=self.name_maps,
         )
         context = AppContext(
             roots=roots,

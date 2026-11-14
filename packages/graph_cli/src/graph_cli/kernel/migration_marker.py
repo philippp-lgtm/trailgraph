@@ -17,6 +17,7 @@ from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import TxId, parse_id
 from graph_cli.kernel.json_access import JsonShapeError, as_object, req_int, req_str
+from graph_cli.kernel.records import OntologyPin
 
 if TYPE_CHECKING:
     from graph_cli.kernel.ports.storage import Snapshot
@@ -37,6 +38,11 @@ class MigrationMarker:
     to_version: str
     artifact_hash: str
     migration_hash: str
+
+    def reached_by(self, pin: OntologyPin) -> bool:
+        """Whether ``pin`` names the marker's target: the pin switch happened, and only the
+        marker file may be left over."""
+        return (self.to_version, self.artifact_hash) == (pin.version, pin.artifact_hash)
 
     def to_json(self) -> dict[str, JsonValue]:
         return {

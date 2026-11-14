@@ -87,7 +87,15 @@ def check(
     read, _ = ctx.catalog.store_for(entry.id)
     snapshot = read.snapshot()
     marker = read.migration_marker()
-    interrupted = marker if marker is not None and marker_committed(snapshot, marker) else None
+    # a marker left over after the pin switch is no interrupted release: the next release
+    # deletes it
+    interrupted = (
+        marker
+        if marker is not None
+        and marker_committed(snapshot, marker)
+        and not marker.reached_by(entry.pin)
+        else None
+    )
     warnings = snapshot.warnings
     block: dict[str, JsonValue] | None = None
     if interrupted is not None and not read.writer_active():

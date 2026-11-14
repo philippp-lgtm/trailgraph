@@ -6,7 +6,11 @@ Three pieces, all opened by ``ReadService.open``:
   built from the pinned versions of the graph's audit stream (``audit.pins``), the installed
   ``compiled.json`` of each version and the installed ``migration.yaml``
   (``temporal_knowledge.name_map``). It is built once per (graph, pin), and only when a
-  revision of another major than the pin is read or an unknown term needs its hint.
+  revision of another major than the pin is read or an unknown term needs its hint. A server
+  builds its read service for every request, so it hands all of them one ``NameMapCache``:
+  a map that is complete (every file of its chain was readable) outlives the request. A pin
+  names an installed release for good and the pin history only grows, so a cached map never
+  goes stale; the cache is bounded.
 - ``GraphNames`` is one graph at one pin for one request: ``map`` returns a revision of the
   pinned major as it is, without building anything.
 - ``MappedSnapshot`` implements the ``Snapshot`` port over a raw snapshot (layered raw store
@@ -28,6 +32,7 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from functools import cached_property
@@ -69,62 +74,110 @@ from graph_cli.temporal_knowledge.name_map import (
 _ALL: Final = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 _CACHE_LIMIT: Final = 16  # (graph, pin) -> name map
 
+_MapKey = tuple[GraphId, OntologyPin]
+
+
+class NameMapCache:
+    """Complete name maps by (graph, pin), shared by the read services of one process
+    (threads of a server); the oldest entry goes when ``limit`` is reached."""
+
+    def __init__(self, limit: int = _CACHE_LIMIT) -> None:
+        self._limit = limit
+        self._lock = threading.Lock()
+        self._maps: dict[_MapKey, NameMap] = {}
+
+    def get(self, key: _MapKey) -> NameMap | None:
+        with self._lock:
+            return self._maps.get(key)
+
+    def put(self, key: _MapKey, name_map: NameMap) -> None:
+        with self._lock:
+            self._maps.pop(key, None)
+            if len(self._maps) >= self._limit:
+                del self._maps[next(iter(self._maps))]
+            self._maps[key] = name_map
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._maps)
+
 
 class NameMaps:
-    """The name maps of the graphs one service reads, per (graph, pin)."""
+    """The name maps of the graphs one service reads, per (graph, pin). ``shared`` is the
+    process-wide cache a server passes in; without one the maps last as long as this object."""
 
-    def __init__(self, catalog: Catalog, audit: AuditSink, models: ModelCache) -> None:
+    def __init__(
+        self,
+        catalog: Catalog,
+        audit: AuditSink,
+        models: ModelCache,
+        shared: NameMapCache | None = None,
+    ) -> None:
         self._catalog = catalog
         self._audit = audit
         self._models = models
-        self._maps: dict[tuple[GraphId, OntologyPin], NameMap] = {}
+        self._shared = shared
+        self._maps: dict[_MapKey, NameMap] = {}
 
     def of(self, entry: GraphEntry) -> NameMap:
         key = (entry.id, entry.pin)
         found = self._maps.get(key)
+        if found is not None:
+            return found
+        found = self._shared.get(key) if self._shared is not None else None
         if found is None:
-            found = self._build(entry)
-            if len(self._maps) >= _CACHE_LIMIT:
-                del self._maps[next(iter(self._maps))]
-            self._maps[key] = found
+            found, complete = self._build(entry)
+            if complete and self._shared is not None:
+                self._shared.put(key, found)
+        if len(self._maps) >= _CACHE_LIMIT:
+            del self._maps[next(iter(self._maps))]
+        self._maps[key] = found
         return found
 
-    def _build(self, entry: GraphEntry) -> NameMap:
-        chain = self._chain(entry)
+    def _build(self, entry: GraphEntry) -> tuple[NameMap, bool]:
+        """The map, and whether every file and line it draws on was readable: only a
+        complete map is shared, so a request that met a damaged file does not hide the
+        names from the next one."""
+        chain, complete = self._chain(entry)
         hops: dict[int, Hop] = {}
         for index, (old, new) in enumerate(pairwise(chain)):
-            hop = self._hop(entry, old, new)
+            hop, readable = self._hop(entry, old, new)
+            complete = complete and readable
             if hop is not None:
                 hops[index] = hop
-        return NameMap(chain, hops)
+        return NameMap(chain, hops), complete
 
-    def _chain(self, entry: GraphEntry) -> list[str]:
+    def _chain(self, entry: GraphEntry) -> tuple[list[str], bool]:
         """The pinned versions; the last is the current pin, also while a migration is
         committed but not pinned yet (the catalog already follows it then)."""
+        complete = True
         try:
             lines = (line.data for line in self._audit.read_lines(graph_stream(str(entry.id))))
             chain = pinned_versions(lines)
         except GraphCliError:
-            chain = []  # no stream to read: nothing is mapped
+            chain, complete = [], False  # no stream to read: nothing is mapped
         if not chain or chain[-1] != entry.pin.version:
             chain.append(entry.pin.version)
-        return chain
+        return chain, complete
 
-    def _hop(self, entry: GraphEntry, old_version: str, new_version: str) -> Hop | None:
-        """The hop of a major pin switch; ``None`` for any other step, or when the release
-        files of either side cannot be read (those revisions keep their names)."""
+    def _hop(
+        self, entry: GraphEntry, old_version: str, new_version: str
+    ) -> tuple[Hop | None, bool]:
+        """The hop of a major pin switch (``None`` for any other step), and whether it could
+        be read: when the release files of either side cannot, those revisions keep their
+        names."""
         try:
             if bump_level(Version.parse(old_version), Version.parse(new_version)) != "major":
-                return None
+                return None, True
         except ValueError:
-            return None
+            return None, True
         try:
             old = self._models.load_release(entry.id, old_version)
             new = self._models.load_release(entry.id, new_version)
             migration = self._migration(entry, old_version, new_version)
         except GraphCliError:
-            return None
-        return Hop(
+            return None, False
+        hop = Hop(
             old_version,
             new_version,
             old,
@@ -133,6 +186,7 @@ class NameMaps:
             migration,
             entry.language,
         )
+        return hop, True
 
     def _migration(
         self, entry: GraphEntry, old_version: str, new_version: str
@@ -301,10 +355,26 @@ def _edge(revision: Revision, edge: EdgeRecord) -> EdgeRecord:
 # ---- hints ---------------------------------------------------------------------------------
 
 
-def known_in(model: CompiledModel) -> Callable[[str, RenameHint], bool]:
-    """Whether the current name of a hint is a term of ``model`` (the caller's view)."""
+def known_in(
+    model: CompiledModel, full: CompiledModel | None = None
+) -> Callable[[str, RenameHint], bool]:
+    """Whether a hint may be shown to a caller whose view is ``model``: its current name is a
+    term of ``model``, and no step of the chain passes through a term the caller cannot see.
+    ``full`` is the model without read limits: a step's name (or owning class) that is a term
+    of ``full`` and not of ``model`` is hidden from the caller, so the chain would reveal it.
+    Names that are no term of ``full`` (old names on the way) are fine."""
+
+    def hidden(kind: str, name: str | None) -> bool:
+        if full is None or name is None:
+            return False
+        if kind == "relation":
+            return name in full.relations and name not in model.relations
+        return name in full.classes and name not in model.classes
 
     def known(kind: str, hint: RenameHint) -> bool:
+        for step in hint.steps:
+            if hidden("class", step.owner) if kind == "attribute" else hidden(kind, step.to):
+                return False
         if kind == "class":
             return hint.current in model.classes
         if kind == "relation":
@@ -347,7 +417,10 @@ _PROBLEM_KINDS: Final = {
 
 
 def hinted_problems(
-    problems: Sequence[Problem], name_map: NameMap, model: CompiledModel
+    problems: Sequence[Problem],
+    name_map: NameMap,
+    model: CompiledModel,
+    full: CompiledModel | None = None,
 ) -> list[Problem]:
     """``problems`` of a function or action folder checked against ``model``, those naming an
     old term with its current name (in the message and ``details.renamed``), as
@@ -360,7 +433,7 @@ def hinted_problems(
         )
         named = problem.code == "term.unknown" or problem.code in _PROBLEM_KINDS
         hints = (
-            term_hints(name_map, kind, term, known_in(model))
+            term_hints(name_map, kind, term, known_in(model, full))
             if named and isinstance(kind, str) and isinstance(term, str)
             else ()
         )
@@ -397,7 +470,12 @@ def unknown_term_of(finding: JsonValue) -> tuple[str, str] | None:
     return None
 
 
-def hinted_findings(error: GraphCliError, name_map: NameMap, model: CompiledModel) -> GraphCliError:
+def hinted_findings(
+    error: GraphCliError,
+    name_map: NameMap,
+    model: CompiledModel,
+    full: CompiledModel | None = None,
+) -> GraphCliError:
     """A ``write.invalid`` whose findings name old terms, with their current names as the
     findings' ``hint`` (one that has a hint already keeps it)."""
     findings = error.details.get("findings")
@@ -408,7 +486,7 @@ def hinted_findings(error: GraphCliError, name_map: NameMap, model: CompiledMode
     for finding in findings:
         named = unknown_term_of(finding)
         if named is not None and isinstance(finding, Mapping) and "hint" not in finding:
-            hints = term_hints(name_map, named[0], named[1], known_in(model))
+            hints = term_hints(name_map, named[0], named[1], known_in(model, full))
             if hints:
                 finding = {**finding, "hint": "; ".join(h.text() for h in hints)}
                 changed = True

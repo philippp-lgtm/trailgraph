@@ -91,8 +91,12 @@ its prefix reserved.
 4. `graph-admin ontology release <graph> <dir> --reason <why>` (or `graph-admin graph push`). The migration
    is one transaction under the graph lock, committed before the pin switches; the answer
    reports the entities, edges and entities per step, the transaction's seq and the duration.
-   Writers wait for the lock: run a large migration in a quiet moment, and over the remote mode
-   raise `[remote] timeout_s` above the duration.
+   Writers wait for the lock: run a large migration in a quiet moment. Over the remote mode the
+   release is one request that answers when the migration is done: raise `[remote] timeout_s`
+   and the ingress read timeout above the duration (about 7 seconds for 6,300 entities in a
+   benchmark; time grows with the entities migrated). If the answer is lost
+   (`remote.outcome_unknown`), run the same command again: it waits for the running migration,
+   then finds it done or finishes it, and never migrates twice.
 5. `graph-admin audit verify` must report no errors.
 
 Before step 4, check what a rename does around the data: `graph-admin ontology diff <dir> --graph

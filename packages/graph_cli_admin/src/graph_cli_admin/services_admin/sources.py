@@ -76,7 +76,14 @@ from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
 from graph_cli.temporal_knowledge.name_map import Hop
-from graph_cli_admin.services_admin import actions, functions, kinetic_slots, release, skill
+from graph_cli_admin.services_admin import (
+    actions,
+    catalog_follow,
+    functions,
+    kinetic_slots,
+    release,
+    skill,
+)
 from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
@@ -490,7 +497,7 @@ def push(
                 label=label_f,
                 # one namespace per graph: no function named like a published action
                 taken=action_names,
-                hints=kinetic_slots.rename_hints(ctx, entry, model_f, pending),
+                hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -505,7 +512,7 @@ def push(
                 model_a,
                 label=actions_dir,
                 function_names=function_names,
-                hints=kinetic_slots.rename_hints(ctx, entry, model_a, pending),
+                hints=catalog_follow.rename_hints(ctx, entry, model_a, pending),
             )
             action_slot = actions.slot_of(checked_a, after)
         else:

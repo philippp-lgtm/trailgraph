@@ -121,6 +121,7 @@ from graph_cli.services.models import ModelCache
 from graph_cli.services.names import (
     GraphNames,
     MappedSnapshot,
+    NameMapCache,
     NameMaps,
     hinted_findings,
     known_in,
@@ -134,6 +135,7 @@ from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.services.visible_catalog import HiddenCatalog, hidden_actions, hidden_functions
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
+from graph_cli.temporal_knowledge.name_map import NameMap, TermKind
 
 if TYPE_CHECKING:
     from graph_cli.kinetic.cover import Cover, SignatureCache
@@ -373,6 +375,7 @@ class ReadService:
         activity: ActivitySink = NULL_ACTIVITY,
         timings: Timings | None = None,
         usage: UsageNote | None = None,
+        name_maps: NameMapCache | None = None,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
@@ -397,7 +400,7 @@ class ReadService:
         self._visibility = Visibility()
         self._hidden = HiddenCatalog()
         self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
-        self._names = NameMaps(catalog, audit, self._models)  # read-time mapping, M7
+        self._names = NameMaps(catalog, audit, self._models, name_maps)  # read-time mapping, M7
 
     # ---- authorization -------------------------------------------------
 
@@ -730,7 +733,7 @@ class ReadService:
         names = GraphNames(self._names, entry)
         with self.timings.phase("snapshot"):
             snapshot = read.snapshot()
-            interrupted = migration_state.read_warning(entry, read, snapshot)
+            interrupted = migration_state.read_warning(entry, read)
             if interrupted is not None:
                 warnings += (interrupted,)
             past = False
@@ -771,15 +774,16 @@ class ReadService:
             name_map = self._names.of(entry)
             if name_map.empty:
                 return error
-            model, _ = self._models.load_for_read(entry)
+            full, _ = self._models.load_for_read(entry)
+            model = full
             visible = self._visible_set(actor, entry)
             if visible is not None:
-                model = self._visibility.model(entry, model, visible)
+                model = self._visibility.model(entry, full, visible)
         except GraphCliError:
             return error
         if not isinstance(kind, str) or not isinstance(term, str):
-            return hinted_findings(error, name_map, model)
-        return with_hints(error, term_hints(name_map, kind, term, known_in(model)))
+            return hinted_findings(error, name_map, model, full)
+        return with_hints(error, term_hints(name_map, kind, term, known_in(model, full)))
 
     def skill(
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
@@ -984,6 +988,8 @@ class ReadService:
         shown = metas[::-1][offset : offset + limit]
         session = actor.session.id
         items: list[JsonValue] = []
+        # a type limited reader sees what a migration did only as far as its view reaches
+        full = self._models.load_for_read(view.entry)[0] if view.visible is not None else None
         for meta in shown:
             tx = view.snapshot.tx(meta.tx_seq)
             before = view.snapshot.get_revision(entity, meta.rev - 1) if meta.rev > 1 else None
@@ -1002,7 +1008,7 @@ class ReadService:
             }
             if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
                 item["action"] = tx.request.action.to_json()
-            migration = _migration_item(view, entity, meta.rev, meta.tx_seq)
+            migration = _migration_item(view, entity, meta.rev, meta.tx_seq, full)
             if migration is not None:  # additive: the revision a migration wrote (M7)
                 item["migration"] = migration
             items.append(item)
@@ -1566,14 +1572,18 @@ def _findings(error: GraphCliError) -> list[JsonValue]:
 
 
 def _migration_item(
-    view: GraphRead, entity: EntityId, rev: int, seq: int
+    view: GraphRead, entity: EntityId, rev: int, seq: int, full: CompiledModel | None = None
 ) -> dict[str, JsonValue] | None:
     """``history``'s ``migration`` of a revision a migration tx wrote (migration plan M7):
     the versions and summary of its changeset and the renames and steps that changed this
     entity. Both sides of the step show under current names, so without it the history
     would hide a change of type. What applied is found by running the release's transform
     on the stored revision before (``RevisionTransform.applied``); for a type limited reader
-    without the edges it cannot see, so nothing names a relation it does not reach."""
+    without the edges it cannot see, so nothing names a relation it does not reach. ``full`` is
+    the model without read limits, given for a type limited reader: an effect that names a term
+    of ``full`` the reader cannot see (a retype out of a hidden type, a rename of a hidden
+    class) is left out, and when the type the entity had before is hidden none is shown (the lists
+    stay, empty)."""
     mapping = view.mapping
     record = mapping.migration_record(seq) if mapping is not None else None
     if mapping is None or record is None:
@@ -1595,11 +1605,56 @@ def _migration_item(
         if isinstance(view.snapshot, VisibleSnapshot):
             before = strip_hidden_edges(before, view.snapshot.sees)
         applied = hop.migrating.applied(before)
+        if full is not None:
+            # an entity that was of a hidden type shows no effects at all (the schema keeps the
+            # two lists, empty)
+            shown = _visible_effects(view, full, mapping.names.name_map, before.type, applied)
+            applied = shown if shown is not None else []
     elif view.visible is None:
         applied = _recorded_effects(record)  # the release files are gone: the whole record
     item["renames"] = [e for e in applied if _kind(e).startswith("rename_")]
     item["steps"] = [e for e in applied if not _kind(e).startswith("rename_")]
     return item
+
+
+def _visible_effects(
+    view: GraphRead,
+    full: CompiledModel,
+    name_map: NameMap,
+    before_type: str,
+    applied: list[JsonValue],
+) -> list[JsonValue] | None:
+    """``applied`` without the effects that name a term the reader cannot see, or ``None``
+    when the type the entity had is hidden. A term is
+    hidden when it, or a current name it was given later, is a term of ``full`` and not of the
+    reader's model: an old name that no current term carries stays visible."""
+    shown = view.model
+
+    def hidden(kind: TermKind, term: object) -> bool:
+        if not isinstance(term, str):
+            return False
+        current = {term} | {h.current for h in name_map.hints(kind, term)}
+        if kind == "relation":
+            return any(n in full.relations and n not in shown.relations for n in current)
+        return any(n in full.classes and n not in shown.classes for n in current)
+
+    if hidden("class", before_type):
+        return None  # nothing of what changed is for this reader
+
+    def names(effect: JsonValue) -> list[tuple[TermKind, object]]:
+        if not isinstance(effect, Mapping):
+            return []
+        found: list[tuple[TermKind, object]] = []
+        kind = _kind(effect)
+        if kind == "rename_relation":
+            found += [("relation", effect.get("from")), ("relation", effect.get("to"))]
+        elif kind in ("rename_class", "retype"):
+            found += [("class", effect.get("from")), ("class", effect.get("to"))]
+        found += [("class", effect.get("class")), ("class", effect.get("type"))]
+        found.append(("relation", effect.get("relation")))
+        return found
+
+    return [e for e in applied if not any(hidden(kind, term) for kind, term in names(e))]
 
 
 def _kind(effect: JsonValue) -> str:

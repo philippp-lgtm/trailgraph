@@ -7,6 +7,7 @@ attribute again to ``title`` and ``located_in`` to ``stored_in``. ``history``, `
 old names on input fail with their current name, and read limits judge the mapped type.
 """
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -452,3 +453,53 @@ def test_publish_names_the_current_name_of_an_old_curie(
     assert blocked.error["code"] == "admin.actions_invalid"
     hinted = [p for p in blocked.error["details"]["problems"] if "renamed" in p["details"]]
     assert hinted and "renamed to sup:Supplier in 2.0.0" in hinted[0]["message"]
+
+
+RETYPE = """\
+format: graph_cli.migration/1
+from: 1.1.0
+summary: Suppliers are categories now.
+steps:
+  - retype: {from: inv:Supplier, to: inv:Category}
+"""
+HIDE_SUPPLIER_CLASS = """\
+schema: graph_cli.policy/1
+id: graph
+types:
+  "inv:Supplier": none
+"""
+
+
+def test_a_retype_out_of_a_hidden_type_does_not_name_that_type(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """``inv:Supplier`` stays in the model and is hidden; its entity was retyped to the visible
+    ``inv:Category``. The history of that entity shows the migration, but not what it was."""
+    create(run_cli)
+    supplier = {"op": "create", "type": "inv:Supplier", "attrs": {"name": "Acme"}}
+    write_documents(root, "example_graph", [{"ops": [supplier]}])
+    source = tmp_path / "retyped"
+    source.mkdir()
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    (source / "inventory.yaml").write_text(
+        text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    )
+    (source / "migration.yaml").write_text(RETYPE)
+    released = admin(run_cli, "ontology", "release", "example_graph", str(source))
+    assert released.code == 0, released.envelope
+    entity = app(run_cli, "find", "--type", "inv:Category", env=ENV).data["items"][0]["id"]
+    seen = app(run_cli, "history", entity, env=ENV)
+    marked = next(i["migration"] for i in seen.data["items"] if "migration" in i)
+    assert [s["kind"] for s in marked["steps"]] == ["retype"]  # the reader may see both types
+    assert marked["steps"][0]["from"] == "inv:Supplier"
+    path = write_policy(tmp_path / "policies", "hide.yaml", HIDE_SUPPLIER_CLASS)
+    applied = admin(
+        run_cli, "policy", "apply", str(path), "--graph", "example_graph", "--reason", "test"
+    )
+    assert applied.code == 0, applied.envelope
+    limited = app(run_cli, "history", entity, env=ENV)
+    assert limited.code == 0, limited.envelope
+    marks = [i["migration"] for i in limited.data["items"] if "migration" in i]
+    assert len(marks) == 1
+    assert (marks[0]["renames"], marks[0]["steps"]) == ([], [])  # nothing of what changed
+    assert "inv:Supplier" not in json.dumps(limited.envelope)

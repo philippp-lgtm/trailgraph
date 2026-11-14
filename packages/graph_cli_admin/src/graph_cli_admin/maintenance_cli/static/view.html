@@ -714,6 +714,14 @@ function handle(event) {
       const who = [event.actor, event.session ? `session ${event.session}` : null].filter(Boolean).join(" · ");
       record("read", `${event.command || "read"}: ${what}${along}`, who, known.length === 1 ? known[0].id : null, color);
     }
+  } else if (event.kind === "reload") {
+    // A write too big to send revision by revision, a connection that fell behind or a new
+    // ontology: the graph is loaded again; events up to its seq are in it already.
+    const gen = generation;
+    if (event.reason === "large_tx") {
+      record("updated", `${event.revisions} revisions, graph reloaded`, event.actor, null);
+    }
+    loadGraph(gen).catch(error => { if (gen === generation) failGraph(error); });
   } else if (event.kind === "error") {
     setStatus(`error: ${event.message}`, false);
   }

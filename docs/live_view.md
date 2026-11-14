@@ -32,6 +32,28 @@ graph a page shows stays open, so with more graphs shown at once more
 stay open. Warnings about a graph opened later (for example an ontology
 pin the program cannot read) print on stderr once.
 
+### Large writes, slow clients and a new ontology
+
+A write that rewrites thousands of entities (a data migration of a major
+release, see [graph-admin](cli_graph_admin.md#releasing-with-a-data-migration)) is not
+sent revision by revision: a transaction with more than 250 revisions
+reaches the page as one `reload` event, and so does a client whose queue
+(1,000 events) overflowed, in place of what it missed. The page then loads
+the graph again, as after a reconnect; events up to the loaded `seq` are
+in it already. Such a transaction is no step of the [trail](#trail).
+
+The view shows the data as the app reads it, under the ontology version
+the data has. While a migration is committed but not pinned yet (a
+release running, or interrupted) that is the target version. When a
+graph's pin moves, the open graph is opened again under the new model on
+the feed's next round (about half a second), and the clients of the graph
+get a `reload` event; without it the labels of later events would still
+come from the old model. The model, functions and policies views do not
+stream: reload them to see a new model. The view shows current revisions
+only, which already carry the pin's names, so it maps no old names; an
+entity's history lists revision numbers, times, actors and reasons, not
+attributes or types.
+
 ## Type graph, model, functions and policies
 
 The folder of a graph lists its views in this order: Type graph, Model,

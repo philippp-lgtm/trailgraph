@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Final, Literal, Protocol
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_bytes, hash_value
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, TermRef
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.records import OntologyPin
 
 if TYPE_CHECKING:
@@ -28,6 +29,11 @@ class GraphEntry:
     extensions: tuple[str, ...]
     title: str | None = None  # human-readable purpose, shown by `graph graphs` (P1.5)
     language: str | None = None  # BCP 47 default language of the values (Q18 stage 2)
+    # A data migration whose tx is committed while the manifest still names the old version
+    # (a release running, or one that crashed before its pin switch). Set only by the app's
+    # catalog, which then already pins the entry to the target version (``pin``); ``None``
+    # otherwise, also when only the marker file is left after the switch.
+    migration: MigrationMarker | None = None
 
 
 @dataclass(frozen=True, slots=True)

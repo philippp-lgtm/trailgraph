@@ -193,21 +193,26 @@ class FileCatalog:
         )
 
     def _effective(self, entry: GraphEntry) -> GraphEntry:
-        """``entry``, pinned to the target version when its migration is committed (one
-        ``stat`` for a graph without a marker). A marker whose tx is not in the log is stale
-        and ignored; one whose version the pin has reached is finished."""
-        if not self._follow_migration:
-            return entry
+        """``entry`` as this catalog hands it out: ``following`` for the app's catalog, the
+        manifest's entry for graph-admin's (the release decides from the manifest)."""
+        return self.following(entry) if self._follow_migration else entry
+
+    def following(self, entry: GraphEntry) -> GraphEntry:
+        """``entry``, pinned to the target version (and carrying the marker as ``migration``)
+        when its migration is committed but not pinned (one ``stat`` for a graph without a
+        marker). A marker whose tx is not in the log is stale and ignored; one whose version
+        the pin has reached is finished: the entry is as the manifest has it, the leftover
+        file changes nothing for the app. Also public for a reader of graph-admin that shows
+        the data as the app reads it (the live view)."""
         marker = read_migration_marker(self._layout(entry.id))
         if marker is None:
             return entry
-        if (marker.to_version, marker.artifact_hash) == (
-            entry.pin.version,
-            entry.pin.artifact_hash,
-        ) or not marker_committed(self.file_store(entry.id).snapshot(), marker):
+        if marker.reached_by(entry.pin) or not marker_committed(
+            self.file_store(entry.id).snapshot(), marker
+        ):
             return entry
         target = OntologyPin(entry.pin.bundle, marker.to_version, marker.artifact_hash)
-        return replace(entry, pin=target)
+        return replace(entry, pin=target, migration=marker)
 
     def _layout(self, graph: GraphId) -> GraphLayout:
         return GraphLayout(self.graphs_dir / str(graph))

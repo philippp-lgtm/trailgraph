@@ -21,11 +21,13 @@ release that republishes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
@@ -34,6 +36,9 @@ from graph_cli.kinetic.action_compile import check_actions, compile_actions
 from graph_cli.kinetic.compile import check_catalog, compile_catalog
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.models import ModelCache
+from graph_cli.services.names import NameMaps, hinted_problems
+from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin.context import AdminContext
 
 
@@ -144,3 +149,28 @@ def write(
     else:
         session.replace_actions(slot, receipt)
     ctx.anchor(entry, decisions, meta, receipt, reason=reason)
+
+
+# Problems of a folder with the current names of the old terms they name (migration plan M7).
+ProblemHints = Callable[[list[Problem]], list[Problem]]
+
+
+def rename_hints(
+    ctx: AdminContext, entry: GraphEntry, model: CompiledModel, pending: Hop | None = None
+) -> ProblemHints:
+    """The hints for problems checked against ``model``: from the graph's name map (its pin
+    history), with ``pending`` on top for a release made in the same push. The name map is
+    read only when there are problems."""
+
+    def hints(problems: list[Problem]) -> list[Problem]:
+        if not problems:
+            return problems
+        try:
+            name_map = NameMaps(ctx.catalog, ctx.audit, ModelCache(ctx.catalog)).of(entry)
+        except GraphCliError:
+            return problems
+        if pending is not None:
+            name_map = name_map.extended(pending)
+        return hinted_problems(problems, name_map, model)
+
+    return hints

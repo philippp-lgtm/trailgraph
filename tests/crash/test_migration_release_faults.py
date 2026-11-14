@@ -201,13 +201,15 @@ def test_a_fault_leaves_the_old_state_or_the_incomplete_one(scene: Scene, name: 
     assert found.code == 0, found.envelope
     attrs = found.data["items"][0]["attrs"]
     assert ("label" in attrs) is row.committed and ("name" in attrs) is not row.committed
-    # the crash case warns; so does a finished pin with a marker left over (the marker is
-    # all that is left, and the next release clears it)
-    assert ("graph.migration_incomplete" in found.warning_codes) is row.committed
+    # the crash case warns; a finished pin with only the marker file left over is not a state
+    # of the data any more (the next release deletes the file), so it neither warns nor
+    # refuses writes
+    incomplete = row.committed and not row.pinned
+    assert ("graph.migration_incomplete" in found.warning_codes) is incomplete
     scene.errors()  # no error finding, whatever the state
-    # writes are refused while the migration is committed and the marker is there
+    # writes are refused while the migration is committed and not pinned
     written = scene.create_location("Annex", "R2")
-    if row.committed:
+    if incomplete:
         assert written.error["code"] == "write.migration_incomplete"
         assert written.error["category"] == "unavailable" and written.error["retryable"]
         assert written.code != 0
@@ -303,6 +305,21 @@ def test_a_stale_marker_is_cleared_by_a_release_without_migration(scene: Scene) 
     outcome = scene.run(patch)
     assert outcome.data["pinned"] is True and scene.marker() is None
     assert scene.pin() == "1.1.1"
+
+
+def test_a_leftover_marker_after_the_pin_switch_is_no_incomplete_state(scene: Scene) -> None:
+    """A crash between the pin switch and the marker removal leaves only the file: the app
+    reads and writes as usual, nothing warns, and ``graph check`` and ``audit verify`` agree."""
+    scene.interrupt("marker_removal")
+    assert scene.pin() == "2.0.0" and scene.marker() is not None and scene.committed()
+    found = scene.items()
+    assert found.code == 0 and found.warning_codes == [], found.envelope
+    assert scene.create_location("Annex", "R2").code == 0
+    checked = check(scene.ctx, graph_ref="example_graph", source=None, module=None)
+    assert checked.warnings == () and checked.data["counts"]["error"] == 0
+    assert scene.errors() == []
+    assert scene.marker() is not None  # only the next release deletes the file
+    assert scene.run().data["pinned"] is False and scene.marker() is None
 
 
 def test_a_finished_pin_with_a_leftover_marker_is_cleared_by_rerunning(scene: Scene) -> None:

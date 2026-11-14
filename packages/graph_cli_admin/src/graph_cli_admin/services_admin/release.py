@@ -89,6 +89,7 @@ from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
+from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import migration as migrations
 from graph_cli_admin.services_admin import renamed_terms
 from graph_cli_admin.services_admin.catalog_follow import (
@@ -96,6 +97,7 @@ from graph_cli_admin.services_admin.catalog_follow import (
     Republish,
     follow,
     names_of,
+    rename_hints,
 )
 from graph_cli_admin.services_admin.catalog_follow import write as write_catalog
 from graph_cli_admin.services_admin.context import AdminContext
@@ -284,7 +286,7 @@ def plan(
     marker, committed = _marker(session)
     if current == target:
         clear = marker is not None
-        if marker is not None and committed and not _finished(marker, current):
+        if marker is not None and committed and not marker.reached_by(current):
             raise migrations.incomplete(marker, current.version)
         return Planned(manifest, compiled, None, False, {}, data, head.seq, (), clear_marker=clear)
     old_model = load_compiled(
@@ -319,7 +321,7 @@ def plan(
         )
     completing: MigrationMarker | None = None
     clear = marker is not None
-    if marker is not None and committed and not _finished(marker, current):
+    if marker is not None and committed and not marker.reached_by(current):
         if (
             file is None
             or (marker.from_version, marker.to_version)
@@ -354,12 +356,23 @@ def plan(
     # Catalogs that no longer resolve: a release with renames or a migration compiles their
     # sources again and publishes them with the release (plan M8); the others block.
     recompile = file is not None or migrations.has_renames(renames)
+    # a problem that names an old term says what it is called now: the graph's name map with
+    # this release's hop on top (the release is not pinned yet)
+    hop = Hop(
+        current.version,
+        target.version,
+        old_model,
+        compiled.model,
+        renames,
+        None if file is None else file.doc,
+    )
+    hint_problems = rename_hints(ctx, entry, compiled.model, hop)
     functions = current_catalog(session, "functions")
     followed_functions = Followed(None, [])
     if not functions_replaced and functions is not None:
         followed_functions = follow(functions, compiled.model, target, recompile=recompile)
         if followed_functions.problems:
-            raise functions_broken(followed_functions.problems, bump_details)
+            raise functions_broken(hint_problems(followed_functions.problems), bump_details)
     followed_actions = Followed(None, [])
     if not actions_replaced:
         actions = current_catalog(session, "actions")
@@ -374,7 +387,7 @@ def plan(
                 function_names=function_names,
             )
             if followed_actions.problems:
-                raise actions_broken(followed_actions.problems, bump_details)
+                raise actions_broken(hint_problems(followed_actions.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
     if bump == "excessive":
@@ -494,11 +507,6 @@ def _marker(session: MaintenanceSession) -> tuple[MigrationMarker | None, bool]:
     if marker is None:
         return None, False
     return marker, marker_committed(session.snapshot(), marker)
-
-
-def _finished(marker: MigrationMarker, pin: OntologyPin) -> bool:
-    """The pin has reached the marker's version: only the marker is left over."""
-    return (marker.to_version, marker.artifact_hash) == (pin.version, pin.artifact_hash)
 
 
 def _check_data(
