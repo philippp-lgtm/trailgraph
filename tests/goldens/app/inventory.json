@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.20.0",
+  "program_version": "0.21.0",
   "surface": "app",
   "global_options": [
     {
