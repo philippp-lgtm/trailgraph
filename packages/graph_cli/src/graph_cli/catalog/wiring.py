@@ -131,6 +131,14 @@ class _Backend:
     timings: Timings
 
 
+@dataclass
+class Selection:
+    """The graph the running command selected, for what is added to its errors (the rename
+    hint of ``term.unknown``, migration plan M7)."""
+
+    entry: GraphEntry | None = None
+
+
 @dataclass(frozen=True)
 class AppContext:
     roots: Roots
@@ -143,6 +151,7 @@ class AppContext:
     graph_env: str | None
     command: str = ""  # the running command, for audited selection refusals
     gate: SkillGate | None = None  # the skill freshness check of a read or write
+    selection: Selection = field(default_factory=Selection, repr=False)
 
     @functools.cached_property
     def writer(self) -> WriteService:
@@ -196,6 +205,7 @@ class AppContext:
         )
         if self.gate is not None:
             self.gate.check(self.catalog, entry)
+        self.selection.entry = entry
         return entry
 
     def select_for(self, ref: str, pointer: PointerFile | None) -> GraphEntry:
@@ -301,6 +311,15 @@ class AppServices:
                 self._context, self._warnings = self._build(command or "", kind, warnings)
         warnings += self._warnings
         return self._context
+
+    def explained(self, error: GraphCliError) -> GraphCliError:
+        """``error`` with what the selected graph can add: an old term's current name
+        (``ReadService.rename_hint``). Unchanged when no graph was selected."""
+        context = self._context
+        entry = context.selection.entry if context is not None else None
+        if context is None or entry is None:
+            return error
+        return context.reader.rename_hint(context.actor, entry, error)
 
     def skill_claims(self) -> tuple[tuple[SkillClaim, ...], Path | None]:
         """``(claims, project directory)`` of the skills installed for this process's agent:

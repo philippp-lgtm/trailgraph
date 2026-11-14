@@ -29,7 +29,9 @@ STRINGS: Final = array(STRING)
 
 def _entity() -> Schema:
     """``read.entity_json``: the content (validity only when set), every key with
-    ``--full``, or with ``--fields`` the always shown ones, ``attrs`` and the named parts."""
+    ``--full``, or with ``--fields`` the always shown ones, ``attrs`` and the named parts.
+    ``names_mapped`` only with ``--full``, and only for a past revision shown under the
+    pinned model's names (migration plan M7)."""
     return obj(
         {
             "id": STRING,
@@ -48,6 +50,7 @@ def _entity() -> Schema:
             "tx_seq": INTEGER,
             "ontology_version": STRING,
             "content_hash": STRING,
+            "names_mapped": BOOLEAN,
         },
     )
 

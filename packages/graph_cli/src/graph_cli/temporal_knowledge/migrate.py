@@ -34,6 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from types import MappingProxyType
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.findings import Finding, Severity
@@ -46,6 +47,7 @@ from graph_cli.kernel.records import (
     Revision,
     content_hash,
     content_projection,
+    revision_content_hash,
 )
 from graph_cli.ontology_layer.data_validator import blob_values
 from graph_cli.ontology_layer.diff import Renames
@@ -199,6 +201,72 @@ def plan_migration(
     return engine.plan(len(items))
 
 
+# Steps that read-time mapping applies to old revisions (plan M7): those that only rename or
+# re-key what is stored. ``fill``, ``drop``, ``drop_edges``, ``drop_qualifier`` and ``convert``
+# change what was recorded; old revisions keep their stored shape there.
+MAPPED_STEPS: Final = (Retype, MapValues, MapQualifierValues, RenameQualifier)
+
+
+class RevisionTransform:
+    """The per-revision transform of one release (plan M7): the derived renames and ``steps``
+    applied to a revision written under ``old``, with the engine ``plan_migration`` uses.
+
+    ``apply`` maps a revision to the names of ``new``, keeping every identity field and the
+    stored ``ontology_version``; ``applied`` says which renames and steps change a revision, in
+    the form of the preview (``Effect.to_json`` without the counts). ``language`` is the graph
+    language, needed only for a ``convert`` to a language-tagged type."""
+
+    def __init__(
+        self,
+        old: CompiledModel,
+        new: CompiledModel,
+        renames: Renames,
+        steps: Sequence[Step],
+        *,
+        language: str | None = None,
+    ) -> None:
+        self._engine = _Engine(old, new, renames, steps, None, language)
+
+    @property
+    def changes_names(self) -> bool:
+        """Whether there is anything to map: a rename or a step."""
+        renames = self._engine.renames
+        return bool(
+            renames.classes or renames.relations or renames.attributes or self._engine.steps
+        )
+
+    def apply(self, revision: Revision) -> Revision:
+        """``revision`` under the new names; the same object when nothing changes. The content
+        hash is not recomputed here (``with_content_hash``), so a chain of transforms hashes
+        once."""
+        entity = self._engine.transform(revision)
+        edges = tuple(entity.edges)
+        if (
+            entity.type == revision.type
+            and entity.attrs == revision.attrs
+            and edges == revision.edges
+        ):
+            return revision
+        return replace(revision, type=TermRef(entity.type), attrs=entity.attrs, edges=edges)
+
+    def applied(self, revision: Revision) -> list[JsonValue]:
+        """The renames and steps that change ``revision``, renames first, then steps in file
+        order."""
+        touched = self._engine.transform(revision).touched
+        return [self._engine.effect_json(key) for key in sorted(touched, key=_effect_order)]
+
+
+def with_content_hash(revision: Revision) -> Revision:
+    """``revision`` with the content hash of its content (the same object when it holds)."""
+    digest = revision_content_hash(revision)
+    return revision if digest == revision.content_hash else replace(revision, content_hash=digest)
+
+
+def _effect_order(key: tuple[str, ...]) -> tuple[int, int, tuple[str, ...]]:
+    kinds = ("class", "relation", "attribute", "step")
+    return (kinds.index(key[0]), int(key[1]) if key[0] == "step" else 0, key)
+
+
 # ---- bookkeeping ---------------------------------------------------------------------------
 
 
@@ -251,7 +319,7 @@ class _Engine:
         new: CompiledModel,
         renames: Renames,
         steps: Sequence[Step],
-        stamp: MigrationStamp,
+        stamp: MigrationStamp | None,
         language: str | None,
     ) -> None:
         self.old = old
@@ -324,6 +392,10 @@ class _Engine:
     # ---- one entity ----------------------------------------------------------------------
 
     def revise(self, revision: Revision) -> None:
+        self.finish(self.transform(revision))
+
+    def transform(self, revision: Revision) -> _Entity:
+        """The renames and steps applied to one revision, nothing recorded yet."""
         original = str(revision.type)
         found = next(((i, s) for i, s in self.retypes if s.from_ == original), None)
         retype = None if found is None else found[1]
@@ -337,7 +409,7 @@ class _Engine:
         self.rename_relations(entity)
         for index, step in enumerate(self.steps):
             self.apply(entity, index, step)
-        self.finish(entity)
+        return entity
 
     def rename_attributes(self, entity: _Entity, original: str, retype: Retype | None) -> None:
         explicit = {} if retype is None else retype.attributes
@@ -473,6 +545,7 @@ class _Engine:
         if digest == previous.content_hash:
             return
         stamp = self.stamp
+        assert stamp is not None, "a plan needs its stamp"
         self.revisions[previous.id] = Revision(
             id=previous.id,
             rev=previous.rev + 1,
@@ -495,6 +568,28 @@ class _Engine:
         self.edges_changed += _edges_changed(previous.edges, edges)
         for key, edge_count in entity.touched.items():
             self.tallies.setdefault(key, _Tally()).add(previous.id, entity.type, edge_count)
+
+    def effect_json(self, key: tuple[str, ...]) -> JsonValue:
+        """What a touched key stands for, as ``Effect.to_json`` names it (without counts)."""
+        if key[0] == "class":
+            return {"kind": "rename_class", "from": key[1], "to": self.renames.classes[key[1]]}
+        if key[0] == "relation":
+            return {
+                "kind": "rename_relation",
+                "from": key[1],
+                "to": self.renames.relations[key[1]],
+            }
+        if key[0] == "attribute":
+            owner, old = key[1], key[2]
+            target = self.renames.attributes[(owner, old)]
+            return {"kind": "rename_attribute", "class": owner, "from": old, "to": target}
+        index = int(key[1])
+        step = self.steps[index]
+        body = step.to_json()
+        assert isinstance(body, dict)
+        what = body[step.NAME]
+        assert isinstance(what, dict)
+        return {"kind": step.NAME, **what, "index": index}
 
     def plan(self, examined: int) -> MigrationPlan:
         def tally(key: tuple[str, ...]) -> _Tally:

@@ -34,7 +34,7 @@ from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import kinetic_slots
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
+from graph_cli_admin.services_admin.kinetic_slots import Checked, ProblemHints, Published
 
 __all__ = [
     "Checked",
@@ -65,11 +65,12 @@ def check_files(
     *,
     label: Path | str,
     function_names: frozenset[str] = frozenset(),
+    hints: ProblemHints | None = None,
 ) -> Checked:
     """``admin.actions_invalid`` when the files cannot become the graph's catalog.
     ``function_names`` are the published functions: an action may not share a name."""
     compiled, found = compile_actions(files, model, function_names=function_names)
-    refuse(label, entry, [*problems, *found])
+    refuse(label, entry, [*problems, *found], hints)
     return Checked(files, compiled)
 
 
@@ -82,8 +83,13 @@ def slot_of(checked: Checked, entry: GraphEntry) -> KineticSlot:
     return kinetic_slots.slot_of(checked, entry, "actions")
 
 
-def refuse(source: Path | str, entry: GraphEntry, problems: list[Problem]) -> None:
-    kinetic_slots.refuse("actions", source, entry, problems)
+def refuse(
+    source: Path | str,
+    entry: GraphEntry,
+    problems: list[Problem],
+    hints: ProblemHints | None = None,
+) -> None:
+    kinetic_slots.refuse("actions", source, entry, problems, hints)
 
 
 def publish(
@@ -92,8 +98,8 @@ def publish(
     return kinetic_slots.publish(
         ctx,
         "actions",
-        lambda entry, files, problems, model, label, others: check_files(
-            entry, files, problems, model, label=label, function_names=others
+        lambda entry, files, problems, model, label, others, hints: check_files(
+            entry, files, problems, model, label=label, function_names=others, hints=hints
         ),
         graph_ref=graph_ref,
         source=source,

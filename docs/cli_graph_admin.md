@@ -65,7 +65,12 @@ the new names and shapes, every migrated entity getting one new revision, and it
 history, edges and the audit trail stay. The migration is part of the release, never a
 separate command; its format and what to write in it is the
 [migrations reference](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/versioning_and_release.md)
-of the `ontology-best-practices` skill.
+of the `ontology-best-practices` skill. The app shows older revisions under the new names
+([graph: Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)),
+from the pin history and the installed release files, so a release directory stays where it is.
+A function or action published with an old name is refused with its current name
+("inv:Item was renamed to inv:Product in 2.0.0") in the problem's message and
+`details.renamed`, also in a `graph push` that makes the release.
 
 - **The file** is `migration.yaml` (`graph_cli.migration/1`: `from`, `summary`, `steps`) next
   to the module files of the version directory; `ontology release`, `graph push` and

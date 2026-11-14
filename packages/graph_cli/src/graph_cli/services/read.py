@@ -12,7 +12,9 @@ that does not match its hash is read with ``ontology.pin_mismatch_read``,
 an archived graph with ``graph.archived_read``. ``as_of`` reads the snapshot
 at the seq it names (B8.8): it needs ``read.history`` besides the read's own
 action, a backend with ``snapshot_at_seq``, and every answer carries
-``temporal.as_of_read``; the model stays the current pin. A successful ``get``,
+``temporal.as_of_read``; the model stays the current pin, and revisions written under
+an older major are shown under its names (``services.names``, migration plan M7; current
+revisions never are). A successful ``get``,
 ``history``, ``find``, ``lookup``, ``search``, ``neighbors`` or ``query`` hands the
 entities it returns, and the edges ``neighbors`` walked or ``query`` rows hold, to the
 activity sink with the command and actor that opened the graph (a transient signal for
@@ -67,7 +69,14 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
-from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMeta, Revision
+from graph_cli.kernel.records import (
+    EdgeRecord,
+    EnvInfo,
+    OntologyPin,
+    RequestMeta,
+    Revision,
+    strip_hidden_edges,
+)
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
@@ -109,6 +118,16 @@ from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
 from graph_cli.services.models import ModelCache
+from graph_cli.services.names import (
+    GraphNames,
+    MappedSnapshot,
+    NameMaps,
+    hinted_findings,
+    known_in,
+    term_hints,
+    unknown_term_of,
+    with_hints,
+)
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
 from graph_cli.services.visibility import Visibility, VisibleSnapshot
@@ -150,9 +169,16 @@ class GraphRead:
     # The concrete types the actor sees when the graph is type limited (``model`` and
     # ``snapshot`` are then the filtered views), else ``None``: the raw model and snapshot.
     visible: frozenset[str] | None = None
+    # The mapped layer below the read limits (migration plan M7): old revisions under the
+    # pin's names; ``None`` only for views built without ``ReadService.open``.
+    mapping: MappedSnapshot | None = None
 
     def envelope_graph(self) -> dict[str, JsonValue]:
         return graph_json(self.entry, self.snapshot.seq)
+
+    def names_mapped(self, revision: Revision) -> bool:
+        """Whether ``revision`` was handed out under mapped names (``names_mapped``)."""
+        return self.mapping is not None and self.mapping.mapped(revision.id, revision.rev)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,11 +229,17 @@ VALIDITY: Final = ("valid_from", "valid_to")
 
 
 def entity_json(
-    revision: Revision, fields: Sequence[str] = (), *, full: bool = False
+    revision: Revision,
+    fields: Sequence[str] = (),
+    *,
+    full: bool = False,
+    names_mapped: bool = False,
 ) -> dict[str, JsonValue]:
     """An entity as reads show it. By default its content: the always shown keys, ``attrs``,
     ``edges`` without their ids, and ``valid_from``/``valid_to`` when set. With ``full``
-    every revision field and edge id, explicit nulls (C.6 envelope rule).
+    every revision field and edge id, explicit nulls (C.6 envelope rule), and
+    ``names_mapped: true`` for a past revision shown under the pin's names (migration plan
+    M7; the key is absent otherwise).
 
     With ``fields`` (checked by ``query.plan.check_fields``) only the always shown
     keys, ``attrs`` with the named attributes (null when absent) and the named
@@ -220,6 +252,8 @@ def entity_json(
         shown.update({n: whole[n] for n in fields if n in whole and n not in ALWAYS_SHOWN})
         return shown
     if full:
+        if names_mapped:
+            whole["names_mapped"] = True
         return whole
     lean = {key: whole[key] for key in (*ALWAYS_SHOWN, "attrs", "edges")}
     lean.update({key: whole[key] for key in VALIDITY if whole[key] is not None})
@@ -363,6 +397,7 @@ class ReadService:
         self._visibility = Visibility()
         self._hidden = HiddenCatalog()
         self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
+        self._names = NameMaps(catalog, audit, self._models)  # read-time mapping, M7
 
     # ---- authorization -------------------------------------------------
 
@@ -692,16 +727,22 @@ class ReadService:
                 WarningRecord("graph.archived_read", f"graph {entry.name} is archived", {}),
             )
         read, _ = self._catalog.store_for(entry.id)
+        names = GraphNames(self._names, entry)
         with self.timings.phase("snapshot"):
             snapshot = read.snapshot()
             interrupted = migration_state.read_warning(entry, read, snapshot)
             if interrupted is not None:
                 warnings += (interrupted,)
+            past = False
             if as_of is not None:
-                snapshot, warning = _snapshot_as_of(read, snapshot, entry, as_of)
+                snapshot, warning, past = _snapshot_as_of(read, snapshot, entry, as_of, names)
                 warnings += (warning,)
+        # Old revisions under the pin's names (migration plan M7); the current revisions of
+        # the head are never mapped, those of an earlier state whose names changed since are.
+        mapping = MappedSnapshot(snapshot, names, current=past)
+        snapshot = mapping
         # Type read limits: a limited caller reads views of the model and the snapshot. They
-        # wrap the as-of snapshot after it read the raw tx metadata.
+        # wrap the as-of snapshot after it read the raw tx metadata, and judge mapped types.
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             visible = self._visibility.of(actor, entry, policy, model)
@@ -710,7 +751,35 @@ class ReadService:
             snapshot = VisibleSnapshot(snapshot, visible)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
-        return GraphRead(entry, model, snapshot, warnings, actor, request.command, visible)
+        return GraphRead(entry, model, snapshot, warnings, actor, request.command, visible, mapping)
+
+    def rename_hint(
+        self, actor: ActorContext, entry: GraphEntry, error: GraphCliError
+    ) -> GraphCliError:
+        """``error`` with the current name of the old term it names, as far as the actor sees
+        it: "renamed to <new> in <version>" from the graph's name map (migration plan M7), in
+        the message of a ``term.unknown`` or as the ``hint`` of a ``write.invalid`` finding
+        that names an unknown type, attribute or relation. Old names are never accepted;
+        anything else, and a graph whose name map cannot be read, gives ``error`` back."""
+        kind, term = error.details.get("kind"), error.details.get("term")
+        if error.code == "term.unknown":
+            if not isinstance(kind, str) or not isinstance(term, str):
+                return error
+        elif error.code != "write.invalid" or not any(map(unknown_term_of, _findings(error))):
+            return error
+        try:
+            name_map = self._names.of(entry)
+            if name_map.empty:
+                return error
+            model, _ = self._models.load_for_read(entry)
+            visible = self._visible_set(actor, entry)
+            if visible is not None:
+                model = self._visibility.model(entry, model, visible)
+        except GraphCliError:
+            return error
+        if not isinstance(kind, str) or not isinstance(term, str):
+            return hinted_findings(error, name_map, model)
+        return with_hints(error, term_hints(name_map, kind, term, known_in(model)))
 
     def skill(
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
@@ -876,7 +945,9 @@ class ReadService:
                 WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
             )
         data: dict[str, JsonValue] = {
-            "entity": entity_json(revision, shown, full=full),
+            "entity": entity_json(
+                revision, shown, full=full, names_mapped=view.names_mapped(revision)
+            ),
             "current_rev": current.rev,
             "superseded_by": list(superseded_by),
             "retracted_by": list(retracted_by),
@@ -931,6 +1002,9 @@ class ReadService:
             }
             if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
                 item["action"] = tx.request.action.to_json()
+            migration = _migration_item(view, entity, meta.rev, meta.tx_seq)
+            if migration is not None:  # additive: the revision a migration wrote (M7)
+                item["migration"] = migration
             items.append(item)
         data: dict[str, JsonValue] = {
             "id": str(entity),
@@ -979,7 +1053,9 @@ class ReadService:
         )
         query: Query = plan_find(view.model, spec)
         page = view.snapshot.query(query)
-        items: list[JsonValue] = [entity_json(r, shown, full=full) for r in page.items]
+        items: list[JsonValue] = [
+            entity_json(r, shown, full=full, names_mapped=view.names_mapped(r)) for r in page.items
+        ]
         data: dict[str, JsonValue] = {"items": items}
         self._signal(view, [r.id for r in page.items])
         return data, Page(page.total, len(page.items), page.limit, page.offset), warnings
@@ -1199,7 +1275,9 @@ class ReadService:
             {
                 "direction": "out" if edge.target == neighbor else "in",
                 "edge": edge_json(edge, full=full),
-                "entity": entity_json(revision, shown, full=full),
+                "entity": entity_json(
+                    revision, shown, full=full, names_mapped=view.names_mapped(revision)
+                ),
             }
             for neighbor, edge, revision in found
         ]
@@ -1447,9 +1525,14 @@ class ReadService:
 
 
 def _snapshot_as_of(
-    read: GraphStoreRead, head: Snapshot, entry: GraphEntry, as_of: AsOf
-) -> tuple[Snapshot, WarningRecord]:
-    """The snapshot at the seq ``as_of`` names, and the warning that says so (B8.8)."""
+    read: GraphStoreRead, head: Snapshot, entry: GraphEntry, as_of: AsOf, names: GraphNames
+) -> tuple[Snapshot, WarningRecord, bool]:
+    """The snapshot at the seq ``as_of`` names, the warning that says so (B8.8), and whether
+    its current revisions are shown under mapped names (migration plan M7).
+
+    The state's version is that of the revisions its last tx wrote (``tx.ontology``); every
+    current revision of the state fits it. When names changed between that version and the
+    pin, the state's revisions are mapped and the warning says so."""
     if CAPABILITY_SNAPSHOT_AT_SEQ not in read.capabilities():
         raise GraphCliError(
             "temporal.as_of_unsupported",
@@ -1460,18 +1543,91 @@ def _snapshot_as_of(
     snapshot = head if seq == head.seq else read.snapshot(at_seq=seq)
     tx = snapshot.tx(seq)
     version = tx.ontology.version if tx is not None else None
+    mapped = seq != head.seq and version is not None and names.changes(version)
     message = f"read as of tx:{seq}; the graph is at tx:{head.seq}"
     if version is not None and version != entry.pin.version:
-        message += (
-            f"; that state was written under ontology {version}, names follow {entry.pin.version}"
-        )
+        message += f"; that state was written under ontology {version}"
+        if mapped:
+            message += f", its names are mapped to those of {entry.pin.version}"
     details: dict[str, JsonValue] = {
         "as_of": as_of_text(as_of),
         "seq": seq,
         "head_seq": head.seq,
         "ontology_version": version,
     }
-    return snapshot, WarningRecord("temporal.as_of_read", message, details)
+    if mapped:
+        details["names_mapped"] = True
+    return snapshot, WarningRecord("temporal.as_of_read", message, details), mapped
+
+
+def _findings(error: GraphCliError) -> list[JsonValue]:
+    found = error.details.get("findings")
+    return found if isinstance(found, list) else []
+
+
+def _migration_item(
+    view: GraphRead, entity: EntityId, rev: int, seq: int
+) -> dict[str, JsonValue] | None:
+    """``history``'s ``migration`` of a revision a migration tx wrote (migration plan M7):
+    the versions and summary of its changeset and the renames and steps that changed this
+    entity. Both sides of the step show under current names, so without it the history
+    would hide a change of type. What applied is found by running the release's transform
+    on the stored revision before (``RevisionTransform.applied``); for a type limited reader
+    without the edges it cannot see, so nothing names a relation it does not reach."""
+    mapping = view.mapping
+    record = mapping.migration_record(seq) if mapping is not None else None
+    if mapping is None or record is None:
+        return None
+    old, new = record.get("from"), record.get("to")
+    item: dict[str, JsonValue] = {"from": old, "to": new}
+    summary = record.get("summary")
+    if isinstance(summary, str):
+        item["summary"] = summary
+    applied: list[JsonValue] = []
+    before = mapping.raw.get_revision(entity, rev - 1) if rev > 1 else None
+    hop = None
+    if before is not None and isinstance(old, str) and isinstance(new, str):
+        try:
+            hop = mapping.names.name_map.hop(old, new)
+        except GraphCliError:
+            hop = None
+    if before is not None and hop is not None:
+        if isinstance(view.snapshot, VisibleSnapshot):
+            before = strip_hidden_edges(before, view.snapshot.sees)
+        applied = hop.migrating.applied(before)
+    elif view.visible is None:
+        applied = _recorded_effects(record)  # the release files are gone: the whole record
+    item["renames"] = [e for e in applied if _kind(e).startswith("rename_")]
+    item["steps"] = [e for e in applied if not _kind(e).startswith("rename_")]
+    return item
+
+
+def _kind(effect: JsonValue) -> str:
+    kind = effect.get("kind") if isinstance(effect, Mapping) else None
+    return kind if isinstance(kind, str) else ""
+
+
+def _recorded_effects(record: Mapping[str, JsonValue]) -> list[JsonValue]:
+    """The renames and steps of a changeset's ``migration`` record, in the form of
+    ``RevisionTransform.applied``."""
+    found: list[JsonValue] = []
+    renames = record.get("renames")
+    renames = renames if isinstance(renames, Mapping) else {}
+    for key, kind in (("classes", "rename_class"), ("relations", "rename_relation")):
+        pairs = renames.get(key)
+        if isinstance(pairs, Mapping):
+            found += [{"kind": kind, "from": o, "to": n} for o, n in sorted(pairs.items())]
+    attributes = renames.get("attributes")
+    for entry in attributes if isinstance(attributes, list) else []:
+        if isinstance(entry, Mapping):
+            found.append({"kind": "rename_attribute", **entry})
+    steps = record.get("steps")
+    for index, step in enumerate(steps if isinstance(steps, list) else []):
+        if isinstance(step, Mapping) and len(step) == 1:
+            ((name, body),) = step.items()
+            if isinstance(body, Mapping):
+                found.append({"kind": name, **body, "index": index})
+    return found
 
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:

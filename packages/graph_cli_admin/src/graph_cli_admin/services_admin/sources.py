@@ -69,11 +69,13 @@ from graph_cli.kernel.skill_marker import graph_skill_name
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.format import NAME_RE as KINETIC_NAME_RE
 from graph_cli.kinetic.params import Problem as KineticProblem
+from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.semver import Version, is_version
 from graph_cli.ontology_layer.vocabulary import MODULE_ID_RE
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
+from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import actions, functions, kinetic_slots, release, skill
 from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
@@ -475,6 +477,7 @@ def push(
         after = replace(entry, pin=target_pin) if releasing else entry
         publishing = skill_changed and current_skill != pushed
         # The functions the graph will have must resolve against the ontology it will have.
+        pending = _pending_hop(entry, planned) if releasing else None
         function_slot = None
         if publishing_functions:
             label_f: Path | str = sources_dir
@@ -487,6 +490,7 @@ def push(
                 label=label_f,
                 # one namespace per graph: no function named like a published action
                 taken=action_names,
+                hints=kinetic_slots.rename_hints(ctx, entry, model_f, pending),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -501,6 +505,7 @@ def push(
                 model_a,
                 label=actions_dir,
                 function_names=function_names,
+                hints=kinetic_slots.rename_hints(ctx, entry, model_a, pending),
             )
             action_slot = actions.slot_of(checked_a, after)
         else:
@@ -727,3 +732,15 @@ def _object(data: bytes) -> Mapping[str, JsonValue] | None:
 
 def _usage(message: str) -> GraphCliError:
     return GraphCliError("usage.invalid_argument", message, details={"argument": "dir"})
+
+
+def _pending_hop(entry: GraphEntry, planned: release.Planned | None) -> Hop | None:
+    """The release a push makes, as the last step of the graph's name map: the rename hints
+    of the functions and actions it publishes name its version (migration plan M7)."""
+    if planned is None or planned.old is None:
+        return None
+    old, new = planned.old.model, planned.compiled.model
+    run = planned.migration
+    renames = run.renames if run is not None else derive_renames(old, new)
+    doc = run.migration.doc if run is not None and run.migration is not None else None
+    return Hop(entry.pin.version, planned.compiled.pin.version, old, new, renames, doc)

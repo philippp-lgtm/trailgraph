@@ -38,7 +38,7 @@ from graph_cli.kinetic.format import FILE_SUFFIX, Problem
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import kinetic_slots
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
+from graph_cli_admin.services_admin.kinetic_slots import Checked, ProblemHints, Published
 from graph_cli_admin.services_admin.release import FUNCTIONS_DAMAGED
 
 DAMAGED = FUNCTIONS_DAMAGED
@@ -73,6 +73,7 @@ def check_files(
     *,
     label: Path | str,
     taken: frozenset[str] = frozenset(),
+    hints: ProblemHints | None = None,
 ) -> Checked:
     """``admin.functions_invalid`` when the files cannot become the graph's catalog.
     ``taken`` are the names of the published actions: a function may not share one."""
@@ -89,7 +90,7 @@ def check_files(
         if (stem := name.removesuffix(FILE_SUFFIX)) in taken
     ]
     compiled, found = compile_catalog(files, model)
-    refuse(label, entry, [*problems, *clashes, *found])
+    refuse(label, entry, [*problems, *clashes, *found], hints)
     return Checked(files, compiled)
 
 
@@ -102,8 +103,13 @@ def slot_of(checked: Checked, entry: GraphEntry) -> KineticSlot:
     return kinetic_slots.slot_of(checked, entry, "functions")
 
 
-def refuse(source: Path | str, entry: GraphEntry, problems: list[Problem]) -> None:
-    kinetic_slots.refuse("functions", source, entry, problems)
+def refuse(
+    source: Path | str,
+    entry: GraphEntry,
+    problems: list[Problem],
+    hints: ProblemHints | None = None,
+) -> None:
+    kinetic_slots.refuse("functions", source, entry, problems, hints)
 
 
 def publish(
@@ -112,8 +118,8 @@ def publish(
     return kinetic_slots.publish(
         ctx,
         "functions",
-        lambda entry, files, problems, model, label, others: check_files(
-            entry, files, problems, model, label=label, taken=others
+        lambda entry, files, problems, model, label, others, hints: check_files(
+            entry, files, problems, model, label=label, taken=others, hints=hints
         ),
         graph_ref=graph_ref,
         source=source,

@@ -21,7 +21,7 @@ normalized document, not of the file bytes.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import ClassVar, Final
@@ -220,6 +220,13 @@ class MigrationDoc:
             "summary": self.summary,
             "steps": [step.to_json() for step in self.steps],
         }
+
+
+def class_moves(renames: Renames, retypes: Sequence[Retype]) -> dict[str, str]:
+    """Old class CURIE to new across one release: the derived class renames and the
+    ``retype`` steps. The one definition of where the entities of an old class went, for the
+    policy guard (``admin.policy_renamed_term``), read-time mapping and its hints."""
+    return {**renames.classes, **{r.from_: r.to for r in retypes}}
 
 
 def migration_hash(doc: MigrationDoc) -> str:

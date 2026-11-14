@@ -13,16 +13,20 @@ timings.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from typing import Final
 
 from graph_cli.kernel.canonical import CanonicalError, hash_bytes, parse_json
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
+from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.timing import Timings
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
+from graph_cli.ontology_layer.vocabulary import MIGRATION_FILE
 
 COMPILED_FILE: Final = "compiled.json"
+RELEASE_FILE: Final = "release.json"
 
 
 class ModelCache:
@@ -32,6 +36,7 @@ class ModelCache:
         self._catalog = catalog
         self._timings = timings if timings is not None else Timings()
         self._models: dict[str, tuple[str, CompiledModel]] = {}  # bytes hash -> (pin, model)
+        self._releases: dict[str, CompiledModel] = {}  # bytes hash -> model, any version
 
     def load(self, entry: GraphEntry) -> CompiledModel:
         with self._timings.phase("model"):
@@ -44,6 +49,26 @@ class ModelCache:
             model = load_compiled(data, expected_hash=pin.artifact_hash)
             self._models[key] = (pin.artifact_hash, model)
             return model
+
+    def load_release(self, graph: GraphId, version: str) -> CompiledModel:
+        """The compiled model of an installed release by its version, for reading revisions
+        written under it (migration plan M7). Not checked against a pin (an older release is
+        no pin any more); parsed once per distinct bytes."""
+        with self._timings.phase("model"):
+            data = self._catalog.read_release_file(graph, version, COMPILED_FILE)
+            key = hash_bytes(data)
+            found = self._releases.get(key)
+            if found is None:
+                try:
+                    found = model_from_json(as_object(parse_json(data), ""))
+                except (CanonicalError, JsonShapeError) as exc:
+                    raise GraphCliError(
+                        "backend.corrupt",
+                        f"compiled ontology {version} is unreadable: {exc}",
+                        details={"version": version},
+                    ) from exc
+                self._releases[key] = found
+            return found
 
     def load_for_read(self, entry: GraphEntry) -> tuple[CompiledModel, tuple[WarningRecord, ...]]:
         """B7.6: reads continue on a mismatching artifact with ``ontology.pin_mismatch_read``."""
@@ -65,3 +90,22 @@ class ModelCache:
             {"version": entry.pin.version, "expected": entry.pin.artifact_hash},
         )
         return model, (warning,)
+
+
+def installed_migration(read_file: Callable[[str], bytes]) -> bytes | None:
+    """The ``migration.yaml`` an installed release keeps (``read_file`` reads a file of its
+    directory); ``None`` for a release without one. The file is checked against the hash
+    ``release.json`` lists."""
+    try:
+        metadata = parse_json(read_file(RELEASE_FILE))
+    except CanonicalError as exc:
+        raise GraphCliError("backend.corrupt", f"{RELEASE_FILE} is unreadable: {exc}") from exc
+    listed = metadata.get("files") if isinstance(metadata, Mapping) else None
+    if not isinstance(listed, Mapping) or MIGRATION_FILE not in listed:
+        return None
+    data = read_file(MIGRATION_FILE)
+    if hash_bytes(data) != listed[MIGRATION_FILE]:
+        raise GraphCliError(
+            "backend.corrupt", f"{MIGRATION_FILE} differs from its hash in {RELEASE_FILE}"
+        )
+    return data

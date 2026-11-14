@@ -25,6 +25,9 @@ from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.services.models import ModelCache
+from graph_cli.services.names import NameMaps, hinted_problems
+from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import catalog_follow
 from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
@@ -55,11 +58,43 @@ class Checked:
 
 
 # What a kind contributes to a publish: the files, the folder problems, the model, the label
-# of the folder for messages and the names of the other kind's published catalog.
+# of the folder for messages, the names of the other kind's published catalog and the rename
+# hints for the problems.
 Check = Callable[
-    [GraphEntry, dict[str, bytes], list[Problem], CompiledModel, Path | str, frozenset[str]],
+    [
+        GraphEntry,
+        dict[str, bytes],
+        list[Problem],
+        CompiledModel,
+        Path | str,
+        frozenset[str],
+        "ProblemHints | None",
+    ],
     Checked,
 ]
+# Problems of a folder with the current names of the old terms they name (migration plan M7).
+ProblemHints = Callable[[list[Problem]], list[Problem]]
+
+
+def rename_hints(
+    ctx: AdminContext, entry: GraphEntry, model: CompiledModel, pending: Hop | None = None
+) -> ProblemHints:
+    """The hints for problems checked against ``model``: from the graph's name map (its pin
+    history), with ``pending`` on top for a release made in the same push. The name map is
+    read only when there are problems."""
+
+    def hints(problems: list[Problem]) -> list[Problem]:
+        if not problems:
+            return problems
+        try:
+            name_map = NameMaps(ctx.catalog, ctx.audit, ModelCache(ctx.catalog)).of(entry)
+        except GraphCliError:
+            return problems
+        if pending is not None:
+            name_map = name_map.extended(pending)
+        return hinted_problems(problems, name_map, model)
+
+    return hints
 
 
 def read_dir(source: Path, kind: SlotKind) -> tuple[dict[str, bytes], list[Problem]]:
@@ -134,8 +169,16 @@ def slot_of(checked: Checked, entry: GraphEntry, kind: SlotKind) -> KineticSlot:
     )
 
 
-def refuse(kind: SlotKind, source: Path | str, entry: GraphEntry, problems: list[Problem]) -> None:
-    """``admin.<kind>_invalid`` when there are problems."""
+def refuse(
+    kind: SlotKind,
+    source: Path | str,
+    entry: GraphEntry,
+    problems: list[Problem],
+    hints: ProblemHints | None = None,
+) -> None:
+    """``admin.<kind>_invalid`` when there are problems (with ``hints`` added)."""
+    if problems and hints is not None:
+        problems = hints(problems)
     if problems:
         raise GraphCliError(
             f"admin.{kind}_invalid",
@@ -168,7 +211,9 @@ def publish(
     files, problems = read_dir(source, kind)
     checked_against = entry.pin
     others = published_names(ctx, entry, other_kind(kind))
-    checked = check(entry, files, problems, pinned_model(ctx.catalog, entry), source, others)
+    model = pinned_model(ctx.catalog, entry)
+    hints = rename_hints(ctx, entry, model)
+    checked = check(entry, files, problems, model, source, others, hints)
     digest = sources_hash(files)
     meta = RequestMeta.of(command, {"graph": str(entry.id), "hash": digest, "dry_run": dry_run})
     decisions = ctx.authorize(
@@ -183,9 +228,9 @@ def publish(
         locked_others = names_of(current_slot(session, other_kind(kind)))
         if entry.pin != checked_against or locked_others != others:
             # A release or a publish of the other kind came in between: check again.
-            checked = check(
-                entry, files, problems, pinned_model(ctx.catalog, entry), source, locked_others
-            )
+            model = pinned_model(ctx.catalog, entry)
+            hints = rename_hints(ctx, entry, model)
+            checked = check(entry, files, problems, model, source, locked_others, hints)
         current = current_slot(session, kind)
         slot = slot_of(checked, entry, kind)
         data: dict[str, JsonValue] = {

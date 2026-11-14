@@ -36,7 +36,7 @@ from graph_cli.kernel.json_access import as_object, req_list, req_str
 from graph_cli.kernel.ports.catalog import KineticSlot
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.ontology_layer.diff import Renames
-from graph_cli.ontology_layer.migration import Retype
+from graph_cli.ontology_layer.migration import Retype, class_moves
 from graph_cli.ontology_layer.model import CompiledModel
 
 MAX_HAZARDS: Final = 20
@@ -81,7 +81,7 @@ def probes(
     """The rule resources of ``entries`` that name a term the release renames or retypes, each
     with the resource of the new term and whether a deny rule covers it."""
     prefix = f"graph:{graph}/type:"
-    class_map = {**renames.classes, **{r.from_: r.to for r in retypes}}
+    class_map = class_moves(renames, retypes)
     attribute_maps = {r.from_: r.attributes for r in retypes}
     denies = [e for e in entries if e.effect == "deny"]
     found: list[Probe] = []

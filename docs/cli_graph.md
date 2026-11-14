@@ -212,9 +212,47 @@ entities and edges the other reads match. An entity created later is
 
 The envelope's `graph.seq` is the seq that was read, and every such answer
 carries the warning `temporal.as_of_read` with `{as_of, seq, head_seq,
-ontology_version}` (the version the state was written under). A
+ontology_version}` (the version the state was written under, that is of the
+revisions its last transaction wrote). A
 next-page command repeats `--as-of tx:<seq>`, also after a time, so it
-reads the same state. A seq after the last transaction or a time without
+reads the same state.
+
+### Earlier revisions under current names
+
+A major ontology release can rename classes, attributes and relations
+(`renamed_from`) and migrate the data to the new names (see
+[graph-admin: Releasing with a data migration](cli_graph_admin.md#releasing-with-a-data-migration)). Stored
+revisions keep the names they were written with; reads show them under the
+names of the pinned ontology instead, so an answer never holds a name the
+model does not know:
+
+- `get --rev`, the revisions behind `history` (its `changed` names) and every
+  revision of an `--as-of` state are mapped: renamed classes, relations and
+  attributes, a `retype` of the migration, and enum values, states and
+  qualifiers its `map_values`, `map_qualifier_values` and `rename_qualifier`
+  steps re-keyed. What the other steps changed (`fill`, `drop`, `drop_edges`,
+  `drop_qualifier`, `convert`) is not mapped: such a revision shows what it
+  stored, for example a plain string where the model now has a
+  `lang_string` (filters compare its text).
+- A mapped revision keeps its `rev`, `tx_seq` and `ontology_version`; its
+  `content_hash` is recomputed over what is shown, and `--full` adds
+  `names_mapped: true`. Current revisions are never mapped: after a major
+  release they fit the pinned ontology, whatever their `ontology_version`.
+- An `--as-of` state whose names changed since is answered over its mapped
+  revisions: `find`, `lookup`, `search`, `neighbors` and `query` name current
+  terms and match the old revisions under them (read limits judge the
+  mapped type), and `temporal.as_of_read` says so ("its names are mapped
+  to those of <version>") with `names_mapped: true` in its details.
+- In `history`, the revision a migration wrote carries `migration: {from,
+  to, summary, renames, steps}`: the versions, the release's summary, and
+  the renames and steps that changed this entity (as `graph-admin graph
+  check --ontology` previews them, without counts). Its `changed` lists
+  only what the mapping does not explain.
+- An old name on input is never accepted: `term.unknown` says what it is
+  called now ("inv:Item was renamed to inv:Product in 2.0.0", each step for
+  a name renamed in several releases), with `details.renamed: [{from, to,
+  steps: [{to, in, class?, how?}]}]`. A name whose new term the caller cannot
+  see gets no hint. A seq after the last transaction or a time without
 an offset is `usage.invalid_argument`. An earlier state is history, so
 `--as-of` also needs `read.history` (see
 [Access control: History](access_control.md#history)).

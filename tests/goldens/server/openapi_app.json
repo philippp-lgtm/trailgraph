@@ -2540,6 +2540,9 @@
           },
           "content_hash": {
             "type": "string"
+          },
+          "names_mapped": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3726,6 +3729,74 @@
                   "required": [
                     "name",
                     "hash"
+                  ]
+                },
+                "migration": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "renames": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "index"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "renames",
+                    "steps"
                   ]
                 }
               },

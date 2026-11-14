@@ -10,7 +10,7 @@ pure function of its inputs.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,10 +19,8 @@ from uuid import UUID
 
 import graph_cli
 from graph_cli.kernel.canonical import (
-    CanonicalError,
     JsonValue,
     hash_bytes,
-    parse_json,
     pretty_bytes,
 )
 from graph_cli.kernel.clock import format_timestamp
@@ -50,11 +48,12 @@ from graph_cli.ontology_layer.vocabulary import (
     MODULE_ID_RE,
     RESERVED_MODULE_IDS,
 )
+from graph_cli.services.models import RELEASE_FILE, installed_migration
 
 RELEASE_SCHEMA: Final = "graph_cli.ontology_release/1"
+__all__ = ["RELEASE_FILE", "installed_migration"]  # moved to graph_cli.services.models
 COMPILED_FILE: Final = "compiled.json"
 DIFF_FILE: Final = "diff.json"
-RELEASE_FILE: Final = "release.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,25 +172,6 @@ def read_migration(directory: Path) -> bytes | None:
             f"cannot read {path}: {exc.strerror or exc}",
             details={"argument": "source"},
         ) from exc
-
-
-def installed_migration(read_file: Callable[[str], bytes]) -> bytes | None:
-    """The ``migration.yaml`` an installed release keeps (``read_file`` reads a file of its
-    directory); ``None`` for a release without one. The file is checked against the hash
-    ``release.json`` lists."""
-    try:
-        metadata = parse_json(read_file(RELEASE_FILE))
-    except CanonicalError as exc:
-        raise GraphCliError("backend.corrupt", f"{RELEASE_FILE} is unreadable: {exc}") from exc
-    listed = metadata.get("files") if isinstance(metadata, Mapping) else None
-    if not isinstance(listed, Mapping) or MIGRATION_FILE not in listed:
-        return None
-    data = read_file(MIGRATION_FILE)
-    if hash_bytes(data) != listed[MIGRATION_FILE]:
-        raise GraphCliError(
-            "backend.corrupt", f"{MIGRATION_FILE} differs from its hash in {RELEASE_FILE}"
-        )
-    return data
 
 
 def diff(old: CompiledModel, new: CompiledModel) -> tuple[DiffReport, BumpCheck]:

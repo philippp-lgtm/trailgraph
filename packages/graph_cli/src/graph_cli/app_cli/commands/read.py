@@ -740,7 +740,19 @@ HISTORY_OUTPUT: Final = obj(
                         )
                     ),
                 },
-                {"action": obj({"name": STRING, "hash": STRING})},  # set by a ``do``
+                {
+                    "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
+                    # the revision a migration wrote (services.read._migration_item)
+                    "migration": obj(
+                        {
+                            "from": NULLABLE_STRING,
+                            "to": NULLABLE_STRING,
+                            "renames": array(obj({"kind": STRING}, extra=ANY)),
+                            "steps": array(obj({"kind": STRING, "index": INTEGER}, extra=ANY)),
+                        },
+                        {"summary": STRING},
+                    ),
+                },
             )
         ),
     }
