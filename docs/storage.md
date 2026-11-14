@@ -17,7 +17,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 
 ## FileStore
 
@@ -69,7 +69,8 @@ POSIX only, local filesystems only.
   full verification behind the index, so it verifies only the txs after
   it. Revisions it reads by id from the index must match their content
   hash, and the current revisions the commit checks rely on must equal
-  the copies in their tx lines. Without a usable index of format 2, when
+  the copies in their tx lines (each tx line is read and parsed once for all
+  the revisions that come from it). Without a usable index of format 2, when
   one of these checks fails, and once 200 txs were written since
   `full_verified_seq`, it replays and verifies the whole log instead and
   rebuilds the index from it. A failed check adds `storage.index_stale`
@@ -81,6 +82,26 @@ POSIX only, local filesystems only.
 - A write appends the audit intent, then the transaction (the commit
   point), then materializes revision files and the checkpoint. Each step is
   synced (`F_FULLFSYNC` on macOS with `durability="full"`).
+- A data migration (a major release with renames or a migration file) is one
+  transaction whose changeset is `{"schema": "graph_cli.migration/1", "ops": [], "migration":
+  {...}}`. It is committed by `MaintenanceSession.migrate`, which runs the steps of a commit
+  with different checks: `commit` refuses a changeset with a `migration` key
+  (`migration_via_commit`), `migrate` refuses one without. A migration tx needs an
+  allow decision for `maint.migrate`, revises existing entities only, may change their type
+  and keeps `alias`, `record_status`, `created_at` and the valid time
+  (`migration_identity`); it has no ops and allocates no alias. The release brackets
+  it with the marker `data/migration.json` (`graph_cli.migration_marker/1`: seq, tx id,
+  from and to version, artifact and migration hash), written by one rename before the intent
+  and removed by one unlink after the pin switch; `FileStore.migration_marker()` reads it
+  lock-free. The marker's tx is committed when the tx at `marker.seq` has the marker's
+  `tx_id`, not when `head.seq >= marker.seq`: after a crash before the commit an application
+  write can take that seq. While a marker's tx is committed and the manifest still names
+  the old version (a release running, or crashed between the tx and the pin switch), the
+  app's catalog pins the graph to the marker's version, so reads use the model whose names
+  the data has; writes are refused (`write.migration_incomplete`), and reads warn
+  `graph.migration_incomplete` when no process holds the graph lock (`writer_active`, a shared
+  non-blocking `flock` probe that creates nothing). A marker whose tx is not in the log is
+  stale: reads ignore it and the next release removes or overwrites it.
 - Every write session first recovers: it truncates a torn last line and
   writes missing derived files. Damage inside the log stops writes with
   `backend.corrupt` until repair.

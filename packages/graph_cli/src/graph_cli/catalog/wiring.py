@@ -76,6 +76,7 @@ from graph_cli.kernel.records import EnvInfo, RequestMeta
 from graph_cli.kernel.skill_marker import SKILLS_DIR
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
+from graph_cli.services.names import NameMapCache
 from graph_cli.services.read import ReadService
 from graph_cli.storage.files.audit_log import FileAuditLog
 
@@ -131,6 +132,14 @@ class _Backend:
     timings: Timings
 
 
+@dataclass
+class Selection:
+    """The graph the running command selected, for what is added to its errors (the rename
+    hint of ``term.unknown``, migration plan M7)."""
+
+    entry: GraphEntry | None = None
+
+
 @dataclass(frozen=True)
 class AppContext:
     roots: Roots
@@ -143,6 +152,7 @@ class AppContext:
     graph_env: str | None
     command: str = ""  # the running command, for audited selection refusals
     gate: SkillGate | None = None  # the skill freshness check of a read or write
+    selection: Selection = field(default_factory=Selection, repr=False)
 
     @functools.cached_property
     def writer(self) -> WriteService:
@@ -196,6 +206,7 @@ class AppContext:
         )
         if self.gate is not None:
             self.gate.check(self.catalog, entry)
+        self.selection.entry = entry
         return entry
 
     def select_for(self, ref: str, pointer: PointerFile | None) -> GraphEntry:
@@ -243,6 +254,8 @@ class AppServices:
     usage: UsageNote = field(default_factory=UsageNote)
     request: RequestScope | None = None  # set by the server, one per request
     compat: Callable[[], str] | None = None  # this program's compatibility id (B14.16)
+    # The server's name maps, shared by its requests (a request builds its services anew)
+    name_maps: NameMapCache | None = None
     _context: AppContext | None = field(default=None, init=False, repr=False)
     _remote: RemoteSession | None = field(default=None, init=False, repr=False)
     _warnings: tuple[WarningRecord, ...] = field(default=(), init=False, repr=False)
@@ -301,6 +314,15 @@ class AppServices:
                 self._context, self._warnings = self._build(command or "", kind, warnings)
         warnings += self._warnings
         return self._context
+
+    def explained(self, error: GraphCliError) -> GraphCliError:
+        """``error`` with what the selected graph can add: an old term's current name
+        (``ReadService.rename_hint``). Unchanged when no graph was selected."""
+        context = self._context
+        entry = context.selection.entry if context is not None else None
+        if context is None or entry is None:
+            return error
+        return context.reader.rename_hint(context.actor, entry, error)
 
     def skill_claims(self) -> tuple[tuple[SkillClaim, ...], Path | None]:
         """``(claims, project directory)`` of the skills installed for this process's agent:
@@ -493,6 +515,7 @@ class AppServices:
             roots.data_root,
             settings=StorageSettings(config.lock_timeout_s, config.durability),
             oplog=oplog,
+            follow_migration=True,
         )
         audit = FileAuditLog(
             roots.data_root,
@@ -515,6 +538,7 @@ class AppServices:
             activity=activity,
             timings=self.timings,
             usage=self.usage,
+            name_maps=self.name_maps,
         )
         context = AppContext(
             roots=roots,

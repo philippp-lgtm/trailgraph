@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.20.0",
+  "program_version": "0.21.0",
   "surface": "app",
   "global_options": [
     {
@@ -118,7 +118,8 @@
         "skills.outdated",
         "usage.invalid_argument",
         "usage.invalid_input",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -345,7 +346,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -1448,7 +1450,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -1612,7 +1615,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -2338,7 +2342,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -2867,7 +2872,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -3511,7 +3517,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -3633,7 +3640,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -3762,7 +3770,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -3935,7 +3944,8 @@
         "remote.unreachable",
         "skills.outdated",
         "usage.invalid_argument",
-        "write.invalid"
+        "write.invalid",
+        "write.migration_incomplete"
       ],
       "exit_codes": [
         0,
@@ -4424,6 +4434,11 @@
       "code": "write.invalid",
       "category": "invalid",
       "exit": 1
+    },
+    {
+      "code": "write.migration_incomplete",
+      "category": "unavailable",
+      "exit": 5
     }
   ]
 }

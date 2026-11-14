@@ -13,6 +13,7 @@ from typing import Any
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import TxRecord, tx_from_json, tx_to_json
+from support.migrations import allow_migrate
 from support.procs import spawn
 from support.txbuilder import allow_ops
 
@@ -56,7 +57,11 @@ def tx_from_payload(data: Mapping[str, JsonValue]) -> AuthorizedTx:
         seq=record.seq,
         recorded_at=record.recorded_at,
         actor=record.actor,
-        decisions=allow_ops(record.graph_id, _ops(record.changeset)),
+        decisions=(
+            allow_migrate(record.graph_id)
+            if "migration" in record.changeset
+            else allow_ops(record.graph_id, _ops(record.changeset))
+        ),
         changeset=record.changeset,
         changeset_hash=record.changeset_hash,
         resolution=record.resolution,
@@ -89,5 +94,28 @@ def run_child(
     if blob_file is not None:
         args["blob_file"] = str(blob_file)
     proc = spawn("crash", args)
+    out, err = proc.communicate(timeout=60)
+    return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+
+
+def run_migration_child(
+    graph_dir: Path,
+    graph_id: str,
+    point: str,
+    *,
+    tx: AuthorizedTx,
+    audit_body: Mapping[str, JsonValue],
+    marker: Mapping[str, JsonValue],
+) -> subprocess.CompletedProcess[str]:
+    """Run one release-shaped migration: marker, intent, ``migrate``, marker removal."""
+    args: dict[str, Any] = {
+        "graph_dir": str(graph_dir),
+        "graph_id": graph_id,
+        "point": point,
+        "tx": tx_payload(tx),
+        "audit": dict(audit_body),
+        "marker": dict(marker),
+    }
+    proc = spawn("migrate", args)
     out, err = proc.communicate(timeout=60)
     return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)

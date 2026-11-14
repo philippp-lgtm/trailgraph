@@ -27,6 +27,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
     GRAPH_ERRORS,
+    MIGRATION_ERRORS,
     ROOT_ERRORS,
     admin_context,
     path,
@@ -321,7 +322,11 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         "actions": obj(  # the published action catalog against the same model
             {"count": INTEGER, "problems": array(ref("action_problem"))}
         ),
-    }
+    },
+    {
+        "migration": ref("migration_preview"),  # --ontology with a migration.yaml
+        "republished": ref("republished"),  # --ontology: catalogs a release would publish again
+    },
 )
 REINDEX_OUTPUT: Final = obj(  # services_admin.reindex.reindex
     {"graph_id": STRING, "seq": INTEGER, "dry_run": BOOLEAN, "rebuilt": BOOLEAN}
@@ -602,6 +607,11 @@ SPECS: Final = (
             "access.denied",
             "admin.model_invalid",
             "admin.data_errors",
+            "admin.migration_required",
+            "migration.invalid",
+            "admin.migration_unexpected",
+            "admin.migration_from_mismatch",
+            "admin.policy_renamed_term",
             "admin.functions_broken",
             "admin.actions_broken",
         ),
@@ -613,7 +623,12 @@ SPECS: Final = (
         " model (admin.functions_broken, for example function.stale after an interrupted"
         " push) and the published actions (admin.actions_broken, for example action.stale; the"
         " functions are reported first). With --ontology, checks the data under an"
-        " authored version before it is released.",
+        " authored version before it is released: for a major version with a migration.yaml (or"
+        " renames that rewrite data) the migration is applied to an overlay, the findings are"
+        " those of the migrated data, and the migration block of the answer counts what each"
+        " rename and step changes, with sample ids (nothing is written); it also reports the"
+        " refusals of the release for the policy (admin.policy_renamed_term) and the catalogs it"
+        " would publish again (republished).",
         remote="hooked",
     ),
     CommandSpec(
@@ -729,9 +744,11 @@ SPECS: Final = (
             "graph.archived",
             "admin.source_conflict",
             "admin.model_invalid",
+            "ontology.rename_invalid",
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",
+            *MIGRATION_ERRORS,
             "admin.skill_invalid",
             "admin.functions_invalid",
             "admin.functions_broken",
@@ -748,9 +765,11 @@ SPECS: Final = (
         " a missing functions or actions directory is an empty one); whenever the ontology"
         " changes, the skill, the functions and the actions are checked against the ontology"
         " they will have (the published functions and actions too, if the push does not replace"
-        " them: admin.functions_broken, admin.actions_broken). A function and an action may not"
-        " share a name. Everything is checked before the first write; the new base is written"
-        " into DIR.",
+        " them: admin.functions_broken, admin.actions_broken; a release with renames publishes"
+        " those that still compile again by itself). A function and an action may not"
+        " share a name. A release in it may carry a data migration (migration.yaml in the version"
+        " directory; see ontology release). Everything is checked before the first write; the new"
+        " base is written into DIR.",
         remote="hooked",
     ),
     CommandSpec(

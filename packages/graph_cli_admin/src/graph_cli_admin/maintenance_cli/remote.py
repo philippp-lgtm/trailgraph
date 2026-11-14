@@ -21,7 +21,10 @@ returned as it came (``Result.forwarded``):
 refuse in remote mode (``admin.remote_mode``). ``--data-root`` names a
 local data root, so it is refused as well. Admin writes carry no
 idempotency key and are never retried: a lost answer says to check the
-state before running the command again.
+state before running the command again, except for a release (``ontology release``, ``graph
+push``), which is safe to repeat. A command that writes nothing (every read, a dry run) is
+sent a second time when the connection fails, with its uploads: the server uses each upload up
+once.
 """
 
 from __future__ import annotations
@@ -52,6 +55,9 @@ MAX_FILES: Final = 1000  # files of one uploaded directory, as the server takes 
 RENDER: Final = ("graph", "skill", "render")
 PULL: Final = ("graph", "pull")
 PUSH: Final = ("graph", "push")
+# Writes whose repetition is safe without a key: running a release again finds it installed
+# (and a migration committed, or finished), so it changes nothing or finishes it.
+REPEATABLE: Final = frozenset({("ontology", "release"), PUSH})
 OUT: Final = "--out"
 DIR: Final = "dir"
 
@@ -79,34 +85,53 @@ def _handler(spec: CommandSpec) -> Callable[..., Result]:
         dry_run = args.get("--dry-run") is True
         if spec.path == PUSH and not dry_run and not os.access(str(args[DIR]), os.W_OK):
             raise _usage(DIR, f"{args[DIR]} is not writable: push records the new base there")
-        for param in spec.params:
-            value = args.get(param.name)
-            if value is None or (param.name == OUT and out is not None):
-                continue
-            if param.name == DIR and target is not None:
-                continue
-            if param.type == "file":
-                args[param.name] = _upload_file(session, str(value), param.name)
-            elif param.type == "directory":
-                only = sources.PARTS if spec.path == PUSH else None
-                args[param.name] = upload_tree(session, str(value), param.name, only=only)
-        write = None
-        if spec.kind == "write" and not dry_run:
-            write = Write(None, command_line(spec, args))
-        if out is not None:
-            args[OUT] = {"files": {}, "name": str(values["out"])}
-            document, _, _ = session.command(spec.path, api_args(args), text=False, write=write)
-            return Result(forwarded=Forwarded(_write_rendered(document, out, values)))
-        if target is not None:
-            args[DIR] = {"files": {}, "name": str(values["target"])}
-            document, _, _ = session.command(spec.path, api_args(args), text=False, write=None)
-            return Result(forwarded=Forwarded(_write_pulled(document, target, values)))
-        document, stdout, stderr = session.command(
-            spec.path, api_args(args), text=not state.json_mode, write=write
-        )
-        if spec.path == PUSH and not dry_run:
-            _record_base(document, Path(str(values["source"])))
-        return Result(forwarded=Forwarded(document, stdout, stderr))
+        sends_write = spec.kind == "write" and not dry_run
+
+        def exchange(args: dict[str, JsonValue]) -> Result:
+            """The uploads and the command, once; a retry repeats both (the server uses an
+            upload up once, so the command alone cannot be sent again)."""
+            for param in spec.params:
+                value = args.get(param.name)
+                if value is None or (param.name == OUT and out is not None):
+                    continue
+                if param.name == DIR and target is not None:
+                    continue
+                if param.type == "file":
+                    args[param.name] = _upload_file(session, str(value), param.name)
+                elif param.type == "directory":
+                    only = sources.PARTS if spec.path == PUSH else None
+                    args[param.name] = upload_tree(session, str(value), param.name, only=only)
+            write = None
+            if sends_write:
+                write = Write(None, command_line(spec, args), repeatable=spec.path in REPEATABLE)
+            if out is not None:
+                args[OUT] = {"files": {}, "name": str(values["out"])}
+                document, _, _ = session.command(
+                    spec.path, api_args(args), text=False, write=write, retry=False
+                )
+                return Result(forwarded=Forwarded(_write_rendered(document, out, values)))
+            if target is not None:
+                args[DIR] = {"files": {}, "name": str(values["target"])}
+                document, _, _ = session.command(
+                    spec.path, api_args(args), text=False, write=None, retry=False
+                )
+                return Result(forwarded=Forwarded(_write_pulled(document, target, values)))
+            document, stdout, stderr = session.command(
+                spec.path, api_args(args), text=not state.json_mode, write=write, retry=False
+            )
+            if spec.path == PUSH and not dry_run:
+                _record_base(document, Path(str(values["source"])))
+            return Result(forwarded=Forwarded(document, stdout, stderr))
+
+        # A command that writes is sent once (a lost answer is ``remote.outcome_unknown``); any
+        # other is sent again, with its uploads, when the connection fails.
+        for attempt in range(1 if sends_write else 2):
+            try:
+                return exchange(dict(args))
+            except GraphCliError as exc:
+                if exc.code != "remote.unreachable" or sends_write or attempt:
+                    raise
+        raise GraphCliError("internal.error", "no attempt was made")
 
     return handler
 

@@ -100,7 +100,8 @@ logs.
 
 - Set it on every concrete class people refer to; it is not inherited.
 - Choose it for good: once entities have aliases, the prefix stays. A
-  class renamed with `renamed_from` keeps it and its aliases count on; a
+  class renamed with `renamed_from` (a local name or the CURIE of the old
+  term) takes it along and the old class no longer holds it; a
   new class cannot take over the prefix of a removed one (the release
   warns `admin.alias_prefix_taken` and the class gets no aliases).
 - Aliases are for people. Change sets use them or `@local` names; nothing

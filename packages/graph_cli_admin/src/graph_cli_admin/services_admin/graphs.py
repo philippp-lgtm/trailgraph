@@ -9,7 +9,8 @@ the anchor, and publishes the graph with one rename.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from graph_cli.audit import events
@@ -21,6 +22,8 @@ from graph_cli.kernel.langtag import normalize_language_tag
 from graph_cli.kernel.ports.audit import AuditReceipt
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.records import RequestMeta
+from graph_cli.ontology_layer.diff import Renames
+from graph_cli.ontology_layer.migration import Retype
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
 from graph_cli_admin.services_admin.context import AdminContext
@@ -120,34 +123,80 @@ def alias_prefixes(compiled: Compiled) -> dict[TermRef, str]:
     }
 
 
+@dataclass(frozen=True, slots=True)
+class PrefixChanges:
+    """What a release does to the manifest's alias prefixes.
+
+    ``merged`` is the new map. ``added`` holds the prefixes given to classes that had none
+    (seeds from ``display_prefix``); ``moved`` the prefixes that follow a class to its new
+    CURIE (new CURIE to ``{"from": old CURIE, "prefix": prefix}``), where the old CURIE's entry
+    is replaced. ``skipped`` are seeds another class already uses."""
+
+    merged: dict[TermRef, str]
+    skipped: dict[TermRef, str]
+    added: dict[TermRef, str]
+    moved: dict[TermRef, dict[str, str]]
+
+    def to_json(self) -> dict[str, JsonValue]:
+        """The ``change.alias_prefixes`` shape of the pin intent."""
+        return {
+            "added": {str(curie): prefix for curie, prefix in sorted(self.added.items())},
+            "moved": {str(curie): dict(move) for curie, move in sorted(self.moved.items())},
+        }
+
+
 def merged_alias_prefixes(
-    current: Mapping[TermRef, str], compiled: Compiled
-) -> tuple[dict[TermRef, str], dict[TermRef, str]]:
-    """The manifest's prefixes plus those of classes a release adds, and the seeds left
-    out. An existing prefix never changes: a class renamed with ``renamed_from`` keeps
-    the prefix of its old name (its aliases count on), and a seed that another class
-    already uses is left out (the class gets no aliases)."""
+    current: Mapping[TermRef, str],
+    compiled: Compiled,
+    *,
+    renames: Renames,
+    retypes: Sequence[Retype] = (),
+) -> PrefixChanges:
+    """The manifest's prefixes plus those of classes a release adds, and the seeds left out.
+
+    A prefix stays with its entities and is never freed. A class renamed (``renames``, local
+    or CURIE ``renamed_from``) takes the prefix of its old CURIE and **replaces** that entry,
+    so the old CURIE no longer holds it. So does the ``to`` class of a ``retype`` whose
+    ``from`` class is gone from the new model, unless ``to`` holds a prefix or declares another
+    ``display_prefix``; then ``to`` keeps or seeds its own and the moved entities keep their
+    old aliases. A class removed without a move keeps its entry (the prefix stays reserved),
+    and a seed that another class already uses is left out (the class gets no aliases)."""
+    classes = compiled.model.classes
     merged = dict(current)
-    used = set(current.values())
-    skipped: dict[TermRef, str] = {}
-    for name, cls in sorted(compiled.model.classes.items()):
-        curie = TermRef(name)
-        if cls.abstract or curie in merged:
+    moved: dict[TermRef, dict[str, str]] = {}
+
+    def move(old: TermRef, new: TermRef) -> None:
+        prefix = merged.pop(old)
+        merged[new] = prefix
+        moved[new] = {"from": str(old), "prefix": prefix}
+
+    sources = {n: o for o, n in renames.classes.items()}
+    for name, cls in sorted(classes.items()):
+        old = TermRef(sources.get(name, ""))
+        if not cls.abstract and TermRef(name) not in merged and old in merged:
+            move(old, TermRef(name))
+    for step in retypes:
+        old, new = TermRef(step.from_), TermRef(step.to)
+        target = classes.get(step.to)
+        if step.from_ in classes or old not in merged or target is None or target.abstract:
             continue
-        if cls.renamed_from is not None:
-            old = TermRef(f"{name.partition(':')[0]}:{cls.renamed_from}")
-            if old in current:
-                merged[curie] = current[old]
-                continue
+        if new in merged or target.display_prefix not in (None, merged[old]):
+            continue
+        move(old, new)
+    used = set(merged.values())
+    skipped: dict[TermRef, str] = {}
+    added: dict[TermRef, str] = {}
+    for name, cls in sorted(classes.items()):
+        curie = TermRef(name)
         prefix = cls.display_prefix
-        if prefix is None:
+        if cls.abstract or curie in merged or prefix is None:
             continue
         if prefix in used:
             skipped[curie] = prefix
             continue
-        merged[curie] = prefix
+        merged[curie] = added[curie] = prefix
         used.add(prefix)
-    return merged, skipped
+    return PrefixChanges(merged, skipped, added, moved)
 
 
 def describe(manifest: ManifestData) -> dict[str, JsonValue]:

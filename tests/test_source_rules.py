@@ -47,6 +47,11 @@ ENV_AND_OS = {
 
 WALL_CLOCK_ALLOWED = {"graph_cli.kernel.clock"}
 COMMIT_ALLOWED = ("graph_cli.services.write", "graph_cli.storage")
+MIGRATE_ALLOWED = (
+    "graph_cli.services",
+    "graph_cli.storage",
+    "graph_cli_admin.services_admin.release",
+)
 ENV_ALLOWED_PREFIXES = ("graph_cli.catalog", "graph_cli_admin.maintenance_cli.wiring")
 
 
@@ -96,6 +101,16 @@ def _commit_calls(tree: ast.Module) -> list[str]:
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "commit"
+    ]
+
+
+def _migrate_calls(tree: ast.Module) -> list[str]:
+    return [
+        "migrate"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "migrate"
     ]
 
 
@@ -198,3 +213,11 @@ def test_clock_port_calls_are_allowed() -> None:
 
 def test_sources_exist() -> None:
     assert all(Path(root).is_dir() for root in SRC_ROOTS)
+
+
+def test_only_services_and_the_release_migrate() -> None:
+    """Plan M4: a migration tx is committed by ``MaintenanceSession.migrate`` only, called
+    from the migration service and the release (graph_cli_admin) that builds it."""
+    found = _violations(_migrate_calls, lambda n: n.startswith(MIGRATE_ALLOWED))
+    assert found == {}
+    assert _migrate_calls(ast.parse("session.migrate(tx, receipt)"))

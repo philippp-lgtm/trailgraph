@@ -37,7 +37,9 @@ will have is checked against the ontology it will have; whenever the
 ontology or the functions change, so are the functions: the new files
 against the model the graph will have, or, when the push does not touch
 them, the published catalog (``admin.functions_broken`` in the release); the
-actions likewise (``admin.actions_broken``). Functions and actions share one
+actions likewise (``admin.actions_broken``); a release with renames or a migration file
+publishes a catalog it does not replace again when its sources still compile against the new
+model (``release.plan``, ``data.ontology.republished``). Functions and actions share one
 namespace: each kind is checked against the names of the other kind the graph
 will have. Every check runs before the first write; the new base is written into the
 directory afterwards (``dry_run``: answered, not written).
@@ -67,18 +69,29 @@ from graph_cli.kernel.skill_marker import graph_skill_name
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.format import NAME_RE as KINETIC_NAME_RE
 from graph_cli.kinetic.params import Problem as KineticProblem
+from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.semver import Version, is_version
 from graph_cli.ontology_layer.vocabulary import MODULE_ID_RE
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, Problem, read_tree
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
-from graph_cli_admin.services_admin import actions, functions, kinetic_slots, release, skill
+from graph_cli.temporal_knowledge.name_map import Hop
+from graph_cli_admin.services_admin import (
+    actions,
+    catalog_follow,
+    functions,
+    kinetic_slots,
+    release,
+    skill,
+)
+from graph_cli_admin.services_admin.catalog_follow import names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     RELEASE_FILE,
     Compiled,
     compile_source,
     pinned_model,
+    read_migration,
 )
 
 SOURCE_FILE: Final = ".graph_cli_source.json"
@@ -379,7 +392,8 @@ def push(
         )
     if not dry_run and not os.access(source, os.W_OK):
         raise _usage(f"{source} is not writable: push records the new base there")
-    compiled = _ontology(source, base)
+    compiled, ontology_dir = _ontology(source, base)
+    migration = read_migration(ontology_dir)
     name = graph_skill_name(entry.name)
     skill_dir = _skill_dir(source, name)
     files: dict[str, bytes] | None = None
@@ -415,7 +429,17 @@ def push(
     configure = ctx.authorize(
         [("maint.graph_configure", resource)], request=meta, graph=entry.id, reason=reason
     )
-    decisions = release.authorize(ctx, entry, meta, reason=reason) if ontology_changed else None
+    decisions = (
+        release.authorize(
+            ctx,
+            entry,
+            meta,
+            reason=reason,
+            migrate=release.wants_migration(ctx, entry, compiled, migration),
+        )
+        if ontology_changed
+        else None
+    )
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         release.check_state(entry)
@@ -440,15 +464,15 @@ def push(
         publishing_actions = actions_changed and current_actions != pushed_actions
         # One namespace per graph: each kind is checked against the names of the other kind
         # the graph will have (the pushed files if the push publishes them, else the published).
-        function_names = (
-            _stems(function_files) if publishing_functions else release.names_of(published)
-        )
-        action_names = _stems(action_files) if publishing_actions else release.names_of(catalog)
+        function_names = _stems(function_files) if publishing_functions else names_of(published)
+        action_names = _stems(action_files) if publishing_actions else names_of(catalog)
         planned = (
             release.plan(
                 ctx,
                 session,
                 compiled,
+                migration=migration,
+                dry_run=dry_run,
                 functions_replaced=publishing_functions,
                 actions_replaced=publishing_actions,
                 function_names=function_names,
@@ -460,6 +484,7 @@ def push(
         after = replace(entry, pin=target_pin) if releasing else entry
         publishing = skill_changed and current_skill != pushed
         # The functions the graph will have must resolve against the ontology it will have.
+        pending = _pending_hop(entry, planned) if releasing else None
         function_slot = None
         if publishing_functions:
             label_f: Path | str = sources_dir
@@ -472,6 +497,7 @@ def push(
                 label=label_f,
                 # one namespace per graph: no function named like a published action
                 taken=action_names,
+                hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -486,6 +512,7 @@ def push(
                 model_a,
                 label=actions_dir,
                 function_names=function_names,
+                hints=catalog_follow.rename_hints(ctx, entry, model_a, pending),
             )
             action_slot = actions.slot_of(checked_a, after)
         else:
@@ -542,8 +569,11 @@ def push(
             }
         )
         final = slot if slot is not None else current
-        final_functions = function_slot if function_slot is not None else published
-        final_actions = action_slot if action_slot is not None else catalog
+        # a catalog the release compiles again (plan M8) is the same sources, compiled anew
+        again_functions = planned.functions if planned is not None else None
+        again_actions = planned.actions if planned is not None else None
+        final_functions = function_slot or (again_functions.slot if again_functions else published)
+        final_actions = action_slot or (again_actions.slot if again_actions else catalog)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
@@ -586,9 +616,9 @@ def push(
     return Pushed(after, data, seq, warnings)
 
 
-def _ontology(source: Path, base: Base) -> Compiled:
+def _ontology(source: Path, base: Base) -> tuple[Compiled, Path]:
     """The highest version directory of ``ontology/``, compiled with the base's main
-    module; its name must be the version its main module declares."""
+    module, and the directory; its name must be the version its main module declares."""
     directory = source / ONTOLOGY
     try:
         versions = sorted(
@@ -608,7 +638,7 @@ def _ontology(source: Path, base: Base) -> Compiled:
             f"{latest} declares version {declared}; name the directory after the version"
             " (bump the module version in a new directory)"
         )
-    return compiled
+    return compiled, latest
 
 
 def _kinetic_files(
@@ -709,3 +739,15 @@ def _object(data: bytes) -> Mapping[str, JsonValue] | None:
 
 def _usage(message: str) -> GraphCliError:
     return GraphCliError("usage.invalid_argument", message, details={"argument": "dir"})
+
+
+def _pending_hop(entry: GraphEntry, planned: release.Planned | None) -> Hop | None:
+    """The release a push makes, as the last step of the graph's name map: the rename hints
+    of the functions and actions it publishes name its version (migration plan M7)."""
+    if planned is None or planned.old is None:
+        return None
+    old, new = planned.old.model, planned.compiled.model
+    run = planned.migration
+    renames = run.renames if run is not None else derive_renames(old, new)
+    doc = run.migration.doc if run is not None and run.migration is not None else None
+    return Hop(entry.pin.version, planned.compiled.pin.version, old, new, renames, doc)

@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.20.0",
+  "program_version": "0.21.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -735,12 +735,17 @@
         "admin.actions_broken",
         "admin.data_errors",
         "admin.functions_broken",
+        "admin.migration_from_mismatch",
+        "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.remote_mode",
         "backend.unavailable",
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1215,8 +1220,12 @@
         "admin.actions_invalid",
         "admin.functions_broken",
         "admin.functions_invalid",
+        "admin.migration_from_mismatch",
+        "admin.migration_incomplete",
         "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.release_exists",
         "admin.remote_mode",
         "admin.skill_invalid",
@@ -1229,6 +1238,8 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
         "remote.protocol",
@@ -1680,6 +1691,7 @@
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1732,6 +1744,20 @@
           "summary": "Main module id (the file <module>.yaml); needed if SOURCE holds several."
         },
         {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why it is released; recorded in every audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run every check and show the release and its migration without writing."
+        },
+        {
           "name": "--data-root",
           "type": "directory",
           "required": false,
@@ -1745,6 +1771,14 @@
           "summary": "Release and pin."
         },
         {
+          "command": "graph-admin ontology release <graph> <dir> --dry-run --json",
+          "summary": "Show what the release and its migration would change."
+        },
+        {
+          "command": "graph-admin ontology release <graph> <dir> --reason <reason>",
+          "summary": "Release with a reason (recorded with the migration)."
+        },
+        {
           "command": "graph-admin ontology release <graph> <dir> --module <module> --json",
           "summary": "Release one module of several, as JSON."
         }
@@ -1753,8 +1787,12 @@
         "access.denied",
         "admin.actions_broken",
         "admin.functions_broken",
+        "admin.migration_from_mismatch",
+        "admin.migration_incomplete",
         "admin.migration_required",
+        "admin.migration_unexpected",
         "admin.model_invalid",
+        "admin.policy_renamed_term",
         "admin.release_exists",
         "admin.remote_mode",
         "admin.version_bump_insufficient",
@@ -1765,6 +1803,8 @@
         "graph.archived",
         "graph.not_found",
         "internal.error",
+        "migration.invalid",
+        "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
         "remote.protocol",
@@ -3156,7 +3196,22 @@
       "exit": 1
     },
     {
+      "code": "admin.migration_from_mismatch",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.migration_incomplete",
+      "category": "refused",
+      "exit": 1
+    },
+    {
       "code": "admin.migration_required",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.migration_unexpected",
       "category": "refused",
       "exit": 1
     },
@@ -3167,6 +3222,11 @@
     },
     {
       "code": "admin.policy_lockout",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.policy_renamed_term",
       "category": "refused",
       "exit": 1
     },
@@ -3276,9 +3336,19 @@
       "exit": 6
     },
     {
+      "code": "migration.invalid",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
       "code": "ontology.artifact_missing",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "ontology.rename_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "policy.invalid",

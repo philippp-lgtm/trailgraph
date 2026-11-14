@@ -1,0 +1,9 @@
+format: graph_cli.ir/1
+module:
+  id: workshop
+  prefix: wk
+  version: 2.0.0
+  summary: The workshop as a whole, the main module that brings its areas together; it holds no terms of its own.
+  imports:
+    - {module: planning, version: "^1.0"}
+    - {module: equipment, version: "^1.0"}

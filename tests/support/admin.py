@@ -100,8 +100,11 @@ def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, 
             session.commit(tx, receipt)
 
 
-def write_documents(root: Path, graph: str, documents: list[dict[str, Any]]) -> list[int]:
-    """Instance data through the real WriteService on the CLI's data root; returns the seqs."""
+def write_documents(
+    root: Path, graph: str, documents: list[dict[str, Any]], *, seed: int = 13
+) -> list[int]:
+    """Instance data through the real WriteService on the CLI's data root; returns the seqs.
+    Ids come from a seeded provider: a second call with the same ``seed`` repeats the ids."""
     from graph_cli.access_control.policy import BuiltinPolicySource
     from graph_cli.catalog.file_catalog import FileCatalog
     from graph_cli.kernel.canonical import hash_value
@@ -118,7 +121,7 @@ def write_documents(root: Path, graph: str, documents: list[dict[str, Any]]) -> 
         audit=FileAuditLog(root),
         policy=BuiltinPolicySource(),
         clock=clock,
-        ids=SeededIdProvider(clock, 13),
+        ids=SeededIdProvider(clock, seed),
         env=EnvInfo("<data root>", "default"),
     )
     requests = [

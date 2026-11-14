@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import GraphId, format_id, parse_id
+from graph_cli.kernel.migration_marker import marker_committed
 from graph_cli.kernel.ports.catalog import (
     Catalog,
     FunctionsSlot,
@@ -27,6 +28,7 @@ from graph_cli.kernel.ports.catalog import (
     graph_not_found,
 )
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
+from graph_cli.kernel.records import OntologyPin
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.kinetic_slot import read_slot
@@ -34,7 +36,7 @@ from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
 from graph_cli.storage.files.skill_slot import read_skill
-from graph_cli.storage.files.store import FileStore
+from graph_cli.storage.files.store import FileStore, read_migration_marker
 
 FILES_BACKEND = "files"
 FILES_FORMAT = 1  # [store] format_version of the FileStore layout (section 5)
@@ -57,11 +59,17 @@ class FileCatalog:
         settings: StorageSettings | None = None,
         oplog: OpLog | None = None,
         faults: FaultHook | None = None,
+        follow_migration: bool = False,
     ) -> None:
         self.data_root = data_root
         self.settings = settings or StorageSettings()
         self.oplog = oplog
         self.faults = faults  # crash tests only; production passes None (K.d)
+        # The app's catalog: a graph whose migration is committed but not pinned yet (a
+        # release running, or crashed between the tx and the pin switch) is read under the
+        # target version, whose names its data has (plan M3). graph-admin keeps the manifest's
+        # pin: the release decides from it.
+        self._follow_migration = follow_migration
         self._warnings: dict[tuple[str, str], WarningRecord] = {}
 
     @property
@@ -123,14 +131,26 @@ class FileCatalog:
         manifests = self.manifests(
             include_archived=include_archived, skip_unreadable=skip_unreadable
         )
-        return [m.entry for m in manifests]
+        entries = []
+        for m in manifests:
+            try:
+                entries.append(self._effective(m.entry))
+            except GraphCliError as exc:  # an unreadable migration marker
+                if not skip_unreadable or exc.code not in UNREADABLE | {"backend.corrupt"}:
+                    raise
+                self._warnings[(str(m.entry.id), "")] = WarningRecord(
+                    "graph.unreadable",
+                    f"graph {m.entry.id} has an unreadable migration marker and is not listed",
+                    {"graph_id": str(m.entry.id), "cause": exc.code},
+                )
+        return entries
 
     def resolve(self, ref: str) -> GraphEntry:
         """Name or id, archived graphs included (names are unique across all, B1.11)."""
         if _is_uuid(ref):
             graph = GraphId(parse_id(ref))
             if graph in self.graph_ids():
-                return self.manifest(graph).entry
+                return self._effective(self.manifest(graph).entry)
         else:
             for entry in self.list_graphs(include_archived=True):
                 if entry.name == ref:
@@ -171,6 +191,28 @@ class FileCatalog:
             oplog=self.oplog,
             faults=self.faults,
         )
+
+    def _effective(self, entry: GraphEntry) -> GraphEntry:
+        """``entry`` as this catalog hands it out: ``following`` for the app's catalog, the
+        manifest's entry for graph-admin's (the release decides from the manifest)."""
+        return self.following(entry) if self._follow_migration else entry
+
+    def following(self, entry: GraphEntry) -> GraphEntry:
+        """``entry``, pinned to the target version (and carrying the marker as ``migration``)
+        when its migration is committed but not pinned (one ``stat`` for a graph without a
+        marker). A marker whose tx is not in the log is stale and ignored; one whose version
+        the pin has reached is finished: the entry is as the manifest has it, the leftover
+        file changes nothing for the app. Also public for a reader of graph-admin that shows
+        the data as the app reads it (the live view)."""
+        marker = read_migration_marker(self._layout(entry.id))
+        if marker is None:
+            return entry
+        if marker.reached_by(entry.pin) or not marker_committed(
+            self.file_store(entry.id).snapshot(), marker
+        ):
+            return entry
+        target = OntologyPin(entry.pin.bundle, marker.to_version, marker.artifact_hash)
+        return replace(entry, pin=target, migration=marker)
 
     def _layout(self, graph: GraphId) -> GraphLayout:
         return GraphLayout(self.graphs_dir / str(graph))

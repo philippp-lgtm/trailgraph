@@ -1,0 +1,100 @@
+# Toy ontology D: one module that is split into an umbrella and two areas in 2.0.0, for the
+# end-to-end test of a release with a data migration (tests/cli/test_migration_end_to_end.py).
+# Plain classes and relations, a stored-file subclass, an enum with a value that goes away,
+# two classes that merge, and a class that is hidden from the apps by a policy.
+format: graph_cli.ir/1
+module:
+  id: workshop
+  prefix: wk
+  version: 1.0.0
+  summary: Projects with their tasks, the tools they use and the manuals of the tools.
+  imports:
+    - {module: files, version: "^1.0"}
+
+enums:
+  Phase:
+    summary: Where a project stands.
+    values:
+      planned: {summary: Not started.}
+      running: {summary: Work is going on.}
+      paused: {summary: Work is on hold.}
+      done: {summary: Finished.}
+
+classes:
+  Site:
+    summary: The place where the workshop is.
+    display_prefix: SITE
+    attributes:
+      name:
+        summary: Name of the site.
+        type: string
+        required: true
+        role: label
+  Project:
+    summary: A piece of work with a goal.
+    display_prefix: PROJ
+    attributes:
+      title:
+        summary: Name of the project.
+        type: string
+        required: true
+        role: label
+      phase:
+        summary: Where the project stands.
+        type: Phase
+  Task:
+    summary: A step of a project.
+    display_prefix: TASK
+    attributes:
+      title:
+        summary: What is to be done.
+        type: string
+        required: true
+        role: label
+  Budget:
+    summary: Money set aside for a project; not for every reader.
+    display_prefix: BUD
+    attributes:
+      amount:
+        summary: Amount in whole currency units.
+        type: integer
+        required: true
+  Tool:
+    summary: Equipment that a task needs.
+    display_prefix: TOOL
+    attributes:
+      name:
+        summary: Name of the tool.
+        type: string
+        required: true
+        role: label
+  Gadget:
+    summary: Small equipment, kept apart from the tools in this version.
+    display_prefix: GADG
+    attributes:
+      title:
+        summary: Name of the gadget.
+        type: string
+        required: true
+        role: label
+  Manual:
+    summary: A scanned manual of a tool.
+    is_a: files:File
+    display_prefix: MAN
+    attributes:
+      edition:
+        summary: Edition of the manual.
+        type: string
+
+relations:
+  belongs_to:
+    summary: The project that the task is a step of.
+    domain: Task
+    range: Project
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_task
+  uses:
+    summary: A tool that the task needs.
+    domain: Task
+    range: Tool
+    inverse_label: used_by

@@ -118,4 +118,4 @@ def test_output_reference_lists_the_fields_of_real_answers(
     check("Write results", [retracted.data])
     history = app(run_cli, "history", entity["id"], env=ENV)
     assert set(history.data) == {"id", "current_rev", "items"}
-    check("History", history.data["items"])
+    check("History", history.data["items"], when_set=frozenset({"migration"}))

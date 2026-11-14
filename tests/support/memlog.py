@@ -21,6 +21,7 @@ from graph_cli.storage.common.view import GraphView, ViewAt
 from support.clock import StepClock
 from support.fixtures import compiled_model
 from support.ids import SeededIdProvider
+from support.migrations import MigrationDraft, begin_migration
 from support.txbuilder import FuncState, TxBuilder, TxDraft
 
 
@@ -57,17 +58,22 @@ class MemLog:
         at = self.view.at()
         return self.builder.begin(view_state(at), self.head, at.alias_counters())
 
-    def check(self, tx: AuthorizedTx) -> None:
+    def check(self, tx: AuthorizedTx, *, migration: bool = False) -> None:
         check_tx(
             tx,
             graph_id=self.graph_id,
             head=self.head,
             view=self.view.at(),
             blob_exists=self.blobs.__contains__,
+            migration=migration,
         )
 
-    def commit(self, tx: AuthorizedTx) -> TxRecord:
-        self.check(tx)
+    def migration(self) -> MigrationDraft:
+        at = self.view.at()
+        return begin_migration(self.builder, view_state(at), self.head)
+
+    def commit(self, tx: AuthorizedTx, *, migration: bool = False) -> TxRecord:
+        self.check(tx, migration=migration)
         record, line = seal_tx(tx, ChainLink(self.head.seq, self.head.hash))
         parsed = tx_from_json(as_object(parse_json(line), "tx"))
         assert parsed == record

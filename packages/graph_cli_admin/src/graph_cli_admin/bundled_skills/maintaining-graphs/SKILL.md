@@ -86,36 +86,36 @@ pull into another folder, carry them over and push from there.
    classifies the change and says whether the version bump is enough; the
    warning `admin.module_bump_insufficient` names a changed module whose
    own version did not follow.
-4. For a major change: `graph-admin graph check <graph> --ontology
-   <folder>/ontology/<new>` shows which entities the new version would
-   refuse. Fix the data (with the `graph-cli` skill) or the model first.
+4. For a major change: `graph-admin graph check <graph> --ontology <folder>/ontology/<new>`
+   shows which entities the new version would refuse. Fix the data or the model, or add a
+   `migration.yaml` that rewrites it and `check` previews (`ontology-best-practices`,
+   `references/migrations.md`; [release_with_a_migration.md](references/release_with_a_migration.md)).
 5. `graph-admin graph push <graph> <folder> --dry-run`, then the same with
    `--reason "<why>"`. Push releases the highest version directory, pins
    the graph to it and publishes a changed skill, functions and actions in
    one step; it writes the new base into the folder.
 6. `graph-admin audit verify`.
-7. Tell the user that the agents using the graph need fresh skills: a
-   generated graph skill renders the new model on its own; they run
-   `graph self update` (or `graph skills install`) where they work.
+7. Tell the user that the agents using the graph need fresh skills (a generated
+   graph skill renders the new model on its own): `graph self update` or
+   `graph skills install` where they work.
 
 A graph with several ontology modules is released the same way. Give `--module
 <main>` to `graph-admin ontology validate`, `graph-admin ontology diff`,
 `graph-admin ontology release`, `graph-admin graph create` and `graph-admin
 graph check` (with its `--ontology` option) whenever the directory holds more
-than one module; `graph-admin graph push` needs none. The rules (every module
-file in each version directory, the bump of the main module, moving terms) are
-in `ontology-best-practices`, `references/versioning_and_release.md` (section
-"Releasing a modular graph").
+than one module; `graph-admin graph push` needs none. The rules are in
+`ontology-best-practices`, `references/versioning_and_release.md` ("Releasing a
+modular graph"); splitting a module is in its `references/migrations.md`.
 
 Published functions and actions must resolve under the new version.
 `ontology diff --graph` warns `admin.functions_affected` and
-`admin.actions_affected` for the ones it would break, and a release (also a
-minor or patch) that would break one is refused with `admin.functions_broken`
-or `admin.actions_broken`. Do not release around it: change or delete the
-affected files in the folder's `functions/` or `actions/` (see the
-`authoring-graph-functions` and `authoring-graph-actions` skills) and push
-them together with the new ontology version, in the same `graph-admin graph
-push`; both are checked against the model the graph will have.
+`admin.actions_affected` for the ones it would break and lists where renamed
+terms are named; a release that would break one is refused
+(`admin.functions_broken`, `admin.actions_broken`), unless it has renames and the
+sources still compile (published again with it). Fix the rest in `functions/` or
+`actions/` (`authoring-graph-functions`, `authoring-graph-actions`) and push them
+with the ontology. A deny rule naming only a renamed term is refused
+(`admin.policy_renamed_term`): apply a policy naming both first.
 
 `admin.source_conflict` means the graph changed since the folder was
 pulled: pull it into another folder, carry the edits over, push from
@@ -236,10 +236,10 @@ the policy does not declare it. `graph-admin policy explain --graph <graph>
 | `admin.workspace_conflict` | a folder `workspace sync` needs is taken; move it away |
 | `admin.skill_invalid` | fix what `details.problems` lists, check with `graph-admin graph skill render` |
 | `admin.functions_invalid` | fix what `details.problems` lists, check with `graph-admin graph functions publish <graph> <folder>/functions --dry-run` |
-| `admin.functions_broken` | a published function would not resolve; fix or delete its file and push it together with the ontology in one `graph-admin graph push` |
+| `admin.functions_broken`, `admin.actions_broken` | a published function or action would not resolve; fix or delete its file and push it with the ontology in one `graph-admin graph push` |
 | `admin.actions_invalid` | fix what `details.problems` lists, check with `graph-admin graph actions publish <graph> <folder>/actions --dry-run` |
-| `admin.actions_broken` | a published action would not compile; fix or delete its file and push it with the ontology in one `graph-admin graph push` |
-| `admin.data_errors` | the data breaks the new version; fix the entities in `details.findings` |
+| `admin.data_errors`, `admin.migration_required` | the data breaks the new version (after its migration, if there is one); fix the entities in `details.findings` or the steps of `migration.yaml` |
+| `admin.migration_incomplete` | an interrupted release; run the same release again (`references/release_with_a_migration.md`) |
 | `access.denied` | not allowed for this token; stop and tell the user |
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |
 | `remote.client_outdated` | this graph-admin is not the build the server runs; stop and tell the user to run `graph-admin self update` |

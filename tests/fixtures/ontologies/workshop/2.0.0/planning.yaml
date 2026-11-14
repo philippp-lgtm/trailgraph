@@ -1,0 +1,75 @@
+format: graph_cli.ir/1
+module:
+  id: planning
+  prefix: plan
+  version: 1.0.0
+  summary: Projects, their tasks and their budgets.
+  imports:
+    - {module: equipment, version: "^1.0"}
+
+enums:
+  Phase:
+    summary: Where a project stands.
+    values:
+      planned: {summary: Not started.}
+      running: {summary: Work is going on.}
+      done: {summary: Finished.}
+  Priority:
+    summary: How soon a task is to be done.
+    values:
+      low: {summary: When there is time.}
+      normal: {summary: In the usual order.}
+      high: {summary: Before the others.}
+
+classes:
+  Project:
+    summary: A piece of work with a goal.
+    display_prefix: PROJ
+    renamed_from: wk:Project
+    attributes:
+      title:
+        summary: Name of the project.
+        type: string
+        required: true
+        role: label
+      phase:
+        summary: Where the project stands.
+        type: Phase
+  Task:
+    summary: A step of a project.
+    display_prefix: TASK
+    renamed_from: wk:Task
+    attributes:
+      title:
+        summary: What is to be done.
+        type: string
+        required: true
+        role: label
+      priority:
+        summary: How soon the task is to be done.
+        type: Priority
+        required: true
+  Budget:
+    summary: Money set aside for a project; not for every reader.
+    display_prefix: BUD
+    renamed_from: wk:Budget
+    attributes:
+      amount:
+        summary: Amount in whole currency units.
+        type: integer
+        required: true
+
+relations:
+  belongs_to:
+    summary: The project that the task is a step of.
+    renamed_from: wk:belongs_to
+    domain: Task
+    range: Project
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_task
+  uses:
+    summary: A tool that the task needs.
+    renamed_from: wk:uses
+    domain: Task
+    range: equip:Tool
+    inverse_label: used_by

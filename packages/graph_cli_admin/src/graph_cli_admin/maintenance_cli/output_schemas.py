@@ -23,6 +23,7 @@ from graph_cli.app_cli.output_schemas import DEFS as APP_DEFS
 from graph_cli.catalog.tokens import ADMIN_SCOPE, APP_SCOPE
 from graph_cli.cli_kit import output_schemas as kit
 from graph_cli.cli_kit.output_schemas import (
+    ANY,
     BOOLEAN,
     INTEGER,
     OPEN,
@@ -79,7 +80,95 @@ RELEASE: Final = {
 RELEASE_OPTIONAL: Final = {
     "diff": ref("ontology_diff"),
     "alias_prefixes_added": obj(extra=STRING),
+    "dry_run": BOOLEAN,  # only for --dry-run
+    "migration": ref("migration_preview"),  # only for a release with a migration file
+    "republished": ref("republished"),  # only when a catalog is compiled again (plan M8)
 }
+
+
+def _republished() -> Schema:
+    """``services_admin.release.republished_json``: the published catalogs a release compiles
+    again from their sources; the compiled hash is the only thing that changes."""
+    one = obj(
+        {
+            "count": INTEGER,
+            "names": STRINGS,
+            "compiled_hash": obj({"from": STRING, "to": STRING}),
+        }
+    )
+    return obj({}, {"functions": one, "actions": one})
+
+
+def _references() -> Schema:
+    """``services_admin.renamed_terms.references``: per renamed term the functions, actions and
+    policy rules that name the old one (``ontology diff --graph``)."""
+    named = obj({"name": STRING, "explicit": BOOLEAN})
+    rule = obj(
+        {
+            "layer": STRING,
+            "rule": STRING,
+            "effect": STRING,
+            "resource": STRING,
+            "covered": nullable(BOOLEAN),
+        }
+    )
+    return array(
+        obj(
+            {
+                "kind": enum("class", "relation", "attribute"),
+                "from": STRING,
+                "to": STRING,
+                "functions": array(named),
+                "actions": array(named),
+                "policy": array(rule),
+            }
+        )
+    )
+
+
+REFERENCES: Final = _references()
+
+
+def _migration_effect() -> Schema:
+    """``temporal_knowledge.migrate.Effect.to_json``: what one derived rename or step changed;
+    the keys that say which rename or step vary with ``kind``."""
+    return obj(
+        {
+            "kind": STRING,
+            "entities": INTEGER,
+            "edges": INTEGER,
+            "by_type": obj(extra=INTEGER),
+            "samples": STRINGS,
+        },
+        {"index": INTEGER},
+        extra=ANY,
+    )
+
+
+def _migration_preview() -> Schema:
+    """``services_admin.migration.preview`` (plan M9): the migration of a release as planned,
+    plus ``migrated``, ``tx_seq`` and ``duration_s`` after the write."""
+    return obj(
+        {
+            "file": BOOLEAN,
+            "migration_hash": NULLABLE_STRING,
+            "summary": NULLABLE_STRING,
+            "completing": BOOLEAN,
+        },
+        {
+            "entities": INTEGER,
+            "unchanged": INTEGER,
+            "edges": INTEGER,
+            "by_type": obj(extra=INTEGER),
+            "renames": array(ref("migration_effect")),
+            "steps": array(ref("migration_effect")),
+            "unused_steps": array(INTEGER),
+            "findings": obj({"count": INTEGER, "items": array(ref("finding"))}),
+            "migrated": obj({"entities": INTEGER, "edges": INTEGER, "by_step": obj(extra=INTEGER)}),
+            "tx_seq": INTEGER,
+            "duration_s": {"type": "number"},
+        },
+    )
 
 
 def _policy_document() -> Schema:
@@ -155,6 +244,9 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         ),
         "ontology_diff": obj(DIFF),
         "release": obj(RELEASE, RELEASE_OPTIONAL),
+        "republished": _republished(),
+        "migration_effect": _migration_effect(),
+        "migration_preview": _migration_preview(),
         "finding_counts": obj(  # services_admin.audit.counts_of
             {"error": INTEGER, "warning": INTEGER, "info": INTEGER}
         ),

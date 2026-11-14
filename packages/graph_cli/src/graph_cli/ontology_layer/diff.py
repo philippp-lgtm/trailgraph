@@ -2,9 +2,13 @@
 
 ``classify(old, new)`` compares two compiled models and returns one entry per
 change with its level; the report level is the maximum. Renames are
-recognized only when declared with ``renamed_from``; anything else shows up
-as remove plus add. Inherited attributes are compared once, at the class
-that declares them.
+recognized only when declared with ``renamed_from`` (a local name, or for classes
+and relations the CURIE of a term of the old model); anything else shows up as remove
+plus add. References to a renamed class (``extends``, relation domain and range) are
+compared through the rename, so a pure move shows only ``rename``. Inherited attributes
+are compared once, at the class that declares them.
+``classify`` ignores a ``renamed_from`` that names nothing; ``check_renames`` judges the
+declarations and ``derive_renames`` returns the renames ``classify`` reports.
 
 ``check_bump`` judges the bundle version (the main module's) against the report level;
 ``module_bumps`` judges the own version of every other authored module against the level
@@ -13,10 +17,11 @@ of the changes to its terms, since importers pin those versions with ranges.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import Literal, Protocol
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.ontology_layer.model import (
@@ -144,14 +149,14 @@ def module_bumps(old: CompiledModel, new: CompiledModel, report: DiffReport) -> 
 
 
 def classify(old: CompiledModel, new: CompiledModel) -> DiffReport:
-    differ = _Differ()
+    differ = _Differ(_effective_renames(old.classes, new.classes))
     differ.modules(old, new)
     differ.section("datatypes", old.datatypes, new.datatypes, differ.datatype)
     differ.section("enums", old.enums, new.enums, differ.enum)
     differ.section("lifecycles", old.lifecycles, new.lifecycles, differ.lifecycle)
-    differ.section("classes", old.classes, new.classes, differ.class_, renames=_class_renames)
+    differ.section("classes", old.classes, new.classes, differ.class_, renames=_effective_renames)
     differ.section(
-        "relations", old.relations, new.relations, differ.relation, renames=_relation_renames
+        "relations", old.relations, new.relations, differ.relation, renames=_effective_renames
     )
     differ.rules(old.rules, new.rules)
     changes = tuple(sorted(differ.changes, key=lambda c: (c.path, c.kind)))
@@ -163,26 +168,245 @@ def classify(old: CompiledModel, new: CompiledModel) -> DiffReport:
     )
 
 
-def _rename_target(curie: str, local: str | None) -> str | None:
-    if local is None:
+def _rename_target(curie: str, renamed_from: str | None) -> str | None:
+    """The old CURIE a term was renamed from: a CURIE ``renamed_from`` as written, a local
+    name with the prefix of the new term."""
+    if renamed_from is None:
         return None
-    return f"{curie.partition(':')[0]}:{local}"
+    if ":" in renamed_from:
+        return renamed_from
+    return f"{curie.partition(':')[0]}:{renamed_from}"
 
 
-def _class_renames(new: Mapping[str, ClassDef]) -> dict[str, str]:
+class _Renamed(Protocol):
+    @property
+    def renamed_from(self) -> str | None: ...
+
+
+def _renames_of(new: Mapping[str, _Renamed]) -> dict[str, str]:
+    """Old CURIE to new CURIE, per declaration (a later term wins a duplicate source)."""
     return {
         old_curie: curie
-        for curie, cls in new.items()
-        if (old_curie := _rename_target(curie, cls.renamed_from)) is not None
+        for curie, term in new.items()
+        if (old_curie := _rename_target(curie, term.renamed_from)) is not None
     }
 
 
-def _relation_renames(new: Mapping[str, RelationDef]) -> dict[str, str]:
+def _effective_renames[T: _Renamed](old: Mapping[str, T], new: Mapping[str, T]) -> dict[str, str]:
+    """The renames that count: the old term exists and is gone in the new model."""
+    return {o: n for o, n in _renames_of(new).items() if o in old and o not in new}
+
+
+def _own_attributes(cls: ClassDef, curie: str) -> dict[str, AttributeDef]:
+    return {n: a for n, a in cls.attributes.items() if a.declared_in == curie}
+
+
+def _attribute_renames(
+    old_attrs: Mapping[str, AttributeDef], new_attrs: Mapping[str, AttributeDef]
+) -> dict[str, str]:
+    """Old attribute name to new name within one class pair (own attributes only)."""
     return {
-        old_curie: curie
-        for curie, rel in new.items()
-        if (old_curie := _rename_target(curie, rel.renamed_from)) is not None
+        a.renamed_from: name
+        for name, a in new_attrs.items()
+        if a.renamed_from is not None
+        and a.renamed_from in old_attrs
+        and a.renamed_from not in new_attrs
     }
+
+
+def _class_pairs(old: Mapping[str, ClassDef], new: Mapping[str, ClassDef]) -> list[tuple[str, str]]:
+    """The (old CURIE, new CURIE) pairs ``classify`` compares, renamed classes included."""
+    renamed = _effective_renames(old, new)
+    return [
+        (curie, renamed[curie]) if curie in renamed else (curie, curie)
+        for curie in sorted(old)
+        if curie in renamed or curie in new
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class Renames:
+    """The renames between two models, as ``classify`` reports them (kind ``rename``).
+
+    ``classes`` and ``relations`` map old CURIE to new CURIE; ``attributes`` maps (new
+    declaring class CURIE, old attribute name) to the new name."""
+
+    classes: Mapping[str, str]
+    relations: Mapping[str, str]
+    attributes: Mapping[tuple[str, str], str]
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "classes": dict(sorted(self.classes.items())),
+            "relations": dict(sorted(self.relations.items())),
+            "attributes": [
+                {"class": cls, "from": old, "to": new}
+                for (cls, old), new in sorted(self.attributes.items())
+            ],
+        }
+
+
+def derive_renames(old: CompiledModel, new: CompiledModel) -> Renames:
+    """The renames ``classify(old, new)`` reports, without the other changes."""
+    attributes: dict[tuple[str, str], str] = {}
+    for old_curie, new_curie in _class_pairs(old.classes, new.classes):
+        renamed = _attribute_renames(
+            _own_attributes(old.classes[old_curie], old_curie),
+            _own_attributes(new.classes[new_curie], new_curie),
+        )
+        attributes.update({(new_curie, name): target for name, target in renamed.items()})
+    return Renames(
+        MappingProxyType(_effective_renames(old.classes, new.classes)),
+        MappingProxyType(_effective_renames(old.relations, new.relations)),
+        MappingProxyType(attributes),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RenameProblem:
+    """One defect of a ``renamed_from`` declaration. ``rule`` is one of ``builtin_source``
+    (the source is a ``core:`` or built-in module term), ``duplicate_source`` (two terms
+    renamed from one), ``dangling`` (the source is in no old model), ``leftover`` (the
+    declaration of the previous release, a warning), ``source_remains`` (the source still
+    exists) and ``target_exists`` (the new term existed before). ``path`` is that of the
+    new term, as in a diff."""
+
+    rule: str
+    severity: Literal["error", "warning"]
+    kind: Literal["class", "relation", "attribute"]
+    path: str
+    source: str
+    message: str
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {
+            "rule": self.rule,
+            "severity": self.severity,
+            "kind": self.kind,
+            "path": self.path,
+            "source": self.source,
+            "message": self.message,
+        }
+
+
+def check_renames(old: CompiledModel, new: CompiledModel) -> tuple[RenameProblem, ...]:
+    """Judge every ``renamed_from`` of ``new`` against ``old`` (contracts B7.12).
+
+    Per renamed term the first matching rule is reported, in the order of the ``rule``
+    list of ``RenameProblem``; ``source_remains`` and ``target_exists`` may both hold.
+    Classes, relations and the own attributes of every class pair are judged (a new class
+    pairs with nothing, so its ``renamed_from`` attributes dangle). ``classify`` itself
+    ignores what is reported here."""
+    builtin = BUILTIN_MODULES | {
+        m.prefix for m in (*old.modules, *new.modules) if m.id in BUILTIN_MODULES
+    }
+    problems = [
+        *_term_problems(
+            "class",
+            _sources(old.classes),
+            _sources(new.classes),
+            lambda curie: f"classes.{curie}",
+            builtin,
+        ),
+        *_term_problems(
+            "relation",
+            _sources(old.relations),
+            _sources(new.relations),
+            lambda curie: f"relations.{curie}",
+            builtin,
+        ),
+    ]
+    pairs: dict[str, list[str]] = {curie: [] for curie in new.classes}
+    for old_curie, new_curie in _class_pairs(old.classes, new.classes):
+        pairs[new_curie].append(old_curie)
+    for new_curie, old_curies in sorted(pairs.items()):
+        new_attrs = _own_attributes(new.classes[new_curie], new_curie)
+        if not any(a.renamed_from is not None for a in new_attrs.values()):
+            continue
+        counterparts = [_own_attributes(old.classes[c], c) for c in old_curies] or [{}]
+        for old_attrs in counterparts:
+            problems += _term_problems(
+                "attribute",
+                {n: a.renamed_from for n, a in old_attrs.items()},
+                {n: a.renamed_from for n, a in new_attrs.items()},
+                _attribute_path(new_curie),
+                frozenset(),
+            )
+    return tuple(dict.fromkeys(problems))
+
+
+def _attribute_path(class_curie: str) -> Callable[[str], str]:
+    return lambda name: f"classes.{class_curie}.attributes.{name}"
+
+
+def _sources(terms: Mapping[str, _Renamed]) -> dict[str, str | None]:
+    return {curie: _rename_target(curie, term.renamed_from) for curie, term in terms.items()}
+
+
+def _term_problems(
+    kind: Literal["class", "relation", "attribute"],
+    old: Mapping[str, str | None],
+    new: Mapping[str, str | None],
+    path_of: Callable[[str], str],
+    builtin: frozenset[str],
+) -> list[RenameProblem]:
+    """``old`` and ``new`` map each term to the source it declares (``None`` = none)."""
+    claims = Counter(source for source in new.values() if source is not None)
+    problems: list[RenameProblem] = []
+
+    def add(rule: str, name: str, source: str, message: str, *, warning: bool = False) -> None:
+        severity: Literal["error", "warning"] = "warning" if warning else "error"
+        problems.append(RenameProblem(rule, severity, kind, path_of(name), source, message))
+
+    for name in sorted(new):
+        source = new[name]
+        if source is None:
+            continue
+        if source.partition(":")[0] in builtin and ":" in source:
+            add(
+                "builtin_source", name, source, f"{source} is a built-in term and cannot be renamed"
+            )
+        elif claims[source] > 1:
+            others = sorted(n for n, s in new.items() if s == source and n != name)
+            add(
+                "duplicate_source",
+                name,
+                source,
+                f"{source} is also the source of {', '.join(others)}; a term has one successor",
+            )
+        elif source not in old:
+            if name in old and old[name] == source:
+                add(
+                    "leftover",
+                    name,
+                    source,
+                    f"renamed_from {source} was applied by the previous release; remove it",
+                    warning=True,
+                )
+            else:
+                add(
+                    "dangling",
+                    name,
+                    source,
+                    f"renamed_from {source} names nothing in the old model",
+                )
+        else:
+            if source in new:
+                add(
+                    "source_remains",
+                    name,
+                    source,
+                    f"{source} still exists in the new model, so {name} is not its rename",
+                )
+            if name in old:
+                add(
+                    "target_exists",
+                    name,
+                    source,
+                    f"{name} existed in the old model; renaming {source} to it would merge two"
+                    " terms (remove the stale renamed_from)",
+                )
+    return problems
 
 
 _SINGULAR = {
@@ -195,8 +419,15 @@ _SINGULAR = {
 
 
 class _Differ:
-    def __init__(self) -> None:
+    def __init__(self, class_renames: Mapping[str, str]) -> None:
         self.changes: list[Change] = []
+        # Old class CURIE to new: references to a renamed class (``extends``, domain and
+        # range) are compared through it, so a pure move shows only its ``rename``.
+        self.class_renames = class_renames
+
+    def mapped(self, curies: tuple[str, ...]) -> tuple[str, ...]:
+        """Old class CURIEs under their new names."""
+        return tuple(self.class_renames.get(c, c) for c in curies)
 
     def add(self, path: str, kind: str, level: ChangeLevel, **detail: JsonValue) -> None:
         self.changes.append(Change(path, kind, level, detail))
@@ -210,11 +441,9 @@ class _Differ:
         new: Mapping[str, T],
         compare: Callable[[str, str, T, T], None],
         *,
-        renames: Callable[[Mapping[str, T]], dict[str, str]] | None = None,
+        renames: Callable[[Mapping[str, T], Mapping[str, T]], dict[str, str]] | None = None,
     ) -> None:
-        renamed = {
-            o: n for o, n in (renames(new) if renames else {}).items() if o in old and o not in new
-        }
+        renamed = renames(old, new) if renames else {}
         renamed_targets = set(renamed.values())
         singular = _SINGULAR[name]
         for curie in sorted(old):
@@ -361,20 +590,17 @@ class _Differ:
     def class_(self, path: str, new_curie: str, old: ClassDef, new: ClassDef) -> None:
         self.doc(path, old.doc, new.doc)
         old_curie = path.partition(".")[2]
-        if old.extends != new.extends:
-            self.add(path, "change_extends", "major", **{"from": old.extends, "to": new.extends})
+        old_extends = None if old.extends is None else self.mapped((old.extends,))[0]
+        if old_extends != new.extends:
+            self.add(path, "change_extends", "major", **{"from": old_extends, "to": new.extends})
         self.flag(path, "abstract", old.abstract, new.abstract, on="major", off="minor")
         if old.display_prefix != new.display_prefix:
             self.add(path, "change_display_prefix", "patch")
         if old.mappings != new.mappings:
             self.add(path, "change_mapping", "patch")
-        old_attrs = {n: a for n, a in old.attributes.items() if a.declared_in == old_curie}
-        new_attrs = {n: a for n, a in new.attributes.items() if a.declared_in == new_curie}
-        renamed = {
-            a.renamed_from: name
-            for name, a in new_attrs.items()
-            if a.renamed_from in old_attrs and a.renamed_from not in new_attrs
-        }
+        old_attrs = _own_attributes(old, old_curie)
+        new_attrs = _own_attributes(new, new_curie)
+        renamed = _attribute_renames(old_attrs, new_attrs)
         for name in sorted(old_attrs):
             attr_path = f"{path}.attributes.{name}"
             if name in renamed:
@@ -425,7 +651,10 @@ class _Differ:
 
     def relation(self, path: str, _curie: str, old: RelationDef, new: RelationDef) -> None:
         self.doc(path, old.doc, new.doc)
-        for key, a, b in (("domain", old.domain, new.domain), ("range", old.range, new.range)):
+        for key, a, b in (
+            ("domain", self.mapped(old.domain), new.domain),
+            ("range", self.mapped(old.range), new.range),
+        ):
             if set(a) == set(b):
                 continue
             wider = not b or (bool(a) and set(a) <= set(b))

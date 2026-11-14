@@ -132,6 +132,133 @@ def test_a_renamed_class_keeps_its_alias_prefix(
     assert [item["alias"] for item in found.data["items"]] == ["SUP-0001"]
 
 
+def vendor_variant(tmp_path: Path, name: str, renamed_from: str | None, *, keep: bool) -> Path:
+    """Version 2.0.0 of 1.1.0 with a class Vendor naming ``renamed_from``; ``keep``: the
+    class Supplier stays."""
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    text = text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    marker = "" if renamed_from is None else f"\n    renamed_from: {renamed_from}"
+    if keep:
+        vendor = f"  Vendor:{marker}\n    summary: A vendor.\n    display_prefix: VEN\n"
+        text = text.replace("  Category:\n", vendor + "  Category:\n", 1)
+    else:
+        text = text.replace("  Supplier:\n", f"  Vendor:{marker}\n", 1)
+        text = text.replace("range: Supplier", "range: Vendor", 1)
+    target = tmp_path / name
+    target.mkdir()
+    (target / "inventory.yaml").write_text(text)
+    return target
+
+
+@pytest.mark.parametrize(
+    ("renamed_from", "keep", "rule"),
+    [("Missing", False, "dangling"), ("Supplier", True, "source_remains")],
+)
+def test_an_invalid_renamed_from_refuses_the_release(
+    run_cli: CliRunner, root: Path, tmp_path: Path, renamed_from: str, keep: bool, rule: str
+) -> None:
+    create(run_cli, "1.1.0")
+    source = vendor_variant(tmp_path, "invalid", renamed_from, keep=keep)
+    outcome = release(run_cli, source)
+    assert (outcome.code, outcome.error["code"]) == (1, "ontology.rename_invalid")
+    details = outcome.error["details"]
+    assert (details["from"], details["to"], details["count"]) == ("1.1.0", "2.0.0", 1)
+    assert [(p["rule"], p["path"]) for p in details["problems"]] == [(rule, "classes.inv:Vendor")]
+    shown = admin(run_cli, "graph", "show", "example_graph").data
+    assert shown["releases"] == ["1.1.0"]
+    assert shown["ontology"]["version"] == "1.1.0"
+
+
+def test_diff_refuses_an_invalid_renamed_from(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    create(run_cli, "1.1.0")
+    source = vendor_variant(tmp_path, "invalid", "Missing", keep=False)
+    against = admin(run_cli, "ontology", "diff", str(source), "--against", str(INVENTORY / "1.1.0"))
+    graph = admin(run_cli, "ontology", "diff", str(source), "--graph", "example_graph")
+    for outcome in (against, graph):
+        assert (outcome.code, outcome.error["code"]) == (1, "ontology.rename_invalid")
+        assert outcome.error["details"]["problems"][0]["rule"] == "dangling"
+    valid = vendor_variant(tmp_path, "valid", "Supplier", keep=False)
+    outcome = admin(run_cli, "ontology", "diff", str(valid), "--graph", "example_graph")
+    assert outcome.code == 0
+    assert ("classes.inv:Supplier", "rename") in {
+        (c["path"], c["kind"]) for c in outcome.data["changes"]
+    }
+
+
+def test_a_leftover_renamed_from_is_a_warning(run_cli: CliRunner, root: Path) -> None:
+    """2.1.0 still carries the renamed_from of 2.0.0: it releases and says so."""
+    create(run_cli, "1.1.0")
+    assert release(run_cli, INVENTORY / "2.0.0").warning_codes == []
+    diffed = admin(
+        run_cli, "ontology", "diff", str(INVENTORY / "2.1.0"), "--graph", "example_graph"
+    )
+    outcome = release(run_cli, INVENTORY / "2.1.0")
+    for found in (diffed, outcome):
+        assert found.code == 0, found.envelope
+        stale = [w for w in found.warnings if w["code"] == "ontology.rename_stale"]
+        assert len(stale) == 1
+        assert stale[0]["details"]["count"] == 1
+        problem = stale[0]["details"]["problems"][0]
+        assert (problem["rule"], problem["path"]) == (
+            "leftover",
+            "classes.inv:Item.attributes.label",
+        )
+
+
+def test_a_class_moved_to_another_module_takes_its_alias_prefix(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """renamed_from with a CURIE: a rename in the diff, and the prefix moves to the new class."""
+    create(run_cli, "1.1.0")
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    text = text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    text = text.replace(
+        "  summary: Physical items",
+        '  imports:\n    - {module: suppliers, version: "^1.0"}\n  summary: Physical items',
+        1,
+    )
+    start = text.index("  Supplier:\n")
+    end = text.index("  Category:\n")
+    text = text[:start] + text[end:]
+    text = text.replace("range: Supplier", "range: sup:Supplier", 1)
+    source = tmp_path / "moved"
+    source.mkdir()
+    (source / "inventory.yaml").write_text(text)
+    (source / "suppliers.yaml").write_text(
+        """format: graph_cli.ir/1
+module: {id: suppliers, prefix: sup, version: 1.0.0, summary: Suppliers.}
+classes:
+  Supplier:
+    summary: A company that delivers items.
+    display_prefix: SUP
+    renamed_from: inv:Supplier
+    attributes:
+      name: {summary: Name of the supplier., type: string, required: true}
+"""
+    )
+    outcome = admin(
+        run_cli, "ontology", "release", "example_graph", str(source), "--module", "inventory"
+    )
+    assert outcome.code == 0, outcome.envelope
+    assert outcome.warning_codes == []
+    assert ("classes.inv:Supplier", "rename") in {
+        (c["path"], c["kind"]) for c in outcome.data["diff"]["changes"]
+    }
+    assert "classes.inv:Supplier" not in {
+        c["path"] for c in outcome.data["diff"]["changes"] if c["kind"].startswith("remove")
+    }
+    assert outcome.data["alias_prefixes_added"] == {"sup:Supplier": "SUP"}
+    prefixes = admin(run_cli, "graph", "show", "example_graph").data["alias_prefixes"]
+    assert prefixes["sup:Supplier"] == "SUP"
+    assert "inv:Supplier" not in prefixes
+    supplier = {"op": "create", "type": "sup:Supplier", "attrs": {"name": "Example supplier"}}
+    write_documents(root, "example_graph", [{"ops": [supplier]}])
+    found = app(run_cli, "find", "--type", "sup:Supplier", env=ENV)
+    assert [item["alias"] for item in found.data["items"]] == ["SUP-0001"]
+
+
 def test_alias_prefix_taken_is_a_warning(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
     """A new class whose prefix another class holds gets no aliases, and the release says so."""
     create(run_cli, "1.1.0")

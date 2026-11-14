@@ -19,6 +19,7 @@ def test_severities_follow_the_contract() -> None:
     assert severity.pop(finding_codes.INTENT_WITHOUT_EFFECT) is Severity.INFO
     assert severity.pop(finding_codes.POLICY_FALLBACK) is Severity.WARNING
     assert severity.pop(finding_codes.POLICY_HASH_UNCHECKED) is Severity.INFO
+    assert severity.pop(finding_codes.MIGRATION_INCOMPLETE) is Severity.WARNING
     assert set(severity.values()) == {Severity.ERROR}
 
 

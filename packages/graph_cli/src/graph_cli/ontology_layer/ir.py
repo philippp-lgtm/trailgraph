@@ -22,6 +22,7 @@ from graph_cli.ontology_layer.semver import VersionRange, is_version
 from graph_cli.ontology_layer.vocabulary import (
     ALL_FACETS,
     CHARACTERISTICS,
+    CURIE_RE,
     DEFAULT_NAMESPACE,
     DISPLAY_PREFIX_RE,
     IR_FORMAT,
@@ -32,6 +33,7 @@ from graph_cli.ontology_layer.vocabulary import (
     MUTABILITY_CLASSES,
     NAMESPACE_NS_RE,
     PREFIX_RE,
+    RESERVED_MODULE_IDS,
     RULE_TIMINGS,
     SEVERITIES,
     TARGET_INACTIVE_POLICIES,
@@ -289,6 +291,14 @@ def _module_info(reader: Reader, node: YamlNode | None, module_name: str) -> IrM
     if module_id is not None and module_id != module_name:
         reader.invalid("module.id", f"module id {module_id!r} does not match {module_name!r}")
         module_id = None
+    if module_id in RESERVED_MODULE_IDS:
+        reader.report.add(
+            "model.structural.reserved_name",
+            module_name,
+            "module.id",
+            f"{module_id!r} is a reserved module id",
+        )
+        module_id = None
     for key in ("id", "prefix", "version"):
         if key not in data:
             reader.invalid(f"module.{key}", f"module.{key} is required")
@@ -415,6 +425,20 @@ class _Parser:
             return None
         return IrEnum(name, tuple(values), doc, path)
 
+    def rename_source(
+        self, node: YamlNode | None, path: str, grammar: re.Pattern[str]
+    ) -> str | None:
+        """``renamed_from`` of a class or relation: a local name (same module) or the CURIE
+        ``prefix:Name`` of a term of the old model, kept verbatim."""
+        text = self.r.string(node, path)
+        if text is None:
+            return None
+        match = CURIE_RE.match(text)
+        if grammar.match(text if match is None else match.group(2)):
+            return text
+        self.r.invalid(path, f"{text!r} is not a name ({grammar.pattern}) or a prefix:name CURIE")
+        return None
+
     def class_(self, name: str, node: YamlNode, path: str) -> IrClass | None:
         data = self.r.mapping(
             node, path, ("abstract", "is_a", "display_prefix", "renamed_from", "attributes", *_DOC)
@@ -438,7 +462,7 @@ class _Parser:
             display_prefix=self.r.name(
                 data.get("display_prefix"), join(path, "display_prefix"), DISPLAY_PREFIX_RE
             ),
-            renamed_from=self.r.name(
+            renamed_from=self.rename_source(
                 data.get("renamed_from"), join(path, "renamed_from"), TYPE_NAME_RE
             ),
             attributes=attributes,
@@ -596,7 +620,7 @@ class _Parser:
                 data.get("inverse_label"), join(path, "inverse_label"), LOWER_NAME_RE
             ),
             qualifiers=qualifiers,
-            renamed_from=self.r.name(
+            renamed_from=self.rename_source(
                 data.get("renamed_from"), join(path, "renamed_from"), LOWER_NAME_RE
             ),
             doc=doc,

@@ -15,31 +15,46 @@ refuses less. A larger bump than needed is a warning.
 | major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a facet, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; `on_target_inactive` changed to `refuse` |
 
 Renames are recognized only with `renamed_from`; without it a rename is a
-removal plus an addition.
+removal plus an addition. `ontology diff` and `ontology release` refuse a
+`renamed_from` that does not fit the pinned release (`ontology.rename_invalid`:
+the old term does not exist, still exists, the new term existed already, two
+terms name the same old one, or the old term is a `core:` or built-in module
+term); one the previous release applied already only warns
+(`ontology.rename_stale`), so a copied version directory still releases.
 
 ## Major versions on a graph with data
 
-graph_cli has no data migration. A major release on a graph that holds
-data runs a batch check of all data under the new version and is refused
-if any error remains; the refusal lists the first findings. So a major
-change passes only when the existing data already fits it.
-`graph-admin graph check <graph> --ontology <dir>` runs the same check
-without releasing and also lists the warnings. In practice:
+A major release on a graph that holds data runs a batch check of all data
+under the new version and is refused if any error remains; the refusal
+lists the first findings. `graph-admin graph check <graph> --ontology <dir>`
+runs the same check without releasing and also lists the warnings.
 
-- **Removing or renaming a term** that data uses fails (the data still has
-  the old name). Deprecate it in a minor release, move the data to the
-  replacement with normal writes, then remove it in a major release.
-- **Tightening** (`required`, a cardinality, an error rule) passes only
-  when every entity already satisfies it. Fill the gaps first, then
-  release.
-- **Moving text to a language** (`string` to `lang_string`, `text` to
-  `lang_text`) fails while values are stored without a tag. Add a new
-  `lang_string` attribute in a minor release, write the values there
-  (untagged ones take the graph language), deprecate the old attribute,
-  then remove it in a major release.
-- **When the data cannot fit**, keep the term and narrow the new rule with
-  `if`, so it applies to new entities only (minor or major depending on
-  the change, but without existing errors).
+Two ways through:
+
+- **With a migration** (the data is rewritten in place, ids, aliases and
+  history stay): a `migration.yaml` in the version directory carries the
+  value changes, `renamed_from` the renames and moves between modules, and
+  the check judges the data after the migration. Required whenever the
+  release rewrites any revision, renames included. Format, steps and a worked
+  module split: [migrations](migrations.md). Use it for a rename, a move to
+  another module, a merged class, a new required attribute, a removed enum
+  value or state.
+- **Without one** the major change passes only when the existing data
+  already fits it, so prepare the data first:
+  - **Removing or renaming a term** that data uses fails (the data still has
+    the old name). Deprecate it in a minor release, move the data to the
+    replacement with normal writes, then remove it in a major release.
+  - **Tightening** (`required`, a cardinality, an error rule) passes only
+    when every entity already satisfies it. Fill the gaps first, then
+    release.
+  - **Moving text to a language** (`string` to `lang_string`, `text` to
+    `lang_text`) fails while values are stored without a tag. Add a new
+    `lang_string` attribute in a minor release, write the values there
+    (untagged ones take the graph language), deprecate the old attribute,
+    then remove it in a major release; or let a migration `convert` it.
+  - **When the data cannot fit**, keep the term and narrow the new rule with
+    `if`, so it applies to new entities only (minor or major depending on
+    the change, but without existing errors).
 
 ## Deprecation
 
@@ -72,11 +87,13 @@ version of the bundle is the version of the main (umbrella) module.
   not cover the changes to the area's terms (the release still goes on).
 - Adding a module is a minor change: a new file plus a new import in the
   main module (or in the module that builds on it).
-- Moving a term to another module changes its CURIE, which `ontology diff`
-  sees as a removal plus an addition. `renamed_from` is a local name
-  and only works within one module, so it cannot carry the move. It is a
-  major release with a data migration: add the term in the new module,
-  move the data, then remove the old term (see the major versions above).
+- Moving a term to another module changes its CURIE. Without a hint
+  `ontology diff` sees a removal plus an addition. A class or relation
+  names its old CURIE in `renamed_from` (`renamed_from: old:Name`, kept as
+  written, no import needed) and the diff reports a rename; a local name
+  still means the same module. Either way it is a major release, and on a
+  graph with data it needs a `migration.yaml` (its `steps` may be empty): the
+  entities move with their ids and aliases ([migrations](migrations.md#a-module-split-step-by-step)).
 - Removing an import is major.
 - After the release, check what agents will see: `graph describe modules`
   and `graph describe module <module>`, and the generated graph skill
@@ -125,11 +142,14 @@ Later versions:
 3. `graph-admin ontology diff <dir> --graph <graph>`: read every change and
    its level; set `module.version` accordingly.
 4. `graph-admin graph check <graph> --ontology <dir>`: no errors; read
-   the warnings (batch rules and `in` cardinality run nowhere else).
+   the warnings (batch rules and `in` cardinality run nowhere else). With a
+   `migration.yaml` it is also the preview of what the migration changes.
 5. Back up the data root and check the backup (see the backup notes in the
    graph_cli documentation, `docs/files.md`).
-6. `graph-admin ontology release <graph> <dir>`; a refusal lists what the
-   data lacks.
+6. `graph-admin ontology release <graph> <dir> --reason "<why>"` (add
+   `--dry-run` first for a release with a migration); a refusal lists what the
+   data lacks. An interrupted migration is finished by running the same
+   release again ([migrations](migrations.md#an-interrupted-release)).
 7. `graph-admin audit verify`: clean.
 8. The graph skill: a template skill renders the new model by itself;
    reinstall it with `graph skills install`. Check its curated text with

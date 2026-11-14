@@ -26,6 +26,16 @@ GRAPH_ERRORS: Final = (*ROOT_ERRORS, "graph.not_found")
 CHANGE_ERRORS: Final = ("access.denied", "backend.lock_timeout", "audit.unavailable")
 
 
+# A release that carries or implies a data migration (plan M1-M3) can be refused for these.
+MIGRATION_ERRORS: Final = (
+    "migration.invalid",
+    "admin.migration_unexpected",
+    "admin.migration_from_mismatch",
+    "admin.migration_incomplete",
+    "admin.policy_renamed_term",
+)
+
+
 def admin_context(state: CommandState, data_root: str | None) -> AdminContext:
     context: AdminContext = state.services.context(
         data_root=path(data_root), warnings=state.warnings

@@ -550,21 +550,32 @@ class IndexedView:
         return None
 
     def confirm(self, entity: EntityId) -> None:
-        """Check the current revision the index holds for ``entity`` against the log.
+        """``confirm_all`` for one entity."""
+        self.confirm_all((entity,))
 
-        The revision must be the one its tx line carries; that line is read at the
+    def confirm_all(self, entities: Iterable[EntityId]) -> None:
+        """Check the current revision the index holds for each entity against the log.
+
+        Each revision must be the one its tx line carries; that line is read at the
         recorded position and checked against the chain, and its bytes are covered by
-        the log digest. Raises ``IndexUnusable`` on any difference.
+        the log digest. The entities are grouped by their revision's tx, so a tx line is
+        read and parsed once however many entities rely on it and is dropped before the
+        next one (memory is bounded by the largest tx). Raises ``IndexUnusable`` on any
+        difference.
         """
-        if entity in self._changed:
-            return  # from the verified tail
-        revision = self.current(entity)
-        if revision is None:
-            return
-        with _guard():
-            tx = self._reader.tx(revision.tx_seq, self._txlog)
-            if revision not in tx.revisions:
-                raise IndexUnusable(f"the index row of {entity} differs from its tx")
+        by_seq: dict[int, list[Revision]] = {}
+        for entity in entities:
+            if entity in self._changed:
+                continue  # from the verified tail
+            revision = self.current(entity)
+            if revision is not None:
+                by_seq.setdefault(revision.tx_seq, []).append(revision)
+        for seq in sorted(by_seq):
+            with _guard():
+                stored = {r.id: r for r in self._reader.tx(seq, self._txlog).revisions}
+                for revision in by_seq[seq]:
+                    if stored.get(revision.id) != revision:
+                        raise IndexUnusable(f"the index row of {revision.id} differs from its tx")
 
 
 # ---- writing -----------------------------------------------------------

@@ -11,6 +11,11 @@
   that transaction; just before a change is its `tx_seq` minus one. A
   time works too, with an offset (`2030-01-01T12:00:00Z`). Such answers
   carry the warning `temporal.as_of_read`.
+- Earlier revisions are shown under the names of the current ontology:
+  after a release that renamed a type, attribute or relation, `history`,
+  `get --rev` and `--as-of` use the new names (with `--full`, such a
+  revision has `names_mapped: true`), and queries name the new terms. An
+  old name is unknown; the error says what it is called now.
 
 ## What the history holds, so entities do not
 

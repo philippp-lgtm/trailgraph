@@ -41,6 +41,7 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EntityId, GraphId, format_id, parse_id
 from graph_cli.kernel.json_access import JsonShapeError
+from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import (
     INSTALLATION_STREAM,
     AuditEventDraft,
@@ -380,8 +381,42 @@ class FileMaintenanceSession:
     def commit(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
         return self._writer().commit(tx, receipt)
 
+    def migrate(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult:
+        return self._writer().migrate(tx, receipt)
+
     def publish_blob(self, staged: StagedBlob) -> BlobInfo:
         return self._writer().publish_blob(staged)
+
+    # ---- migration marker ------------------------------------------------
+
+    def migration_marker(self) -> MigrationMarker | None:
+        self._check_open()
+        return self._store.migration_marker()
+
+    def write_migration_marker(self, marker: MigrationMarker) -> None:
+        """Replace ``data/migration.json`` by one rename (the commit point)."""
+        self._check_open()
+        store = self._store
+        layout = store.layout
+        try:
+            temp = write_temp(layout.migration_marker, pretty_bytes(marker.to_json()), store.syncer)
+            fire(store.faults, CrashPoint.MIGRATION_MARKER_BEFORE_RENAME)
+            os.replace(temp, layout.migration_marker)
+            store.syncer.sync_dir(layout.data)
+        except OSError as exc:
+            raise _unavailable("cannot write the migration marker", exc) from exc
+
+    def remove_migration_marker(self) -> None:
+        """Remove ``data/migration.json`` (the commit point is the unlink); idempotent."""
+        self._check_open()
+        store = self._store
+        layout = store.layout
+        try:
+            fire(store.faults, CrashPoint.MIGRATION_MARKER_BEFORE_REMOVE)
+            layout.migration_marker.unlink(missing_ok=True)
+            store.syncer.sync_dir(layout.data)
+        except OSError as exc:
+            raise _unavailable("cannot remove the migration marker", exc) from exc
 
     # ---- manifest and releases ------------------------------------------
 

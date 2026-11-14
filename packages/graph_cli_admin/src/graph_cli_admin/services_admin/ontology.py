@@ -2,7 +2,8 @@
 
 An authored ontology is a directory of ``<module_id>.yaml`` files in the
 maintainer workspace; the main module is named explicitly or is the only
-file there. Validation and diff are reads: no lock, no audit (B5.10).
+module file there (``migration.yaml``, the migration of a major release, is no
+module). Validation and diff are reads: no lock, no audit (B5.10).
 ``release_files`` builds the immutable release directory (B7.4, B7.5) as a
 pure function of its inputs.
 """
@@ -17,7 +18,11 @@ from typing import Final
 from uuid import UUID
 
 import graph_cli
-from graph_cli.kernel.canonical import JsonValue, hash_bytes, pretty_bytes
+from graph_cli.kernel.canonical import (
+    JsonValue,
+    hash_bytes,
+    pretty_bytes,
+)
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, has_errors
@@ -30,18 +35,25 @@ from graph_cli.ontology_layer.diff import (
     BumpCheck,
     DiffReport,
     check_bump,
+    check_renames,
     classify,
     module_bumps,
 )
 from graph_cli.ontology_layer.exporters.jsonschema import export_jsonschema
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version, bump_level
-from graph_cli.ontology_layer.vocabulary import IR_FORMAT, MODULE_ID_RE
+from graph_cli.ontology_layer.vocabulary import (
+    IR_FORMAT,
+    MIGRATION_FILE,
+    MODULE_ID_RE,
+    RESERVED_MODULE_IDS,
+)
+from graph_cli.services.models import RELEASE_FILE, installed_migration
 
 RELEASE_SCHEMA: Final = "graph_cli.ontology_release/1"
+__all__ = ["RELEASE_FILE", "installed_migration"]  # moved to graph_cli.services.models
 COMPILED_FILE: Final = "compiled.json"
 DIFF_FILE: Final = "diff.json"
-RELEASE_FILE: Final = "release.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,14 +110,16 @@ def main_module(directory: Path, module: str | None) -> str:
                 f"--module {module!r} is not a module id ({MODULE_ID_RE.pattern})",
                 details={"argument": "module"},
             )
-        if not (directory / f"{module}.yaml").is_file():
+        if module in RESERVED_MODULE_IDS or not (directory / f"{module}.yaml").is_file():
             raise GraphCliError(
                 "usage.invalid_argument",
                 f"{directory} has no module file {module}.yaml",
                 details={"argument": "module"},
             )
         return module
-    candidates = sorted(p.stem for p in directory.glob("*.yaml"))
+    candidates = sorted(
+        p.stem for p in directory.glob("*.yaml") if p.stem not in RESERVED_MODULE_IDS
+    )
     if len(candidates) != 1:
         raise GraphCliError(
             "usage.missing_argument",
@@ -146,9 +160,60 @@ def pinned_model(catalog: Catalog, entry: GraphEntry) -> CompiledModel:
     return load_compiled(data, expected_hash=entry.pin.artifact_hash)
 
 
+def read_migration(directory: Path) -> bytes | None:
+    """The bytes of ``migration.yaml`` in a version directory; ``None`` without one. Parsing
+    and checking are ``ontology_layer.migration`` (the raw bytes are what a release keeps)."""
+    path = directory / MIGRATION_FILE
+    try:
+        return path.read_bytes() if path.is_file() else None
+    except OSError as exc:
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"cannot read {path}: {exc.strerror or exc}",
+            details={"argument": "source"},
+        ) from exc
+
+
 def diff(old: CompiledModel, new: CompiledModel) -> tuple[DiffReport, BumpCheck]:
     report = classify(old, new)
     return report, check_bump(report)
+
+
+def rename_warnings(old: CompiledModel, new: CompiledModel) -> tuple[WarningRecord, ...]:
+    """Judge the ``renamed_from`` declarations of ``new`` against ``old``: an invalid one is
+    ``ontology.rename_invalid`` (the problems in the details), a leftover of the previous
+    release is the warning ``ontology.rename_stale``. Run by ``ontology diff`` and the release
+    plan, not by ``validate`` (there is no old model)."""
+    problems = check_renames(old, new)
+    errors = [p for p in problems if p.severity == "error"]
+    if errors:
+        raise GraphCliError(
+            "ontology.rename_invalid",
+            f"{len(errors)} renamed_from declarations do not fit {old.bundle_version} ->"
+            f" {new.bundle_version}: {errors[0].message}",
+            details={
+                "from": old.bundle_version,
+                "to": new.bundle_version,
+                "count": len(errors),
+                "problems": [p.to_json() for p in errors],
+            },
+        )
+    stale = [p for p in problems if p.severity == "warning"]
+    if not stale:
+        return ()
+    return (
+        WarningRecord(
+            "ontology.rename_stale",
+            f"{len(stale)} renamed_from declarations were applied by the previous release;"
+            " remove them",
+            {
+                "from": old.bundle_version,
+                "to": new.bundle_version,
+                "count": len(stale),
+                "problems": [p.to_json() for p in stale],
+            },
+        ),
+    )
 
 
 def module_bump_warnings(
@@ -175,8 +240,11 @@ def release_files(
     previous: PinnedModel | None,
     release_id: UUID,
     released_at: datetime,
+    migration: bytes | None = None,
 ) -> dict[str, bytes]:
-    """Every file of ``ontology/<version>/``; ``release.json`` lists the others' sha256."""
+    """Every file of ``ontology/<version>/``; ``release.json`` lists the others' sha256.
+    ``migration`` is the release's ``migration.yaml`` as authored (part of the release
+    identity, so it is listed like the other files)."""
     model = compiled.model
     files: dict[str, bytes] = {COMPILED_FILE: pretty_bytes(model.to_json())}
     metadata: dict[str, JsonValue] = {
@@ -200,6 +268,8 @@ def release_files(
         files[f"exports/jsonschema/{name}"] = pretty_bytes(schema)
     for module_id, data in compiled.sources.items():
         files[f"source/{module_id}.yaml"] = data
+    if migration is not None:
+        files[MIGRATION_FILE] = migration
     metadata["compiler"] = {
         "name": "graph_cli",
         "version": graph_cli.__version__,

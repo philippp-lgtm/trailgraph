@@ -54,6 +54,7 @@ WRITE_ERRORS: Final = (
     "access.reason_required",
     "ontology.pin_mismatch",
     "backend.lock_timeout",
+    "write.migration_incomplete",
     "backend.corrupt",
     "audit.unavailable",
     "skills.outdated",

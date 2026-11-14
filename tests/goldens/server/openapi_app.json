@@ -2540,6 +2540,9 @@
           },
           "content_hash": {
             "type": "string"
+          },
+          "names_mapped": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3726,6 +3729,74 @@
                   "required": [
                     "name",
                     "hash"
+                  ]
+                },
+                "migration": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "renames": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "index"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "renames",
+                    "steps"
                   ]
                 }
               },
@@ -6467,7 +6538,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, format.unsupported_version, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, format.unsupported_version, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -6497,7 +6568,8 @@
               "config.invalid",
               "format.unsupported_version",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -6886,7 +6958,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -6915,7 +6987,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -11796,7 +11869,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -11825,7 +11898,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -12255,7 +12329,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -12284,7 +12358,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -15068,7 +15143,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -15097,7 +15172,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -16894,7 +16970,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -16923,7 +16999,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -18125,7 +18202,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -18154,7 +18231,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -18533,7 +18611,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -18562,7 +18640,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -18956,7 +19035,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -18985,7 +19064,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {
@@ -19382,7 +19462,7 @@
             ]
           },
           "503": {
-            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch.",
+            "description": "Service Unavailable: audit.unavailable, backend.corrupt, backend.lock_timeout, backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing, ontology.pin_mismatch, write.migration_incomplete.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -19411,7 +19491,8 @@
               "config.forbidden_key",
               "config.invalid",
               "ontology.artifact_missing",
-              "ontology.pin_mismatch"
+              "ontology.pin_mismatch",
+              "write.migration_incomplete"
             ]
           },
           "default": {

@@ -476,7 +476,51 @@ as `graph` does.
   `graph` ([Builds](#builds)).
 - Writes are never retried. A lost answer is `remote.outcome_unknown`:
   check the state (`graph show`, `token list`, `policy show`) before
-  running the command again.
+  running the command again. A release is the exception: `ontology release`
+  and `graph push` name the command to run again, which is safe, because a
+  release that was applied is found installed and changes nothing, and one
+  that was interrupted is finished (also a data migration, which commits
+  once and is never applied twice). A command that writes nothing (every
+  read, a dry run) is sent a second time, with its uploads, when the
+  connection fails.
+- A data migration runs inside one request, under the graph's lock, and
+  answers when it is finished: see [Timeouts](#timeouts).
+
+## Timeouts
+
+The server puts no limit on how long a command runs; it answers when the
+command is done. Three clocks can end the wait earlier:
+
+- **The client's** `[remote] timeout_s` (60 seconds by default,
+  [Configuration](configuration.md#remote-mode)) is the socket timeout of
+  every request: it ends a request that sends or receives nothing for that
+  long, which for a command is the time until the answer starts. A release
+  with a data migration sends nothing back until the migration is done.
+- **The server's** `channel_timeout` (120 seconds) closes a connection that
+  is idle, before a request arrives or while the server cannot write; it
+  does not interrupt a command that is running.
+- **The ingress** (a reverse proxy or load balancer in front of the
+  server) has its own read timeout for the time to the first byte of the
+  answer, often 30 to 60 seconds. It ends the wait for the client, not
+  the command: the server finishes it.
+
+A command that outlasts one of them is applied anyway and the client sees
+`remote.outcome_unknown` (a write) or `remote.unreachable`. Only a data
+migration takes long enough to matter. It rewrites every entity it
+touches in one transaction and materializes each revision with fsyncs: on
+a generated graph of 6,300 entities and 16,000 edges the migration took
+about 7 seconds with full durability (plan, check and commit together) and
+the process stayed near 120 MiB. Measure the preview on the real data
+(`graph check --ontology <dir>` counts what would change), expect time
+roughly proportional to the entities migrated, and before a large
+migration set `[remote] timeout_s` and the ingress read timeout above the
+expected duration with a margin (the answer reports `duration_s`). App
+writers wait for the graph's lock up to `lock_timeout_s` and then get the
+retryable `backend.lock_timeout`, so run a large migration in a quiet
+moment. If an answer is lost anyway, wait and run the same release again:
+it waits for the lock of the running migration, then finds it done or
+finishes it, and applies nothing twice; `graph show` and `audit verify`
+confirm the result.
 
 ## Container
 

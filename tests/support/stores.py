@@ -9,18 +9,22 @@ import fcntl
 import os
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Protocol
 
 from graph_cli.kernel.authz import AuthorizedTx
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import EntityId, GraphId
-from graph_cli.kernel.ports.audit import AuditEventDraft, AuditSink, graph_stream
-from graph_cli.kernel.ports.storage import CommitResult, Snapshot
+from graph_cli.kernel.migration_marker import MigrationMarker
+from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, AuditSink, graph_stream
+from graph_cli.kernel.ports.storage import CommitResult, Head, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.files.layout import init_graph_dir
+from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
 from graph_cli.storage.memory.store import InMemoryStore
@@ -29,6 +33,7 @@ from support.clock import StepClock
 from support.drafts import intent
 from support.ids import SeededIdProvider
 from support.memlog import model
+from support.migrations import MigrationDraft, begin_migration
 from support.txbuilder import FuncState, TxBuilder, TxDraft
 
 ALL_STATUSES = frozenset({"active", "superseded", "retracted"})
@@ -72,6 +77,23 @@ class FaultSwitch:
         self.seen.append(point)
         if point in self.armed:
             raise OSError(f"injected fault at {point}")
+
+
+class MigrationSession(Protocol):
+    """What both backends' sessions offer a migration: the memory store's write session and
+    the file store's maintenance session."""
+
+    def snapshot(self) -> Snapshot: ...
+
+    def head(self) -> Head: ...
+
+    def append_audit(self, event: AuditEventDraft) -> AuditReceipt: ...
+
+    def migrate(self, tx: AuthorizedTx, receipt: AuditReceipt) -> CommitResult: ...
+
+    def write_migration_marker(self, marker: MigrationMarker) -> None: ...
+
+    def remove_migration_marker(self) -> None: ...
 
 
 def snapshot_state(snapshot: Snapshot) -> FuncState:
@@ -149,6 +171,34 @@ class StoreEnv:
             tx = replace(draft.build(), blobs=tuple(sorted({b.hash for b in staged})))
             receipt = session.append_audit(self.intent(tx, session.snapshot()))
             return tx, session.commit(tx, receipt)
+
+    @contextmanager
+    def maintenance(self) -> Iterator[MigrationSession]:
+        """A session with the maintenance effects this backend has: the file store's
+        maintenance session, the memory store's own session (it has ``migrate`` and the
+        marker methods, not the rest)."""
+        if isinstance(self.store, InMemoryStore):
+            with self.store.session(timeout_s=5) as session:
+                yield session
+            return
+        root = self.store.layout.root.parent.parent
+        maintenance = FileStoreMaintenance(root, syncer=self.syncer, faults=self.faults)
+        with maintenance.maintenance_session(self.graph_id, timeout_s=5) as session:
+            yield session
+
+    def migrate(
+        self, edit: Callable[[MigrationDraft], object]
+    ) -> tuple[AuthorizedTx, CommitResult]:
+        """One maintenance session: build a migration tx from the session snapshot, append its
+        intent, ``migrate``."""
+        with self.maintenance() as session:
+            draft = begin_migration(
+                self.builder, snapshot_state(session.snapshot()), session.head()
+            )
+            edit(draft)
+            tx = draft.build()
+            receipt = session.append_audit(self.intent(tx, session.snapshot()))
+            return tx, session.migrate(tx, receipt)
 
     def intent(self, tx: AuthorizedTx, snapshot: Snapshot) -> AuditEventDraft:
         """The intent this env appends for ``tx``; ``snapshot`` is the pre-state."""

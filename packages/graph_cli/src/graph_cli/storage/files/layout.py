@@ -94,6 +94,11 @@ class GraphLayout:
         return self.data / "head.json"
 
     @property
+    def migration_marker(self) -> Path:
+        """Present while a data migration is committed or about to be, until its pin switch."""
+        return self.data / "migration.json"
+
+    @property
     def txlog(self) -> Path:
         return self.data / "txlog"
 

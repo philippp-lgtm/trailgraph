@@ -202,7 +202,9 @@ through `tests/support/services.py` (an in-memory catalog, a builder with
 test clock and seeded ids, and a factory for valid creates of any class).
 `uv run python scripts/bench_store.py` (not part of the suite) times reads
 and writes of `FileStore` on a generated graph, with and without the
-writer's full replay.
+writer's full replay; with `--migration` it migrates a generated graph of about 6,300
+entities and 16,000 edges (every class and relation moves to a new module) with real fsyncs
+and prints the time of each phase and the peak memory.
 
 ### Test harness
 
@@ -238,7 +240,10 @@ authored as several modules (`company`: `people`, `organization` and, from
 1.1.0, `operations`, brought together by the main module `company`, whose
 version is the graph's release; its tests are `tests/cli/test_company_modules.py`
 and the `MODULAR_ONTOLOGIES` entries of the compiler, diff and vocabulary tests;
-the role-based and contract tests run on the single-module toys only), one broken ontology per `model.*` finding
+the role-based and contract tests run on the single-module toys only), a fourth with a
+version series for data migrations (`workshop`: 1.0.0 is one module, 2.0.0 an umbrella with two
+areas, classes and relations moved by `renamed_from` CURIEs; used by
+`tests/cli/test_migration_end_to_end.py` and not part of the toy lists), one broken ontology per `model.*` finding
 code, one broken change set per `data.*` finding code, seed change sets for
 all three (`tests/fixtures/seeds/`, applied through the write
 service; `company` has a second file for the classes of 1.1.0), role mappings for role-based contract tests

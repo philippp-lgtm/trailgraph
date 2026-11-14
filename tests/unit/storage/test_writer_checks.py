@@ -16,13 +16,16 @@ from support.stores import ALL_STATUSES, StoreEnv, snapshot_state
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.query_ast import Query
+from graph_cli.kernel.records import TxRecord
 from graph_cli.storage.files.index import (
     INDEX_FORMAT,
     IndexedView,
     IndexMeta,
     IndexReader,
+    IndexUnusable,
     index_difference,
 )
+from graph_cli.storage.files.segments import SegmentedLog
 from graph_cli.storage.files.store import FileStore
 
 EVERYTHING = Query(record_status=ALL_STATUSES, limit=10**9)
@@ -270,3 +273,91 @@ def test_the_digest_follows_the_log_across_segments(tmp_path: Path) -> None:
     assert [d.segment for d in meta_of(env).digest or ()] == segments
     assert replayed(store) == 0
     assert difference(env) is None
+
+
+# ---- confirm: one read per tx --------------------------------------------------------
+
+
+def _writer_index(env: StoreEnv) -> IndexedView:
+    store = fresh(env)
+    index, _ = store.writer_index(store.read_state())
+    assert index is not None
+    return index.view
+
+
+def _confirm_each(view: IndexedView, entities: list[EntityId]) -> None:
+    """The check as it was before ``confirm_all``: one tx read per entity, linear membership."""
+    for entity in entities:
+        revision = view.current(entity)
+        if revision is not None:
+            tx = view._reader.tx(revision.tx_seq, view._txlog)
+            if revision not in tx.revisions:
+                raise IndexUnusable(f"the index row of {entity} differs from its tx")
+
+
+def _count_tx_reads(view: IndexedView, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    reads: list[int] = []
+    original = view._reader.tx
+
+    def counting(seq: int, txlog: SegmentedLog) -> TxRecord:
+        reads.append(seq)
+        return original(seq, txlog)
+
+    monkeypatch.setattr(view._reader, "tx", counting)
+    return reads
+
+
+def _populated(tmp_path: Path) -> tuple[StoreEnv, list[EntityId]]:
+    """Eight entities over four txs (one entity revised in a later tx)."""
+    env = files_env(tmp_path)
+    ids: list[EntityId] = []
+    env.write(lambda d: ids.extend(d.create() for _ in range(4)))
+    env.write(lambda d: ids.extend(d.create() for _ in range(3)))
+    env.write(lambda d: d.update(ids[0]))
+    env.write(lambda d: ids.append(d.create()))
+    return env, sorted(ids)
+
+
+def test_confirm_reads_each_tx_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env, ids = _populated(tmp_path)
+    view = _writer_index(env)
+    reads = _count_tx_reads(view, monkeypatch)
+    view.confirm_all(ids)
+    assert sorted(reads) == [1, 2, 3, 4]  # one read per tx the current revisions come from
+    old = _writer_index(env)
+    old_reads = _count_tx_reads(old, monkeypatch)
+    _confirm_each(old, ids)
+    assert len(old_reads) == len(ids)  # what it cost before: one per entity
+
+
+def test_confirm_skips_what_has_no_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env, _ = _populated(tmp_path)
+    view = _writer_index(env)
+    reads = _count_tx_reads(view, monkeypatch)
+    view.confirm_all([EntityId(env.ids.new_id())])
+    view.confirm_all([])
+    assert reads == []
+
+
+def test_confirm_agrees_with_the_per_entity_check_on_a_clean_index(tmp_path: Path) -> None:
+    env, ids = _populated(tmp_path)
+    _writer_index(env).confirm_all(ids)
+    _confirm_each(_writer_index(env), ids)
+
+
+@pytest.mark.parametrize("position", [0, 3, 7])
+def test_confirm_agrees_with_the_per_entity_check_on_a_tampered_row(
+    tmp_path: Path, position: int
+) -> None:
+    env, ids = _populated(tmp_path)
+    entity = ids[position]
+    current = FileStore(store_of(env).layout.root, env.graph_id).snapshot().get(entity)
+    assert current is not None
+    _edit_row(env, entity, {"rev": current.rev + 5, "prev_rev": current.rev + 4})
+    with pytest.raises(IndexUnusable) as old:
+        _confirm_each(_writer_index(env), ids)
+    with pytest.raises(IndexUnusable) as new:
+        _writer_index(env).confirm_all(ids)
+    assert str(new.value) == str(old.value) == f"the index row of {entity} differs from its tx"
+    with pytest.raises(IndexUnusable):  # the single-entity form is the same check
+        _writer_index(env).confirm(entity)

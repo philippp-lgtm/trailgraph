@@ -19,7 +19,8 @@ collected, never raised, because a later release may add the term: the caller wa
 ``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
 and ``named_read_types`` read back which types and terms, and which types a read rule
 names, the installed documents name for one graph (an ontology release checks them against
-the new model).
+the new model); ``rule_entries`` lists every rule's resource patterns, effect and actions, so a
+release that renames terms can tell which deny rules would stop applying (migration plan M8).
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.access_control.documents import CURIE_RE, NAME_RE, glob, rules, strings
+from graph_cli.access_control.documents import CURIE_RE, NAME_RE, glob, layer_of, rules, strings
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import GraphId
 
@@ -201,4 +202,34 @@ def named_read_types(
             for resource in strings(rule, "resource"):
                 if resource.startswith(prefix) and CURIE_RE.match(resource[len(prefix) :]):
                     found.add(NamedReadType(resource[len(prefix) :], grant))
+    return tuple(sorted(found))
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class RuleEntry:
+    """One resource pattern of one compiled rule: where it sits (``layer``, ``rule`` id), its
+    ``effect`` (``allow`` or ``deny``), the pattern as compiled and the action patterns of the
+    rule."""
+
+    layer: str
+    rule: str
+    effect: str
+    resource: str
+    actions: tuple[str, ...]
+
+
+def rule_entries(documents: Sequence[Mapping[str, JsonValue]]) -> tuple[RuleEntry, ...]:
+    """Every (rule, resource pattern) of ``documents``, sorted and unique. Pure: a release looks
+    for the rules that name a type or term it renames (``unless`` conditions are not rules'
+    own resources and are left out)."""
+    found: set[RuleEntry] = set()
+    for document in documents:
+        layer = layer_of(document)
+        for rule in rules(document):
+            rule_id, effect = rule.get("id"), rule.get("effect")
+            if not isinstance(rule_id, str) or not isinstance(effect, str):
+                continue
+            actions = tuple(sorted(strings(rule, "action")))
+            for resource in strings(rule, "resource"):
+                found.add(RuleEntry(layer, rule_id, effect, resource, actions))
     return tuple(sorted(found))

@@ -48,9 +48,11 @@ Only for a graph with more than one module of its own.
 - [ ] The main module holds no terms of its own and imports every area.
 - [ ] Any change in a module is matched by a bump of the main module
       (the graph's version).
-- [ ] A term that moved to another module is released as major with a
-      data migration (removal plus addition; `renamed_from` only works
-      within one module).
+- [ ] A term that moved to another module is released as major; a class
+      or relation names its old CURIE in `renamed_from`, else the diff sees
+      a removal plus an addition; on a graph with data the version
+      directory has a `migration.yaml` and the preview
+      (`graph-admin graph check --ontology`) was read.
 - [ ] No rule is a prose prohibition between areas: what may not be
       linked is left out of `domain` and `range`.
 

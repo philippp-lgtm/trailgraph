@@ -37,6 +37,7 @@ PIN_ACTION: Final = "maint.ontology_pin"
 CONFIGURE_ACTION: Final = "maint.graph_configure"
 REPAIR_ACTION: Final = "maint.repair"
 REINDEX_ACTION: Final = "maint.reindex"
+MIGRATE_ACTION: Final = "maint.migrate"
 POLICY_ACTION: Final = "maint.policy_change"
 TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke", "maint.token_update")
 _ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.format.NAME_RE
@@ -83,6 +84,24 @@ def is_ext_state_action(action: str) -> bool:
 def is_write_intent(event: Mapping[str, JsonValue]) -> bool:
     """An ``ok`` event with a ``write.*`` action: committed iff its tx exists (B5.6)."""
     return _status(event) == "ok" and any(a.startswith("write.") for a in _actions(event))
+
+
+def is_migration_intent(event: Mapping[str, JsonValue]) -> bool:
+    """An ``ok`` ``maint.migrate`` event with ``change.migration``: the intent of a migration
+    tx (plan M5). The installation stream's ``maint.migrate`` events with another payload are
+    not."""
+    change = event.get("change")
+    return (
+        _status(event) == "ok"
+        and MIGRATE_ACTION in _actions(event)
+        and isinstance(change, Mapping)
+        and "migration" in change
+    )
+
+
+def is_tx_intent(event: Mapping[str, JsonValue]) -> bool:
+    """An intent that is committed iff its tx exists: a write intent or a migration intent."""
+    return is_write_intent(event) or is_migration_intent(event)
 
 
 def is_intent(event: Mapping[str, JsonValue]) -> bool:
@@ -472,10 +491,75 @@ def _is_enrollment_change(enrollment: JsonValue, created: bool) -> bool:
     )
 
 
+MIGRATION_CHANGE_KEYS: Final = frozenset(
+    {
+        "tx_id",
+        "tx_seq",
+        "changeset_hash",
+        "changeset_size",
+        "from",
+        "to",
+        "migration_hash",
+        "revisions_hash",
+        "counts",
+    }
+)
+
+
+def is_migration_change(migration: JsonValue) -> bool:
+    """``change.migration`` of a migration intent: the tx it names and what it migrates
+    between, with constant-size digests of the result (``revisions_hash``, ``counts``)."""
+    if not isinstance(migration, Mapping) or set(migration) != MIGRATION_CHANGE_KEYS:
+        return False
+    tx_seq, counts = migration["tx_seq"], migration["counts"]
+    return (
+        is_canonical_uuid(migration["tx_id"])
+        and isinstance(tx_seq, int)
+        and not isinstance(tx_seq, bool)
+        and tx_seq >= 1
+        and all(_is_hash(migration[k]) for k in ("changeset_hash", "migration_hash"))
+        and _is_hash(migration["revisions_hash"])
+        and _is_size(migration["changeset_size"])
+        and all(isinstance(migration[k], str) and migration[k] for k in ("from", "to"))
+        and isinstance(counts, Mapping)
+        and set(counts) == {"entities", "edges"}
+        and all(_is_size(v) for v in counts.values())
+    )
+
+
+def is_alias_prefix_changes(changes: JsonValue) -> bool:
+    """``change.alias_prefixes`` of a pin intent: ``{added: {curie: prefix},
+    moved: {curie: {from: curie, prefix}}}``, the prefixes the release gave or moved."""
+    if not isinstance(changes, Mapping) or set(changes) != {"added", "moved"}:
+        return False
+    added, moved = changes["added"], changes["moved"]
+    if not isinstance(added, Mapping) or not isinstance(moved, Mapping):
+        return False
+    if not all(_non_empty(k) and _non_empty(v) for k, v in added.items()):
+        return False
+    return all(
+        _non_empty(curie)
+        and isinstance(move, Mapping)
+        and set(move) == {"from", "prefix"}
+        and _non_empty(move["from"])
+        and _non_empty(move["prefix"])
+        for curie, move in moved.items()
+    )
+
+
+def _non_empty(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
 def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[str]:
     """Graph-stream maintenance intents name their effect (P1 item 5, plan M4)."""
     problems = []
     entries = change if isinstance(change, Mapping) else {}
+    if MIGRATE_ACTION in actions and not is_migration_change(entries.get("migration")):
+        problems.append(
+            "a migration intent needs change.migration{tx_id, tx_seq, changeset_hash,"
+            " changeset_size, from, to, migration_hash, revisions_hash, counts{entities, edges}}"
+        )
     if RELEASE_ACTION in actions:
         release = entries.get("release")
         if not (
@@ -488,6 +572,8 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             problems.append(
                 "a release intent needs change.release{version, artifact_hash, release_id}"
             )
+        if "migration_hash" in entries and not _is_hash(entries["migration_hash"]):
+            problems.append("change.migration_hash of a release intent is not a sha256 hash")
     if PIN_ACTION in actions:
         pin = entries.get("pin")
         if not (
@@ -496,6 +582,11 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             and all(_is_pin(pin[k]) for k in ("from", "to"))
         ):
             problems.append("a pin intent needs change.pin{from, to}")
+        if "alias_prefixes" in entries and not is_alias_prefix_changes(entries["alias_prefixes"]):
+            problems.append(
+                "change.alias_prefixes of a pin intent is not {added{curie: prefix},"
+                " moved{curie: {from, prefix}}}"
+            )
     if REPAIR_ACTION in actions and ("blobs_removed" in entries or "staging_removed" in entries):
         removed, staging = entries.get("blobs_removed"), entries.get("staging_removed")
         if not (

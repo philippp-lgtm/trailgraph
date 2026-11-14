@@ -126,6 +126,7 @@ These are the fields an agent reads most. The envelope leaves out `data`,
 | `reason` | The reason given, or null. |
 | `own_session` | True when your own session wrote it; the writer is not shown. |
 | `changed` | Names, not values: `attrs`, `edges` (`added`, `removed`, `changed`) and `record`; null for the first revision. |
+| `migration` | Only on a revision an ontology release wrote: `from` and `to` (versions), `summary`, and the `renames` and `steps` that changed this entity. |
 
 ## Write results
 

@@ -7,9 +7,10 @@ installation stream.
 
 | Module | Content |
 | --- | --- |
-| `audit.events` | builders for write intents, refusals, maintenance events, graph genesis and anchors; each routes its event to the graph or the installation stream |
+| `audit.events` | builders for write intents, refusals, maintenance events (the `change` of a release, pin and migration intent), graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
-| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write intents), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write and migration intents), `check_migrations` (migration txs: kept identity, versions, digest, the pin that follows), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.pins` | the chain of versions a graph was pinned to, read from the `maint.ontology_pin` intents of its stream (the name map's input; not verified, `audit verify` does that) |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification
@@ -224,5 +225,47 @@ from its recorded hash, is `integrity.audit.slot_mismatch` (its target names
 `graphs/<id>/skill`, `.../functions` or `.../actions`); an intent
 whose slot switch never happened is an interrupted publish
 (`intent_without_effect`, info).
+
+## Migration verification
+
+A release with a data migration commits one transaction whose changeset has a `migration`
+key (`from`, `to`, `migration_hash`, `summary`, the derived renames and the steps). It is
+announced like a write: before the commit an `ok` `maint.migrate` event is appended to the
+graph stream with the transaction's `event_id` and `change.migration{tx_id, tx_seq,
+changeset_hash, changeset_size, from, to, migration_hash, revisions_hash,
+counts{entities, edges}}`. `revisions_hash` is the hash of `[id, rev, content_hash]` per
+revision, sorted by id, so the event stays constant in size and lists no entity (the
+transaction has them). A `maint.migrate` event of a graph stream without that payload is
+malformed (`event_malformed`); the installation stream's `maint.migrate` events (another
+payload) are not constrained.
+
+`cross_check` matches transactions and intents by kind: a transaction with a `migration`
+key needs a migration intent and a write transaction a write intent. An intent of the
+other kind with the transaction's event id does not match it (`tx_without_intent`, "differs
+in kind") and stays an intent without effect. The id, seq, changeset hash and size of a
+migration intent are compared like those of a write intent.
+
+`check_migrations` judges every migration transaction:
+
+| Code | Severity | When |
+| --- | --- | --- |
+| `integrity.audit.migration_changed_identity` | error | a revision's `alias`, `record_status`, `created_at`, `valid_from` or `valid_to` differs from the entity's previous revision, or it has no previous revision |
+| `integrity.audit.migration_version_mismatch` | error | a revision's `ontology_version`, the transaction's pin, the changeset's `migration.to` and the intent's `from` and `to` are not the same versions |
+| `integrity.audit.migration_revisions_mismatch` | error | the intent's `revisions_hash` or `counts.entities` differs from the transaction |
+| `integrity.audit.migration_unpinned` | error | no `maint.ontology_pin` intent to `to` follows the migration intent in the stream, and no migration marker names the transaction |
+| `integrity.audit.migration_incomplete` | warning | the migration marker names the transaction and no pin intent to `to` follows: the crash between the commit and the pin switch, completed by running the release again |
+
+Each finding is one per transaction; the identity finding lists the first 20 revisions with
+the fields that differ. A migration whose pin intent follows but whose marker is still
+there is clean (the crash between the pin switch and the marker removal). `audit verify`
+reads the marker from the store; a damaged marker counts as none.
+
+A release and a pin intent carry two optional keys next to `change.release` and
+`change.pin`, never inside them: `change.migration_hash` (the hash of the release's
+migration file) on a release with a migration, and `change.alias_prefixes{added, moved}`
+(prefixes given to classes, and prefixes that moved with a renamed or retyped class, new
+CURIE to `{from, prefix}`) on a pin that changes alias prefixes. Without them the events are
+unchanged. A verifier from before migrations reports a migration transaction as
+`tx_without_intent` and no more: upgrade it before the first migration.
 
 What verification cannot detect: [Security model](security_model.md#detection).

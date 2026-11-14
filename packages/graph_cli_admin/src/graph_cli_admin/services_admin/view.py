@@ -16,7 +16,11 @@
   (``on_close``); when every open graph is watched, more stay open.
   ``close_revoked`` closes the open graphs the caller may no longer read. A
   graph whose ontology pin moved is opened again, its feed and trail
-  kept. Warnings of a graph opened later go to ``on_warning`` once.
+  kept: on the next request for it, and on every round of the feed (``refresh_models``), which
+  tells the clients of that graph to reload. The view shows the data as the app reads it: a
+  graph whose migration is committed but not pinned yet (a release running, or interrupted)
+  is shown under the target version, whose names its data has (``following``). Warnings of a
+  graph opened later go to ``on_warning`` once.
 - ``graph_json`` is the whole graph at one snapshot: every entity as a node
   (label, type, alias, record status) and every edge between two of them
   as a link. Attributes other than the label stay out.
@@ -37,7 +41,9 @@
   for ``read.get`` on its type like ``files path``.
 - ``ViewFeed.poll`` turns committed txs after the last seen seq into
   ``created`` (rev 1) and ``updated`` (rev > 1) events. The txlog, not the
-  audit log, is the source: an intent precedes its commit (W.12).
+  audit log, is the source: an intent precedes its commit (W.12). A tx with more than
+  ``RELOAD_REVISIONS`` revisions (a data migration rewrites every entity of a graph) is one
+  ``reload`` event instead: the page loads the graph again, as it does after a reconnect.
 - ``read_event`` turns an activity datagram for this graph into a ``read``
   event; ids the page does not know are the page's to ignore.
 - ``ActivityTrail`` numbers these events as steps and keeps the last
@@ -45,6 +51,10 @@
   per read command (its datagrams merged by ``call``) and one per written
   revision, each with command, actor and session. Nothing is stored; the
   trail starts empty with the view.
+
+The view shows current revisions only, so it never maps old names (migration plan M7:
+current revisions already carry the pin's names); an entity's history lists revision numbers,
+times, actors and reasons, not attributes or types.
 
 A node's label is the value of the first ``label`` role attribute, else the
 alias, else the type's local name and the last 8 hex digits of the id; a
@@ -90,6 +100,10 @@ from graph_cli_admin.services_admin import policy
 from graph_cli_admin.services_admin.context import AdminContext
 
 PAGE: Final = 1000  # txs per changes_since call
+# A tx with more revisions is sent as one ``reload`` event, not one event per revision: a
+# client's queue holds 1,000 events (``view_server.CLIENT_QUEUE``) and a migration rewrites
+# thousands. A quarter of the queue, so several such txs in one poll still fit.
+RELOAD_REVISIONS: Final = 250
 TRAIL_STEPS: Final = 500
 MAX_OPEN: Final = 8  # graphs a view keeps open, each with its model, feed and trail
 DENIAL_AUDIT_S: Final = 60.0  # a refused graph's denial is audited at most once in this time
@@ -121,8 +135,14 @@ class BlobStream:
     chunks: Iterator[bytes]
 
 
+def effective_entry(ctx: AdminContext, graph_ref: str) -> GraphEntry:
+    """The graph as the app reads it: pinned to the target version while its migration is
+    committed but not pinned yet (graph-admin's catalog keeps the manifest's pin)."""
+    return ctx.catalog.following(ctx.resolve(graph_ref, "view"))
+
+
 def open_view(ctx: AdminContext, *, graph_ref: str) -> ViewSource:
-    entry = ctx.resolve(graph_ref, "view")
+    entry = effective_entry(ctx, graph_ref)
     meta = RequestMeta.of("view", {"graph": str(entry.id)})
     ctx.authorize([("read.get", f"graph:{entry.id}")], request=meta, graph=entry.id)
     model, warnings = ModelCache(ctx.catalog).load_for_read(entry)
@@ -414,6 +434,20 @@ def tx_events(model: CompiledModel, tx: TxRecord) -> list[dict[str, JsonValue]]:
     return events
 
 
+def reload_event(tx: TxRecord) -> dict[str, JsonValue]:
+    """One event for a tx too big to send revision by revision: the page loads the graph
+    again (its seq includes the tx)."""
+    return {
+        "kind": "reload",
+        "reason": "large_tx",
+        "seq": tx.seq,
+        "ts": format_timestamp(tx.recorded_at),
+        "command": tx.request.command,
+        "actor": tx.actor.label()[:MAX_TEXT],
+        "revisions": len(tx.revisions),
+    }
+
+
 def _session(actor: ActorContext) -> str | None:
     """The session as a read datagram carries it, so reads and writes group alike."""
     key = actor.session_key()
@@ -551,7 +585,10 @@ class ViewFeed:
         while True:
             txs = self.source.read.changes_since(self.seq, limit=PAGE)
             for tx in txs:
-                events += tx_events(self.source.model, tx)
+                if len(tx.revisions) > RELOAD_REVISIONS:
+                    events.append(reload_event(tx))
+                else:
+                    events += tx_events(self.source.model, tx)
                 self.seq = tx.seq
             if len(txs) < PAGE:
                 return events
@@ -624,7 +661,7 @@ class ViewGraphs:
                     details={"argument": "graph"},
                 )
             ref = self.default
-        entry = self.ctx.resolve(ref, "view")
+        entry = effective_entry(self.ctx, ref)
         key = str(entry.id)
         self.authorize(entry)
         with self._lock:
@@ -653,6 +690,26 @@ class ViewGraphs:
         for graph in closed:
             self.on_close(graph)
         return view
+
+    def refresh_models(self) -> list[str]:
+        """Open again every open graph whose ontology pin moved since it was opened (a release,
+        or a migration committed but not pinned yet), keeping its feed and trail; the ids of
+        those graphs. Without this a graph nobody requests would keep sending events labeled
+        with the old model."""
+        moved: list[str] = []
+        for view in self.opened():
+            graph = str(view.source.entry.id)
+            try:
+                if effective_entry(self.ctx, graph).pin == view.source.entry.pin:
+                    continue
+                source = open_view(self.ctx, graph_ref=graph)
+            except GraphCliError:  # gone, hidden or unreadable: the next request says why
+                continue
+            with self._lock:
+                if self._open.get(graph) is view:
+                    view.source = view.feed.source = source
+                    moved.append(graph)
+        return moved
 
     def authorize(
         self, entry: GraphEntry, action: str = "read.get", resource: str | None = None

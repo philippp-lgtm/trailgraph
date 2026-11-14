@@ -14,7 +14,8 @@ docs/                                   documentation
 
 The kernel holds ids, canonical JSON, registries and the ports. The
 ontology layer holds the schema IR `graph_cli.ir/1`: loader, validator,
-compiler, semver classifier, JSON Schema export and data validation.
+compiler, semver classifier (with the rename checks), the migration file format (`ontology_layer.migration`),
+JSON Schema export and data validation.
 
 ## Layers
 
@@ -145,7 +146,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, read signal |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
-| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` |
+| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for`; the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |
@@ -230,6 +231,15 @@ is paid.
 | `services.visibility` | `Visibility`: the visible concrete types per actor and graph (one `access_control.effective.visibility` decision per type, no decision recorded), cached per policy hash, pin and actor facts; `VisibleSnapshot`, a `Snapshot` that answers for a hidden entity as for a missing one, strips every revision it hands out and sets `Query.visible`; `filter_model`, the model without hidden types and what depends on them |
 | `services.visible_catalog` | which functions and actions a limited caller sees: those whose terms and parameter classes all exist in the filtered model and that still compile against it |
 | `kernel.query_eval`, `kernel.records` | `Query.visible` and `NeighborQuery.visible`, honoured in one place for every store (subjects, relation ends, traversal, totals), and `strip_hidden_edges`, which drops the edges into hidden entities from a revision and recomputes its content hash |
+| `temporal_knowledge.migrate` | `plan_migration`: the new revision of every current revision (all record statuses) that a major release's renames and migration steps change, as a pure function of the old and new model, the derived renames, the migration file and a snapshot; no-op detection by content hash, per-step counts and samples, an overlay for `check_graph` and the blobs of the migrated revisions; `WorkingState` answers `incoming` from a reverse-edge index built on first use, so a large overlay is judged in linear time |
+| `services.migration`, `kernel.migration_marker` | `build_migration_tx`: the `AuthorizedTx` of a migration plan (changeset `graph_cli.migration/1` with no ops and a `migration` record, no aliases, no idempotency key), committed only by `MaintenanceSession.migrate`; `MigrationMarker` and `marker_committed`, the note of a migration that is not finished and the identity check of whether its tx is in the log |
+| `services.migration_state` | the app's view of a migration that is committed but not pinned (`GraphEntry.migration`, set by the app's catalog only while the pin is not switched; a marker file left after the switch is no state): `refuse_write` (`write.migration_incomplete`, for `WriteService` before and under the lock) and `read_warning` (`graph.migration_incomplete` when no writer holds the lock, which means the release crashed) |
+| `services.names` | read-time mapping (migration plan M7): `NameMaps` builds the `NameMap` of a graph at its pin from the pin history and the installed release files, `MappedSnapshot` hands out past revisions under the pin's names; a server builds its read service per request and passes every one the same `NameMapCache` (complete maps by graph and pin, bounded, thread safe) |
+| `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources` use it |
+| `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
+| `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
+| `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph push` |
+| `graph_cli_admin.services_admin.renamed_terms` | what a release that renames terms does to policy and catalogs: `hazards` (deny rules that would apply to nothing, `admin.policy_renamed_term`) and `references` (where functions, actions and policy name each renamed term) |
 | `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
 
 The write path keeps two snapshots for such a caller: the raw one is the truth
@@ -243,7 +253,8 @@ refusal.
 
 Every change to instance data is a change set (`graph_cli.changeset/1`) and
 goes through one path, `graph_cli.services.write.WriteService`; it is the
-only caller of `WriteSession.commit`.
+only caller of `WriteSession.commit`. The one other tx, a data migration, is built by
+`services.migration` and committed by `MaintenanceSession.migrate`.
 
 | Module | Content |
 | --- | --- |

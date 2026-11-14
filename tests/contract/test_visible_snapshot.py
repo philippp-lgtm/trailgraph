@@ -237,7 +237,12 @@ TX_READERS = {  # the modules of the app and server distributions that read a tx
     "services/read.py",  # history: request, reason, actor session; as-of: ontology version
     "services/visibility.py",  # the wrapper itself
     "temporal_knowledge/as_of.py",  # the time of a tx
+    "kernel/migration_marker.py",  # marker_committed: the tx id at a seq, on a raw snapshot
+    "services/names.py",  # the mapped layer below the view: delegates, and the migration record
 }
+# Modules that read a tx body on purpose, below the read limits, and hand out only what the
+# caller may see (``history``'s ``migration``: versions, summary, what changed the entity).
+BODY_READERS = {"services/names.py"}
 WRITE_SIDE = {"temporal_knowledge/working.py"}  # the write path's overlay; it delegates to a base
 
 
@@ -271,7 +276,7 @@ def test_no_read_command_reads_the_body_of_a_tx() -> None:
     server, _ = tx_calls_and_body_reads(REPO_ROOT / "packages" / "graph_cli_server" / "src")
     assert callers == TX_READERS
     assert server == set()
-    assert readers == set()
+    assert readers == BODY_READERS
     # positive control: the scanner sees an attribute read next to a tx call
     probe = ast.parse("def f(s):\n    return s.tx(1).changeset\n")
     assert any(isinstance(n, ast.Attribute) and n.attr in TX_BODY for n in ast.walk(probe))

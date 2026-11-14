@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from harness import BIN_DIR, CliRunner
 from support.admin import admin, init
+from support.admin_api import command, served, upload_tree
 from support.app import create_graph
 from support.equivalence import differences, home_env, normalized
 from support.fixtures import FIXTURES, ONTOLOGIES
@@ -62,24 +63,6 @@ def installation(
         "root": new_token(run_cli, "root", "--scope", "admin"),
     }
     return {"root": root, "env": isolated_env, "tokens": tokens}
-
-
-def served(installation: dict[str, Any], cwd: Path, *, with_admin: bool = True) -> ServerApp:
-    settings = Settings.load(installation["env"], cwd)
-    return ServerApp(settings, log=io.StringIO(), admin=AdminApi if with_admin else None)
-
-
-def command(app: ServerApp, path: str, token: str, **body: Any) -> Any:
-    return call(app, "POST", f"/v1/admin/commands/{path}", token=token, body=body)
-
-
-def upload_tree(app: ServerApp, token: str, directory: Path) -> dict[str, Any]:
-    files = {}
-    for path in sorted(p for p in directory.rglob("*") if p.is_file()):
-        reply = call(app, "PUT", "/v1/uploads", token=token, raw=path.read_bytes())
-        assert reply.status == 200, reply.json
-        files[path.relative_to(directory).as_posix()] = reply.json["upload"]
-    return {"files": files, "name": str(directory)}
 
 
 def audit_events(root: Path) -> list[dict[str, Any]]:

@@ -314,6 +314,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "ontology.artifact_missing": None,
     "backend.unavailable": _init,
     "backend.lock_timeout": None,
+    "write.migration_incomplete": None,  # the message names the release a maintainer re-runs
     "backend.corrupt": None,
     "audit.unavailable": None,
     "format.unsupported_version": None,

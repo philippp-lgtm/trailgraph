@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Hashable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from typing import Final
 
@@ -304,7 +304,9 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
       guard that names one is dropped from its transition. The text match is a substring one:
       over-dropping is safe because the read side never evaluates rules.
     - Enums, lifecycles and datatypes that no kept attribute or qualifier uses are dropped,
-      and a module without any term left goes with its prefix.
+      and a module that lost all its terms goes with its prefix. A module that has none in the
+      full model either (a main module that only imports the areas) stays: nothing was hidden
+      from it, and the functions and actions that name it as their module stay visible.
     """
     classes = model.classes
     visible_concrete = [c for c in classes if c in visible and not classes[c].abstract]
@@ -333,7 +335,10 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
         rule for rule in model.rules if rule.target in kept and not names_removed(rule.expr)
     )
     lifecycles = {k: _kept_guards(v, names_removed) for k, v in lifecycles.items()}
-    modules = tuple(m for m in model.modules if _has_terms(m, terms))
+    all_terms = model.term_curies()
+    modules = tuple(
+        m for m in model.modules if _has_terms(m, terms) or not _has_terms(m, all_terms)
+    )
     dropped = {m.prefix for m in model.modules} - {m.prefix for m in modules}
     prefixes = {p: ns for p, ns in model.prefixes.items() if p not in dropped}
     return CompiledModel(
@@ -431,6 +436,6 @@ def _kept_guards(lifecycle: LifecycleDef, names_removed: NamesRemoved) -> Lifecy
     return replace(lifecycle, transitions=transitions)
 
 
-def _has_terms(module: ModuleInfo, terms: set[str]) -> bool:
+def _has_terms(module: ModuleInfo, terms: Collection[str]) -> bool:
     prefix = f"{module.prefix}:"
     return any(t.startswith(prefix) for t in terms)

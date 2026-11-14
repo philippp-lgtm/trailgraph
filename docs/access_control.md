@@ -250,6 +250,19 @@ not silently take writes away. It also warns `admin.policy_unknown_type` when a
 type named in a `writes` grant becomes abstract or gains subclasses: the exact
 rule then misses their entities, so grant the subclasses too.
 
+Allow lists fail closed on a rename, deny rules fail open: a rule that hides or
+protects a type or term by its old name applies to nothing once a release
+renames it (`renamed_from`) or moves its entities to another class (a migration's
+`retype`). `ontology release` therefore refuses such a release
+(`admin.policy_renamed_term`, `details.rules` names each rule, the old and the new term)
+when a deny rule (a `deny` entry of a graph policy, `types: {T: none}` or `read`, a glob
+such as `prefix:*` that the new name leaves) matches the old type or term and no deny rule
+matches the new one for the same actions. Apply a graph policy that names both the old and
+the new term first (a policy may name terms the pinned release does not have yet), release,
+then remove the old names. `ontology diff --graph` and `graph check --ontology` show the same
+before the release (`admin.policy_renamed_term_affected`, `references`). An unfinished
+migration is completed even if the policy fails this check.
+
 ### Read limits
 
 A grant reads a whole graph: every entity of every type. To let a subject see
@@ -394,7 +407,11 @@ and a `graph push` that releases also authorize it for a project admin: a
 deny rule on reads (by project, for example) holds there too. Everything
 else stays with the `maintainers`: creating, archiving
 and restoring graphs, migrations, purges and repairs, policies, tokens
-and the installation audit. `maintain` names graphs one by one (`"*":
+and the installation audit. A release that carries a migration (a
+`migration.yaml`, or renames) is also authorized `maint.migrate`, before
+the lock and for a dry run too; a project admin has no such right, so
+that release is `access.ceiling` and a project admin releases only
+versions that need no data migration. `maintain` names graphs one by one (`"*":
 maintain` is refused), so a new graph is never maintained implicitly.
 
 A project admin is held to this by a hard-coded ceiling, like the app:
@@ -575,7 +592,8 @@ A named function or action is shown to a limited caller only when it fits what
 the caller sees; to everyone else it does not exist.
 
 - **Functions** are hidden when a type or relation they touch, the class of a
-  `ref` parameter, an enum parameter or the module that holds them is hidden, or
+  `ref` parameter, an enum parameter or the module that holds them is hidden (a module
+  whose terms are all hidden; a main module that holds no terms of its own is not), or
   when they compile only against the full model (an unlabelled node that reads
   an attribute only a hidden type has). A hidden function is not listed or
   described, not featured in the skill, not counted in `describe modules`, not

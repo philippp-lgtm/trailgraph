@@ -18,6 +18,11 @@ CORE_MODULE: Final = "core"
 BUILTIN_MODULES: Final = frozenset({CORE_MODULE, "provenance", "files"})
 FILE_TYPE: Final = "files:File"  # the stored-file class of the standard module files (B7.8)
 DEFAULT_NAMESPACE: Final = "urn:graph_cli:onto:{module}#"
+# The migration file of a version directory (``migration.yaml``, format ``graph_cli.migration/1``)
+# lives next to the module files, so its stem is no module id.
+MIGRATION_FILE: Final = "migration.yaml"
+MIGRATION_FORMAT: Final = "graph_cli.migration/1"
+RESERVED_MODULE_IDS: Final = frozenset({"migration"})
 
 BASE_TYPES: Final = frozenset(
     {
