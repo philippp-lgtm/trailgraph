@@ -24,7 +24,11 @@ only after its SHA-256 digest of the transaction log matches and check
 what they copy from it, so an edited log is found by the next writer; an
 index edited consistently with its digest is found by `audit verify` and
 replaced by the full replay a writer runs at least every 200
-transactions. Reads are not audited, so a read under
+transactions. A data migration (a maintainer's release that rewrites entities
+as new revisions) is announced by its own intent, and `audit verify` checks the
+transaction against it: the identity every revision keeps, the versions, a digest
+of the revisions and the pin that follows
+([Audit: migration verification](audit.md#migration-verification)). Reads are not audited, so a read under
 another policy leaves no trace in the audit; the opt-in
 [access log](audit.md#access-log) records reads, but it is not chained
 and can be edited.
@@ -48,7 +52,8 @@ prevents depends on what is verified:
   project's scope says `maintain` for (release, publish, push, check,
   reindex) and sees no other graph; a hard-coded ceiling keeps it from
   every installation and destructive action and from the maintainer
-  rules ([Project admins](access_control.md#project-admins)). Whoever
+  rules, so it cannot release with a data migration (`maint.migrate`)
+  ([Project admins](access_control.md#project-admins)). Whoever
   holds it can still change those graphs' ontology, skill, named
   functions and named actions, and reads their data through check findings.
   The skill, the functions and the actions steer every agent that uses the

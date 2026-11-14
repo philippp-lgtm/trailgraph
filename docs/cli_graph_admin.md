@@ -64,7 +64,7 @@ A major release on a graph with data can carry a migration: the data is rewritte
 the new names and shapes, every migrated entity getting one new revision, and its id, alias,
 history, edges and the audit trail stay. The migration is part of the release, never a
 separate command; its format and what to write in it is the
-[migrations reference](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/versioning_and_release.md)
+[migrations reference](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/references/migrations.md)
 of the `ontology-best-practices` skill. The app shows older revisions under the new names
 ([graph: Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)),
 from the pin history and the installed release files, so a release directory stays where it is.
@@ -124,7 +124,8 @@ A function or action published with an old name is refused with its current name
   again publishes what a crash left. The answer
   reports `migrated` (entities, edges, entities per step), the transaction's `tx_seq` and the
   duration. App writers wait for the lock, up to `lock_timeout_s`, and are judged by the new
-  model when they get it; run a large migration in a quiet moment.
+  model when they get it; run a large migration in a quiet moment. Over a server the release is
+  one request that answers when the migration is done: see [Timeouts](server.md#timeouts).
 - **An interrupted release** leaves either the old state or the incomplete one, where the
   transaction is committed but the pin is not switched: reads use the target version's names
   (warning `graph.migration_incomplete` once no release holds the lock), writes are refused

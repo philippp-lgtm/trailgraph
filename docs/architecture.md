@@ -14,7 +14,7 @@ docs/                                   documentation
 
 The kernel holds ids, canonical JSON, registries and the ports. The
 ontology layer holds the schema IR `graph_cli.ir/1`: loader, validator,
-compiler, semver classifier (with the rename checks), the migration file format,
+compiler, semver classifier (with the rename checks), the migration file format (`ontology_layer.migration`),
 JSON Schema export and data validation.
 
 ## Layers
@@ -236,6 +236,10 @@ is paid.
 | `services.migration_state` | the app's view of a migration that is committed but not pinned (`GraphEntry.migration`, set by the app's catalog only while the pin is not switched; a marker file left after the switch is no state): `refuse_write` (`write.migration_incomplete`, for `WriteService` before and under the lock) and `read_warning` (`graph.migration_incomplete` when no writer holds the lock, which means the release crashed) |
 | `services.names` | read-time mapping (migration plan M7): `NameMaps` builds the `NameMap` of a graph at its pin from the pin history and the installed release files, `MappedSnapshot` hands out past revisions under the pin's names; a server builds its read service per request and passes every one the same `NameMapCache` (complete maps by graph and pin, bounded, thread safe) |
 | `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources` use it |
+| `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
+| `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
+| `graph_cli_admin.services_admin.catalog_follow` | published function and action catalogs across a release with renames: `follow` decides nothing to do, republish (same sources, new compiled document) or refuse; `write` is the catalog switch shared with `graph <kind> publish` and `graph push` |
+| `graph_cli_admin.services_admin.renamed_terms` | what a release that renames terms does to policy and catalogs: `hazards` (deny rules that would apply to nothing, `admin.policy_renamed_term`) and `references` (where functions, actions and policy name each renamed term) |
 | `ontology_layer.data_validator` | `CallerView`: on the write path, validation judges the whole graph and the view only decides what a finding may say (concealed findings, unknown type and relation answers over the filtered model) |
 
 The write path keeps two snapshots for such a caller: the raw one is the truth

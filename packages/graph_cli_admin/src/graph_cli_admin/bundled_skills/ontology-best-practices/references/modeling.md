@@ -186,13 +186,14 @@ How to cut:
   sentence such as "a copy is never linked to a member" is not checked; a
   relation with a `domain` and `range` is, and the write path refuses a
   wrong edge and names the relations that do connect the two types.
-- **Moving a term to another module changes its CURIE.** That is a removal
-  plus an addition, so a major change with a data migration: add the term
-  in the new module, move the data, then remove the old term.
-  For a class or relation, `renamed_from` may name the old term by its CURIE
-  (`renamed_from: old:Name`), which `ontology diff` reports as a rename
-  instead of a removal plus an addition
-  ([versioning](versioning_and_release.md#releasing-a-modular-graph)).
+- **Moving a term to another module changes its CURIE.** The term names its
+  old CURIE in `renamed_from` (`renamed_from: old:Name`, for a class or a
+  relation): `ontology diff` reports a rename, and on a graph with data the
+  release carries a `migration.yaml` that moves the entities in place, with
+  their ids, aliases and history ([migrations](migrations.md), with a worked
+  split). Without the hint the move is a removal plus an addition, which
+  data cannot follow: add the term in the new module, move the data with
+  normal writes, then remove the old term in a major release.
 
 ## Anti-patterns
 

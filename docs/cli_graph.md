@@ -215,7 +215,35 @@ carries the warning `temporal.as_of_read` with `{as_of, seq, head_seq,
 ontology_version}` (the version the state was written under, that is of the
 revisions its last transaction wrote). A
 next-page command repeats `--as-of tx:<seq>`, also after a time, so it
-reads the same state.
+reads the same state. A seq after the last transaction or a time without
+an offset is `usage.invalid_argument`. An earlier state is history, so
+`--as-of` also needs `read.history` (see
+[Access control: History](access_control.md#history)).
+
+Every write is a change set that commits completely or not at all;
+validation findings, refusals and dry runs are described in
+[Architecture: write pipeline](architecture.md#write-pipeline).
+
+A `data.referential.domain_violation` or `data.referential.range_violation`
+finding (also in `graph check`) carries `connecting`, computed from the
+ontology alone: `direct` lists the relations that accept the two types in
+either direction, and only when there are none, `paths` lists up to three
+chains of two relations over an intermediate class (each hop is `{relation,
+from, to}`). Relations with an open domain or range, such as the provenance
+relations, and deprecated relations are never listed; an abstract class is
+never the intermediate one. The text output adds a line `connect with: a -rel->
+b`.
+
+A write that leaves an entity as it was (its content after all ops of the
+document equals its current revision: `--add` of a value already there,
+`--set` to the current value, an `add` and a `remove` that cancel out)
+gives it no new revision. Its entry in `data.entities` has `changed:
+false` and the current `rev`, and the answer, a dry run too, carries the
+warning `entity.unchanged {ids, count}`. A document that changes no
+entity commits no transaction: `tx_id`, `seq` and `event_id` are null, no
+audit event and no idempotency key are recorded (a retry is evaluated
+again), and the exit code is 0. Expectations (`--expect`, `expect_seq`)
+and errors are checked as for any write.
 
 ### Earlier revisions under current names
 
@@ -252,35 +280,14 @@ model does not know:
   called now ("inv:Item was renamed to inv:Product in 2.0.0", each step for
   a name renamed in several releases), with `details.renamed: [{from, to,
   steps: [{to, in, class?, how?}]}]`. A name whose new term the caller cannot
-  see gets no hint. A seq after the last transaction or a time without
-an offset is `usage.invalid_argument`. An earlier state is history, so
-`--as-of` also needs `read.history` (see
-[Access control: History](access_control.md#history)).
+  see gets no hint.
 
-Every write is a change set that commits completely or not at all;
-validation findings, refusals and dry runs are described in
-[Architecture: write pipeline](architecture.md#write-pipeline).
-
-A `data.referential.domain_violation` or `data.referential.range_violation`
-finding (also in `graph check`) carries `connecting`, computed from the
-ontology alone: `direct` lists the relations that accept the two types in
-either direction, and only when there are none, `paths` lists up to three
-chains of two relations over an intermediate class (each hop is `{relation,
-from, to}`). Relations with an open domain or range, such as the provenance
-relations, and deprecated relations are never listed; an abstract class is
-never the intermediate one. The text output adds a line `connect with: a -rel->
-b`.
-
-A write that leaves an entity as it was (its content after all ops of the
-document equals its current revision: `--add` of a value already there,
-`--set` to the current value, an `add` and a `remove` that cancel out)
-gives it no new revision. Its entry in `data.entities` has `changed:
-false` and the current `rev`, and the answer, a dry run too, carries the
-warning `entity.unchanged {ids, count}`. A document that changes no
-entity commits no transaction: `tx_id`, `seq` and `event_id` are null, no
-audit event and no idempotency key are recorded (a retry is evaluated
-again), and the exit code is 0. Expectations (`--expect`, `expect_seq`)
-and errors are checked as for any write.
+While a release's migration is committed but the pin is not switched yet (a release
+running, or interrupted), reads use the target version's names; `graph.migration_incomplete`
+warns when no release is running, which means it crashed, and every write is refused with
+`write.migration_incomplete` until a maintainer runs the release again ([graph-admin: An
+interrupted release](cli_graph_admin.md#releasing-with-a-data-migration)). Nothing helps from
+the app side: ask the maintainer.
 
 ## Fewer fields
 

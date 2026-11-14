@@ -10,6 +10,7 @@ installation stream.
 | `audit.events` | builders for write intents, refusals, maintenance events (the `change` of a release, pin and migration intent), graph genesis and anchors; each routes its event to the graph or the installation stream |
 | `audit.schema` | the event shape; builders refuse their own output if it misses it |
 | `audit.verify` | `verify_stream` over raw lines, `cross_check` (tx log against write and migration intents), `check_migrations` (migration txs: kept identity, versions, digest, the pin that follows), `check_maintenance` (release and pin intents against their effects, pin events against the manifest, skill, function catalog and action catalog events against the published slots), `check_policy` and `check_policy_hashes` (installed policies and the policy behind every graph-stream decision), `check_anchors`, and `verify_graph` / `verify_installation` composing them |
+| `audit.pins` | the chain of versions a graph was pinned to, read from the `maint.ontology_pin` intents of its stream (the name map's input; not verified, `audit verify` does that) |
 | `audit.finding_codes` | `integrity.audit.*` |
 
 ## Verification

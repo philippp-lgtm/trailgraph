@@ -1,0 +1,29 @@
+format: graph_cli.ir/1
+module:
+  id: equipment
+  prefix: equip
+  version: 1.0.0
+  summary: Tools and their manuals.
+  imports:
+    - {module: files, version: "^1.0"}
+
+classes:
+  Tool:
+    summary: Equipment that a task needs; the gadgets of 1.0.0 are tools now.
+    display_prefix: TOOL
+    renamed_from: wk:Tool
+    attributes:
+      name:
+        summary: Name of the tool.
+        type: string
+        required: true
+        role: label
+  Manual:
+    summary: A scanned manual of a tool.
+    is_a: files:File
+    display_prefix: MAN
+    renamed_from: wk:Manual
+    attributes:
+      edition:
+        summary: Edition of the manual.
+        type: string

@@ -21,6 +21,26 @@ The file is required whenever the release rewrites any revision, also when the o
 rename (then `steps` may be empty): `from`, `summary` and the file itself are the explicit
 opt-in. Without it the release is refused with a hint to the file and to the preview.
 
+## Renames and moves across modules
+
+`renamed_from` is the one source of renames, for classes, relations and attributes. A local
+name (`renamed_from: Task`) means the same module; for a class or a relation the CURIE of the
+old term (`renamed_from: old:Task`, kept as written, no import needed, the old module may be
+gone) moves it to another module. The diff then reports a `rename` (major) instead of a removal
+plus an addition, the data follows with no step, and the alias prefix moves with the class.
+
+`ontology diff` and `ontology release` refuse a `renamed_from` that does not fit the pinned
+release (`ontology.rename_invalid`, every problem with its path): the old term does not exist,
+it still exists in the new version, the new term existed in the old one (the two would merge),
+two terms name the same old one, or the old term is a `core:` or built-in module term
+(`files:`). A `renamed_from` the previous release applied already is only the warning
+`ontology.rename_stale`: remove it from the sources.
+
+Enum values, states, qualifiers, datatypes, enums and lifecycles have no `renamed_from`. An enum,
+datatype or lifecycle that moves to another module shows as a removal, an addition and a
+`change_type` on every attribute that uses it, all major; the stored values still fit, so the
+move needs no step (unless a value goes away: `map_values`).
+
 ## The file
 
 ```yaml
@@ -77,6 +97,66 @@ its old name and replaces that entry in the graph's prefix map, so new entities 
 continue the numbering. A prefix is never freed: a class that is removed without a move keeps
 its prefix reserved.
 
+## A module split, step by step
+
+A graph with one module `workshop` (prefix `wk`) holds projects, tasks, budgets, tools, gadgets
+and manuals (a subclass of `files:File`), with the relations `belongs_to` (task to project) and
+`uses` (task to tool). Version 2.0.0 splits it into the main module `workshop`, which keeps a few
+classes and brings the areas together, and two areas: `planning` (prefix `plan`) and `equipment`
+(prefix `equip`). The gadgets become tools.
+
+1. Copy the version directory to `2.0.0/`. It holds a file per module, also those that did not
+   change. Bump the main module to 2.0.0; the areas start at their own `1.0.0`. The main module
+   imports both areas; an area that needs another imports it (no cycles).
+2. Move each class and relation by naming its old CURIE; the move keeps the display prefix, so
+   the aliases stay (`TASK-0001` is still `TASK-0001`):
+
+   ```yaml
+   # planning.yaml
+   classes:
+     Task:
+       summary: A step of a project.
+       display_prefix: TASK
+       renamed_from: wk:Task
+       attributes:
+         priority: {summary: How soon the task is to be done., type: Priority, required: true}
+   relations:
+     belongs_to:
+       summary: The project that the task is a step of.
+       renamed_from: wk:belongs_to
+       domain: Task
+       range: Project
+   ```
+
+   A `files:File` subclass moves the same way (`renamed_from: wk:Manual` in `equipment.yaml`);
+   its stored content, the edges that cite it and their qualifiers stay.
+3. Merge the gadgets into the tools: `equip:Tool` has `renamed_from: wk:Tool`, `wk:Gadget` is
+   gone, and a step moves its entities (their aliases `GADG-0001` stay and keep resolving):
+
+   ```yaml
+   # migration.yaml
+   format: graph_cli.migration/1
+   from: 1.0.0
+   summary: Split the workshop into planning and equipment; the gadgets are tools now.
+   steps:
+     - retype: {from: wk:Gadget, to: equip:Tool, attributes: {title: name}}
+     - fill: {type: plan:Task, attribute: priority, value: normal}
+     - map_values: {type: plan:Project, attribute: phase, values: {paused: running}}
+   ```
+
+   `fill` answers the new required attribute `priority`, `map_values` the enum value `paused`
+   that the moved enum no longer has.
+4. `graph-admin ontology diff <dir> --module workshop --graph <graph>` lists every rename and
+   the policy rules, functions and actions that still name an old term. Fix the problems
+   it names first ([Functions and actions](#functions-and-actions)).
+5. Apply a policy that names old and new terms of every hidden type or denied term (below), if
+   there is one.
+6. Preview and release as under [Releasing](#releasing), with the version directory as it is.
+   One `graph-admin graph push` carries the ontology, the migration, the functions and the skill.
+7. Afterwards the ids, aliases, edges and history of every entity are the ones before, now
+   read under the new names; `TASK-0004` is the next task, because the prefix moved with the
+   class.
+
 ## Releasing
 
 1. Back up the graph first (a migration rewrites data; the log keeps the old revisions, but
@@ -99,13 +179,31 @@ its prefix reserved.
    then finds it done or finishes it, and never migrates twice.
 5. `graph-admin audit verify` must report no errors.
 
-Before step 4, check what a rename does around the data: `graph-admin ontology diff <dir> --graph
-<graph>` lists per renamed term the functions, actions and policy rules that name the old one.
-A deny rule (`types: {T: none}`, a `deny` entry) that names only the old term is refused
-(`admin.policy_renamed_term`): apply a policy naming both terms first, release, then drop the
-old name. Published functions whose files name the class by its bare name (and a `module:`
-line) are compiled again and published with the release; those that name the old CURIE or a
-renamed attribute are fixed in the same push (`admin.functions_broken`).
+## Functions and actions
+
+Check what a rename does around the data before step 4 of the release: `graph-admin ontology
+diff <dir> --graph <graph>` lists, per renamed term, the functions, actions and policy rules
+that name the old one.
+
+- **Deny rules.** A rule that hides or protects a term by its old name applies to nothing once
+  the term is renamed, so it would fail open. A deny rule (`types: {T: none}`, a `deny` entry,
+  a glob the new name leaves) that names only the old term is refused
+  (`admin.policy_renamed_term`; `ontology diff --graph` warns
+  `admin.policy_renamed_term_affected`): apply a policy naming both terms first (a policy may
+  name terms that do not exist yet), release, then drop the old name. Allow lists (`reads`,
+  `writes`) fail closed and only warn.
+- **Functions.** A published function is stored with resolved names. After a release with
+  renames, those whose source names classes and relations bare (and, with several modules, has a
+  `module:` line that exists in both versions) are compiled again and published with the
+  release (the same sources, a new compiled document). Those that name an old CURIE or a
+  renamed attribute are `admin.functions_broken`: fix them in `functions/` and push them with
+  the ontology. A function without a `module:` line must get one in the same push as soon as the
+  release makes the graph multi-module (`function.module_required`); name a module that exists
+  before and after the split (the main module). A reader with read limits sees a function only
+  while its module has a term that reader sees: a main module without terms of its own hides
+  the function from them, so name an area module in the same push when that matters.
+- **Actions** name their classes by CURIE, so an action that names a class that moves never
+  follows (`admin.actions_broken`): fix its file in the same push.
 
 Only maintainers may migrate (`maint.migrate`); a project admin's release that migrates is
 refused with `access.ceiling`. The file is part of the release: the same version with another

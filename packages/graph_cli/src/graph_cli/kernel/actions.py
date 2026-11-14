@@ -67,10 +67,10 @@ MAINT_ACTIONS: Final = frozenset(
         "token_update",  # a token's roles change (B14.11)
     )
 )
-# Names are part of the closed taxonomy now; their behaviour comes later.
+# Names are part of the closed taxonomy now; their behaviour comes later. ``maint.migrate`` left
+# the set with the migration tool (graph-stream migrations); a later ``graph seal`` shares it.
 RESERVED_ACTIONS: Final = frozenset(
-    Action(a)
-    for a in ("read.native", "maint.migrate", "maint.bundle", "maint.policy_change", "maint.purge")
+    Action(a) for a in ("read.native", "maint.bundle", "maint.policy_change", "maint.purge")
 )
 ACTIONS: Final[frozenset[Action]] = READ_ACTIONS | WRITE_ACTIONS | MAINT_ACTIONS
 
