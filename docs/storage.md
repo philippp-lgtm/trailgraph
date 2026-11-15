@@ -20,8 +20,9 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
 | `storage.files.blob_backend` | the blob seam: the `BlobBackend` protocol through which `FileStore`, its write sessions, the commit check and maintenance reach stored files; `LocalBlobs` over `storage.files.blobs`; `BlobBackends`, which picks the backend from the manifest's blob location (parsed manifests cached per process by the file's identity) |
 | `storage.files.s3_blobs` | `S3Blobs`: stored files in an S3-compatible object store ([Stored files in an object store](#stored-files-in-an-object-store)) |
+| `storage.files.blob_move` | the copy pass of `files move`: both locations listed once, every blob the move covers copied to the location the manifest does not name, each verified ([Stored files in an object store](#stored-files-in-an-object-store)) |
 | `storage.files.store_marker` | the object store's marker `graph_cli_store.json`: creating it, reading it, and the per-process cache of the identity check |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `misplaced_blobs`, `remove_blobs`, `recover`, `reindex` (admin only); the object store client for `files store check` |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `misplaced_blobs`, `remove_blobs`, `copy_blobs` (the copy passes of `files move`), `recover`, `reindex` (admin only); the object store client for `files store check` |
 | `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (`storage.files.s3_blobs` and `storage.files.store_marker` use it) |
 
 ## FileStore
@@ -298,7 +299,7 @@ fixed key order.
   program that knows only format 1 refuses it by the top-level
   `format_version`, so no older program reads or rewrites such a graph.
   A later storage feature gets a new feature name, not a new format number.
-- The one feature so far is `blobs.s3` (in development): the stored files are
+- The one feature so far is `blobs.s3`: the stored files are
   in an S3-compatible object store, named by `[store.blobs]` with
   `location = "s3"` and the object store's `store_id` (a UUID). `requires`
   and `[store.blobs]` must agree, and a format-1 manifest carries neither;

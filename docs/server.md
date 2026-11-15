@@ -592,6 +592,27 @@ Moving an existing data root into the container:
    [remote mode](#remote-mode-of-graph) (with a code: `graph connect`,
    [Enrollment](#enrollment)).
 
+### Stored files in an object store
+
+To keep stored files in an S3-compatible object store
+([Object storage](files.md#object-storage-optional)), set `[files] store =
+"s3"` and the non-secret `[files.s3]` keys in
+`/config/graph_cli/config.toml` ([Configuration](configuration.md#object-storage))
+and give the container the credentials as environment variables
+(`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; the bucket, endpoint and
+region may come the same way), from the orchestrator's secret store (for
+example a Kubernetes Secret through `envFrom`, or an `env_file` kept out of
+git), never in the config file, which refuses unknown keys for that
+reason. Every process in the container that touches stored files needs
+them: the server, `graph-admin` in it and its live view. An endpoint inside
+a private cluster network is often plain `http://`; that needs
+`allow_plain_http = true`, and the bytes then travel in clear inside that
+network (each download is still checked against its hash). The
+[download route](#downloads) streams from the store; the server needs no
+disk space for file copies. Then run `graph-admin files store check` in the
+container, and move existing graphs with `graph-admin files move`
+(back up the data root first).
+
 `docker build --target test .` runs the whole test suite on Linux in the
 image. Each release publishes the runtime image to the GitHub container
 registry of the repository ([CI and releases](../CONTRIBUTING.md#ci-and-releases)).
