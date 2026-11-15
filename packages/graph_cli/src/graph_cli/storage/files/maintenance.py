@@ -158,9 +158,9 @@ class FileStoreMaintenance:
     def store(self, graph: GraphId) -> FileStore:
         """The graph's store, after the checks ``FileCatalog.file_store`` makes
         (``store_format.check_store``): an unsupported manifest format, feature, backend or
-        blob location is refused. A manifest that cannot be read at all is left to the
-        caller: ``verify`` reports it (``pin_mismatch``), a missing graph is
-        ``backend.unavailable`` on first use."""
+        layout is refused; object store settings are checked on blob access. A manifest
+        that cannot be read at all is left to the caller: ``verify`` reports it
+        (``pin_mismatch``), a missing graph is ``backend.unavailable`` on first use."""
         root = self.data_root / "graphs" / str(graph)
         try:
             manifest = read_manifest(GraphLayout(root))[0]
@@ -168,11 +168,7 @@ class FileStoreMaintenance:
             if exc.code != "config.invalid":
                 raise
         else:
-            check_store(
-                manifest,
-                object_store=self.object_store,
-                object_store_problem=self.object_store_problem,
-            )
+            check_store(manifest)
         return FileStore(
             root,
             graph,
@@ -636,7 +632,7 @@ class FileMaintenanceSession:
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
-        return [b for b in self._store.blob_backend().listing() if b.hash not in referenced]
+        return self._store.blob_backend().collectable(referenced)
 
     def staging(self) -> Iterator[tuple[str, datetime]]:
         self._check_open()

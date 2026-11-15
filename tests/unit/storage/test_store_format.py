@@ -2,8 +2,9 @@
 
 ``FileCatalog.file_store`` (app, server) and ``FileStoreMaintenance.store`` (graph-admin,
 ``files verify|gc``, ``audit verify``) refuse the same manifests: another backend or
-layout, an unknown manifest format or storage feature, and, in this build, a graph whose
-stored files are in an object store.
+layout, an unknown manifest format or storage feature. A graph whose stored files are in
+an object store opens without object store settings; its blob access is refused instead
+(``unusable_object_store``), naming what is missing.
 """
 
 from collections.abc import Callable
@@ -21,6 +22,7 @@ from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.manifest import format_manifest
 from graph_cli.storage.files.releases import read_manifest
+from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.s3.settings import ObjectStoreCredentials, ObjectStoreSettings
 
 STORE_ID = "4b0c9f3e-2d1a-4c5b-9e8f-7a6b5c4d3e2f"
@@ -138,12 +140,32 @@ def test_unsupported_manifests_are_refused_by_every_opener(
     assert refusal(inst, graph, opener(SETTINGS)).code == "format.unsupported_version"
 
 
-def test_an_object_store_graph_without_settings_names_what_is_missing(
+def test_an_object_store_graph_opens_without_settings(
     inst: Installation, opener: Callable[..., Opener]
+) -> None:
+    """Reads that touch no file never need the object store (O4)."""
+    graph = inst.create()
+    move_to_object_store(inst, graph)
+    opener()(inst, graph)
+    opener(None, PROBLEM)(inst, graph)
+    opener(SETTINGS)(inst, graph)
+
+
+def blob_refusal(store: object) -> GraphCliError:
+    assert isinstance(store, FileStore)
+    with pytest.raises(GraphCliError) as caught:
+        store.blob("sha256:" + "0" * 64)
+    return caught.value
+
+
+@pytest.mark.parametrize("opener_name", ["catalog", "maintenance"])
+def test_blob_access_without_settings_names_what_is_missing(
+    inst: Installation, opener_name: str
 ) -> None:
     graph = inst.create()
     move_to_object_store(inst, graph)
-    error = refusal(inst, graph, opener(None, PROBLEM))
+    opener = OPENERS[opener_name]
+    error = blob_refusal(opener(None, PROBLEM)(inst, graph))
     assert error.code == "backend.unavailable"
     assert str(graph) in error.message
     assert "files.s3.bucket is missing" in error.message
@@ -154,20 +176,9 @@ def test_an_object_store_graph_without_settings_names_what_is_missing(
         "cause": "config.invalid",
         "key": "files.s3.bucket",
     }
-    plain = refusal(inst, graph, opener())
+    plain = blob_refusal(opener()(inst, graph))
     assert (plain.code, plain.details.get("cause")) == ("backend.unavailable", None)
-
-
-def test_an_object_store_graph_is_refused_until_the_backend_exists(
-    inst: Installation, opener: Callable[..., Opener]
-) -> None:
-    """Never read as if its files were local (a missing-file storm)."""
-    graph = inst.create()
-    move_to_object_store(inst, graph)
-    error = refusal(inst, graph, opener(SETTINGS))
-    assert error.code == "backend.unavailable"
-    assert error.details["store_id"] == STORE_ID
-    assert "example-secret-value" not in error.message + repr(error.details)
+    assert "no object store is configured" in plain.message
 
 
 def test_disagreeing_requires_is_refused_by_the_catalog(inst: Installation) -> None:

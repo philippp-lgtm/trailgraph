@@ -55,8 +55,8 @@ unknown `format_version` or an invalid value stops the command.
 
 Keeping stored files in an S3-compatible object store is in development and
 not usable yet: this version creates every graph with its files in the data
-root and refuses a graph whose files are in an object store. The settings
-are read and checked already:
+root and cannot move a graph's files to an object store. The settings are
+read and checked already:
 
 ```toml
 [files]

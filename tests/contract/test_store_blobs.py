@@ -1,13 +1,20 @@
-"""Blob port contract (files slice 1: stage, publish, read; tx ``blobs``; B13.2 capability)."""
+"""Blob port contract (files slice 1: stage, publish, read; tx ``blobs``; B13.2 capability).
+
+Besides the global backends, this suite runs on ``s3``: a file store whose stored files
+are in the fake object store (object storage O10; its own behaviour is in
+``tests/unit/storage/test_s3_blobs.py``).
+"""
 
 import hashlib
 import os
 import stat
 from collections.abc import Iterator
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
-from support.stores import StoreEnv, snapshot_state
+from support.fake_s3 import FakeS3
+from support.stores import BLOB_BACKENDS, StoreEnv, snapshot_state
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH
@@ -17,6 +24,20 @@ from graph_cli.storage.files.store import FileStore
 
 CONTENT = b"%PDF-1.4\nsynthetic test bytes\n"
 DIGEST = "sha256:" + hashlib.sha256(CONTENT).hexdigest()
+
+
+@pytest.fixture(params=BLOB_BACKENDS)
+def backend(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+@pytest.fixture
+def env(backend: str, ontology: str, tmp_path: Path) -> Iterator[StoreEnv]:
+    if backend != "s3":
+        yield StoreEnv(backend, ontology, tmp_path)
+        return
+    with FakeS3() as fake:
+        yield StoreEnv(backend, ontology, tmp_path, object_store=fake.settings())
 
 
 def _staging(env: StoreEnv) -> list[str]:
@@ -114,7 +135,7 @@ def test_a_tx_naming_an_unstored_blob_is_refused(env: StoreEnv) -> None:
 def test_local_path_is_a_capability_of_the_file_store(env: StoreEnv) -> None:
     env.write_blobs(lambda d: d.create(), [CONTENT])
     path = env.store.blob_local_path(DIGEST)
-    if env.backend == "memory":
+    if env.backend in ("memory", "s3"):
         assert CAPABILITY_BLOB_LOCAL_PATH not in env.store.capabilities()
         assert path is None
         return

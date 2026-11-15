@@ -3,8 +3,9 @@
 ``FileStore`` keeps the tx log, revisions, index, audit and manifest itself and hands
 the bytes of stored files to a ``BlobBackend``. ``LocalBlobs`` keeps them in the graph
 directory's ``blobs/`` (``storage.files.blobs``, unchanged layout, modes and crash
-points). The protocol is internal to ``graph_cli.storage``; the kernel ports keep
-their shape and only ``GraphStoreWrite.promote_blobs`` reaches it from the services.
+points); ``S3Blobs`` (``storage.files.s3_blobs``) in an S3-compatible object store.
+The protocol is internal to ``graph_cli.storage``; the kernel ports keep their shape
+and only ``GraphStoreWrite.promote_blobs`` reaches it from the services.
 
 Which backend serves a graph follows from its manifest (``[store]`` ``blob_location``),
 never from the installation's ``[files] store``, and ``BlobBackends.backend`` is the
@@ -13,7 +14,8 @@ one place that turns a manifest into a backend:
 - a ``FileSession`` binds the backend on its first blob use, under the graph lock
   (``publish_blob`` and the commit check), and keeps it for the session, so a tx never
   references a blob outside the location the manifest names while the lock is held;
-- readers stay lock-free and resolve the backend per call;
+- readers stay lock-free and resolve the backend per call (the parsed manifest is
+  cached per process, see ``blob_manifest``);
 - a graph directory whose manifest is missing or unreadable is served by
   ``LocalBlobs``, as before blob locations existed: storage tests build stores without
   one, and maintenance reports an unreadable manifest itself (``verify``). The catalog
@@ -31,11 +33,15 @@ the lock, KB1/KB2), then the commit check asks ``missing`` for the tx's blobs.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping, Sequence, Set
+import os
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding
@@ -47,7 +53,7 @@ from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Syncer
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest
-from graph_cli.storage.files.store_format import check_store
+from graph_cli.storage.files.s3_blobs import ClientFactory, S3Blobs
 from graph_cli.storage.s3.settings import ObjectStoreSettings
 
 
@@ -110,10 +116,16 @@ class BlobBackend(Protocol):
         log cannot be read whole (no orphans then); ``rehash`` reads every stored blob."""
         ...
 
+    def collectable(self, referenced: Set[str]) -> list[BlobInfo]:
+        """The stored blobs ``files gc`` may remove now: unreferenced and, in an object
+        store, older than the grace period by the store's clock; in hash order."""
+        ...
+
     def remove(
         self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
     ) -> Mapping[str, int]:
-        """Delete unreferenced blobs and staging leftovers; how many of each went."""
+        """Delete unreferenced blobs (an object store keeps those younger than the grace
+        period) and staging leftovers; how many of each went."""
         ...
 
     def target(self, digest: str) -> str:
@@ -164,6 +176,9 @@ class LocalBlobs:
     def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
         return blobs.verify(self.layout, referenced, rehash_all=rehash)
 
+    def collectable(self, referenced: Set[str]) -> list[BlobInfo]:
+        return [blob for blob in blobs.listing(self.layout) if blob.hash not in referenced]
+
     def remove(
         self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
     ) -> Mapping[str, int]:
@@ -173,16 +188,51 @@ class LocalBlobs:
         return blobs.relative(self.layout, digest)
 
 
+_MANIFEST_CACHE_SIZE: Final = 256
+_ManifestKey = tuple[int, int, int, int]
+_manifest_lock = threading.Lock()
+_manifests: OrderedDict[str, tuple[_ManifestKey, ManifestData]] = OrderedDict()
+
+
+def _manifest_key(path: Path) -> _ManifestKey | None:
+    try:
+        status = os.stat(path)
+    except OSError:
+        return None
+    return (status.st_dev, status.st_ino, status.st_mtime_ns, status.st_size)
+
+
 def blob_manifest(layout: GraphLayout) -> ManifestData | None:
     """The manifest that decides the graph's blob location; ``None`` when it is missing
     or unreadable (``config.invalid``), which means local. An unknown format or feature
-    is raised: no backend is guessed for it."""
+    is raised: no backend is guessed for it.
+
+    Parsed manifests are cached per process, keyed by the file's device, inode,
+    modification time and size: graph-admin replaces a manifest by a rename (a new
+    inode), so a replaced manifest is never served from the cache. A manifest that
+    changed while it was read is not cached."""
+    path = layout.manifest
+    name = str(path)
+    before = _manifest_key(path)
+    if before is not None:
+        with _manifest_lock:
+            hit = _manifests.get(name)
+            if hit is not None and hit[0] == before:
+                _manifests.move_to_end(name)
+                return hit[1]
     try:
-        return read_manifest(layout)[0]
+        manifest = read_manifest(layout)[0]
     except GraphCliError as exc:
         if exc.code != "config.invalid":
             raise
         return None
+    if before is not None and _manifest_key(path) == before:
+        with _manifest_lock:
+            _manifests[name] = (before, manifest)
+            _manifests.move_to_end(name)
+            while len(_manifests) > _MANIFEST_CACHE_SIZE:
+                _manifests.popitem(last=False)
+    return manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +243,10 @@ class BlobBackends:
     object_store: ObjectStoreSettings | None = None
     # why ``object_store`` is ``None``, when it is known (the configuration error)
     object_store_problem: GraphCliError | None = None
+    # tests: the object store client (default ``ObjectStoreClient``) and the monotonic
+    # clock of the store marker cache
+    client_factory: ClientFactory | None = None
+    monotonic: Callable[[], float] = time.monotonic
 
     def backend(
         self,
@@ -204,15 +258,17 @@ class BlobBackends:
     ) -> BlobBackend:
         if manifest is None or manifest.store.blob_location == "local":
             return LocalBlobs(layout, syncer=syncer, faults=faults)
-        # The object store backend is built here from ``self.object_store``. Until it
-        # exists, the graph is refused as ``check_store`` refuses it when it is opened.
-        check_store(
+        # No I/O and no settings check here: S3Blobs refuses unusable settings and a
+        # foreign bucket on blob access, so a read that touches no file never needs them.
+        return S3Blobs(
+            layout,
             manifest,
-            object_store=self.object_store,
-            object_store_problem=self.object_store_problem,
-        )
-        raise GraphCliError(
-            "internal.error", f"no blob backend for {manifest.store.blob_location!r}"
+            settings=self.object_store,
+            settings_problem=self.object_store_problem,
+            syncer=syncer,
+            faults=faults,
+            client_factory=self.client_factory,
+            monotonic=self.monotonic,
         )
 
     def capabilities(self, manifest: ManifestData | None) -> frozenset[str]:

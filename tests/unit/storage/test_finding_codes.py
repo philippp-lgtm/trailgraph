@@ -40,6 +40,8 @@ def test_crash_points_cover_the_contract_table() -> None:
         "blob.after_stage",
         "blob.before_rename",
         "blob.after_rename",
+        "blob.after_upload",
+        "blob.before_staging_removal",
     }
     assert {p.value for p in CrashPoint} - {
         p.value for p in EXTRA_POINTS | MAINT_POINTS

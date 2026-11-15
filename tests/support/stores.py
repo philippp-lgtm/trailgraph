@@ -23,21 +23,27 @@ from graph_cli.kernel.ports.storage import CommitResult, Head, Snapshot
 from graph_cli.kernel.query_ast import Query
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
+from graph_cli.storage.files.blob_backend import BlobBackends
 from graph_cli.storage.files.layout import init_graph_dir
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.store import FileStore
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
 from graph_cli.storage.memory.store import InMemoryStore
+from graph_cli.storage.s3.settings import ObjectStoreSettings
 from support import audit_events
 from support.clock import StepClock
 from support.drafts import intent
 from support.ids import SeededIdProvider
 from support.memlog import model
 from support.migrations import MigrationDraft, begin_migration
+from support.s3_graphs import move_to_object_store
 from support.txbuilder import FuncState, TxBuilder, TxDraft
 
 ALL_STATUSES = frozenset({"active", "superseded", "retracted"})
 BACKENDS = ("memory", "files")
+# The blob suites add "s3": a file store whose stored files are in the fake object store
+# (``StoreEnv.object_store`` names it); never the global backend list (O10).
+BLOB_BACKENDS = (*BACKENDS, "s3")
 
 Store = InMemoryStore | FileStore
 
@@ -112,6 +118,7 @@ class StoreEnv:
     seed: int = 0
     faults: FaultSwitch = field(default_factory=FaultSwitch)
     real_audit: bool = False  # graph_cli.audit events instead of minimal drafts
+    object_store: ObjectStoreSettings | None = None  # backend "s3": the fake's settings
 
     def __post_init__(self) -> None:
         self.clock = StepClock()
@@ -127,7 +134,7 @@ class StoreEnv:
         )
         self.syncer = RecordingSyncer()
         self.store, self.audit = make_backend(
-            self.backend, self.graph_id, self.root, self.faults, self.syncer
+            self.backend, self.graph_id, self.root, self.faults, self.syncer, self.object_store
         )
 
     def audit_head(self) -> tuple[int, str]:
@@ -182,7 +189,9 @@ class StoreEnv:
                 yield session
             return
         root = self.store.layout.root.parent.parent
-        maintenance = FileStoreMaintenance(root, syncer=self.syncer, faults=self.faults)
+        maintenance = FileStoreMaintenance(
+            root, syncer=self.syncer, faults=self.faults, object_store=self.object_store
+        )
         with maintenance.maintenance_session(self.graph_id, timeout_s=5) as session:
             yield session
 
@@ -212,7 +221,12 @@ class StoreEnv:
 
 
 def make_backend(
-    backend: str, graph_id: GraphId, root: Path, faults: FaultSwitch, syncer: RecordingSyncer
+    backend: str,
+    graph_id: GraphId,
+    root: Path,
+    faults: FaultSwitch,
+    syncer: RecordingSyncer,
+    object_store: ObjectStoreSettings | None = None,
 ) -> tuple[Store, AuditSink]:
     if backend == "memory":
         audit = InMemoryAuditLog(faults=faults)
@@ -221,5 +235,18 @@ def make_backend(
         graph_dir = root / "graphs" / str(graph_id)
         init_graph_dir(graph_dir, syncer)
         store = FileStore(graph_dir, graph_id, syncer=syncer, faults=faults)
+        return store, FileAuditLog(root, syncer=syncer, faults=faults)
+    if backend == "s3":
+        assert object_store is not None, "the s3 backend needs the fake's settings"
+        graph_dir = root / "graphs" / str(graph_id)
+        init_graph_dir(graph_dir, syncer)
+        move_to_object_store(graph_dir, graph_id, object_store)
+        store = FileStore(
+            graph_dir,
+            graph_id,
+            syncer=syncer,
+            faults=faults,
+            blob_backends=BlobBackends(object_store),
+        )
         return store, FileAuditLog(root, syncer=syncer, faults=faults)
     raise AssertionError(f"unknown backend {backend!r}")

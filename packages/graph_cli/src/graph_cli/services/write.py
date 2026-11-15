@@ -78,7 +78,8 @@ about entities the caller does not see are concealed by the validator, and the r
 entities of visible types. A write of any other caller is unchanged, byte for byte.
 
 The command's timings get the phases ``model``, ``snapshot``, ``resolve``,
-``authorize``, ``lock`` (waiting for and taking the graph lock, with the
+``authorize``, ``promote`` (a request with staged blobs: their upload to an object
+store), ``lock`` (waiting for and taking the graph lock, with the
 recovery of an interrupted write), ``normalize``, ``validate``, ``audit``
 (the intent or a refusal) and ``commit``.
 """
@@ -589,7 +590,8 @@ class WriteService:
     def _apply(self, request: WriteRequest) -> WriteResult:
         prepared = self._prepare(request, None)
         if request.blobs:  # W.5b
-            prepared.write.promote_blobs(request.blobs)
+            with self.timings.phase("promote"):
+                prepared.write.promote_blobs(request.blobs)
         with ExitStack() as stack:
             with self.timings.phase("lock"):
                 session = stack.enter_context(

@@ -3,8 +3,8 @@
 ``LocalBlobs`` implements ``BlobBackend`` over ``storage.files.blobs``; a store resolves
 the backend from the manifest per read, a write session binds it on first blob use under
 the lock, and the commit check asks the bound backend. A manifest that names an object
-store is refused on blob access only, as ``check_store`` refuses it, until that backend
-exists.
+store gets ``S3Blobs`` (``test_s3_blobs.py``), which refuses blob access without usable
+settings. Parsed manifests are cached by the file's identity.
 """
 
 import hashlib
@@ -23,9 +23,17 @@ from graph_cli.kernel.ids import EventId, TermRef
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, CAPABILITY_SNAPSHOT_AT_SEQ
 from graph_cli.kernel.records import BlobInfo, OntologyPin
-from graph_cli.storage.files.blob_backend import BlobBackend, BlobBackends, LocalBlobs
+from graph_cli.storage.files import blob_backend
+from graph_cli.storage.files.blob_backend import (
+    BlobBackend,
+    BlobBackends,
+    LocalBlobs,
+    blob_manifest,
+)
+from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.maintenance import FileStoreMaintenance
 from graph_cli.storage.files.manifest import format_manifest
+from graph_cli.storage.files.s3_blobs import S3Blobs
 from graph_cli.storage.files.store import FileStore
 
 CONTENT = b"stored bytes\n"
@@ -77,6 +85,7 @@ def test_local_blobs_has_every_member_of_the_protocol() -> None:
         "listing",
         "staging",
         "verify",
+        "collectable",
         "remove",
         "target",
     }
@@ -107,27 +116,63 @@ def test_a_store_without_an_object_store_manifest_uses_local_blobs(
     assert b"".join(store.read_blob(DIGEST)) == CONTENT
 
 
-def test_an_object_store_manifest_is_refused_on_blob_access_only(env: StoreEnv) -> None:
+def test_an_object_store_manifest_without_settings_is_refused_on_blob_access_only(
+    env: StoreEnv,
+) -> None:
     env.write_blobs(lambda d: d.create(), [CONTENT])
     write_manifest(env, OBJECT_STORE)
     store = store_of(env)
-    for touch in (
-        lambda: store.blob(DIGEST),
-        lambda: store.read_blob(DIGEST),
-        lambda: store.blob_local_path(DIGEST),
-        lambda: store.stage_blob([CONTENT], max_bytes=100),
-        lambda: store.promote_blobs([object()]),  # type: ignore[list-item]
-    ):
-        with pytest.raises(GraphCliError) as caught:
-            touch()
-        assert caught.value.code == "backend.unavailable"
-        assert caught.value.details["store_id"] == STORE_ID
-    # reads and writes that touch no file need no blob backend
+    assert isinstance(store.blob_backend(), S3Blobs)  # built without any I/O or check
+    staged = store.stage_blob([CONTENT], max_bytes=100)  # staging stays local
+    try:
+        for touch in (
+            lambda: store.blob(DIGEST),
+            lambda: store.read_blob(DIGEST),
+            lambda: store.promote_blobs([staged]),
+            lambda: list(store.blob_backend().listing()),
+        ):
+            with pytest.raises(GraphCliError) as caught:
+                touch()
+            assert caught.value.code == "backend.unavailable"
+            assert caught.value.details["store_id"] == STORE_ID
+            assert str(env.graph_id) in caught.value.message
+    finally:
+        staged.discard()
+    assert store.blob_local_path(DIGEST) is None  # no local paths, nothing to ask
+    # reads and writes that touch no file need no object store
     assert store.capabilities() == {CAPABILITY_SNAPSHOT_AT_SEQ}
     assert store.snapshot().seq == 1
     store.promote_blobs([])
     env.write(lambda d: d.create())
     assert store.head().seq == 2
+
+
+def test_parsed_manifests_are_cached_by_the_file_identity(
+    env: StoreEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_manifest(env, StoreInfo("files", 1))
+    layout = store_of(env).layout
+    parsed: list[Path] = []
+    real = blob_backend.read_manifest
+
+    def counting(layout: GraphLayout) -> Any:
+        parsed.append(layout.manifest)
+        return real(layout)
+
+    monkeypatch.setattr(blob_backend, "read_manifest", counting)
+    first = blob_manifest(layout)
+    assert blob_manifest(layout) is first
+    assert len(parsed) == 1
+    # replaced by rename (a new inode), as graph-admin replaces it
+    data = format_manifest(ManifestData(first.entry, first.created_at, OBJECT_STORE))  # type: ignore[union-attr]
+    tmp = layout.manifest.with_name("manifest.toml.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(layout.manifest)
+    second = blob_manifest(layout)
+    assert second is not None and second.store == OBJECT_STORE
+    assert len(parsed) == 2
+    layout.manifest.unlink()
+    assert blob_manifest(layout) is None
 
 
 def test_the_session_binds_the_manifest_location_under_the_lock(env: StoreEnv) -> None:

@@ -275,7 +275,8 @@ class MaintenanceSession(WriteSession, Protocol):
         ...
 
     def orphan_blobs(self) -> Sequence[BlobInfo]:
-        """Stored blobs no tx names; ``backend.corrupt`` when the tx log is damaged."""
+        """Stored blobs no tx names that may be removed now (an object store keeps young
+        ones for a grace period); ``backend.corrupt`` when the tx log is damaged."""
         ...
 
     def staging(self) -> Iterator[tuple[str, datetime]]:

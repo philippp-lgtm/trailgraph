@@ -6,8 +6,9 @@ read. Staging directories (``.tmp-*``) and anything that is not a canonical
 graph id are ignored. Reads create nothing; a missing data root is
 ``backend.unavailable``.
 
-The catalog holds the installation's object store settings (``catalog.object_store``)
-and checks every graph it opens against them (``storage.files.store_format``).
+The catalog checks the store format of every graph it opens
+(``storage.files.store_format``) and hands the installation's object store settings
+(``catalog.object_store``) to its stores, whose blob backend checks them on blob access.
 """
 
 from __future__ import annotations
@@ -184,11 +185,7 @@ class FileCatalog:
         return store, store
 
     def file_store(self, graph: GraphId) -> FileStore:
-        check_store(
-            self.manifest(graph),
-            object_store=self.object_store,
-            object_store_problem=self.object_store_problem,
-        )
+        check_store(self.manifest(graph))
         return FileStore(
             self._layout(graph).root,
             graph,

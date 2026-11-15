@@ -282,6 +282,10 @@ class ObjectStoreClient:
     def __repr__(self) -> str:
         return f"ObjectStoreClient(bucket={self._settings.bucket!r})"
 
+    @property
+    def bucket(self) -> str:
+        return self._settings.bucket
+
     # -- public calls ---------------------------------------------------------------------
 
     def put_object(self, key: str, body: BinaryIO, size: int, sha256_hex: str) -> None:

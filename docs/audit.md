@@ -116,6 +116,7 @@ claimed, so the phases add up to `total`:
 | `resolve` | a write resolving its references; `query` resolving names, fields and parameters against the model |
 | `execute` | `query` matching patterns and computing the rows |
 | `stage` | `file add` hashing and staging the file |
+| `promote` | `file add` handing the staged file to the graph's file store once the write is authorized (the upload when the graph keeps its files in an object store) |
 | `lock` | a write waiting for and taking the graph lock, including the recovery of an interrupted write |
 | `normalize` | applying the ops to a working copy |
 | `validate` | checking the result against the ontology |

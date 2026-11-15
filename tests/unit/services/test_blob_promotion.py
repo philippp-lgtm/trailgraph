@@ -4,15 +4,19 @@ A store that keeps stored files elsewhere uploads them in ``promote_blobs``, so 
 that is denied, names a missing entity or is a dry-run must never reach it, and an
 allowed one reaches it once, before its session takes the graph lock. Validation (W.11)
 runs under the lock: an authorized request found invalid there has promoted its blobs.
+The ``s3`` parameter checks the fake object store's bucket as well: a denied add leaves
+no object there.
 """
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from support.fake_s3 import FakeS3
+from support.s3_graphs import blob_keys
 from support.services import ServiceEnv
 
 from graph_cli.access_control.policy import PolicySet
@@ -28,9 +32,18 @@ TEXT = b"plain text for the promotion tests\n"
 DIGEST = "sha256:" + hashlib.sha256(TEXT).hexdigest()
 
 
-@pytest.fixture(params=["memory", "files"])
-def svc(request: pytest.FixtureRequest, tmp_path: Path) -> ServiceEnv:
-    return ServiceEnv(str(request.param), "notes_and_sources", tmp_path / "root", version="1.1.0")
+@pytest.fixture(params=["memory", "files", "s3"])
+def svc(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[ServiceEnv]:
+    """Both backends, and a files graph whose stored files are in the fake object store."""
+    backend = str(request.param)
+    root = tmp_path / "root"
+    if backend != "s3":
+        yield ServiceEnv(backend, "notes_and_sources", root, version="1.1.0")
+        return
+    with FakeS3() as fake:
+        yield ServiceEnv(
+            backend, "notes_and_sources", root, version="1.1.0", object_store=fake.settings()
+        )
 
 
 @pytest.fixture
@@ -109,6 +122,7 @@ def test_a_denied_add_never_reaches_promotion(
     assert caught.value.code == "access.denied"
     assert promoted == []
     assert svc.store.blob(DIGEST) is None
+    assert blob_keys(svc.object_store) == []  # a denied add leaves no object in the bucket
 
 
 def test_a_dry_run_never_reaches_promotion(
@@ -116,6 +130,7 @@ def test_a_dry_run_never_reaches_promotion(
 ) -> None:
     add(svc.make_files(), svc, source, dry_run=True)
     assert promoted == []
+    assert blob_keys(svc.object_store) == []
 
 
 def test_a_request_with_a_missing_reference_never_reaches_promotion(
@@ -134,6 +149,7 @@ def test_a_request_with_a_missing_reference_never_reaches_promotion(
     finally:
         staged.discard()
     assert promoted == []
+    assert blob_keys(svc.object_store) == []
 
 
 def test_a_request_over_a_limit_never_reaches_promotion(
@@ -156,6 +172,7 @@ def test_a_request_over_a_limit_never_reaches_promotion(
         error = exc
     assert error is not None and error.code == "file.too_large"
     assert promoted == []
+    assert blob_keys(svc.object_store) == []
 
 
 def test_an_add_found_invalid_under_the_lock_has_promoted(
@@ -167,3 +184,4 @@ def test_an_add_found_invalid_under_the_lock_has_promoted(
     assert caught.value.code == "write.invalid"
     assert promoted == [([DIGEST], False, 0)]
     assert svc.head_seq() == 0
+    assert len(blob_keys(svc.object_store)) == (svc.backend == "s3")

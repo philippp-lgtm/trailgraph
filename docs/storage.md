@@ -18,9 +18,11 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
-| `storage.files.blob_backend` | the blob seam: the `BlobBackend` protocol through which `FileStore`, its write sessions, the commit check and maintenance reach stored files; `LocalBlobs` over `storage.files.blobs`; `BlobBackends`, which picks the backend from the manifest's blob location |
+| `storage.files.blob_backend` | the blob seam: the `BlobBackend` protocol through which `FileStore`, its write sessions, the commit check and maintenance reach stored files; `LocalBlobs` over `storage.files.blobs`; `BlobBackends`, which picks the backend from the manifest's blob location (parsed manifests cached per process by the file's identity) |
+| `storage.files.s3_blobs` | `S3Blobs`: stored files in an S3-compatible object store ([Stored files in an object store](#stored-files-in-an-object-store)) |
+| `storage.files.store_marker` | the object store's marker `graph_cli_store.json`: creating it, reading it, and the per-process cache of the identity check |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
-| `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (not wired into a backend yet) |
+| `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (`storage.files.s3_blobs` and `storage.files.store_marker` use it) |
 
 ## FileStore
 
@@ -121,6 +123,68 @@ POSIX only, local filesystems only.
   write hands its staged blobs to the store for promotion after W.1-W.5
   (authorization) and before the lock; local blobs need none. A graph
   directory whose manifest is missing or unreadable is served locally.
+
+### Stored files in an object store
+
+A graph whose manifest names `blobs.s3` keeps its stored files in an
+S3-compatible object store (`storage.files.s3_blobs`); everything else stays
+in the graph directory.
+
+- **Keys.** The bytes of one hash are the object
+  `<prefix>graphs/<graph id>/blobs/sha256/<first 2 hex>/<64 hex>`
+  (`application/octet-stream`, no user metadata). Finding targets name this
+  key, never the endpoint or a credential. Other keys below the graph's
+  prefix are not blobs.
+- **Marker.** `<prefix>graph_cli_store.json`
+  (`{"schema": "graph_cli.object_store/1", "store_id", "created_at"}`)
+  identifies the store's content; the manifest names it by `store_id`. It is
+  created only when absent, read back after writing and never overwritten
+  (`ensure_store_marker`, called by the audited steps that establish a
+  location). Every blob access checks that the configured bucket's marker
+  carries the manifest's `store_id`; what a bucket's marker says is cached per
+  process by `(endpoint, bucket, prefix)` for 10 minutes and read again on a
+  404 of a referenced object. A missing marker or another id is
+  `backend.unavailable` ("this graph's files are not in that bucket"), never
+  an empty listing or missing files.
+- **Fail closed on blob access only.** Building the backend does no I/O and
+  checks nothing, so reads and writes that touch no file never need the
+  object store. A blob access without usable settings (none, a
+  `[files.s3]` error, no credentials) or against a foreign bucket is
+  `backend.unavailable` naming the graph and what is missing. Every revision
+  of a file lists its blob, so any write to a file entity needs the store.
+- **Write path.** Staging is the local staging file. The promote (before the
+  lock, after authorization) `HEAD`s each staged hash and uploads it when the
+  object is absent, has another size, or its `LastModified` is older than 12
+  hours by the store's clock (the answer's `Date`), so a gc cannot remove it
+  before the commit; uploads are signed with the real SHA-256, which the store
+  verifies. The publish under the lock confirms the object by `HEAD` (present,
+  same size), uploads from the staging file only when it is missing, and then
+  removes the staging file. The commit check answers from the hashes the
+  session published or confirmed, else by `HEAD`; above 64 unconfirmed hashes
+  one paged listing replaces the `HEAD`s, and a hash the listing lacks is
+  confirmed by `HEAD` before it is reported missing (listings may lag).
+- **Reads** stream the object hashed against its name; the last chunk is held
+  back until the hash matches. An absent referenced object or bytes that
+  differ from their hash are `backend.corrupt`, like a missing local blob.
+  There is no local path (`blob_local_path` capability absent).
+- **Verify and gc.** Blob verification lists the graph's prefix once
+  (`--rehash` streams every object); the finding codes are those of local
+  blobs. Only orphans older than 24 hours by the store's clock (the listing's
+  `Date`) are offered to and removed by gc, since an add is an orphan between
+  its promote and its commit; staging leftovers keep their local rule. A gc
+  holds the graph lock, as the publish does.
+- **Crash windows** (in addition to KB0-KB2 of local blobs):
+
+  | Point | Window | Durable after `kill -9` |
+  | --- | --- | --- |
+  | `blob.after_stage` | KB0 | the staging file |
+  | `blob.after_upload` after the promote | KB0s | the object (an orphan) and the staging file; no intent |
+  | `blob.after_upload` after the publish fallback | KB1s | the same, under the lock |
+  | `blob.before_staging_removal` | after the publish confirmation | the same |
+
+  A retry with the same idempotency key finds the object, commits once and
+  uploads nothing; the staging file of the crash stays until gc, an object
+  nobody commits is removed by gc after 24 hours.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once
@@ -167,9 +231,10 @@ fixed key order.
   in an S3-compatible object store, named by `[store.blobs]` with
   `location = "s3"` and the object store's `store_id` (a UUID). `requires`
   and `[store.blobs]` must agree, and a format-1 manifest carries neither;
-  anything else is `config.invalid`. This version has no object store
-  backend yet: it refuses such a graph with `backend.unavailable` wherever its
-  store is opened, instead of reading it as if its files were local.
+  anything else is `config.invalid`. Such a graph opens like any other; its
+  blob accesses are refused with `backend.unavailable` while the object store
+  is not usable ([Stored files in an object store](#stored-files-in-an-object-store)),
+  never read as if its files were local.
 
 ```toml
 format_version = 2

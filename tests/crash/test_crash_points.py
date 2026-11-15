@@ -24,7 +24,7 @@ from graph_cli.kernel.canonical import parse_json
 from graph_cli.kernel.ids import EntityId
 from graph_cli.kernel.ports.audit import AuditEventDraft
 from graph_cli.kernel.query_ast import Query
-from graph_cli.storage.common.faults import CrashPoint
+from graph_cli.storage.common.faults import MAINT_POINTS, CrashPoint
 from graph_cli.storage.files.store import FileStore
 
 pytestmark = pytest.mark.slow
@@ -225,3 +225,20 @@ def test_kill_leaves_no_stale_lock(tmp_path: Path) -> None:
     with store.session(timeout_s=0.5):
         pass
     assert os.path.exists(store.layout.lock)
+
+
+def test_every_write_path_point_is_covered() -> None:
+    """Every named point outside the maintenance effects is killed at by a crash test: the
+    commit points here, the blob points (local and object store) in ``test_blob_crash``
+    and ``test_file_add_crash``, the recovery points above."""
+    from crash import test_blob_crash, test_file_add_crash
+
+    covered = (
+        set(ROWS)
+        | set(test_blob_crash.ROWS)
+        | {point for point, _ in test_blob_crash.S3_ROWS}
+        | set(test_file_add_crash.ROWS)
+        | set(test_file_add_crash.S3_ROWS)
+        | {CrashPoint.RECOVERY_AFTER_TRUNCATE, CrashPoint.RECOVERY_AFTER_MATERIALIZE}
+    )
+    assert set(CrashPoint) - MAINT_POINTS - covered == set()

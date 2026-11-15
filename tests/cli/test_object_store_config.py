@@ -1,13 +1,14 @@
 """S: ``[files] store``, ``[files.s3]`` and manifest format 2 through both programs.
 
-The settings reach the app's catalog and graph-admin's catalog and maintenance port:
-a graph whose manifest names an object store is refused by ``graph find``,
-``graph-admin graph show`` and ``graph-admin files verify`` alike, with what is
-missing named, and never read as if its files were local (this build has no object
-store backend yet). An installation that does not use an object store never meets
-``[files.s3]``.
+The settings reach the app's catalog and graph-admin's catalog and maintenance port.
+A graph whose manifest names an object store opens without them: ``graph find`` and
+``graph-admin graph show`` touch no file and work, while a blob access such as
+``graph-admin files verify`` is refused with what is missing named, or, against a bucket
+without the graph's store marker, as "not in that bucket" (never as missing files). An
+installation that does not use an object store never meets ``[files.s3]``.
 """
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,12 +16,14 @@ import pytest
 from harness import CliRunner
 from support.admin import admin, init
 from support.app import app, create_graph
+from support.fake_s3 import ACCESS_KEY_ID, SECRET_ACCESS_KEY, FakeS3
 from support.output_schemas import validator
 
 from graph_cli.kernel.ports.catalog import StoreInfo
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.manifest import format_manifest
 from graph_cli.storage.files.releases import read_manifest
+from graph_cli.storage.files.store_marker import MARKER_KEY
 from graph_cli_admin.maintenance_cli.commands.graph import CREATE_OUTPUT
 from graph_cli_admin.maintenance_cli.output_schemas import DEFS
 from graph_cli_admin.services_admin.graphs import describe
@@ -120,22 +123,30 @@ def test_a_secret_pasted_into_files_s3_is_refused(
         assert SECRET not in str(outcome.envelope)
 
 
-def test_a_graph_in_an_object_store_is_refused_with_what_is_missing(
+def test_a_graph_in_an_object_store_is_refused_on_blob_access_only(
     run_cli: CliRunner, root: Path, isolated_env: dict[str, str]
 ) -> None:
     graph_id = create_graph(run_cli, "example_graph")
     move_to_object_store(root, graph_id)
-    listed = admin(run_cli, "graph", "list")  # the manifest alone reads fine
-    assert [i["name"] for i in listed.data["items"]] == ["example_graph"]
-    commands = (
-        lambda env: admin(run_cli, "graph", "show", "example_graph", env=env),
-        lambda env: admin(run_cli, "files", "verify", "--graph", "example_graph", env=env),
-        lambda env: app(
-            run_cli, "find", "--graph", "example_graph", "--type", "inv:Location", env=env
-        ),
-    )
-    for command in commands:
-        missing = command(isolated_env)
+    with FakeS3() as fake:
+        fake_env = {
+            **isolated_env,
+            **S3_ENV,
+            "GRAPH_CLI_S3_BUCKET": fake.bucket,
+            "AWS_REGION": fake.region,
+            "AWS_ENDPOINT_URL_S3": fake.endpoint_url,
+            "AWS_ACCESS_KEY_ID": ACCESS_KEY_ID,
+            "AWS_SECRET_ACCESS_KEY": SECRET_ACCESS_KEY,
+        }
+        for env in (isolated_env, fake_env):
+            shown = admin(run_cli, "graph", "show", "example_graph", env=env)
+            assert shown.data["store"]["store_id"] == STORE_ID, shown.envelope
+            found = app(
+                run_cli, "find", "--graph", "example_graph", "--type", "inv:Location", env=env
+            )
+            assert found.code == 0, found.envelope
+        verify = ("files", "verify", "--graph", "example_graph")
+        missing = admin(run_cli, *verify)
         assert missing.error["code"] == "backend.unavailable", missing.envelope
         details = missing.error["details"]
         assert (details["store_id"], details["cause"], details["key"]) == (
@@ -143,8 +154,19 @@ def test_a_graph_in_an_object_store_is_refused_with_what_is_missing(
             "config.invalid",
             "files.s3.bucket",
         )
-        configured = command({**isolated_env, **S3_ENV})
-        assert configured.error["code"] == "backend.unavailable", configured.envelope
-        assert "cause" not in configured.error["details"]
-        assert "cannot open yet" in configured.error["message"]
-        assert SECRET not in str(configured.envelope)
+        foreign = admin(run_cli, *verify, env=fake_env)  # the bucket has no store marker
+        assert foreign.error["code"] == "backend.unavailable", foreign.envelope
+        assert "not in that bucket" in foreign.error["message"]
+        assert graph_id in foreign.error["message"]
+        fake.put(
+            MARKER_KEY,
+            json.dumps(
+                {"schema": "graph_cli.object_store/1", "store_id": STORE_ID, "created_at": "x"}
+            ).encode(),
+        )
+        clean = admin(run_cli, *verify, env=fake_env)
+        assert clean.code == 0, clean.envelope
+        for outcome in (missing, foreign, clean):
+            assert SECRET not in str(outcome.envelope)
+            assert SECRET_ACCESS_KEY not in str(outcome.envelope)
+            assert ACCESS_KEY_ID not in str(outcome.envelope)
