@@ -62,7 +62,7 @@ from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Syncer
 from graph_cli.storage.files.layout import STAGING_PREFIX, GraphLayout
 from graph_cli.storage.files.store_format import unusable_object_store
-from graph_cli.storage.files.store_marker import check_store_identity
+from graph_cli.storage.files.store_marker import check_store_identity, read_store_marker
 from graph_cli.storage.finding_codes import (
     BLOB_HASH_MISMATCH,
     BLOB_MISSING,
@@ -135,7 +135,8 @@ class S3Blobs:
         self._client: ObjectStoreClient | None = None
         self._base = f"graphs/{manifest.entry.id}/blobs/sha256/"
         # False for the copies a local graph may have left in the configured store (a
-        # move back to the data root): any graph_cli store marker will do
+        # move back to the data root): any graph_cli store marker will do for finding them;
+        # whether files gc may delete them is decided by ``store_id`` (the marker's id)
         self._require_store_id = require_store_id
         # hashes this instance published or found stored (a session's commit check)
         self._confirmed: set[str] = set()
@@ -440,6 +441,18 @@ class S3Blobs:
                     removed += 1
         local = blobs.remove(self.layout, (), names, referenced=referenced, syncer=self.syncer)
         return {"blobs": removed, "staging": local["staging"]}
+
+    def store_id(self) -> str | None:
+        marker = read_store_marker(self._store())
+        return marker.store_id if marker is not None else None
+
+    def hash_of(self, digest: str) -> str | None:
+        if not HASH_RE.match(digest):
+            return None
+        try:
+            return self._rehash(self._store(), digest)
+        except GraphCliError:
+            return None
 
     def remove_misplaced(self, hashes: Sequence[str]) -> int:
         for digest in hashes:

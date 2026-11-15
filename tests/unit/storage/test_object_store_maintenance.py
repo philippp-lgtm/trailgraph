@@ -27,6 +27,7 @@ from support.stores import StoreEnv
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ids import EventId
 from graph_cli.kernel.ports.audit import AuditReceipt
+from graph_cli.kernel.ports.storage import MisplacedCopies
 from graph_cli.kernel.records import BlobInfo
 from graph_cli.storage import finding_codes
 from graph_cli.storage.files.maintenance import FileMaintenanceSession, FileStoreMaintenance
@@ -125,6 +126,20 @@ def codes(findings: tuple[Finding, ...] | list[Finding]) -> list[tuple[str, str]
     return sorted((f.code, str(f.target.get("path"))) for f in findings)
 
 
+def judge(
+    maintenance: FileStoreMaintenance, env: StoreEnv, recorded: str | None = None
+) -> MisplacedCopies:
+    """The misplaced copies as gc judges them, before the lock; ``recorded`` is the store
+    the graph's audit trail records it left."""
+    copies = maintenance.misplaced_blobs(env.graph_id, recorded_store=lambda: recorded)
+    assert copies is not None
+    return copies
+
+
+def hashes(blobs: tuple[BlobInfo, ...]) -> list[str]:
+    return [b.hash for b in blobs]
+
+
 def receipt(env: StoreEnv, session: FileMaintenanceSession) -> AuditReceipt:
     event = draft(env.stream, EventId(env.ids.new_id()), env.clock.now(), actions=("maint.repair",))
     return session.append_audit(event)
@@ -193,7 +208,7 @@ def test_a_local_copy_of_a_graph_in_the_object_store_is_misplaced(
     maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
         found = session.verify_blobs(rehash=False).findings
-        removable, kept = session.misplaced_blobs()
+    copies = judge(maintenance, env)
     misplaced = {str(f.target["path"]): f for f in found if f.code == finding_codes.BLOB_MISPLACED}
     root = store_of(env).layout.root
     assert set(misplaced) == {str(p.relative_to(root)) for p in (confirmed, unconfirmed)}
@@ -201,8 +216,8 @@ def test_a_local_copy_of_a_graph_in_the_object_store_is_misplaced(
     assert "files gc removes the copy" in misplaced[str(confirmed.relative_to(root))].message
     assert "files gc keeps the copy" in misplaced[str(unconfirmed.relative_to(root))].message
     assert "the object store" in misplaced[str(confirmed.relative_to(root))].message
-    assert [b.hash for b in removable] == [digest(KEPT)]
-    assert [b.hash for b in kept] == [digest(LOOSE)]
+    assert (hashes(copies.removable), hashes(copies.kept)) == ([digest(KEPT)], [digest(LOOSE)])
+    assert (copies.location, copies.store_id) == ("local", None)
     assert {f.code for f in found} == {
         finding_codes.BLOB_MISPLACED,
         finding_codes.BLOB_STAGING_LEFTOVER,
@@ -212,26 +227,57 @@ def test_a_local_copy_of_a_graph_in_the_object_store_is_misplaced(
 def test_an_object_of_a_local_graph_is_misplaced_when_a_store_is_configured(
     tmp_path: Path, fake: FakeS3, clock: FixedClock
 ) -> None:
+    """After a recorded move from this store back to the data root (the recorded store
+    is the bucket's marker id) its objects are the graph's own: confirmed ones may go."""
     env = local_graph(tmp_path)
-    create_marker(fake.settings())
+    store_id = create_marker(fake.settings())
     fake.put(blob_key(env.graph_id, digest(KEPT)), KEPT)
     fake.put(blob_key(env.graph_id, digest(LOOSE)), LOOSE)
     without = maintenance_of(tmp_path, None, clock, env)
     with without.maintenance_session(env.graph_id, timeout_s=5) as session:
         assert session.verify_blobs(rehash=True).findings == ()  # no store: never asked
+    assert without.misplaced_blobs(env.graph_id) is None
     maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        found = session.verify_blobs(rehash=True).findings
-        removable, kept = session.misplaced_blobs()
+        found = session.verify_blobs(rehash=True, recorded_store=lambda: store_id).findings
+    copies = judge(maintenance, env, store_id)
     assert codes(found) == sorted(
         (finding_codes.BLOB_MISPLACED, blob_key(env.graph_id, digest(data)))
         for data in (KEPT, LOOSE)
     )
     assert "the data root" in found[0].message
-    assert ([b.hash for b in removable], [b.hash for b in kept]) == (
+    assert "not this graph's recorded store" not in found[0].message
+    assert (hashes(copies.removable), hashes(copies.kept)) == ([digest(KEPT)], [digest(LOOSE)])
+    assert (copies.location, copies.store_id) == ("s3", store_id)
+
+
+@pytest.mark.parametrize("recorded", [None, OTHER_ID])
+def test_objects_in_a_store_the_local_graph_was_not_recorded_to_leave_are_report_only(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock, recorded: str | None
+) -> None:
+    """A cloned or restored installation may share the bucket and the graph id: without a
+    recorded switch from this very store (or with another marker id), its objects are
+    reported, never removable, and gc refuses to delete them even when asked."""
+    env = local_graph(tmp_path)
+    create_marker(fake.settings())
+    key = blob_key(env.graph_id, digest(KEPT))
+    fake.put(key, KEPT)  # the data root holds the same bytes
+    maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        (found,) = session.verify_blobs(rehash=True, recorded_store=lambda: recorded).findings
+    assert found.code == finding_codes.BLOB_MISPLACED
+    assert "not this graph's recorded store" in found.message
+    assert "files gc keeps the copy" in found.message
+    copies = judge(maintenance, env, recorded)
+    assert (hashes(copies.removable), hashes(copies.kept), copies.store_id) == (
+        [],
         [digest(KEPT)],
-        [digest(LOOSE)],
+        None,
     )
+    forged = replace(copies, removable=copies.kept, store_id=recorded)
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        session.remove_blobs([], [], receipt(env, session), misplaced=forged)
+    assert fake.get(key) == KEPT
 
 
 @pytest.mark.parametrize("problem", ["no marker", "unreachable", "no credentials"])
@@ -248,7 +294,7 @@ def test_a_local_graph_never_fails_because_of_the_object_store(
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
         assert session.verify_blobs(rehash=True).findings == ()
         assert session.verify() == []
-        assert session.misplaced_blobs() == ([], [])
+    assert maintenance.misplaced_blobs(env.graph_id, recorded_store=lambda: OTHER_ID) is None
 
 
 @pytest.mark.parametrize("problem", ["other store", "no settings", "no credentials", "500"])
@@ -342,10 +388,9 @@ def test_gc_removes_a_misplaced_copy_only_after_confirming_it(
     confirmed = local_copy(env, KEPT)
     unconfirmed = local_copy(env, LOOSE)
     maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    copies = judge(maintenance, env)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        removable, kept = session.misplaced_blobs()
-        everything = [*removable, *kept]  # a caller that asks for more is refused per hash
-        session.remove_blobs([], [], receipt(env, session), misplaced=everything)
+        session.remove_blobs([], [], receipt(env, session), misplaced=copies)
     assert not confirmed.exists()
     assert unconfirmed.exists()
     assert blob_key(env.graph_id, digest(KEPT)) in fake.objects
@@ -354,17 +399,32 @@ def test_gc_removes_a_misplaced_copy_only_after_confirming_it(
 def test_gc_confirms_again_under_the_removal(
     tmp_path: Path, fake: FakeS3, clock: FixedClock
 ) -> None:
-    """The named location lost the file after it was judged: the copy stays."""
+    """The hash is confirmed once, before the lock (immutable content addresses); under
+    the lock only presence and size are checked again, by one listing and without reading
+    any file: the named location lost the file after it was judged, so the copy stays."""
     env = s3_graph(tmp_path, fake)
     copy = local_copy(env, KEPT)
     maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    start = len(fake.requests)
+    copies = judge(maintenance, env)
+    assert hashes(copies.removable) == [digest(KEPT)]
+    reads = [r for r in fake.requests[start:] if r.method == "GET" and "list-type" not in r.query]
+    assert [r.key for r in reads if not (r.key or "").endswith(MARKER_KEY)] == [
+        blob_key(env.graph_id, digest(KEPT))
+    ]
+    smaller = replace(copies, removable=(BlobInfo(digest(KEPT), len(KEPT) - 1),))
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        removable, _ = session.misplaced_blobs()
-        assert [b.hash for b in removable] == [digest(KEPT)]
-        del fake.objects[blob_key(env.graph_id, digest(KEPT))]
-        session.remove_blobs([], [], receipt(env, session), misplaced=removable)
-        smaller = [BlobInfo(digest(KEPT), len(KEPT) - 1)]  # another size is no confirmation
+        start = len(fake.requests)
         session.remove_blobs([], [], receipt(env, session), misplaced=smaller)
+        assert copy.exists()  # another size is no confirmation
+        del fake.objects[blob_key(env.graph_id, digest(KEPT))]
+        session.remove_blobs([], [], receipt(env, session), misplaced=copies)
+        blob_gets = [
+            r
+            for r in fake.requests[start:]
+            if r.method == "GET" and "list-type" not in r.query and "/blobs/" in (r.key or "")
+        ]
+        assert blob_gets == []  # nothing is read in full under the lock
     assert copy.exists()
 
 
@@ -372,15 +432,70 @@ def test_gc_removes_a_local_graphs_confirmed_objects(
     tmp_path: Path, fake: FakeS3, clock: FixedClock
 ) -> None:
     env = local_graph(tmp_path)
-    create_marker(fake.settings())
+    store_id = create_marker(fake.settings())
     referenced, loose = blob_key(env.graph_id, digest(KEPT)), blob_key(env.graph_id, digest(LOOSE))
     fake.put(referenced, KEPT)
     fake.put(loose, LOOSE)
     maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    copies = judge(maintenance, env, store_id)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        removable, kept = session.misplaced_blobs()
-        session.remove_blobs([], [], receipt(env, session), misplaced=removable)
+        session.remove_blobs([], [], receipt(env, session), misplaced=copies)
     assert referenced not in fake.objects  # the data root holds the file
     assert loose in fake.objects  # the data root lacks it: kept
     assert store_of(env).blob(digest(KEPT)) == BlobInfo(digest(KEPT), len(KEPT))
-    assert [b.hash for b in kept] == [digest(LOOSE)]
+    assert hashes(copies.kept) == [digest(LOOSE)]
+
+
+def damaged(data: bytes) -> bytes:
+    """Other bytes of the same size (bit rot: the listing cannot see it)."""
+    return bytes([data[0] ^ 0x01]) + data[1:]
+
+
+@pytest.mark.parametrize("named", ["s3", "local"])
+def test_a_damaged_named_copy_keeps_the_misplaced_copy(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock, named: str
+) -> None:
+    """Never lose a file: gc confirms the graph's location by the hash of its bytes (a
+    verified GET, a rehash), not by the listing's size; a damaged copy there keeps the
+    good misplaced one, in both directions."""
+    recorded = None
+    if named == "s3":
+        env = s3_graph(tmp_path, fake)
+        key = blob_key(env.graph_id, digest(KEPT))
+        fake.put(key, damaged(KEPT))
+        misplaced = local_copy(env, KEPT)
+    else:
+        env = local_graph(tmp_path)
+        recorded = create_marker(fake.settings())
+        key = blob_key(env.graph_id, digest(KEPT))
+        fake.put(key, KEPT)
+        path = store_of(env).layout.blob_path(digest(KEPT))
+        path.chmod(0o644)
+        path.write_bytes(damaged(KEPT))
+    maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    copies = judge(maintenance, env, recorded)
+    assert (hashes(copies.removable), hashes(copies.kept)) == ([], [digest(KEPT)])
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        session.remove_blobs([], [], receipt(env, session), misplaced=copies)
+        found = session.verify_blobs(rehash=True, recorded_store=lambda: recorded).findings
+    if named == "s3":
+        assert misplaced.read_bytes() == KEPT
+    else:
+        assert fake.get(key) == KEPT
+    (copy,) = [f for f in found if f.code == finding_codes.BLOB_MISPLACED]
+    assert "files gc keeps the copy" in copy.message
+    assert finding_codes.BLOB_HASH_MISMATCH in {f.code for f in found}
+
+
+def test_an_unreadable_named_copy_keeps_the_misplaced_copy(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock
+) -> None:
+    env = s3_graph(tmp_path, fake)
+    misplaced = local_copy(env, KEPT)
+    maintenance = maintenance_of(tmp_path, fake.settings(), clock, env)
+    fake.fail(500, "InternalError", method="GET", key=blob_key(env.graph_id, digest(KEPT)))
+    copies = judge(maintenance, env)
+    assert (hashes(copies.removable), hashes(copies.kept)) == ([], [digest(KEPT)])
+    with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
+        session.remove_blobs([], [], receipt(env, session), misplaced=copies)
+    assert misplaced.read_bytes() == KEPT

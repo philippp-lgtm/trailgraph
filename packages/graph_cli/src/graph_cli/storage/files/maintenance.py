@@ -63,6 +63,8 @@ from graph_cli.kernel.ports.storage import (
     GraphStoreMaintenance,
     Head,
     MaintenanceSession,
+    MisplacedCopies,
+    RecordedStore,
     RecoveryReport,
     RegistrySession,
     Snapshot,
@@ -122,6 +124,7 @@ from graph_cli.storage.files.token_files import (
     write_tokens_file,
 )
 from graph_cli.storage.finding_codes import (
+    BLOB_HASH_MISMATCH,
     BLOB_MISPLACED,
     BLOB_MISSING,
     HEAD_INCONSISTENT,
@@ -178,6 +181,11 @@ class FileStoreMaintenance:
             client_factory=self.client_factory,
             monotonic=self.monotonic,
         )
+
+    def misplaced_blobs(
+        self, graph: GraphId, *, recorded_store: RecordedStore | None = None
+    ) -> MisplacedCopies | None:
+        return misplaced_copies(self.store(graph), recorded_store)
 
     def object_store_client(self) -> ObjectStoreClient | None:
         """A client of the configured object store (``files store check``); ``None``
@@ -666,42 +674,20 @@ class FileMaintenanceSession:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
         return self._store.blob_backend().collectable(referenced)
 
-    def _copies(self) -> tuple[BlobBackend, list[BlobInfo]] | None:
-        """The other location and the copies of blobs it holds (``.tmp-`` staging entries
-        are not blobs). A local graph's object store is optional: when it cannot be
-        reached or is no graph_cli store, there are no copies to judge."""
-        other = self._store.misplaced_backend()
-        if other is None:
-            return None
-        try:
-            return other, list(other.listing())
-        except GraphCliError as exc:
-            if other.unavailable(exc) is None:
-                raise
-            return None
-
-    def misplaced_blobs(self) -> tuple[Sequence[BlobInfo], Sequence[BlobInfo]]:
-        self._check_open()
-        found = self._copies()
-        if found is None or not found[1]:
-            return [], []
-        held = {blob.hash: blob.size for blob in self._store.blob_backend().listing()}
-        copies = found[1]
-        return (
-            [copy for copy in copies if held.get(copy.hash) == copy.size],
-            [copy for copy in copies if held.get(copy.hash) != copy.size],
-        )
-
     def staging(self) -> Iterator[tuple[str, datetime]]:
         self._check_open()
         return self._store.blob_backend().staging()
 
-    def verify_blobs(self, *, rehash: bool) -> BlobVerification:
+    def verify_blobs(
+        self, *, rehash: bool, recorded_store: RecordedStore | None = None
+    ) -> BlobVerification:
         """Missing, damaged, orphan, staged and misplaced files; no orphans beyond tx-log
         damage. An object store that cannot be reached, or carries another store marker,
         is one ``blob_store_unavailable`` finding in place of everything else it would be
         asked (staging leftovers are still listed); misplaced copies are judged against
-        the location's one listing."""
+        the location's one listing (and, with ``rehash``, its damaged files). A local
+        graph's copies in an object store that is not the one it was recorded to leave are
+        reported as not its own."""
         referenced = self._referenced()
         layout = self._store.layout
         backend = self._store.blob_backend()
@@ -714,21 +700,30 @@ class FileMaintenanceSession:
             findings = [finding, *blobs.staging_findings(layout)]
             return BlobVerification(tuple(sort_findings(findings)), None)
         held = {blob.hash: blob.size for blob in checked.stored or ()}
-        found = self._copies()
+        found = _copies(self._store, recorded_store)
         misplaced: list[Finding] = []
         if found is not None:
-            other, copies = found
+            other, copies = found.other, found.copies
             where = _LOCATION_NAMES[backend.location]
+            damaged = {f.expected for f in checked.findings if f.code == BLOB_HASH_MISMATCH}
             for copy in copies:
-                if held.get(copy.hash) == copy.size:
+                if not found.owned:
                     message = (
-                        f"a copy outside the graph's location ({where}), which holds the"
-                        " same file; files gc removes the copy"
+                        f"a copy outside the graph's location ({where}), in an object store"
+                        " that is not this graph's recorded store (no switch from it to the"
+                        " data root is recorded, or the bucket's marker differs); files gc"
+                        " keeps the copy"
+                    )
+                elif held.get(copy.hash) == copy.size and copy.hash not in damaged:
+                    message = (
+                        f"a copy outside the graph's location ({where}), which holds this"
+                        " hash with the same size; files gc removes the copy once the bytes"
+                        " there match their hash"
                     )
                 else:
                     message = (
                         f"a copy outside the graph's location ({where}), which lacks this"
-                        " file or holds another size; files gc keeps the copy"
+                        " file, holds another size or damaged bytes; files gc keeps the copy"
                     )
                 target = {"path": other.target(copy.hash)}
                 misplaced.append(Finding(Severity.INFO, BLOB_MISPLACED, target, message))
@@ -741,23 +736,34 @@ class FileMaintenanceSession:
         staging: Sequence[str],
         receipt: AuditReceipt,
         *,
-        misplaced: Sequence[BlobInfo] = (),
+        misplaced: MisplacedCopies | None = None,
     ) -> None:
         """Refuses a referenced hash; refuses everything when the tx log is damaged.
-        Misplaced copies go first, each only while one listing of the graph's location
-        still shows its hash with the same size (so an orphan this gc removes cannot have
-        been the confirmation)."""
+        The removable misplaced copies (hash-confirmed before the lock,
+        ``FileStoreMaintenance.misplaced_blobs``) go first, each only while one listing of
+        the graph's location, made right before, still shows its hash with the same size
+        (so an orphan this gc removes cannot be the confirmation), and an object store's
+        objects only while its marker is still ``misplaced.store_id``. Nothing is read in
+        full under the lock."""
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
         writer = self._writer()
         writer.claim_receipt(receipt)
         backend = writer.blob_backend()
-        other = self._store.misplaced_backend() if misplaced else None
-        if other is not None:
-            held = {blob.hash: blob.size for blob in backend.listing()}
-            confirmed = sorted({b.hash for b in misplaced if held.get(b.hash) == b.size})
-            other.remove_misplaced(confirmed)
+        if misplaced is not None and misplaced.removable:
+            other = self._store.misplaced_backend()
+            if other is None or other.location != misplaced.location:
+                raise GraphCliError(
+                    "internal.error",
+                    "the graph's blob location changed since its copies were judged",
+                )
+            if other.location == "local" or (
+                misplaced.store_id is not None and other.store_id() == misplaced.store_id
+            ):
+                held = {blob.hash: blob.size for blob in backend.listing()}
+                present = {b.hash for b in misplaced.removable if held.get(b.hash) == b.size}
+                other.remove_misplaced(sorted(present))
         backend.remove(hashes, staging, referenced=referenced)
 
     def reindex(self, receipt: AuditReceipt | None = None) -> None:
@@ -790,6 +796,63 @@ class FileMaintenanceSession:
             store.rebuild_index(state.end.seq)
         except INDEX_ERRORS as exc:
             raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class _Copies:
+    other: BlobBackend
+    copies: list[BlobInfo]
+    owned: bool  # the graph may clean ``other``
+    store_id: str | None  # ``other``'s store when it is an object store the graph owns
+
+
+def _copies(store: FileStore, recorded_store: RecordedStore | None) -> _Copies | None:
+    """The other location, the copies of blobs it holds (``.tmp-`` staging entries are not
+    blobs) and whether the graph may clean it: always the data root; a local graph's
+    object store only when its marker is the store the graph's audit trail records it
+    left (else report only: a cloned or restored installation may share the bucket and
+    the graph id). A local graph's object store is optional: when
+    it cannot be reached or is no graph_cli store, there are no copies to judge."""
+    other = store.misplaced_backend()
+    if other is None:
+        return None
+    try:
+        copies = list(other.listing())
+        if other.location == "local":
+            return _Copies(other, copies, True, None)
+        recorded = recorded_store() if recorded_store is not None and copies else None
+        owned = recorded is not None and other.store_id() == recorded
+    except GraphCliError as exc:
+        if other.unavailable(exc) is None:
+            raise
+        return None
+    return _Copies(other, copies, owned, recorded if owned else None)
+
+
+def misplaced_copies(
+    store: FileStore, recorded_store: RecordedStore | None
+) -> MisplacedCopies | None:
+    """``FileStoreMaintenance.misplaced_blobs`` for one store, without its lock: a copy is
+    removable when the graph may clean its location and the named location lists the
+    same hash and size and its bytes, read in full (a verified streamed GET in an object
+    store, a rehash locally), have that hash. A file that is damaged, unreadable or absent
+    there confirms nothing."""
+    found = _copies(store, recorded_store)
+    if found is None:
+        return None
+    copies = found.copies
+    confirmed: set[str] = set()
+    if found.owned and copies:
+        named = store.blob_backend()
+        held = {blob.hash: blob.size for blob in named.listing()}
+        wanted = sorted({copy.hash for copy in copies if held.get(copy.hash) == copy.size})
+        confirmed = {digest for digest in wanted if named.hash_of(digest) == digest}
+    return MisplacedCopies(
+        found.other.location,
+        tuple(copy for copy in copies if copy.hash in confirmed),
+        tuple(copy for copy in copies if copy.hash not in confirmed),
+        found.store_id,
+    )
 
 
 class Verifier:

@@ -430,3 +430,91 @@ def test_store_check_skips_what_an_unreachable_store_cannot_answer(
     assert found["marker"] == "error"
     assert {found[n] for n in ("list", "write", "read", "delete", "missing_key")} == {"skipped"}
     assert (found["clock"], found["addressing"]) == ("skipped", "skipped")
+
+
+def test_gc_keeps_a_copy_whose_counterpart_is_damaged(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock
+) -> None:
+    root = tmp_path / "root"
+    ctx = context(root, fake.settings(), clock)
+    graph_id = create(ctx)
+    fake.put(blob_key(graph_id, digest(CONTENT)), b"X" + CONTENT[1:])  # same size, rotten
+    copy = local_file(root, graph_id, CONTENT)
+    done = files.gc(ctx, graph_ref="example_graph", reason=None, dry_run=False).data
+    assert done["misplaced_removed"] == []
+    assert done["misplaced_kept"] == [{"hash": digest(CONTENT), "size": len(CONTENT)}]
+    assert done["removed"] is False and copy.read_bytes() == CONTENT
+
+
+def test_objects_of_a_local_graph_never_in_the_store_are_report_only(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock
+) -> None:
+    """A cloned or restored installation shares the bucket (another marker) and the graph
+    id: files verify reports the objects, files gc keeps them, whatever they hold."""
+    root = tmp_path / "root"
+    ctx = context(root, fake.settings(), clock, files_store="local")
+    graph_id = create(ctx)
+    document = {"schema": "graph_cli.object_store/1", "store_id": OTHER_ID, "created_at": "x"}
+    fake.put(MARKER_KEY, json.dumps(document).encode())
+    key = blob_key(graph_id, digest(CONTENT))
+    fake.put(key, CONTENT)
+    local_file(root, graph_id, CONTENT)  # the data root holds the same bytes
+    verified = files.verify(ctx, graph_ref="example_graph", rehash=True).data
+    (finding,) = [
+        f
+        for f in verified["findings"]  # type: ignore[union-attr]
+        if f["code"] == finding_codes.BLOB_MISPLACED  # type: ignore[index]
+    ]
+    assert "not this graph's recorded store" in finding["message"]  # type: ignore[index]
+    done = files.gc(ctx, graph_ref="example_graph", reason=None, dry_run=False).data
+    assert done["misplaced_removed"] == []
+    assert done["misplaced_kept"] == [{"hash": digest(CONTENT), "size": len(CONTENT)}]
+    assert fake.get(key) == CONTENT
+
+
+def switch_to_local(ctx: AdminContext, graph_id: GraphId, store_id: str) -> None:
+    """A recorded move from the object store back to the data root, as step 7's switch
+    will write it (intent with change.blob_store, manifest by one rename, anchor)."""
+    from graph_cli.audit import events as builders
+    from graph_cli.kernel.records import RequestMeta
+
+    meta = RequestMeta.of("files move", {"graph": str(graph_id)})
+    decisions = ctx.authorize(
+        [("maint.graph_configure", f"graph:{graph_id}")], request=meta, graph=graph_id
+    )
+    with ctx.maintenance.maintenance_session(graph_id, timeout_s=5) as session:
+        current = session.manifest()
+        change = builders.blob_store_change("s3", "local", store_id, blobs=1, size=len(CONTENT))
+        receipt = ctx.intent(session, current.entry, decisions, meta, change)
+        local = dataclasses.replace(current.store, blob_location="local", store_id=None)
+        session.replace_manifest(dataclasses.replace(current, store=local), receipt)
+        ctx.anchor(current.entry, decisions, meta, receipt)
+
+
+@pytest.mark.parametrize("intact", [True, False])
+def test_gc_removes_the_objects_after_a_recorded_move_back_with_the_hash_check(
+    tmp_path: Path, fake: FakeS3, clock: FixedClock, intact: bool
+) -> None:
+    root = tmp_path / "root"
+    ctx = context(root, fake.settings(), clock)
+    graph_id = create(ctx)
+    store_id = json.loads(fake.get(MARKER_KEY) or b"{}")["store_id"]
+    key = blob_key(graph_id, digest(CONTENT))
+    fake.put(key, CONTENT)
+    switch_to_local(ctx, graph_id, store_id)
+    path = local_file(root, graph_id, CONTENT)
+    if not intact:  # same size, other bytes under the hash's name: a damaged named copy
+        path.write_bytes(b"X" + CONTENT[1:])
+    verified = files.verify(ctx, graph_ref="example_graph", rehash=False).data
+    messages = [f["message"] for f in verified["findings"]]  # type: ignore[index, union-attr]
+    assert not any("not this graph's recorded store" in m for m in messages)
+    done = files.gc(ctx, graph_ref="example_graph", reason=None, dry_run=False).data
+    item = [{"hash": digest(CONTENT), "size": len(CONTENT)}]
+    if intact:
+        assert (done["misplaced_removed"], done["misplaced_kept"]) == (item, [])
+        assert key not in fake.objects
+    else:
+        assert (done["misplaced_removed"], done["misplaced_kept"]) == ([], item)
+        assert fake.get(key) == CONTENT
+    report = audit.verify(ctx)
+    assert report.data["counts"]["error"] == 0, report.findings  # type: ignore[index]

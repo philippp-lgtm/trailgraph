@@ -143,10 +143,21 @@ class BlobBackend(Protocol):
         period) and staging leftovers; how many of each went."""
         ...
 
+    def store_id(self) -> str | None:
+        """The id of the object store whose bucket this backend uses (its marker's);
+        ``None`` for the data root."""
+        ...
+
+    def hash_of(self, digest: str) -> str | None:
+        """The hash of the stored bytes of ``digest``, read in full; ``None`` when they are
+        absent or cannot be read (``files gc`` confirms a location this way before it
+        removes a misplaced copy elsewhere)."""
+        ...
+
     def remove_misplaced(self, hashes: Sequence[str]) -> int:
         """Delete this location's copies of ``hashes``, referenced or not: misplaced copies
         of a graph that keeps its stored files elsewhere. Only after the caller confirmed
-        that the graph's location holds each hash with the same size. How many went."""
+        that the graph's location holds the same bytes (``hash_of``). How many went."""
         ...
 
     def target(self, digest: str) -> str:
@@ -210,6 +221,15 @@ class LocalBlobs:
         self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
     ) -> Mapping[str, int]:
         return blobs.remove(self.layout, hashes, names, referenced=referenced, syncer=self.syncer)
+
+    def store_id(self) -> str | None:
+        return None
+
+    def hash_of(self, digest: str) -> str | None:
+        try:
+            return blobs.rehash(self.layout, digest)
+        except (OSError, GraphCliError):
+            return None
 
     def remove_misplaced(self, hashes: Sequence[str]) -> int:
         return blobs.remove_copies(self.layout, hashes, syncer=self.syncer)
@@ -312,7 +332,9 @@ class BlobBackends:
         """Where misplaced copies of the graph's blobs may lie (object storage O7, O8): the
         graph directory's ``blobs/`` for a graph in an object store; for a local graph the
         configured object store, when one is configured with credentials (any graph_cli
-        store marker will do; whether it can be reached shows on first use). ``None``
+        store marker will do for finding copies; whether they are the graph's own, which
+        ``files gc`` may delete, the caller decides from the marker's id and the graph's
+        audit trail; whether the store can be reached shows on first use). ``None``
         when there is no such place, or the manifest is unreadable (nothing is judged)."""
         if manifest is None:
             return None

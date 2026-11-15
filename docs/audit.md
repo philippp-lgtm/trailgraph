@@ -259,8 +259,10 @@ reached is the storage error `blob_store_unavailable`
 names them by hash and size only: `change.blobs_removed[{hash, size}]` (the
 orphans), `staging_removed` (how many staging files) and, only when there
 were any, `misplaced_removed[{hash, size}]`: copies outside the location
-the manifest names, each removed only after that location showed the same
-hash and size. A `misplaced_removed` that is not a non-empty list of that
+the manifest names, each removed only after that location's copy, read in
+full, showed the same hash. A local graph's objects in an object store count
+as its own only when the bucket's marker id is the `store_id` of the graph's
+last `change.blob_store` switch, and that switch went to `local`. A `misplaced_removed` that is not a non-empty list of that
 shape in hash order is `event_malformed`.
 
 ## Migration verification

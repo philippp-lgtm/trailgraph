@@ -89,6 +89,8 @@ def test_local_blobs_has_every_member_of_the_protocol() -> None:
         "unavailable",
         "collectable",
         "remove",
+        "store_id",
+        "hash_of",
         "remove_misplaced",
         "target",
     }

@@ -184,21 +184,36 @@ in the graph directory.
 
   | Code | Severity | Meaning |
   | --- | --- | --- |
-  | `integrity.storage.blob_misplaced` | info | a copy outside the location the manifest names: a file in `blobs/sha256/` of a graph in an object store, or, when an object store is configured with credentials, an object below `graphs/<id>/blobs/` of a local graph (`.tmp-` staging files are not copies); the message says whether the named location holds the same hash and size |
+  | `integrity.storage.blob_misplaced` | info | a copy outside the location the manifest names: a file in `blobs/sha256/` of a graph in an object store, or, when an object store is configured with credentials, an object below `graphs/<id>/blobs/` of a local graph (`.tmp-` staging files are not copies) |
   | `integrity.storage.blob_store_unavailable` | error | the object store of a graph in an object store cannot be used: no usable settings, no credentials, a marker that is missing or carries another id, refused credentials, no answer; it stands for every other finding about the store (staging leftovers are still listed), and its `actual` carries the error's code and safe details |
 
   A local graph never fails because of the object store: copies there are
   looked for only when it is configured with credentials, answers and has
-  a marker (any id). With an unreadable manifest the blob location is
+  a marker. They are the graph's own only when the marker's id is the
+  `store_id` of the graph's last recorded `change.blob_store` switch, and
+  only when that switch went to `local` (read from the graph's audit
+  stream, which must verify, and only when there are such objects);
+  otherwise a cloned or restored installation may share the bucket and the
+  graph id, so they are reported ("not this graph's recorded store") and gc
+  never deletes them. The message of a misplaced copy says whether the named
+  location lists the same hash and size (with `--rehash`, also whether its
+  bytes match). With an unreadable manifest the blob location is
   unknown, so `audit verify` judges no blob (the manifest is `pin_mismatch`).
   Only orphans older than 24 hours by the store's clock (the listing's
   `Date`) are offered to and removed by gc, since an add is an orphan between
   its promote and its commit; staging leftovers keep their local rule.
-  Misplaced copies go only when one listing of the named location shows
-  their hash with the same size, judged again right before the removal and
-  before any orphan goes, so neither an aborted move nor a damaged location
-  loses a file; the others stay. A gc holds the graph lock, as the publish
-  does. `graph-admin files store check` probes a store without any graph.
+  Misplaced copies go only when the named location holds the same bytes:
+  one listing shows their hash with the same size and the bytes there, read
+  in full (a verified streamed `GET`, a local rehash), have that hash. The
+  bytes are read once, before the graph lock (stored files are immutable),
+  so writes are not blocked while a large store is read; under the lock one
+  listing made right before the removal, before any orphan goes, checks
+  presence and size again (and the marker's id for an object store). So
+  neither an aborted move nor a damaged or unreadable copy in the named
+  location loses a file; the others stay (`misplaced_kept`). The first gc
+  after a move reads every moved file once and reports nothing until it is
+  done (no progress line yet). A gc holds the graph lock for the rest, as
+  the publish does. `graph-admin files store check` probes a store without any graph.
 - **Crash windows** (in addition to KB0-KB2 of local blobs):
 
   | Point | Window | Durable after `kill -9` |

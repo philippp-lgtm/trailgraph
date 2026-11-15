@@ -155,8 +155,8 @@ SPECS: Final = (
         output=GC_OUTPUT,
         description="Files that any revision ever named stay, history included; in an object"
         " store only files older than 24 hours by the store's clock go. A copy outside the"
-        " graph's location goes only when that location holds the same hash and size"
-        " (misplaced_kept lists the others). The removal is audited (maint.repair); nothing"
+        " graph's location goes only when that location's copy, read in full, has the same"
+        " hash (misplaced_kept lists the others). The removal is audited (maint.repair); nothing"
         " to remove writes nothing.",
     ),
     CommandSpec(

@@ -60,6 +60,26 @@ class BlobVerification:
 
 
 @dataclass(frozen=True, slots=True)
+class MisplacedCopies:
+    """Copies of blobs outside the location the graph's manifest names, judged before the
+    graph lock (``GraphStoreMaintenance.misplaced_blobs``): ``location`` is where the copies
+    lie; ``removable`` are those the named location holds intact (listed with the same size,
+    its bytes read in full have the hash) in a place this graph may clean, ``kept`` the
+    others. ``store_id`` is the object store whose objects may go (the copies of a local
+    graph: the store it was recorded to leave), ``None`` for the data root."""
+
+    location: str
+    removable: tuple[BlobInfo, ...]
+    kept: tuple[BlobInfo, ...]
+    store_id: str | None = None
+
+
+# The object store a local graph was recorded to leave (its last ``change.blob_store`` to
+# ``local``), asked only when the graph has copies there; ``None`` when there is none.
+RecordedStore = Callable[[], str | None]
+
+
+@dataclass(frozen=True, slots=True)
 class RecoveryReport:
     recovered: bool
     details: Mapping[str, JsonValue] = field(default=EMPTY)
@@ -289,20 +309,16 @@ class MaintenanceSession(WriteSession, Protocol):
         ones for a grace period); ``backend.corrupt`` when the tx log is damaged."""
         ...
 
-    def misplaced_blobs(self) -> tuple[Sequence[BlobInfo], Sequence[BlobInfo]]:
-        """Copies of blobs outside the location the manifest names (the data root for a
-        graph in an object store, the configured object store for a local graph, when one
-        is usable): those the named location holds with the same hash and size, which may
-        be removed, and the others, which are kept."""
-        ...
-
     def staging(self) -> Iterator[tuple[str, datetime]]:
         """Blob staging leftovers: ``(name, last modified)``."""
         ...
 
-    def verify_blobs(self, *, rehash: bool) -> BlobVerification:
+    def verify_blobs(
+        self, *, rehash: bool, recorded_store: RecordedStore | None = None
+    ) -> BlobVerification:
         """``integrity.storage.blob_*`` findings and the stored blobs; ``rehash`` reads
-        every stored blob."""
+        every stored blob; ``recorded_store`` tells whether a local graph's copies in the
+        object store are its own."""
         ...
 
     def remove_blobs(
@@ -311,10 +327,11 @@ class MaintenanceSession(WriteSession, Protocol):
         staging: Sequence[str],
         receipt: AuditReceipt,
         *,
-        misplaced: Sequence[BlobInfo] = (),
+        misplaced: MisplacedCopies | None = None,
     ) -> None:
-        """Delete unreferenced blobs, staging leftovers and misplaced copies (each only
-        while the named location still holds its hash with the same size); ``receipt`` is
+        """Delete unreferenced blobs, staging leftovers and the removable misplaced copies
+        (each only while the named location still lists its hash with the same size, and
+        an object store only while its marker is ``misplaced.store_id``); ``receipt`` is
         the intent (W.e)."""
         ...
 
@@ -377,3 +394,12 @@ class GraphStoreMaintenance(Protocol):
     def maintenance_session(
         self, graph: GraphId, *, timeout_s: float
     ) -> AbstractContextManager[MaintenanceSession]: ...
+
+    def misplaced_blobs(
+        self, graph: GraphId, *, recorded_store: RecordedStore | None = None
+    ) -> MisplacedCopies | None:
+        """The graph's misplaced copies, judged without the graph lock: stored blobs are
+        content addressed and immutable, so the named location's copies are read in full
+        and hashed here, never under the lock; ``None`` when there is no other location
+        (or a local graph's object store cannot be reached)."""
+        ...
