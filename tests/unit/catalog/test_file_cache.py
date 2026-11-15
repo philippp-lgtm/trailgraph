@@ -123,6 +123,7 @@ def test_two_fetches_of_one_file_at_once(tmp_path: Path) -> None:
     """Each fetch writes its own partial file; both end with the same copy."""
     cache = StateFileCache(tmp_path / "state", FixedClock())
     both = threading.Barrier(2, timeout=10)
+    listed = threading.Barrier(2, timeout=10)
     partials: list[list[str]] = []
 
     def fill(sink: BinaryIO) -> None:
@@ -130,6 +131,7 @@ def test_two_fetches_of_one_file_at_once(tmp_path: Path) -> None:
         sink.flush()
         both.wait()  # both partial files exist now
         partials.append(entries(cache))
+        listed.wait()  # neither finishes (and renames) before both have looked
         sink.write(DATA[100:])
 
     results: list[Path] = []

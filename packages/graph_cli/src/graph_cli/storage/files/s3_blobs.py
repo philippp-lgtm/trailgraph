@@ -27,8 +27,13 @@ the object ``graphs/<graph id>/blobs/sha256/<xx>/<64 hex>`` below the configured
   until the hash matches. A referenced object that is absent or whose bytes differ is
   ``backend.corrupt``, like a missing or damaged local blob, once the store marker was
   checked again.
+- ``verify`` and ``absent`` (maintenance) list the graph's prefix once and confirm a
+  referenced hash the listing lacks by ``HEAD``; ``unavailable`` turns a store that cannot
+  be used into the finding ``blob_store_unavailable``.
 - ``collectable`` and ``remove`` judge an orphan's age by the store's clock (the listing
-  answer's ``Date``): only objects older than ``GC_GRACE`` go.
+  answer's ``Date``): only objects older than ``GC_GRACE`` go. ``remove_misplaced`` deletes
+  the objects of a local graph once the data root confirmed them (``files gc``); such a
+  backend accepts any store marker (``require_store_id=False``).
 
 Crash windows (contracts section 4.1, amended): KB0 is the staging file as for local
 blobs. ``blob.after_upload`` follows every upload: after the promote (KB0s) or the
@@ -50,7 +55,7 @@ from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
 from graph_cli.kernel.ports.catalog import BlobLocation, ManifestData
-from graph_cli.kernel.ports.storage import StagedBlob
+from graph_cli.kernel.ports.storage import BlobVerification, StagedBlob
 from graph_cli.kernel.records import BlobInfo
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.files import blobs
@@ -62,7 +67,7 @@ from graph_cli.storage.finding_codes import (
     BLOB_HASH_MISMATCH,
     BLOB_MISSING,
     BLOB_ORPHAN,
-    BLOB_STAGING_LEFTOVER,
+    BLOB_STORE_UNAVAILABLE,
 )
 from graph_cli.storage.s3.client import ObjectInfo, ObjectSourceError, ObjectStoreClient
 from graph_cli.storage.s3.errors import ObjectContentMismatch, ObjectNotFound
@@ -117,6 +122,7 @@ class S3Blobs:
         faults: FaultHook | None,
         client_factory: ClientFactory | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        require_store_id: bool = True,
     ) -> None:
         self.layout = layout
         self.manifest = manifest
@@ -128,6 +134,9 @@ class S3Blobs:
         self._monotonic = monotonic
         self._client: ObjectStoreClient | None = None
         self._base = f"graphs/{manifest.entry.id}/blobs/sha256/"
+        # False for the copies a local graph may have left in the configured store (a
+        # move back to the data root): any graph_cli store marker will do
+        self._require_store_id = require_store_id
         # hashes this instance published or found stored (a session's commit check)
         self._confirmed: set[str] = set()
 
@@ -151,7 +160,7 @@ class S3Blobs:
 
     def _check_identity(self, *, force: bool) -> None:
         assert self._client is not None and self.settings is not None
-        expected = self.manifest.store.store_id or ""
+        expected = (self.manifest.store.store_id or "") if self._require_store_id else None
         problem = check_store_identity(
             self._client, self.settings, expected, monotonic=self._monotonic, force=force
         )
@@ -331,7 +340,29 @@ class S3Blobs:
                 actual = _SHA256_PREFIX + exc.actual
         return actual
 
-    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
+    def _unlisted(
+        self, store: ObjectStoreClient, referenced: Set[str], listed: Set[str]
+    ) -> list[str]:
+        """The referenced hashes a listing lacks and a ``HEAD`` confirms absent (listings
+        may lag), sorted; the store marker is checked again when there are any."""
+        absent = [
+            digest
+            for digest in sorted(referenced)
+            if digest not in listed
+            and (not HASH_RE.match(digest) or store.head_object(self.key(digest)) is None)
+        ]
+        if absent:
+            self._absent()
+        return absent
+
+    def absent(self, referenced: Set[str]) -> list[str]:
+        if not referenced:
+            return []
+        store = self._store()
+        listed = {digest for digest, _ in self._objects(store)}
+        return self._unlisted(store, referenced, listed)
+
+    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> BlobVerification:
         findings: list[Finding] = []
 
         def add(
@@ -346,15 +377,7 @@ class S3Blobs:
 
         store = self._store()
         listed = dict(self._objects(store))
-        absent = [
-            digest
-            for digest in sorted(referenced or ())
-            if digest not in listed
-            and (not HASH_RE.match(digest) or store.head_object(self.key(digest)) is None)
-        ]
-        if absent:
-            self._absent()
-        for digest in absent:
+        for digest in self._unlisted(store, referenced or frozenset(), set(listed)):
             add(BLOB_MISSING, self.target(digest), "a referenced file is missing", _E)
         for digest in sorted(listed):
             path = self.target(digest)
@@ -365,9 +388,26 @@ class S3Blobs:
                 if actual is not None and actual != digest:
                     message = "the stored bytes differ from their hash"
                     add(BLOB_HASH_MISMATCH, path, message, _E, digest, actual)
-        for name, _ in blobs.staging(self.layout):
-            add(BLOB_STAGING_LEFTOVER, f"blobs/{name}", "a staged file was never published", _I)
-        return findings
+        findings += blobs.staging_findings(self.layout)
+        stored = tuple(BlobInfo(digest, entry.size) for digest, entry in listed.items())
+        return BlobVerification(tuple(findings), stored)
+
+    def unavailable(self, error: GraphCliError) -> Finding | None:
+        if error.code != "backend.unavailable":
+            return None
+        actual: dict[str, JsonValue] = {"code": error.code, **error.details}
+        return Finding(
+            _E,
+            BLOB_STORE_UNAVAILABLE,
+            {"path": self.target_prefix()},
+            error.message,
+            actual=actual,
+        )
+
+    def target_prefix(self) -> str:
+        """Where the graph's objects are, as finding targets name it."""
+        prefix = self.settings.prefix if self.settings is not None else ""
+        return prefix + self._base.removesuffix("sha256/")
 
     def collectable(self, referenced: Set[str]) -> list[BlobInfo]:
         return [
@@ -400,6 +440,17 @@ class S3Blobs:
                     removed += 1
         local = blobs.remove(self.layout, (), names, referenced=referenced, syncer=self.syncer)
         return {"blobs": removed, "staging": local["staging"]}
+
+    def remove_misplaced(self, hashes: Sequence[str]) -> int:
+        for digest in hashes:
+            if not HASH_RE.match(digest):
+                raise GraphCliError("internal.error", f"refusing to remove blob {digest!r}")
+        if not hashes:
+            return 0
+        store = self._store()
+        for digest in hashes:
+            store.delete_object(self.key(digest))
+        return len(hashes)
 
     def target(self, digest: str) -> str:
         prefix = self.settings.prefix if self.settings is not None else ""

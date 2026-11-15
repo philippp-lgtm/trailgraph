@@ -50,6 +50,16 @@ class CommitResult:
 
 
 @dataclass(frozen=True, slots=True)
+class BlobVerification:
+    """What a blob check found: its ``integrity.storage.blob_*`` findings and the blobs
+    stored in the location the graph's manifest names, as one listing saw them (``None``
+    when that location could not be listed: ``blob_store_unavailable``)."""
+
+    findings: tuple[Finding, ...]
+    stored: tuple[BlobInfo, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
 class RecoveryReport:
     recovered: bool
     details: Mapping[str, JsonValue] = field(default=EMPTY)
@@ -279,18 +289,33 @@ class MaintenanceSession(WriteSession, Protocol):
         ones for a grace period); ``backend.corrupt`` when the tx log is damaged."""
         ...
 
+    def misplaced_blobs(self) -> tuple[Sequence[BlobInfo], Sequence[BlobInfo]]:
+        """Copies of blobs outside the location the manifest names (the data root for a
+        graph in an object store, the configured object store for a local graph, when one
+        is usable): those the named location holds with the same hash and size, which may
+        be removed, and the others, which are kept."""
+        ...
+
     def staging(self) -> Iterator[tuple[str, datetime]]:
         """Blob staging leftovers: ``(name, last modified)``."""
         ...
 
-    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
-        """``integrity.storage.blob_*`` findings; ``rehash`` reads every stored blob."""
+    def verify_blobs(self, *, rehash: bool) -> BlobVerification:
+        """``integrity.storage.blob_*`` findings and the stored blobs; ``rehash`` reads
+        every stored blob."""
         ...
 
     def remove_blobs(
-        self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
+        self,
+        hashes: Sequence[str],
+        staging: Sequence[str],
+        receipt: AuditReceipt,
+        *,
+        misplaced: Sequence[BlobInfo] = (),
     ) -> None:
-        """Delete unreferenced blobs and staging leftovers; ``receipt`` is the intent (W.e)."""
+        """Delete unreferenced blobs, staging leftovers and misplaced copies (each only
+        while the named location still holds its hash with the same size); ``receipt`` is
+        the intent (W.e)."""
         ...
 
 

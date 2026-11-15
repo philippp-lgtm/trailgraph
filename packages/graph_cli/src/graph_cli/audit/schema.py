@@ -588,7 +588,8 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
                 "change.alias_prefixes of a pin intent is not {added{curie: prefix},"
                 " moved{curie: {from, prefix}}}"
             )
-    if REPAIR_ACTION in actions and ("blobs_removed" in entries or "staging_removed" in entries):
+    removal = ("blobs_removed", "staging_removed", "misplaced_removed")
+    if REPAIR_ACTION in actions and any(key in entries for key in removal):
         removed, staging = entries.get("blobs_removed"), entries.get("staging_removed")
         if not (
             (removed == [] or is_blob_list(removed))
@@ -598,6 +599,10 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
         ):
             problems.append(
                 "a file removal needs change.blobs_removed[{hash, size}] and staging_removed"
+            )
+        if "misplaced_removed" in entries and not is_blob_list(entries["misplaced_removed"]):
+            problems.append(
+                "change.misplaced_removed of a file removal is not a non-empty [{hash, size}]"
             )
     if REINDEX_ACTION in actions and "reindex" in entries:
         reindex = entries["reindex"]

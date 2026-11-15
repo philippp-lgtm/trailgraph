@@ -55,6 +55,9 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         "A renamed_from was applied by the previous release.",
     ),
     ErrorSpec("admin.integrity_errors", _C.INVALID, False, "Verification found errors."),
+    ErrorSpec(
+        "admin.store_check_failed", _C.INVALID, False, "The object store check found a problem."
+    ),
     ErrorSpec("admin.data_errors", _C.INVALID, False, "The data has error findings."),
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.functions_invalid", _C.INVALID, False, "The function files are invalid."),

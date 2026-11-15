@@ -7,11 +7,13 @@ intent, ``migrate``, pin intent with the alias prefixes, manifest switch, marker
 ``verify`` composes storage verify and the audit verifier like ``graph-admin audit verify``.
 """
 
+import dataclasses
 from collections.abc import Callable, Mapping
 
 from graph_cli.audit import events as builders
 from graph_cli.audit.verify import (
     MaintEffects,
+    blob_store_state,
     check_anchors,
     effect_anchors,
     verify_graph,
@@ -111,6 +113,20 @@ class AuditedScene(Installation):
             session.replace_manifest(with_pin(current, pin_of(model)), receipt)
             self.companion("maint.ontology_pin", resource, entry, receipt)
 
+    def switch_blob_store(self, graph_id: GraphId, store_id: str) -> None:
+        """Switch a graph that holds no stored file to the object store ``store_id`` as
+        ``graph create`` does (intent with ``change.blob_store``, manifest, companion)."""
+        resource = f"graph:{graph_id}"
+        with self.maintenance.maintenance_session(graph_id, timeout_s=5) as session:
+            current = session.manifest()
+            change = builders.blob_store_change("local", "s3", store_id, blobs=0, size=0)
+            receipt = session.append_audit(
+                self.maint("maint.graph_configure", resource, graph=current.entry, change=change)
+            )
+            store = dataclasses.replace(current.store, blob_location="s3", store_id=store_id)
+            session.replace_manifest(dataclasses.replace(current, store=store), receipt)
+            self.companion("maint.graph_configure", resource, current.entry, receipt)
+
     def companion(
         self, action: str, resource: str, entry: GraphEntry, receipt: AuditReceipt
     ) -> None:
@@ -129,11 +145,15 @@ class AuditedScene(Installation):
             with self.maintenance.maintenance_session(graph_id, timeout_s=5) as session:
                 storage = list(session.verify())
                 pin_broken = any(f.code == storage_codes.PIN_MISMATCH for f in storage)
+                located = None if pin_broken else session.manifest().store
                 effects = MaintEffects(
                     manifest_pin=None if pin_broken else session.manifest().entry.pin,
                     releases=session.release_hashes(),
                     anchored=anchored.get(str(graph_id), frozenset()),
                     migration_marker=store.migration_marker(),
+                    blob_store=None
+                    if located is None
+                    else blob_store_state(located.blob_location, located.store_id),
                 )
             report = verify_graph(
                 self.audit.read_lines(graph_stream(str(graph_id))),

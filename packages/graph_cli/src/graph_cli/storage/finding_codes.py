@@ -1,8 +1,8 @@
 """Finding codes owned by storage (contracts R.4, R.6, section 1.5.2).
 
-Produced by ``MaintenanceSession.verify`` (``blob_missing`` too) and
-``verify_blobs`` (every ``blob_*`` code). Every code has exactly one tamper
-scenario under ``tests/tamper/``.
+Produced by ``MaintenanceSession.verify`` (``blob_missing`` and
+``blob_store_unavailable`` too) and ``verify_blobs`` (every ``blob_*`` code). Every code
+has exactly one tamper scenario under ``tests/tamper/``.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ BLOB_MISSING: Final = "integrity.storage.blob_missing"
 BLOB_HASH_MISMATCH: Final = "integrity.storage.blob_hash_mismatch"
 BLOB_ORPHAN: Final = "integrity.storage.blob_orphan"
 BLOB_STAGING_LEFTOVER: Final = "integrity.storage.blob_staging_leftover"
+BLOB_MISPLACED: Final = "integrity.storage.blob_misplaced"
+BLOB_STORE_UNAVAILABLE: Final = "integrity.storage.blob_store_unavailable"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("tx_chain_broken", "A tx log line is damaged or does not continue the chain."),
@@ -48,4 +50,13 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity("blob_hash_mismatch", "The bytes of a stored file differ from its hash."),
     _integrity("blob_orphan", "A stored file is referenced by no tx.", Severity.INFO),
     _integrity("blob_staging_leftover", "A staged file was never published.", Severity.INFO),
+    _integrity(
+        "blob_misplaced",
+        "A copy of a stored file lies outside the location the manifest names.",
+        Severity.INFO,
+    ),
+    _integrity(
+        "blob_store_unavailable",
+        "The object store holding the graph's files cannot be reached or is another store.",
+    ),
 )

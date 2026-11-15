@@ -82,11 +82,14 @@ def test_local_blobs_has_every_member_of_the_protocol() -> None:
         "read",
         "local_path",
         "missing",
+        "absent",
         "listing",
         "staging",
         "verify",
+        "unavailable",
         "collectable",
         "remove",
+        "remove_misplaced",
         "target",
     }
     for name in sorted(members):

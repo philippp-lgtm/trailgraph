@@ -77,7 +77,7 @@ def staging_files(store: FileStore) -> int:
 def blob_codes(env: StoreEnv) -> list[str]:
     maintenance = FileStoreMaintenance(env.root, object_store=env.object_store)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        return sorted(f.code for f in session.verify_blobs(rehash=True))
+        return sorted(f.code for f in session.verify_blobs(rehash=True).findings)
 
 
 @pytest.mark.parametrize("point", list(ROWS), ids=str)

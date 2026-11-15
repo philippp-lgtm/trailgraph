@@ -7,6 +7,7 @@ The ``integrity.audit.pin_mismatch`` scenario lives here because it needs a
 manifest and releases (``test_audit_verify`` covers the other audit codes).
 """
 
+import dataclasses
 from collections.abc import Callable
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.ports.audit import INSTALLATION_STREAM
 from graph_cli.storage import finding_codes as storage_codes
 from graph_cli.storage.common.faults import CrashPoint
+
+STORE_ID = "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9"
 
 
 @pytest.fixture
@@ -40,8 +43,16 @@ def pin_back_to_the_genesis_release(scene: AuditedScene, graph_id: GraphId) -> N
     scene.write_manifest(graph_id, with_pin(scene.manifest_of(graph_id), old))
 
 
+def blob_location_edited_by_hand(scene: AuditedScene, graph_id: GraphId) -> None:
+    """The manifest is rewritten to name an object store; no switch was recorded."""
+    data = scene.manifest_of(graph_id)
+    store = dataclasses.replace(data.store, blob_location="s3", store_id=STORE_ID)
+    scene.write_manifest(graph_id, dataclasses.replace(data, store=store))
+
+
 SCENARIOS: dict[str, Callable[[AuditedScene, GraphId], None]] = {
     audit_codes.PIN_MISMATCH: pin_back_to_the_genesis_release,
+    audit_codes.BLOB_STORE_MISMATCH: blob_location_edited_by_hand,
 }
 
 
@@ -88,3 +99,43 @@ def test_interrupted_create_is_an_intent_without_effect(scene: AuditedScene) -> 
     assert [(f.code, f.target["stream"]) for f in findings] == [
         (audit_codes.INTENT_WITHOUT_EFFECT, INSTALLATION_STREAM)
     ]
+
+
+def test_a_recorded_blob_store_switch_verifies_clean(scene: AuditedScene) -> None:
+    """Genesis means local; the switch's intent, manifest and anchor agree (O7)."""
+    graph_id = scene.create_audited()
+    scene.switch_blob_store(graph_id, STORE_ID)
+    assert scene.manifest_of(graph_id).store.store_id == STORE_ID
+    assert scene.codes() == []
+
+
+def test_a_manifest_switched_back_by_hand_is_a_blob_store_mismatch(scene: AuditedScene) -> None:
+    graph_id = scene.create_audited()
+    scene.switch_blob_store(graph_id, STORE_ID)
+    data = scene.manifest_of(graph_id)
+    local = dataclasses.replace(data.store, blob_location="local", store_id=None)
+    scene.write_manifest(graph_id, dataclasses.replace(data, store=local))
+    (finding,) = scene.verify()
+    assert finding.code == audit_codes.BLOB_STORE_MISMATCH
+    assert finding.target["path"] == f"graphs/{graph_id}/manifest.toml"
+    assert finding.expected == {"location": "s3", "store_id": STORE_ID}
+    assert finding.actual == {"location": "local"}
+
+
+def test_an_interrupted_blob_store_switch_is_an_intent_without_effect(
+    scene: AuditedScene,
+) -> None:
+    """The intent is written, the manifest rename fails: the graph stays local with every
+    file, as an interrupted pin switch leaves its pin (info, not an error), and the finding
+    says what to do."""
+    graph_id = scene.create_audited()
+    scene.faults.armed.add(CrashPoint.MANIFEST_BEFORE_RENAME)
+    with pytest.raises(Exception, match="injected fault"):
+        scene.switch_blob_store(graph_id, STORE_ID)
+    scene.faults.armed.clear()
+    (finding,) = scene.verify()
+    assert finding.code == audit_codes.INTENT_WITHOUT_EFFECT
+    assert finding.severity.value == "info"
+    assert "interrupted switch" in finding.message
+    assert "in the data root" in finding.message
+    assert "graph-admin files move --to s3" in finding.message

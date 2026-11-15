@@ -202,8 +202,9 @@ SCENARIOS: dict[str, Callable[[Scene], None]] = {
 
 # Codes whose scenario needs manifests and releases (tests/tamper/test_maint_verify.py),
 # installed policies (tests/tamper/test_policy_verify.py), tokens
-# (tests/tamper/test_token_verify.py), published slots (tests/tamper/test_slot_verify.py) or
-# migrations (tests/tamper/test_migration_verify.py).
+# (tests/tamper/test_token_verify.py), published slots (tests/tamper/test_slot_verify.py),
+# migrations (tests/tamper/test_migration_verify.py) or a blob location
+# (tests/tamper/test_maint_verify.py).
 MAINT_SCENARIO_CODES = {
     finding_codes.TOKEN_MISMATCH,
     finding_codes.ENROLLMENT_MISMATCH,
@@ -218,6 +219,7 @@ MAINT_SCENARIO_CODES = {
     finding_codes.MIGRATION_REVISIONS_MISMATCH,
     finding_codes.MIGRATION_UNPINNED,
     finding_codes.MIGRATION_INCOMPLETE,
+    finding_codes.BLOB_STORE_MISMATCH,
 }
 
 

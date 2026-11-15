@@ -21,7 +21,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.blob_backend` | the blob seam: the `BlobBackend` protocol through which `FileStore`, its write sessions, the commit check and maintenance reach stored files; `LocalBlobs` over `storage.files.blobs`; `BlobBackends`, which picks the backend from the manifest's blob location (parsed manifests cached per process by the file's identity) |
 | `storage.files.s3_blobs` | `S3Blobs`: stored files in an S3-compatible object store ([Stored files in an object store](#stored-files-in-an-object-store)) |
 | `storage.files.store_marker` | the object store's marker `graph_cli_store.json`: creating it, reading it, and the per-process cache of the identity check |
-| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `misplaced_blobs`, `remove_blobs`, `recover`, `reindex` (admin only); the object store client for `files store check` |
 | `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (`storage.files.s3_blobs` and `storage.files.store_marker` use it) |
 
 ## FileStore
@@ -177,12 +177,28 @@ in the graph directory.
   the manifest replaced by one rename as format 2, and the anchor. A switch
   that fails after the creation leaves the graph local (format 1, holding no
   file) and the command names it.
-- **Verify and gc.** Blob verification lists the graph's prefix once
-  (`--rehash` streams every object); the finding codes are those of local
-  blobs. Only orphans older than 24 hours by the store's clock (the listing's
+- **Verify and gc.** Blob verification (`files verify`, and the check of
+  referenced files in `audit verify`) lists the graph's prefix once and
+  confirms a referenced hash the listing lacks by `HEAD` (`--rehash` streams
+  every object); the finding codes are those of local blobs, plus:
+
+  | Code | Severity | Meaning |
+  | --- | --- | --- |
+  | `integrity.storage.blob_misplaced` | info | a copy outside the location the manifest names: a file in `blobs/sha256/` of a graph in an object store, or, when an object store is configured with credentials, an object below `graphs/<id>/blobs/` of a local graph (`.tmp-` staging files are not copies); the message says whether the named location holds the same hash and size |
+  | `integrity.storage.blob_store_unavailable` | error | the object store of a graph in an object store cannot be used: no usable settings, no credentials, a marker that is missing or carries another id, refused credentials, no answer; it stands for every other finding about the store (staging leftovers are still listed), and its `actual` carries the error's code and safe details |
+
+  A local graph never fails because of the object store: copies there are
+  looked for only when it is configured with credentials, answers and has
+  a marker (any id). With an unreadable manifest the blob location is
+  unknown, so `audit verify` judges no blob (the manifest is `pin_mismatch`).
+  Only orphans older than 24 hours by the store's clock (the listing's
   `Date`) are offered to and removed by gc, since an add is an orphan between
-  its promote and its commit; staging leftovers keep their local rule. A gc
-  holds the graph lock, as the publish does.
+  its promote and its commit; staging leftovers keep their local rule.
+  Misplaced copies go only when one listing of the named location shows
+  their hash with the same size, judged again right before the removal and
+  before any orphan goes, so neither an aborted move nor a damaged location
+  loses a file; the others stay. A gc holds the graph lock, as the publish
+  does. `graph-admin files store check` probes a store without any graph.
 - **Crash windows** (in addition to KB0-KB2 of local blobs):
 
   | Point | Window | Durable after `kill -9` |

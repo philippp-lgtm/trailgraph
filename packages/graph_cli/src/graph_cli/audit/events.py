@@ -166,9 +166,19 @@ def changeset_size(changeset: Mapping[str, JsonValue]) -> int:
     return len(canonical_bytes(dict(changeset)))
 
 
-def blobs_removed(blobs: Sequence[BlobInfo], staging: int) -> dict[str, JsonValue]:
-    """``change`` of a ``maint.repair`` intent that removes stored files (``files gc``)."""
-    return {"blobs_removed": blob_list(blobs) if blobs else [], "staging_removed": staging}
+def blobs_removed(
+    blobs: Sequence[BlobInfo], staging: int, *, misplaced: Sequence[BlobInfo] = ()
+) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.repair`` intent that removes stored files (``files gc``):
+    orphans, the number of staging leftovers and, only when there are any, the misplaced
+    copies (outside the location the manifest names, which holds each of them)."""
+    change: dict[str, JsonValue] = {
+        "blobs_removed": blob_list(blobs) if blobs else [],
+        "staging_removed": staging,
+    }
+    if misplaced:
+        change["misplaced_removed"] = blob_list(misplaced)
+    return change
 
 
 def reindexed(seq: int) -> dict[str, JsonValue]:

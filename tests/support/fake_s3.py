@@ -15,8 +15,9 @@ store where it matters for the client:
   answers of S3 do, so tests can prove the client never echoes a body;
 - ``LastModified`` and ``Date`` come from the injected clock.
 
-Faults are injected with ``fail``, ``delay``, ``stall_get_body``, ``corrupt_get`` and
-``listing_lag``; ``requests`` records every request. ``tls`` serves HTTPS with the given
+Faults are injected with ``fail``, ``delay``, ``stall_get_body``, ``corrupt_get``,
+``listing_lag`` and ``without_list_bucket`` (a missing object answers 403, as AWS does for a
+key without ``ListBucket``); ``requests`` records every request. ``tls`` serves HTTPS with the given
 certificate and key. Ranges and chunked uploads are not
 supported. The signing primitives come from ``graph_cli.storage.s3.signing``, which has its
 own test vectors.
@@ -133,6 +134,8 @@ class FakeS3:
         self.objects: dict[str, StoredObject] = {}
         self.requests: list[RecordedRequest] = []
         self.listing_lag = timedelta(0)
+        # a key without ListBucket: AWS answers 403 instead of 404 for a missing object
+        self.without_list_bucket = False
         self._lock = threading.Lock()
         self._faults: list[_Fault] = []
         self._delays: list[_Delay] = []
@@ -443,6 +446,8 @@ class _Handler(BaseHTTPRequestHandler):
                 stall, store._stall = store._stall, None
                 cut, store._truncate = store._truncate, None
         if stored is None:
+            if store.without_list_bucket:
+                return self._error(request, 403, "AccessDenied", "Access Denied")
             return self._error(request, 404, "NoSuchKey", "The specified key does not exist.")
         data = served if served is not None else stored.data
         headers = {

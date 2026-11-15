@@ -40,7 +40,7 @@ def verify(maintenance: FileStoreMaintenance, graph: GraphId) -> list[str]:
     """Storage ``verify`` plus the full blob check, each code once."""
     with maintenance.maintenance_session(graph, timeout_s=5) as session:
         codes = [f.code for f in session.verify()]
-        extra = [f.code for f in session.verify_blobs(rehash=True)]
+        extra = [f.code for f in session.verify_blobs(rehash=True).findings]
     return [*codes, *(c for c in dict.fromkeys(extra) if c not in codes)]
 
 
@@ -136,9 +136,20 @@ SCENARIOS: dict[str, Callable[[FileStore], None]] = {
 }
 
 
+# Codes whose scenario needs the fake object store (tests/tamper/test_object_store_verify.py).
+OBJECT_STORE_SCENARIO_CODES = {
+    finding_codes.BLOB_MISPLACED,
+    finding_codes.BLOB_STORE_UNAVAILABLE,
+}
+
+
 def test_every_storage_code_has_one_scenario() -> None:
-    """R.6: registry and tamper scenarios match one to one."""
-    assert set(SCENARIOS) == {spec.code for spec in finding_codes.FINDING_CODES}
+    """R.6: registry and tamper scenarios match one to one (the object store codes'
+    scenarios need the fake object store: ``tests/tamper/test_object_store_verify.py``)."""
+    assert not set(SCENARIOS) & OBJECT_STORE_SCENARIO_CODES
+    assert set(SCENARIOS) | OBJECT_STORE_SCENARIO_CODES == {
+        spec.code for spec in finding_codes.FINDING_CODES
+    }
 
 
 def test_clean_graph_verifies_clean(tmp_path: Path) -> None:
@@ -313,8 +324,8 @@ def test_only_rehash_reads_the_stored_bytes(tmp_path: Path) -> None:
     flip_blob_byte(store)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
         assert session.verify() == []
-        assert session.verify_blobs(rehash=False) == []
-        (finding,) = session.verify_blobs(rehash=True)
+        assert session.verify_blobs(rehash=False).findings == ()
+        (finding,) = session.verify_blobs(rehash=True).findings
     assert finding.code == finding_codes.BLOB_HASH_MISMATCH
     assert finding.target == {"path": str(stored_blob(store).relative_to(store.layout.root))}
     assert finding.expected == "sha256:" + hashlib.sha256(CONTENT).hexdigest()
@@ -334,7 +345,7 @@ def test_blob_findings_beyond_damage_name_no_orphans(tmp_path: Path) -> None:
     edit_interior_tx_line(store)
     add_orphan_blob(store)
     with maintenance.maintenance_session(env.graph_id, timeout_s=5) as session:
-        assert session.verify_blobs(rehash=False) == []
+        assert session.verify_blobs(rehash=False).findings == ()
         unused = AuditReceipt(store.stream, EventId(env.ids.new_id()), 1, "", object())
         with pytest.raises(GraphCliError) as info:
             session.remove_blobs([], [], unused)

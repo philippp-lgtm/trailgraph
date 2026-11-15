@@ -177,19 +177,19 @@ def reset_identity_cache() -> None:
 def check_store_identity(
     client: ObjectStoreClient,
     settings: ObjectStoreSettings,
-    expected: str,
+    expected: str | None,
     *,
     monotonic: Callable[[], float],
     force: bool = False,
 ) -> str | None:
-    """``None`` when the configured bucket's marker carries ``expected``, else why not
-    (a phrase for ``unusable_object_store``). A cached answer younger than
-    ``IDENTITY_TTL_S`` is used unless ``force``; a cached id that differs is read again
-    once before it is believed."""
+    """``None`` when the configured bucket's marker carries ``expected`` (any id when
+    ``expected`` is ``None``: a bucket written by graph_cli), else why not (a phrase for
+    ``unusable_object_store``). A cached answer younger than ``IDENTITY_TTL_S`` is used
+    unless ``force``; a cached id that differs is read again once before it is believed."""
     key = identity_key(settings)
     now = monotonic()
     cached = None if force else _CACHE.lookup(key, now)
-    if cached == expected:
+    if cached is not None and (expected is None or cached == expected):
         return None
     marker = read_store_marker(client)
     found = marker.store_id if marker is not None else None
@@ -200,7 +200,7 @@ def check_store_identity(
             f" graph_cli store marker ({MARKER_KEY}); check the bucket, the prefix and the"
             " endpoint"
         )
-    if found != expected:
+    if expected is not None and found != expected:
         return (
             f"this graph's files are not in that bucket: bucket {settings.bucket} belongs to"
             f" object store {found}; check the bucket, the prefix and the endpoint"

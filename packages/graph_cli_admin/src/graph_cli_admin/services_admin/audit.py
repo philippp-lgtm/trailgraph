@@ -8,10 +8,12 @@ maintenance effects, pin events, anchors). Order, without cascades:
    installed installation policy against its policy events (B5.15), the
    token file against the token events (B14.11) and the enrollment file
    against the enrollment events (B14.21);
-2. each graph under its maintenance lock: storage findings, then the graph
-   stream with the txs (only if the tx log is clean) and the maintenance
-   effects (the manifest pin only if storage found it intact, the graph's
-   installed policy, the published skill and function catalog);
+2. each graph under its maintenance lock: storage findings (a referenced stored
+   file that is missing; an object store that cannot be reached is the finding
+   ``blob_store_unavailable``, not a stop), then the graph stream with the txs (only
+   if the tx log is clean) and the maintenance effects (the manifest pin only if
+   storage found it intact, the graph's installed policy, the published skill and
+   function catalog, the blob location against the ``change.blob_store`` intents);
 3. the anchors against the graph streams.
 
 Then a ``maint.audit_verify`` event anchors the heads of the graphs without
@@ -35,6 +37,7 @@ from graph_cli.audit.verify import (
     InstalledSlots,
     MaintEffects,
     StreamReport,
+    blob_store_state,
     check_anchors,
     check_enrollments,
     check_policy,
@@ -219,6 +222,18 @@ def _migration_marker(ctx: AdminContext, graph_id: GraphId) -> MigrationMarker |
         return None
 
 
+def _blob_store(session: MaintenanceSession) -> dict[str, JsonValue] | None:
+    """Where the manifest says the graph keeps its stored files; ``None`` when the manifest
+    cannot be read (storage reports it as ``pin_mismatch``)."""
+    try:
+        store = session.manifest().store
+    except GraphCliError as exc:
+        if exc.code != "config.invalid":
+            raise
+        return None
+    return blob_store_state(store.blob_location, store.store_id)
+
+
 def _verify_graph(
     ctx: AdminContext, graph_id: GraphId, anchored: frozenset[int] | None
 ) -> tuple[list[Finding], StreamReport]:
@@ -233,6 +248,7 @@ def _verify_graph(
             policy=_installed(session.read_policy),
             slots=_installed_slots(session),
             migration_marker=_migration_marker(ctx, graph_id),
+            blob_store=_blob_store(session),
         )
         txs = None
         if storage_codes.TX_CHAIN_BROKEN not in codes:

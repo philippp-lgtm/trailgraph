@@ -46,6 +46,7 @@ MIGRATION_VERSION_MISMATCH: Final = "integrity.audit.migration_version_mismatch"
 MIGRATION_REVISIONS_MISMATCH: Final = "integrity.audit.migration_revisions_mismatch"
 MIGRATION_UNPINNED: Final = "integrity.audit.migration_unpinned"
 MIGRATION_INCOMPLETE: Final = "integrity.audit.migration_incomplete"
+BLOB_STORE_MISMATCH: Final = "integrity.audit.blob_store_mismatch"
 
 FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
     _integrity(
@@ -136,5 +137,10 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         "migration_incomplete",
         Severity.WARNING,
         "A migration tx is committed but its pin switch has not happened yet.",
+    ),
+    _integrity(
+        "blob_store_mismatch",
+        Severity.ERROR,
+        "The manifest's blob location differs from the recorded blob store switches.",
     ),
 )

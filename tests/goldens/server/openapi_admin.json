@@ -547,6 +547,42 @@
               "type": "string"
             }
           },
+          "misplaced_removed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "hash",
+                "size"
+              ]
+            }
+          },
+          "misplaced_kept": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "hash",
+                "size"
+              ]
+            }
+          },
           "dry_run": {
             "type": "boolean"
           },
@@ -558,8 +594,138 @@
           "graph_id",
           "blobs_removed",
           "staging_removed",
+          "misplaced_removed",
+          "misplaced_kept",
           "dry_run",
           "removed"
+        ]
+      },
+      "files_store_check_data": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "files_store": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3"
+            ]
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "bucket": {
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "endpoint_host": {
+                    "type": "string"
+                  },
+                  "addressing": {
+                    "type": "string",
+                    "enum": [
+                      "path",
+                      "virtual"
+                    ]
+                  }
+                },
+                "required": [
+                  "bucket",
+                  "prefix",
+                  "region",
+                  "endpoint_host",
+                  "addressing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "store_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "graphs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "skew_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "warning",
+                    "error",
+                    "skipped"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "status",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "configured",
+          "files_store",
+          "store",
+          "store_id",
+          "graphs",
+          "skew_s",
+          "checks"
         ]
       },
       "files_verify_data": {
@@ -6466,7 +6632,7 @@
     "/v1/admin/commands/files/gc": {
       "post": {
         "operationId": "files_gc",
-        "summary": "Remove stored files no tx names and staging files older than one hour.",
+        "summary": "Remove stored files no tx names, staging files older than one hour and misplaced copies.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -6805,10 +6971,284 @@
         "x-graph-cli-remote": "server"
       }
     },
+    "/v1/admin/commands/files/store/check": {
+      "post": {
+        "operationId": "files_store_check",
+        "summary": "Check the configured object store: settings, marker, permissions, clock.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/files_store_check_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "remote.unauthorized"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, admin.store_check_failed, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "admin.store_check_failed",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {},
+                    "required": []
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
+        "x-graph-cli-remote": "server"
+      }
+    },
     "/v1/admin/commands/files/verify": {
       "post": {
         "operationId": "files_verify",
-        "summary": "Check that every file a tx names is stored; list orphans and staging leftovers.",
+        "summary": "Check that every file a tx names is stored; list orphans, staging leftovers and misplaced copies.",
         "responses": {
           "200": {
             "description": "The answer.",

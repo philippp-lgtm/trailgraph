@@ -286,6 +286,11 @@ class ObjectStoreClient:
     def bucket(self) -> str:
         return self._settings.bucket
 
+    def endpoint_host(self) -> str:
+        """The store's host (and port) as messages name it; raises ``backend.unavailable``
+        for an endpoint the client cannot use."""
+        return self._endpoint("ListObjectsV2").display_host
+
     # -- public calls ---------------------------------------------------------------------
 
     def put_object(self, key: str, body: BinaryIO, size: int, sha256_hex: str) -> None:

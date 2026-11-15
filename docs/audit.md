@@ -241,6 +241,28 @@ records the switch right after the genesis (`blobs` and `bytes` 0). An
 intent whose `blob_store` is not that shape (an unknown location, `from`
 equal to `to`, a `store_id` that is not a UUID) is `event_malformed`.
 
+`audit verify` walks these intents from `local` (genesis) and compares the
+end with the manifest: its blob location, and for `s3` its `store_id`, must
+be what the last committed switch recorded. A manifest that names another
+location or store, edited or restored by hand, is
+`integrity.audit.blob_store_mismatch` (its target names
+`graphs/<id>/manifest.toml`; expected and actual give location and store
+id). A switch whose manifest rename never happened left the graph where it
+was with every file; like an interrupted pin switch it is
+`intent_without_effect` (info), and its message names the command that
+switches the graph. Whether every referenced file is where the manifest
+says is the storage check (`blob_missing`); an object store that cannot be
+reached is the storage error `blob_store_unavailable`
+([Storage](storage.md#stored-files-in-an-object-store)).
+
+`files gc` removes stored files as a `maint.repair` operation whose intent
+names them by hash and size only: `change.blobs_removed[{hash, size}]` (the
+orphans), `staging_removed` (how many staging files) and, only when there
+were any, `misplaced_removed[{hash, size}]`: copies outside the location
+the manifest names, each removed only after that location showed the same
+hash and size. A `misplaced_removed` that is not a non-empty list of that
+shape in hash order is `event_malformed`.
+
 ## Migration verification
 
 A release with a data migration commits one transaction whose changeset has a `migration`

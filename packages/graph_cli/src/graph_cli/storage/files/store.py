@@ -282,6 +282,12 @@ class FileStore:
             self.layout, blob_manifest(self.layout), syncer=self.syncer, faults=self.faults
         )
 
+    def misplaced_backend(self) -> BlobBackend | None:
+        """Where misplaced copies of the graph's blobs may lie (``BlobBackends.elsewhere``)."""
+        return self.blob_backends.elsewhere(
+            self.layout, blob_manifest(self.layout), syncer=self.syncer, faults=self.faults
+        )
+
     def blob(self, digest: str) -> BlobInfo | None:
         return self.blob_backend().info(digest)
 

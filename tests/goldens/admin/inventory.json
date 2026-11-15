@@ -392,7 +392,7 @@
       "kind": "write",
       "surface": "act",
       "action": "maint.repair",
-      "summary": "Remove stored files no tx names and staging files older than one hour.",
+      "summary": "Remove stored files no tx names, staging files older than one hour and misplaced copies.",
       "args": [],
       "options": [
         {
@@ -464,12 +464,66 @@
     {
       "path": [
         "files",
+        "store",
+        "check"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": "maint.audit_verify",
+      "summary": "Check the configured object store: settings, marker, permissions, clock.",
+      "args": [],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin files store check",
+          "summary": "Check the object store."
+        },
+        {
+          "command": "graph-admin files store check --json",
+          "summary": "Every check as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.store_check_failed",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "files",
         "verify"
       ],
       "kind": "read",
       "surface": "trace",
       "action": "maint.audit_verify",
-      "summary": "Check that every file a tx names is stored; list orphans and staging leftovers.",
+      "summary": "Check that every file a tx names is stored; list orphans, staging leftovers and misplaced copies.",
       "args": [],
       "options": [
         {
@@ -3264,6 +3318,11 @@
     {
       "code": "admin.source_exists",
       "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.store_check_failed",
+      "category": "invalid",
       "exit": 1
     },
     {

@@ -1,14 +1,19 @@
-"""``graph-admin files verify`` and ``files gc``: the stored files of one graph (files slice 1).
+"""``graph-admin files verify`` and ``files gc``: the stored files of one graph (files slice 1,
+object storage O7, O8).
 
-- ``verify`` reads every stored file under the graph lock: missing and
-  damaged files (errors), orphans and staging leftovers (info). It writes
+- ``verify`` checks the stored files under the graph lock, in an object store by one
+  listing of the graph's prefix (``--rehash`` reads every file): missing and damaged
+  files (errors), orphans, staging leftovers and misplaced copies (info: copies outside
+  the location the manifest names). An object store that cannot be reached or carries
+  another store marker is the error finding ``blob_store_unavailable``. It writes
   nothing; error findings fail with ``admin.integrity_errors``.
-- ``gc`` removes stored files no tx names and staging files older than one
-  hour (an add stages before it takes the lock, so a young staging file may
-  belong to a write in flight). Orphans appear only under the lock, so
-  removing them under the lock cannot race a writer. The removal is a
-  ``maint.repair`` event pair (W.e) whose change names hashes and sizes
-  only; nothing to remove writes nothing.
+- ``gc`` removes stored files no tx names (in an object store only those older than 24
+  hours by the store's clock), staging files older than one hour (an add stages before
+  it takes the lock, so a young staging file may belong to a write in flight) and
+  misplaced copies whose hash the graph's location holds with the same size (the
+  others are kept and listed). Orphans appear only under the lock, so removing them
+  under the lock cannot race a writer. The removal is a ``maint.repair`` event pair
+  (W.e) whose change names hashes and sizes only; nothing to remove writes nothing.
 """
 
 from __future__ import annotations
@@ -41,8 +46,9 @@ def verify(ctx: AdminContext, *, graph_ref: str, rehash: bool) -> FilesOutcome:
     meta = RequestMeta.of("files verify", {"graph": str(entry.id), "rehash": rehash})
     ctx.authorize([("maint.audit_verify", f"graph:{entry.id}")], request=meta, graph=entry.id)
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
-        findings: list[Finding] = list(session.verify_blobs(rehash=rehash))
-        stored = list(session.blobs())
+        verification = session.verify_blobs(rehash=rehash)
+        findings: list[Finding] = list(verification.findings)
+        stored = verification.stored or ()  # None only beside a blob_store_unavailable error
         seq = ctx.maintenance.store(entry.id).head().seq
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
@@ -69,21 +75,24 @@ def gc(ctx: AdminContext, *, graph_ref: str, reason: str | None, dry_run: bool) 
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         orphans = list(session.orphan_blobs())
+        misplaced, kept = session.misplaced_blobs()
         now = ctx.clock.now()
         stale = [name for name, modified in session.staging() if now - modified > STAGING_MAX_AGE]
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "blobs_removed": events.blob_list(orphans) if orphans else [],
             "staging_removed": list(stale),
+            "misplaced_removed": events.blob_list(misplaced) if misplaced else [],
+            "misplaced_kept": events.blob_list(kept) if kept else [],
             "dry_run": dry_run,
             "removed": False,
         }
         seq = session.head().seq
-        if dry_run or not (orphans or stale):
+        if dry_run or not (orphans or stale or misplaced):
             return FilesOutcome(entry, data, seq)
-        change = events.blobs_removed(orphans, len(stale))
+        change = events.blobs_removed(orphans, len(stale), misplaced=misplaced)
         receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
-        session.remove_blobs([b.hash for b in orphans], stale, receipt)
+        session.remove_blobs([b.hash for b in orphans], stale, receipt, misplaced=misplaced)
         ctx.anchor(entry, decisions, meta, receipt, reason=reason)
         data["removed"] = True
         return FilesOutcome(entry, data, seq)

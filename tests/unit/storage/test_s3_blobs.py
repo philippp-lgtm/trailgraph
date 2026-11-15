@@ -370,10 +370,15 @@ def test_verify_lists_once_and_rehash_reads_every_object(env: StoreEnv, fake: Fa
     backend = backend_of(env)
     referenced = frozenset({DIGEST, digest_of(gone)})
     start = len(fake.requests)
-    plain = backend.verify(referenced, rehash=False)
+    checked = backend.verify(referenced, rehash=False)
+    plain = checked.findings
     assert listings(fake, since=start) == 1
     assert count(fake, "HEAD", since=start) == 1  # the one hash the listing lacks
-    full = backend.verify(referenced, rehash=True)
+    assert checked.stored is not None
+    assert sorted(b.hash for b in checked.stored) == sorted(
+        [DIGEST, digest_of(orphan), digest_of(damaged)]
+    )
+    full = backend.verify(referenced, rehash=True).findings
     codes = sorted((f.code, f.target["path"]) for f in full)
     assert codes == sorted(
         [
@@ -580,7 +585,7 @@ def test_no_secret_in_any_error_finding_or_log(
     store.blob_backends = backends(settings, clock, ticks)
     fake.fail(403, "SignatureDoesNotMatch", method="HEAD")
     seen.append(repr(refused(lambda: store.blob(DIGEST)).details))
-    findings = backend_of(env).verify(frozenset({DIGEST, digest_of(b"x")}), rehash=True)
+    findings = backend_of(env).verify(frozenset({DIGEST, digest_of(b"x")}), rehash=True).findings
     seen += [repr(f) for f in findings]
     seen.append(caplog.text)
     seen.append(repr(blob_manifest(store.layout)))

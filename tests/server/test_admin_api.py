@@ -607,6 +607,23 @@ def test_graph_create_through_the_api_follows_the_servers_object_store(
         verified = command(app, "audit/verify", root)
         assert verified.status == 200, verified.json
         assert verified.json["data"]["counts"]["error"] == 0
+        files = command(app, "files/verify", root, args={"--graph": "second"})
+        assert files.status == 200, files.json
+        checked = command(app, "files/store/check", root)  # the server's store (step 6)
+        assert checked.status == 200, checked.json
+        assert checked.json["data"]["store_id"] == marker["store_id"]
+        assert checked.json["data"]["graphs"] == [
+            {"id": created.json["data"]["id"], "name": "second"}
+        ]
+        assert {c["status"] for c in checked.json["data"]["checks"]} == {"ok"}
+        fake.without_list_bucket = True
+        failed = command(app, "files/store/check", root)
+        assert failed.status == 422, failed.json  # invalid, as admin.integrity_errors
+        assert failed.error["code"] == "admin.store_check_failed"
+        assert "ListBucket" in failed.error["message"]
+        for answer in (checked, failed):
+            assert SECRET_ACCESS_KEY not in json.dumps(answer.json)
+            assert ACCESS_KEY_ID not in json.dumps(answer.json)
 
 
 def test_render_and_pull_answer_their_files_instead_of_a_server_path(
@@ -789,6 +806,7 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("enroll", "revoke", "0123456789ab"),
         ("files", "verify", "--graph", "example_graph"),
         ("files", "gc", "--graph", "example_graph", "--dry-run"),
+        ("files", "store", "check"),
         ("audit", "anchor"),
         ("audit", "verify"),
         ("usage", "report"),

@@ -44,7 +44,7 @@ ROWS = {
 def blob_codes(svc: ServiceEnv) -> list[str]:
     maintenance = FileStoreMaintenance(svc.root, object_store=svc.object_store)
     with maintenance.maintenance_session(svc.entry.id, timeout_s=5) as session:
-        return [f.code for f in session.verify_blobs(rehash=True)]
+        return [f.code for f in session.verify_blobs(rehash=True).findings]
 
 
 @pytest.mark.parametrize("point", list(ROWS), ids=str)

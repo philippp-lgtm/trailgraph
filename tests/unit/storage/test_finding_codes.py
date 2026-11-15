@@ -12,7 +12,11 @@ def test_codes_follow_the_grammar_and_are_unique() -> None:
         assert FINDING_CODE_RE.match(spec.code)
         assert spec.code.startswith("integrity.storage.")
         assert (spec.when, spec.fixture) == ("verify", "tamper")
-        info = spec.code in (finding_codes.BLOB_ORPHAN, finding_codes.BLOB_STAGING_LEFTOVER)
+        info = spec.code in (
+            finding_codes.BLOB_ORPHAN,
+            finding_codes.BLOB_STAGING_LEFTOVER,
+            finding_codes.BLOB_MISPLACED,
+        )
         assert spec.default_severity is (Severity.INFO if info else Severity.ERROR)
 
 

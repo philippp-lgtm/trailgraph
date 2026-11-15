@@ -46,14 +46,18 @@ from typing import Final, Protocol
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding
 from graph_cli.kernel.ports.catalog import BlobLocation, ManifestData
-from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, StagedBlob
+from graph_cli.kernel.ports.storage import (
+    CAPABILITY_BLOB_LOCAL_PATH,
+    BlobVerification,
+    StagedBlob,
+)
 from graph_cli.kernel.records import BlobInfo
 from graph_cli.storage.common.faults import FaultHook
 from graph_cli.storage.files import blobs
 from graph_cli.storage.files.durable import Syncer
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import read_manifest
-from graph_cli.storage.files.s3_blobs import ClientFactory, S3Blobs
+from graph_cli.storage.files.s3_blobs import ClientFactory, S3Blobs, missing_credentials
 from graph_cli.storage.s3.settings import ObjectStoreSettings
 
 
@@ -99,8 +103,12 @@ class BlobBackend(Protocol):
         ...
 
     def missing(self, referenced: Set[str]) -> list[str]:
-        """The hashes of ``referenced`` that are not stored, sorted (the commit check and
-        ``audit verify``)."""
+        """The hashes of ``referenced`` that are not stored, sorted (the commit check)."""
+        ...
+
+    def absent(self, referenced: Set[str]) -> list[str]:
+        """``missing`` for maintenance (``audit verify``): an object store answers it from
+        one listing of the graph's prefix, confirming what the listing lacks by ``HEAD``."""
         ...
 
     def listing(self) -> Iterator[BlobInfo]:
@@ -111,9 +119,16 @@ class BlobBackend(Protocol):
         """Staging leftovers with their modification time."""
         ...
 
-    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
-        """``integrity.storage.blob_*`` findings; ``referenced`` is ``None`` when the tx
-        log cannot be read whole (no orphans then); ``rehash`` reads every stored blob."""
+    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> BlobVerification:
+        """``integrity.storage.blob_*`` findings and the stored blobs, from one listing;
+        ``referenced`` is ``None`` when the tx log cannot be read whole (no orphans then);
+        ``rehash`` reads every stored blob."""
+        ...
+
+    def unavailable(self, error: GraphCliError) -> Finding | None:
+        """The ``blob_store_unavailable`` finding that stands for ``error`` when it says
+        that this backend's store cannot be reached or is another store; ``None`` for any
+        other error (it is raised: a local disk that fails stops the command)."""
         ...
 
     def collectable(self, referenced: Set[str]) -> list[BlobInfo]:
@@ -126,6 +141,12 @@ class BlobBackend(Protocol):
     ) -> Mapping[str, int]:
         """Delete unreferenced blobs (an object store keeps those younger than the grace
         period) and staging leftovers; how many of each went."""
+        ...
+
+    def remove_misplaced(self, hashes: Sequence[str]) -> int:
+        """Delete this location's copies of ``hashes``, referenced or not: misplaced copies
+        of a graph that keeps its stored files elsewhere. Only after the caller confirmed
+        that the graph's location holds each hash with the same size. How many went."""
         ...
 
     def target(self, digest: str) -> str:
@@ -167,14 +188,20 @@ class LocalBlobs:
     def missing(self, referenced: Set[str]) -> list[str]:
         return blobs.missing(self.layout, referenced)
 
+    def absent(self, referenced: Set[str]) -> list[str]:
+        return blobs.missing(self.layout, referenced)
+
     def listing(self) -> Iterator[BlobInfo]:
         return blobs.listing(self.layout)
 
     def staging(self) -> Iterator[tuple[str, datetime]]:
         return blobs.staging(self.layout)
 
-    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
+    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> BlobVerification:
         return blobs.verify(self.layout, referenced, rehash_all=rehash)
+
+    def unavailable(self, error: GraphCliError) -> Finding | None:
+        return None
 
     def collectable(self, referenced: Set[str]) -> list[BlobInfo]:
         return [blob for blob in blobs.listing(self.layout) if blob.hash not in referenced]
@@ -183,6 +210,9 @@ class LocalBlobs:
         self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
     ) -> Mapping[str, int]:
         return blobs.remove(self.layout, hashes, names, referenced=referenced, syncer=self.syncer)
+
+    def remove_misplaced(self, hashes: Sequence[str]) -> int:
+        return blobs.remove_copies(self.layout, hashes, syncer=self.syncer)
 
     def target(self, digest: str) -> str:
         return blobs.relative(self.layout, digest)
@@ -269,6 +299,37 @@ class BlobBackends:
             faults=faults,
             client_factory=self.client_factory,
             monotonic=self.monotonic,
+        )
+
+    def elsewhere(
+        self,
+        layout: GraphLayout,
+        manifest: ManifestData | None,
+        *,
+        syncer: Syncer,
+        faults: FaultHook | None,
+    ) -> BlobBackend | None:
+        """Where misplaced copies of the graph's blobs may lie (object storage O7, O8): the
+        graph directory's ``blobs/`` for a graph in an object store; for a local graph the
+        configured object store, when one is configured with credentials (any graph_cli
+        store marker will do; whether it can be reached shows on first use). ``None``
+        when there is no such place, or the manifest is unreadable (nothing is judged)."""
+        if manifest is None:
+            return None
+        if manifest.store.blob_location != "local":
+            return LocalBlobs(layout, syncer=syncer, faults=faults)
+        if self.object_store is None or missing_credentials(self.object_store):
+            return None
+        return S3Blobs(
+            layout,
+            manifest,
+            settings=self.object_store,
+            settings_problem=None,
+            syncer=syncer,
+            faults=faults,
+            client_factory=self.client_factory,
+            monotonic=self.monotonic,
+            require_store_id=False,
         )
 
     def capabilities(self, manifest: ManifestData | None) -> frozenset[str]:

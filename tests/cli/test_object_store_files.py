@@ -170,3 +170,98 @@ def test_a_store_that_refuses_the_marker_creates_no_graph(
     assert admin(run_cli, "graph", "list", env=s3_env).data["items"] == []
     created = create(run_cli, s3_env, "example_graph")  # the name is still free
     assert created.code == 0, created.envelope
+
+
+def test_verify_gc_and_audit_verify_of_a_graph_in_the_object_store(
+    run_cli: CliRunner, root: Path, s3_env: dict[str, str], fake: FakeS3
+) -> None:
+    """O8 through graph-admin: ``files verify`` lists the graph's prefix once, a local copy
+    is misplaced (info) and goes with ``files gc`` once the store holds it, a store that is
+    another store is an error finding in both verifies (exit 1), never a secret."""
+    graph_id = create(run_cli, s3_env, "example_graph").data["id"]
+    home = Path(s3_env["HOME"])
+    write_pdf(home / "report.pdf")
+    env = {**s3_env, "GRAPH_CLI_GRAPH": "example_graph"}
+    digest = app(run_cli, "file", "add", str(home / "report.pdf"), env=env).data["file"]["hash"]
+    copy = root / "graphs" / graph_id / "blobs" / "sha256" / digest[7:9] / digest[7:]
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy.write_bytes(synthetic_pdf())
+    start = len(fake.requests)
+    verify = ("files", "verify", "--graph", "example_graph", "--rehash")
+    checked = admin(run_cli, *verify, env=s3_env)
+    assert checked.code == 0, checked.envelope
+    listings = [r for r in fake.requests[start:] if r.method == "GET" and "list-type" in r.query]
+    assert len(listings) == 1
+    (finding,) = checked.data["findings"]
+    assert finding["code"] == "integrity.storage.blob_misplaced"
+    assert finding["target"] == {"path": str(copy.relative_to(root / "graphs" / graph_id))}
+    assert checked.data["stored"] == {"files": 1, "bytes": len(synthetic_pdf())}
+    gc = admin(run_cli, "files", "gc", "--graph", "example_graph", env=s3_env)
+    assert gc.code == 0, gc.envelope
+    assert gc.data["misplaced_removed"] == [{"hash": digest, "size": len(synthetic_pdf())}]
+    assert gc.data["removed"] is True and not copy.exists()
+    assert fake.get(blob_key(graph_id, digest)) == synthetic_pdf()
+    verified = admin(run_cli, "audit", "verify", env=s3_env)
+    assert verified.code == 0, verified.envelope
+
+    fake.put(
+        MARKER_KEY,
+        json.dumps(
+            {
+                "schema": "graph_cli.object_store/1",
+                "store_id": "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9",
+                "created_at": "x",
+            }
+        ).encode(),
+    )
+    for args in (verify, ("audit", "verify")):
+        failed = admin(run_cli, *args, env=s3_env)
+        assert (failed.code, failed.error["code"]) == (1, "admin.integrity_errors"), args
+        codes = [f["code"] for f in failed.error["details"]["findings"]]
+        assert codes == ["integrity.storage.blob_store_unavailable"], failed.envelope
+        assert "not in that bucket" in failed.error["details"]["findings"][0]["message"]
+        assert SECRET_ACCESS_KEY not in str(failed.envelope)
+        assert ACCESS_KEY_ID not in str(failed.envelope)
+
+
+def test_files_store_check(
+    run_cli: CliRunner, root: Path, s3_env: dict[str, str], fake: FakeS3
+) -> None:
+    """``files store check`` answers each check in words and fails on an error; without a
+    store it says so and succeeds; no audit event, no probe left, no secret."""
+    plain = admin(run_cli, "files", "store", "check")  # no [files.s3], no variables
+    assert plain.code == 5 and plain.error["code"] == "config.invalid"  # store = "s3" needs it
+    config = Path(s3_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    written = config.read_text()
+    config.write_text(written.replace('store = "s3"', 'store = "local"'))
+    nothing = admin(run_cli, "files", "store", "check")
+    config.write_text(written)
+    assert nothing.code == 0, nothing.envelope
+    assert nothing.data["configured"] is False
+    assert "no object store is configured" in nothing.data["checks"][0]["message"]
+
+    checked = admin(run_cli, "files", "store", "check", env=s3_env)
+    assert checked.code == 0, checked.envelope
+    statuses = {c["name"]: c["status"] for c in checked.data["checks"]}
+    assert statuses["marker"] == "warning"  # no graph yet, so no marker yet
+    assert {s for n, s in statuses.items() if n != "marker"} == {"ok"}
+    assert [k for k in fake.objects if k.startswith("graph_cli_probe/")] == []
+    created = create(run_cli, s3_env, "example_graph")
+    checked = admin(run_cli, "files", "store", "check", env=s3_env)
+    assert checked.data["graphs"] == [{"id": created.data["id"], "name": "example_graph"}]
+    assert checked.data["store_id"] == created.data["store"]["store_id"]
+    text = run_cli("graph-admin", "files", "store", "check", env=s3_env)
+    assert text.returncode == 0, text.stderr
+    assert "missing_key" in text.stdout and "ok" in text.stdout
+
+    fake.without_list_bucket = True
+    failed = admin(run_cli, "files", "store", "check", env=s3_env)
+    assert (failed.code, failed.error["code"]) == (1, "admin.store_check_failed")
+    assert "ListBucket" in failed.error["message"]
+    checks = {c["name"]: c for c in failed.error["details"]["checks"]}
+    assert checks["missing_key"]["status"] == "error"
+    for outcome in (checked, failed):
+        assert SECRET_ACCESS_KEY not in str(outcome.envelope)
+        assert ACCESS_KEY_ID not in str(outcome.envelope)
+    stream = events(root, INSTALLATION_STREAM)
+    assert not [e for e in stream if e["request"]["command"] == "files store check"]

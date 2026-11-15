@@ -146,18 +146,22 @@ def test_a_graph_in_an_object_store_is_refused_on_blob_access_only(
             )
             assert found.code == 0, found.envelope
         verify = ("files", "verify", "--graph", "example_graph")
-        missing = admin(run_cli, *verify)
-        assert missing.error["code"] == "backend.unavailable", missing.envelope
-        details = missing.error["details"]
-        assert (details["store_id"], details["cause"], details["key"]) == (
+        missing = admin(run_cli, *verify)  # a finding, not a stop (step 6)
+        assert (missing.code, missing.error["code"]) == (1, "admin.integrity_errors")
+        (finding,) = missing.error["details"]["findings"]
+        assert finding["code"] == "integrity.storage.blob_store_unavailable", finding
+        details = finding["actual"]
+        assert (details["code"], details["store_id"], details["cause"], details["key"]) == (
+            "backend.unavailable",
             STORE_ID,
             "config.invalid",
             "files.s3.bucket",
         )
         foreign = admin(run_cli, *verify, env=fake_env)  # the bucket has no store marker
-        assert foreign.error["code"] == "backend.unavailable", foreign.envelope
-        assert "not in that bucket" in foreign.error["message"]
-        assert graph_id in foreign.error["message"]
+        assert foreign.error["code"] == "admin.integrity_errors", foreign.envelope
+        (finding,) = foreign.error["details"]["findings"]
+        assert "not in that bucket" in finding["message"]
+        assert graph_id in finding["message"]
         fake.put(
             MARKER_KEY,
             json.dumps(
