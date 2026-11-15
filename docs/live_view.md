@@ -6,8 +6,10 @@ whole graph as dots and lines, with labels, and a list of recent
 activity. Besides the graph itself, the page shows the graph's types as
 a graph, its ontology, its named functions and its policies (see
 [Type graph, model, functions and policies](#type-graph-model-functions-and-policies)). `--graph <graph>` opens the page on that graph; without it the
-page opens on none, with the list of graphs open. It serves until Ctrl+C (`--port`, `--host`,
-`--no-open`, `--token-file`).
+page opens on none, with the list of graphs open. It serves until Ctrl+C or `SIGTERM` (`--port`,
+`--host`, `--no-open`, `--token-file`); both stop it the same way, removing its activity socket.
+Started with `SIGINT` ignored, as a shell starts a background job, it keeps ignoring Ctrl+C and
+stops on `SIGTERM`.
 
 ## Switching graphs
 
