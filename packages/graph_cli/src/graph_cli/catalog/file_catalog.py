@@ -33,6 +33,7 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.storage.common.faults import FaultHook
+from graph_cli.storage.files.blob_backend import BlobBackends
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.kinetic_slot import read_slot
 from graph_cli.storage.files.layout import GraphLayout
@@ -194,6 +195,7 @@ class FileCatalog:
             durability=self.settings.durability,
             oplog=self.oplog,
             faults=self.faults,
+            blob_backends=BlobBackends(self.object_store, self.object_store_problem),
         )
 
     def _effective(self, entry: GraphEntry) -> GraphEntry:

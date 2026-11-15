@@ -179,6 +179,13 @@ class GraphStoreWrite(Protocol):
         """Hash and hold ``chunks`` without the lock; ``file.too_large`` beyond ``max_bytes``."""
         ...
 
+    def promote_blobs(self, staged: Sequence[StagedBlob]) -> None:
+        """Without the lock, once the write is authorized and before its session: get
+        staged blobs ready for ``publish_blob`` (a backend that keeps stored files
+        elsewhere moves the bytes here, not under the lock). The staged blobs stay
+        usable; a no-op for a backend that publishes from the staged bytes alone."""
+        ...
+
 
 class MaintenanceSession(WriteSession, Protocol):
     """A write session plus the maintenance effects (W.e); no recovery on open."""

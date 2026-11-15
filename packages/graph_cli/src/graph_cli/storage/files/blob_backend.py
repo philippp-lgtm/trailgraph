@@ -1,0 +1,223 @@
+"""Blob backends: where a graph's stored file bytes live (contracts section 5, 4.1 KB0-KB2).
+
+``FileStore`` keeps the tx log, revisions, index, audit and manifest itself and hands
+the bytes of stored files to a ``BlobBackend``. ``LocalBlobs`` keeps them in the graph
+directory's ``blobs/`` (``storage.files.blobs``, unchanged layout, modes and crash
+points). The protocol is internal to ``graph_cli.storage``; the kernel ports keep
+their shape and only ``GraphStoreWrite.promote_blobs`` reaches it from the services.
+
+Which backend serves a graph follows from its manifest (``[store]`` ``blob_location``),
+never from the installation's ``[files] store``, and ``BlobBackends.backend`` is the
+one place that turns a manifest into a backend:
+
+- a ``FileSession`` binds the backend on its first blob use, under the graph lock
+  (``publish_blob`` and the commit check), and keeps it for the session, so a tx never
+  references a blob outside the location the manifest names while the lock is held;
+- readers stay lock-free and resolve the backend per call;
+- a graph directory whose manifest is missing or unreadable is served by
+  ``LocalBlobs``, as before blob locations existed: storage tests build stores without
+  one, and maintenance reports an unreadable manifest itself (``verify``). The catalog
+  never opens such a graph, and the write service re-reads the manifest under the lock.
+
+Staging is always local: a write stages the bytes into ``blobs/.tmp-<random>`` before
+the lock whatever the backend, keeps the staging file until the request ends, and the
+backend bound under the lock publishes from it. A blob staged while the graph named
+another location is therefore published to the bound one from the same file.
+
+The write path per blob: ``stage`` (before the lock, KB0), ``promote`` (before the
+lock, after the write is authorized; a no-op for ``LocalBlobs``), ``publish`` (under
+the lock, KB1/KB2), then the commit check asks ``missing`` for the tx's blobs.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Iterator, Mapping, Sequence, Set
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Protocol
+
+from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.findings import Finding
+from graph_cli.kernel.ports.catalog import BlobLocation, ManifestData
+from graph_cli.kernel.ports.storage import CAPABILITY_BLOB_LOCAL_PATH, StagedBlob
+from graph_cli.kernel.records import BlobInfo
+from graph_cli.storage.common.faults import FaultHook
+from graph_cli.storage.files import blobs
+from graph_cli.storage.files.durable import Syncer
+from graph_cli.storage.files.layout import GraphLayout
+from graph_cli.storage.files.releases import read_manifest
+from graph_cli.storage.files.store_format import check_store
+from graph_cli.storage.s3.settings import ObjectStoreSettings
+
+
+class BlobBackend(Protocol):
+    """The stored file bytes of one graph, by hash (``sha256:<hex>``)."""
+
+    @property
+    def location(self) -> BlobLocation:
+        """The manifest's ``blob_location`` this backend serves."""
+        ...
+
+    @property
+    def local_paths(self) -> bool:
+        """Whether ``local_path`` hands out files (capability ``blob_local_path``)."""
+        ...
+
+    def stage(self, chunks: Iterable[bytes], *, max_bytes: int) -> blobs.FileStagedBlob:
+        """Before the lock: a synced local staging file, hashed and limited while written
+        (KB0); ``file.too_large`` beyond ``max_bytes``."""
+        ...
+
+    def promote(self, staged: Sequence[StagedBlob]) -> None:
+        """Before the lock, once the write is authorized: make staged blobs ready, so that
+        ``publish`` rarely moves bytes under the lock. The staging files stay."""
+        ...
+
+    def publish(self, staged: StagedBlob) -> BlobInfo:
+        """Under the lock: the staged blob stored under its hash, durable on return
+        (KB1/KB2). A blob already stored is kept; the staged copy is discarded."""
+        ...
+
+    def info(self, digest: str) -> BlobInfo | None:
+        """The stored blob, ``None`` when absent or not a hash."""
+        ...
+
+    def read(self, digest: str) -> Iterator[bytes]:
+        """The stored bytes in chunks; ``backend.corrupt`` when the blob is absent."""
+        ...
+
+    def local_path(self, digest: str) -> Path | None:
+        """The read-only file of a stored blob; ``None`` when absent or without
+        ``local_paths``."""
+        ...
+
+    def missing(self, referenced: Set[str]) -> list[str]:
+        """The hashes of ``referenced`` that are not stored, sorted (the commit check and
+        ``audit verify``)."""
+        ...
+
+    def listing(self) -> Iterator[BlobInfo]:
+        """Every stored blob of the graph, in hash order."""
+        ...
+
+    def staging(self) -> Iterator[tuple[str, datetime]]:
+        """Staging leftovers with their modification time."""
+        ...
+
+    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
+        """``integrity.storage.blob_*`` findings; ``referenced`` is ``None`` when the tx
+        log cannot be read whole (no orphans then); ``rehash`` reads every stored blob."""
+        ...
+
+    def remove(
+        self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
+    ) -> Mapping[str, int]:
+        """Delete unreferenced blobs and staging leftovers; how many of each went."""
+        ...
+
+    def target(self, digest: str) -> str:
+        """Where a blob is, as finding targets name it."""
+        ...
+
+
+class LocalBlobs:
+    """``blobs/sha256/<xx>/<hex>`` of the graph directory (``storage.files.blobs``)."""
+
+    location: BlobLocation = "local"
+    local_paths = True
+
+    def __init__(self, layout: GraphLayout, *, syncer: Syncer, faults: FaultHook | None) -> None:
+        self.layout = layout
+        self.syncer = syncer
+        self.faults = faults
+
+    def stage(self, chunks: Iterable[bytes], *, max_bytes: int) -> blobs.FileStagedBlob:
+        return blobs.stage(
+            self.layout, chunks, max_bytes=max_bytes, syncer=self.syncer, faults=self.faults
+        )
+
+    def promote(self, staged: Sequence[StagedBlob]) -> None:
+        """Nothing to do: the staging file is renamed into place by ``publish``."""
+
+    def publish(self, staged: StagedBlob) -> BlobInfo:
+        return blobs.publish(self.layout, staged, syncer=self.syncer, faults=self.faults)
+
+    def info(self, digest: str) -> BlobInfo | None:
+        return blobs.info(self.layout, digest)
+
+    def read(self, digest: str) -> Iterator[bytes]:
+        return blobs.read(self.layout, digest)
+
+    def local_path(self, digest: str) -> Path | None:
+        return blobs.local_path(self.layout, digest)
+
+    def missing(self, referenced: Set[str]) -> list[str]:
+        return blobs.missing(self.layout, referenced)
+
+    def listing(self) -> Iterator[BlobInfo]:
+        return blobs.listing(self.layout)
+
+    def staging(self) -> Iterator[tuple[str, datetime]]:
+        return blobs.staging(self.layout)
+
+    def verify(self, referenced: Set[str] | None, *, rehash: bool) -> list[Finding]:
+        return blobs.verify(self.layout, referenced, rehash_all=rehash)
+
+    def remove(
+        self, hashes: Sequence[str], names: Sequence[str], *, referenced: Set[str]
+    ) -> Mapping[str, int]:
+        return blobs.remove(self.layout, hashes, names, referenced=referenced, syncer=self.syncer)
+
+    def target(self, digest: str) -> str:
+        return blobs.relative(self.layout, digest)
+
+
+def blob_manifest(layout: GraphLayout) -> ManifestData | None:
+    """The manifest that decides the graph's blob location; ``None`` when it is missing
+    or unreadable (``config.invalid``), which means local. An unknown format or feature
+    is raised: no backend is guessed for it."""
+    try:
+        return read_manifest(layout)[0]
+    except GraphCliError as exc:
+        if exc.code != "config.invalid":
+            raise
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class BlobBackends:
+    """Builds the backend a manifest names, from the installation's object store
+    settings (built by ``catalog``; storage never reads the environment)."""
+
+    object_store: ObjectStoreSettings | None = None
+    # why ``object_store`` is ``None``, when it is known (the configuration error)
+    object_store_problem: GraphCliError | None = None
+
+    def backend(
+        self,
+        layout: GraphLayout,
+        manifest: ManifestData | None,
+        *,
+        syncer: Syncer,
+        faults: FaultHook | None,
+    ) -> BlobBackend:
+        if manifest is None or manifest.store.blob_location == "local":
+            return LocalBlobs(layout, syncer=syncer, faults=faults)
+        # The object store backend is built here from ``self.object_store``. Until it
+        # exists, the graph is refused as ``check_store`` refuses it when it is opened.
+        check_store(
+            manifest,
+            object_store=self.object_store,
+            object_store_problem=self.object_store_problem,
+        )
+        raise GraphCliError(
+            "internal.error", f"no blob backend for {manifest.store.blob_location!r}"
+        )
+
+    def capabilities(self, manifest: ManifestData | None) -> frozenset[str]:
+        """The blob capabilities of the backend ``manifest`` names, without building it
+        (so a read that touches no file never needs the object store)."""
+        if manifest is None or manifest.store.blob_location == "local":
+            return frozenset({CAPABILITY_BLOB_LOCAL_PATH})
+        return frozenset()

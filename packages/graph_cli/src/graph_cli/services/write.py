@@ -9,6 +9,12 @@ graph_cli (B3.1). Steps:
   (action, ``graph:<id>/type:<curie>``) pair; a denial is appended to the
   installation stream (not in dry-run) and raised, as ``graph.not_found``
   when the actor cannot see the graph (B6.15).
+- W.5b the blobs the request staged are handed to the store for promotion
+  (``GraphStoreWrite.promote_blobs``) after W.1-W.5 and before the lock: a
+  store that keeps stored files elsewhere moves the bytes there, so a request
+  that is over a limit, names a missing entity or is denied never reaches it.
+  Validation (W.11) runs under the lock, so an authorized request found
+  invalid there has promoted its blobs; no tx references them.
 - W.6 the graph lock; the manifest is re-read (state and pin re-checked, a
   changed pin reloads the model) and references are resolved again on the
   locked snapshot. W.7 idempotency (same key and hash replays the original
@@ -582,6 +588,8 @@ class WriteService:
 
     def _apply(self, request: WriteRequest) -> WriteResult:
         prepared = self._prepare(request, None)
+        if request.blobs:  # W.5b
+            prepared.write.promote_blobs(request.blobs)
         with ExitStack() as stack:
             with self.timings.phase("lock"):
                 session = stack.enter_context(

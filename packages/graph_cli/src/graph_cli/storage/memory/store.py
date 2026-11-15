@@ -89,6 +89,9 @@ class InMemoryStore:
     def writer_active(self) -> bool:
         return self._lock.locked()
 
+    def promote_blobs(self, staged: Sequence[StagedBlob]) -> None:
+        """Nothing to do: ``publish_blob`` keeps the staged bytes."""
+
     def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> MemoryStagedBlob:
         parts: list[bytes] = []
         size = 0

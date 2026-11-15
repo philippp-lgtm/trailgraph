@@ -18,6 +18,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.policy_files` | installed policies: `policy/installation.json` and `graphs/<id>/policy.json`, read lock-free, replaced by one rename |
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
+| `storage.files.blob_backend` | the blob seam: the `BlobBackend` protocol through which `FileStore`, its write sessions, the commit check and maintenance reach stored files; `LocalBlobs` over `storage.files.blobs`; `BlobBackends`, which picks the backend from the manifest's blob location |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
 | `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (not wired into a backend yet) |
 
@@ -112,6 +113,14 @@ POSIX only, local filesystems only.
   `blobs/.tmp-*` before the lock and published by one rename under it;
   each transaction lists the hashes its revisions reference (`blobs`), so
   verification and cleanup need no ontology.
+- Stored files go through a blob backend (`storage.files.blob_backend`)
+  chosen by the manifest's blob location, never by `[files] store`. Readers
+  resolve it per call; a write session binds it on its first blob use under
+  the lock (publish and the commit check) and keeps it, except across a
+  manifest replaced in the same session. Staging is always a local file. A
+  write hands its staged blobs to the store for promotion after W.1-W.5
+  (authorization) and before the lock; local blobs need none. A graph
+  directory whose manifest is missing or unreadable is served locally.
 - Maintenance effects are published with one rename each: a new graph
   directory (staged as `graphs/.tmp-<id>`), an ontology release directory,
   the manifest, the graph skill's `source.json` (its files are written once

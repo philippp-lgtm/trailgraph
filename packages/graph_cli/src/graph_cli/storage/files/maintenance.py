@@ -71,7 +71,7 @@ from graph_cli.storage.common.audit import audit_body
 from graph_cli.storage.common.chain import GENESIS, link_of, seal
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.view import GraphView
-from graph_cli.storage.files import blobs
+from graph_cli.storage.files.blob_backend import BlobBackends
 from graph_cli.storage.files.durable import (
     Durability,
     OsSyncer,
@@ -180,6 +180,7 @@ class FileStoreMaintenance:
             faults=self.faults,
             segment_bytes=self.segment_bytes,
             oplog=self.oplog,
+            blob_backends=BlobBackends(self.object_store, self.object_store_problem),
         )
 
     @property
@@ -474,6 +475,8 @@ class FileMaintenanceSession:
             store.syncer.sync_dir(layout.root)
         except OSError as exc:
             raise _unavailable("cannot replace the manifest", exc) from exc
+        if self._write is not None:  # the blob location may have changed
+            self._write.rebind_blobs()
 
     def install_release(
         self, version: str, files: Mapping[str, bytes], receipt: AuditReceipt
@@ -627,22 +630,22 @@ class FileMaintenanceSession:
 
     def blobs(self) -> Iterator[BlobInfo]:
         self._check_open()
-        return blobs.listing(self._store.layout)
+        return self._store.blob_backend().listing()
 
     def orphan_blobs(self) -> Sequence[BlobInfo]:
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
-        return [b for b in blobs.listing(self._store.layout) if b.hash not in referenced]
+        return [b for b in self._store.blob_backend().listing() if b.hash not in referenced]
 
     def staging(self) -> Iterator[tuple[str, datetime]]:
         self._check_open()
-        return blobs.staging(self._store.layout)
+        return self._store.blob_backend().staging()
 
     def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
         """Missing, damaged, orphan and staged files; no orphans beyond tx-log damage."""
         referenced = self._referenced()
-        return sort_findings(blobs.verify(self._store.layout, referenced, rehash_all=rehash))
+        return sort_findings(self._store.blob_backend().verify(referenced, rehash=rehash))
 
     def remove_blobs(
         self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
@@ -651,9 +654,9 @@ class FileMaintenanceSession:
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
-        self._writer().claim_receipt(receipt)
-        store = self._store
-        blobs.remove(store.layout, hashes, staging, referenced=referenced, syncer=store.syncer)
+        writer = self._writer()
+        writer.claim_receipt(receipt)
+        writer.blob_backend().remove(hashes, staging, referenced=referenced)
 
     def reindex(self, receipt: AuditReceipt | None = None) -> None:
         """Rebuild ``data/entities/``, ``head.json`` and the index from the tx log (B4.1).
@@ -721,14 +724,14 @@ class Verifier:
 
     def _blobs(self, view: GraphView) -> None:
         """Every blob a verified tx names is stored (the full check is ``verify_blobs``)."""
-        layout = self.store.layout
+        backend = self.store.blob_backend()
         referenced = {h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs}
         try:
-            absent = blobs.missing(layout, referenced)
+            absent = backend.missing(referenced)
         except OSError as exc:
             raise _unavailable("cannot read the stored files", exc) from exc
         for digest in absent:
-            target = {"path": blobs.relative(layout, digest)}
+            target = {"path": backend.target(digest)}
             self.add(BLOB_MISSING, target, "a referenced file is missing")
 
     def _pin(self) -> None:

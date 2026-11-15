@@ -42,7 +42,6 @@ from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.migration_marker import MigrationMarker
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditReceipt, graph_stream
 from graph_cli.kernel.ports.storage import (
-    CAPABILITY_BLOB_LOCAL_PATH,
     CAPABILITY_SNAPSHOT_AT_SEQ,
     EMPTY_HEAD,
     CommitResult,
@@ -73,6 +72,7 @@ from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.snapshot import ViewSnapshot, resolve_at_seq
 from graph_cli.storage.common.view import GraphView, ViewAt
 from graph_cli.storage.files import blobs
+from graph_cli.storage.files.blob_backend import BlobBackend, BlobBackends, blob_manifest
 from graph_cli.storage.files.durable import Durability, OsSyncer, Syncer, ensure_dir, write_temp
 from graph_cli.storage.files.headfile import HeadFile, parse_head_file
 from graph_cli.storage.files.index import (
@@ -251,8 +251,11 @@ class FileStore:
         oplog: OpLog | None = None,
         use_index: bool = True,
         full_check_every: int = FULL_CHECK_EVERY,
+        blob_backends: BlobBackends | None = None,
     ) -> None:
         self.layout = GraphLayout(graph_dir)
+        # which backend serves the stored files, from the manifest (storage.files.blob_backend)
+        self.blob_backends = blob_backends if blob_backends is not None else BlobBackends()
         self.use_index = use_index
         self.full_check_every = full_check_every
         self.oplog = oplog
@@ -267,19 +270,26 @@ class FileStore:
     # ---- read port -----------------------------------------------------
 
     def capabilities(self) -> frozenset[str]:
-        return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ, CAPABILITY_BLOB_LOCAL_PATH})
+        blob_capabilities = self.blob_backends.capabilities(blob_manifest(self.layout))
+        return frozenset({CAPABILITY_SNAPSHOT_AT_SEQ}) | blob_capabilities
 
     def head(self) -> Head:
         return self.read_state().head
 
+    def blob_backend(self) -> BlobBackend:
+        """The backend the manifest names now; readers resolve it per call, lock-free."""
+        return self.blob_backends.backend(
+            self.layout, blob_manifest(self.layout), syncer=self.syncer, faults=self.faults
+        )
+
     def blob(self, digest: str) -> BlobInfo | None:
-        return blobs.info(self.layout, digest)
+        return self.blob_backend().info(digest)
 
     def read_blob(self, digest: str) -> Iterator[bytes]:
-        return blobs.read(self.layout, digest)
+        return self.blob_backend().read(digest)
 
     def blob_local_path(self, digest: str) -> Path | None:
-        return blobs.local_path(self.layout, digest)
+        return self.blob_backend().local_path(digest)
 
     def migration_marker(self) -> MigrationMarker | None:
         return read_migration_marker(self.layout)
@@ -329,9 +339,13 @@ class FileStore:
     def stage_blob(self, chunks: Iterable[bytes], *, max_bytes: int) -> blobs.FileStagedBlob:
         """KB0: hashed into ``blobs/.tmp-*`` without the lock (an in-flight add)."""
         self._require_layout()
-        return blobs.stage(
-            self.layout, chunks, max_bytes=max_bytes, syncer=self.syncer, faults=self.faults
-        )
+        return self.blob_backend().stage(chunks, max_bytes=max_bytes)
+
+    def promote_blobs(self, staged: Sequence[StagedBlob]) -> None:
+        """Without the lock, after the write is authorized: the backend the manifest names
+        now gets the staged blobs ready (nothing to do for local blobs)."""
+        if staged:
+            self.blob_backend().promote(staged)
 
     # ---- shared internals ----------------------------------------------
 
@@ -780,6 +794,9 @@ class FileSession:
         self._store = store
         self._token = object()
         self._used: set[EventId] = set()
+        # bound on first blob use, under the lock: publish and the commit check use the
+        # location the manifest names while this session holds the lock
+        self._blobs: BlobBackend | None = None
         self._open = True
         self._broken = False
         # Recovery needs the store's primitives, so it is imported here (no import cycle).
@@ -895,10 +912,31 @@ class FileSession:
 
     # ---- blobs ---------------------------------------------------------
 
+    def blob_backend(self) -> BlobBackend:
+        """The backend of the manifest's blob location, bound once per session."""
+        if self._blobs is None:
+            self._blobs = self._store.blob_backend()
+        return self._blobs
+
+    def rebind_blobs(self) -> None:
+        """The manifest was replaced in this session; the next blob use binds again."""
+        self._blobs = None
+
     def publish_blob(self, staged: StagedBlob) -> BlobInfo:
         self._check_usable()
-        store = self._store
-        return blobs.publish(store.layout, staged, syncer=store.syncer, faults=store.faults)
+        return self.blob_backend().publish(staged)
+
+    def _blob_exists(self, tx: AuthorizedTx) -> Callable[[str], bool]:
+        """The commit check's question, answered for all of ``tx.blobs`` at once by the
+        bound backend when it is first asked (never for a tx without blobs)."""
+        absent: list[frozenset[str]] = []
+
+        def exists(digest: str) -> bool:
+            if not absent:
+                absent.append(frozenset(self.blob_backend().missing(frozenset(tx.blobs))))
+            return digest not in absent[0]
+
+        return exists
 
     # ---- commit --------------------------------------------------------
 
@@ -925,7 +963,7 @@ class FileSession:
             graph_id=store.graph_id,
             head=self._head,
             view=self._view(),
-            blob_exists=lambda digest: blobs.info(store.layout, digest) is not None,
+            blob_exists=self._blob_exists(tx),
             migration=migration,
         )
         record, line = seal_tx(tx, self._end)
