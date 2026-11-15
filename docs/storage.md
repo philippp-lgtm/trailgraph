@@ -177,6 +177,36 @@ in the graph directory.
   the manifest replaced by one rename as format 2, and the anchor. A switch
   that fails after the creation leaves the graph local (format 1, holding no
   file) and the command names it.
+- **Moving a graph** (`graph-admin files move`, `storage.files.blob_move`,
+  `services_admin.files_move`). A copy pass lists both locations once and
+  copies to the location the manifest does not name every blob the move
+  covers: each hash a tx names and every blob stored at the source (orphans
+  and old copies too; `.tmp-` staging files never), skipping those the target
+  holds with the same size (the name is the hash). A referenced hash a
+  listing lacks is confirmed by `HEAD` or `stat` first; one in neither
+  location refuses the move (`backend.corrupt`). Copies are verified
+  (`BlobBackend.receive`): into an object store as a `PUT` signed with the
+  hash, then a `HEAD` for the size; into the data root through a staging file
+  hashed while written and synced, mode 0444, renamed into
+  `blobs/sha256/<xx>/<hex>` with both directories synced (a present file of
+  another size is damaged and replaced). Passes run without the graph lock,
+  so a concurrent gc may remove a copy as misplaced; nothing depends on
+  them. The switch runs one more pass under the lock (the tx log read whole
+  by replay), so a file committed meanwhile or a copy gc removed is copied
+  before the intent; then the `change.blob_store` intent, the manifest
+  through `replace_manifest` (one rename, format 1 <-> 2; the session
+  rebinds its blob backend), the anchor. `graph create`'s switch is the same
+  code with nothing to copy. A file add racing the move commits where the
+  manifest names: its session binds the location under the lock, and the
+  publish uploads from, or renames, its local staging file when the bound
+  location lacks the blob (the promote before the lock went to the location
+  named then). A pass or switch with a time budget asks it before every copy
+  after the first; a switch whose copies run out of time releases the lock
+  without an intent. Nothing is removed: the source's copies wait for gc.
+  Crash windows: `blob.after_copy` (after each verified copy) leaves extra
+  copies and no intent; `manifest.before_rename` an intent without effect
+  (the graph whole in the old location); after the rename the graph is
+  switched, with or without its anchor.
 - **Verify and gc.** Blob verification (`files verify`, and the check of
   referenced files in `audit verify`) lists the graph's prefix once and
   confirms a referenced hash the listing lacks by `HEAD` (`--rehash` streams

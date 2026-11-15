@@ -237,7 +237,13 @@ before and after, the object store's id from its marker, and the number
 and bytes of the stored files the switch covered), the manifest replaced
 by one rename, then an installation event that anchors the intent. A graph
 is always created `local`: `graph create` with `[files] store = "s3"`
-records the switch right after the genesis (`blobs` and `bytes` 0). An
+records the switch right after the genesis (`blobs` and `bytes` 0).
+`graph-admin files move` records the same switch after its copies:
+`blobs` and `bytes` count every stored file the switch covered (each file a
+transaction names and every other file stored at the source, all present
+at the target when the manifest is replaced); `store_id` is the target
+store for a move to `s3` and, for a move to `local`, the store the graph
+leaves (`files gc` judges a local graph's objects by it, below). An
 intent whose `blob_store` is not that shape (an unknown location, `from`
 equal to `to`, a `store_id` that is not a UUID) is `event_malformed`.
 

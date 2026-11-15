@@ -464,6 +464,118 @@
     {
       "path": [
         "files",
+        "move"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Move the stored files of graphs between the data root and the object store.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": true,
+          "summary": "Graph names or ids."
+        }
+      ],
+      "options": [
+        {
+          "name": "--to",
+          "type": "choice",
+          "required": true,
+          "repeatable": false,
+          "summary": "Where the stored files go: the data root or the object store.",
+          "choices": [
+            "local",
+            "s3"
+          ]
+        },
+        {
+          "name": "--all",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Every graph of the installation, archived ones too."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Count what would be copied without copying it."
+        },
+        {
+          "name": "--step",
+          "type": "choice",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run one copy pass, or only the switch, each with 30 s of copying (the remote mode sends these).",
+          "choices": [
+            "pass",
+            "switch"
+          ]
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the files move; recorded in the audit event."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin files move <graph> --to s3 --dry-run",
+          "summary": "Count the files a move would copy."
+        },
+        {
+          "command": "graph-admin files move --all --to s3 --reason <reason> --json",
+          "summary": "Move every graph into the object store."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.migration_incomplete",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.corrupt",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "conflict.seq_mismatch",
+        "files.store_refused",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "files",
         "store",
         "check"
       ],
@@ -3374,6 +3486,11 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "conflict.seq_mismatch",
+      "category": "conflict",
+      "exit": 4
     },
     {
       "code": "files.store_refused",

@@ -243,7 +243,7 @@ def test_an_interrupted_switch_is_reported_by_audit_verify(
     (finding,) = report.findings
     assert finding.code == "integrity.audit.intent_without_effect"
     assert finding.severity.value == "info"
-    assert "graph-admin files move --to s3" in finding.message
+    assert "files move " in finding.message and "--to s3" in finding.message
     report.raise_on_errors()  # info: the graph is local and whole
 
 

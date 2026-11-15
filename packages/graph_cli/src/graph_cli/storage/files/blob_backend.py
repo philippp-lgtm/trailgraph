@@ -38,7 +38,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Final, Protocol
@@ -160,6 +160,14 @@ class BlobBackend(Protocol):
         that the graph's location holds the same bytes (``hash_of``). How many went."""
         ...
 
+    def receive(self, blob: BlobInfo, source: BlobBackend) -> None:
+        """Store a copy of ``blob`` read from ``source``, the graph's other location (``files
+        move``), durable and verified on return: the data root rehashes the bytes while it
+        writes them, an object store checks the signed hash of the upload and then shows
+        the object with its size. A copy already present with the same size is kept.
+        ``backend.corrupt`` when ``source`` lacks the blob or its bytes differ."""
+        ...
+
     def target(self, digest: str) -> str:
         """Where a blob is, as finding targets name it."""
         ...
@@ -233,6 +241,9 @@ class LocalBlobs:
 
     def remove_misplaced(self, hashes: Sequence[str]) -> int:
         return blobs.remove_copies(self.layout, hashes, syncer=self.syncer)
+
+    def receive(self, blob: BlobInfo, source: BlobBackend) -> None:
+        blobs.receive(self.layout, blob, source.read(blob.hash), syncer=self.syncer)
 
     def target(self, digest: str) -> str:
         return blobs.relative(self.layout, digest)
@@ -353,6 +364,26 @@ class BlobBackends:
             monotonic=self.monotonic,
             require_store_id=False,
         )
+
+    def at(
+        self,
+        layout: GraphLayout,
+        manifest: ManifestData,
+        location: BlobLocation,
+        store_id: str | None,
+        *,
+        syncer: Syncer,
+        faults: FaultHook | None,
+    ) -> BlobBackend:
+        """The backend of ``location`` for the graph of ``manifest`` whatever its manifest
+        names (the target of ``files move``): the graph directory's ``blobs/``, or the
+        configured object store whose marker must carry ``store_id``."""
+        if location == "local":
+            return LocalBlobs(layout, syncer=syncer, faults=faults)
+        named = replace(
+            manifest, store=replace(manifest.store, blob_location=location, store_id=store_id)
+        )
+        return self.backend(layout, named, syncer=syncer, faults=faults)
 
     def capabilities(self, manifest: ManifestData | None) -> frozenset[str]:
         """The blob capabilities of the backend ``manifest`` names, without building it

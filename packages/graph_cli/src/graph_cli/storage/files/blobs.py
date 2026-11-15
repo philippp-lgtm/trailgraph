@@ -135,6 +135,52 @@ def publish(
     return BlobInfo(staged.hash, staged.size)
 
 
+def receive(
+    layout: GraphLayout, blob: BlobInfo, chunks: Iterable[bytes], *, syncer: Syncer
+) -> BlobInfo:
+    """A copy of ``blob`` from the graph's other location (``graph-admin files move``):
+    staged like a write's bytes (hashed and counted while written, synced), compared with
+    the hash and size, mode 0o444, then renamed into place with both directories synced,
+    as ``publish`` does. A file that is present with the same size is kept (its name is its
+    hash); one with another size is damaged and replaced by the verified copy. Bytes that
+    differ from the hash or the size are ``backend.corrupt``, and nothing is placed."""
+    try:
+        staged = stage(layout, chunks, max_bytes=blob.size, syncer=syncer, faults=None)
+    except GraphCliError as exc:
+        if exc.code != "file.too_large":
+            raise
+        raise _differs(blob.hash) from None
+    if staged.hash != blob.hash or staged.size != blob.size:
+        staged.discard()
+        raise _differs(blob.hash)
+    target = layout.blob_path(blob.hash)
+    try:
+        try:
+            present = os.lstat(target)
+        except FileNotFoundError:
+            present = None
+        if present is not None and stat.S_ISREG(present.st_mode) and present.st_size == blob.size:
+            staged.discard()
+            return blob
+        ensure_dir(target.parent, syncer)
+        os.chmod(staged.path, BLOB_MODE)
+        os.replace(staged.path, target)
+        syncer.sync_dir(target.parent)
+        syncer.sync_dir(layout.blobs)
+    except OSError as exc:
+        staged.discard()
+        raise _unavailable("cannot store the copied file", exc) from exc
+    return blob
+
+
+def _differs(digest: str) -> GraphCliError:
+    return GraphCliError(
+        "backend.corrupt",
+        "the bytes read for a stored file differ from its hash or size",
+        details={"blob": digest},
+    )
+
+
 def info(layout: GraphLayout, digest: str) -> BlobInfo | None:
     if not HASH_RE.match(digest):
         return None

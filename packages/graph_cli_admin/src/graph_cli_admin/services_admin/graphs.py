@@ -22,7 +22,7 @@ and its location.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from graph_cli.audit import events
@@ -39,10 +39,10 @@ from graph_cli.ontology_layer.diff import Renames
 from graph_cli.ontology_layer.migration import Retype
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
-from graph_cli.storage.files.s3_blobs import missing_credentials
 from graph_cli.storage.files.store_marker import ensure_store_marker
 from graph_cli.storage.s3.client import ObjectStoreClient
 from graph_cli.storage.s3.settings import ObjectStoreSettings
+from graph_cli_admin.services_admin import files_move
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import Compiled, compile_source, release_files
 
@@ -146,7 +146,7 @@ def create(
             exc.code,
             f"graph {name} was created, but it keeps its stored files in the data root:"
             f" switching it to the object store failed ({exc.message}). It holds no file"
-            " yet; move it to the object store with graph-admin files move once the cause"
+            f" yet; move it there with graph-admin files move {name} --to s3 once the cause"
             " is fixed",
             details={**exc.details, "graph_id": str(entry.id), "blob_location": "local"},
         ) from exc
@@ -157,22 +157,14 @@ def _object_store(ctx: AdminContext) -> tuple[ObjectStoreClient, ObjectStoreSett
     graph is created; ``None`` for the data root."""
     if ctx.config.files_store != "s3":
         return None
-    settings = ctx.catalog.object_store
-    if settings is None:  # catalog.object_store stops every command first; a guard
-        raise ctx.catalog.object_store_problem or GraphCliError(
-            "config.invalid",
-            '[files] store = "s3" needs [files.s3]',
-            details={"key": "files.s3.bucket"},
-        )
-    missing = missing_credentials(settings)
-    if missing:
-        raise GraphCliError(
-            "backend.unavailable",
-            '[files] store = "s3" puts new graphs into the object store, but its credentials'
-            f" are not set ({', '.join(missing)})",
-            details={"missing": list(missing)},
-        )
-    return ObjectStoreClient(settings), settings
+    # catalog.object_store stops every command without settings first; this is a guard
+    return files_move.object_store_client(
+        ctx.catalog.object_store,
+        ctx.catalog.object_store_problem,
+        ctx.maintenance.client_factory,
+        what='[files] store = "s3"',
+        purpose='[files] store = "s3" puts new graphs into the object store',
+    )
 
 
 def _into_object_store(
@@ -183,17 +175,15 @@ def _into_object_store(
     store_id: str,
 ) -> ManifestData:
     """Switch the new, empty graph to the object store ``store_id`` (O7) in the W.e shape:
-    intent, manifest replaced by one rename, anchor."""
+    intent, manifest replaced by one rename, anchor (``files_move.switch_blob_store``, the
+    switch of ``files move``)."""
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         current = session.manifest()
         if current.store.blob_location != "local":
             raise GraphCliError("internal.error", "the new graph is not local")
-        change = events.blob_store_change("local", "s3", store_id, blobs=0, size=0)
-        receipt = ctx.intent(session, current.entry, decisions, meta, change)
-        switched = replace(current, store=replace(STORE, blob_location="s3", store_id=store_id))
-        session.replace_manifest(switched, receipt)
-        ctx.anchor(current.entry, decisions, meta, receipt)
-    return switched
+        return files_move.switch_blob_store(
+            ctx, session, current, decisions, meta, to="s3", store_id=store_id, blobs=()
+        )
 
 
 def alias_prefixes(compiled: Compiled) -> dict[TermRef, str]:

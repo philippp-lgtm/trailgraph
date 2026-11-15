@@ -49,7 +49,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -72,6 +72,9 @@ from graph_cli.storage.finding_codes import (
 from graph_cli.storage.s3.client import ObjectInfo, ObjectSourceError, ObjectStoreClient
 from graph_cli.storage.s3.errors import ObjectContentMismatch, ObjectNotFound
 from graph_cli.storage.s3.settings import ObjectStoreSettings
+
+if TYPE_CHECKING:
+    from graph_cli.storage.files.blob_backend import BlobBackend
 
 PROMOTE_REFRESH: Final = timedelta(hours=12)
 GC_GRACE: Final = timedelta(hours=24)
@@ -464,6 +467,38 @@ class S3Blobs:
         for digest in hashes:
             store.delete_object(self.key(digest))
         return len(hashes)
+
+    def receive(self, blob: BlobInfo, source: BlobBackend) -> None:
+        """Upload ``blob`` from the data root's file (``files move``), signed with its hash
+        so the store verifies the bytes, then ``HEAD`` it: present with the size."""
+        if not HASH_RE.match(blob.hash):
+            raise GraphCliError("internal.error", f"not a blob hash: {blob.hash!r}")
+        path = source.local_path(blob.hash)
+        if path is None:
+            if source.local_paths:
+                raise _corrupt("a stored file is missing", blob.hash)
+            raise GraphCliError("internal.error", "an object store takes copies from the data root")
+        store = self._store()
+        key = self.key(blob.hash)
+        try:
+            with open(path, "rb") as handle:
+                store.put_object(key, handle, blob.size, blob.hash.removeprefix(_SHA256_PREFIX))
+        except ObjectSourceError:
+            raise _corrupt("a stored file is shorter than its size", blob.hash) from None
+        except FileNotFoundError:
+            raise _corrupt("a stored file is missing", blob.hash) from None
+        except OSError as exc:
+            raise GraphCliError(
+                "backend.unavailable", f"cannot read a stored file: {exc.strerror or exc}"
+            ) from None
+        stored = store.head_object(key)
+        if stored is None or stored.size != blob.size:
+            raise GraphCliError(
+                "backend.unavailable",
+                "the object store does not show the copied file with its size",
+                details={"blob": blob.hash},
+            )
+        self._confirmed.add(blob.hash)
 
     def target(self, digest: str) -> str:
         prefix = self.settings.prefix if self.settings is not None else ""

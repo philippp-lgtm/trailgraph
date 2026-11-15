@@ -80,6 +80,26 @@ RecordedStore = Callable[[], str | None]
 
 
 @dataclass(frozen=True, slots=True)
+class BlobCopies:
+    """One copy pass of a move of a graph's stored files to its other blob location
+    (``graph-admin files move``, object storage O7): ``source`` is the location the manifest
+    names, ``target`` the other one; ``blobs`` every stored file the move covers (each hash
+    a tx names, and every blob stored at the source: orphans too), in hash order; ``copied``
+    those this pass copied, verified; ``remaining`` those the target still lacks (holds
+    with another size) because the pass stopped early or was a dry run."""
+
+    source: str
+    target: str
+    blobs: tuple[BlobInfo, ...]
+    copied: tuple[BlobInfo, ...]
+    remaining: tuple[BlobInfo, ...]
+
+
+# Asked before every copy after the first of a pass: ``True`` stops the pass (its time is up).
+CopyBudget = Callable[[], bool]
+
+
+@dataclass(frozen=True, slots=True)
 class RecoveryReport:
     recovered: bool
     details: Mapping[str, JsonValue] = field(default=EMPTY)
@@ -335,6 +355,15 @@ class MaintenanceSession(WriteSession, Protocol):
         the intent (W.e)."""
         ...
 
+    def copy_blobs(
+        self, *, to: str, store_id: str | None, stop: CopyBudget | None = None
+    ) -> BlobCopies:
+        """A move's copy pass under the lock, right before its switch: every blob the move
+        covers that the location ``to`` (the object store ``store_id``) lacks is copied
+        there and verified, until ``stop`` says the time is up; nothing is removed, and the
+        manifest is not touched (``replace_manifest`` switches the graph)."""
+        ...
+
 
 class RegistrySession(Protocol):
     """Holds the installation registry lock (W.a, W.f)."""
@@ -402,4 +431,20 @@ class GraphStoreMaintenance(Protocol):
         content addressed and immutable, so the named location's copies are read in full
         and hashed here, never under the lock; ``None`` when there is no other location
         (or a local graph's object store cannot be reached)."""
+        ...
+
+    def copy_blobs(
+        self,
+        graph: GraphId,
+        *,
+        to: str,
+        store_id: str | None,
+        stop: CopyBudget | None = None,
+        dry_run: bool = False,
+    ) -> BlobCopies:
+        """A move's copy pass without the graph lock (idempotent, repeatable; an interrupted
+        pass only leaves extra copies): every blob the move covers that the location ``to``
+        lacks is copied there and verified, until ``stop`` says the time is up. A dry run
+        copies nothing; for an object store without a marker yet (``store_id`` ``None``) it
+        counts every blob as remaining."""
         ...

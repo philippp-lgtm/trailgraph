@@ -15,7 +15,9 @@ returned as it came (``Result.forwarded``):
 - ``graph pull`` writes the files the server answers into ``DIR`` (the
   same checks as locally, ``services_admin.sources``);
 - ``graph push`` uploads only what push reads of ``DIR`` (the base file,
-  ``ontology/``, ``skill/``) and records the answered base in ``DIR``.
+  ``ontology/``, ``skill/``) and records the answered base in ``DIR``;
+- ``files move`` is driven by the client as short requests (``remote_move``): a dry run,
+  copy passes, then the switch.
 
 ``client`` commands keep their own handler, ``local`` ones too, which
 refuse in remote mode (``admin.remote_mode``). ``--data-root`` names a
@@ -48,6 +50,7 @@ from graph_cli.cli_kit.spec import SERVED, CommandSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.skills.tree import MAX_NAME, NAME_RE, write_tree
+from graph_cli_admin.maintenance_cli import remote_move
 from graph_cli_admin.maintenance_cli.commands.common import DATA_ROOT
 from graph_cli_admin.services_admin import sources
 
@@ -80,6 +83,8 @@ def _handler(spec: CommandSpec) -> Callable[..., Result]:
                 details={"argument": DATA_ROOT.name},
             )
         session: RemoteSession = state.services.remote(state.warnings)
+        if remote_move.drives(spec, args):  # a move: passes, then the switch, as requests
+            return remote_move.run(session, spec, args)
         out = _local_out(args) if spec.path == RENDER else None
         target = Path(str(args[DIR])).resolve() if spec.path == PULL else None
         dry_run = args.get("--dry-run") is True

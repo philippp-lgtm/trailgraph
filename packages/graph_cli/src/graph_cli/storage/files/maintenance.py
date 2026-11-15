@@ -50,6 +50,7 @@ from graph_cli.kernel.ports.audit import (
     graph_stream,
 )
 from graph_cli.kernel.ports.catalog import (
+    BlobLocation,
     KineticSlot,
     ManifestData,
     SkillSlot,
@@ -58,8 +59,10 @@ from graph_cli.kernel.ports.catalog import (
     sources_hash,
 )
 from graph_cli.kernel.ports.storage import (
+    BlobCopies,
     BlobVerification,
     CommitResult,
+    CopyBudget,
     GraphStoreMaintenance,
     Head,
     MaintenanceSession,
@@ -77,6 +80,7 @@ from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.view import GraphView
 from graph_cli.storage.files import blobs
 from graph_cli.storage.files.blob_backend import BlobBackend, BlobBackends, blob_manifest
+from graph_cli.storage.files.blob_move import copy_pass, lock_free_referenced
 from graph_cli.storage.files.durable import (
     Durability,
     OsSyncer,
@@ -186,6 +190,22 @@ class FileStoreMaintenance:
         self, graph: GraphId, *, recorded_store: RecordedStore | None = None
     ) -> MisplacedCopies | None:
         return misplaced_copies(self.store(graph), recorded_store)
+
+    def copy_blobs(
+        self,
+        graph: GraphId,
+        *,
+        to: str,
+        store_id: str | None,
+        stop: CopyBudget | None = None,
+        dry_run: bool = False,
+    ) -> BlobCopies:
+        store = self.store(graph)
+        source, target = _move_backends(store, to, store_id, dry_run=dry_run)
+        referenced = lock_free_referenced(store)
+        return copy_pass(
+            source, target, referenced, stop=stop, dry_run=dry_run, faults=store.faults
+        )
 
     def object_store_client(self) -> ObjectStoreClient | None:
         """A client of the configured object store (``files store check``); ``None``
@@ -766,6 +786,19 @@ class FileMaintenanceSession:
                 other.remove_misplaced(sorted(present))
         backend.remove(hashes, staging, referenced=referenced)
 
+    def copy_blobs(
+        self, *, to: str, store_id: str | None, stop: CopyBudget | None = None
+    ) -> BlobCopies:
+        referenced = self._referenced()
+        if referenced is None:
+            raise GraphCliError(
+                "backend.corrupt", "the tx log is damaged; a move needs it whole (repair first)"
+            )
+        store = self._store
+        source, target = _move_backends(store, to, store_id, dry_run=False)
+        assert target is not None
+        return copy_pass(source, target, referenced, stop=stop, dry_run=False, faults=store.faults)
+
     def reindex(self, receipt: AuditReceipt | None = None) -> None:
         """Rebuild ``data/entities/``, ``head.json`` and the index from the tx log (B4.1).
 
@@ -796,6 +829,32 @@ class FileMaintenanceSession:
             store.rebuild_index(state.end.seq)
         except INDEX_ERRORS as exc:
             raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
+
+
+def _move_backends(
+    store: FileStore, to: str, store_id: str | None, *, dry_run: bool
+) -> tuple[BlobBackend, BlobBackend | None]:
+    """The location the graph's manifest names and the location ``to`` of a move; the
+    target is ``None`` for a dry run to an object store without a marker yet."""
+    manifest = blob_manifest(store.layout)
+    if manifest is None:
+        raise GraphCliError(
+            "config.invalid",
+            "the graph's manifest cannot be read; its stored files are not moved",
+            details={"graph_id": str(store.graph_id)},
+        )
+    if to not in _LOCATION_NAMES or to == manifest.store.blob_location:
+        raise GraphCliError("internal.error", f"cannot move the graph's stored files to {to!r}")
+    source = store.blob_backend()
+    if to == "s3" and store_id is None:
+        if not dry_run:
+            raise GraphCliError("internal.error", "a move to an object store needs its id")
+        return source, None
+    location: BlobLocation = "s3" if to == "s3" else "local"
+    target = store.blob_backends.at(
+        store.layout, manifest, location, store_id, syncer=store.syncer, faults=store.faults
+    )
+    return source, target
 
 
 @dataclass(frozen=True, slots=True)

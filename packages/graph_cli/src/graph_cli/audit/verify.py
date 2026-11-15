@@ -1111,7 +1111,7 @@ def _blob_store_walk(
         final_target={"stream": stream, "path": f"graphs/{graph_id}/manifest.toml"},
         anchored=anchored,
         code=codes.BLOB_STORE_MISMATCH,
-        interrupted=_interrupted_switch,
+        interrupted=lambda old, new: _interrupted_switch(old, new, graph_id),
         changed="the manifest's blob location differs from the recorded blob store switches",
     )
 
@@ -1119,13 +1119,14 @@ def _blob_store_walk(
 _WHERE: Final = {"local": "in the data root", "s3": "in the object store"}
 
 
-def _interrupted_switch(old: JsonValue, new: JsonValue) -> str:
+def _interrupted_switch(old: JsonValue, new: JsonValue, graph_id: str | None) -> str:
     source = old.get("location") if isinstance(old, Mapping) else None
     target = new.get("location") if isinstance(new, Mapping) else None
     return (
         f"blob store switch intent from {source} to {target} without its manifest switch (an"
         f" interrupted switch): the graph still keeps its stored files {_WHERE.get(str(source))}"
-        f" and lost none; to switch it, run graph-admin files move --to {target}"
+        f" and lost none; to switch it, run graph-admin files move {graph_id or '<graph>'}"
+        f" --to {target}"
     )
 
 

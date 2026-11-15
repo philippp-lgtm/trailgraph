@@ -138,4 +138,4 @@ def test_an_interrupted_blob_store_switch_is_an_intent_without_effect(
     assert finding.severity.value == "info"
     assert "interrupted switch" in finding.message
     assert "in the data root" in finding.message
-    assert "graph-admin files move --to s3" in finding.message
+    assert "files move " in finding.message and "--to s3" in finding.message

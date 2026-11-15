@@ -48,6 +48,9 @@ class CrashPoint(StrEnum):
     FUNCTIONS_BEFORE_RENAME = "functions.before_rename"
     ACTIONS_BEFORE_RENAME = "actions.before_rename"
     POLICY_BEFORE_RENAME = "policy.before_rename"
+    # A move of a graph's stored files (object storage O7): one blob copied to the other
+    # location and verified; the manifest still names the old one.
+    BLOB_AFTER_COPY = "blob.after_copy"
     # The migration marker (plan M3): the commit point of each effect is the rename or unlink.
     MIGRATION_MARKER_BEFORE_RENAME = "migration_marker.before_rename"
     MIGRATION_MARKER_BEFORE_REMOVE = "migration_marker.before_remove"
@@ -75,6 +78,7 @@ MAINT_POINTS: Final = frozenset(
         CrashPoint.FUNCTIONS_BEFORE_RENAME,
         CrashPoint.ACTIONS_BEFORE_RENAME,
         CrashPoint.POLICY_BEFORE_RENAME,
+        CrashPoint.BLOB_AFTER_COPY,
         CrashPoint.MIGRATION_MARKER_BEFORE_RENAME,
         CrashPoint.MIGRATION_MARKER_BEFORE_REMOVE,
     }
