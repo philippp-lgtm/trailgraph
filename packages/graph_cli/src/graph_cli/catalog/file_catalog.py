@@ -5,6 +5,9 @@ on every call, so a graph published by graph-admin is visible to the next
 read. Staging directories (``.tmp-*``) and anything that is not a canonical
 graph id are ignored. Reads create nothing; a missing data root is
 ``backend.unavailable``.
+
+The catalog holds the installation's object store settings (``catalog.object_store``)
+and checks every graph it opens against them (``storage.files.store_format``).
 """
 
 from __future__ import annotations
@@ -37,9 +40,9 @@ from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileStore, read_migration_marker
+from graph_cli.storage.files.store_format import check_store
+from graph_cli.storage.s3.settings import ObjectStoreSettings
 
-FILES_BACKEND = "files"
-FILES_FORMAT = 1  # [store] format_version of the FileStore layout (section 5)
 UNREADABLE = frozenset({"config.invalid", "format.unsupported_version", "backend.unavailable"})
 
 
@@ -60,10 +63,16 @@ class FileCatalog:
         oplog: OpLog | None = None,
         faults: FaultHook | None = None,
         follow_migration: bool = False,
+        object_store: ObjectStoreSettings | None = None,
+        object_store_problem: GraphCliError | None = None,
     ) -> None:
         self.data_root = data_root
         self.settings = settings or StorageSettings()
         self.oplog = oplog
+        # ``[files.s3]`` and the environment (``catalog.object_store``); when ``None``, the
+        # problem says why, for the graph whose manifest names an object store
+        self.object_store = object_store
+        self.object_store_problem = object_store_problem
         self.faults = faults  # crash tests only; production passes None (K.d)
         # The app's catalog: a graph whose migration is committed but not pinned yet (a
         # release running, or crashed between the tx and the pin switch) is read under the
@@ -174,16 +183,11 @@ class FileCatalog:
         return store, store
 
     def file_store(self, graph: GraphId) -> FileStore:
-        info = self.manifest(graph).store
-        if (info.backend, info.format_version) != (FILES_BACKEND, FILES_FORMAT):
-            raise GraphCliError(
-                "format.unsupported_version",
-                f"graph {graph} uses store {info.backend}/{info.format_version}",
-                details={
-                    "expected": f"{FILES_BACKEND}/{FILES_FORMAT}",
-                    "actual": f"{info.backend}/{info.format_version}",
-                },
-            )
+        check_store(
+            self.manifest(graph),
+            object_store=self.object_store,
+            object_store_problem=self.object_store_problem,
+        )
         return FileStore(
             self._layout(graph).root,
             graph,

@@ -4,7 +4,8 @@ The app's only reader of the process environment and the working
 directory. It resolves config and roots with the code graph-admin uses (no
 ``--data-root``; ``GRAPH_CLI_ROOT`` warns), finds the project pointer,
 builds the actor (entrypoint ``app``, never from env or flags), and wires
-clock, ids, catalog, audit log, the installed policy and the services.
+clock, ids, catalog (with the object store settings, ``catalog.object_store``),
+audit log, the installed policy and the services.
 Graph selection asks the policy first (B6.15); a project the policy has no
 scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
@@ -54,6 +55,7 @@ from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.file_roots import FileRoots, GivenOrigins
 from graph_cli.catalog.identity import resolve_actor, system_inputs
+from graph_cli.catalog.object_store import object_store
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import (
     GRAPH_ENV,
@@ -511,11 +513,14 @@ class AppServices:
         clock = SystemClock()
         ids = Uuid7Provider(clock)
         oplog = OpLogFile(roots.state_root, clock)
+        stores = object_store(config, self.env)
         catalog = FileCatalog(
             roots.data_root,
             settings=StorageSettings(config.lock_timeout_s, config.durability),
             oplog=oplog,
             follow_migration=True,
+            object_store=stores.settings,
+            object_store_problem=stores.problem,
         )
         audit = FileAuditLog(
             roots.data_root,

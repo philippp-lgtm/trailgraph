@@ -30,6 +30,7 @@ limit and the read signal. The sections described elsewhere:
   `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
+- `[files] store` and `[files.s3]`: [Object storage (in development)](#object-storage-in-development)
 - `[activity]`: [Live view](live_view.md)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
@@ -47,8 +48,38 @@ limit and the read signal. The sections described elsewhere:
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 
-Unknown config or manifest keys are warnings; an unknown `format_version`
-or an invalid value stops the command.
+Unknown config or manifest keys are warnings (except in `[files.s3]`); an
+unknown `format_version` or an invalid value stops the command.
+
+### Object storage (in development)
+
+Keeping stored files in an S3-compatible object store is in development and
+not usable yet: this version creates every graph with its files in the data
+root and refuses a graph whose files are in an object store. The settings
+are read and checked already:
+
+```toml
+[files]
+store = "local"          # default; "s3" is reserved for object storage
+
+[files.s3]
+bucket = "example-bucket"
+prefix = ""              # optional key prefix; "graph_cli" becomes "graph_cli/"
+endpoint_url = ""        # empty: AWS by region
+region = ""
+addressing = "path"      # or "virtual"
+# allow_plain_http = true  # http:// to a host that is not loopback
+```
+
+- `[files.s3]` takes exactly these keys: any other key stops the command
+  (`config.invalid`), so a credential pasted into the file is never silently
+  ignored. Credentials come only from the environment (below).
+- The environment wins over the file. The endpoint is an `http(s)` URL
+  without user info, path, query or fragment; `http://` only to a loopback
+  host unless `allow_plain_http = true`.
+- With `store = "local"` (the default) only the types of `[files.s3]` are
+  checked; with `store = "s3"` an incomplete or invalid setting stops every
+  command.
 
 ## Remote mode
 
@@ -120,5 +151,10 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_DIST_DIR` | the directory of wheels `graph-server` hands out ([Self update](server.md#self-update)); set in the image |
 | `GRAPH_CLI_ADMIN_TOKEN` | the admin token of `graph-admin` in [remote mode](#remote-mode), before `[remote] admin_token_file` |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
+| `GRAPH_CLI_S3_BUCKET` | the object store's bucket, before `[files.s3] bucket` ([Object storage](#object-storage-in-development)) |
+| `AWS_ENDPOINT_URL_S3`, then `AWS_ENDPOINT_URL` | the object store's endpoint, before `[files.s3] endpoint_url` |
+| `AWS_REGION`, then `AWS_DEFAULT_REGION` | the object store's region, before `[files.s3] region` |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | the object store's credentials (both keys or neither; the session token is optional); only from the environment |
+| `AWS_CA_BUNDLE` | an absolute path to the CA certificates for the object store's TLS |
 
 Only `catalog` and the admin wiring may read the process environment.

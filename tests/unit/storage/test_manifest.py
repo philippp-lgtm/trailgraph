@@ -1,4 +1,5 @@
-"""``manifest.toml`` codec (contracts B12, C.8, V.3, V.4; plan M1)."""
+"""``manifest.toml`` codec (contracts B12, C.8, V.3, V.4; plan M1; format 2 with
+``requires`` for stored files in an object store)."""
 
 import tomllib
 from datetime import UTC, datetime
@@ -11,15 +12,25 @@ from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GraphId, TermRef
 from graph_cli.kernel.ports.catalog import GraphEntry, ManifestData, StoreInfo
 from graph_cli.kernel.records import OntologyPin
-from graph_cli.storage.files.manifest import format_manifest, parse_manifest
+from graph_cli.storage.files.manifest import (
+    KNOWN_FEATURES,
+    format_manifest,
+    manifest_features,
+    parse_manifest,
+)
 from graph_cli.storage.files.tomlw import dumps
 
 GRAPH_ID = GraphId(UUID("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"))
 HASH = "sha256:" + "5d0e" * 16
+STORE_ID = "4b0c9f3e-2d1a-4c5b-9e8f-7a6b5c4d3e2f"
+S3_STORE = StoreInfo("files", 1, "s3", STORE_ID)
 
 
 def manifest(
-    *, title: str | None = 'Example "graph"\tone', language: str | None = None
+    *,
+    title: str | None = 'Example "graph"\tone',
+    language: str | None = None,
+    store: StoreInfo | None = None,
 ) -> ManifestData:
     entry = GraphEntry(
         id=GRAPH_ID,
@@ -34,7 +45,7 @@ def manifest(
     return ManifestData(
         entry=entry,
         created_at=datetime(2026, 10, 14, 19, 0, tzinfo=UTC),
-        store=StoreInfo("files", 1),
+        store=store or StoreInfo("files", 1),
     )
 
 
@@ -115,11 +126,138 @@ def test_unknown_keys_are_warnings() -> None:
     ]
 
 
-def test_unknown_major_is_unsupported() -> None:
-    data = format_manifest(manifest()).replace(b"format_version = 1\n", b"format_version = 2\n", 1)
+@pytest.mark.parametrize("version", ["3", "0", "true", '"2"', "2.0", "1.0"])
+def test_unknown_major_is_unsupported(version: str) -> None:
+    data = format_manifest(manifest()).replace(
+        b"format_version = 1\n", f"format_version = {version}\n".encode(), 1
+    )
     with pytest.raises(GraphCliError) as caught:
         parse_manifest(data, source="m")
     assert caught.value.code == "format.unsupported_version"
+    assert caught.value.details["expected"] == [1, 2]
+
+
+# ---- format 2: requires and [store.blobs] ------------------------------------
+
+
+def test_a_local_graph_stays_format_1_byte_for_byte() -> None:
+    """The local default writes exactly what 0.21 wrote: no ``requires``, no
+    ``[store.blobs]``, and a 0.21 manifest reads and writes back unchanged."""
+    golden = (GOLDENS / "storage" / "manifest.toml").read_bytes()
+    local = manifest(store=StoreInfo("files", 1, "local", None))
+    assert format_manifest(local) == format_manifest(manifest()) == golden
+    parsed, warnings = parse_manifest(golden, source="m")
+    assert (parsed.store, warnings) == (StoreInfo("files", 1), ())
+    assert format_manifest(parsed) == golden
+    assert b"requires" not in golden
+    assert b"blobs" not in golden
+    assert manifest_features(parsed.store) == ()
+
+
+def test_object_store_round_trip_and_golden() -> None:
+    data = format_manifest(manifest(store=S3_STORE))
+    assert_golden(GOLDENS / "storage" / "manifest_s3.toml", data)
+    text = data.decode()
+    assert text.startswith('format_version = 2\nrequires = ["blobs.s3"]\n\n[graph]\n')
+    headers = [line for line in text.splitlines() if line.startswith("[")]
+    assert headers == [
+        "[graph]",
+        "[ontology]",
+        "[store]",
+        "[store.blobs]",
+        "[alias.prefixes]",
+        "[extensions]",
+    ]
+    parsed, warnings = parse_manifest(data, source="m")
+    assert parsed == manifest(store=S3_STORE)
+    assert warnings == ()
+    assert format_manifest(parsed) == data
+    assert manifest_features(parsed.store) == ("blobs.s3",)
+
+
+@pytest.mark.parametrize(
+    "store", [StoreInfo("files", 1, "s3", None), StoreInfo("files", 1, "local", STORE_ID)]
+)
+def test_a_store_id_is_written_with_an_object_store_only(store: StoreInfo) -> None:
+    """Never dropped silently, never written without its location."""
+    with pytest.raises(GraphCliError) as caught:
+        format_manifest(manifest(store=store))
+    assert caught.value.code == "internal.error"
+
+
+@pytest.mark.parametrize(
+    "requires",
+    ['["blobs.s3", "sealed"]', '["future.thing"]', '["sealed", "blobs.s3"]'],
+)
+def test_an_unknown_feature_is_unsupported_and_named(requires: str) -> None:
+    text = format_manifest(manifest(store=S3_STORE)).decode()
+    text = text.replace('requires = ["blobs.s3"]', f"requires = {requires}", 1)
+    text = text.replace("[ontology]", "[ontology]\nsealed_key = 1", 1)  # unknown: not reached
+    with pytest.raises(GraphCliError) as caught:
+        parse_manifest(text.encode(), source="graphs/g/manifest.toml")
+    assert caught.value.code == "format.unsupported_version"
+    feature = next(f for f in ("sealed", "future.thing") if f in requires)
+    assert caught.value.details["feature"] == feature
+    assert feature in caught.value.message
+    assert caught.value.details["known"] == sorted(KNOWN_FEATURES)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "key"),
+    [
+        # requires and [store.blobs] disagree
+        ('requires = ["blobs.s3"]\n', "", "requires"),
+        ("[store.blobs]\n", "[unrelated]\n", "store.blobs"),
+        ('location = "s3"', 'location = "local"', "store.blobs.location"),
+        ('location = "s3"\n', "", "store.blobs.location"),
+        # the shape of requires and of the store id
+        ('requires = ["blobs.s3"]', "requires = []", "requires"),
+        ('requires = ["blobs.s3"]', 'requires = "blobs.s3"', "requires"),
+        ('requires = ["blobs.s3"]', 'requires = ["blobs.s3", "blobs.s3"]', "requires"),
+        ('requires = ["blobs.s3"]', 'requires = [""]', "requires"),
+        (f'store_id = "{STORE_ID}"', 'store_id = "bucket-1"', "store.blobs.store_id"),
+        (f'store_id = "{STORE_ID}"', f'store_id = "{STORE_ID.upper()}"', "store.blobs.store_id"),
+        (f'store_id = "{STORE_ID}"\n', "", "store.blobs.store_id"),
+    ],
+)
+def test_format_2_defects_are_config_invalid(old: str, new: str, key: str) -> None:
+    text = format_manifest(manifest(store=S3_STORE)).decode()
+    assert old in text
+    with pytest.raises(GraphCliError) as caught:
+        parse_manifest(text.replace(old, new, 1).encode(), source="graphs/g/manifest.toml")
+    assert caught.value.code == "config.invalid"
+    assert caught.value.details["key"] == key
+
+
+@pytest.mark.parametrize(
+    ("addition", "key"),
+    [
+        ('requires = ["blobs.s3"]\n', "requires"),
+        (None, "store.blobs"),
+    ],
+)
+def test_format_1_with_format_2_keys_is_refused(addition: str | None, key: str) -> None:
+    """A format-1 manifest never carries a location: one would be dropped silently."""
+    text = format_manifest(manifest()).decode()
+    if addition is not None:
+        text = text.replace("format_version = 1\n", "format_version = 1\n" + addition, 1)
+    else:
+        text = text.replace(
+            "[alias.prefixes]",
+            f'[store.blobs]\nlocation = "s3"\nstore_id = "{STORE_ID}"\n\n[alias.prefixes]',
+            1,
+        )
+    with pytest.raises(GraphCliError) as caught:
+        parse_manifest(text.encode(), source="m")
+    assert (caught.value.code, caught.value.details["key"]) == ("config.invalid", key)
+
+
+def test_format_2_unknown_keys_still_warn() -> None:
+    text = format_manifest(manifest(store=S3_STORE)).decode()
+    text = text.replace("[store.blobs]\n", "[store.blobs]\nregion = 'x'\n", 1)
+    parsed, warnings = parse_manifest(text.encode(), source="m")
+    assert parsed.store == S3_STORE
+    assert [w.details["key"] for w in warnings] == ["store.blobs.region"]
 
 
 @pytest.mark.parametrize(

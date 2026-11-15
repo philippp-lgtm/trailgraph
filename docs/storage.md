@@ -10,7 +10,8 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.common` | chained JSONL codec, fault points, commit checks, tx-log replay view (the reference query evaluator is `kernel.query_eval`) |
 | `storage.memory` | `InMemoryStore`, `InMemoryAuditLog`: the reference backend |
 | `storage.files` | `FileStore` (one graph directory), `FileAuditLog` (installation audit stream), lock, durable writes, recovery |
-| `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec; reading manifests and installed ontology releases |
+| `storage.files.manifest`, `storage.files.releases` | the `manifest.toml` codec (formats 1 and 2, [Manifest](#manifest)); reading manifests and installed ontology releases |
+| `storage.files.store_format` | which graphs a `FileStore` opens: the one manifest check of the catalog and the maintenance port |
 | `storage.files.index` | the disposable index: building and updating it, binding it to the tx log, its log digest, the view over it for readers and writers |
 | `storage.files.skill_slot` | reading a graph's published skill (`skill/source.json` and `skill/files/<hash>/`) |
 | `storage.files.kinetic_slot` | reading a graph's published function or action catalog, one implementation for both kinds (`<kind>/slot.json`, `<kind>/compiled/<hash>.json`, and with `sources=True` `<kind>/files/<hash>/<name>.yaml`); the app reads only the compiled document |
@@ -135,3 +136,51 @@ POSIX only, local filesystems only.
   damaged one is `actions.slot_invalid`. The slots are verified against the
   audit trail ([Slot verification](audit.md#slot-verification)); the format of a
   function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), that of an action file in the [actions authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md).
+
+## Manifest
+
+`graphs/<id>/manifest.toml` holds the graph's identity, state, ontology pin,
+alias prefixes, extensions and `[store]` (`backend = "files"`,
+`format_version = 1`: the layout above). It is written by one rename, with a
+fixed key order.
+
+- **Format 1** is the manifest of a graph whose stored files are local. Such
+  a graph is always written as format 1, byte for byte as before format 2
+  existed.
+- **Format 2** is format 1 plus a top-level `requires`: the storage features
+  a reader must know to open the graph. A reader that does not know one
+  refuses the graph with `format.unsupported_version` naming the feature; a
+  program that knows only format 1 refuses it by the top-level
+  `format_version`, so no older program reads or rewrites such a graph.
+  A later storage feature gets a new feature name, not a new format number.
+- The one feature so far is `blobs.s3` (in development): the stored files are
+  in an S3-compatible object store, named by `[store.blobs]` with
+  `location = "s3"` and the object store's `store_id` (a UUID). `requires`
+  and `[store.blobs]` must agree, and a format-1 manifest carries neither;
+  anything else is `config.invalid`. This version has no object store
+  backend yet: it refuses such a graph with `backend.unavailable` wherever its
+  store is opened, instead of reading it as if its files were local.
+
+```toml
+format_version = 2
+requires = ["blobs.s3"]
+
+# [graph] and [ontology] as in format 1
+
+[store]
+backend = "files"
+format_version = 1
+
+[store.blobs]
+location = "s3"
+store_id = "<uuid>"
+```
+
+The catalog (`FileCatalog.file_store`: app and server) and the maintenance
+port (`FileStoreMaintenance.store`: `graph-admin`) make the same check before
+they open a graph's store (`storage.files.store_format`); another backend or
+layout version is `format.unsupported_version`. The maintenance port leaves a
+manifest that cannot be read at all to `verify`, which reports it
+(`pin_mismatch`). Every manifest rewrite (the pin switch of a release) keeps
+`[store]` as read, so the location is never dropped; `graph-admin graph show`
+reports it as `store.blob_location` and `store.store_id`.

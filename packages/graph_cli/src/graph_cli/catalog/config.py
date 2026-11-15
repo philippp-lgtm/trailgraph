@@ -6,6 +6,11 @@ Reading follows V.3/V.4: an unknown ``format_version`` is
 key. A missing file is the default configuration. ``graph-admin init``
 writes the file only when it does not exist yet; ``graph connect`` creates
 it or sets only ``[runtime] mode`` and ``endpoint`` in it (``remote_config``).
+
+``[files.s3]`` is stricter: any key it does not define is ``config.invalid``, so
+a secret pasted into the file stops the command instead of being ignored
+(credentials come only from the environment). Here only its shape is checked;
+``catalog.object_store`` validates it with the environment.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.tomlw import TomlTable, TomlValue, dumps
+from graph_cli.storage.s3.settings import Addressing
 
 CONFIG_FORMAT: Final = 1
 OutputMode = Literal["text", "json"]
@@ -52,12 +58,15 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "storage": frozenset({"lock_timeout_s", "durability"}),
     "audit": frozenset({"record_data_root", "access_log"}),
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
-    "files": frozenset({"max_bytes"}),
+    "files": frozenset({"max_bytes", "store", "s3"}),
     "activity": frozenset({"signal_reads"}),
     "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist", "public_url"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
 }
 _OPEN_TABLES: Final = frozenset({"roots"})  # keys are names chosen by the user
+FileStoreKind = Literal["local", "s3"]
+# [files.s3]: exactly these keys; any other is config.invalid, not a warning
+S3_KEYS: Final = ("bucket", "prefix", "endpoint_url", "region", "addressing", "allow_plain_http")
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
 MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
 DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
@@ -65,6 +74,19 @@ MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
 ORIGIN_RE: Final = re.compile(r"^https?://[^/\s?#]+$")  # a browser Origin: scheme://host[:port]
 # no credentials (they would be public in every problem type), no query, no fragment
 PUBLIC_URL_RE: Final = re.compile(r"^https?://[^/\s?#@]+(/[^\s?#]*)?$")
+
+
+@dataclass(frozen=True, slots=True)
+class S3Table:
+    """``[files.s3]`` as written, shape checked only (``catalog.object_store`` validates
+    it with the environment); ``None`` where a key is not set."""
+
+    bucket: str | None = None
+    prefix: str | None = None
+    endpoint_url: str | None = None
+    region: str | None = None
+    addressing: Addressing | None = None
+    allow_plain_http: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +106,8 @@ class Config:
     spill_dir: str | None = None  # as written; absolute or "~/..."; None = /tmp/graph_cli_<uid>
     file_roots: Mapping[str, str] = field(default_factory=dict)  # name -> path as written
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
+    files_store: FileStoreKind = "local"  # [files] store: where new graphs keep their files
+    files_s3: S3Table = S3Table()  # [files.s3]
     signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
     mode: Literal["local", "remote"] = "local"  # [runtime] mode
     endpoint: str | None = None  # [runtime]: the server's URL in remote mode
@@ -198,6 +222,10 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     max_bytes = get("files.max_bytes", int, "an integer")
     if max_bytes is not None and not 1 <= max_bytes <= MAX_MAX_FILE_BYTES:
         raise _invalid(path, "files.max_bytes", f"must be between 1 and {MAX_MAX_FILE_BYTES}")
+    files_store = get("files.store", str, "a string")
+    if files_store not in (None, "local", "s3"):
+        raise _invalid(path, "files.store", "must be 'local' or 's3'")
+    files_s3 = _s3_table(path, tables.get("files", {}).get("s3"))
     signal_reads = get("activity.signal_reads", bool, "a boolean")
     cors_origins = get("server.cors_origins", list, "an array of origins")
     if cors_origins is not None and not all(
@@ -236,6 +264,8 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         spill_dir=spill_dir,
         file_roots=file_roots,
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
+        files_store=files_store or defaults.files_store,
+        files_s3=files_s3,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
         admin_api=bool(admin_api),
@@ -252,6 +282,38 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         else defaults.remote_timeout_s,
     )
     return config, tuple(warnings)
+
+
+def _s3_table(path: Path, table: object) -> S3Table:
+    """``[files.s3]``: only its keys, each of its type. Messages name keys, never values."""
+    if table is None:
+        return S3Table()
+    if not isinstance(table, dict):
+        raise _invalid(path, "files.s3", "must be a table")
+    for key in sorted(set(table) - set(S3_KEYS)):
+        raise _invalid(
+            path,
+            f"files.s3.{key}",
+            f"is not a key of [files.s3] ({', '.join(S3_KEYS)}); credentials come only from"
+            " the environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN)",
+        )
+    for key in ("bucket", "prefix", "endpoint_url", "region", "addressing"):
+        if key in table and not isinstance(table[key], str):
+            raise _invalid(path, f"files.s3.{key}", "must be a string")
+    addressing = table.get("addressing")
+    if addressing not in (None, "path", "virtual"):
+        raise _invalid(path, "files.s3.addressing", "must be 'path' or 'virtual'")
+    allow_plain_http = table.get("allow_plain_http", False)
+    if not isinstance(allow_plain_http, bool):
+        raise _invalid(path, "files.s3.allow_plain_http", "must be a boolean")
+    return S3Table(
+        bucket=table.get("bucket"),
+        prefix=table.get("prefix"),
+        endpoint_url=table.get("endpoint_url"),
+        region=table.get("region"),
+        addressing=addressing,
+        allow_plain_http=allow_plain_http,
+    )
 
 
 def _file_roots(path: Path, table: Mapping[str, Any]) -> dict[str, str]:

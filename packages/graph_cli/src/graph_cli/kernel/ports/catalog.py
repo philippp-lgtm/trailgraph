@@ -36,10 +36,19 @@ class GraphEntry:
     migration: MigrationMarker | None = None
 
 
+BlobLocation = Literal["local", "s3"]
+
+
 @dataclass(frozen=True, slots=True)
 class StoreInfo:
+    """The manifest's ``[store]``: the backend, its layout version and where the graph keeps
+    its stored files. ``blob_location`` ``"s3"`` names the object store by ``store_id``;
+    a local graph has no ``store_id``."""
+
     backend: str
     format_version: int
+    blob_location: BlobLocation = "local"
+    store_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +239,7 @@ __all__ = [
     "FUNCTION_SLOT_SCHEMA",
     "KINDS",
     "SKILL_SOURCE_SCHEMA",
+    "BlobLocation",
     "Catalog",
     "FunctionsSlot",
     "GraphEntry",

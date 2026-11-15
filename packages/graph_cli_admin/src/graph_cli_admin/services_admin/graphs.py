@@ -214,6 +214,8 @@ def describe(manifest: ManifestData) -> dict[str, JsonValue]:
         "store": {
             "backend": manifest.store.backend,
             "format_version": manifest.store.format_version,
+            "blob_location": manifest.store.blob_location,
+            "store_id": manifest.store.store_id,
         },
     }
 

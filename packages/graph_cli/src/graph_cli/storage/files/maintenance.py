@@ -110,6 +110,7 @@ from graph_cli.storage.files.releases import (
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
+from graph_cli.storage.files.store_format import check_store
 from graph_cli.storage.files.token_files import (
     enrollments_path,
     read_tokens_file,
@@ -126,6 +127,7 @@ from graph_cli.storage.finding_codes import (
     REVISION_UNEXPECTED,
     TX_CHAIN_BROKEN,
 )
+from graph_cli.storage.s3.settings import ObjectStoreSettings
 
 
 class FileStoreMaintenance:
@@ -140,16 +142,39 @@ class FileStoreMaintenance:
         faults: FaultHook | None = None,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         oplog: OpLog | None = None,
+        object_store: ObjectStoreSettings | None = None,
+        object_store_problem: GraphCliError | None = None,
     ) -> None:
         self.data_root = data_root
         self.syncer: Syncer = syncer if syncer is not None else OsSyncer(durability)
         self.faults = faults
         self.segment_bytes = segment_bytes
         self.oplog = oplog
+        # Built by the admin wiring from ``[files.s3]`` and the environment; storage never
+        # reads either. ``object_store_problem`` says why ``object_store`` is ``None``.
+        self.object_store = object_store
+        self.object_store_problem = object_store_problem
 
     def store(self, graph: GraphId) -> FileStore:
+        """The graph's store, after the checks ``FileCatalog.file_store`` makes
+        (``store_format.check_store``): an unsupported manifest format, feature, backend or
+        blob location is refused. A manifest that cannot be read at all is left to the
+        caller: ``verify`` reports it (``pin_mismatch``), a missing graph is
+        ``backend.unavailable`` on first use."""
+        root = self.data_root / "graphs" / str(graph)
+        try:
+            manifest = read_manifest(GraphLayout(root))[0]
+        except GraphCliError as exc:
+            if exc.code != "config.invalid":
+                raise
+        else:
+            check_store(
+                manifest,
+                object_store=self.object_store,
+                object_store_problem=self.object_store_problem,
+            )
         return FileStore(
-            self.data_root / "graphs" / str(graph),
+            root,
             graph,
             syncer=self.syncer,
             faults=self.faults,

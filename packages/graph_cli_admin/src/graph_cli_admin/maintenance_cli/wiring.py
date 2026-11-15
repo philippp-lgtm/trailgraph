@@ -3,7 +3,8 @@
 The only admin module that reads the process environment. It resolves
 config and roots with the same catalog code as the app, adds graph-admin's
 ``--data-root`` and builds the ``AdminContext`` for the services: actor
-(entrypoint ``maint``), clock, ids, catalog, audit log, maintenance port,
+(entrypoint ``maint``), clock, ids, catalog and maintenance port (both with the
+object store settings, ``catalog.object_store``), audit log,
 policy (the installed files, falling back past an invalid one) and the op
 log. Everything is built lazily per command, so a broken config renders as
 an error envelope.
@@ -33,6 +34,7 @@ from typing import TYPE_CHECKING, Final
 from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.identity import resolve_actor, system_inputs
+from graph_cli.catalog.object_store import object_store
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.catalog.resolve import config_path, resolve_roots
@@ -246,6 +248,7 @@ class Services:
                 warnings.append(warning)
 
         settings = StorageSettings(config.lock_timeout_s, config.durability)
+        stores = object_store(config, self.env)
         policy = FilePolicySource(roots.data_root, fallback=fallback)
         policy.installation()  # a broken installation policy warns on every command
         return AdminContext(
@@ -254,7 +257,13 @@ class Services:
             actor=actor,
             clock=clock,
             ids=Uuid7Provider(clock),
-            catalog=FileCatalog(roots.data_root, settings=settings, oplog=oplog),
+            catalog=FileCatalog(
+                roots.data_root,
+                settings=settings,
+                oplog=oplog,
+                object_store=stores.settings,
+                object_store_problem=stores.problem,
+            ),
             audit=FileAuditLog(
                 roots.data_root,
                 durability=config.durability,
@@ -262,7 +271,11 @@ class Services:
                 oplog=oplog,
             ),
             maintenance=FileStoreMaintenance(
-                roots.data_root, durability=config.durability, oplog=oplog
+                roots.data_root,
+                durability=config.durability,
+                oplog=oplog,
+                object_store=stores.settings,
+                object_store_problem=stores.problem,
             ),
             policy=policy,
             env=EnvInfo(

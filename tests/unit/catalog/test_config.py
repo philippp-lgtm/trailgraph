@@ -6,6 +6,7 @@ import pytest
 
 from graph_cli.catalog.config import (
     Config,
+    S3Table,
     format_new_config,
     load_config,
     parse_config,
@@ -40,6 +41,14 @@ notes = "~/synced/notes"
 archive_2 = "/srv/archive"
 [files]
 max_bytes = 2048
+store = "s3"
+[files.s3]
+bucket = "example-bucket"
+prefix = "graph_cli"
+endpoint_url = "https://objects.example.org"
+region = "example-region"
+addressing = "virtual"
+allow_plain_http = true
 [activity]
 signal_reads = true
 [server]
@@ -79,6 +88,15 @@ def test_every_key() -> None:
         spill_dir="~/spill",
         file_roots={"archive_2": "/srv/archive", "notes": "~/synced/notes"},
         max_file_bytes=2048,
+        files_store="s3",
+        files_s3=S3Table(
+            bucket="example-bucket",
+            prefix="graph_cli",
+            endpoint_url="https://objects.example.org",
+            region="example-region",
+            addressing="virtual",
+            allow_plain_http=True,
+        ),
         signal_reads=True,
         mode="remote",
         endpoint="https://graphs.example.org/api/",
@@ -106,6 +124,7 @@ def test_plain_http_beyond_loopback_needs_the_switch() -> None:
 def test_file_defaults() -> None:
     config, _ = parse_config(b"format_version = 1\n", path=PATH)
     assert (config.file_roots, config.max_file_bytes) == ({}, 100 * 1024 * 1024)
+    assert (config.files_store, config.files_s3) == ("local", S3Table())
     assert config.signal_reads is False
     assert config.access_log is False
     assert config.client_builds == "compatible"

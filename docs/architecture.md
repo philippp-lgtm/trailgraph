@@ -143,10 +143,11 @@ load. The versions are constants in `graph_cli/__init__.py` and
 
 | Module | Content |
 | --- | --- |
-| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, read signal |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, the file store (`[files] store`, the shape of `[files.s3]`), read signal |
+| `catalog.object_store` | the object store settings (`ObjectStoreSettings`) from `[files.s3]` and the environment, handed to the catalog and, through the admin wiring, to the maintenance port; storage never reads either |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
-| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for`; the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
+| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` (after the manifest check of `storage.files.store_format`); the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |

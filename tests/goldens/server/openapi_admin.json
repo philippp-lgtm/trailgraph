@@ -1032,11 +1032,30 @@
               },
               "format_version": {
                 "type": "integer"
+              },
+              "blob_location": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "s3"
+                ]
+              },
+              "store_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "backend",
-              "format_version"
+              "format_version",
+              "blob_location",
+              "store_id"
             ]
           }
         },
@@ -1644,11 +1663,30 @@
               },
               "format_version": {
                 "type": "integer"
+              },
+              "blob_location": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "s3"
+                ]
+              },
+              "store_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "backend",
-              "format_version"
+              "format_version",
+              "blob_location",
+              "store_id"
             ]
           },
           "seq": {
