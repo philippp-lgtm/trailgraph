@@ -51,6 +51,7 @@ import queue
 import secrets
 import sys
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Final
@@ -188,6 +189,7 @@ class ViewServer:
         graphs.watched = self.hub.watched
         self.clock = clock if clock is not None else SystemClock()
         self._stop = threading.Event()
+        self._stop_requested = False  # set by a signal handler, which must take no lock
         self.host = host
         self._http = _HTTPServer((host, port), _handler(self))
         self._http.daemon_threads = True
@@ -211,10 +213,16 @@ class ViewServer:
             thread.start()
             self._threads.append(thread)
 
+    def request_stop(self) -> None:
+        """Make ``wait`` return; safe in a signal handler (one assignment, no lock)."""
+        self._stop_requested = True
+
     def wait(self) -> None:
-        """Block until ``stop``; short waits keep Ctrl+C responsive."""
-        while not self._stop.wait(0.2):
-            pass
+        """Block until ``request_stop`` or ``stop``. It polls instead of waiting on the
+        event: a signal handler runs between two steps of this thread and must not touch
+        a lock this thread may hold."""
+        while not (self._stop_requested or self._stop.is_set()):
+            time.sleep(0.2)
 
     def stop(self) -> None:
         self._stop.set()

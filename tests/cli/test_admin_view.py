@@ -8,6 +8,7 @@ import socket
 import subprocess
 from pathlib import Path
 
+import pytest
 from harness import BIN_DIR, CliRunner
 from support.activity import short_dir
 from support.admin import admin, init
@@ -15,40 +16,129 @@ from support.app import create_graph
 from support.policies import write_policy
 
 
+def start_view(
+    args: tuple[str, ...], env: dict[str, str], cwd: Path, *, sigint_ignored: bool = False
+) -> subprocess.Popen[str]:
+    """``graph-admin view ARGS`` as a process. Its SIGINT is set to the default, not
+    inherited: a shell starts background jobs with SIGINT ignored, so a suite run in the
+    background would hand that on and every Ctrl+C test would wait for a view that keeps
+    ignoring it. ``sigint_ignored`` starts it like such a background job."""
+
+    def set_sigint() -> None:
+        signal.signal(signal.SIGINT, signal.SIG_IGN if sigint_ignored else signal.SIG_DFL)
+
+    return subprocess.Popen(
+        [str(BIN_DIR / "graph-admin"), "view", *args],
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        preexec_fn=set_sigint,
+    )
+
+
+def stop_view(proc: subprocess.Popen[str], sig: int = signal.SIGINT) -> tuple[str, str]:
+    """Send ``sig`` and collect the output. A view that does not stop within 10 s fails
+    the test and is killed, never left running."""
+    proc.send_signal(sig)
+    try:
+        return proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _, err = proc.communicate()
+        pytest.fail(f"graph-admin view did not stop on {signal.Signals(sig).name}: {err}")
+
+
+def address(proc: subprocess.Popen[str]) -> tuple[int, str]:
+    """Port and token from the first line on stderr."""
+    assert proc.stderr is not None
+    line = proc.stderr.readline()
+    found = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=(\S+)", line)
+    assert found, line
+    return int(found.group(1)), found.group(2)
+
+
+def with_reads(env: dict[str, str]) -> None:
+    config = Path(env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + "\n[activity]\nsignal_reads = true\n")
+
+
 def test_serves_until_interrupted(
     run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
 ) -> None:
     init(run_cli, isolated_env)
     create_graph(run_cli, "example_graph", "notes_and_sources")
-    config = Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
-    config.write_text(config.read_text() + "\n[activity]\nsignal_reads = true\n")
+    with_reads(isolated_env)
     with short_dir() as state:
         activity = state / "graph_cli" / "activity"
-        proc = subprocess.Popen(
-            [str(BIN_DIR / "graph-admin"), "view", "--graph", "example_graph", "--no-open"],
-            env={**isolated_env, "XDG_STATE_HOME": str(state)},
-            cwd=tmp_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        env = {**isolated_env, "XDG_STATE_HOME": str(state)}
+        proc = start_view(("--graph", "example_graph", "--no-open"), env, tmp_path)
         try:
-            assert proc.stderr is not None
-            line = proc.stderr.readline()
-            found = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=(\S+)", line)
-            assert found, line
-            port, token = int(found.group(1)), found.group(2)
+            port, token = address(proc)
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
             conn.request("GET", f"/graph?t={token}")
             data = json.loads(conn.getresponse().read())
             assert data["graph"]["name"] == "example_graph" and data["signal_reads"] is True
             (sock,) = activity.glob("*.sock")
         finally:
-            proc.send_signal(signal.SIGINT)
-            out, err = proc.communicate(timeout=10)
+            out, err = stop_view(proc)
         assert proc.returncode == 0, err
         assert "stopped" in out
         assert not sock.exists()
+
+
+def test_sigterm_stops_the_view_as_ctrl_c_does(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    with_reads(isolated_env)
+    with short_dir() as state:
+        env = {**isolated_env, "XDG_STATE_HOME": str(state)}
+        proc = start_view(("--graph", "example_graph", "--no-open"), env, tmp_path)
+        try:
+            address(proc)
+            (sock,) = (state / "graph_cli" / "activity").glob("*.sock")
+        finally:
+            out, err = stop_view(proc, signal.SIGTERM)
+        assert proc.returncode == 0 and "stopped" in out, err
+        assert not sock.exists()
+
+
+def test_a_signal_right_after_the_address_still_stops_cleanly(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """The signal handlers are in place before the address is printed: a Ctrl+C at once
+    is no abort halfway through the start."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    for _ in range(3):
+        proc = start_view(("--graph", "example_graph", "--no-open"), isolated_env, tmp_path)
+        try:
+            address(proc)
+        finally:
+            out, err = stop_view(proc)
+        assert proc.returncode == 0 and "stopped" in out, err
+
+
+def test_a_view_started_with_sigint_ignored_keeps_ignoring_it(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """As a background job of a shell expects; SIGTERM still stops it cleanly."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph", "notes_and_sources")
+    proc = start_view(
+        ("--graph", "example_graph", "--no-open"), isolated_env, tmp_path, sigint_ignored=True
+    )
+    try:
+        address(proc)
+        proc.send_signal(signal.SIGINT)
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=1)
+    finally:
+        out, err = stop_view(proc, signal.SIGTERM)
+    assert proc.returncode == 0 and "stopped" in out, err
 
 
 def test_a_view_without_reads_says_why(
@@ -56,23 +146,15 @@ def test_a_view_without_reads_says_why(
 ) -> None:
     init(run_cli, isolated_env)
     create_graph(run_cli, "example_graph", "notes_and_sources")
-    config = Path(isolated_env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
-    config.write_text(config.read_text() + "\n[activity]\nsignal_reads = true\n")
+    with_reads(isolated_env)
     state = tmp_path / ("s" * 120)  # too long for a Unix socket path
-    proc = subprocess.Popen(
-        [str(BIN_DIR / "graph-admin"), "view", "--graph", "example_graph", "--no-open"],
-        env={**isolated_env, "XDG_STATE_HOME": str(state)},
-        cwd=tmp_path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    env = {**isolated_env, "XDG_STATE_HOME": str(state)}
+    proc = start_view(("--graph", "example_graph", "--no-open"), env, tmp_path)
     try:
         assert proc.stderr is not None
         lines = [proc.stderr.readline() for _ in range(2)]
     finally:
-        proc.send_signal(signal.SIGINT)
-        proc.communicate(timeout=10)
+        stop_view(proc)
     assert "the activity socket cannot be bound (" in lines[1], lines
     assert str(state / "graph_cli" / "activity") in lines[1]
     assert not list((state / "graph_cli" / "activity").glob("*.sock"))
@@ -103,14 +185,7 @@ def test_a_token_file_gives_the_token_and_stays_out_of_the_address(
     token_file = tmp_path / "view_token"
     token_file.write_text(f"  {token}\n")
     serve = ("--graph", "example_graph", "--no-open", "--token-file", str(token_file))
-    proc = subprocess.Popen(
-        [str(BIN_DIR / "graph-admin"), "view", *serve],
-        env=isolated_env,
-        cwd=tmp_path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    proc = start_view(serve, isolated_env, tmp_path)
     try:
         assert proc.stderr is not None
         line = proc.stderr.readline()
@@ -120,8 +195,7 @@ def test_a_token_file_gives_the_token_and_stays_out_of_the_address(
         conn.request("GET", f"/graph?t={token}")
         assert conn.getresponse().status == 200
     finally:
-        proc.send_signal(signal.SIGINT)
-        out, err = proc.communicate(timeout=10)
+        out, err = stop_view(proc)
     assert proc.returncode == 0 and token not in out + err, err
 
 
@@ -163,25 +237,14 @@ no_project: {"*": read, example_graph: none}
 
 def listed(args: tuple[str, ...], env: dict[str, str], cwd: Path) -> list[str]:
     """The graphs a view started with ``args`` lists."""
-    proc = subprocess.Popen(
-        [str(BIN_DIR / "graph-admin"), "view", "--no-open", *args],
-        env=env,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    proc = start_view(("--no-open", *args), env, cwd)
     try:
-        assert proc.stderr is not None
-        line = proc.stderr.readline()
-        found = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=(\S+)", line)
-        assert found, line
-        conn = http.client.HTTPConnection("127.0.0.1", int(found.group(1)), timeout=5)
-        conn.request("GET", f"/graphs?t={found.group(2)}")
+        port, token = address(proc)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", f"/graphs?t={token}")
         return [g["name"] for g in json.loads(conn.getresponse().read())["graphs"]]
     finally:
-        proc.send_signal(signal.SIGINT)
-        proc.communicate(timeout=10)
+        stop_view(proc)
 
 
 def test_a_project_gets_the_view_its_scope(

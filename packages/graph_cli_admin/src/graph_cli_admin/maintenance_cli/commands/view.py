@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import signal
+import threading
 import webbrowser
+from collections.abc import Iterator
 from importlib.resources import files
 from pathlib import Path
+from types import FrameType
 from typing import Final
 
 import click
@@ -56,6 +60,34 @@ def read_token_file(path: str) -> str:
     if len(token) < MIN_TOKEN:
         raise refused(f"the token is shorter than {MIN_TOKEN} characters")
     return token
+
+
+@contextlib.contextmanager
+def stop_on_signals(server: ViewServer) -> Iterator[None]:
+    """SIGTERM and SIGINT (Ctrl+C) make ``server.wait`` return, so the view always stops
+    the same way: the address is printed inside, so a signal after it never cuts the
+    cleanup short. A signal the view was started with ignored stays ignored (a shell
+    starts background jobs with SIGINT ignored); SIGTERM still stops such a view.
+    Handlers can only be set on the main thread; elsewhere nothing changes."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def handler(signum: int, frame: FrameType | None) -> None:
+        server.request_stop()
+
+    previous = {}
+    try:
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            current = signal.getsignal(signum)
+            if current is not signal.SIG_IGN:
+                # None: a handler not set from Python; the default is the closest there is
+                previous[signum] = signal.SIG_DFL if current is None else current
+                signal.signal(signum, handler)
+        yield
+    finally:
+        for signum, old in previous.items():
+            signal.signal(signum, old)
 
 
 def view_command(
@@ -143,29 +175,32 @@ def view_command(
             details=details,
         ) from exc
     try:
-        server.start()
-        if token is None:
-            click.echo(f"Graph view{of}: {server.url}", err=True)
-        else:
-            click.echo(
-                f"Graph view{of}: {server.address} (add ?t= with the token of --token-file)",
-                err=True,
-            )
-        if host != "127.0.0.1":
-            click.echo(
-                f"Bound to {host}: the page and its token travel in clear; publish the port"
-                " to 127.0.0.1 only, or put a proxy in front.",
-                err=True,
-            )
-        if no_reads:  # the warnings print only when the view stops
-            click.echo(
-                f"Reads are not shown: the activity socket cannot be bound ({no_reads}).", err=True
-            )
-        click.echo("Press Ctrl+C to stop.", err=True)
-        if not no_open:
-            webbrowser.open(server.url)
-        with contextlib.suppress(KeyboardInterrupt):
-            server.wait()
+        with stop_on_signals(server):
+            server.start()
+            if token is None:
+                click.echo(f"Graph view{of}: {server.url}", err=True)
+            else:
+                click.echo(
+                    f"Graph view{of}: {server.address} (add ?t= with the token of --token-file)",
+                    err=True,
+                )
+            if host != "127.0.0.1":
+                click.echo(
+                    f"Bound to {host}: the page and its token travel in clear; publish the port"
+                    " to 127.0.0.1 only, or put a proxy in front.",
+                    err=True,
+                )
+            if no_reads:  # the warnings print only when the view stops
+                click.echo(
+                    f"Reads are not shown: the activity socket cannot be bound ({no_reads}).",
+                    err=True,
+                )
+            click.echo("Press Ctrl+C to stop.", err=True)
+            if not no_open:
+                webbrowser.open(server.url)
+            # a SIGINT that came as KeyboardInterrupt: off the main thread, or before the handlers
+            with contextlib.suppress(KeyboardInterrupt):
+                server.wait()
     finally:
         server.stop()
         if listener is not None:

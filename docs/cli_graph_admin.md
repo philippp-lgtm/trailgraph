@@ -58,7 +58,7 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `self update` | in the remote mode install the server's build of `graph-admin` when it differs (`--check` only reports); see [Self update](server.md#self-update) |
 | `skills install --scope user\|project` | install or refresh the [admin skills](skills.md#admin-skills) for an agent (`--dir`, `--force`, `--dry-run`); runs here, also in the remote mode |
 | `skills check --scope user\|project` | report each admin skill as `fresh`, `stale`, `modified`, `unexpected`, `foreign`, `missing` or `unavailable` (`--dir`); exit 1 unless all are fresh |
-| `view [--graph REF]` | serve a live view of the graphs in the browser until Ctrl+C, opened on `REF` or on none (`--port`, `--host`, `--no-open`, `--token-file`, `--project`); no JSON mode (see [Live view](live_view.md)) |
+| `view [--graph REF]` | serve a live view of the graphs in the browser until Ctrl+C or `SIGTERM`, opened on `REF` or on none (`--port`, `--host`, `--no-open`, `--token-file`, `--project`); no JSON mode (see [Live view](live_view.md)) |
 
 ## Releasing with a data migration
 
