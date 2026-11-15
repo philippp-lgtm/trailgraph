@@ -36,9 +36,13 @@
   and each token gets there, as ``policy show`` and ``policy explain`` print.
 - ``entity_json`` is one entity in full for the detail panel: attributes
   (hidden labels left out), edges both ways with their qualifiers, and
-  every revision with the actor that wrote it.
+  every revision with the actor that wrote it. A file's stored state is
+  unknown (``stored: null``) when its object store cannot be asked
+  (``backend.unavailable``): the rest of the page does not need it.
 - ``open_blob`` is the stored file of a ``files:File`` entity, authorized
-  for ``read.get`` on its type like ``files path``.
+  for ``read.get`` on its type like ``files path``, and read like the
+  server's download (``services.files.open_stored``): started before the
+  answer begins, verified while it streams.
 - ``ViewFeed.poll`` turns committed txs after the last seen seq into
   ``created`` (rev 1) and ``updated`` (rev > 1) events. The txlog, not the
   audit log, is the source: an intent precedes its commit (W.12). A tx with more than
@@ -67,7 +71,7 @@ import sys
 import threading
 import time
 from collections import Counter, OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +99,7 @@ from graph_cli.services.describe import (
     describe_type,
     model_envelope,
 )
+from graph_cli.services.files import FileStream, open_stored
 from graph_cli.services.models import ModelCache
 from graph_cli_admin.services_admin import policy
 from graph_cli_admin.services_admin.context import AdminContext
@@ -132,7 +137,7 @@ class BlobStream:
     inline: bool
     file_name: str
     size: int
-    chunks: Iterator[bytes]
+    chunks: FileStream  # started: what fails before the first byte was raised by open_blob
 
 
 def effective_entry(ctx: AdminContext, graph_ref: str) -> GraphEntry:
@@ -369,12 +374,20 @@ def entity_json(source: ViewSource, text: str) -> dict[str, JsonValue]:
     }
     digest = revision.attrs.get("content")
     if _is_file(source, revision) and isinstance(digest, str):
-        stored = source.read.blob(digest)
         media_type = revision.attrs.get("media_type")
+        stored: bool | None
+        try:
+            found = source.read.blob(digest)
+        except GraphCliError as exc:
+            if exc.code != "backend.unavailable":
+                raise
+            found, stored = None, None  # the object store cannot be asked: unknown
+        else:
+            stored = found is not None
         data["file"] = {
             "media_type": media_type if isinstance(media_type, str) else None,
-            "size": stored.size if stored else None,
-            "stored": stored is not None,
+            "size": found.size if found else None,
+            "stored": stored,
             "inline": media_type in INLINE_MEDIA_TYPES,
         }
     return data
@@ -393,24 +406,16 @@ def open_blob(source: ViewSource, text: str) -> BlobStream:
             details={"argument": "id", "actual": revision.type},
         )
     source.authorize_type(revision.type)
-    stored = source.read.blob(digest)
-    if stored is None:
-        raise GraphCliError(
-            "backend.corrupt",
-            f"the stored copy of {text} is missing; run graph-admin files verify",
-            details={"id": str(entity), "blob": digest},
-        )
-    media_type = revision.attrs.get("media_type")
-    inline = isinstance(media_type, str) and media_type in INLINE_MEDIA_TYPES
-    name = revision.attrs.get("file_name") or revision.attrs.get("title") or "file"
+    opened = open_stored(source.read, revision, text)
+    media_type = opened.media_type
+    inline = media_type is not None and media_type in INLINE_MEDIA_TYPES
+    name = opened.file_name or revision.attrs.get("title") or "file"
     return BlobStream(
-        media_type=media_type
-        if inline and isinstance(media_type, str)
-        else "application/octet-stream",
+        media_type=media_type if inline and media_type is not None else "application/octet-stream",
         inline=inline,
         file_name=str(name),
-        size=stored.size,
-        chunks=source.read.read_blob(digest),
+        size=opened.size,
+        chunks=opened.start(),
     )
 
 

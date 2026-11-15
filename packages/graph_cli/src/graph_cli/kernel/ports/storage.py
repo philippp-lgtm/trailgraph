@@ -50,6 +50,56 @@ class CommitResult:
 
 
 @dataclass(frozen=True, slots=True)
+class BlobVerification:
+    """What a blob check found: its ``integrity.storage.blob_*`` findings and the blobs
+    stored in the location the graph's manifest names, as one listing saw them (``None``
+    when that location could not be listed: ``blob_store_unavailable``)."""
+
+    findings: tuple[Finding, ...]
+    stored: tuple[BlobInfo, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class MisplacedCopies:
+    """Copies of blobs outside the location the graph's manifest names, judged before the
+    graph lock (``GraphStoreMaintenance.misplaced_blobs``): ``location`` is where the copies
+    lie; ``removable`` are those the named location holds intact (listed with the same size,
+    its bytes read in full have the hash) in a place this graph may clean, ``kept`` the
+    others. ``store_id`` is the object store whose objects may go (the copies of a local
+    graph: the store it was recorded to leave), ``None`` for the data root."""
+
+    location: str
+    removable: tuple[BlobInfo, ...]
+    kept: tuple[BlobInfo, ...]
+    store_id: str | None = None
+
+
+# The object store a local graph was recorded to leave (its last ``change.blob_store`` to
+# ``local``), asked only when the graph has copies there; ``None`` when there is none.
+RecordedStore = Callable[[], str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class BlobCopies:
+    """One copy pass of a move of a graph's stored files to its other blob location
+    (``graph-admin files move``, object storage O7): ``source`` is the location the manifest
+    names, ``target`` the other one; ``blobs`` every stored file the move covers (each hash
+    a tx names, and every blob stored at the source: orphans too), in hash order; ``copied``
+    those this pass copied, verified; ``remaining`` those the target still lacks (holds
+    with another size) because the pass stopped early or was a dry run."""
+
+    source: str
+    target: str
+    blobs: tuple[BlobInfo, ...]
+    copied: tuple[BlobInfo, ...]
+    remaining: tuple[BlobInfo, ...]
+
+
+# Asked before every copy after the first of a pass: ``True`` stops the pass (its time is up).
+CopyBudget = Callable[[], bool]
+
+
+@dataclass(frozen=True, slots=True)
 class RecoveryReport:
     recovered: bool
     details: Mapping[str, JsonValue] = field(default=EMPTY)
@@ -179,6 +229,13 @@ class GraphStoreWrite(Protocol):
         """Hash and hold ``chunks`` without the lock; ``file.too_large`` beyond ``max_bytes``."""
         ...
 
+    def promote_blobs(self, staged: Sequence[StagedBlob]) -> None:
+        """Without the lock, once the write is authorized and before its session: get
+        staged blobs ready for ``publish_blob`` (a backend that keeps stored files
+        elsewhere moves the bytes here, not under the lock). The staged blobs stay
+        usable; a no-op for a backend that publishes from the staged bytes alone."""
+        ...
+
 
 class MaintenanceSession(WriteSession, Protocol):
     """A write session plus the maintenance effects (W.e); no recovery on open."""
@@ -268,21 +325,43 @@ class MaintenanceSession(WriteSession, Protocol):
         ...
 
     def orphan_blobs(self) -> Sequence[BlobInfo]:
-        """Stored blobs no tx names; ``backend.corrupt`` when the tx log is damaged."""
+        """Stored blobs no tx names that may be removed now (an object store keeps young
+        ones for a grace period); ``backend.corrupt`` when the tx log is damaged."""
         ...
 
     def staging(self) -> Iterator[tuple[str, datetime]]:
         """Blob staging leftovers: ``(name, last modified)``."""
         ...
 
-    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
-        """``integrity.storage.blob_*`` findings; ``rehash`` reads every stored blob."""
+    def verify_blobs(
+        self, *, rehash: bool, recorded_store: RecordedStore | None = None
+    ) -> BlobVerification:
+        """``integrity.storage.blob_*`` findings and the stored blobs; ``rehash`` reads
+        every stored blob; ``recorded_store`` tells whether a local graph's copies in the
+        object store are its own."""
         ...
 
     def remove_blobs(
-        self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
+        self,
+        hashes: Sequence[str],
+        staging: Sequence[str],
+        receipt: AuditReceipt,
+        *,
+        misplaced: MisplacedCopies | None = None,
     ) -> None:
-        """Delete unreferenced blobs and staging leftovers; ``receipt`` is the intent (W.e)."""
+        """Delete unreferenced blobs, staging leftovers and the removable misplaced copies
+        (each only while the named location still lists its hash with the same size, and
+        an object store only while its marker is ``misplaced.store_id``); ``receipt`` is
+        the intent (W.e)."""
+        ...
+
+    def copy_blobs(
+        self, *, to: str, store_id: str | None, stop: CopyBudget | None = None
+    ) -> BlobCopies:
+        """A move's copy pass under the lock, right before its switch: every blob the move
+        covers that the location ``to`` (the object store ``store_id``) lacks is copied
+        there and verified, until ``stop`` says the time is up; nothing is removed, and the
+        manifest is not touched (``replace_manifest`` switches the graph)."""
         ...
 
 
@@ -344,3 +423,28 @@ class GraphStoreMaintenance(Protocol):
     def maintenance_session(
         self, graph: GraphId, *, timeout_s: float
     ) -> AbstractContextManager[MaintenanceSession]: ...
+
+    def misplaced_blobs(
+        self, graph: GraphId, *, recorded_store: RecordedStore | None = None
+    ) -> MisplacedCopies | None:
+        """The graph's misplaced copies, judged without the graph lock: stored blobs are
+        content addressed and immutable, so the named location's copies are read in full
+        and hashed here, never under the lock; ``None`` when there is no other location
+        (or a local graph's object store cannot be reached)."""
+        ...
+
+    def copy_blobs(
+        self,
+        graph: GraphId,
+        *,
+        to: str,
+        store_id: str | None,
+        stop: CopyBudget | None = None,
+        dry_run: bool = False,
+    ) -> BlobCopies:
+        """A move's copy pass without the graph lock (idempotent, repeatable; an interrupted
+        pass only leaves extra copies): every blob the move covers that the location ``to``
+        lacks is copied there and verified, until ``stop`` says the time is up. A dry run
+        copies nothing; for an object store without a marker yet (``store_id`` ``None``) it
+        counts every blob as remaining."""
+        ...

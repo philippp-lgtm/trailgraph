@@ -8,9 +8,11 @@ times are numbered by first appearance and the actor's principal, client
 and facet sources are left out: the only differences the server may make.
 """
 
+import contextlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +22,7 @@ import pytest
 from harness import BIN_DIR
 from support.app import create_args
 from support.equivalence import differences, home_env, normalized
+from support.fake_s3 import ACCESS_KEY_ID, SECRET_ACCESS_KEY, FakeS3
 from support.files import synthetic_pdf, write_pdf, write_text
 from support.fixtures import FIXTURES, ONTOLOGIES, TOY_ONTOLOGIES, compiled_model
 from support.roles import Roles, lifecycle_path, load_roles
@@ -63,12 +66,22 @@ def actions_step(ontology: str) -> tuple[tuple[str, ...], ...]:
     return (("graph", "actions", "publish", "example_graph", str(folder)),)
 
 
-def prepare(env: dict[str, str], cwd: Path, ontology: str, version: str | None = None) -> None:
+def prepare(
+    env: dict[str, str], cwd: Path, ontology: str, version: str | None = None, *, s3: bool = False
+) -> None:
+    """An installation with ``example_graph``; with ``s3`` its stored files are in the object
+    store the env names (``[files] store = "s3"`` before the graph is created)."""
     version = version or compiled_model(ontology).bundle_version
     policy = cwd / "installation.yaml"
     policy.write_text(SERVER_POLICY)
+    init = subprocess.run(
+        [str(BIN_DIR / "graph-admin"), "init"], env=env, cwd=cwd, capture_output=True, text=True
+    )
+    assert init.returncode == 0, init.stdout + init.stderr
+    if s3:
+        config = Path(env["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+        config.write_text(config.read_text() + '\n[files]\nstore = "s3"\n')
     for args in (
-        ("init",),
         ("graph", "create", "example_graph", "--ontology", str(ONTOLOGIES / ontology / version)),
         ("policy", "apply", str(policy), "--reason", "equivalence"),
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL)),
@@ -314,6 +327,9 @@ def files_scenario(run: Run, home: Path) -> list[Any]:
             stored = Path(document["data"]["path"])
             assert stored.read_bytes() == synthetic_pdf()  # here, whatever the machine
             assert not os.access(stored, os.W_OK)
+            if stored.parent.parent.name == "files":  # a copy in this machine's file cache
+                assert stat.S_IMODE(stored.stat().st_mode) == 0o400
+                assert stored.is_relative_to(home)
             document["data"]["path"] = "<stored copy>"
         seen.append([list(args), code, document])
         return document
@@ -335,17 +351,42 @@ def files_scenario(run: Run, home: Path) -> list[Any]:
     return seen
 
 
-def test_files_answer_the_same(isolated_env: dict[str, str], tmp_path: Path) -> None:
+@pytest.mark.parametrize("store", ["local", "s3"])
+def test_files_answer_the_same(isolated_env: dict[str, str], tmp_path: Path, store: str) -> None:
+    """Locally and through the server; with ``s3`` both installations keep their stored
+    files in the fake object store: a local ``file path`` answers a copy in the file cache,
+    the server streams the bytes from the store to the remote client's cache."""
+    with contextlib.ExitStack() as stack:
+        s3_env: dict[str, str] = {}
+        if store == "s3":
+            fake = stack.enter_context(FakeS3())
+            s3_env = {
+                "GRAPH_CLI_S3_BUCKET": fake.bucket,
+                "AWS_REGION": fake.region,
+                "AWS_ENDPOINT_URL_S3": fake.endpoint_url,
+                "AWS_ACCESS_KEY_ID": ACCESS_KEY_ID,
+                "AWS_SECRET_ACCESS_KEY": SECRET_ACCESS_KEY,
+            }
+        files_answer_the_same({**isolated_env, **s3_env}, isolated_env, tmp_path, store == "s3")
+        if store == "s3":  # both graphs keep their two files in the bucket, none locally
+            stored = [k.split("/") for k in list(fake.objects) if "/blobs/" in k]
+            assert len(stored) == 4 and len({parts[1] for parts in stored}) == 2
+            assert not any(p.is_file() for p in tmp_path.glob("*/.local/share/**/blobs/**/*"))
+
+
+def files_answer_the_same(
+    installation_env: dict[str, str], client_base: dict[str, str], tmp_path: Path, s3: bool
+) -> None:
     roots = '[roots]\nnotes = "~/notes"\n'
     local_home = tmp_path / "local"
-    local = home_env(isolated_env, local_home)
-    prepare(local, tmp_path, "notes_and_sources", "1.1.0")
+    local = home_env(installation_env, local_home)
+    prepare(local, tmp_path, "notes_and_sources", "1.1.0", s3=s3)
     config = Path(local["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
     config.write_text(config.read_text() + roots)
     expected = files_scenario(runner(local, local_home / "notes"), local_home)
 
-    owner = home_env(isolated_env, tmp_path / "server")
-    prepare(owner, tmp_path, "notes_and_sources", "1.1.0")
+    owner = home_env(installation_env, tmp_path / "server")
+    prepare(owner, tmp_path, "notes_and_sources", "1.1.0", s3=s3)
     created = subprocess.run(
         [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
         env=owner,
@@ -356,7 +397,7 @@ def test_files_answer_the_same(isolated_env: dict[str, str], tmp_path: Path) -> 
     client_home = tmp_path / "client"
     with graph_server(owner, tmp_path) as server:
         client = client_env(
-            {**isolated_env, "GRAPH_CLI_GRAPH": "example_graph"},
+            {**client_base, "GRAPH_CLI_GRAPH": "example_graph"},
             client_home,
             server.port,
             token,

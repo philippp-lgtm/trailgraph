@@ -5,6 +5,10 @@ on every call, so a graph published by graph-admin is visible to the next
 read. Staging directories (``.tmp-*``) and anything that is not a canonical
 graph id are ignored. Reads create nothing; a missing data root is
 ``backend.unavailable``.
+
+The catalog checks the store format of every graph it opens
+(``storage.files.store_format``) and hands the installation's object store settings
+(``catalog.object_store``) to its stores, whose blob backend checks them on blob access.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.storage import GraphStoreRead, GraphStoreWrite
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.storage.common.faults import FaultHook
+from graph_cli.storage.files.blob_backend import BlobBackends
 from graph_cli.storage.files.durable import Durability
 from graph_cli.storage.files.kinetic_slot import read_slot
 from graph_cli.storage.files.layout import GraphLayout
@@ -37,9 +42,9 @@ from graph_cli.storage.files.releases import read_manifest, read_release_file
 from graph_cli.storage.files.segments import OpLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileStore, read_migration_marker
+from graph_cli.storage.files.store_format import check_store
+from graph_cli.storage.s3.settings import ObjectStoreSettings
 
-FILES_BACKEND = "files"
-FILES_FORMAT = 1  # [store] format_version of the FileStore layout (section 5)
 UNREADABLE = frozenset({"config.invalid", "format.unsupported_version", "backend.unavailable"})
 
 
@@ -60,10 +65,16 @@ class FileCatalog:
         oplog: OpLog | None = None,
         faults: FaultHook | None = None,
         follow_migration: bool = False,
+        object_store: ObjectStoreSettings | None = None,
+        object_store_problem: GraphCliError | None = None,
     ) -> None:
         self.data_root = data_root
         self.settings = settings or StorageSettings()
         self.oplog = oplog
+        # ``[files.s3]`` and the environment (``catalog.object_store``); when ``None``, the
+        # problem says why, for the graph whose manifest names an object store
+        self.object_store = object_store
+        self.object_store_problem = object_store_problem
         self.faults = faults  # crash tests only; production passes None (K.d)
         # The app's catalog: a graph whose migration is committed but not pinned yet (a
         # release running, or crashed between the tx and the pin switch) is read under the
@@ -174,22 +185,14 @@ class FileCatalog:
         return store, store
 
     def file_store(self, graph: GraphId) -> FileStore:
-        info = self.manifest(graph).store
-        if (info.backend, info.format_version) != (FILES_BACKEND, FILES_FORMAT):
-            raise GraphCliError(
-                "format.unsupported_version",
-                f"graph {graph} uses store {info.backend}/{info.format_version}",
-                details={
-                    "expected": f"{FILES_BACKEND}/{FILES_FORMAT}",
-                    "actual": f"{info.backend}/{info.format_version}",
-                },
-            )
+        check_store(self.manifest(graph))
         return FileStore(
             self._layout(graph).root,
             graph,
             durability=self.settings.durability,
             oplog=self.oplog,
             faults=self.faults,
+            blob_backends=BlobBackends(self.object_store, self.object_store_problem),
         )
 
     def _effective(self, entry: GraphEntry) -> GraphEntry:

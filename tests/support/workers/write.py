@@ -4,10 +4,11 @@ Arguments: ``root``, ``graph``, ``documents`` (change set documents applied
 in order, each as its own request), optional ``file`` (``{path,
 idempotency_key?}``, added through the FileService first), optional ``point`` (a crash point at
 which the process sends itself SIGKILL), optional ``barrier`` (wait for the
-file first), ``worker`` (seed) and ``uid`` (the principal; the CLI's own uid
-when a ``graph`` retry must share the idempotency scope). Production parts throughout: system
-clock, UUIDv7 provider, FileCatalog, FileAuditLog, built-in policy. Emits
-one result per document: ``{"seq", "replay", "aliases"}`` or ``{"error"}``.
+file first), ``object_store`` (the fake's settings, ``support.s3_graphs.settings_spec``,
+for a graph whose stored files are there), ``worker`` (seed) and ``uid`` (the principal;
+the CLI's own uid when a ``graph`` retry must share the idempotency scope). Production
+parts throughout: system clock, UUIDv7 provider, FileCatalog, FileAuditLog, built-in
+policy. Emits one result per document: ``{"seq", "replay", "aliases"}`` or ``{"error"}``.
 """
 
 import os
@@ -27,6 +28,7 @@ from graph_cli.services.write import WriteConfig, WriteRequest, WriteService
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.audit_log import FileAuditLog
 from support.procs import wait_for
+from support.s3_graphs import settings_from_spec
 from support.services import app_actor
 from support.workers import args, emit
 
@@ -41,7 +43,8 @@ def main() -> None:
             os.kill(os.getpid(), signal.SIGKILL)
 
     clock = SystemClock()
-    catalog = FileCatalog(root, faults=kill_at if target else None)
+    settings = settings_from_spec(spec["object_store"]) if "object_store" in spec else None
+    catalog = FileCatalog(root, faults=kill_at if target else None, object_store=settings)
     service = WriteService(
         catalog=catalog,
         audit=FileAuditLog(root, durability="fsync", lock_timeout_s=60),

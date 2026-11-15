@@ -22,7 +22,7 @@ from graph_cli.cli_kit.output_schemas import (
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.ports.catalog import GraphState
+from graph_cli.kernel.ports.catalog import BlobLocation, GraphState
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -279,7 +279,14 @@ _MANIFEST: Final = {
     "ontology": ref("ontology_pin"),
     "alias_prefixes": obj(extra=STRING),
     "extensions": STRINGS,
-    "store": obj({"backend": STRING, "format_version": INTEGER}),
+    "store": obj(
+        {
+            "backend": STRING,
+            "format_version": INTEGER,
+            "blob_location": enum(*get_args(BlobLocation)),
+            "store_id": NULLABLE_STRING,
+        }
+    ),
 }
 CREATE_OUTPUT: Final = obj(_MANIFEST)
 LIST_OUTPUT: Final = obj(  # services_admin.graphs.list_graphs
@@ -536,6 +543,7 @@ SPECS: Final = (
             *CHANGE_ERRORS,
             "admin.model_invalid",
             "admin.graph_name_taken",
+            "files.store_refused",  # [files] store = "s3": the object store refused the marker
         ),
         handler=create,
         output=CREATE_OUTPUT,

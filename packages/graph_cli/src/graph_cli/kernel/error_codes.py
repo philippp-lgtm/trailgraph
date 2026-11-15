@@ -581,6 +581,9 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("file.origin_missing", _C.NOT_FOUND, False, "The origin of the file is missing."),
     ErrorSpec("file.no_local_path", _C.REFUSED, False, "The backend gives no local file path."),
     ErrorSpec(
+        "files.store_refused", _C.REFUSED, False, "The object store refused to store a file."
+    ),
+    ErrorSpec(
         "access.project_mismatch", _C.DENIED, False, "The token is bound to another project."
     ),
     ErrorSpec("remote.unreachable", _C.UNAVAILABLE, True, "The server cannot be reached."),

@@ -46,7 +46,8 @@ and storage adapters, `audit` and `access_control` import only `kernel`.
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
 `query`; the layers above may use it. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
-two storage backends are independent of each other. Authored YAML (ontologies,
+two storage backends are independent of each other. The S3 client
+(`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,
 policies, function files) is parsed only through the kernel's strict loader
 `kernel.yaml_strict`, by `ontology_layer`, `access_control` and `kinetic`.
 
@@ -143,10 +144,12 @@ load. The versions are constants in `graph_cli/__init__.py` and
 
 | Module | Content |
 | --- | --- |
-| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, read signal |
+| `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, the file store (`[files] store`, the shape of `[files.s3]`), read signal |
+| `catalog.object_store` | the object store settings (`ObjectStoreSettings`) from `[files.s3]` and the environment, handed to the catalog and, through the admin wiring, to the maintenance port; storage never reads either |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
+| `catalog.file_cache` | `StateFileCache`: this machine's file cache `<state>/files/<graph id>/<hex>`, the `FileCache` port of `services.files` (read-only copies, unique partial files, hash check, use time, 24-hour expiry), shared by `file path` in local mode and the remote client's download |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
-| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for`; the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
+| `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` (after the manifest check of `storage.files.store_format`); the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |
@@ -267,7 +270,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
-| `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path`, `check`; the built-in media type table |
+| `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path` (the backend's file, else a copy in the injected `FileCache`), `open` (the one streaming read of a stored file, for the server's download and, through `open_stored`, the live view), `check`; the built-in media type table |
 
 A write runs in this order: check the graph state and the pinned ontology
 artifact, resolve references, authorize every (action, type) pair, take the

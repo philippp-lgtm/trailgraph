@@ -81,6 +81,7 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "migration.invalid": None,  # details.problems names each path to fix
     "ontology.rename_invalid": None,  # details.problems names each renamed_from to fix
     "admin.integrity_errors": None,
+    "admin.store_check_failed": None,  # details.checks says what is wrong, check by check
     "admin.data_errors": None,  # the entities to fix are in details.findings
     "admin.policy_lockout": None,  # details.rule names the rule that locks out
     "admin.skill_invalid": None,  # the files to fix are in details.problems

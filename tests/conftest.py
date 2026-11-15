@@ -19,15 +19,16 @@ pytest_plugins = ["support.output_schemas"]
 
 @pytest.fixture
 def isolated_env(tmp_path: Path) -> dict[str, str]:
-    """Environment with a throwaway home and XDG dirs, no GRAPH_CLI_* overrides and no
-    ``CLAUDE_CONFIG_DIR`` (the user skill directory is the throwaway home's), except that
-    large answers stay on stdout (``GRAPH_CLI_SPILL_BYTES=0``): tests read whole envelopes
-    and never write to the shared spill directory; spill tests set their own."""
+    """Environment with a throwaway home and XDG dirs, no GRAPH_CLI_* overrides, no AWS_*
+    object store settings and no ``CLAUDE_CONFIG_DIR`` (the user skill directory is the
+    throwaway home's), except that large answers stay on stdout
+    (``GRAPH_CLI_SPILL_BYTES=0``): tests read whole envelopes and never write to the shared
+    spill directory; spill tests set their own."""
     home = tmp_path / "home"
     env = {
         k: v
         for k, v in os.environ.items()
-        if not k.startswith("GRAPH_CLI_") and k != "CLAUDE_CONFIG_DIR"
+        if not k.startswith(("GRAPH_CLI_", "AWS_")) and k != "CLAUDE_CONFIG_DIR"
     }
     env.update(
         HOME=str(home),

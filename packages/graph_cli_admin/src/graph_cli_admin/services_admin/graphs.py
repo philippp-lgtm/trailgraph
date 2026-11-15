@@ -5,6 +5,18 @@ under the registry lock checks the name against every graph (archived ones
 too, B1.11) and hands storage the manifest, the genesis event and the first
 release; storage stages them, calls back for the installation event with
 the anchor, and publishes the graph with one rename.
+
+With ``[files] store = "s3"`` a new graph keeps its stored files in the object store
+(object storage O7, "genesis means local"): the graph is created as above, local, and
+the same command then switches it, as a ``maint.graph_configure`` operation in the W.e
+shape (an intent with ``change.blob_store{from: local, to: s3, store_id, blobs: 0,
+bytes: 0}``, the manifest replaced by one rename as format 2, the installation anchor).
+Everything that can fail on the object store's side is done before the graph exists:
+the settings and credentials are checked, ``maint.graph_configure`` on the new graph is
+authorized, and the store marker is read or created (``ensure_store_marker``; creating
+it is part of this audited step). Should the switch still fail (the graph lock, the
+disk), the graph stays local, holding no file, and the command fails naming the graph
+and its location.
 """
 
 from __future__ import annotations
@@ -14,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from graph_cli.audit import events
+from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError
@@ -26,6 +39,10 @@ from graph_cli.ontology_layer.diff import Renames
 from graph_cli.ontology_layer.migration import Retype
 from graph_cli.storage.files.layout import GraphLayout
 from graph_cli.storage.files.releases import release_hashes
+from graph_cli.storage.files.store_marker import ensure_store_marker
+from graph_cli.storage.s3.client import ObjectStoreClient
+from graph_cli.storage.s3.settings import ObjectStoreSettings
+from graph_cli_admin.services_admin import files_move
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import Compiled, compile_source, release_files
 
@@ -64,6 +81,7 @@ def create(
         {"name": name, "title": title, "language": language, "ontology": pin.to_json()},
     )
     decisions = ctx.authorize([("maint.graph_create", "installation")], request=meta)
+    object_store = _object_store(ctx)
     now = ctx.clock.now()
     entry = GraphEntry(
         GraphId(ctx.ids.new_id()),
@@ -75,6 +93,14 @@ def create(
         title,
         language,
     )
+    configure: tuple[Decision, ...] = ()
+    store_id: str | None = None
+    if object_store is not None:
+        configure = ctx.authorize(
+            [("maint.graph_configure", f"graph:{entry.id}")], request=meta, graph=entry.id
+        )
+        client, settings = object_store
+        store_id = ensure_store_marker(client, settings, clock=ctx.clock, ids=ctx.ids)
     manifest = ManifestData(entry, now, STORE)
     genesis = events.graph_genesis(
         actor=ctx.actor,
@@ -111,7 +137,53 @@ def create(
         registry.create_graph(
             manifest, genesis, version=pin.version, files=files, announce=announce
         )
-    return manifest
+    if store_id is None:
+        return manifest
+    try:
+        return _into_object_store(ctx, entry, configure, meta, store_id)
+    except GraphCliError as exc:
+        raise GraphCliError(
+            exc.code,
+            f"graph {name} was created, but it keeps its stored files in the data root:"
+            f" switching it to the object store failed ({exc.message}). It holds no file"
+            f" yet; move it there with graph-admin files move {name} --to s3 once the cause"
+            " is fixed",
+            details={**exc.details, "graph_id": str(entry.id), "blob_location": "local"},
+        ) from exc
+
+
+def _object_store(ctx: AdminContext) -> tuple[ObjectStoreClient, ObjectStoreSettings] | None:
+    """The object store new graphs go to (``[files] store = "s3"``), checked before the
+    graph is created; ``None`` for the data root."""
+    if ctx.config.files_store != "s3":
+        return None
+    # catalog.object_store stops every command without settings first; this is a guard
+    return files_move.object_store_client(
+        ctx.catalog.object_store,
+        ctx.catalog.object_store_problem,
+        ctx.maintenance.client_factory,
+        what='[files] store = "s3"',
+        purpose='[files] store = "s3" puts new graphs into the object store',
+    )
+
+
+def _into_object_store(
+    ctx: AdminContext,
+    entry: GraphEntry,
+    decisions: tuple[Decision, ...],
+    meta: RequestMeta,
+    store_id: str,
+) -> ManifestData:
+    """Switch the new, empty graph to the object store ``store_id`` (O7) in the W.e shape:
+    intent, manifest replaced by one rename, anchor (``files_move.switch_blob_store``, the
+    switch of ``files move``)."""
+    with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
+        current = session.manifest()
+        if current.store.blob_location != "local":
+            raise GraphCliError("internal.error", "the new graph is not local")
+        return files_move.switch_blob_store(
+            ctx, session, current, decisions, meta, to="s3", store_id=store_id, blobs=()
+        )
 
 
 def alias_prefixes(compiled: Compiled) -> dict[TermRef, str]:
@@ -214,6 +286,8 @@ def describe(manifest: ManifestData) -> dict[str, JsonValue]:
         "store": {
             "backend": manifest.store.backend,
             "format_version": manifest.store.format_version,
+            "blob_location": manifest.store.blob_location,
+            "store_id": manifest.store.store_id,
         },
     }
 

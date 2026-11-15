@@ -17,7 +17,7 @@ does not cascade into findings for every later line:
 and, when recorded, changeset size; B5.6, B5.12), ``check_migrations`` judges the
 migration txs (kept identity, versions, digest, the pin that follows),
 ``check_maintenance`` judges maintenance intents by their effects and walks
-the pin, graph policy and skill and function catalog events against the
+the pin, graph policy, skill and function catalog and blob store events against the
 manifest, the installed policy and the published slots, ``check_policy`` walks
 the installation policy events (B5.15),
 ``check_policy_hashes`` checks every graph-stream decision against the
@@ -32,7 +32,7 @@ verified the tx log clean, so a damaged log does not cascade into
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
@@ -48,6 +48,7 @@ from graph_cli.audit.schema import (
     RELEASE_ACTION,
     event_problems,
     graph_of_stream,
+    is_blob_store_change,
     is_migration_intent,
     is_tx_intent,
     unknown_actions,
@@ -122,6 +123,8 @@ class MaintEffects:
     and function catalog; ``None`` skips the slot walks. ``migration_marker`` is the
     graph's migration marker (``None`` without one): a migration tx it names is in the
     incomplete state, a warning instead of ``migration_unpinned`` (plan M3, M5).
+    ``blob_store`` is where the manifest says the graph keeps its stored files
+    (``blob_store_state``); ``None`` (an unreadable manifest) skips the blob store walk.
     """
 
     manifest_pin: OntologyPin | None
@@ -130,6 +133,15 @@ class MaintEffects:
     policy: InstalledPolicy | None = None
     slots: InstalledSlots | None = None
     migration_marker: MigrationMarker | None = None
+    blob_store: Mapping[str, JsonValue] | None = None
+
+
+def blob_store_state(location: str, store_id: str | None) -> dict[str, JsonValue]:
+    """A graph's blob location as the blob store walk compares it: ``{"location":
+    "local"}``, or ``{"location": "s3", "store_id": <the object store's id>}``."""
+    if location == "local":
+        return {"location": location}
+    return {"location": location, "store_id": store_id}
 
 
 @dataclass(frozen=True, slots=True)
@@ -548,6 +560,8 @@ def check_maintenance(
         findings += _pin_walk(stream, ok, effects)
     if effects.policy is not None:
         findings += _policy_walk(stream, ok, effects.policy, effects.anchored)
+    if effects.blob_store is not None:
+        findings += _blob_store_walk(stream, ok, effects.blob_store, effects.anchored)
     if effects.slots is not None:
         findings += _slot_walk(stream, ok, "skill", effects.slots.skill, effects.anchored)
         for key in ("functions", "actions"):
@@ -1068,6 +1082,54 @@ def _slot_walk(
     )
 
 
+def _blob_store_walk(
+    stream: AuditStream,
+    events: Sequence[Mapping[str, JsonValue]],
+    observed: Mapping[str, JsonValue],
+    anchored: frozenset[int],
+) -> list[Finding]:
+    """From ``local`` (a graph is always created local) through the ``change.blob_store``
+    intents to the manifest's blob location and store id (object storage O7). A switch
+    whose manifest rename never happened leaves the graph where it was, with every file:
+    an interrupted switch (``intent_without_effect``, info, like an interrupted pin)."""
+    switches: list[tuple[Mapping[str, JsonValue], Mapping[str, JsonValue]]] = []
+    for event, change in _effects(events, CONFIGURE_ACTION, "blob_store"):
+        if not is_blob_store_change(change):
+            continue  # event_malformed already
+        store_id = change.get("store_id")
+        store_id = store_id if isinstance(store_id, str) else None
+        old, new = str(change.get("from")), str(change.get("to"))
+        states = {"from": blob_store_state(old, store_id), "to": blob_store_state(new, store_id)}
+        switches.append((event, states))
+    graph_id = graph_of_stream(stream)
+    return _walk(
+        stream,
+        switches,
+        start=blob_store_state("local", None),
+        strict_start=True,
+        final=dict(observed),
+        final_target={"stream": stream, "path": f"graphs/{graph_id}/manifest.toml"},
+        anchored=anchored,
+        code=codes.BLOB_STORE_MISMATCH,
+        interrupted=lambda old, new: _interrupted_switch(old, new, graph_id),
+        changed="the manifest's blob location differs from the recorded blob store switches",
+    )
+
+
+_WHERE: Final = {"local": "in the data root", "s3": "in the object store"}
+
+
+def _interrupted_switch(old: JsonValue, new: JsonValue, graph_id: str | None) -> str:
+    source = old.get("location") if isinstance(old, Mapping) else None
+    target = new.get("location") if isinstance(new, Mapping) else None
+    return (
+        f"blob store switch intent from {source} to {target} without its manifest switch (an"
+        f" interrupted switch): the graph still keeps its stored files {_WHERE.get(str(source))}"
+        f" and lost none; to switch it, run graph-admin files move {graph_id or '<graph>'}"
+        f" --to {target}"
+    )
+
+
 def _compiled_check(
     stream: AuditStream,
     events: Sequence[Mapping[str, JsonValue]],
@@ -1115,14 +1177,15 @@ def _walk(
     final_target: Mapping[str, JsonValue],
     anchored: frozenset[int],
     code: str,
-    interrupted: str,
+    interrupted: str | Callable[[JsonValue, JsonValue], str],
     changed: str,
 ) -> list[Finding]:
     """Walk ``{from, to}`` intents from ``start`` to the ``final`` state on disk.
 
     An intent is committed if the next observed state (the next intent's
     ``from``, at the end ``final``) equals its ``to``; it is an interrupted op
-    if that state is still its ``from`` and no anchor proves the effect;
+    if that state is still its ``from`` and no anchor proves the effect
+    (``interrupted`` is its message, or makes it from ``from`` and ``to``);
     anything else means the state changed outside maintenance (``code``),
     after which nothing more is judged: no cascades.
     """
@@ -1145,11 +1208,12 @@ def _walk(
             state = new
             return True
         if observed == old and event.get("seq") not in anchored:
+            message = interrupted if isinstance(interrupted, str) else interrupted(old, new)
             orphans.append(
                 _finding(
                     codes.INTENT_WITHOUT_EFFECT,
                     {"stream": stream, "seq": event.get("seq")},
-                    interrupted,
+                    message,
                 )
             )
             state = old

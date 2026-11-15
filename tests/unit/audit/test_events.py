@@ -397,6 +397,58 @@ def test_slot_changes_name_both_tree_hashes(world: World, key: str) -> None:
         assert f"change.{key}" in caught.value.message
 
 
+STORE_ID = "4b0c9f3e-2d1a-4c5b-9e8f-7a6b5c4d3e2f"
+
+
+def test_a_blob_store_switch_names_both_locations(world: World) -> None:
+    """Object storage O7: ``change.blob_store{from, to, store_id, blobs, bytes}`` of a
+    ``maint.graph_configure`` intent; the schema refuses other shapes."""
+    common = dict(
+        actor=maint_actor(),
+        decisions=[allow("maint.graph_configure", f"graph:{world.graph_id}")],
+        request=REQUEST,
+        env=ENV,
+        graph=world.graph,
+    )
+    change = events.blob_store_change("local", "s3", STORE_ID, blobs=0, size=0)
+    assert change == {
+        "blob_store": {"from": "local", "to": "s3", "store_id": STORE_ID, "blobs": 0, "bytes": 0}
+    }
+    back = events.blob_store_change("s3", "local", STORE_ID, blobs=3, size=1024)
+    for good in (change, back):
+        draft = events.maintenance(
+            ts=world.clock.now(),
+            event_id=world.event_id(),
+            change=good,
+            **common,  # type: ignore[arg-type]
+        )
+        assert draft.body["change"] == good
+    valid = change["blob_store"]
+    assert isinstance(valid, dict)
+    for bad in (
+        {**valid, "to": "local"},  # no switch
+        {**valid, "to": "gcs"},
+        {**valid, "store_id": "not-a-uuid"},
+        {**valid, "store_id": STORE_ID.upper()},
+        {**valid, "store_id": None},
+        {**valid, "blobs": -1},
+        {**valid, "bytes": True},
+        {k: v for k, v in valid.items() if k != "bytes"},
+        {**valid, "path": "/somewhere"},
+    ):
+        with pytest.raises(GraphCliError) as caught:
+            events.maintenance(
+                ts=world.clock.now(),
+                event_id=world.event_id(),
+                change={"blob_store": bad},
+                **common,  # type: ignore[arg-type]
+            )
+        assert "change.blob_store" in caught.value.message
+    with pytest.raises(GraphCliError) as refused:
+        events.blob_store_change("local", "local", STORE_ID, blobs=0, size=0)
+    assert refused.value.code == "internal.error"
+
+
 def test_invalid_events_keep_twenty_findings(world: World) -> None:
     findings = [
         Finding(Severity.ERROR, "data.structural.missing_required", {"id": f"e{n:02d}"}, "m")

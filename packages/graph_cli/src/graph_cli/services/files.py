@@ -20,11 +20,21 @@ them. ``FileService.add``:
    which is published at W.11b. The staged copy is discarded afterwards in
    every case.
 
-Reads (``path``, ``check``) are ``read.get`` on the graph and then on
+Reads (``path``, ``open``, ``check``) are ``read.get`` on the graph and then on
 ``graph:<id>/type:<curie>`` of the file, so a policy can deny file content
-per type. They write nothing; ``check`` hashes the origin files. Both hand
-the ids they return to the activity sink with the request's command and actor
+per type. They write nothing to the graph; ``check`` hashes the origin files. They
+hand the ids they return to the activity sink with the request's command and actor
 (see ``services.read``).
+
+``open`` is the one way to read a stored file's bytes (object storage O8): the file's
+metadata and its chunks from ``read_blob`` (verified while they stream when the
+backend checks them), with the stored copy's local path when the backend keeps one.
+The server's download route and the live view stream through it (``open_stored`` is
+the part without the app's authorization, which the view replaces with its own).
+``path`` answers the stored copy's path: the backend's own file, else a read-only copy
+in this machine's file cache (``FileCache``, injected by the app wiring), else
+``file.no_local_path``. On the server (``paths=False``) the stored copy's path means
+nothing to the caller: ``path`` answers ``null`` and touches no bytes.
 """
 
 from __future__ import annotations
@@ -32,7 +42,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import BinaryIO, Final, Protocol
@@ -72,6 +82,110 @@ class Origins(Protocol):
     def resolve(self, origin: Mapping[str, JsonValue]) -> Path:
         """The origin's path on this machine; ``file.root_unknown`` if its root is not set."""
         ...
+
+
+class FileCache(Protocol):
+    """Read-only copies of stored files on this machine (``<state>/files/<graph id>/<hex>``),
+    for a backend without local paths and for the remote client (object storage O8)."""
+
+    def prune(self) -> None:
+        """Remove the copies nobody used for a day; never fails."""
+        ...
+
+    def copy(
+        self,
+        graph: str,
+        digest: str,
+        fill: Callable[[BinaryIO], None],
+        *,
+        mismatch: Callable[[], GraphCliError] | None = None,
+    ) -> Path:
+        """The copy of ``digest``, used now; written by ``fill`` and hash-checked when it
+        is not there or no longer has its hash. ``mismatch`` is the error for written bytes
+        that do not have the hash (default ``backend.corrupt``)."""
+        ...
+
+
+class FileStream:
+    """The bytes of a stored file, started: the first chunk is read when it is built, so a
+    missing or refused object (and the hash mismatch of a file of one chunk) is raised
+    before anything was sent; a later failure is raised by the iteration. ``close`` ends
+    the read (an object store's connection) when the bytes are not all wanted."""
+
+    def __init__(self, chunks: Iterator[bytes]) -> None:
+        self._chunks = chunks
+        try:
+            self._first: bytes | None = next(chunks)
+        except StopIteration:
+            self._first = None
+        except BaseException:
+            self.close()
+            raise
+
+    def __iter__(self) -> FileStream:
+        return self
+
+    def __next__(self) -> bytes:
+        first = self._first
+        if first is not None:
+            self._first = None
+            return first
+        return next(self._chunks)
+
+    def close(self) -> None:
+        close = getattr(self._chunks, "close", None)
+        if close is not None:
+            close()
+
+
+@dataclass(frozen=True, slots=True)
+class OpenedFile:
+    """A stored file ready to be read (``open_stored``); nothing is read yet."""
+
+    id: str
+    alias: str | None
+    type: str
+    hash: str
+    size: int
+    media_type: str | None
+    file_name: str | None
+    origin: Mapping[str, JsonValue] | None
+    local_path: Path | None  # the backend's own read-only file, when it keeps one
+    read: GraphStoreRead = field(repr=False)
+
+    def start(self) -> FileStream:
+        """The verified bytes, started (``FileStream``)."""
+        return FileStream(iter(self.read.read_blob(self.hash)))
+
+
+def open_stored(read: GraphStoreRead, revision: Revision, ref: str) -> OpenedFile:
+    """The stored file of a ``files:File`` revision the caller may read: ``backend.corrupt``
+    when its blob is absent, ``backend.unavailable`` when the store cannot be asked."""
+    digest = str(revision.attrs.get("content"))
+    stored = read.blob(digest)
+    if stored is None:
+        raise GraphCliError(
+            "backend.corrupt",
+            f"the stored copy of {ref} is missing; run graph-admin files verify",
+            details={"id": str(revision.id), "blob": digest},
+        )
+    local = (
+        read.blob_local_path(digest) if CAPABILITY_BLOB_LOCAL_PATH in read.capabilities() else None
+    )
+    media_type, file_name = revision.attrs.get("media_type"), revision.attrs.get("file_name")
+    origin = revision.attrs.get("origin")
+    return OpenedFile(
+        id=str(revision.id),
+        alias=revision.alias,
+        type=revision.type,
+        hash=digest,
+        size=stored.size,
+        media_type=media_type if isinstance(media_type, str) else None,
+        file_name=file_name if isinstance(file_name, str) else None,
+        origin=origin if isinstance(origin, Mapping) else None,
+        local_path=local,
+        read=read,
+    )
 
 
 class NoOrigins:
@@ -248,6 +362,8 @@ class FileService:
         origins: Origins | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
         activity: ActivitySink = NULL_ACTIVITY,
+        cache: FileCache | None = None,
+        paths: bool = True,
     ) -> None:
         self._catalog = catalog
         self._writer = writer
@@ -255,6 +371,8 @@ class FileService:
         self._origins: Origins = origins if origins is not None else NoOrigins()
         self.max_bytes = max_bytes
         self._activity = activity
+        self._cache = cache
+        self._paths = paths  # False on the server: a path there means nothing to the caller
         self._timings = writer.timings  # one command, one set of timings
         self._models = ModelCache(catalog, self._timings)
 
@@ -294,53 +412,76 @@ class FileService:
     ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
         """The stored copy's path (read only), or with ``origin`` the origin on this machine."""
         revision, warnings = self._file(view, ref, actor, request)
-        read = self._catalog.store_for(view.entry.id)[0]
-        digest = str(revision.attrs.get("content"))
-        stored = read.blob(digest)
-        if stored is None:
-            raise GraphCliError(
-                "backend.corrupt",
-                f"the stored copy of {ref} is missing; run graph-admin files verify",
-                details={"id": str(revision.id), "blob": digest},
-            )
-        where = self._origin(revision)
+        opened = open_stored(self._catalog.store_for(view.entry.id)[0], revision, ref)
+        path: str | None
+        if not origin and self._cache is not None:
+            self._cache.prune()  # copies nobody used for a day go with the next file path
         if origin:
-            if where is None:
-                raise GraphCliError(
-                    "file.origin_missing",
-                    f"{ref} has no recorded origin",
-                    details={"id": str(revision.id)},
-                )
-            resolved = self._origins.resolve(where)  # file.root_unknown
-            if not resolved.is_file():
-                raise GraphCliError(
-                    "file.origin_missing",
-                    f"the origin of {ref} is not there: {resolved}",
-                    details={"id": str(revision.id), "path": str(resolved)},
-                )
-            path = str(resolved)
+            path = str(self._origin_path(opened, ref))
+        elif not self._paths:
+            path = None
+        elif opened.local_path is not None:
+            path = str(opened.local_path)
+        elif self._cache is not None:
+            path = str(self._cached(str(view.entry.id), opened))
         else:
-            if CAPABILITY_BLOB_LOCAL_PATH not in read.capabilities():
-                raise GraphCliError(
-                    "file.no_local_path",
-                    "this backend keeps stored files without a local path",
-                    details={"id": str(revision.id)},
-                )
-            local = read.blob_local_path(digest)
-            assert local is not None  # the blob exists and the capability is there
-            path = str(local)
-        data: dict[str, JsonValue] = {
-            "id": str(revision.id),
-            "alias": revision.alias,
-            "type": revision.type,
-            "hash": digest,
-            "size": stored.size,
-            "media_type": revision.attrs.get("media_type"),
-            "path": path,
-            "origin": self._origin_json(where),
-        }
+            raise GraphCliError(
+                "file.no_local_path",
+                "this backend keeps stored files without a local path",
+                details={"id": opened.id},
+            )
         self._activity.reads(ReadSignal(view.entry.id, request.command, actor, [revision.id]))
-        return data, warnings
+        return self.answer(opened, path), warnings
+
+    def open(
+        self, view: GraphRead, ref: str, *, actor: ActorContext, request: RequestMeta
+    ) -> tuple[OpenedFile, list[WarningRecord]]:
+        """The stored file to stream, authorized like ``path`` (object storage O8)."""
+        revision, warnings = self._file(view, ref, actor, request)
+        opened = open_stored(self._catalog.store_for(view.entry.id)[0], revision, ref)
+        self._activity.reads(ReadSignal(view.entry.id, request.command, actor, [revision.id]))
+        return opened, warnings
+
+    def answer(self, opened: OpenedFile, path: str | None = None) -> dict[str, JsonValue]:
+        """What ``file path`` answers about ``opened``, with ``path``."""
+        return {
+            "id": opened.id,
+            "alias": opened.alias,
+            "type": opened.type,
+            "hash": opened.hash,
+            "size": opened.size,
+            "media_type": opened.media_type,
+            "path": path,
+            "origin": self._origin_json(opened.origin),
+        }
+
+    def _origin_path(self, opened: OpenedFile, ref: str) -> Path:
+        if opened.origin is None:
+            raise GraphCliError(
+                "file.origin_missing", f"{ref} has no recorded origin", details={"id": opened.id}
+            )
+        resolved = self._origins.resolve(opened.origin)  # file.root_unknown
+        if not resolved.is_file():
+            raise GraphCliError(
+                "file.origin_missing",
+                f"the origin of {ref} is not there: {resolved}",
+                details={"id": opened.id, "path": str(resolved)},
+            )
+        return resolved
+
+    def _cached(self, graph: str, opened: OpenedFile) -> Path:
+        """A read-only copy in this machine's file cache, written from the verified bytes."""
+        assert self._cache is not None
+
+        def fill(sink: BinaryIO) -> None:
+            stream = opened.start()
+            try:
+                for chunk in stream:
+                    sink.write(chunk)
+            finally:
+                stream.close()
+
+        return self._cache.copy(graph, opened.hash, fill)
 
     def check(
         self,

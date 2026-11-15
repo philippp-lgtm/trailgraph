@@ -28,6 +28,7 @@ from typing import BinaryIO, Final
 from graph_cli.kernel.canonical import HASH_RE, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.findings import Finding, Severity
+from graph_cli.kernel.ports.storage import BlobVerification
 from graph_cli.kernel.records import BlobInfo
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.files.durable import FILE_MODE, Syncer, ensure_dir, write_all
@@ -134,6 +135,52 @@ def publish(
     return BlobInfo(staged.hash, staged.size)
 
 
+def receive(
+    layout: GraphLayout, blob: BlobInfo, chunks: Iterable[bytes], *, syncer: Syncer
+) -> BlobInfo:
+    """A copy of ``blob`` from the graph's other location (``graph-admin files move``):
+    staged like a write's bytes (hashed and counted while written, synced), compared with
+    the hash and size, mode 0o444, then renamed into place with both directories synced,
+    as ``publish`` does. A file that is present with the same size is kept (its name is its
+    hash); one with another size is damaged and replaced by the verified copy. Bytes that
+    differ from the hash or the size are ``backend.corrupt``, and nothing is placed."""
+    try:
+        staged = stage(layout, chunks, max_bytes=blob.size, syncer=syncer, faults=None)
+    except GraphCliError as exc:
+        if exc.code != "file.too_large":
+            raise
+        raise _differs(blob.hash) from None
+    if staged.hash != blob.hash or staged.size != blob.size:
+        staged.discard()
+        raise _differs(blob.hash)
+    target = layout.blob_path(blob.hash)
+    try:
+        try:
+            present = os.lstat(target)
+        except FileNotFoundError:
+            present = None
+        if present is not None and stat.S_ISREG(present.st_mode) and present.st_size == blob.size:
+            staged.discard()
+            return blob
+        ensure_dir(target.parent, syncer)
+        os.chmod(staged.path, BLOB_MODE)
+        os.replace(staged.path, target)
+        syncer.sync_dir(target.parent)
+        syncer.sync_dir(layout.blobs)
+    except OSError as exc:
+        staged.discard()
+        raise _unavailable("cannot store the copied file", exc) from exc
+    return blob
+
+
+def _differs(digest: str) -> GraphCliError:
+    return GraphCliError(
+        "backend.corrupt",
+        "the bytes read for a stored file differ from its hash or size",
+        details={"blob": digest},
+    )
+
+
 def info(layout: GraphLayout, digest: str) -> BlobInfo | None:
     if not HASH_RE.match(digest):
         return None
@@ -212,9 +259,26 @@ def relative(layout: GraphLayout, digest: str) -> str:
     return str(layout.blob_path(digest).relative_to(layout.root))
 
 
-def verify(layout: GraphLayout, referenced: Set[str] | None, *, rehash_all: bool) -> list[Finding]:
-    """Blob findings; ``referenced`` is ``None`` when the tx log could not be read whole."""
+def staging_findings(layout: GraphLayout) -> list[Finding]:
+    """``blob_staging_leftover`` for every staging file (any blob backend stages here)."""
+    return [
+        Finding(
+            _I,
+            BLOB_STAGING_LEFTOVER,
+            {"path": f"blobs/{name}"},
+            "a staged file was never published",
+        )
+        for name, _ in staging(layout)
+    ]
+
+
+def verify(
+    layout: GraphLayout, referenced: Set[str] | None, *, rehash_all: bool
+) -> BlobVerification:
+    """Blob findings and the stored blobs; ``referenced`` is ``None`` when the tx log could
+    not be read whole."""
     findings: list[Finding] = []
+    stored: list[BlobInfo] = []
 
     def add(
         code: str,
@@ -231,6 +295,7 @@ def verify(layout: GraphLayout, referenced: Set[str] | None, *, rehash_all: bool
             if info(layout, digest) is None:
                 add(BLOB_MISSING, relative(layout, digest), "a referenced file is missing", _E)
         for blob in listing(layout):
+            stored.append(blob)
             path = relative(layout, blob.hash)
             if referenced is not None and blob.hash not in referenced:
                 add(BLOB_ORPHAN, path, "no tx references this file", _I)
@@ -239,16 +304,38 @@ def verify(layout: GraphLayout, referenced: Set[str] | None, *, rehash_all: bool
                 if actual != blob.hash:
                     message = "the stored bytes differ from their hash"
                     add(BLOB_HASH_MISMATCH, path, message, _E, blob.hash, actual)
-        for name, _ in staging(layout):
-            add(BLOB_STAGING_LEFTOVER, f"blobs/{name}", "a staged file was never published", _I)
+        findings += staging_findings(layout)
     except OSError as exc:
         raise _unavailable("cannot read the stored files", exc) from exc
-    return findings
+    return BlobVerification(tuple(findings), tuple(stored))
 
 
 def missing(layout: GraphLayout, referenced: Set[str]) -> list[str]:
     """Referenced hashes without a stored blob, sorted."""
     return [digest for digest in sorted(referenced) if info(layout, digest) is None]
+
+
+def remove_copies(layout: GraphLayout, hashes: Sequence[str], *, syncer: Syncer) -> int:
+    """Delete the files of ``hashes``, referenced or not: misplaced copies of a graph whose
+    stored files are elsewhere, after the caller confirmed that location holds each. How
+    many went."""
+    for digest in hashes:
+        if not HASH_RE.match(digest):
+            raise GraphCliError("internal.error", f"refusing to remove blob {digest!r}")
+    directories: set[Path] = set()
+    removed = 0
+    try:
+        for digest in hashes:
+            path = layout.blob_path(digest)
+            if path.exists():
+                path.unlink()
+                directories.add(path.parent)
+                removed += 1
+        for directory in sorted(directories):
+            syncer.sync_dir(directory)
+    except OSError as exc:
+        raise _unavailable("cannot remove stored files", exc) from exc
+    return removed
 
 
 def remove(

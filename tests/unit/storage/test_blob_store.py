@@ -105,7 +105,7 @@ def test_remove_deletes_orphans_and_staging_only(env: StoreEnv) -> None:
         )
         assert [b.hash for b in session.blobs()] == [digest(KEPT)]
         assert list(session.staging()) == []
-        assert session.verify_blobs(rehash=True) == []
+        assert session.verify_blobs(rehash=True).findings == ()
     assert b"".join(store.read_blob(digest(KEPT))) == KEPT
 
 

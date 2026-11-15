@@ -1,6 +1,6 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, move a graph's stored files between the data root and an object store, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
@@ -215,14 +215,14 @@ the policy does not declare it. `graph-admin policy explain --graph <graph>
 
 ## Check a graph
 
-- `graph-admin graph show <graph>`: manifest, head, releases, skill, the
-  number of published functions and actions.
+- `graph-admin graph show <graph>`: manifest, head, releases, skill, functions, actions.
 - `graph-admin graph check <graph>`: every entity against the pinned ontology
   (also what no write checks) and the published functions and actions against
   the same model; exit 1 on error findings or a function or action that no
   longer resolves.
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
-  that imports the `files` module.
+  that imports the `files` module. Moving them to an object store and back:
+  [move_stored_files.md](references/move_stored_files.md).
 - `graph-admin audit verify`: every chain, log and pin of the installation.
 
 ## Common refusals

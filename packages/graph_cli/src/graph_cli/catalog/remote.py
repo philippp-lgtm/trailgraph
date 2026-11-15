@@ -137,6 +137,9 @@ class RemoteClient:
                     raise self._unreachable(exc) from None
                 if hasattr(body, "seek"):
                     body.seek(0)  # type: ignore[union-attr]
+                if sink is not None and attempt and sink.seekable():
+                    sink.seek(0)  # a retry after a body cut off starts the file again
+                    sink.truncate()
                 try:
                     connection.request(
                         method,

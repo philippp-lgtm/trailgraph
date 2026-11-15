@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ from graph_cli.kernel.ports.audit import (
     graph_stream,
 )
 from graph_cli.kernel.ports.catalog import (
+    BlobLocation,
     KineticSlot,
     ManifestData,
     SkillSlot,
@@ -57,10 +59,15 @@ from graph_cli.kernel.ports.catalog import (
     sources_hash,
 )
 from graph_cli.kernel.ports.storage import (
+    BlobCopies,
+    BlobVerification,
     CommitResult,
+    CopyBudget,
     GraphStoreMaintenance,
     Head,
     MaintenanceSession,
+    MisplacedCopies,
+    RecordedStore,
     RecoveryReport,
     RegistrySession,
     Snapshot,
@@ -72,6 +79,8 @@ from graph_cli.storage.common.chain import GENESIS, link_of, seal
 from graph_cli.storage.common.faults import CrashPoint, FaultHook, fire
 from graph_cli.storage.common.view import GraphView
 from graph_cli.storage.files import blobs
+from graph_cli.storage.files.blob_backend import BlobBackend, BlobBackends, blob_manifest
+from graph_cli.storage.files.blob_move import copy_pass, lock_free_referenced
 from graph_cli.storage.files.durable import (
     Durability,
     OsSyncer,
@@ -107,9 +116,11 @@ from graph_cli.storage.files.releases import (
     read_release_file,
     release_hashes,
 )
+from graph_cli.storage.files.s3_blobs import ClientFactory
 from graph_cli.storage.files.segments import OpLog, SegmentedLog
 from graph_cli.storage.files.skill_slot import read_skill
 from graph_cli.storage.files.store import FileSession, FileStore, parse_tx
+from graph_cli.storage.files.store_format import check_store
 from graph_cli.storage.files.token_files import (
     enrollments_path,
     read_tokens_file,
@@ -117,6 +128,8 @@ from graph_cli.storage.files.token_files import (
     write_tokens_file,
 )
 from graph_cli.storage.finding_codes import (
+    BLOB_HASH_MISMATCH,
+    BLOB_MISPLACED,
     BLOB_MISSING,
     HEAD_INCONSISTENT,
     INDEX_INCONSISTENT,
@@ -126,6 +139,11 @@ from graph_cli.storage.finding_codes import (
     REVISION_UNEXPECTED,
     TX_CHAIN_BROKEN,
 )
+from graph_cli.storage.s3.client import ObjectStoreClient
+from graph_cli.storage.s3.settings import ObjectStoreSettings
+
+# How finding messages name a blob location.
+_LOCATION_NAMES: Final = {"local": "the data root", "s3": "the object store"}
 
 
 class FileStoreMaintenance:
@@ -140,21 +158,85 @@ class FileStoreMaintenance:
         faults: FaultHook | None = None,
         segment_bytes: int = DEFAULT_SEGMENT_BYTES,
         oplog: OpLog | None = None,
+        object_store: ObjectStoreSettings | None = None,
+        object_store_problem: GraphCliError | None = None,
+        client_factory: ClientFactory | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.data_root = data_root
         self.syncer: Syncer = syncer if syncer is not None else OsSyncer(durability)
         self.faults = faults
         self.segment_bytes = segment_bytes
         self.oplog = oplog
+        # Built by the admin wiring from ``[files.s3]`` and the environment; storage never
+        # reads either. ``object_store_problem`` says why ``object_store`` is ``None``.
+        self.object_store = object_store
+        self.object_store_problem = object_store_problem
+        # tests: the object store client (default ``ObjectStoreClient``) and the monotonic
+        # clock of the store marker cache, as ``BlobBackends`` takes them
+        self.client_factory = client_factory
+        self.monotonic = monotonic
+
+    @property
+    def blob_backends(self) -> BlobBackends:
+        return BlobBackends(
+            self.object_store,
+            self.object_store_problem,
+            client_factory=self.client_factory,
+            monotonic=self.monotonic,
+        )
+
+    def misplaced_blobs(
+        self, graph: GraphId, *, recorded_store: RecordedStore | None = None
+    ) -> MisplacedCopies | None:
+        return misplaced_copies(self.store(graph), recorded_store)
+
+    def copy_blobs(
+        self,
+        graph: GraphId,
+        *,
+        to: str,
+        store_id: str | None,
+        stop: CopyBudget | None = None,
+        dry_run: bool = False,
+    ) -> BlobCopies:
+        store = self.store(graph)
+        source, target = _move_backends(store, to, store_id, dry_run=dry_run)
+        referenced = lock_free_referenced(store)
+        return copy_pass(
+            source, target, referenced, stop=stop, dry_run=dry_run, faults=store.faults
+        )
+
+    def object_store_client(self) -> ObjectStoreClient | None:
+        """A client of the configured object store (``files store check``); ``None``
+        without one."""
+        if self.object_store is None:
+            return None
+        factory: ClientFactory = self.client_factory or ObjectStoreClient
+        return factory(self.object_store)
 
     def store(self, graph: GraphId) -> FileStore:
+        """The graph's store, after the checks ``FileCatalog.file_store`` makes
+        (``store_format.check_store``): an unsupported manifest format, feature, backend or
+        layout is refused; object store settings are checked on blob access. A manifest
+        that cannot be read at all is left to the caller: ``verify`` reports it
+        (``pin_mismatch``), a missing graph is ``backend.unavailable`` on first use."""
+        root = self.data_root / "graphs" / str(graph)
+        try:
+            manifest = read_manifest(GraphLayout(root))[0]
+        except GraphCliError as exc:
+            if exc.code != "config.invalid":
+                raise
+        else:
+            check_store(manifest)
         return FileStore(
-            self.data_root / "graphs" / str(graph),
+            root,
             graph,
             syncer=self.syncer,
             faults=self.faults,
             segment_bytes=self.segment_bytes,
             oplog=self.oplog,
+            blob_backends=self.blob_backends,
         )
 
     @property
@@ -449,6 +531,8 @@ class FileMaintenanceSession:
             store.syncer.sync_dir(layout.root)
         except OSError as exc:
             raise _unavailable("cannot replace the manifest", exc) from exc
+        if self._write is not None:  # the blob location may have changed
+            self._write.rebind_blobs()
 
     def install_release(
         self, version: str, files: Mapping[str, bytes], receipt: AuditReceipt
@@ -602,33 +686,118 @@ class FileMaintenanceSession:
 
     def blobs(self) -> Iterator[BlobInfo]:
         self._check_open()
-        return blobs.listing(self._store.layout)
+        return self._store.blob_backend().listing()
 
     def orphan_blobs(self) -> Sequence[BlobInfo]:
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
-        return [b for b in blobs.listing(self._store.layout) if b.hash not in referenced]
+        return self._store.blob_backend().collectable(referenced)
 
     def staging(self) -> Iterator[tuple[str, datetime]]:
         self._check_open()
-        return blobs.staging(self._store.layout)
+        return self._store.blob_backend().staging()
 
-    def verify_blobs(self, *, rehash: bool) -> Sequence[Finding]:
-        """Missing, damaged, orphan and staged files; no orphans beyond tx-log damage."""
+    def verify_blobs(
+        self, *, rehash: bool, recorded_store: RecordedStore | None = None
+    ) -> BlobVerification:
+        """Missing, damaged, orphan, staged and misplaced files; no orphans beyond tx-log
+        damage. An object store that cannot be reached, or carries another store marker,
+        is one ``blob_store_unavailable`` finding in place of everything else it would be
+        asked (staging leftovers are still listed); misplaced copies are judged against
+        the location's one listing (and, with ``rehash``, its damaged files). A local
+        graph's copies in an object store that is not the one it was recorded to leave are
+        reported as not its own."""
         referenced = self._referenced()
-        return sort_findings(blobs.verify(self._store.layout, referenced, rehash_all=rehash))
+        layout = self._store.layout
+        backend = self._store.blob_backend()
+        try:
+            checked = backend.verify(referenced, rehash=rehash)
+        except GraphCliError as exc:
+            finding = backend.unavailable(exc)
+            if finding is None:
+                raise
+            findings = [finding, *blobs.staging_findings(layout)]
+            return BlobVerification(tuple(sort_findings(findings)), None)
+        held = {blob.hash: blob.size for blob in checked.stored or ()}
+        found = _copies(self._store, recorded_store)
+        misplaced: list[Finding] = []
+        if found is not None:
+            other, copies = found.other, found.copies
+            where = _LOCATION_NAMES[backend.location]
+            damaged = {f.expected for f in checked.findings if f.code == BLOB_HASH_MISMATCH}
+            for copy in copies:
+                if not found.owned:
+                    message = (
+                        f"a copy outside the graph's location ({where}), in an object store"
+                        " that is not this graph's recorded store (no switch from it to the"
+                        " data root is recorded, or the bucket's marker differs); files gc"
+                        " keeps the copy"
+                    )
+                elif held.get(copy.hash) == copy.size and copy.hash not in damaged:
+                    message = (
+                        f"a copy outside the graph's location ({where}), which holds this"
+                        " hash with the same size; files gc removes the copy once the bytes"
+                        " there match their hash"
+                    )
+                else:
+                    message = (
+                        f"a copy outside the graph's location ({where}), which lacks this"
+                        " file, holds another size or damaged bytes; files gc keeps the copy"
+                    )
+                target = {"path": other.target(copy.hash)}
+                misplaced.append(Finding(Severity.INFO, BLOB_MISPLACED, target, message))
+        findings = sort_findings([*checked.findings, *misplaced])
+        return BlobVerification(tuple(findings), checked.stored)
 
     def remove_blobs(
-        self, hashes: Sequence[str], staging: Sequence[str], receipt: AuditReceipt
+        self,
+        hashes: Sequence[str],
+        staging: Sequence[str],
+        receipt: AuditReceipt,
+        *,
+        misplaced: MisplacedCopies | None = None,
     ) -> None:
-        """Refuses a referenced hash; refuses everything when the tx log is damaged."""
+        """Refuses a referenced hash; refuses everything when the tx log is damaged.
+        The removable misplaced copies (hash-confirmed before the lock,
+        ``FileStoreMaintenance.misplaced_blobs``) go first, each only while one listing of
+        the graph's location, made right before, still shows its hash with the same size
+        (so an orphan this gc removes cannot be the confirmation), and an object store's
+        objects only while its marker is still ``misplaced.store_id``. Nothing is read in
+        full under the lock."""
         referenced = self._referenced()
         if referenced is None:
             raise GraphCliError("backend.corrupt", "the tx log is damaged; gc needs repair")
-        self._writer().claim_receipt(receipt)
+        writer = self._writer()
+        writer.claim_receipt(receipt)
+        backend = writer.blob_backend()
+        if misplaced is not None and misplaced.removable:
+            other = self._store.misplaced_backend()
+            if other is None or other.location != misplaced.location:
+                raise GraphCliError(
+                    "internal.error",
+                    "the graph's blob location changed since its copies were judged",
+                )
+            if other.location == "local" or (
+                misplaced.store_id is not None and other.store_id() == misplaced.store_id
+            ):
+                held = {blob.hash: blob.size for blob in backend.listing()}
+                present = {b.hash for b in misplaced.removable if held.get(b.hash) == b.size}
+                other.remove_misplaced(sorted(present))
+        backend.remove(hashes, staging, referenced=referenced)
+
+    def copy_blobs(
+        self, *, to: str, store_id: str | None, stop: CopyBudget | None = None
+    ) -> BlobCopies:
+        referenced = self._referenced()
+        if referenced is None:
+            raise GraphCliError(
+                "backend.corrupt", "the tx log is damaged; a move needs it whole (repair first)"
+            )
         store = self._store
-        blobs.remove(store.layout, hashes, staging, referenced=referenced, syncer=store.syncer)
+        source, target = _move_backends(store, to, store_id, dry_run=False)
+        assert target is not None
+        return copy_pass(source, target, referenced, stop=stop, dry_run=False, faults=store.faults)
 
     def reindex(self, receipt: AuditReceipt | None = None) -> None:
         """Rebuild ``data/entities/``, ``head.json`` and the index from the tx log (B4.1).
@@ -660,6 +829,89 @@ class FileMaintenanceSession:
             store.rebuild_index(state.end.seq)
         except INDEX_ERRORS as exc:
             raise GraphCliError("backend.unavailable", f"the index rebuild failed: {exc}") from exc
+
+
+def _move_backends(
+    store: FileStore, to: str, store_id: str | None, *, dry_run: bool
+) -> tuple[BlobBackend, BlobBackend | None]:
+    """The location the graph's manifest names and the location ``to`` of a move; the
+    target is ``None`` for a dry run to an object store without a marker yet."""
+    manifest = blob_manifest(store.layout)
+    if manifest is None:
+        raise GraphCliError(
+            "config.invalid",
+            "the graph's manifest cannot be read; its stored files are not moved",
+            details={"graph_id": str(store.graph_id)},
+        )
+    if to not in _LOCATION_NAMES or to == manifest.store.blob_location:
+        raise GraphCliError("internal.error", f"cannot move the graph's stored files to {to!r}")
+    source = store.blob_backend()
+    if to == "s3" and store_id is None:
+        if not dry_run:
+            raise GraphCliError("internal.error", "a move to an object store needs its id")
+        return source, None
+    location: BlobLocation = "s3" if to == "s3" else "local"
+    target = store.blob_backends.at(
+        store.layout, manifest, location, store_id, syncer=store.syncer, faults=store.faults
+    )
+    return source, target
+
+
+@dataclass(frozen=True, slots=True)
+class _Copies:
+    other: BlobBackend
+    copies: list[BlobInfo]
+    owned: bool  # the graph may clean ``other``
+    store_id: str | None  # ``other``'s store when it is an object store the graph owns
+
+
+def _copies(store: FileStore, recorded_store: RecordedStore | None) -> _Copies | None:
+    """The other location, the copies of blobs it holds (``.tmp-`` staging entries are not
+    blobs) and whether the graph may clean it: always the data root; a local graph's
+    object store only when its marker is the store the graph's audit trail records it
+    left (else report only: a cloned or restored installation may share the bucket and
+    the graph id). A local graph's object store is optional: when
+    it cannot be reached or is no graph_cli store, there are no copies to judge."""
+    other = store.misplaced_backend()
+    if other is None:
+        return None
+    try:
+        copies = list(other.listing())
+        if other.location == "local":
+            return _Copies(other, copies, True, None)
+        recorded = recorded_store() if recorded_store is not None and copies else None
+        owned = recorded is not None and other.store_id() == recorded
+    except GraphCliError as exc:
+        if other.unavailable(exc) is None:
+            raise
+        return None
+    return _Copies(other, copies, owned, recorded if owned else None)
+
+
+def misplaced_copies(
+    store: FileStore, recorded_store: RecordedStore | None
+) -> MisplacedCopies | None:
+    """``FileStoreMaintenance.misplaced_blobs`` for one store, without its lock: a copy is
+    removable when the graph may clean its location and the named location lists the
+    same hash and size and its bytes, read in full (a verified streamed GET in an object
+    store, a rehash locally), have that hash. A file that is damaged, unreadable or absent
+    there confirms nothing."""
+    found = _copies(store, recorded_store)
+    if found is None:
+        return None
+    copies = found.copies
+    confirmed: set[str] = set()
+    if found.owned and copies:
+        named = store.blob_backend()
+        held = {blob.hash: blob.size for blob in named.listing()}
+        wanted = sorted({copy.hash for copy in copies if held.get(copy.hash) == copy.size})
+        confirmed = {digest for digest in wanted if named.hash_of(digest) == digest}
+    return MisplacedCopies(
+        found.other.location,
+        tuple(copy for copy in copies if copy.hash in confirmed),
+        tuple(copy for copy in copies if copy.hash not in confirmed),
+        found.store_id,
+    )
 
 
 class Verifier:
@@ -695,15 +947,28 @@ class Verifier:
         return self.findings
 
     def _blobs(self, view: GraphView) -> None:
-        """Every blob a verified tx names is stored (the full check is ``verify_blobs``)."""
+        """Every blob a verified tx names is stored (the full check is ``verify_blobs``);
+        an object store answers from one listing. A store that cannot be reached is a
+        ``blob_store_unavailable`` finding. With an unreadable manifest the graph's blob
+        location is unknown: ``pin_mismatch`` reports the manifest, and no blob is judged
+        against a location that may not be the graph's."""
         layout = self.store.layout
+        if layout.manifest.exists() and blob_manifest(layout) is None:
+            return
+        backend = self.store.blob_backend()
         referenced = {h for tx in view.at().txs_since(0, limit=sys.maxsize) for h in tx.blobs}
         try:
-            absent = blobs.missing(layout, referenced)
+            absent = backend.absent(referenced)
         except OSError as exc:
             raise _unavailable("cannot read the stored files", exc) from exc
+        except GraphCliError as exc:
+            finding = backend.unavailable(exc)
+            if finding is None:
+                raise
+            self.findings.append(finding)
+            return
         for digest in absent:
-            target = {"path": blobs.relative(layout, digest)}
+            target = {"path": backend.target(digest)}
             self.add(BLOB_MISSING, target, "a referenced file is missing")
 
     def _pin(self) -> None:

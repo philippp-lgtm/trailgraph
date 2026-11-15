@@ -61,6 +61,7 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.clock import Clock, SystemClock
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli_admin.services_admin.view import (
+    BlobStream,
     GraphView,
     ViewGraphs,
     entity_json,
@@ -346,6 +347,12 @@ def _handler(server: ViewServer) -> type[BaseHTTPRequestHandler]:
 
         def _blob(self, view: GraphView, entity: str) -> None:
             blob = open_blob(view.source, entity)
+            try:
+                self._send_blob(blob)
+            finally:
+                blob.chunks.close()
+
+        def _send_blob(self, blob: BlobStream) -> None:
             self.send_response(200)
             self.send_header("Content-Type", blob.media_type)
             self.send_header("Content-Length", str(blob.size))

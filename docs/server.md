@@ -149,7 +149,7 @@ exit code `graph` would have. A route called with another method answers
 | `GET /v1/openapi.json` | an OpenAPI 3.1 document generated from the inventory |
 | `POST /v1/commands/{path}` | run a command; `{path}` is the command path with `/` (`describe/types`) |
 | `PUT /v1/uploads` | stage bytes for a file parameter; answers `{upload, size}` |
-| `GET /v1/graphs/{graph}/files/{ref}` | the stored file of an entity, checked like `file path` |
+| `GET /v1/graphs/{graph}/files/{ref}` | the stored file of an entity, checked like `file path` and streamed ([Downloads](#downloads)) |
 | `POST /v1/graphs/{graph}/skill` | the graph's published skill, rendered for installing |
 | `GET /v1/dist/manifest`, `GET /v1/dist/{file}` | the programs the server hands out ([Self update](#self-update)); no token needed, except for the `graph-admin` wheel |
 | `POST /v1/enroll` | an enrollment code exchanged for a token ([Enrollment](#enrollment)); no token needed |
@@ -220,12 +220,6 @@ else `about:blank` and the status phrase. Match on `code`, which every
 problem has. With `?render=text` an error asked for as a problem is the
 problem only.
 
-The file download carries `ETag: "sha256:<hex>"` and
-`Cache-Control: private, no-cache`: a client may keep the bytes (a
-browser too, on disk, also after its token is revoked), and a request with
-`If-None-Match` naming that tag answers 304 without them, after the same
-check and audit as a download.
-
 `GET /v1/openapi.json` describes every route above (`/v1/dist/` only while
 the server hands out programs), with `servers` naming `[server] public_url`
 when it is set. A command's answer `200` is the envelope with that command's
@@ -248,6 +242,29 @@ never sends the token on its own, so a page can only use a token it was
 given. A page may send `Idempotency-Key` and `If-None-Match` and read
 `ETag`, `Retry-After`, `Allow` and the `Graph-Cli-*` headers. With origins
 listed, every answer carries `Vary: Origin`.
+
+### Downloads
+
+`GET /v1/graphs/{graph}/files/{ref}` runs the checks of `file path` for
+the request's actor and then streams the stored bytes with their
+`Content-Length`, `Graph-Cli-Content-Hash` and `Graph-Cli-Media-Type`:
+from the graph's own file in the data root, or, for a graph whose stored
+files are in an object store, from the store, checked against their hash
+while they stream. The server never writes a copy of a file; `file path`
+over the API answers `path: null` and reads no bytes. What fails before
+the first byte (an object missing from the store, the store unreachable,
+a file of one chunk whose bytes differ from their hash) is an error answer
+like any other. What fails later (the bytes of a large file turn out
+different from their hash at the end, the store connection breaks) can
+only end the answer early: the body is shorter than its `Content-Length`,
+the server closes the connection and logs the code. The remote `graph`
+checks the hash of every download and refuses such a body.
+
+The file download carries `ETag: "sha256:<hex>"` and
+`Cache-Control: private, no-cache`: a client may keep the bytes (a
+browser too, on disk, also after its token is revoked), and a request with
+`If-None-Match` naming that tag answers 304 without them, after the same
+check and audit as a download.
 
 ## Builds
 
@@ -444,10 +461,9 @@ proxy that refuses requests without one lets it through.
 - `apply FILE|-` and `query -|--file` read their input here and upload it.
 - `file add PATH` uploads the file with its origin under this machine's
   `[roots]`; the server stores it.
-- `file path` downloads the stored file into
-  `<state>/files/<graph id>/<hash>` on this machine (read only, kept as a
-  cache) and answers that path; `--origin` and `file check` look at the
-  origins on this machine, as locally.
+- `file path` downloads the stored file into this machine's
+  [file cache](files.md#file-cache) and answers that path; `--origin` and
+  `file check` look at the origins on this machine, as locally.
 - `skills emit|install|check` run here; a graph skill comes from the
   server, rendered for the graph's current ontology, and must be allowed by
   this project's pointer.
@@ -575,6 +591,27 @@ Moving an existing data root into the container:
 4. Create the tokens, or enrollment codes, and switch the clients to the
    [remote mode](#remote-mode-of-graph) (with a code: `graph connect`,
    [Enrollment](#enrollment)).
+
+### Stored files in an object store
+
+To keep stored files in an S3-compatible object store
+([Object storage](files.md#object-storage-optional)), set `[files] store =
+"s3"` and the non-secret `[files.s3]` keys in
+`/config/graph_cli/config.toml` ([Configuration](configuration.md#object-storage))
+and give the container the credentials as environment variables
+(`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; the bucket, endpoint and
+region may come the same way), from the orchestrator's secret store (for
+example a Kubernetes Secret through `envFrom`, or an `env_file` kept out of
+git), never in the config file, which refuses unknown keys for that
+reason. Every process in the container that touches stored files needs
+them: the server, `graph-admin` in it and its live view. An endpoint inside
+a private cluster network is often plain `http://`; that needs
+`allow_plain_http = true`, and the bytes then travel in clear inside that
+network (each download is still checked against its hash). The
+[download route](#downloads) streams from the store; the server needs no
+disk space for file copies. Then run `graph-admin files store check` in the
+container, and move existing graphs with `graph-admin files move`
+(back up the data root first).
 
 `docker build --target test .` runs the whole test suite on Linux in the
 image. Each release publishes the runtime image to the GitHub container

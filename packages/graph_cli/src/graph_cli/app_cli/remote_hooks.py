@@ -4,10 +4,10 @@
   local errors, and uploaded; the server reads the upload.
 - ``file add PATH``: the file is checked and uploaded here, with its origin
   under this machine's ``[roots]``.
-- ``file path``: the stored file is downloaded into
-  ``<state>/files/<graph id>/<hex>`` (read only, hash checked, kept as a
-  cache) and that path is answered; ``--origin`` resolves the origin with
-  this machine's roots instead.
+- ``file path``: the stored file is downloaded into this machine's file
+  cache ``<state>/files/<graph id>/<hex>`` (``catalog.file_cache``: mode
+  0400, hash checked, removed after a day unused) and that path is answered;
+  ``--origin`` resolves the origin with this machine's roots instead.
 - ``file check``: the server lists the files and their content hashes; the
   origins are checked here.
 
@@ -18,14 +18,13 @@ answer) happens on the server.
 from __future__ import annotations
 
 import base64
-import contextlib
 import json
 import os
 import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, BinaryIO, Final
 
 from graph_cli.app_cli.commands.common import services
 from graph_cli.app_cli.remote import forward, new_key
@@ -222,9 +221,10 @@ def _origin_path(file_roots: object, where: JsonValue, ref: str, entity: str) ->
 def _download(
     session: RemoteSession, state_root: Path, graph_id: str, entity: str, digest: str
 ) -> Path:
-    """The stored file in this machine's cache, downloaded unless it is there already."""
+    """The stored file in this machine's file cache (``catalog.file_cache``), downloaded
+    unless a copy with its hash is there already."""
+    from graph_cli.catalog.file_cache import StateFileCache
     from graph_cli.kernel.ids import parse_id
-    from graph_cli.services.files import hash_file
 
     try:  # the server names what becomes a path here: only ids and a hash
         parse_id(graph_id)
@@ -233,32 +233,30 @@ def _download(
         raise protocol(200, "the answer names no graph or file id") from None
     if not DIGEST_RE.match(digest):
         raise protocol(200, "the answer names no content hash")
-    hex_digest = digest.removeprefix("sha256:")
-    directory = state_root / "files" / graph_id
-    target = directory / hex_digest
-    if hash_file(target) == digest:
-        return target
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    partial = directory / f".{hex_digest}.partial"
     actor = base64.urlsafe_b64encode(json.dumps(dict(session.actor)).encode()).decode()
-    try:
-        with partial.open("wb") as sink:
-            answer = session.client.call(
-                "GET",
-                f"/v1/graphs/{graph_id}/files/{entity}",
-                headers={ACTOR_HEADER: actor.rstrip("=")},
-                sink=sink,
-            )
+    status: list[int] = []
+
+    def fill(sink: BinaryIO) -> None:
+        answer = session.client.call(
+            "GET",
+            f"/v1/graphs/{graph_id}/files/{entity}",
+            headers={ACTOR_HEADER: actor.rstrip("=")},
+            sink=sink,
+        )
+        status.append(answer.status)
         if answer.status != 200:
             raise error_of(envelope_of(answer))
-        if hash_file(partial) != digest:
-            raise protocol(answer.status, "the downloaded file does not have its hash")
-        os.chmod(partial, 0o444)
-        os.replace(partial, target)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            partial.unlink()
-    return target
+
+    cache = StateFileCache(state_root)
+    cache.prune()
+    return cache.copy(
+        graph_id,
+        digest,
+        fill,
+        mismatch=lambda: protocol(
+            status[-1] if status else 200, "the downloaded file does not have its hash"
+        ),
+    )
 
 
 def file_check_hook(

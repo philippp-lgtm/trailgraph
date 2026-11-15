@@ -2,7 +2,9 @@
 
 ``MemoryCatalog`` serves graphs from ``InMemoryStore`` with release files in
 memory; the files backend creates its graph through graph-admin's service
-and reads it with ``FileCatalog``, as the app will. ``ServiceEnv`` gives a
+and reads it with ``FileCatalog``, as the app will; the ``s3`` backend is such a
+graph with its stored files in the fake object store (``object_store``, blob suites
+only). ``ServiceEnv`` gives a
 C test one graph, a ``WriteService`` and request builders. ``OpsFactory``
 writes valid create ops for any class from the compiled model alone
 (required attributes and required relations), so core tests name no type.
@@ -42,12 +44,14 @@ from graph_cli.services.write import (
 from graph_cli.storage.files.audit_log import FileAuditLog
 from graph_cli.storage.memory.audit_log import InMemoryAuditLog
 from graph_cli.storage.memory.store import InMemoryStore
+from graph_cli.storage.s3.settings import ObjectStoreSettings
 from support.admin_context import admin_context
 from support.audit_events import allow
 from support.clock import StepClock
 from support.fixtures import EXAMPLES, FIXTURES, ONTOLOGIES, compiled_model, example_model
 from support.graphs import pin_of, release_files
 from support.ids import SeededIdProvider
+from support.s3_graphs import move_to_object_store
 from support.stores import ALL_STATUSES, FaultSwitch
 
 ENV = EnvInfo(data_root="<data root>", root_source="default")
@@ -209,6 +213,8 @@ class ServiceEnv:
     version: str | None = None  # fixture version; the first one by default
     language: str | None = None  # the graph language (BCP 47)
     example_version: str | None = None  # the ontology is ``examples/<ontology>/ontology/<this>``
+    # backend "s3": a files graph whose stored files are in the fake object store
+    object_store: ObjectStoreSettings | None = None
 
     def __post_init__(self) -> None:
         if self.example_version is not None:
@@ -248,10 +254,19 @@ class ServiceEnv:
                 title=None,
                 language=self.language,
             )
-            self.catalog = FileCatalog(self.root, faults=self.faults)
+            if self.backend == "s3":
+                assert self.object_store is not None, "the s3 backend needs the fake's settings"
+                graph = self._created_id()
+                move_to_object_store(self.root / "graphs" / str(graph), graph, self.object_store)
+            self.catalog = FileCatalog(
+                self.root, faults=self.faults, object_store=self.object_store
+            )
             self.audit = FileAuditLog(self.root, faults=self.faults)
         self.entry = self.catalog.resolve(self.name)
         self.service = self.make_service()
+
+    def _created_id(self) -> GraphId:
+        return FileCatalog(self.root).resolve(self.name).id
 
     def make_service(self, policy: Any = None, **config: Any) -> WriteService:
         return WriteService(

@@ -1,6 +1,6 @@
 [project]
 name = "graph_cli"
-version = "0.21.0"
+version = "0.22.0"
 description = "Domain-agnostic knowledge graph shell: application CLI (graph)."
 requires-python = ">=3.12"
 dependencies = [

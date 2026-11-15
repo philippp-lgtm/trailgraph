@@ -1,14 +1,26 @@
-"""FileService.add on both backends (files slice 1, step 4): create, dedupe, origin, refusals."""
+"""FileService.add on both backends (files slice 1, step 4): create, dedupe, origin, refusals.
+
+The ``s3`` parameter is a files graph whose stored files are in the fake object store
+(object storage O10).
+"""
 
 import hashlib
+import stat
+from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import pytest
+from support.clock import FixedClock
+from support.fake_s3 import FakeS3
+from support.s3_graphs import blob_key, blob_keys
 from support.services import RecordingActivity, ServiceEnv
 from support.trees import tree_hash
 
+from graph_cli.catalog.file_cache import StateFileCache
+from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.kernel.canonical import JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId
@@ -34,9 +46,20 @@ class Roots:
             return None
 
 
-@pytest.fixture(params=["memory", "files"])
-def svc(request: pytest.FixtureRequest, tmp_path: Path) -> ServiceEnv:
-    return ServiceEnv(str(request.param), "notes_and_sources", tmp_path / "root", version="1.1.0")
+@pytest.fixture(params=["memory", "files", "s3"])
+def svc(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[ServiceEnv]:
+    """Both backends, and a files graph whose stored files are in the fake object store."""
+    backend = str(request.param)
+    root = tmp_path / "root"
+    if backend != "s3":
+        yield ServiceEnv(backend, "notes_and_sources", root, version="1.1.0")
+        return
+    with FakeS3() as fake:
+        env = ServiceEnv(
+            backend, "notes_and_sources", root, version="1.1.0", object_store=fake.settings()
+        )
+        env.fake = fake  # type: ignore[attr-defined]
+        yield env
 
 
 @pytest.fixture
@@ -72,7 +95,7 @@ def refuse(service: FileService, svc: ServiceEnv, path: Path, **kw: Any) -> Grap
 
 
 def staging(svc: ServiceEnv) -> list[str]:
-    if svc.backend != "files":
+    if svc.backend == "memory":
         return []
     blobs = svc.root / "graphs" / str(svc.entry.id) / "blobs"
     return (
@@ -110,6 +133,9 @@ def test_add_creates_a_file_with_its_blob(svc: ServiceEnv, notes: Path) -> None:
     intent = svc.graph_events()[-1]
     assert intent["change"]["blobs"] == [{"hash": DIGEST, "size": len(PDF)}]  # type: ignore[call-overload,index]
     assert staging(svc) == []
+    assert blob_keys(svc.object_store) == (
+        [blob_key(svc.entry.id, DIGEST)] if svc.object_store else []
+    )
     assert svc.verify().findings == ()
 
 
@@ -189,12 +215,15 @@ def test_dry_run_writes_nothing(svc: ServiceEnv, notes: Path) -> None:
     assert svc.head_seq() == 0
     if before is not None:
         assert tree_hash(svc.root) == before
+    assert blob_keys(svc.object_store) == []
 
 
 def test_a_refused_write_leaves_no_blob(svc: ServiceEnv, notes: Path) -> None:
     error = refuse(files_of(svc, notes), svc, notes, attrs={"pages": 3})
     assert error.code == "write.invalid"
-    assert svc.store.blob(DIGEST) is None
+    # Validation runs under the lock, after the promote: an object store keeps the
+    # authorized but invalid add's object as an orphan until gc (object storage O6).
+    assert (svc.store.blob(DIGEST) is None) is (svc.backend != "s3")
     assert staging(svc) == []
     assert svc.head_seq() == 0
 
@@ -247,7 +276,98 @@ def test_path_and_check_signal_the_files_they_read(svc: ServiceEnv, notes: Path)
     if svc.backend == "files":
         service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
         assert activity.signals[-1] == (graph, [file_id])
-    else:
-        with pytest.raises(GraphCliError):  # file.no_local_path: nothing was read
+    else:  # no local path and no file cache: file.no_local_path, nothing was read
+        with pytest.raises(GraphCliError) as caught:
             service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+        assert caught.value.code == "file.no_local_path"
         assert len(activity.signals) == 2
+    service.open(view, "FILE-0001", actor=svc.actor, request=request)
+    assert activity.signals[-1] == (graph, [file_id])
+
+
+def test_open_streams_the_stored_bytes(svc: ServiceEnv, notes: Path) -> None:
+    """One way to read a stored file (O8): metadata, the local path when there is one, and
+    the bytes, started before the first one is handed out."""
+    add(files_of(svc, notes), svc, notes)
+    reader = svc.make_reader()
+    service = svc.make_files(reader=reader)
+    request = RequestMeta("file path", hash_value({}))
+    view = reader.open(svc.actor, svc.entry, "read.get", request)
+    opened, warnings = service.open(view, "FILE-0001", actor=svc.actor, request=request)
+    assert warnings == []
+    assert (opened.hash, opened.size, opened.media_type, opened.file_name) == (
+        DIGEST,
+        len(PDF),
+        "application/pdf",
+        "report 2024.pdf",
+    )
+    assert (opened.local_path is not None) is (svc.backend == "files")
+    assert b"".join(opened.start()) == PDF
+    answer = service.answer(opened)
+    assert answer["path"] is None and answer["hash"] == DIGEST and answer["size"] == len(PDF)
+
+
+def test_path_answers_a_cached_copy_without_a_local_path(
+    svc: ServiceEnv, notes: Path, tmp_path: Path
+) -> None:
+    """``file path`` in local mode with an object store: a read-only copy in this machine's
+    file cache, reused while it has its hash; the backend's own file where there is one."""
+    add(files_of(svc, notes), svc, notes)
+    reader = svc.make_reader()
+    clock = FixedClock()
+    cache = StateFileCache(tmp_path / "state", clock)
+    service = svc.make_files(reader=reader, cache=cache)
+    request = RequestMeta("file path", hash_value({}))
+    view = reader.open(svc.actor, svc.entry, "read.get", request)
+    data, _ = service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+    path = Path(str(data["path"]))
+    if svc.backend == "files":
+        assert path.is_relative_to(svc.root) and not cache.root.exists()
+        return
+    assert path == cache.path(str(svc.entry.id), DIGEST)
+    assert path.read_bytes() == PDF
+    assert stat.S_IMODE(path.stat().st_mode) == 0o400
+    gets = fetches(svc)
+    clock.advance(timedelta(hours=1))
+    again, _ = service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+    assert again["path"] == str(path) and fetches(svc) == gets  # reused, not fetched
+    assert path.stat().st_mtime == clock.now().timestamp()
+
+
+def fetches(svc: ServiceEnv) -> int:
+    """GET requests of stored files the fake object store answered (0 without one)."""
+    fake: FakeS3 | None = getattr(svc, "fake", None)
+    if fake is None:
+        return 0
+    return len([c for c in fake.calls("GET") if "/blobs/" in (c.key or "")])
+
+
+def test_the_server_answers_no_path(svc: ServiceEnv, notes: Path) -> None:
+    """On the server (``paths=False``) the stored copy's path is null and no bytes are read."""
+    add(files_of(svc, notes), svc, notes)
+    reader = svc.make_reader()
+    service = svc.make_files(reader=reader, paths=False)
+    request = RequestMeta("file path", hash_value({}))
+    view = reader.open(svc.actor, svc.entry, "read.get", request)
+    data, _ = service.path(view, "FILE-0001", origin=False, actor=svc.actor, request=request)
+    assert data["path"] is None and data["hash"] == DIGEST
+
+
+def test_writes_to_file_entities_need_the_object_store(
+    svc: ServiceEnv, notes: Path, tmp_path: Path
+) -> None:
+    """Every revision of a file lists its blob, so the commit check asks the object store
+    even for a title change (O4); writes that touch no file and file-free reads do not."""
+    if svc.backend != "s3":
+        pytest.skip("an object store only")
+    add(files_of(svc, notes), svc, notes)
+    svc.catalog = FileCatalog(svc.root)  # the installation lost its [files.s3]
+    svc.service = svc.make_service()
+    with pytest.raises(GraphCliError) as caught:
+        svc.apply({"op": "update", "id": "FILE-0001", "set": {"title": "renamed"}})
+    assert caught.value.code == "backend.unavailable"
+    assert str(svc.entry.id) in caught.value.message
+    assert svc.head_seq() == 1
+    svc.create("nas:Note")
+    assert svc.head_seq() == 2
+    assert svc.snapshot().seq == 2

@@ -1,6 +1,7 @@
 """The local server of graph-admin view (graph view plan, step 4)."""
 
 import dataclasses
+import hashlib
 import http.client
 import json
 import re
@@ -13,11 +14,14 @@ import pytest
 from support.activity import short_dir
 from support.admin_context import admin_context
 from support.clock import StepClock
+from support.fake_s3 import FakeS3
 from support.ids import SeededIdProvider
 from support.roles import load_roles
+from support.s3_graphs import blob_key
 from support.services import ServiceEnv
 
 from graph_cli.catalog.activity import ActivityListener, SocketActivity
+from graph_cli.catalog.file_catalog import FileCatalog
 from graph_cli.catalog.policy_source import FilePolicySource
 from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.ports.activity import ReadSignal
@@ -546,3 +550,83 @@ def test_the_stop_reaches_a_client_with_a_full_queue(monkeypatch: pytest.MonkeyP
         hub.publish("h", {"n": n})
     hub.close("h")
     assert behind.get_nowait() is None and behind.empty()
+
+
+@pytest.fixture
+def s3_files(tmp_path: Path) -> Iterator[tuple[ServiceEnv, str, FakeS3]]:
+    """A files graph whose stored files are in the fake object store, with a PDF."""
+    with FakeS3() as fake:
+        env = ServiceEnv(
+            "s3",
+            "notes_and_sources",
+            tmp_path / "root",
+            version="1.1.0",
+            object_store=fake.settings(),
+        )
+        document = tmp_path / "report.pdf"
+        document.write_bytes(PDF)
+        added = env.make_files().add(
+            FileAddRequest(
+                actor=env.actor,
+                graph=env.name,
+                path=document,
+                request=RequestMeta("file add", hash_value({"path": document.name})),
+            )
+        )
+        yield env, str(added.entity["id"]), fake
+
+
+def view_of(env: ServiceEnv, ctx: AdminContext) -> ViewServer:
+    running = ViewServer(ViewGraphs(ctx, default=env.name), page=page(), poll_s=0.05)
+    running.start()
+    return running
+
+
+def test_a_file_in_the_object_store_streams_verified(
+    s3_files: tuple[ServiceEnv, str, FakeS3],
+) -> None:
+    """``/blob`` reads like the server's download (``open_stored``): the verified bytes;
+    bytes that differ from their hash are an error before the answer starts."""
+    env, entity, fake = s3_files
+    ctx = admin_context(env.root)
+    s3_ctx = dataclasses.replace(ctx, catalog=FileCatalog(env.root, object_store=fake.settings()))
+    running = view_of(env, s3_ctx)
+    try:
+        token = running.token
+        details = json.loads(get(running, f"/entity?id={entity}&t={token}").read())
+        assert details["file"]["stored"] is True and details["file"]["size"] == len(PDF)
+        response = get(running, f"/blob?id={entity}&t={token}")
+        assert response.status == 200 and response.read() == PDF
+        digest = "sha256:" + hashlib.sha256(PDF).hexdigest()
+        fake.corrupt_get(blob_key(env.entry.id, digest), b"x" * len(PDF))
+        corrupt = get(running, f"/blob?id={entity}&t={token}")
+        assert corrupt.status == 400
+        assert json.loads(corrupt.read())["code"] == "backend.corrupt"
+    finally:
+        running.stop()
+
+
+def test_the_entity_page_degrades_without_the_object_store(
+    s3_files: tuple[ServiceEnv, str, FakeS3],
+) -> None:
+    """A view without the object store's settings shows the file's stored state as unknown
+    (O4); the rest of the page works, and the file itself is refused."""
+    env, entity, _ = s3_files
+    running = view_of(env, admin_context(env.root))  # no [files.s3]
+    try:
+        token = running.token
+        response = get(running, f"/entity?id={entity}&t={token}")
+        assert response.status == 200
+        details = json.loads(response.read())
+        assert details["file"] == {
+            "media_type": "application/pdf",
+            "size": None,
+            "stored": None,
+            "inline": True,
+        }
+        assert details["history"] and details["attrs"]["file_name"] == "report.pdf"
+        refused = get(running, f"/blob?id={entity}&t={token}")
+        assert refused.status == 400
+        assert json.loads(refused.read())["code"] == "backend.unavailable"
+    finally:
+        running.stop()

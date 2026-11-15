@@ -861,6 +861,7 @@ function fileSection(d) {
   box.append(el("h4", null, "File"));
   const info = d.file;
   box.append(el("div", "meta", [info.media_type, size(info.size)].filter(Boolean).join(" · ")));
+  if (info.stored === null) { box.append(el("div", "small", "The stored copy cannot be checked now: its object store is unavailable.")); return box; }
   if (!info.stored) { box.append(el("div", "small", "The stored copy is missing.")); return box; }
   const actions = el("div", "actions");
   if (info.inline) {

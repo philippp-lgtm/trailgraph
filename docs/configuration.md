@@ -30,6 +30,7 @@ limit and the read signal. The sections described elsewhere:
   `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
+- `[files] store` and `[files.s3]`: [Object storage](#object-storage)
 - `[activity]`: [Live view](live_view.md)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
@@ -47,8 +48,57 @@ limit and the read signal. The sections described elsewhere:
 - `[runtime]` `mode = "remote"` with `endpoint`, and `[remote]`: the
   [remote mode](#remote-mode)
 
-Unknown config or manifest keys are warnings; an unknown `format_version`
-or an invalid value stops the command.
+Unknown config or manifest keys are warnings (except in `[files.s3]`); an
+unknown `format_version` or an invalid value stops the command.
+
+### Object storage
+
+`[files] store` decides where `graph-admin graph create` puts the stored
+files of a **new** graph: `"local"` (the default) in the data root,
+`"s3"` in the S3-compatible object store of `[files.s3]`. Existing graphs
+stay where they are until `graph-admin files move`; changing the setting
+never moves one. What moves, permissions, backups:
+[Object storage](files.md#object-storage-optional).
+
+```toml
+[files]
+store = "local"          # default; "s3": new graphs keep their stored files in [files.s3]
+
+[files.s3]
+bucket = "example-bucket"
+prefix = ""              # optional key prefix; "graph_cli" becomes "graph_cli/"
+endpoint_url = ""        # empty: AWS by region
+region = ""
+addressing = "path"      # or "virtual"
+# allow_plain_http = true  # http:// to a host that is not loopback
+```
+
+- `[files.s3]` takes exactly these keys: any other key stops the command
+  (`config.invalid`), so a credential pasted into the file is never silently
+  ignored. Credentials come only from the environment
+  ([Environment variables](#environment-variables)), and the environment
+  wins over the file for the bucket, the endpoint and the region, so one
+  file can serve several deployments.
+- `bucket` and `region` are required (no default region); the prefix is
+  segments of letters, digits and `!_.*'()-` separated by `/`.
+- The endpoint is an `http(s)` URL without user info, path, query or
+  fragment; `http://` only to a loopback host unless `allow_plain_http =
+  true` (a store inside a private network, such as a cluster's; file bytes
+  then travel in clear there, though checked against their hash). Empty
+  means AWS itself, reached by region.
+- `addressing = "path"` puts the bucket into the path
+  (`<endpoint>/<bucket>/<key>`, what most self-hosted stores expect);
+  `"virtual"` into the host name (`<bucket>.<endpoint host>`).
+- With `store = "local"` only the types of `[files.s3]` are checked; the
+  settings are used by `graph-admin files move --to s3` and by graphs
+  already in an object store. With `store = "s3"` an incomplete or invalid
+  setting stops every command. A graph in an object store opened without
+  usable settings fails only where it needs its file bytes
+  (`backend.unavailable`).
+- Every process that reads or writes stored files needs the settings and
+  the credentials: `graph` in the local mode, `graph-server`, `graph-admin`
+  and its live view. A `graph` in the [remote mode](#remote-mode) needs
+  none.
 
 ## Remote mode
 
@@ -120,5 +170,10 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_DIST_DIR` | the directory of wheels `graph-server` hands out ([Self update](server.md#self-update)); set in the image |
 | `GRAPH_CLI_ADMIN_TOKEN` | the admin token of `graph-admin` in [remote mode](#remote-mode), before `[remote] admin_token_file` |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
+| `GRAPH_CLI_S3_BUCKET` | the object store's bucket, before `[files.s3] bucket` ([Object storage](#object-storage)) |
+| `AWS_ENDPOINT_URL_S3`, then `AWS_ENDPOINT_URL` | the object store's endpoint, before `[files.s3] endpoint_url` |
+| `AWS_REGION`, then `AWS_DEFAULT_REGION` | the object store's region, before `[files.s3] region` |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | the object store's credentials (both keys or neither; the session token is optional); only from the environment |
+| `AWS_CA_BUNDLE` | an absolute path to the CA certificates for the object store's TLS |
 
 Only `catalog` and the admin wiring may read the process environment.

@@ -116,6 +116,7 @@ claimed, so the phases add up to `total`:
 | `resolve` | a write resolving its references; `query` resolving names, fields and parameters against the model |
 | `execute` | `query` matching patterns and computing the rows |
 | `stage` | `file add` hashing and staging the file |
+| `promote` | `file add` handing the staged file to the graph's file store once the write is authorized (the upload when the graph keeps its files in an object store) |
 | `lock` | a write waiting for and taking the graph lock, including the recovery of an interrupted write |
 | `normalize` | applying the ops to a working copy |
 | `validate` | checking the result against the ontology |
@@ -225,6 +226,50 @@ from its recorded hash, is `integrity.audit.slot_mismatch` (its target names
 `graphs/<id>/skill`, `.../functions` or `.../actions`); an intent
 whose slot switch never happened is an interrupted publish
 (`intent_without_effect`, info).
+
+## Blob location
+
+Where a graph keeps its stored files (in the data root, `local`, or in an
+object store, `s3`) is a configuration of the graph: switching it is a
+`maint.graph_configure` operation with an intent carrying
+`change.blob_store{from, to, store_id, blobs, bytes}` (the locations
+before and after, the object store's id from its marker, and the number
+and bytes of the stored files the switch covered), the manifest replaced
+by one rename, then an installation event that anchors the intent. A graph
+is always created `local`: `graph create` with `[files] store = "s3"`
+records the switch right after the genesis (`blobs` and `bytes` 0).
+`graph-admin files move` records the same switch after its copies:
+`blobs` and `bytes` count every stored file the switch covered (each file a
+transaction names and every other file stored at the source, all present
+at the target when the manifest is replaced); `store_id` is the target
+store for a move to `s3` and, for a move to `local`, the store the graph
+leaves (`files gc` judges a local graph's objects by it, below). An
+intent whose `blob_store` is not that shape (an unknown location, `from`
+equal to `to`, a `store_id` that is not a UUID) is `event_malformed`.
+
+`audit verify` walks these intents from `local` (genesis) and compares the
+end with the manifest: its blob location, and for `s3` its `store_id`, must
+be what the last committed switch recorded. A manifest that names another
+location or store, edited or restored by hand, is
+`integrity.audit.blob_store_mismatch` (its target names
+`graphs/<id>/manifest.toml`; expected and actual give location and store
+id). A switch whose manifest rename never happened left the graph where it
+was with every file; like an interrupted pin switch it is
+`intent_without_effect` (info), and its message names the command that
+switches the graph. Whether every referenced file is where the manifest
+says is the storage check (`blob_missing`); an object store that cannot be
+reached is the storage error `blob_store_unavailable`
+([Storage](storage.md#stored-files-in-an-object-store)).
+
+`files gc` removes stored files as a `maint.repair` operation whose intent
+names them by hash and size only: `change.blobs_removed[{hash, size}]` (the
+orphans), `staging_removed` (how many staging files) and, only when there
+were any, `misplaced_removed[{hash, size}]`: copies outside the location
+the manifest names, each removed only after that location's copy, read in
+full, showed the same hash. A local graph's objects in an object store count
+as its own only when the bucket's marker id is the `store_id` of the graph's
+last `change.blob_store` switch, and that switch went to `local`. A `misplaced_removed` that is not a non-empty list of that
+shape in hash order is `event_malformed`.
 
 ## Migration verification
 

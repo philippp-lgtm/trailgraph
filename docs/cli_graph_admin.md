@@ -35,11 +35,13 @@ schema of every answer, as for `graph` (see [`graph`](cli_graph.md)).
 | `ontology validate DIR` | compile and check an authored ontology |
 | `ontology diff DIR --against DIR` / `--graph REF` | classify the changes and check the version bump; a `renamed_from` that does not fit the older version is `ontology.rename_invalid` (a leftover the previous release applied already is the warning `ontology.rename_stale`); with `--graph`, warns `admin.functions_affected` and `admin.actions_affected` for the published functions and actions the release would break, `admin.policy_renamed_term_affected` for deny rules that would fail open, and lists `references` (where functions, actions and policy name each renamed term) and the catalogs the release would publish again (`republished`) |
 | `ontology release GRAPH DIR` | publish a release into the graph and pin the graph to it; classes the release adds get their `display_prefix` as alias prefix (a prefix stays with its entities: a class renamed with `renamed_from` (a local name, or the CURIE of the old term when it moves to another module) takes the prefix of its old name and replaces that entry, a removed class keeps its prefix, and a prefix another class already holds is not given out, with the warning `admin.alias_prefix_taken`); every published function and action must still resolve under the new release, on every bump, else `admin.functions_broken` or `admin.actions_broken` ([Auditing and releases](#auditing-and-releases)), unless the release has renames and they can be compiled again (`republished`); a deny rule that names a renamed term and no new one is `admin.policy_renamed_term`; a major release may carry a data migration (`migration.yaml`, [below](#releasing-with-a-data-migration)); `--dry-run` makes every check and shows the migration without writing, `--reason` is recorded with the release and the migration |
-| `audit verify` | check every chain, tx log, revision file, index, manifest pin and installed policy; exit 1 on error findings |
+| `audit verify` | check every chain, tx log, revision file, index, manifest pin, installed policy and blob location ([Blob location](audit.md#blob-location)); exit 1 on error findings |
 | `audit anchor` | record every graph stream's head in the installation stream |
 | `usage report [GRAPH] [--since DATE]` | read the access log (needs `[audit] access_log = true`; else `access_log: false`) per graph, or for `GRAPH` only: function runs (calls, distinct sessions, errors by code), `never_run` (published functions without a run), `function_share` (whole percent of runs among runs and queries), query `shapes` ranked by distinct sessions, and three lists derived from them: `discovery_misses` (a covered shape still queried), `batch_gaps` (the covering function takes one value where the query took a list) and `candidates` (uncovered shapes in at least two sessions, the input for new functions). Each list shows 20 entries, `<list>_more` counts the rest. `--since` takes a date (midnight UTC) or an RFC 3339 timestamp, inclusive. Shapes only, no values; sessions are counted, never listed. In remote mode the server's log is read through the admin API (`maint.audit_read`) |
-| `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans and staging leftovers info |
-| `files gc --graph REF` | remove stored files no transaction names and staging files older than one hour (`--dry-run`, `--reason`), audited as `maint.repair` |
+| `files verify --graph REF` | check the stored files of a graph: missing (and, with `--rehash`, damaged) files are errors, orphans, staging leftovers and misplaced copies (`blob_misplaced`: a copy outside the location the graph's manifest names) info; for a graph in an object store one listing of its prefix (`--rehash` reads every object), and a store that cannot be reached or is another store is the error `blob_store_unavailable` instead of a stop; a local graph is checked for copies in the configured object store only when one is configured with credentials and reachable, and never fails because of it |
+| `files gc --graph REF` | remove stored files no transaction names (in an object store only those older than 24 hours by the store's clock), staging files older than one hour and misplaced copies whose bytes the graph's location holds intact (same size, and its copy, read in full before the graph lock, has the hash; a damaged or unreadable copy there keeps the misplaced one, listed as `misplaced_kept`; a local graph's objects only in the store its audit trail records it moved away from, others are report-only) (`--dry-run`, `--reason`), audited as `maint.repair` ([what the event names](audit.md#blob-location)) |
+| `files move REF... --to s3\|local` | move the stored files of graphs between the data root and the object store (`--all` for every graph, archived ones too; graphs already there are skipped and listed as `at_target`): copy passes while writes go on, then the switch under the graph lock, audited as `maint.graph_configure`; the old copies stay until `files gc` (`--dry-run` counts files and bytes, `--reason`; [Moving stored files](#moving-stored-files)) |
+| `files store check` | check the configured object store and say in words what is wrong: the settings and credentials (never their values), the store marker (its id and the graphs of this installation that keep their files in it), listing, a probe write, read and delete below `graph_cli_probe/`, a missing key answering 404 (403 means the key lacks `ListBucket`), the clock against the store's `Date`, and redirects (endpoint, region, addressing); exit 1 (`admin.store_check_failed`) on an error, warnings (no marker yet, a drifting clock) do not fail; without a configured object store it says so and succeeds; authorized as `maint.audit_verify`, records no audit event |
 | `policy check FILE [--graph G]` | compile an authored policy and report every problem; installs nothing |
 | `policy show [--graph G]` | the installed compiled policy and its hash (the built-in one when none is installed) |
 | `policy diff FILE [--graph G]` | rules and keys added, removed or changed against the installed policy |
@@ -241,6 +243,52 @@ A folder is never replaced or deleted. New graphs are drafted outside the
 graph folders, created with `graph create`, and get their folder at the
 next sync. The workflow for agents is the `maintaining-graphs` skill
 ([Admin skills](skills.md#admin-skills)).
+
+## Moving stored files
+
+`files move REF... --to s3|local` moves where graphs keep their stored files
+(the data root or the object store configured in `[files.s3]`,
+[Configuration](configuration.md)). For each graph it copies every file the
+graph's transactions name and every other file stored there (orphans too),
+each verified (an upload signed with the file's hash, then checked for its
+size; a copy into the data root rehashed while written and synced), without
+holding the graph lock, so writes go on. Then it takes the lock, copies what
+arrived meanwhile and switches the graph: one
+`maint.graph_configure` event pair whose intent names the location before
+and after, the object store's id and the number and bytes of the files
+([Blob location](audit.md#blob-location)). A file added while a graph moves
+is committed where the graph keeps its files once the add takes the lock.
+
+- **Nothing is deleted.** The old copies are `blob_misplaced` (info) in
+  `files verify` until `files gc` removes them, each only after the new
+  location's copy, read in full, showed the same hash. A move back to the
+  data root records the object store it leaves, which is what lets `files
+  gc` clean the bucket; the bucket's marker stays.
+- **Refused before any copy:** an object store that is not configured or
+  has no credentials (`config.invalid`, `backend.unavailable`), or, for a
+  graph in an object store, whose marker is not that graph's store
+  (`backend.unavailable`); a graph in the middle of a data migration
+  (`admin.migration_incomplete`: finish the release first). `--to s3`
+  creates the bucket's marker when there is none. A store that refuses an
+  upload (quota, permissions) stops with `files.store_refused`; the graph
+  stays where it was, and the copies made so far are reused by the next run.
+  A file a transaction names that is in neither location stops the move with
+  `backend.corrupt` (`files verify` names it).
+- **Interrupted moves** leave the graph where it was with every file: a run
+  stopped while copying only leaves extra copies, and one stopped right
+  before the switch leaves an intent without effect, which `audit verify`
+  reports as info. Running the move again finishes it.
+- **`--dry-run`** copies and writes nothing and answers per graph how many
+  files and bytes the move covers (`stored`) and would copy (`remaining`).
+  A graph already at the target writes no audit event.
+- **`--step pass|switch`** runs one copy pass, or only the switch, with 30
+  seconds of copying each (a switch whose copies under the lock take longer
+  switches nothing and answers `copying`). In the remote mode `graph-admin`
+  sends a dry run, then these steps for each graph, so every request fits
+  the client's timeout; without `--step` a local run copies and switches in
+  one go. Each step is safe to repeat.
+- Exit codes follow the other commands; with several graphs the first
+  failure ends the command, its answer lists the graphs handled before.
 
 ## Auditing and releases
 

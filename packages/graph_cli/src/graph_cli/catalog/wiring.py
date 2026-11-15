@@ -4,7 +4,8 @@ The app's only reader of the process environment and the working
 directory. It resolves config and roots with the code graph-admin uses (no
 ``--data-root``; ``GRAPH_CLI_ROOT`` warns), finds the project pointer,
 builds the actor (entrypoint ``app``, never from env or flags), and wires
-clock, ids, catalog, audit log, the installed policy and the services.
+clock, ids, catalog (with the object store settings, ``catalog.object_store``),
+audit log, the installed policy and the services.
 Graph selection asks the policy first (B6.15); a project the policy has no
 scope for warns once per command (``access.project_unknown``). Everything is
 built lazily on the first command that needs it, so a broken config
@@ -24,7 +25,10 @@ The server builds one ``AppServices`` per request with a ``RequestScope``
 (B14.8): the request's actor (token principal, entrypoint ``server``),
 pointer, ``GRAPH_CLI_GRAPH`` and the origins of uploaded files take the
 place of the process's identity, the working directory's pointer, its
-environment variable and the configured file roots.
+environment variable and the configured file roots. The file service gets
+this machine's file cache (``catalog.file_cache``) for ``file path``, except
+on the server: there ``file path`` answers no path and writes no copy, and the
+download route has it open the file (``RequestScope.download``) to stream it.
 
 In remote mode (``[runtime] mode = "remote"``) there is no local context:
 ``remote`` builds the command's ``RemoteSession`` instead, with the token
@@ -54,6 +58,7 @@ from graph_cli.catalog.config import Config, load_config
 from graph_cli.catalog.file_catalog import FileCatalog, StorageSettings
 from graph_cli.catalog.file_roots import FileRoots, GivenOrigins
 from graph_cli.catalog.identity import resolve_actor, system_inputs
+from graph_cli.catalog.object_store import object_store
 from graph_cli.catalog.oplog import OpLogFile
 from graph_cli.catalog.pointer import (
     GRAPH_ENV,
@@ -84,7 +89,7 @@ if TYPE_CHECKING:
     from graph_cli.catalog.endpoint import Endpoint
     from graph_cli.catalog.remote import RemoteSession
     from graph_cli.services.actions import ActionService
-    from graph_cli.services.files import FileService, Origins
+    from graph_cli.services.files import FileService, OpenedFile, Origins
     from graph_cli.services.write import WriteService
 
 PROGRAM: Final = "graph"
@@ -130,6 +135,10 @@ class _Backend:
     activity: ActivitySink
     origins: Origins
     timings: Timings
+    # whether ``file path`` may answer a copy in this machine's file cache
+    # (``catalog.file_cache``): not on the server, which never writes a copy of a file and
+    # answers no path of its own
+    local_copies: bool = True
 
 
 @dataclass
@@ -183,8 +192,10 @@ class AppContext:
 
     @functools.cached_property
     def files(self) -> FileService:
+        from graph_cli.catalog.file_cache import StateFileCache
         from graph_cli.services.files import FileService
 
+        local = self.backend.local_copies
         return FileService(
             catalog=self.catalog,
             writer=self.writer,
@@ -192,6 +203,8 @@ class AppContext:
             origins=self.backend.origins,
             max_bytes=self.config.max_file_bytes,
             activity=self.backend.activity,
+            cache=StateFileCache(self.roots.state_root, self.backend.clock) if local else None,
+            paths=local,
         )
 
     def select(self, flag: str | None) -> GraphEntry:
@@ -241,6 +254,9 @@ class RequestScope:
     graph_env: str | None
     origins: Mapping[Path, Mapping[str, JsonValue] | None]  # uploaded file -> its origin
     claims: tuple[SkillClaim, ...] = ()  # the graph skills the client has (B14.17)
+    # The download route: ``file path`` opens the stored file (``FileService.open``) and
+    # hands it here for the route to stream, instead of answering a path.
+    download: list[OpenedFile] | None = None
 
 
 @dataclass
@@ -511,11 +527,14 @@ class AppServices:
         clock = SystemClock()
         ids = Uuid7Provider(clock)
         oplog = OpLogFile(roots.state_root, clock)
+        stores = object_store(config, self.env)
         catalog = FileCatalog(
             roots.data_root,
             settings=StorageSettings(config.lock_timeout_s, config.durability),
             oplog=oplog,
             follow_migration=True,
+            object_store=stores.settings,
+            object_store_problem=stores.problem,
         )
         audit = FileAuditLog(
             roots.data_root,
@@ -558,6 +577,7 @@ class AppServices:
                 if request is None
                 else GivenOrigins(request.origins),
                 timings=self.timings,
+                local_copies=request is None,
             ),
             graph_env=self.env.get(GRAPH_ENV) or None if request is None else request.graph_env,
             command=command,
