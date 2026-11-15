@@ -19,6 +19,7 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 | `storage.files.token_files` | the token file `tokens/tokens.json` of the server API and the enrollment codes `tokens/enrollments.json`, read lock-free, replaced by one rename under the registry lock |
 | `storage.files.blobs` | stored files by hash: staging, publishing, reading, listing, blob verification and removal |
 | `storage.files.maintenance` | `FileStoreMaintenance`: graph creation, manifest switch, release install, migration tx and marker, skill publish, function and action catalog publish, policy install, `verify`, `verify_blobs`, `remove_blobs`, `recover`, `reindex` (admin only) |
+| `storage.s3` | a small S3 client on the standard library: SigV4 signing, put, streamed and hash-verified get, head, delete, paged listing, retries and error mapping by S3 code; imports only `kernel` (not wired into a backend yet) |
 
 ## FileStore
 

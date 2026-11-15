@@ -334,6 +334,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "file.root_unknown": None,
     "file.origin_missing": None,
     "file.no_local_path": None,
+    "files.store_refused": None,  # the message names quota and permissions
     "access.project_mismatch": None,
     "remote.unreachable": None,
     "remote.unauthorized": None,  # the message names the token settings

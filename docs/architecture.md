@@ -46,7 +46,8 @@ and storage adapters, `audit` and `access_control` import only `kernel`.
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
 `query`; the layers above may use it. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
-two storage backends are independent of each other. Authored YAML (ontologies,
+two storage backends are independent of each other. The S3 client
+(`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,
 policies, function files) is parsed only through the kernel's strict loader
 `kernel.yaml_strict`, by `ontology_layer`, `access_control` and `kinetic`.
 

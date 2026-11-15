@@ -40,6 +40,10 @@ POSITIVE_CONTROLS = {
         "graph_cli/storage/common/__init__.py",
         "import graph_cli.storage.memory.store\n",
     ),
+    "The S3 client imports only the kernel and the standard library": (
+        "graph_cli/storage/s3/__init__.py",
+        "import graph_cli.storage.files.blobs\n",
+    ),
     "Audit and access control import only the kernel": (
         "graph_cli/audit/__init__.py",
         "import graph_cli.query\n",
