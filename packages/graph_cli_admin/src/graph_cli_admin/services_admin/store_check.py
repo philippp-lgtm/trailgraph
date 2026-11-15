@@ -20,8 +20,9 @@ The checks, in order (each ``ok``, ``warning``, ``error`` or ``skipped``):
 - ``write``, ``read``, ``delete``: a probe ``PUT``, ``HEAD`` plus ``GET``, ``DELETE``;
 - ``missing_key``: a ``HEAD`` of a key that does not exist answers 404; a 403 means the
   key lacks ``ListBucket``, and graph_cli could not tell a missing file from a refused one;
-- ``clock``: the store's ``Date`` against this machine's clock (signed requests fail
-  beyond 15 minutes; grace periods use the store's clock);
+- ``clock``: the store's ``Date`` against this machine's clock (AWS refuses signed
+  requests beyond 15 minutes, some stores accept more and some answer with another code;
+  grace periods use the store's clock);
 - ``addressing``: no answer redirected to another endpoint, region or addressing style.
 
 When the store cannot be reached at all, or refuses the credentials, the bucket or the
@@ -405,8 +406,8 @@ def _clock(run: _Run, data: dict[str, JsonValue]) -> None:
         run.add(
             "clock",
             "error",
-            f"{said}; the store refuses signed requests beyond 15 minutes: correct this"
-            " machine's clock",
+            f"{said}; AWS and most stores refuse signed requests more than 15 minutes off"
+            " (some accept more): correct this machine's clock",
         )
 
 

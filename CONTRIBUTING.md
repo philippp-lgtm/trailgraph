@@ -18,6 +18,7 @@ uv run lint-imports
 GRAPH_CLI_UPDATE_GOLDENS=1 uv run pytest  # rewrite golden files and the generated skill after an intended change
 docker build --target test .               # the whole suite on Linux, in the image
 GRAPH_CLI_DOCKER_TESTS=1 uv run pytest tests/docker  # the container: kill mid-write, restart, verify
+tests/integration/run_garage.sh            # stored files in a real object store (Garage in Docker)
 ```
 
 Run the CLIs from the checkout:
@@ -32,16 +33,17 @@ uv run graph-server serve --port 0
 
 `.github/workflows/check.yml` runs on every pull request and every push to
 `main`: the lint commands above, the suite in the image (`docker build
---target test .`) and `scripts/smoke_image.sh` on the runtime image (it
+--target test .`), `scripts/smoke_image.sh` on the runtime image (it
 starts, answers `/v1/health`, and `graph-admin audit verify` in it is
-clean). The repository variable `CI_RUNS_ON` (a JSON `runs-on` value) moves
+clean) and the object store integration test against a real S3-compatible
+store (`tests/integration/run_garage.sh`, see [Tests](#tests)). The repository variable `CI_RUNS_ON` (a JSON `runs-on` value) moves
 the jobs to a self-hosted runner; pull requests from forks always run on a
 hosted one.
 
 A push to `main` that merges a pull request rebased on `main` (its tree equals
 the tree of the pull request head, and that head has a green first-attempt
-`check` run) is not tested again: both jobs log "tree identical to PR #n head
-..., validated in run ...; not re-run" and succeed. `scripts/ci-reuse-pr-run.sh`
+`check` run) is not tested again: every job logs "tree identical to PR #n head
+..., validated in run ...; not re-run" and succeeds. `scripts/ci-reuse-pr-run.sh`
 decides, any doubt or API error means the full run, and
 `tests/ci-reuse/run.sh` tests it offline. The rule and why it is safe: the
 infra repository's `DECISIONS.md` I31.
@@ -189,6 +191,7 @@ headers and envelope keys per level and fails until the change is judged.
 | skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written `ontology-best-practices` skill: its YAML examples compile, the format reference names every accepted key, structure |
 | server | `tests/server/` | `graph-server` in-process (routes, auth, uploads, CORS, denials audited) and as a process (threads plus a `graph-admin` process lose no writes); the remote `graph` against stub servers (lost answers, retries, versions); every command answers the same locally and remotely on both toy ontologies; the admin API (token scopes, maintainers, no paths from requests) and every `graph-admin` command it runs answering the same from a remote-mode host |
 | docker | `tests/docker/` | opt-in (`GRAPH_CLI_DOCKER_TESTS=1`): the container killed mid-write recovers, `audit verify` in it stays clean |
+| integration | `tests/integration/` | opt-in (`GRAPH_CLI_TEST_S3_ENDPOINT` and the other variables the module names): stored files in a real S3-compatible store through both programs, local and remote mode (add, read, download, verify, gc, move both ways, quota, store check, wrong settings); `tests/integration/run_garage.sh` starts the pinned Garage image, creates a bucket, a key and a quota, and runs it |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
 | docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
 

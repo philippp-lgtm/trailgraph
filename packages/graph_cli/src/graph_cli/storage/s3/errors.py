@@ -152,7 +152,9 @@ def response_error(
         return GraphCliError(
             "files.store_refused",
             f"the object store at {host} refused {operation}: the bucket's quota may be"
-            " exhausted or the key lacks write permission (PutObject, DeleteObject)",
+            " exhausted, the key may lack write permission (PutObject, DeleteObject), or the"
+            " credentials may be wrong (some stores answer AccessDenied for those too); run"
+            " 'graph-admin files store check'",
             details=_details(operation, host, status=status, s3_code=s3_code),
         )
     if s3_code in CREDENTIAL_CODES:
@@ -175,10 +177,12 @@ def response_error(
             " the region and the addressing style"
         )
     if s3_code == "AccessDenied" or (s3_code is None and status in (401, 403) and not write):
-        # A HEAD answer has no body, so a denied HEAD arrives without a code.
+        # A HEAD answer has no body, so a denied HEAD arrives without a code. Some stores
+        # (Garage) answer an unknown key or a wrong secret with AccessDenied as well.
         return refuse(
-            f"the object store at {host} denied access during {operation}; check the key's"
-            " permissions (GetObject, ListBucket) or run 'graph-admin files store check'"
+            f"the object store at {host} denied access during {operation}; check the"
+            " credentials and the key's permissions (GetObject, ListBucket) or run"
+            " 'graph-admin files store check'"
         )
     if (
         status == 404
@@ -193,7 +197,8 @@ def response_error(
         )
     suffix = f" ({s3_code})" if s3_code else ""
     return unavailable(
-        f"the object store at {host} answered {operation} with status {status}{suffix}",
+        f"the object store at {host} answered {operation} with status {status}{suffix};"
+        " run 'graph-admin files store check'",
         operation,
         host,
         status=status,

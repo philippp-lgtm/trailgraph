@@ -4,7 +4,9 @@ name: check
 #   lint:  ruff, ruff format, mypy and the import contracts (CONTRIBUTING.md, "Development")
 #   test:  the whole suite on Linux as a non-root user (the Dockerfile's `test` stage), then
 #          the runtime image: it builds, starts, answers /v1/health and its data root verifies
-# Both jobs only need Docker on the runner (no job containers, no `services:`), so they also run on
+#   object-store: tests/integration against a real S3-compatible store (the pinned Garage image,
+#          tests/integration/run_garage.sh); the suite of `test` skips it
+# All jobs only need Docker on the runner (no job containers, no `services:`), so they also run on
 # a self-hosted runner: the repository variable CI_RUNS_ON holds the JSON runs-on value, e.g.
 # ["self-hosted","linux"]; unset means ubuntu-24.04. A pull request from a fork always runs on
 # ubuntu-24.04: never hand a self-hosted runner code from outside the repository.
@@ -37,7 +39,7 @@ jobs:
           persist-credentials: false
 
       # A push to main whose tree equals the head of its merged pull request, with a green first-attempt run of this workflow
-      # on that head (both jobs), is not checked again (infra DECISIONS.md I31). Any doubt or API error means the full run.
+      # on that head (all jobs), is not checked again (infra DECISIONS.md I31). Any doubt or API error means the full run.
       - name: Reuse the pull request run
         id: reuse
         env:
@@ -114,3 +116,27 @@ jobs:
       - name: Lint the workflows
         if: steps.reuse.outputs.reuse != 'true'
         run: scripts/lint-workflows.sh
+
+  object-store:
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh (infra DECISIONS.md I31)
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reuse the pull request run
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-reuse-pr-run.sh check.yml
+
+      # Garage and the test container share a Docker network of their own (no job containers, no `services:`); pytest runs
+      # in the uv image of the lint job as the runner's user. The script removes what it started, also on failure.
+      - name: Object store integration test (Garage)
+        if: steps.reuse.outputs.reuse != 'true'
+        run: tests/integration/run_garage.sh --container ghcr.io/astral-sh/uv:0.13-python3.13-trixie-slim

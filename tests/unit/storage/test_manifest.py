@@ -175,6 +175,24 @@ def test_object_store_round_trip_and_golden() -> None:
     assert manifest_features(parsed.store) == ("blobs.s3",)
 
 
+def read_as_0_21(data: bytes) -> None:
+    """The first check of every manifest reader of 0.21 and older (app, server,
+    maintenance, ``audit verify``, the manifest rewrite): the top-level ``format_version``
+    must be exactly 1."""
+    version = tomllib.loads(data.decode()).get("format_version")
+    if version != 1:
+        raise GraphCliError("format.unsupported_version", f"format_version {version!r}")
+
+
+def test_programs_of_0_21_refuse_a_graph_in_an_object_store() -> None:
+    """An image rolled back below format 2 refuses such a graph entirely instead of reading
+    its files as missing local ones or rewriting its manifest without the location."""
+    with pytest.raises(GraphCliError) as caught:
+        read_as_0_21(format_manifest(manifest(store=S3_STORE)))
+    assert caught.value.code == "format.unsupported_version"
+    read_as_0_21(format_manifest(manifest()))  # a local graph stays readable by them
+
+
 @pytest.mark.parametrize(
     "store", [StoreInfo("files", 1, "s3", None), StoreInfo("files", 1, "local", STORE_ID)]
 )

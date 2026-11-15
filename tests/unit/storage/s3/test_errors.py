@@ -107,6 +107,18 @@ def test_access_denied_on_a_read_points_at_the_store_check(
     assert error.details["s3_code"] == "AccessDenied"
 
 
+@pytest.mark.parametrize("call", ["put", "get", "head", "list", "delete"])
+def test_access_denied_names_the_credentials_too(
+    client: ObjectStoreClient, fake: FakeS3, call: str
+) -> None:
+    """Garage answers an unknown key id or a wrong secret with 403 ``AccessDenied``, not
+    with a credential code: every AccessDenied message names the credentials as a cause
+    (found against Garage v2.5.0, tests/integration/test_s3_garage.py)."""
+    error = fail_and_call(client, fake, call, 403, "AccessDenied")
+    assert "credentials" in error.message
+    assert "graph-admin files store check" in error.message
+
+
 def test_a_denied_head_has_no_body_and_is_still_backend_unavailable(
     client: ObjectStoreClient, fake: FakeS3
 ) -> None:
