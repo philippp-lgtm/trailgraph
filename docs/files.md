@@ -51,8 +51,28 @@ machine.
 In the [remote mode](server.md#remote-mode-of-graph) the roots of the
 machine running `graph` count: `file add` records the origin there,
 `file path --origin` and `file check` resolve origins there, and `file
-path` answers a read-only copy downloaded to this machine; `[files]
-max_bytes` of the server limits what it stores.
+path` answers a read-only copy downloaded to this machine (the
+[file cache](#file-cache)); `[files] max_bytes` of the server limits what
+it stores.
+
+## File cache
+
+When the stored copy has no path on this machine, `file path` answers a
+copy in the file cache `<state>/files/<graph id>/<hash>` (`<state>` is
+`$XDG_STATE_HOME/graph_cli`): in the remote mode, where the copy is
+downloaded from the server, and for a graph whose stored files are in an
+object store ([Object storage](configuration.md#object-storage-in-development)).
+
+- A copy is read only (mode 0400) and is checked against its hash before
+  it is answered; a copy that changed is fetched again. Read it, never edit
+  it.
+- Two commands may fetch the same file at once: each writes its own
+  partial file and only bytes with the right hash become the copy.
+- Every `file path` that answers a copy marks it as used. A later `file
+  path` removes copies nobody used for 24 hours, so the cache does not
+  keep files on the machine for long; the next `file path` fetches them
+  again.
+- The cache is never authoritative and can be deleted at any time.
 
 ## Privacy
 

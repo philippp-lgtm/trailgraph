@@ -128,7 +128,14 @@ def path(state: CommandState, ref: str, origin: bool, graph: str | None) -> Resu
     view = _open(state, graph, "file path", args)
     ctx = context(state)
     request = RequestMeta.of("file path", {"graph": view.entry.name, **args})
-    data, warnings = ctx.files.path(view, ref, origin=origin, actor=ctx.actor, request=request)
+    scope = services(state).request
+    download = scope.download if scope is not None and not origin else None
+    if download is not None:  # the server's download route streams what it opens
+        opened, warnings = ctx.files.open(view, ref, actor=ctx.actor, request=request)
+        download.append(opened)
+        data = ctx.files.answer(opened)
+    else:
+        data, warnings = ctx.files.path(view, ref, origin=origin, actor=ctx.actor, request=request)
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
 

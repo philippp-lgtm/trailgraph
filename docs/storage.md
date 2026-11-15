@@ -166,7 +166,17 @@ in the graph directory.
 - **Reads** stream the object hashed against its name; the last chunk is held
   back until the hash matches. An absent referenced object or bytes that
   differ from their hash are `backend.corrupt`, like a missing local blob.
-  There is no local path (`blob_local_path` capability absent).
+  There is no local path (`blob_local_path` capability absent): `graph
+  file path` answers a copy in this machine's
+  [file cache](files.md#file-cache), and the server and the live view
+  stream the verified bytes (`FileService.open`, `services.files.open_stored`).
+- **Getting there.** A graph is always created with its files local; with
+  `[files] store = "s3"`, `graph-admin graph create` then switches it in the
+  same command: the marker is read or created before the graph exists,
+  then a `change.blob_store` intent ([Blob location](audit.md#blob-location)),
+  the manifest replaced by one rename as format 2, and the anchor. A switch
+  that fails after the creation leaves the graph local (format 1, holding no
+  file) and the command names it.
 - **Verify and gc.** Blob verification lists the graph's prefix once
   (`--rehash` streams every object); the finding codes are those of local
   blobs. Only orphans older than 24 hours by the store's clock (the listing's

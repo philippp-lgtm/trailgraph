@@ -78,6 +78,17 @@ _E, _I = Severity.ERROR, Severity.INFO
 ClientFactory = Callable[[ObjectStoreSettings], ObjectStoreClient]
 
 
+def missing_credentials(settings: ObjectStoreSettings) -> list[str]:
+    """The credential variables the settings lack (the client needs both)."""
+    credentials = settings.credentials
+    missing = []
+    if credentials is None or not credentials.access_key_id:
+        missing.append("AWS_ACCESS_KEY_ID")
+    if credentials is None or not credentials.secret_access_key:
+        missing.append("AWS_SECRET_ACCESS_KEY")
+    return missing
+
+
 def _age(info: ObjectInfo) -> timedelta | None:
     """How old the object is by the store's own clock; ``None`` without its ``Date``."""
     if info.response_date is None:
@@ -126,12 +137,7 @@ class S3Blobs:
         """The client, after the settings and the store marker were checked."""
         if self.settings is None:
             raise unusable_object_store(self.manifest, object_store_problem=self.settings_problem)
-        credentials = self.settings.credentials
-        missing = []
-        if credentials is None or not credentials.access_key_id:
-            missing.append("AWS_ACCESS_KEY_ID")
-        if credentials is None or not credentials.secret_access_key:
-            missing.append("AWS_SECRET_ACCESS_KEY")
+        missing = missing_credentials(self.settings)
         if missing:
             raise unusable_object_store(
                 self.manifest,

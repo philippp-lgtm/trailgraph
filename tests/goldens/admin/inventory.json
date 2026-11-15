@@ -841,6 +841,7 @@
         "backend.lock_timeout",
         "backend.unavailable",
         "config.invalid",
+        "files.store_refused",
         "internal.error",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -3314,6 +3315,11 @@
       "code": "config.invalid",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "files.store_refused",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "functions.slot_invalid",

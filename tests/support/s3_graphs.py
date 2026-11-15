@@ -1,9 +1,10 @@
 """Graphs whose stored files are in the fake object store (object storage O10).
 
-``graph create`` with ``store = "s3"`` and ``files move`` come in later steps; until then a
-test puts a graph into the fake store here: the store marker is created in the bucket and
-the graph's manifest is rewritten as format 2 naming the marker's id. A graph directory
-without a manifest (the storage tests' bare stores) gets a minimal one.
+Tests of the storage and service layers put a graph into the fake store here, without the
+audited switch of ``graph create`` with ``store = "s3"`` (``tests/cli/test_object_store_files.py``
+covers that): the store marker is created in the bucket and the graph's manifest is
+rewritten as format 2 naming the marker's id. A graph directory without a manifest (the
+storage tests' bare stores) gets a minimal one.
 """
 
 from collections.abc import Mapping

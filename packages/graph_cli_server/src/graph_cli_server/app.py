@@ -40,7 +40,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path, PurePosixPath
-from typing import IO, Any, Final, Protocol
+from typing import IO, TYPE_CHECKING, Any, Final, Protocol
 
 import click
 
@@ -89,6 +89,9 @@ from graph_cli_server.problems import (
     wants_problem,
 )
 from graph_cli_server.uploads import DIGEST_RE, Uploads, link_name
+
+if TYPE_CHECKING:
+    from graph_cli.services.files import FileStream, OpenedFile
 
 SERVER_PROGRAM: Final = "graph-server"
 MAX_BODY_BYTES: Final = 16 * 1024 * 1024
@@ -453,8 +456,6 @@ class ServerApp:
         claims = parse_claims_header(environ.get("HTTP_GRAPH_CLI_SKILLS"))
         key = environ.get("HTTP_IDEMPOTENCY_KEY")
         outcome = self.run_command(spec, body, token, claims, None if key is None else str(key))
-        if spec.path == ("file", "path"):
-            outcome = _without_server_path(outcome)
         return answer(outcome, render)
 
     def run_command(
@@ -464,10 +465,13 @@ class ServerApp:
         token: TokenRecord,
         claims: tuple[SkillClaim, ...] = (),
         idempotency_key: str | None = None,
+        *,
+        download: list[OpenedFile] | None = None,
     ) -> Outcome:
         """Run one command for a request; every error becomes an envelope. ``claims`` are
         the graph skills the client has installed (B14.17), ``idempotency_key`` the value
-        of the ``Idempotency-Key`` header."""
+        of the ``Idempotency-Key`` header; ``download`` receives the file ``file path``
+        opened for the download route."""
         command = " ".join(spec.path)
         given = body.get("args", {})
         staged: list[Staged] = []
@@ -491,7 +495,10 @@ class ServerApp:
             with self.uploads.request_dir(token.name) as directory:
                 argv = to_argv(spec, args, self.stager(token, directory, staged))
                 origins = {s.link: s.origin for s in staged}
-                done = self._run(argv, RequestScope(**scope, origins=origins, claims=claims))
+                done = self._run(
+                    argv,
+                    RequestScope(**scope, origins=origins, claims=claims, download=download),
+                )
         except GraphCliError as exc:
             failed = envelope(command, program=PROGRAM, error=exc)
             return Outcome(failed, None, *status_of(failed))
@@ -647,40 +654,58 @@ class ServerApp:
     def _file(
         self, environ: Mapping[str, Any], graph: str, ref: str, token: TokenRecord
     ) -> Response:
-        """``file path`` for the request's actor, then the stored bytes (B14.2)."""
+        """``file path`` for the request's actor, then the stored bytes (B14.2), streamed
+        from ``FileService.open``: the backend's own file through the WSGI file wrapper
+        when it keeps one, else the verified chunks of the object store. The server never
+        writes a copy. What fails before the first byte is an error answer as for any
+        command; what fails later can only end the connection (``_CutOff``)."""
         body: dict[str, JsonValue] = {"args": {"ref": ref, "graph": graph}}
         header = environ.get(ACTOR_HEADER)
         if header:
             body["actor"] = _actor_header(str(header))
-        outcome = self.run_command(self.specs["file/path"], body, token)
+        opened: list[OpenedFile] = []
+        outcome = self.run_command(self.specs["file/path"], body, token, download=opened)
         if outcome.document.get("ok") is not True:
             return _json(outcome.status, dict(outcome.document), exit_code=outcome.exit_code)
-        data = outcome.document["data"]
-        assert isinstance(data, Mapping)
-        tag = f'"{data.get("hash")}"'
+        (stored,) = opened
+        tag = f'"{stored.hash}"'
         # the browser may keep the bytes, but asks every time (the read is authorized)
         cached = [("ETag", tag), ("Cache-Control", "private, no-cache")]
         if _matches(environ.get("HTTP_IF_NONE_MATCH"), tag):
             return Response(304, [b""], headers=cached, content_type="application/octet-stream")
-        stored = Path(str(data["path"]))
-        handle = stored.open("rb")
-        wrapper = environ.get("wsgi.file_wrapper")
-        chunks: Iterable[bytes] = (
-            wrapper(handle, 1024 * 1024) if wrapper is not None else _chunks(handle)
-        )
+        chunks: Iterable[bytes]
+        try:
+            if stored.local_path is not None:
+                handle = _open_stored(stored.local_path, ref, stored)
+                wrapper = environ.get("wsgi.file_wrapper")
+                chunks = wrapper(handle, 1024 * 1024) if wrapper is not None else _chunks(handle)
+            else:
+                chunks = _CutOff(stored.start(), lambda exc: self._cut_off(graph, ref, exc))
+        except GraphCliError as exc:
+            failed = envelope("file path", program=PROGRAM, error=exc)
+            status, exit_code = status_of(failed)
+            return _json(status, dict(failed), exit_code=exit_code)
         return Response(
             200,
             chunks,
             headers=[
-                ("Content-Length", str(stored.stat().st_size)),
+                ("Content-Length", str(stored.size)),
                 ("Content-Disposition", "attachment"),
-                ("Graph-Cli-Content-Hash", str(data.get("hash"))),
-                ("Graph-Cli-Media-Type", str(data.get("media_type") or "")),
+                ("Graph-Cli-Content-Hash", stored.hash),
+                ("Graph-Cli-Media-Type", stored.media_type or ""),
                 (EXIT_HEADER, str(EXIT_OK)),
                 *cached,
             ],
             content_type="application/octet-stream",
         )
+
+    def _cut_off(self, graph: str, ref: str, error: BaseException) -> None:
+        """A download that failed after its headers were sent: logged without a trace."""
+        code = error.code if isinstance(error, GraphCliError) else "internal.error"
+        stamp = self.clock.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        shown = _loggable(f"/v1/graphs/{graph}/files/{ref}")
+        self.log.write(f"{SERVER_PROGRAM} {stamp} GET {shown} cut off: {code}\n")
+        self.log.flush()
 
     def _skill(self, environ: Mapping[str, Any], graph: str, token: TokenRecord) -> Response:
         """A graph's published skill, rendered as ``graph skills install`` would (B14.2)."""
@@ -925,16 +950,6 @@ def status_of(document: Mapping[str, JsonValue]) -> tuple[int, int]:
     return status_for(str(error.get("code")), category), exit_code_for(category)
 
 
-def _without_server_path(outcome: Outcome) -> Outcome:
-    """``file path`` over the API: the stored copy's path on the server means nothing to a
-    caller (``path: null``); the bytes are at ``GET /v1/graphs/{graph}/files/{ref}``."""
-    data = outcome.document.get("data")
-    if outcome.document.get("ok") is not True or not isinstance(data, Mapping):
-        return outcome
-    document = {**outcome.document, "data": {**data, "path": None}}
-    return Outcome(document, None, outcome.status, outcome.exit_code)
-
-
 def restore_names(
     document: Mapping[str, JsonValue], staged: list[Staged]
 ) -> Mapping[str, JsonValue]:
@@ -1062,6 +1077,47 @@ def _actor_header(value: str) -> JsonValue:
 
 def _bad_upload(name: str, message: str) -> GraphCliError:
     return GraphCliError("usage.invalid_argument", f"{name}: {message}", details={"argument": name})
+
+
+def _open_stored(path: Path, ref: str, stored: OpenedFile) -> IO[bytes]:
+    """The backend's own file of a stored blob; gone since it was found is corrupt."""
+    try:
+        return path.open("rb")
+    except OSError as exc:
+        raise GraphCliError(
+            "backend.corrupt",
+            f"the stored copy of {ref} cannot be read ({exc.strerror or exc});"
+            " run graph-admin files verify",
+            details={"id": stored.id, "blob": stored.hash},
+        ) from None
+
+
+class _CutOff:
+    """The chunks of a download whose headers are sent: a failure (a hash mismatch, a lost
+    object store connection) ends the body early instead of raising into the WSGI server.
+    The answer then has fewer bytes than its ``Content-Length``, so the server closes the
+    connection and the client sees a truncated body (and the remote client a hash that
+    does not match); ``on_error`` logs it."""
+
+    def __init__(self, stream: FileStream, on_error: Callable[[BaseException], None]) -> None:
+        self._stream = stream
+        self._on_error = on_error
+
+    def __iter__(self) -> _CutOff:
+        return self
+
+    def __next__(self) -> bytes:
+        try:
+            return next(self._stream)
+        except StopIteration:
+            raise
+        except Exception as exc:
+            self._stream.close()
+            self._on_error(exc)
+            raise StopIteration from None
+
+    def close(self) -> None:
+        self._stream.close()
 
 
 def _chunks(handle: IO[bytes]) -> Iterable[bytes]:

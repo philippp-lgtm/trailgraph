@@ -274,7 +274,11 @@ with some. Clicking an edge shows its relation, ends and qualifiers
 and the history of its source entity. For a stored file (`files:File`)
 the panel offers a preview of PDFs and images in the page and the
 original as a download; reading the bytes needs `read.get` on the file's
-type, as for `file path`. Click an activity entry to jump to its entity;
+type, as for `file path`, and they are read like the server's download
+(checked against their hash while they stream when the graph's files are
+in an object store). When the object store cannot be reached, the panel
+says the stored copy cannot be checked now and offers no preview; the
+rest of the entity is shown as usual. Click an activity entry to jump to its entity;
 Escape closes the panel; on a wide screen the button at its top right
 folds the panel to a strip and back, and the browser remembers the choice (clicking a node
 opens it again). The search box dims everything whose label,

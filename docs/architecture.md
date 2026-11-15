@@ -147,6 +147,7 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.config` | `config.toml`: device id and name, runtime mode, data root, identity providers, lock timeout, durability, audit redaction, access log, output default, file roots, file size limit, the file store (`[files] store`, the shape of `[files.s3]`), read signal |
 | `catalog.object_store` | the object store settings (`ObjectStoreSettings`) from `[files.s3]` and the environment, handed to the catalog and, through the admin wiring, to the maintenance port; storage never reads either |
 | `catalog.file_roots` | `FileRoots`: the named roots of this machine; the origin of a file and where an origin is here |
+| `catalog.file_cache` | `StateFileCache`: this machine's file cache `<state>/files/<graph id>/<hex>`, the `FileCache` port of `services.files` (read-only copies, unique partial files, hash check, use time, 24-hour expiry), shared by `file path` in local mode and the remote client's download |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` (after the manifest check of `storage.files.store_format`); the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
@@ -269,7 +270,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
-| `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path`, `check`; the built-in media type table |
+| `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path` (the backend's file, else a copy in the injected `FileCache`), `open` (the one streaming read of a stored file, for the server's download and, through `open_stored`, the live view), `check`; the built-in media type table |
 
 A write runs in this order: check the graph state and the pinned ontology
 artifact, resolve references, authorize every (action, type) pair, take the

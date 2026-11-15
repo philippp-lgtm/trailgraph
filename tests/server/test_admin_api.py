@@ -23,12 +23,14 @@ from support.admin import admin, init
 from support.admin_api import command, served, upload_tree
 from support.app import create_graph
 from support.equivalence import differences, home_env, normalized
+from support.fake_s3 import ACCESS_KEY_ID, SECRET_ACCESS_KEY, FakeS3
 from support.fixtures import FIXTURES, ONTOLOGIES
 from support.openapi import admin_document
 from support.serve import client_env, graph_server
 from support.server import SERVER_POLICY, call, grant_server, new_token
 
 from graph_cli import __version__
+from graph_cli.storage.files.store_marker import MARKER_KEY
 from graph_cli_admin.maintenance_cli.admin_skills import admin_compat
 from graph_cli_admin.maintenance_cli.commands import all_specs
 from graph_cli_server.admin_api import AdminApi
@@ -563,6 +565,48 @@ def test_an_ontology_is_created_and_released_through_uploads(
     assert broken.status == 400, broken.json
     assert "request-" not in json.dumps(broken.json)
     assert command(app, "audit/verify", root).status == 200
+
+
+def test_graph_create_through_the_api_follows_the_servers_object_store(
+    installation: dict[str, Any], tmp_path: Path
+) -> None:
+    """Object storage O7 in the remote admin mode: the server's ``[files] store`` and
+    object store settings decide, as for a local ``graph create``."""
+    config = Path(installation["env"]["XDG_CONFIG_HOME"]) / "graph_cli" / "config.toml"
+    config.write_text(config.read_text() + '\n[files]\nstore = "s3"\n')
+    with FakeS3() as fake:
+        env = {
+            **installation["env"],
+            "GRAPH_CLI_S3_BUCKET": fake.bucket,
+            "AWS_REGION": fake.region,
+            "AWS_ENDPOINT_URL_S3": fake.endpoint_url,
+            "AWS_ACCESS_KEY_ID": ACCESS_KEY_ID,
+            "AWS_SECRET_ACCESS_KEY": SECRET_ACCESS_KEY,
+        }
+        app = served({**installation, "env": env}, tmp_path)
+        root = installation["tokens"]["root"]
+        created = command(
+            app,
+            "graph/create",
+            root,
+            args={"name": "second", "--ontology": upload_tree(app, root, V100)},
+        )
+        assert created.status == 200, created.json
+        store = created.json["data"]["store"]
+        marker = json.loads(fake.get(MARKER_KEY) or b"{}")
+        assert store == {
+            "backend": "files",
+            "format_version": 1,
+            "blob_location": "s3",
+            "store_id": marker["store_id"],
+        }
+        switch = [
+            e for e in audit_events(installation["root"]) if "blob_store" in e.get("change", {})
+        ]
+        assert len(switch) == 1 and switch[0]["change"]["blob_store"]["to"] == "s3"
+        verified = command(app, "audit/verify", root)
+        assert verified.status == 200, verified.json
+        assert verified.json["data"]["counts"]["error"] == 0
 
 
 def test_render_and_pull_answer_their_files_instead_of_a_server_path(

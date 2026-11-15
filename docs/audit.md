@@ -227,6 +227,20 @@ from its recorded hash, is `integrity.audit.slot_mismatch` (its target names
 whose slot switch never happened is an interrupted publish
 (`intent_without_effect`, info).
 
+## Blob location
+
+Where a graph keeps its stored files (in the data root, `local`, or in an
+object store, `s3`) is a configuration of the graph: switching it is a
+`maint.graph_configure` operation with an intent carrying
+`change.blob_store{from, to, store_id, blobs, bytes}` (the locations
+before and after, the object store's id from its marker, and the number
+and bytes of the stored files the switch covered), the manifest replaced
+by one rename, then an installation event that anchors the intent. A graph
+is always created `local`: `graph create` with `[files] store = "s3"`
+records the switch right after the genesis (`blobs` and `bytes` 0). An
+intent whose `blob_store` is not that shape (an unknown location, `from`
+equal to `to`, a `store_id` that is not a UUID) is `event_malformed`.
+
 ## Migration verification
 
 A release with a data migration commits one transaction whose changeset has a `migration`

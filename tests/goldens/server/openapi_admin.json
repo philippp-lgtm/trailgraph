@@ -8309,7 +8309,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.graph_name_taken, admin.model_invalid, admin.remote_mode, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.graph_name_taken, admin.model_invalid, admin.remote_mode, files.store_refused, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -8331,6 +8331,7 @@
               "admin.graph_name_taken",
               "admin.model_invalid",
               "admin.remote_mode",
+              "files.store_refused",
               "remote.client_outdated"
             ]
           },

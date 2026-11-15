@@ -543,6 +543,7 @@ SPECS: Final = (
             *CHANGE_ERRORS,
             "admin.model_invalid",
             "admin.graph_name_taken",
+            "files.store_refused",  # [files] store = "s3": the object store refused the marker
         ),
         handler=create,
         output=CREATE_OUTPUT,

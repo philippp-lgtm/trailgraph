@@ -21,6 +21,7 @@ from graph_cli.audit.schema import (
     INSTALLATION,
     MAX_RESULT_FINDINGS,
     event_problems,
+    is_blob_store_change,
     is_ext_state_action,
     is_migration_change,
 )
@@ -403,6 +404,28 @@ def actions_change(old_hash: str | None, new_hash: str, compiled_hash: str) -> d
     """``change`` of a ``maint.graph_configure`` intent that publishes the action catalog
     (actions plan A8), shaped like ``functions_change``."""
     return {"actions": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
+
+
+def blob_store_change(
+    old: str, new: str, store_id: str, *, blobs: int, size: int
+) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that switches where the graph keeps
+    its stored files (object storage O7): the location before and after (``local`` or
+    ``s3``), the object store's id and the number and bytes of the stored files the switch
+    covered. ``audit verify`` follows these intents from ``local`` (a graph is created
+    local, so ``graph create`` in an object store records one right after the genesis)."""
+    change: dict[str, JsonValue] = {
+        "blob_store": {
+            "from": old,
+            "to": new,
+            "store_id": store_id,
+            "blobs": blobs,
+            "bytes": size,
+        }
+    }
+    if not is_blob_store_change(change["blob_store"]):
+        raise _internal("the blob store switch does not fit change.blob_store")
+    return change
 
 
 def policy_change(old_hash: str | None, new_hash: str) -> dict[str, JsonValue]:

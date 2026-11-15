@@ -53,14 +53,18 @@ unknown `format_version` or an invalid value stops the command.
 
 ### Object storage (in development)
 
-Keeping stored files in an S3-compatible object store is in development and
-not usable yet: this version creates every graph with its files in the data
-root and cannot move a graph's files to an object store. The settings are
-read and checked already:
+Keeping stored files in an S3-compatible object store is in development:
+with `store = "s3"`, `graph-admin graph create` puts a new graph's stored
+files into the object store (the graph is created with its files in the
+data root and switched in the same command, an audited configuration
+change); existing graphs cannot be moved yet, and switching the setting
+never moves one. A graph whose files are in an object store reads them
+through the server, the live view and `graph file path` (a read-only copy
+in the [file cache](files.md#file-cache)) like any other graph.
 
 ```toml
 [files]
-store = "local"          # default; "s3" is reserved for object storage
+store = "local"          # default; "s3": new graphs keep their stored files in [files.s3]
 
 [files.s3]
 bucket = "example-bucket"

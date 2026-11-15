@@ -10,6 +10,7 @@ taxonomy are not a shape problem; ``unknown_actions`` lists them separately
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Final
 
@@ -620,6 +621,16 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
                     f"a {key} change needs change.{key}{{from: hash or null, to: hash"
                     + (", compiled_hash: hash}" if compiled else "}")
                 )
+    blob_store = entries.get("blob_store")
+    if (
+        CONFIGURE_ACTION in actions
+        and "blob_store" in entries
+        and not is_blob_store_change(blob_store)
+    ):
+        problems.append(
+            "a blob_store change needs change.blob_store{from, to: local or s3 (not the"
+            " same), store_id: uuid, blobs, bytes}"
+        )
     for key in ("policy", "installation_policy"):
         if POLICY_ACTION in actions and key in entries:
             policy = entries[key]
@@ -633,6 +644,31 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
                     f"a policy change needs change.{key}{{from: hash or null, to: hash}}"
                 )
     return problems
+
+
+BLOB_LOCATIONS: Final = ("local", "s3")
+
+
+def is_blob_store_change(value: JsonValue) -> bool:
+    """``change.blob_store`` of a ``maint.graph_configure`` intent (object storage O7): the
+    graph's blob location before and after, the object store's id (the marker's) and the
+    number and bytes of the stored files the switch covered."""
+    keys = {"from", "to", "store_id", "blobs", "bytes"}
+    if not (isinstance(value, Mapping) and set(value) == keys):
+        return False
+    store_id = value["store_id"]
+    try:
+        canonical = isinstance(store_id, str) and str(uuid.UUID(store_id)) == store_id
+    except ValueError:
+        canonical = False
+    return (
+        value["from"] in BLOB_LOCATIONS
+        and value["to"] in BLOB_LOCATIONS
+        and value["from"] != value["to"]
+        and canonical
+        and _is_size(value["blobs"])
+        and _is_size(value["bytes"])
+    )
 
 
 def _is_pin(pin: JsonValue) -> bool:
