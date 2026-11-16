@@ -236,14 +236,21 @@ installed skills.
 Starting `graph` or `graph-admin` costs about 200 ms, nearly all of it
 importing the program, and an end-to-end test runs a program a dozen times or
 more. So on Linux a run is forked from a launcher (`tests/support/launcher.py`):
-one process per program and test worker that has imported the program the way
-its console script does; each run is a child of it with the run's arguments,
-environment, working directory and standard streams, and exits with the run's
-status. No state of one run reaches the next, because every run forks from the
-same untouched launcher. That only holds while importing a program reads
-nothing of the process (environment, home, working directory, clock,
-randomness, terminal): `tests/test_source_rules.py` enforces it, and
-`tests/test_harness.py` checks that forked runs answer like fresh processes.
+one process per program and test worker that has imported the program's entry
+point the way its console script does; each run is a child of it with the
+run's arguments, environment, working directory and standard streams (pipes),
+and ends with the run's exit status once its pipes are closed. No state of one
+run reaches the next, because every run forks from the same untouched
+launcher. That only holds while importing a program reads nothing of the
+process (environment, home, working directory, clock, randomness, terminal)
+and writes nothing: `tests/test_source_rules.py` checks the source,
+`tests/test_harness.py` traces the import and compares forked runs with fresh
+processes, and the launcher refuses to start when the import writes to stderr.
+
+What a fork cannot give is a run's own interpreter start: a run whose
+environment sets `PYTHON*`, `LANG` or `LC_*` differently starts as a real
+process, and all runs of one launcher share a string hash seed, so a test that
+checks that output stays the same between runs makes one of them fresh.
 Tests that build their own command line call `launcher.run` instead of
 `subprocess.run`. `run_cli(..., fresh=True)` starts a real process, as
 `tests/test_smoke.py` does; `GRAPH_CLI_TEST_FORK=0` does so for every run

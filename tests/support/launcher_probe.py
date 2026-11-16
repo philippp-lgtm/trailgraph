@@ -3,6 +3,7 @@
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -35,4 +36,10 @@ def main() -> int:
         time.sleep(30)
     if action == "kill":
         os.kill(os.getpid(), signal.SIGKILL)
+    if action == "interrupt":
+        raise KeyboardInterrupt
+    if action == "dunder":
+        print("via __stdout__", file=sys.__stdout__)
+    if action == "leave_child":  # a child that keeps stdout open after the program exits
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.5)"])
     return 0

@@ -64,7 +64,15 @@ PROCESS_STATE = {
     ("stdout", "isatty"),
     ("stderr", "isatty"),
     ("time", "monotonic"),
+    ("time", "monotonic_ns"),
+    ("time", "perf_counter"),
+    ("time", "perf_counter_ns"),
+    ("time", "process_time"),
+    ("shutil", "get_terminal_size"),
 }
+# kernel.timing takes the clock at import on purpose: its startup phase measures the program's
+# imports (in forked test runs it counts from the launcher's import; tests only assert > 0).
+IMPORT_TIME_ALLOWED = {"graph_cli.kernel.timing"}
 
 WALL_CLOCK_ALLOWED = {"graph_cli.kernel.clock"}
 COMMIT_ALLOWED = ("graph_cli.services.write", "graph_cli.storage")
@@ -206,7 +214,7 @@ def test_importing_reads_nothing_of_the_process() -> None:
     """Importing a module reads no environment, home, working directory, clock, randomness or
     terminal: a run of a program then depends only on how it is started, and the tests may
     fork runs from a process that imported the program once (``support.launcher``)."""
-    assert _violations(_import_time_reads, lambda name: False) == {}
+    assert _violations(_import_time_reads, IMPORT_TIME_ALLOWED.__contains__) == {}
     controls = (
         "import os\nHOME = os.environ['HOME']",
         "from pathlib import Path\nclass C:\n    root = Path.home()",
