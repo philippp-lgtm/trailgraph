@@ -1,6 +1,8 @@
 """What the installed policy and the model of a release say about markings (field visibility
 plan F2): the policy-side warnings of ``policies_affected``, which runs for ``ontology release``,
-``graph push`` and ``ontology diff --graph``.
+``graph push`` and ``ontology diff --graph``; ``admin.marking_ungranted`` also for an installation
+policy file (``policy check|diff|apply``) and ``admin.marking_in_expression`` also for the
+actions of ``graph actions publish``.
 
 A marking is declared by the ontology and granted by the installation policy (``markings`` of a
 grant, compiled to ``marking:<graph>/<curie>`` rules). A marked attribute is hidden from every
@@ -64,6 +66,19 @@ def warnings(
     return tuple(found)
 
 
+def ungranted_warnings(
+    policy: PolicySet, entry: GraphEntry, model: CompiledModel
+) -> tuple[WarningRecord, ...]:
+    """``admin.marking_ungranted`` for the pinned ``model`` of ``entry`` under an installation
+    policy file that is not installed yet (``policy check|diff|apply``): the markings the model
+    uses that no grant of ``policy`` names."""
+    return tuple(
+        _ungranted(
+            _declared(model), named_markings(policy.documents, entry.id), policy, entry, file=True
+        )
+    )
+
+
 def precondition_warnings(
     model: CompiledModel, actions: KineticSlot, entry: GraphEntry
 ) -> tuple[WarningRecord, ...]:
@@ -107,6 +122,8 @@ def _ungranted(
     granted: Iterable[str],
     policy: PolicySet,
     entry: GraphEntry,
+    *,
+    file: bool = False,
 ) -> list[WarningRecord]:
     named = set(granted)
     builtin = len(policy.documents) > 0 and policy.documents[0] == BUILTIN_POLICY
@@ -114,19 +131,28 @@ def _ungranted(
     for marking, attributes in declared.items():
         if marking in named:
             continue
-        effect = (
-            "no installation policy is installed, so no app caller can read or write them (the"
-            " built-in policy grants no marking); only maintainer surfaces show them"
-            if builtin
-            else "only maintainer surfaces show them until a grant of the installation policy"
-            " names the marking"
-        )
+        if file:
+            effect = (
+                "under this policy no app caller can read or write them; only maintainer"
+                " surfaces show them until a grant names the marking"
+            )
+        elif builtin:
+            effect = (
+                "no installation policy is installed, so no app caller can read or write them"
+                " (the built-in policy grants no marking); only maintainer surfaces show them"
+            )
+        else:
+            effect = (
+                "only maintainer surfaces show them until a grant of the installation policy"
+                " names the marking"
+            )
         shown = ", ".join(attributes[:5]) + (", ..." if len(attributes) > 5 else "")
+        where = "grant of this policy" if file else "installed grant"
         found.append(
             WarningRecord(
                 "admin.marking_ungranted",
                 f"marking {marking} is used in graph {entry.name} ({shown}) and granted by no"
-                f" installed grant: {effect}",
+                f" {where}: {effect}",
                 {
                     "graph": entry.name,
                     "marking": marking,

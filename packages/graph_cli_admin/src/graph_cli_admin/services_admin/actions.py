@@ -16,7 +16,9 @@ per graph: an action named like a published function is refused (``action.name_t
 and the other way round (``function.name_taken``). Publishing the same files against the
 same pin again changes nothing; an empty folder publishes an empty catalog (it unpublishes
 every action) and, with nothing published, changes nothing. ``--dry-run`` stops after the
-checks.
+checks. A precondition that names a marked attribute warns with
+``admin.marking_in_expression`` (field visibility plan F2), also on a dry run and when
+nothing changes.
 
 ``show`` is read-only for the data root: no lock, no event, authorized
 ``maint.graph_configure``.
@@ -32,7 +34,7 @@ from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kinetic.action_compile import compile_actions
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli_admin.services_admin import kinetic_slots
+from graph_cli_admin.services_admin import kinetic_slots, marking_warnings
 from graph_cli_admin.services_admin.catalog_follow import ProblemHints
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
@@ -106,6 +108,7 @@ def publish(
         source=source,
         reason=reason,
         dry_run=dry_run,
+        warn=lambda entry, model, slot: marking_warnings.precondition_warnings(model, slot, entry),
     )
 
 

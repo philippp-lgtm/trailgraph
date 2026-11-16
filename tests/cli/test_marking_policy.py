@@ -1,7 +1,7 @@
 """S: markings in the installation policy and what a release says about them (field visibility
-plan F2, F3, step 2): ``policy check`` against the pinned model, and the warnings of ``ontology
-release``, ``ontology diff --graph`` and ``graph push``. Graph and markings are those of the
-``personnel`` series."""
+plan F2, F3, step 2): ``policy check|diff|apply`` against the pinned model, and the warnings of
+``ontology release``, ``ontology diff --graph``, ``graph push`` and ``graph actions publish``.
+Graph and markings are those of the ``personnel`` series."""
 
 import shutil
 from pathlib import Path
@@ -115,7 +115,9 @@ def test_a_write_list_naming_a_marked_attribute_without_its_marking_warns(
     no_marking = policy("ex:personal", WRITES).replace("    markings: [ex:personal]\n", "")
     checked = check(run_cli, tmp_path, no_marking)
     assert checked.code == 0, checked.envelope
-    assert checked.warning_codes == ["admin.policy_unusable_write"] * 2
+    assert checked.warning_codes == ["admin.policy_unusable_write"] * 2 + [
+        "admin.marking_ungranted"
+    ]
     assert details(checked, "admin.policy_unusable_write") == [
         {
             "graph": "example_graph",
@@ -146,6 +148,42 @@ def test_a_write_list_naming_a_marked_attribute_without_its_marking_warns(
     )
     assert explained.code == 0, explained.envelope
     assert explained.warning_codes == checked.warning_codes
+
+
+def test_a_policy_that_grants_no_marking_in_use_warns_on_check_diff_and_apply(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """A policy apply that drops the grant of a used marking is not silent until the next
+    release: ``check``, ``diff`` and ``apply`` judge the file against every pinned model."""
+    assert apply(run_cli, tmp_path, policy("ex:personal")).code == 0
+    dropped = policy("ex:personal").replace("    markings: [ex:personal]\n", "")
+    expected = {
+        "graph": "example_graph",
+        "marking": "ex:personal",
+        "count": 2,
+        "attributes": ["ex:Person.birth_date", "ex:Person.email"],
+    }
+    checked = check(run_cli, tmp_path, dropped)
+    path = str(tmp_path / "work" / "installation.yaml")
+    diffed = admin(run_cli, "policy", "diff", path)
+    applied = admin(run_cli, "policy", "apply", path, "--reason", "test policy")
+    for outcome in (checked, diffed, applied):
+        assert outcome.code == 0, outcome.envelope
+        assert details(outcome, "admin.marking_ungranted") == [expected]
+    message = next(w["message"] for w in checked.warnings if w["code"].endswith("ungranted"))
+    assert "granted by no grant of this policy" in message
+    assert "no app caller can read or write them" in message
+    assert applied.data["applied"] is True  # warnings never block
+    # a graph policy grants no marking: it is not judged for them
+    graph_policy = write_policy(
+        tmp_path / "work",
+        "graph.yaml",
+        "schema: graph_cli.policy/1\nid: graph\n"
+        'deny:\n  - {id: no_history, action: ["read.history"]}\n',
+    )
+    on_graph = admin(run_cli, "policy", "check", str(graph_policy), "--graph", "example_graph")
+    assert on_graph.code == 0, on_graph.envelope
+    assert "admin.marking_ungranted" not in on_graph.warning_codes
 
 
 def test_markings_need_named_graphs(run_cli: CliRunner, graph_id: str, tmp_path: Path) -> None:
@@ -321,6 +359,17 @@ examples:
 """
 
 
+TIDY = {
+    "admin.marking_in_expression": {
+        "graph": "example_graph",
+        "kind": "precondition",
+        "name": "tidy_person.has_mail",
+        "attributes": ["ex:Person.email"],
+        "markings": ["ex:personal"],
+    }
+}
+
+
 def test_a_published_action_precondition_over_a_marked_attribute_warns(
     run_cli: CliRunner, graph_id: str, tmp_path: Path
 ) -> None:
@@ -329,6 +378,9 @@ def test_a_published_action_precondition_over_a_marked_attribute_warns(
     (folder / "tidy_person.yaml").write_text(ACTION)
     published = admin(run_cli, "graph", "actions", "publish", "example_graph", str(folder))
     assert published.code == 0, published.envelope
+    assert details(published, "admin.marking_in_expression") == [
+        TIDY["admin.marking_in_expression"]
+    ]
     assert apply(run_cli, tmp_path, policy("ex:personal")).code == 0
     patch = release_dir(tmp_path, "1.0.1", {"Full name.": "The full name."})
     previewed = admin(run_cli, "ontology", "diff", str(patch), "--graph", "example_graph")
@@ -344,17 +396,6 @@ def test_a_published_action_precondition_over_a_marked_attribute_warns(
                 "markings": ["ex:personal"],
             }
         ]
-
-
-TIDY = {
-    "admin.marking_in_expression": {
-        "graph": "example_graph",
-        "kind": "precondition",
-        "name": "tidy_person.has_mail",
-        "attributes": ["ex:Person.email"],
-        "markings": ["ex:personal"],
-    }
-}
 
 
 def test_push_looks_at_the_actions_it_publishes(
@@ -398,3 +439,29 @@ def test_a_pushed_action_without_a_marked_precondition_adds_no_warning(
     pushed = admin(run_cli, "graph", "push", "example_graph", str(work))
     assert pushed.code == 0, pushed.envelope
     assert "admin.marking_in_expression" not in pushed.warning_codes
+
+
+def test_actions_publish_alone_warns_about_a_marked_precondition(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """``graph actions publish`` judges the catalog it publishes, as a push does: on a dry run,
+    on the publish and when nothing changes; a precondition over an unmarked attribute does
+    not warn."""
+    folder = tmp_path / "actions"
+    folder.mkdir()
+    (folder / "tidy_person.yaml").write_text(ACTION)
+    command = ("graph", "actions", "publish", "example_graph", str(folder))
+    dry = admin(run_cli, *command, "--dry-run")
+    published = admin(run_cli, *command)
+    unchanged = admin(run_cli, *command)
+    for outcome in (dry, published, unchanged):
+        assert outcome.code == 0, outcome.envelope
+        assert details(outcome, "admin.marking_in_expression") == [
+            TIDY["admin.marking_in_expression"]
+        ]
+    assert (dry.data["published"], published.data["published"]) == (False, True)
+    assert unchanged.data["published"] is False
+    (folder / "tidy_person.yaml").write_text(ACTION.replace("attr: email", "attr: team"))
+    plain = admin(run_cli, *command)
+    assert plain.code == 0, plain.envelope
+    assert "admin.marking_in_expression" not in plain.warning_codes

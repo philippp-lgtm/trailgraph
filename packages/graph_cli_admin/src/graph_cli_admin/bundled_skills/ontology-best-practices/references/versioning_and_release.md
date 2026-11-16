@@ -57,7 +57,9 @@ A marking hides an attribute from every reader who does not hold it (what reader
   not judged. Rename a marked attribute with `renamed_from` and keep its markings; give a new
   meaning a new name.
 - **Other warnings** (state based, shown by `graph-admin ontology release`, `graph-admin graph push` and
-  `graph-admin ontology diff --graph`): `admin.marking_ungranted` (a marking in use is granted by no
+  `graph-admin ontology diff --graph`; the first also by `graph-admin policy check` and
+  `graph-admin policy apply` of the installation policy, the last also by
+  `graph-admin graph actions publish`): `admin.marking_ungranted` (a marking in use is granted by no
   installed grant; only maintainer surfaces see those attributes, and without an installation policy
   no app caller can read or write them), `admin.policy_unknown_marking` (an installed grant names
   a marking the version does not declare), `admin.marking_blocks_create` (a required

@@ -437,12 +437,16 @@ sees everything, because rights add up.
   `writes` name a marked attribute, or cover one with `true`, without the same
   grant holding its markings (another grant of the caller may add them), and
   when a grant creates a type whose required marked attribute without default it
-  does not hold, which can then never be created. `ontology release`,
+  does not hold, which can then never be created. An installation policy that
+  names no grant for a marking some graph's pinned model uses warns
+  `admin.marking_ungranted` there as well, so a policy change that drops such a
+  grant is not silent until the next release. `ontology release`,
   `graph push` and `ontology diff --graph` warn `admin.marking_ungranted` (a
   marking the new version uses that no installed grant names: only maintainer
   surfaces show those attributes), `admin.marking_blocks_create`,
   `admin.marking_in_expression` (a rule, lifecycle guard or action precondition
-  names a marked attribute: its refusals are a covert channel, see the
+  names a marked attribute; `graph actions publish` warns it for the
+  preconditions it publishes: its refusals are a covert channel, see the
   [security model](security_model.md#field-visibility)), `admin.marking_removed`
   (a marking was removed from an attribute, and the values, history included,
   become readable for every caller that sees the type) and

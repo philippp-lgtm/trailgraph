@@ -12,6 +12,9 @@ can satisfy with ``admin.policy_unusable_write``; an abstract type is ``policy.i
 A grant's ``markings`` are checked against the same models: a marking the model does not declare
 warns with ``admin.policy_unknown_marking``, and a ``writes`` entry that names or covers a marked
 attribute without the grant holding its markings warns with ``admin.policy_unusable_write``.
+An installation policy that names no grant for a marking some graph's pinned model uses warns
+with ``admin.marking_ungranted`` (``check``, ``diff``, ``apply`` and ``explain --file``; only
+maintainer surfaces show those attributes then).
 Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
@@ -47,7 +50,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -125,6 +128,7 @@ from graph_cli.services.term_model import (
 from graph_cli.services.visibility import attribute_mask, filter_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
+from graph_cli_admin.services_admin import marking_warnings
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.tokens import check_name, check_roles, server_actor
@@ -602,19 +606,27 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
     graphs = {e.name: e.id for e in entries}
     entry = ctx.resolve(graph_ref, command) if graph_ref is not None else None
     own = pinned_model(ctx.catalog, entry) if entry is not None else None
+    loaded: dict[GraphId, CompiledModel | None] = {}
 
-    def models(graph: GraphId) -> TermModel | None:
-        """The pinned model of a graph a rule names, condensed; ``None`` (not checked) for an
-        archived graph and one whose model cannot be read."""
-        found = next((e for e in entries if e.id == graph), None)
-        if found is None or found.state == "archived":
+    def model_of(found: GraphEntry) -> CompiledModel | None:
+        """The pinned model of a graph, read once; ``None`` (not checked) for an archived graph
+        and one whose model cannot be read."""
+        if found.state == "archived":
             return None
         if entry is not None and own is not None and found.id == entry.id:
-            return term_model(own)
-        try:
-            return term_model(pinned_model(ctx.catalog, found))
-        except GraphCliError:
-            return None
+            return own
+        if found.id not in loaded:
+            try:
+                loaded[found.id] = pinned_model(ctx.catalog, found)
+            except GraphCliError:
+                loaded[found.id] = None
+        return loaded[found.id]
+
+    def models(graph: GraphId) -> TermModel | None:
+        """The pinned model of a graph a rule names, condensed (see ``model_of``)."""
+        found = next((e for e in entries if e.id == graph), None)
+        model = model_of(found) if found is not None else None
+        return term_model(model) if model is not None else None
 
     classes = own.classes if own is not None else None
     compiled = compile_policy(
@@ -731,7 +743,31 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             for w in compiled.unusable_marked_writes
         ),
     )
-    return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
+    ungranted = (
+        _ungranted(compiled, entries, model_of) if compiled.layer == INSTALLATION_LAYER else ()
+    )
+    return _Source(
+        compiled,
+        entry,
+        (*warnings, *ungranted, *(role_warning if compiled.unknown_roles else ())),
+    )
+
+
+def _ungranted(
+    compiled: Compiled,
+    entries: Sequence[GraphEntry],
+    model_of: Callable[[GraphEntry], CompiledModel | None],
+) -> tuple[WarningRecord, ...]:
+    """``admin.marking_ungranted`` for every graph whose pinned model uses a marking that no
+    grant of the installation policy ``compiled`` names (an archived graph and one whose model
+    cannot be read are not checked)."""
+    future = policy_set(compiled.document)
+    found: list[WarningRecord] = []
+    for graph in sorted(entries, key=lambda e: e.name):
+        model = model_of(graph)
+        if model is not None and model.used_markings():
+            found += marking_warnings.ungranted_warnings(future, graph, model)
+    return tuple(found)
 
 
 _KIND_TEXT: Final = {
