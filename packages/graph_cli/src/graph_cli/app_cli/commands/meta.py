@@ -72,6 +72,9 @@ WHOAMI_OUTPUT: Final = obj(
                             "writes": obj(extra=obj(extra=_VERB_RIGHT)),
                             # access_control.effective.visibility: the visible concrete types
                             "reads": STRINGS,
+                            # access_control.effective.marking_allowance: the markings held,
+                            # when the graph's model uses some the caller lacks
+                            "markings": STRINGS,
                         },
                     )
                 ),

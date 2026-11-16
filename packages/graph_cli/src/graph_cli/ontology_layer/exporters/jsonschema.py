@@ -12,7 +12,8 @@ stored blob, the path segments, the full BCP 47 grammar and canonical case
 of a tag). Facets of a language-tagged datatype apply to its ``value``.
 A label role is the annotation ``x-graph_cli-role`` on the property (draft
 2020-12 collects unknown keywords as annotations; ``$comment`` is not one).
-Validators in a strict mode, such as Ajv's, need the keyword registered.
+A marked attribute carries ``x-graph_cli-markings`` (the marking CURIEs a reader must hold).
+Validators in a strict mode, such as Ajv's, need the keywords registered.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from graph_cli.ontology_layer.vocabulary import FILE_ROOT_RE, LANG_BASES
 
 DIALECT: Final = "https://json-schema.org/draft/2020-12/schema"
 ROLE_KEYWORD: Final = "x-graph_cli-role"
+MARKINGS_KEYWORD: Final = "x-graph_cli-markings"
 BASE_KEYWORD: Final = "x-graph_cli-base"  # bases JSON Schema cannot fully express
 
 _UUID: Final = {
@@ -127,6 +129,8 @@ def _attribute_schema(model: CompiledModel, attribute: AttributeDef) -> dict[str
     schema["description"] = attribute.doc.summary
     if attribute.role is not None:
         schema[ROLE_KEYWORD] = attribute.role
+    if attribute.markings:
+        schema[MARKINGS_KEYWORD] = list(attribute.markings)
     if attribute.default is not None:
         schema["default"] = attribute.default
     return schema

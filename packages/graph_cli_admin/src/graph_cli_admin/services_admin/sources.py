@@ -81,6 +81,7 @@ from graph_cli_admin.services_admin import (
     catalog_follow,
     functions,
     kinetic_slots,
+    marking_warnings,
     release,
     skill,
 )
@@ -611,6 +612,8 @@ def push(
     if not dry_run:
         write_base(source, base_document(after, after.pin, final, final_functions, final_actions))
     warnings = planned.warnings if planned is not None else ()
+    if action_slot is not None:  # the published catalog was not looked at: judge the pushed one
+        warnings += marking_warnings.precondition_warnings(model_a, action_slot, entry)
     if checked is not None:
         warnings += checked.warnings(after, name)
     return Pushed(after, data, seq, warnings)

@@ -10,6 +10,7 @@ from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
 from graph_cli.kernel.actor import ActorContext, Assurance, ClientInfo, Entrypoint, Facet
 from graph_cli.kernel.ids import GraphId, parse_id
 from graph_cli.kernel.ports.catalog import GraphEntry
+from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.services.visibility import Visibility, actor_key
 
@@ -63,16 +64,16 @@ def token(*roles: str, session: str | None = None) -> ActorContext:
 
 def test_a_limited_actor_gets_its_types_and_an_unlimited_one_none() -> None:
     cache = Visibility()
-    assert cache.of(token("reporting"), entry(), POLICY, MODEL) == {"nas:Note"}
-    assert cache.of(token("auditor"), entry(), POLICY, MODEL) is None
-    assert cache.of(token("reporting", "auditor"), entry(), POLICY, MODEL) is None
-    assert cache.of(token(), entry(), POLICY, MODEL) == frozenset()
+    assert cache.of(token("reporting"), entry(), POLICY, MODEL).types == {"nas:Note"}
+    assert cache.of(token("auditor"), entry(), POLICY, MODEL).types is None
+    assert cache.of(token("reporting", "auditor"), entry(), POLICY, MODEL).types is None
+    assert cache.of(token(), entry(), POLICY, MODEL).types == frozenset()
 
 
 def test_a_graph_that_no_rule_limits_is_not_filtered() -> None:
     cache = Visibility()
-    assert cache.of(token("reporting"), entry(OTHER), POLICY, MODEL) is None
-    assert cache.of(token(), entry(), BUILTIN_POLICY_SET, MODEL) is None
+    assert cache.of(token("reporting"), entry(OTHER), POLICY, MODEL) == UNLIMITED
+    assert cache.of(token(), entry(), BUILTIN_POLICY_SET, MODEL) == UNLIMITED
     assert not cache.limited(BUILTIN_POLICY_SET, EXAMPLE)
     assert cache.limited(POLICY, EXAMPLE)
 
@@ -109,9 +110,9 @@ def test_the_actor_cache_is_bounded() -> None:
 
 def test_the_filtered_model_is_cached_per_pin_and_visible_set() -> None:
     cache = Visibility()
-    visible = frozenset({"nas:Note"})
+    visible = ReadView(frozenset({"nas:Note"}))
     first = cache.model(entry(), MODEL, visible)
     assert cache.model(entry(), MODEL, visible) is first
-    assert cache.model(entry(), MODEL, frozenset({"nas:Topic"})) is not first
+    assert cache.model(entry(), MODEL, ReadView(frozenset({"nas:Topic"}))) is not first
     assert cache.model(entry(artifact="sha256:b"), MODEL, visible) is not first
     assert set(first.classes) == {"nas:Note"}

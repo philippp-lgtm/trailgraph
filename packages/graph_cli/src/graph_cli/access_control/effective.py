@@ -4,7 +4,8 @@ Pure helpers over ``authorize()`` for ``graph whoami``, ``graph-admin
 policy explain`` and the admin API: the access level per graph, whether an
 actor maintains a graph, the actions a deny rule withholds below it, the
 obligations of the allowed writes, what a write allow list lets a caller write
-(``write_allowance``), which types a caller sees (``visibility``, ``read_allowance``), the
+(``write_allowance``), which types a caller sees (``visibility``, ``read_allowance``), which
+markings it holds (``held_markings``, ``marking_allowance``), the
 project scope that applies and the warning for a project the installation policy has no scope
 for. Nothing here decides on its own; every answer is a set
 of ``authorize()`` calls.
@@ -27,7 +28,7 @@ from graph_cli.access_control.documents import (
     rules,
     strings,
 )
-from graph_cli.access_control.terms import TermModel, TypeTerms, term_resource
+from graph_cli.access_control.terms import TermModel, TypeTerms, marking_resource, term_resource
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
     PROJECT_MAINT_ACTIONS,
@@ -44,6 +45,7 @@ from graph_cli.kernel.ports.policy import PolicySet
 NO_PROJECT: Final = "no_project"
 # Obligations do not lower a level: a reason is given, one op at a time.
 _PROBE: Final = AuthzContext(op_count=1, has_reason=True, dry_run=False)
+_UNDECLARED_MARKING: Final = "probe:undeclared"  # a marking no model declares
 
 
 def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
@@ -235,6 +237,53 @@ def read_allowance(
     every type; see ``visibility``)."""
     visible = visibility(actor, graph, policy, concrete_types)
     return None if visible is None else sorted(visible)
+
+
+def held_markings(
+    actor: ActorContext, graph: GraphId, policy: PolicySet, markings: Iterable[str]
+) -> frozenset[str]:
+    """The markings of ``markings`` ``actor`` holds in ``graph`` (field visibility plan F4): the
+    ones for which ``authorize`` allows ``read.get`` on ``marking:<graph>/<curie>``, one probe
+    per marking and none recorded (like the type probes of ``visibility``). ``markings`` are
+    the markings the graph's pinned model uses; a name outside the marking grammar is never
+    held (fail closed). Nothing is held without a rule that names the marking: no grant of a
+    graph, scope or deny rule covers a marking resource, and the project-admin ceiling refuses
+    it, so only the maintainer rules (``*`` on ``*``) and ``markings`` grants allow it. The
+    caller caches the answer per policy hash, actor facts and pin."""
+    held: set[str] = set()
+    for marking in markings:
+        resource = marking_resource(graph, marking)
+        if (
+            resource is not None
+            and authorize(actor, "read.get", resource, _PROBE, policy).effect == "allow"
+        ):
+            held.add(marking)
+    return frozenset(held)
+
+
+def holds_every_marking(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
+    """Whether ``actor`` holds every marking of ``graph`` whatever its model declares, for a
+    graph whose model cannot be read: only a rule that covers every resource (the maintainer's
+    ``*`` on ``*``) allows ``read.get`` on a marking nobody declared, because a ``markings``
+    grant names its markings one by one."""
+    resource = marking_resource(graph, _UNDECLARED_MARKING)
+    assert resource is not None
+    return authorize(actor, "read.get", resource, _PROBE, policy).effect == "allow"
+
+
+def marking_allowance(
+    actor: ActorContext, graph: GraphId, policy: PolicySet, used: Iterable[str]
+) -> list[str] | None:
+    """What a caller may see of the marked attributes of ``graph``, for ``whoami`` and ``policy
+    explain``: the sorted markings of ``used`` it holds, or ``None`` when there is nothing to say
+    (no marking is used, or it holds every one: it sees every marked attribute). An empty list
+    tells that something is marked and the caller holds none of it; a marking the caller lacks
+    is never named."""
+    markings = frozenset(used)
+    if not markings:
+        return None
+    held = held_markings(actor, graph, policy, markings)
+    return None if held == markings else sorted(held)
 
 
 def visible_limits(limits: Mapping[str, JsonValue], classes: Iterable[str]) -> dict[str, JsonValue]:

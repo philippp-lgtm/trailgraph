@@ -1,0 +1,256 @@
+{
+  "bundle": {
+    "id": "personnel",
+    "version": "1.0.0"
+  },
+  "classes": {
+    "ex:Person": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "birth_date": {
+          "annotations": {},
+          "declared_in": "ex:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "ex:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Date of birth.",
+          "type": "date",
+          "unique": false
+        },
+        "email": {
+          "annotations": {},
+          "declared_in": "ex:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "ex:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Private e-mail address.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "ex:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Full name.",
+          "type": "string",
+          "unique": false
+        },
+        "team": {
+          "annotations": {},
+          "declared_in": "ex:Person",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Name of the team the person works in.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "PER",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A person known to the organization."
+    },
+    "ex:Team": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "name": {
+          "annotations": {},
+          "declared_in": "ex:Team",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the team.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "TEAM",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A group of people working together."
+    }
+  },
+  "datatypes": {},
+  "enums": {},
+  "lifecycles": {},
+  "markings": {
+    "ex:personal": {
+      "description": "Visible only to callers that hold this marking.",
+      "summary": "Personal data of a natural person."
+    }
+  },
+  "modules": [
+    {
+      "extensions": {},
+      "id": "core",
+      "namespace": "urn:graph_cli:onto:core#",
+      "prefix": "core",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "personnel",
+      "namespace": "urn:graph_cli:onto:personnel#",
+      "prefix": "ex",
+      "summary": "People and the teams they belong to.",
+      "version": "1.0.0"
+    }
+  ],
+  "prefixes": {
+    "core": "urn:graph_cli:onto:core#",
+    "ex": "urn:graph_cli:onto:personnel#"
+  },
+  "relations": {
+    "core:derived_from": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "derivation_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source was derived from a specific revision of the target."
+    },
+    "core:retracts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "retracted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source withdraws the target; created only by the retract operation."
+    },
+    "core:source": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "source_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The target is where the information in the source came from."
+    },
+    "core:supersedes": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "superseded_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source replaces the target; created only by the supersede operation."
+    }
+  },
+  "requires": [
+    "markings"
+  ],
+  "rules": [],
+  "schema": "graph_cli.compiled_ontology/2"
+}

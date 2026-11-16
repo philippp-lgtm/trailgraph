@@ -353,6 +353,104 @@ sees everything, because rights add up.
   hidden by a deny rule gains subclasses (the deny names the exact type, so the
   subclass is visible: deny it too).
 
+### Markings
+
+Read limits hide whole types. A **marking** hides single attributes inside a
+type that stays visible. The ontology author declares markings and puts them on
+attributes (`markings: [ex:personal]`, for example personal data; see the
+[`ontology-best-practices`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md)
+skill and its format reference). An attribute with several markings needs all
+of them (they are conjunctive). The policy grants markings to subjects: a
+caller that holds every marking of an attribute sees it, and for every other
+caller the attribute reads as if the type did not declare it ([What a caller
+can see](#what-a-caller-can-see)). The entity itself stays visible.
+
+```yaml
+schema: graph_cli.policy/1
+id: installation
+roles:
+  hr: {description: "HR: personal data of example_graph"}
+  reporting: {description: "Reporting apps: example_graph without personal data"}
+grants:
+  - entrypoint: server
+    principal: {role: hr}
+    graphs: [example_graph]
+    level: write
+    markings: [ex:personal]
+  - {entrypoint: server, principal: {role: reporting}, graphs: [example_graph], level: read}
+scopes:
+  example_project: {example_graph: write}
+no_project: {"*": none}
+```
+
+A token with `hr` reads and writes the attributes marked `ex:personal`; a token
+with `reporting` sees the same entities without them; a token with both roles
+sees everything, because rights add up.
+
+- **`markings` on a grant.** A list of marking CURIEs (`prefix:name`, lower
+  case), on a grant of any level, with graphs named one by one (`"*"` is
+  `policy.invalid`). Rights add up across grants and roles, as for every other
+  right. A marking the graph's pinned ontology does not declare only warns
+  (`admin.policy_unknown_marking`). There is no graph-layer form and no deny
+  rule on a marking: a marking already hides by default, so a new marking stays
+  hidden until a grant names it, and a marking moved to another module (a
+  different CURIE) is hidden again until the grant names the new one.
+- **One decision per marking.** A caller holds a marking when `read.get` on
+  `marking:<graph id>/<curie>` is allowed to it. No existing grant, scope,
+  `no_project` entry or deny rule covers that resource (it is not below
+  `graph:<id>`), so a marked attribute is hidden from every grant until a grant
+  names the marking. The maintainers hold every marking. A project admin token
+  never does, because its ceiling refuses every resource but a graph
+  ([Project admins](#project-admins)); the maintenance commands it may run
+  still read raw data, as they do for [read limits](#read-limits). A rule on a
+  marking resource may name `read.get` only (`policy.invalid` otherwise).
+- **Compiled rules.** A grant with `markings` keeps its other rules and gains
+  `grant.<n>.markings`: `read.get` on each marking resource of each named graph.
+  A policy without `markings` compiles to the same document and hash as before.
+  A graph whose pinned ontology uses no marking is not marking-limited: nothing
+  is filtered, and its answers, events and hashes are what they were.
+- **A marked artifact must match its pin.** Reads go on with a warning
+  (`ontology.pin_mismatch_read`) when the pinned compiled ontology no longer
+  matches its hash, but not when that file shows markings: only the pin vouches
+  for which attributes are marked, so every read of the graph, a holder's
+  included, fails with `ontology.pin_mismatch` until the file is restored, and
+  `whoami` shows `markings: []` for it (nothing for a maintainer, who holds
+  every marking).
+- **The built-in policy grants no marking.** Without an installation policy no
+  caller of `graph` reads or writes a marked attribute, and a type with a
+  required marked attribute without a default cannot be created locally
+  (`graph-admin` has no data write path). A local installation that uses
+  markings installs a small installation policy with a grant for the local
+  app that names them; locally it stays a guardrail, like every policy:
+
+  ```yaml
+  schema: graph_cli.policy/1
+  id: installation
+  grants:
+    - {entrypoint: app, graphs: [example_graph], level: write, markings: [ex:personal]}
+  no_project: {"*": write}
+  ```
+
+- **Warnings.** `policy check`, `diff`, `apply` and `explain --file` warn
+  `admin.policy_unknown_marking` for a named marking the graph does not declare
+  and `admin.policy_unusable_write` (a message of its own) when a grant's
+  `writes` name a marked attribute, or cover one with `true`, without the same
+  grant holding its markings (another grant of the caller may add them), and
+  when a grant creates a type whose required marked attribute without default it
+  does not hold, which can then never be created. `ontology release`,
+  `graph push` and `ontology diff --graph` warn `admin.marking_ungranted` (a
+  marking the new version uses that no installed grant names: only maintainer
+  surfaces show those attributes), `admin.marking_blocks_create`,
+  `admin.marking_in_expression` (a rule, lifecycle guard or action precondition
+  names a marked attribute: its refusals are a covert channel, see the
+  [security model](security_model.md#field-visibility)), `admin.marking_removed`
+  (a marking was removed from an attribute, and the values, history included,
+  become readable for every caller that sees the type) and
+  `ontology.marking_name_returned` (a once-marked name returns unmarked while its
+  old values map away by rename). A release that would expose old values of a
+  marked name through a reused name is refused (`ontology.marking_name_reused`);
+  the ontology skill explains when a name counts as reused.
+
 ## Roles
 
 Roles make two apps of one project differ, and one set of rights apply across
@@ -606,6 +704,50 @@ the caller sees; to everyone else it does not exist.
   `describe action` and the skill never name a hidden term. `do` and
   `describe action` of a hidden action are `action.not_found`.
 
+### Attributes a caller lacks a marking for
+
+A caller that lacks a marking of an attribute ([Markings](#markings)) is
+answered as if the type did not declare the attribute: the same code, message
+and details as for a name the type does not have. Every other caller, and
+every graph whose ontology uses no marking, is answered as before.
+
+- **Entities and queries.** `get`, `find`, `lookup`, `search`, `neighbors`,
+  `query` and `run` show an entity without the attribute, and `get --full`
+  shows a content hash computed over what is shown. A filter, a sort or a
+  field list that names it is `term.unknown` (with suggestions from what the
+  caller sees); `exists`, `ne` and negation treat it as absent, also on
+  sibling types that declare an attribute of the same name, and a Cypher
+  property of it is absent (`null`) on a node without a label. Totals count what
+  is left. A hidden label is no label: the entity shows no label, `lookup` and
+  `search` do not match it and `lookup` facts leave it out.
+- **Time.** `history`, `get --rev`, `--as-of` and the migration items of
+  `history` show past revisions mapped to current names and stripped the same
+  way: `changed` never names the attribute, and an attribute whose name no
+  longer maps (dropped, or an old release that cannot be read) is hidden for a
+  caller without markings. A rename hint never prints a hidden name.
+- **The model.** `describe`, the schema search and the generated skill omit the
+  attribute and what only it uses (an enum or datatype, a rule or lifecycle
+  guard that reads it); a reader that holds the markings sees them as a note on
+  the field. A function or action that reads or sets the attribute, or takes an
+  enum only hidden attributes use, is hidden like one that touches a hidden type
+  ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
+  The claim of an installed skill ([Skills](skills.md#blocks)) goes stale when
+  a marking grant or a release changes what the reader sees.
+- **Writes.** A write that names the attribute (`create`, `set`, `set_text`,
+  `unset`, `add`, `remove`, a transition's `attr`, an action's operations)
+  is answered exactly like a write of an attribute the type lacks, a guess of
+  the current value and a dry run included: `write.invalid` with
+  `data.structural.unknown_attribute` when the caller's rights cover attribute
+  names, `access.denied` when its `writes` list does not. The decision is made
+  from the names the write carries, before the write is normalized, so a guess
+  never gets a "nothing changed" answer. Refusals that name a hidden attribute
+  are audited as `denied` events that also record the denied `read.get` on the
+  marking resource ([Audit](audit.md)). An update keeps the values the caller
+  cannot see, and validation still judges the whole graph, so a finding that
+  stems from a hidden value keeps its code and severity and says "conflicts with
+  data you cannot see" (what this still shows is in the [security
+  model](security_model.md#field-visibility)).
+
 ### Inspecting what a caller sees
 
 - **`graph whoami`** gains, per graph, `reads`: the sorted concrete types the
@@ -617,7 +759,22 @@ the caller sees; to everyone else it does not exist.
   projects: without `--action` the answer gains `reads`, and `--type T --action
   read.get` explains whether `T` is visible. The compiled rules `grant.<n>.reads`
   show as grants, `type.<curie>` of a `none` as a type limit.
-- The [live view](live_view.md) shows `reads` next to the level of a caller.
+- **`markings` in `graph whoami` and `explain`.** `whoami` lists, per graph,
+  the sorted markings the caller holds, when the graph's ontology uses markings
+  and the caller does not hold every one of them. `markings: []` means that
+  something is marked and the caller holds nothing; a marking the caller lacks
+  is never named. The key is absent when the caller holds every marking in use or
+  the graph uses none, so those answers are unchanged. When the graph's model
+  cannot be read, a caller that does not hold every marking gets `markings: []`
+  (fail closed). `writes` lists only attributes the caller sees.
+  `graph-admin policy explain` answers the same for roles, tokens and projects
+  (`markings` next to `reads` and `writes`), and `--action read.get --marking
+  <curie>` explains one marking: the compiled rule is `grant.<n>.markings`, a
+  grant kind. A project admin token is refused with `access.ceiling` and lists
+  `markings: []`; a token with no project that is a maintainer holds every
+  marking.
+- The [live view](live_view.md) shows `reads` and `markings` next to the level
+  of a caller.
 
 ## History
 
@@ -635,7 +792,8 @@ readable; hiding history is not a way to remove data. A caller with
 [read limits](#read-limits) reads the history of the entities it sees, over
 their revisions without edges into hidden entities: a revision whose only change
 was such an edge shows an empty `changed` ([What a caller can
-see](#what-a-caller-can-see)).
+see](#what-a-caller-can-see)). The same holds for a revision whose only change was
+an attribute the caller lacks a marking for.
 
 ## Queries
 

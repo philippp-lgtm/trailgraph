@@ -1,4 +1,5 @@
-"""Compiled ontology ``graph_cli.compiled_ontology/1``: typed view and JSON form (B7.5-B7.7).
+"""Compiled ontology ``graph_cli.compiled_ontology/1`` and ``/2``: typed view and JSON form
+(B7.5-B7.7).
 
 The runtime reads only this form. Every documented key is always present;
 ``null`` is meaningful where it appears (``extends``, ``inverse_label``,
@@ -10,13 +11,23 @@ only when it is not the default ``allow`` and reads as ``allow`` when absent.
 An expression node kind, a relation key or an ``on_target_inactive`` value
 this program does not know (a model released for a newer ``graph``) is
 refused with ``format.unsupported_version``.
+
+A model that declares markings is written as ``/2``: the top-level ``requires`` lists the
+features the document uses (``["markings"]``), ``markings`` holds the declarations and an
+attribute with markings carries ``markings`` (sorted CURIEs). Every program before ``/2``
+refuses it by its schema check, so no older program shows marked attributes. A model without
+markings stays ``/1`` with the same bytes and artifact hash. The reader refuses a feature it
+does not know (details ``feature``), a ``/2`` document that uses no feature, ``markings`` in a
+``/1`` document and any attribute key it does not know (``format.unsupported_version``): the
+attribute keys are an allow list, so a later security-bearing key is never ignored. No key was
+ever removed from the compiled attribute form, so the list reads every installed model.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Final, Literal
 
 from graph_cli.kernel.canonical import CanonicalError, JsonObject, JsonValue, hash_value, parse_json
 from graph_cli.kernel.errors import GraphCliError
@@ -35,8 +46,11 @@ from graph_cli.kernel.json_access import (
 )
 from graph_cli.ontology_layer.expr_ast import unknown_nodes
 from graph_cli.ontology_layer.vocabulary import (
+    COMPILED_FEATURES,
     COMPILED_SCHEMA,
+    COMPILED_SCHEMA_V2,
     LABEL_ROLES,
+    MARKINGS_FEATURE,
     TARGET_INACTIVE_POLICIES,
 )
 
@@ -155,6 +169,20 @@ class AttributeDef:
     declared_in: str
     renamed_from: str | None
     doc: TermDoc
+    # Marking CURIEs, sorted; a caller must hold every one to see the attribute. ``()`` =
+    # unmarked (the attribute key is then not written, so ``/1`` documents keep their bytes).
+    markings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MarkingDef:
+    """A declared marking (``markings.<curie>``)."""
+
+    summary: str
+    description: str | None
+
+    def to_json(self) -> dict[str, JsonValue]:
+        return {"summary": self.summary, "description": self.description}
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,10 +249,33 @@ class CompiledModel:
     classes: Mapping[str, ClassDef]
     relations: Mapping[str, RelationDef]
     rules: tuple[RuleDef, ...]
+    markings: Mapping[str, MarkingDef] = field(default_factory=dict)
+
+    def features(self) -> tuple[str, ...]:
+        """The features of ``/2`` this model uses, sorted (``()``: it is written as ``/1``)."""
+        marked = bool(self.markings) or any(
+            a.markings for c in self.classes.values() for a in c.attributes.values()
+        )
+        return (MARKINGS_FEATURE,) if marked else ()
+
+    def used_markings(self) -> frozenset[str]:
+        """The markings some attribute carries (a declared marking no attribute names hides
+        nothing)."""
+        return frozenset(
+            m for c in self.classes.values() for a in c.attributes.values() for m in a.markings
+        )
 
     def to_json(self) -> dict[str, JsonValue]:
+        features = self.features()
+        extra: dict[str, JsonValue] = {}
+        if features:
+            extra = {
+                "requires": list(features),
+                "markings": {k: v.to_json() for k, v in self.markings.items()},
+            }
         return {
-            "schema": COMPILED_SCHEMA,
+            "schema": COMPILED_SCHEMA_V2 if features else COMPILED_SCHEMA,
+            **extra,
             "bundle": {"id": self.bundle_id, "version": self.bundle_version},
             "modules": [m.to_json() for m in self.modules],
             "prefixes": dict(self.prefixes),
@@ -243,7 +294,14 @@ class CompiledModel:
 
     def term_curies(self) -> frozenset[str]:
         return frozenset(
-            (*self.datatypes, *self.enums, *self.lifecycles, *self.classes, *self.relations)
+            (
+                *self.datatypes,
+                *self.enums,
+                *self.lifecycles,
+                *self.classes,
+                *self.relations,
+                *self.markings,
+            )
         )
 
     def is_a(self, class_curie: str, ancestor: str) -> bool:
@@ -337,6 +395,7 @@ def _attribute_json(a: AttributeDef) -> dict[str, JsonValue]:
         "role": a.role,
         "declared_in": a.declared_in,
         "renamed_from": a.renamed_from,
+        **({"markings": list(a.markings)} if a.markings else {}),
         **a.doc.to_json(),
     }
 
@@ -463,6 +522,76 @@ _RELATION_KEYS = frozenset(
 )
 
 
+# Every key the compiled attribute form ever had (git history: ``role`` came with label roles
+# and may be absent); ``markings`` only in ``/2``. A key outside the list is refused.
+_ATTRIBUTE_KEYS: Final = frozenset(
+    {
+        "type",
+        "kind",
+        "required",
+        "many",
+        "unique",
+        "default",
+        "mutability",
+        "role",
+        "declared_in",
+        "renamed_from",
+        "summary",
+        "description",
+        "deprecated",
+        "annotations",
+    }
+)
+_ATTRIBUTE_KEYS_V2: Final = _ATTRIBUTE_KEYS | {"markings"}
+
+
+def _features(data: JsonObject, schema: str) -> bool:
+    """Whether the document uses markings. ``/1`` carries no ``requires`` and no
+    ``markings``; ``/2`` names in ``requires`` every feature it uses, only features this
+    program knows, and uses each."""
+    if schema == COMPILED_SCHEMA:
+        for key in ("requires", "markings"):
+            if key in data:
+                raise _newer("the compiled ontology", f"the key {key!r}")
+        return False
+    features = str_list(data, "requires")
+    for feature in features:
+        if feature not in COMPILED_FEATURES:
+            raise GraphCliError(
+                "format.unsupported_version",
+                f"the compiled ontology requires the feature {feature!r}, which this graph"
+                " program does not know; the ontology was released for a newer graph, update"
+                " graph",
+                details={"feature": feature},
+            )
+    if list(features) != sorted(set(features)) or MARKINGS_FEATURE not in features:
+        raise JsonShapeError(f"requires: expected {[MARKINGS_FEATURE]}, got {list(features)}")
+    if not req_obj(data, "markings"):
+        raise JsonShapeError("markings: a document that requires markings declares some")
+    return True
+
+
+def _markings(data: JsonObject) -> dict[str, MarkingDef]:
+    return {
+        k: MarkingDef(req_str(v, "summary", f"markings.{k}."), opt_str(v, "description"))
+        for k, v in _objects(data, "markings").items()
+    }
+
+
+def _attribute_markings(
+    data: JsonObject, path: str, declared: Mapping[str, MarkingDef]
+) -> tuple[str, ...]:
+    if "markings" not in data:
+        return ()
+    found = str_list(data, "markings", path)
+    if not found or list(found) != sorted(set(found)):
+        raise JsonShapeError(f"{path}markings: expected sorted, distinct markings")
+    undeclared = [m for m in found if m not in declared]
+    if undeclared:
+        raise JsonShapeError(f"{path}markings: {undeclared[0]!r} is not declared")
+    return found
+
+
 def _newer(owner: str, what: str) -> GraphCliError:
     return GraphCliError(
         "format.unsupported_version",
@@ -498,15 +627,50 @@ def _expr(data: JsonObject, owner: str) -> JsonValue:
     return expr
 
 
+# What the raw bytes of a document with markings contain: the schema string or a key, spelled
+# plainly, or a JSON escape that could spell one (a canonical document escapes neither ``/``
+# nor printable characters, so its bytes hold none unless they hold a control character).
+_TRACE_WORDS: Final = (
+    COMPILED_SCHEMA_V2.encode(),
+    b'"requires"',
+    b'"markings"',
+    b"\\u",
+    b"\\/",
+)
+
+
+def traces_markings(raw: bytes) -> bool:
+    """Whether the raw bytes of a compiled document show markings: the ``/2`` schema or a
+    ``requires`` / ``markings`` key. Bytes that are no JSON object are searched for the schema
+    string. Markings need a program that writes ``/2``, so a document without any of these
+    traces holds none. Bytes that spell none of them plainly and hold no escape that could
+    (``_TRACE_WORDS``) are answered without parsing them."""
+    if not any(word in raw for word in _TRACE_WORDS):
+        return False
+    try:
+        document = parse_json(raw)
+    except CanonicalError:
+        return COMPILED_SCHEMA_V2.encode() in raw
+    if not isinstance(document, Mapping):
+        return False
+    return (
+        document.get("schema") == COMPILED_SCHEMA_V2
+        or "requires" in document
+        or "markings" in document
+    )
+
+
 def model_from_json(data: JsonObject) -> CompiledModel:
     """Typed view of a compiled document. Shape errors raise ``JsonShapeError``."""
     schema = req_str(data, "schema")
-    if schema != COMPILED_SCHEMA:
+    if schema not in (COMPILED_SCHEMA, COMPILED_SCHEMA_V2):
         raise GraphCliError(
             "format.unsupported_version",
             f"unsupported compiled ontology schema {schema!r}",
-            details={"expected": COMPILED_SCHEMA, "actual": schema},
+            details={"expected": [COMPILED_SCHEMA, COMPILED_SCHEMA_V2], "actual": schema},
         )
+    marked = _features(data, schema)
+    markings = _markings(data) if marked else {}
     bundle = req_obj(data, "bundle")
     modules = tuple(
         ModuleInfo(
@@ -551,6 +715,9 @@ def model_from_json(data: JsonObject) -> CompiledModel:
         attributes = {}
         for name, a in _objects(v, "attributes").items():
             path = f"{k}.attributes.{name}."
+            unknown = sorted(a.keys() - (_ATTRIBUTE_KEYS_V2 if marked else _ATTRIBUTE_KEYS))
+            if unknown:
+                raise _newer(f"attribute {k}.{name}", f"the key {unknown[0]!r}")
             attributes[name] = AttributeDef(
                 type=req_str(a, "type", path),
                 kind=_kind(req_str(a, "kind", path), path),
@@ -563,6 +730,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
                 declared_in=req_str(a, "declared_in", path),
                 renamed_from=opt_str(a, "renamed_from", path),
                 doc=TermDoc.from_json(a, path),
+                markings=_attribute_markings(a, path, markings),
             )
         classes[k] = ClassDef(
             abstract=req_bool(v, "abstract", f"{k}."),
@@ -623,6 +791,7 @@ def model_from_json(data: JsonObject) -> CompiledModel:
         classes=classes,
         relations=relations,
         rules=rules,
+        markings=markings,
     )
 
 

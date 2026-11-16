@@ -1,0 +1,31 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+markings:
+  personal:
+    summary: Personal data of a natural person.
+
+lifecycles:
+  Progress:
+    summary: Progress of a thing.
+    states:
+      open: {summary: Not started., initial: true}
+      done: {summary: Finished., terminal: true}
+    transitions:
+      - {from: open, to: done, summary: Finish.}
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      name:
+        summary: Display name.
+        type: string
+      state:
+        summary: Progress.
+        lifecycle: Progress
+        markings: [personal]

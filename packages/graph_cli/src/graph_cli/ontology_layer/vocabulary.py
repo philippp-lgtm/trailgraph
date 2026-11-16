@@ -11,6 +11,12 @@ from typing import Final
 
 IR_FORMAT: Final = "graph_cli.ir/1"
 COMPILED_SCHEMA: Final = "graph_cli.compiled_ontology/1"
+# The compiled form of a model that uses a feature older programs must not ignore (markings):
+# its ``requires`` lists them, and a reader refuses a feature it does not know. A model without
+# such features keeps ``/1``, its bytes and its artifact hash.
+COMPILED_SCHEMA_V2: Final = "graph_cli.compiled_ontology/2"
+MARKINGS_FEATURE: Final = "markings"
+COMPILED_FEATURES: Final = frozenset({MARKINGS_FEATURE})
 DIFF_SCHEMA: Final = "graph_cli.ontology_diff/1"
 
 CORE_MODULE: Final = "core"

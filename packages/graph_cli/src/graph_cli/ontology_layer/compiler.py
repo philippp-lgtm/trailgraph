@@ -26,6 +26,7 @@ from graph_cli.ontology_layer.model import (
     EnumDef,
     GuardDef,
     LifecycleDef,
+    MarkingDef,
     ModuleInfo,
     NamedValue,
     QualifierDef,
@@ -95,6 +96,7 @@ class _Compiler:
             declared_in=owner,
             renamed_from=attribute.renamed_from,
             doc=_doc(attribute.doc),
+            markings=tuple(sorted(self.ref(module_id, m, "marking") for m in attribute.markings)),
         )
 
     def lower(self, module_id: str, conds: tuple[Cond, ...]) -> JsonValue:
@@ -106,6 +108,8 @@ class _Compiler:
 
     def module_terms(self, module_id: str, module: IrModule, out: _Terms) -> None:
         curie = self.b.curie
+        for name, m in module.markings.items():
+            out.markings[curie(module_id, name)] = MarkingDef(m.doc.summary, m.doc.description)
         for name, d in module.datatypes.items():
             out.datatypes[curie(module_id, name)] = DatatypeDef(d.base, dict(d.facets), _doc(d.doc))
         for name, e in module.enums.items():
@@ -193,6 +197,7 @@ class _Terms:
     classes: dict[str, ClassDef] = field(default_factory=dict)
     relations: dict[str, RelationDef] = field(default_factory=dict)
     rules: dict[str, RuleDef] = field(default_factory=dict)
+    markings: dict[str, MarkingDef] = field(default_factory=dict)
 
 
 def _sorted[T](items: Mapping[str, T]) -> dict[str, T]:
@@ -230,4 +235,5 @@ def compile_model(bundle: IrBundle) -> CompiledModel:
         classes=_sorted(out.classes),
         relations=_sorted(out.relations),
         rules=rules,
+        markings=_sorted(out.markings),
     )

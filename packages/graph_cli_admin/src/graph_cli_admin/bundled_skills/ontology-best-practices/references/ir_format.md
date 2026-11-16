@@ -50,8 +50,8 @@ always use CURIEs (`rcp:Recipe`).
 
 A module file has the keys `format`, `module` and, each optional,
 `datatypes`, `enums`, `classes`, `relations`, `lifecycles` (each a map
-from term name to definition), `rules` (a list), `mappings` and
-`extensions`.
+from term name to definition), `rules` (a list), `mappings`,
+`extensions` and `markings`.
 
 ## Module header
 
@@ -163,6 +163,7 @@ imported class (`is_a: files:File`).
 | `mutability` | `content` (default), `immutable` (write once: cannot change or be removed once set), `operational` (housekeeping values that may change any time, such as a local path), `lifecycle` (implied by `lifecycle`; changes only through transitions) |
 | `role` | `label` (the main name, one per class, single; on `lang_string` it may be `many`, one value per language), `alt_label` (other names, abbreviations), `hidden_label` (misspellings, never shown); on `string` and `lang_string` attributes only; `graph lookup` searches them |
 | `renamed_from` | the old name of a renamed attribute (major) |
+| `markings` | a non-empty list of markings (see Markings); a caller sees the attribute only when it holds every one; not on lifecycle attributes |
 
 A lifecycle attribute with a single initial state is set to it on create.
 
@@ -279,6 +280,30 @@ adds `attr`, a single `integer` or `decimal` attribute declared on every
 class at the other end; the sum is absent when one of them lacks the
 value, so test `value_presence: PRESENT` in `if` first. `{attr: <name>}`
 compares with an attribute of the entity in scope.
+
+## Markings
+
+```yaml
+markings:
+  personal: {summary: "Personal data of a natural person"}
+classes:
+  Person:
+    attributes:
+      email: {summary: "Private e-mail address.", type: string, markings: [personal]}
+```
+
+Marking name (lower case, like a relation name, and distinct from the module's relation
+names) to `summary` (required) and an optional `description`; no other key. An attribute
+names markings of its own module or an imported one, as a local name or a CURIE (`[personal]`,
+`[ex:personal]`); the list is non-empty and names each marking once. Several markings on one
+attribute are conjunctive: a caller sees the attribute only when it holds every one. A subclass
+inherits the markings with the attribute. Only attributes carry markings (not classes,
+relations, qualifiers or enum values), and not lifecycle attributes
+(`model.semantic.marking_on_lifecycle`); labels, `unique` and `required` attributes may. An
+unknown marking is `model.referential.unknown_marking`. The installation policy grants markings
+by CURIE. What a marking does, the compiled form, the change levels and the release checks are in
+[versioning_and_release.md](versioning_and_release.md#markings); advice on using them in
+[modeling.md](modeling.md#marking-attributes).
 
 ## Mappings
 

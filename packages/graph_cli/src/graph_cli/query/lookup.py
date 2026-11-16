@@ -230,6 +230,7 @@ def plan_lookup(model: CompiledModel, spec: LookupSpec, language: str | None = N
         if spec.include_inactive
         else frozenset({"active"}),
         limit=sys.maxsize,
+        rehash=False,  # every candidate is read for its labels, none handed out as such
     )
     folded = normalize_label(spec.text, fold_accents=True) if spec.ignore_accents else None
     return LookupPlan(

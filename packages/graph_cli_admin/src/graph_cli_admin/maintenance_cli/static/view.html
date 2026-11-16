@@ -1932,6 +1932,7 @@ function accessLevel(caller) {
   const box = frag(code(caller.level));
   if (caller.withheld.length) box.append(" ", el("span", "small", "withheld: "), frag(...caller.withheld.flatMap((a, i) => i ? [", ", code(a)] : [code(a)])));
   if (caller.reads) box.append(readsText(caller.reads));
+  if (caller.markings) box.append(markingsText(caller.markings));
   if (caller.writes) box.append(writesText(caller.writes));
   return box;
 }
@@ -1942,6 +1943,15 @@ function readsText(reads) {
   box.append(el("br"));
   if (!reads.length) box.append("no type");
   reads.forEach((type, index) => box.append(...(index ? [", "] : []), code(type)));
+  return box;
+}
+
+// The markings a caller holds when the graph's model uses some it lacks.
+function markingsText(markings) {
+  const box = el("span", "small", "markings:");
+  box.append(el("br"));
+  if (!markings.length) box.append("none");
+  markings.forEach((marking, index) => box.append(...(index ? [", "] : []), code(marking)));
   return box;
 }
 
@@ -1996,6 +2006,11 @@ function resourceText(pattern) {
   if (pattern === "*") return el("span", null, "everything");
   if (pattern === "graph:*") return el("span", null, "every graph");
   if (pattern === "installation") return el("span", null, "the installation");
+  const marking = /^marking:([0-9a-f-]{36})\/(.+)$/.exec(pattern);
+  if (marking) {
+    const owner = policies.graphs[marking[1]] || marking[1];
+    return frag("marking ", code(marking[2]), " in ", marking[1] === policies.graph.id ? el("strong", null, owner) : el("span", null, owner));
+  }
   const found = /^graph:([0-9a-f-]{36})(\*|\/type:([^/]+)(?:\/(attr|rel):(.+))?)?$/.exec(pattern);
   if (!found) return code(pattern);
   const name = policies.graphs[found[1]] || found[1];

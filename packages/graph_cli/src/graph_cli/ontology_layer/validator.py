@@ -111,6 +111,7 @@ def attribute_default(
 _SUGGEST_KINDS: dict[str, tuple[TermKind, ...]] = {
     "class": ("class",),
     "lifecycle": ("lifecycle",),
+    "marking": ("marking",),
     "relation": ("relation",),
     "type": ("datatype", "enum"),
 }
@@ -155,6 +156,9 @@ class _Validator:
             ("enums", module.enums),
             ("classes", module.classes),
             ("lifecycles", module.lifecycles),
+            # relations and markings share the lower-case names: one CURIE each
+            ("relations", module.relations),
+            ("markings", module.markings),
         )
         for section, names in sections:
             for name in names:
@@ -352,6 +356,8 @@ class _Validator:
                 )
         if attribute.role is not None:
             self.role(module_id, attribute, base, resolved_kind)
+        if attribute.markings:
+            self.markings(module_id, attribute)
         if attribute.unique and (attribute.many or base in NON_SCALAR_BASES):
             self.add(
                 "model.semantic.unique_on_non_scalar",
@@ -362,6 +368,41 @@ class _Validator:
         _, problem = attribute_default(self.b, module_id, attribute)
         if problem:
             self.add("model.structural.invalid_default", module_id, f"{path}.default", problem)
+
+    def markings(self, module_id: str, attribute: IrAttribute) -> None:
+        """Markings name declared markings of the module or a visible one, each once; a
+        lifecycle attribute carries none (its state drives transitions, guards and
+        affordances, which would be half defined for a caller without the marking)."""
+        path = f"{attribute.path}.markings"
+        if attribute.lifecycle is not None:
+            self.add(
+                "model.semantic.marking_on_lifecycle",
+                module_id,
+                path,
+                "a lifecycle attribute cannot carry markings",
+                actual=attribute.lifecycle,
+            )
+        seen: dict[str, str] = {}
+        for index, ref in enumerate(attribute.markings):
+            curie = self.b.resolve(module_id, ref, "marking")
+            if curie is None:
+                self.unknown(
+                    "model.referential.unknown_marking",
+                    module_id,
+                    f"{path}[{index}]",
+                    "marking",
+                    ref,
+                )
+            elif curie in seen:
+                self.add(
+                    "model.structural.invalid_value",
+                    module_id,
+                    f"{path}[{index}]",
+                    f"{ref!r} names the marking {curie} again (as {seen[curie]!r})",
+                    actual=ref,
+                )
+            else:
+                seen[curie] = ref
 
     def role(
         self, module_id: str, attribute: IrAttribute, base: str | None, kind: str | None

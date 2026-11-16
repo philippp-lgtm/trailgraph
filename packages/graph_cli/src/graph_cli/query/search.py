@@ -192,6 +192,7 @@ def plan_search(model: CompiledModel, spec: SearchSpec, language: str | None = N
         if spec.include_inactive
         else frozenset({"active"}),
         limit=sys.maxsize,
+        rehash=False,  # every candidate is read for its text fields, none handed out as such
     )
     return SearchPlan(
         query=query,

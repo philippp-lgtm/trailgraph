@@ -29,7 +29,9 @@
   deny rule that names a renamed term and no new one fails with ``admin.policy_renamed_term``,
   as the release would; published functions and actions that would be compiled again and
   published with the release are listed in ``republished``; those that cannot be are
-  ``admin.functions_broken`` / ``admin.actions_broken`` as before.
+  ``admin.functions_broken`` / ``admin.actions_broken`` as before. A release that would show
+  marked values under a name declared without the marking fails with
+  ``ontology.marking_name_reused`` (``marking_names``), its warnings come along.
 """
 
 from __future__ import annotations
@@ -51,8 +53,9 @@ from graph_cli.ontology_layer.diff import Renames, derive_renames
 from graph_cli.ontology_layer.migration import Retype
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled
 from graph_cli.ontology_layer.semver import Version
+from graph_cli.temporal_knowledge.name_map import Hop
+from graph_cli_admin.services_admin import marking_names, renamed_terms
 from graph_cli_admin.services_admin import migration as migrations
-from graph_cli_admin.services_admin import renamed_terms
 from graph_cli_admin.services_admin.audit import counts_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
@@ -116,6 +119,7 @@ def check(
     renames: Renames | None = None
     retypes: tuple[Retype, ...] = ()
     file: migrations.Migration | None = None
+    hop: Hop | None = None  # the release this check previews, when it would make one
     if source is None:
         model = _migrated_model(ctx, entry, interrupted) or pinned_model(ctx.catalog, entry)
         findings = check_graph(model, snapshot)
@@ -127,6 +131,8 @@ def check(
             renames = derive_renames(old, model)
             file = migrations.parse(read_migration(source))
             retypes = migrations.retypes(file)
+            doc = None if file is None else file.doc
+            hop = Hop(entry.pin.version, pin.version, old, model, renames, doc)
         findings, block, extra = _authored(ctx, entry, model, file, renames, read, snapshot)
         warnings += extra
     codes = Counter(f.code for f in findings)
@@ -171,6 +177,8 @@ def check(
         found = renamed_terms.hazards(entries, entry.id, renames, retypes, model)
         if found:
             raise renamed_terms.refusal(found, bump)
+    if hop is not None:
+        warnings += marking_names.check(ctx, entry, hop, bump)
     if problems:
         raise functions_broken(problems, bump, advice="")
     if action_problems:

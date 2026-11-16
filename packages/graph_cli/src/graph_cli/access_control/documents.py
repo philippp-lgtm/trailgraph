@@ -20,6 +20,10 @@ below a type, one attribute ``.../attr:<name>`` or one relation ``.../rel:<curie
 terms a write touches). A rule on a type names write actions, ``read.get`` or ``read.*``:
 ``read.get`` on a type is the type's visibility, the one read decision below a graph (every
 other read is decided on ``graph:<id>`` itself); a rule on a term names write actions only.
+A marking (field visibility) is the exact resource ``marking:<graph uuid>/<curie>``, outside
+the ``graph:`` namespace on purpose: no glob of a graph, a scope or a deny rule covers it, so a
+marked attribute stays hidden until a rule names its marking. A rule on a marking resource names
+``read.get`` only (the marking is held or not) and never a glob of markings.
 Globs match by prefix, so ``graph:<id>*``, ``graph:<id>/type:*`` and ``graph:<id>/type:ex:*``
 cover the terms of every type they cover, as ``.../type:<curie>/attr:*`` and ``.../rel:*`` cover
 the terms of one type. An exact type resource matches the type only, never its terms.
@@ -65,15 +69,21 @@ _UUID: Final = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _CURIE: Final = r"[a-z][a-z0-9_]*:[A-Za-z][A-Za-z0-9_]*"
 # An attribute name: the lower names of the ontology layer and of change sets.
 _NAME: Final = r"[a-z][a-z0-9_]{0,63}"
+# A marking is referred to as a lower-case CURIE (``ex:personal``).
+_MARKING: Final = rf"[a-z][a-z0-9_]*:{_NAME}"
 NAME_RE: Final = re.compile(rf"^{_NAME}$")
 CURIE_RE: Final = re.compile(rf"^{_CURIE}$")
+MARKING_RE: Final = re.compile(rf"^{_MARKING}$")
+MARKING_RESOURCE_PREFIX: Final = "marking:"
 RESOURCE_RE: Final = re.compile(
     rf"^installation$|^graph:{_UUID}(/type:{_CURIE}(/attr:{_NAME}|/rel:{_CURIE})?)?$"
+    rf"|^marking:{_UUID}/{_MARKING}$"
 )
 TYPE_GLOB_RE: Final = re.compile(rf"^(?:{_CURIE}|[a-z][a-z0-9_]*:\*)$")
 _RESOURCE_GLOB_RE: Final = re.compile(
     rf"^(?:\*|installation|graph:\*|graph:{_UUID}(?:\*|/type:\*|/type:[a-z][a-z0-9_]*:\*"
-    rf"|/type:{_CURIE}(?:/attr:(?:{_NAME}|\*)|/rel:(?:{_CURIE}|\*))?)?)$"
+    rf"|/type:{_CURIE}(?:/attr:(?:{_NAME}|\*)|/rel:(?:{_CURIE}|\*))?)?"
+    rf"|marking:{_UUID}/{_MARKING})$"
 )
 _AREA_GLOBS: Final = frozenset({"*", "read.*", "write.*", "maint.*", "ext.*"})
 _EXT_GLOB_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.\*$")
@@ -344,7 +354,12 @@ def _rules_problems(value: JsonValue, graph_layer: bool, add: _Add) -> None:
                 if not isinstance(pattern, str) or not is_action_glob(pattern):
                     add(f"{path}.action", f"unknown action {pattern!r}")
             resource = rule.get("resource")
-            if _names_terms(resource):
+            if _names_markings(resource) and not all(p == "read.get" for p in actions):
+                add(
+                    f"{path}.action",
+                    "a rule on a marking names read.get only: a marking is held or not",
+                )
+            elif _names_terms(resource):
                 if not all(isinstance(p, str) and is_write_glob(p) for p in actions):
                     add(
                         f"{path}.action",
@@ -368,6 +383,13 @@ def _names_types(resource: JsonValue) -> bool:
     patterns = [resource] if isinstance(resource, str) else resource
     return isinstance(patterns, list) and any(
         isinstance(p, str) and "/type:" in p for p in patterns
+    )
+
+
+def _names_markings(resource: JsonValue) -> bool:
+    patterns = [resource] if isinstance(resource, str) else resource
+    return isinstance(patterns, list) and any(
+        isinstance(p, str) and p.startswith(MARKING_RESOURCE_PREFIX) for p in patterns
     )
 
 

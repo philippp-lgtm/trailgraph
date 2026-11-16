@@ -89,6 +89,24 @@ one class by a value, retyping single entities, and CURIE renames of enums, data
 lifecycles. If a release needs one of them, keep the old term, add the new one and move the data
 with normal writes.
 
+## Marked attributes
+
+Old revisions keep their stored names and a migration rewrites only the current ones, so the
+release checks where the values of every marked attribute of every earlier version end up
+(the name map, history included: `references/versioning_and_release.md`, "Markings").
+
+- A `renamed_from` on a marked attribute keeps its markings: the values follow the rename and
+  stay hidden for the same readers, history included.
+- A `retype` carries an attribute by name unless its `attributes` map says otherwise. A marked
+  attribute carried that way into a class that declares the name without all its markings is
+  refused (`ontology.marking_name_reused`); map it to an attribute with the same markings, or to one with
+  weaker markings on purpose (the release then warns `admin.marking_removed`, "including
+  history").
+- `drop` removes the current values; the history keeps them, still hidden. Declaring the name
+  again unmarked is refused.
+- A release that cannot read an earlier version of a graph with markings is refused
+  (`details.unreadable`): restore or repair the history first.
+
 ## Aliases
 
 A migrated entity keeps its alias. A class that moves (a `renamed_from` CURIE, or a `retype`

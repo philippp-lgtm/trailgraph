@@ -322,7 +322,7 @@ def _family_text(view: GraphRead, types: tuple[str, ...]) -> str:
     """What the "not a stored file" message names: ``files:File``, or for a caller who does
     not see that type (it reads the file classes it sees) those classes, so the message never
     names a hidden type."""
-    if view.visible is None or FILE_TYPE in view.model.classes:
+    if not view.read_view.types_limited or FILE_TYPE in view.model.classes:
         return FILE_TYPE
     return ", ".join(types)
 
@@ -562,9 +562,9 @@ class FileService:
         (a scan stays a file when plain files are hidden). A caller who sees none of the family
         reads a graph without the files module."""
         family = file_types(self._models.load_for_read(view.entry)[0])
-        if view.visible is None:
+        if not view.read_view.types_limited:
             return family
-        seen = tuple(t for t in family if t in view.visible)
+        seen = tuple(t for t in family if view.read_view.shows_type(t))
         if not seen:
             raise module_missing()
         return seen

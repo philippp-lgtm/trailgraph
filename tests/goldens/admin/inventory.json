@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.22.0",
+  "program_version": "0.23.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -912,6 +912,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1406,6 +1407,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -1858,6 +1860,7 @@
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.protocol",
@@ -1971,6 +1974,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -2330,6 +2334,13 @@
           "summary": "Decide on one relation of --type (needs --action), as --attribute does. Excludes --attribute."
         },
         {
+          "name": "--marking",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one marking of the graph, by CURIE (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
+        },
+        {
           "name": "--file",
           "type": "file",
           "required": false,
@@ -2356,6 +2367,10 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action write.update --type <type> --attribute <name>",
           "summary": "One attribute of a type, and the type decision next to it."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --action read.get --marking <curie>",
+          "summary": "Whether the caller holds one marking."
         },
         {
           "command": "graph-admin policy explain --graph <graph> --role <value> --role <value> --project <value>",
@@ -3526,6 +3541,11 @@
       "code": "ontology.artifact_missing",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "ontology.marking_name_reused",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "ontology.rename_invalid",

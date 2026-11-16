@@ -56,6 +56,20 @@ Only for a graph with more than one module of its own.
 - [ ] No rule is a prose prohibition between areas: what may not be
       linked is left out of `domain` and `range`.
 
+## Markings
+
+Only for a graph that marks attributes.
+
+- [ ] A marked attribute is one that some readers of the type should not see; markings are
+      declared in a module every area imports and named for the kind of data.
+- [ ] No lifecycle attribute is marked; every marked required attribute has a `default`.
+- [ ] No rule, guard or action precondition names a marked attribute.
+- [ ] A name that was marked is never declared again without the marking.
+- [ ] Every marking in use is granted by the installation policy (or the release warned
+      `admin.marking_ungranted` on purpose); servers and clients are 0.23.0 or later before the
+      first release that marks an attribute (compiled schema `/2`).
+- [ ] Curated text (summaries, graph skill, function and action prose) names no marked value.
+
 ## Names and descriptions
 
 - [ ] Names follow the conventions; relations read from source to target.

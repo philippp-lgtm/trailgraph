@@ -52,6 +52,7 @@ moment and tell the user how long it took.
 | `admin.migration_required` | the data still does not fit after the migration, or a rename rewrites data and there is no file; `details.findings` and the hint say which |
 | `admin.migration_unexpected` | a migration file on a minor or patch release; remove it or make the release major |
 | `admin.migration_from_mismatch` | `from` is not the pinned version; a graph several majors behind releases them one by one |
+| `ontology.marking_name_reused` | a marked name would show its values, history included, under an attribute with weaker markings (declared again unmarked, an implicit retype carry, a parent attribute redeclared unmarked); `details.reuses` names each; keep the markings, map the retype explicitly or use a new name. `details.unreadable` means an earlier release could not be read |
 | `ontology.rename_invalid` | a `renamed_from` does not fit the pinned release; `details.problems` names each |
 | `admin.policy_renamed_term` | a deny rule names only the old term; apply a policy that names both first |
 | `admin.functions_broken`, `admin.actions_broken` | a published function or action names an old term; fix its file and push it with the ontology |
@@ -59,7 +60,7 @@ moment and tell the user how long it took.
 | `access.ceiling` | the caller is a project admin; a maintainer must release |
 
 Warnings: `admin.migration_step_unused` (a step matched nothing, check it was meant),
-`ontology.rename_stale` (remove a `renamed_from` the previous release applied).
+`ontology.rename_stale` (remove a `renamed_from` the previous release applied), `admin.marking_removed` (a deliberate downgrade of a marked attribute: its values, history included, become readable for more callers; confirm with the user) and `ontology.marking_name_returned`.
 
 ## An interrupted release: the incomplete state
 

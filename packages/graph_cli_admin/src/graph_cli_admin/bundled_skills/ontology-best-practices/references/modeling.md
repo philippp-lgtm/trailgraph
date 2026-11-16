@@ -195,6 +195,35 @@ How to cut:
   data cannot follow: add the term in the new module, move the data with
   normal writes, then remove the old term in a major release.
 
+## Marking attributes
+
+A marking is for a field that some readers of a type should not see while they still see the
+entity: personal data, pay, a private note. It hides per attribute, for readers whose role does
+not hold the marking; hiding whole types is `reads` in the policy. Do not mark to organize
+the model or to document sensitivity nobody enforces.
+
+- Declare markings once, in a module every area imports (a shared or main module), not in the
+  area that first uses them. A marking is a term with a CURIE and grants name that CURIE; one
+  that moves to another module in a split is another marking.
+- Name a marking for the kind of data (`personal`, `pay`), not for a reader (`hr_only`): who
+  holds it is the policy's business and changes without a release.
+- Several markings on one attribute are conjunctive: use them for data that needs both rights.
+- A lifecycle attribute cannot carry a marking.
+- A marked required attribute needs a `default`. Readers without the marking cannot set it, so
+  without a default they cannot create the type at all (the release warns
+  `admin.marking_blocks_create`). A marked label leaves the entity without a name for those
+  readers; give the class an unmarked label.
+- Keep marked attributes out of rules, lifecycle guards and action preconditions. Those are
+  judged on the whole graph, so a refusal still tells a reader without the marking something
+  about the value, and repeated dry runs narrow it down (the release warns
+  `admin.marking_in_expression`). Keep the checked fact in an unmarked attribute, or check
+  it in the process that writes the marked one.
+- A marked name keeps its protection for its whole life: never redeclare it unmarked
+  ([releases](versioning_and_release.md#markings)).
+- Curated text is not filtered: summaries, descriptions and the graph skill's own text reach
+  every reader. Describe a marked attribute without values, and do not name it in text every
+  reader gets.
+
 ## Anti-patterns
 
 | Anti-pattern | Problem | Instead |

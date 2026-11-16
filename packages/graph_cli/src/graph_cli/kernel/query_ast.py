@@ -14,6 +14,7 @@ from typing import Final, Literal
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
+from graph_cli.kernel.read_view import AttributeMask
 from graph_cli.kernel.records import Revision
 
 FieldName = str  # attribute name or reserved system field (B7.8)
@@ -100,6 +101,15 @@ class Query:
     # ``types`` (never widens it), hides edge ends of other types and strips the revisions
     # handed out (``query_eval`` "Visibility").
     visible: frozenset[TermRef] | None = None
+    # Per concrete type, the attribute names the caller may see; None = no mask. A revision
+    # loses every other attribute (a type without an entry loses all of them) before a
+    # ``where`` or ``order`` that names a masked attribute is evaluated, and the revisions
+    # handed out are stripped (``query_eval`` "Attribute mask").
+    attributes: AttributeMask | None = None
+    # Whether a revision stripped by ``visible`` or ``attributes`` gets the content hash of
+    # what is left. False only for internal queries whose revisions never reach a caller as
+    # such (``lookup`` and ``search`` read labels and text): their hashes are then stale.
+    rehash: bool = True
 
     def __post_init__(self) -> None:
         if self.limit < 0 or self.offset < 0:
@@ -121,6 +131,7 @@ class NeighborQuery:
     direction: Literal["out", "in", "both"]
     depth: int = 1
     visible: frozenset[TermRef] | None = None  # as ``Query.visible``: hidden nodes are not walked
+    attributes: AttributeMask | None = None  # as ``Query.attributes``: neighbors are stripped
 
     def __post_init__(self) -> None:
         if not 1 <= self.depth <= MAX_NEIGHBOR_DEPTH:

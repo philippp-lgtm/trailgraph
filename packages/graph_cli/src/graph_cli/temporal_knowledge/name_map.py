@@ -17,7 +17,10 @@ an old revision keeps what it stored.
 Renames need a major release (``diff.classify`` rates every rename major, and a migration file
 is refused on a minor or patch release), so only hops between majors are built, and a revision
 of the pinned major is never mapped. A version that is not in the chain (a stream that does
-not reach back to it) maps to itself.
+not reach back to it) maps to itself, and so does a revision behind a hop whose release files
+could not be read; ``unmapped`` tells both apart from a revision whose names are known to fit
+the pin (field visibility plan R3: a reader limited to some attributes must not trust its
+names).
 
 ``hints`` answers the other side: the current name of an old one, for the "renamed to" hint of
 ``term.unknown`` (old names are never accepted on input).
@@ -25,7 +28,7 @@ not reach back to it) maps to itself.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Final, Literal
@@ -33,7 +36,14 @@ from typing import Final, Literal
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.diff import Renames
-from graph_cli.ontology_layer.migration import MigrationDoc, Retype, class_moves
+from graph_cli.ontology_layer.migration import (
+    MapQualifierValues,
+    MapValues,
+    MigrationDoc,
+    RenameQualifier,
+    Retype,
+    class_moves,
+)
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.semver import Version
 from graph_cli.temporal_knowledge.migrate import (
@@ -166,11 +176,16 @@ class RenameHint:
 
 class NameMap:
     """The chain of pinned versions (the last is the pin) and the hops between them that
-    change names, keyed by the index of their old version in ``chain``."""
+    change names, keyed by the index of their old version in ``chain``. ``unreadable`` holds
+    the indices of the major switches whose hop could not be built (a release file or the
+    migration file did not read)."""
 
-    def __init__(self, chain: Sequence[str], hops: Mapping[int, Hop]) -> None:
+    def __init__(
+        self, chain: Sequence[str], hops: Mapping[int, Hop], unreadable: Iterable[int] = ()
+    ) -> None:
         self.chain = tuple(chain)
         self.hops = dict(hops)
+        self.unreadable = frozenset(unreadable)
 
     @property
     def pin(self) -> str | None:
@@ -205,11 +220,46 @@ class NameMap:
                 hop.old_version,
             )
         )
-        return NameMap((*chain, hop.new_version), {**self.hops, len(chain) - 1: hop})
+        return NameMap(
+            (*chain, hop.new_version), {**self.hops, len(chain) - 1: hop}, self.unreadable
+        )
 
-    def changes(self, version: str) -> bool:
-        """Whether revisions written under ``version`` can have names that changed since."""
-        return bool(self._hops_from(version))
+    def changes(
+        self, version: str, known: Callable[[TermKind, RenameHint], bool] | None = None
+    ) -> bool:
+        """Whether revisions written under ``version`` can have names that changed since.
+        With ``known`` (a test of the current name a caller may see, as for ``hints``), only
+        changes of terms that test keeps count: a rename, retype, attribute map, value map or
+        qualifier step of a hop the revision is mapped through, followed to its current name
+        (field visibility plan R4: the ``--as-of`` warning of a limited reader)."""
+        if known is None:
+            return bool(self._hops_from(version))
+        return any(known(kind, hint) for kind, hint in self._changed(version))
+
+    def _changed(self, version: str) -> Iterator[tuple[TermKind, RenameHint]]:
+        start = self._last_index.get(version)
+        if start is None:
+            return
+        ordered = sorted(self.hops)
+        for position, index in enumerate(ordered):
+            hop = self.hops[index]
+            if index < start or not hop.mapping.changes_names:
+                continue
+            later = [self.hops[i] for i in ordered[position + 1 :]]
+            for kind, source, first in _hop_terms(hop):
+                steps = [first]
+                self._follow(kind, steps, later)
+                yield kind, RenameHint(source, tuple(steps))
+
+    def unmapped(self, version: str) -> bool:
+        """Whether revisions written under ``version`` reach the pin under names the map
+        cannot vouch for: ``version`` is of another major than the pin and either not in the
+        chain or behind an unreadable hop. ``map`` hands such a revision out as stored."""
+        pin = self.pin
+        if pin is None or not other_major(version, pin):
+            return False
+        start = self._last_index.get(version)
+        return start is None or any(i >= start for i in self.unreadable)
 
     def map(self, revision: Revision) -> Revision:
         """``revision`` under the current names with its content hash recomputed; the same
@@ -287,3 +337,24 @@ class NameMap:
             if last.to in names:
                 how = "renamed" if last.to in hop.renames.classes or kind != "class" else "retyped"
                 steps.append(RenameStep(names[last.to], hop.new_version, how))
+
+
+def _hop_terms(hop: Hop) -> Iterator[tuple[TermKind, str, RenameStep]]:
+    """``(kind, old name, step)`` of every term whose name or values change across ``hop``
+    for a revision mapped through it (a value map or a qualifier step keeps the name)."""
+    version = hop.new_version
+    for old, new in sorted(hop.renames.classes.items()):
+        yield "class", old, RenameStep(new, version)
+    for old, new in sorted(hop.renames.relations.items()):
+        yield "relation", old, RenameStep(new, version)
+    for (owner, old), new in sorted(hop.renames.attributes.items()):
+        yield "attribute", old, RenameStep(new, version, owner=owner)
+    for step in () if hop.migration is None else hop.migration.steps:
+        if isinstance(step, Retype):
+            yield "class", step.from_, RenameStep(step.to, version, "retyped")
+            for old, new in sorted(step.attributes.items()):
+                yield "attribute", old, RenameStep(new, version, owner=step.to)
+        elif isinstance(step, MapValues):
+            yield "attribute", step.attribute, RenameStep(step.attribute, version, owner=step.type)
+        elif isinstance(step, MapQualifierValues | RenameQualifier):
+            yield "relation", step.relation, RenameStep(step.relation, version)

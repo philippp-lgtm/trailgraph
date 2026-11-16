@@ -8,6 +8,11 @@ the edges to entities that are not copied, which are dropped, and the content ha
 That reference is a plain in-memory ``GraphView`` replay, so the comparison tests the filter
 against the evaluation the memory store has always run.
 
+The same holds with a random attribute half (field visibility plan F4, F5, section 6): per
+concrete type a random set of visible attributes, and the reference store holds the revisions
+without the others (a type without an entry loses every attribute), the content hash recomputed.
+The queries then also filter, test and sort by attributes.
+
 Compared: ``get``, ``get_many``, ``get_revision``, ``history``, ``incoming``, ``resolve_alias``,
 ``match_suffix``, ``query`` (types, attribute and hash predicates, ``RelConstraint`` out and in
 with and without targets, ``exists`` false, statuses, ordering, paging, ``total``) and
@@ -29,6 +34,7 @@ from support.txbuilder import TxDraft
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, NeighborQuery, Not, OrderKey, Query, RelConstraint
+from graph_cli.kernel.read_view import AttributeMask, ReadView
 from graph_cli.kernel.records import Revision, TxRecord, revision_content_hash
 from graph_cli.services.visibility import VisibleSnapshot
 from graph_cli.storage.common.snapshot import ViewSnapshot
@@ -47,13 +53,19 @@ LIMITS = (1, 2, 5, 50)
 OFFSETS = (0, 0, 0, 1, 3, 40)
 
 
-def stripped(revision: Revision, kept: set[EntityId]) -> Revision:
+def stripped(
+    revision: Revision, kept: set[EntityId], mask: AttributeMask | None = None
+) -> Revision:
     """The revision as the store of the visible part holds it: the edges to entities outside it
-    are gone and the content hash is that of what is left."""
+    and the attributes outside ``mask`` are gone and the content hash is that of what is left."""
     edges = tuple(e for e in revision.edges if e.target in kept)
-    if edges == revision.edges:
+    attrs = revision.attrs
+    if mask is not None:
+        keep = dict(mask).get(revision.type, frozenset())
+        attrs = {name: value for name, value in revision.attrs.items() if name in keep}
+    if edges == revision.edges and attrs == revision.attrs:
         return revision
-    cut = replace(revision, edges=edges)
+    cut = replace(revision, edges=edges, attrs=attrs)
     return replace(cut, content_hash=revision_content_hash(cut))
 
 
@@ -71,7 +83,7 @@ class Sides:
         return len(self.raw)
 
 
-def split(env: StoreEnv, visible: frozenset[str]) -> Sides:
+def split(env: StoreEnv, visible: frozenset[str], mask: AttributeMask | None = None) -> Sides:
     records = list(env.store.changes_since(0, limit=10**6))
     types = {r.id: r.type for tx in records for r in tx.revisions}
     kept = {entity for entity, type_ in types.items() if type_ in visible}
@@ -80,7 +92,7 @@ def split(env: StoreEnv, visible: frozenset[str]) -> Sides:
         reference.apply(
             replace(
                 tx,
-                revisions=tuple(stripped(r, kept) for r in tx.revisions if r.id in kept),
+                revisions=tuple(stripped(r, kept, mask) for r in tx.revisions if r.id in kept),
                 alias_allocations=tuple((e, a) for e, a in tx.alias_allocations if e in kept),
             )
         )
@@ -248,13 +260,91 @@ def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
         ref = ViewSnapshot(sides.reference.at(at))
         for store in stores:
-            view = VisibleSnapshot(store.snapshot(at_seq=at), visible)
+            view = VisibleSnapshot(store.snapshot(at_seq=at), ReadView(visible))
             check_point_reads(seed, view, ref, sides, ids, rng)
             check_queries(seed, view, ref, sides, ids, concrete, rng)
             # a hidden entity is a missing one: no revision, history, edges or neighbours
             for entity in ids:
                 if entity not in sides.kept:
                     assert view.get(entity) is None and not view.history(entity)
+
+
+def random_mask(rng: random.Random, env: StoreEnv) -> AttributeMask:
+    """Per concrete type a random set of its attributes (none and all included); now and then
+    a type without an entry."""
+    found = []
+    for name in env.builder.concrete_classes:
+        if rng.random() < 0.1:
+            continue  # no entry: the type loses every attribute
+        attributes = sorted(env.builder.model.classes[name].attributes)
+        size = rng.choice((0, len(attributes))) if rng.random() < 0.2 else None
+        count = size if size is not None else rng.randint(0, len(attributes))
+        found.append((name, frozenset(rng.sample(attributes, count))))
+    return tuple(found)
+
+
+def attribute_queries(rng: random.Random, sides: Sides, concrete: Sequence[str]) -> list[Query]:
+    """Queries that test, compare and sort by attributes (masked or not), on sibling types and
+    without a type."""
+    values: dict[str, list[object]] = {}
+    for tx in sides.raw:
+        for revision in tx.revisions:
+            for name, value in revision.attrs.items():
+                if isinstance(value, str | int | bool):
+                    values.setdefault(name, []).append(value)
+    names = sorted(values)
+    if not names:
+        return []
+    queries = []
+    for _ in range(14):
+        name = rng.choice(names)
+        where = rng.choice(
+            (
+                Cmp(name, "exists"),
+                Not(Cmp(name, "exists")),
+                Cmp(name, "eq", rng.choice(values[name])),
+                Cmp(name, "ne", rng.choice(values[name])),
+                None,
+            )
+        )
+        queries.append(
+            Query(
+                types=tuple(TermRef(t) for t in pick(rng, concrete, rng.choice((0, 0, 1, 2)))),
+                where=where,
+                record_status=rng.choice(STATUSES),
+                order=rng.choice(
+                    ((), (OrderKey(rng.choice(names)),), (OrderKey(rng.choice(names), True),))
+                ),
+                limit=rng.choice(LIMITS),
+                offset=rng.choice(OFFSETS),
+            )
+        )
+    return queries
+
+
+@pytest.mark.parametrize("seed", range(CASES // 2))
+def test_every_answer_over_an_attribute_view_is_the_answer_over_the_store_without_them(
+    backend: str, ontology: str, tmp_path: Path, seed: int
+) -> None:
+    rng = random.Random(1000 + seed)
+    env = StoreEnv(backend, ontology, tmp_path, seed=seed)
+    visible = random_graph(env, rng)
+    if rng.random() < 0.5:  # half of the cases without a type half
+        visible = frozenset(env.builder.concrete_classes)
+        types: frozenset[str] | None = None
+    else:
+        types = visible
+    mask = random_mask(rng, env)
+    sides = split(env, visible, mask)
+    concrete = env.builder.concrete_classes
+    ids = sorted({r.id for tx in sides.raw for r in tx.revisions})
+    for at in sorted({1, max(1, sides.head // 2), sides.head}):
+        ref = ViewSnapshot(sides.reference.at(at))
+        view = VisibleSnapshot(env.store.snapshot(at_seq=at), ReadView(types, mask))
+        check_point_reads(seed, view, ref, sides, ids, rng)
+        check_queries(seed, view, ref, sides, ids, concrete, rng)
+        for query in attribute_queries(rng, sides, concrete):
+            compare(f"query {query}", seed, view.query(query), ref.query(query))
 
 
 def test_the_comparison_catches_a_view_that_shows_too_much(env: StoreEnv) -> None:
@@ -265,7 +355,28 @@ def test_the_comparison_catches_a_view_that_shows_too_much(env: StoreEnv) -> Non
     sides = split(env, frozenset({first}))
     everything = Query(record_status=STATUSES[1])
     reference = ViewSnapshot(sides.reference.at()).query(everything)
-    exact = VisibleSnapshot(env.store.snapshot(), frozenset({first})).query(everything)
-    wider = VisibleSnapshot(env.store.snapshot(), frozenset({first, second})).query(everything)
+    exact = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({first}))).query(everything)
+    wider = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({first, second}))).query(
+        everything
+    )
     assert exact == reference and reference.total == 1
     assert wider != reference and wider.total == 2
+
+
+def test_the_comparison_catches_a_view_that_shows_an_attribute_too_many(env: StoreEnv) -> None:
+    """Positive control of the attribute half: a view that keeps one attribute more than the
+    reference holds differs from it."""
+    first = env.builder.concrete_classes[0]
+    env.write(lambda d: d.create(first))
+    current = env.store.snapshot().query(Query(record_status=STATUSES[1])).items
+    held = sorted(attribute for r in current for attribute in r.attrs)
+    assert held, "the created entity holds an attribute"
+    everything = Query(record_status=STATUSES[1])
+    narrow = ((first, frozenset(held[1:])),)
+    wide = ((first, frozenset(held)),)
+    reference = ViewSnapshot(split(env, frozenset({first}), narrow).reference.at()).query(
+        everything
+    )
+    exact = VisibleSnapshot(env.store.snapshot(), ReadView(None, narrow)).query(everything)
+    wider = VisibleSnapshot(env.store.snapshot(), ReadView(None, wide)).query(everything)
+    assert exact == reference and wider != reference

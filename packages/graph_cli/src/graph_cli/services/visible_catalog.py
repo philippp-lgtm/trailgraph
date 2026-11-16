@@ -17,12 +17,12 @@ hidden when:
 
 Every other function runs over the filtered view (``services.visibility.VisibleSnapshot``), so
 its answer holds what the reader may see. ``HiddenCatalog`` caches the names hidden per
-(catalog, pin, visible set): the check compiles every entry again, so it runs once per set.
+(catalog, pin, read view): the check compiles every entry again, so it runs once per view.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject
@@ -124,21 +124,23 @@ def hidden_actions(
 
 
 class HiddenCatalog:
-    """The hidden names of a catalog for a visible set, computed once and cached (bounded;
-    the oldest entries go first)."""
+    """The hidden names of a catalog for a read view, computed once and cached (bounded; the
+    oldest entries go first)."""
 
     def __init__(self) -> None:
-        self._found: dict[tuple[str, str, str, frozenset[str]], frozenset[str]] = {}
+        self._found: dict[tuple[str, str, str, Hashable], frozenset[str]] = {}
 
     def of(
         self,
         kind: str,
         catalog_hash: str,
         pin_hash: str,
-        visible: frozenset[str],
+        view: Hashable,
         compute: Callable[[], frozenset[str]],
     ) -> frozenset[str]:
-        key = (kind, catalog_hash, pin_hash, visible)
+        """``compute()`` once per (kind, catalog, pin, ``view``): ``view`` is the reader's
+        ``ReadView`` (any hashable key that tells the model views apart)."""
+        key = (kind, catalog_hash, pin_hash, view)
         found = self._found.get(key)
         if found is None:
             found = compute()

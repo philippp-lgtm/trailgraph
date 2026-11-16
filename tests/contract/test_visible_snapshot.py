@@ -18,6 +18,7 @@ from support.txbuilder import TxDraft
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import revision_content_hash
 from graph_cli.services.visibility import VisibleSnapshot
 
@@ -39,7 +40,7 @@ class World:
         return self.env.store.snapshot(at_seq=seq)
 
     def view(self, seq: int | None = None, *, over: Snapshot | None = None) -> VisibleSnapshot:
-        return VisibleSnapshot(over or self.raw(seq), frozenset({self.a}))
+        return VisibleSnapshot(over or self.raw(seq), ReadView(frozenset({self.a})))
 
     def names(self, entities: list[EntityId]) -> list[str]:
         by_id = {entity: name for name, entity in self.ids.items()}
@@ -129,12 +130,12 @@ def test_get_revision_and_history_are_stripped_and_hashes_match(world: World) ->
 
 
 def test_a_past_revision_is_judged_by_the_current_type(world: World) -> None:
-    other = VisibleSnapshot(world.raw(), frozenset({world.b}))
+    other = VisibleSnapshot(world.raw(), ReadView(frozenset({world.b})))
     # B2 is retracted but of a visible type for ``other``: still visible, edges to A* stripped
     assert other.get(world.ids["B2"]) is not None
     assert other.get_revision(world.ids["A1"], 1) is None
     # as of seq 1 an entity created later has no current revision and no revision either
-    early = VisibleSnapshot(world.raw(1), frozenset({world.a}))
+    early = VisibleSnapshot(world.raw(1), ReadView(frozenset({world.a})))
     assert early.get_revision(world.ids["A2"], 2) is None
     assert [m.rev for m in early.history(world.ids["A2"])] == [1]
 
@@ -222,7 +223,7 @@ def test_neighbors_never_walk_a_hidden_node(world: World) -> None:
 def test_every_type_visible_equals_the_raw_snapshot(world: World) -> None:
     raw = world.raw()
     everything = frozenset({world.a, world.b})
-    view = VisibleSnapshot(raw, everything)
+    view = VisibleSnapshot(raw, ReadView(everything))
     for name, entity in world.ids.items():
         assert view.get(entity) == raw.get(entity), name
         assert view.history(entity) == list(raw.history(entity)), name

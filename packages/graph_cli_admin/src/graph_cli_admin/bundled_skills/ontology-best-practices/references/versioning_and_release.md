@@ -11,8 +11,8 @@ refuses less. A larger bump than needed is a warning.
 | Level | Changes |
 | --- | --- |
 | patch | summaries, descriptions, annotations, mappings, `display_prefix`, order of enum values, clearing `deprecated` |
-| minor | new class, attribute (optional), relation, qualifier (optional), enum value, datatype, enum, lifecycle, state (not initial), transition, import; setting `deprecated`; loosening: `required` or `unique` off, a facet, a cardinality, a wider `domain` or `range`, a looser mutability; `abstract` off; a new `role`; a changed `default`; removing a guard or a characteristic; a new or changed warning rule; removing a warning rule; a rule changed from error to warning; `on_target_inactive` changed to `warn` or `allow` |
-| major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a facet, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; `on_target_inactive` changed to `refuse` |
+| minor | new class, attribute (optional), relation, qualifier (optional), enum value, datatype, enum, lifecycle, state (not initial), transition, import; setting `deprecated`; loosening: `required` or `unique` off, a facet, a cardinality, a wider `domain` or `range`, a looser mutability; `abstract` off; a new `role`; a changed `default`; removing a guard or a characteristic; a new or changed warning rule; removing a warning rule; declaring a marking; removing a marking from an attribute (`remove_marking`); a rule changed from error to warning; `on_target_inactive` changed to `warn` or `allow` |
+| major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a facet, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; adding a marking to an existing attribute (`add_marking`); removing a marking declaration (`remove_marking_term`); `on_target_inactive` changed to `refuse` |
 
 Renames are recognized only with `renamed_from`; without it a rename is a
 removal plus an addition. `ontology diff` and `ontology release` refuse a
@@ -21,6 +21,48 @@ the old term does not exist, still exists, the new term existed already, two
 terms name the same old one, or the old term is a `core:` or built-in module
 term); one the previous release applied already only warns
 (`ontology.rename_stale`), so a copied version directory still releases.
+
+## Markings
+
+A marking hides an attribute from every reader who does not hold it (what readers see is in
+`docs/access_control.md`, "Markings"). For the release it means:
+
+- **Levels.** A new attribute declared with a marking is an ordinary new attribute (minor).
+  `add_marking` on an existing attribute is major (for readers without the marking the attribute
+  disappears, like a removed one, and functions, actions and skills that read it change).
+  `remove_marking` is minor, but the values, history included, become readable for every
+  reader that sees the type: the release warns `admin.marking_removed` and names the markings that
+  remain. Declaring a marking (`add_marking_term`) is minor; removing a declaration
+  (`remove_marking_term`) is major and only possible once no attribute uses it. A marking that
+  moves to another module has another CURIE: it shows as `remove_marking` plus `add_marking`.
+- **Compiled form.** A model that uses markings compiles to `graph_cli.compiled_ontology/2` with
+  `requires: ["markings"]`; a model without them stays `/1`, byte for byte. Programs before 0.23.0
+  refuse `/2` (`format.unsupported_version`), so update the servers and clients before the first
+  release that marks an attribute: older ones would otherwise show it.
+- **A marked name is never reused unmarked.** Old revisions keep the names they stored, so a
+  name that was marked once must not turn up in a new version without the marking as another
+  attribute of the data. The release is decided by the name map, history included: for every
+  released version of the graph, a value stored under a marked attribute is followed to where
+  the new version reads it. It is refused (`ontology.marking_name_reused`, `details.reuses`
+  lists version, type, attribute and where it lands) when it lands in an attribute with weaker
+  markings and nothing in the diff links the two: a marked name dropped and declared again
+  unmarked, an implicit retype carry (marked `A.x` retyped to `B`, which declares an unmarked
+  `x`), a marked parent attribute redeclared unmarked lower in the hierarchy. A deliberate
+  downgrade, visible as `remove_marking`, a `renamed_from` or an explicit retype attribute map, is
+  allowed and warns `admin.marking_removed` ("including history"). A name that returns
+  unmarked while every old value maps away by a rename warns
+  `ontology.marking_name_returned`: maintainer surfaces still show the old names. The check fails
+  closed while markings are in play: a release of the graph's history that cannot be read, or an
+  incomplete pin history, refuses with `details.unreadable`. A graph with no trace of markings is
+  not judged. Rename a marked attribute with `renamed_from` and keep its markings; give a new
+  meaning a new name.
+- **Other warnings** (state based, shown by `graph-admin ontology release`, `graph-admin graph push` and
+  `graph-admin ontology diff --graph`): `admin.marking_ungranted` (a marking in use is granted by no
+  installed grant; only maintainer surfaces see those attributes, and without an installation policy
+  no app caller can read or write them), `admin.policy_unknown_marking` (an installed grant names
+  a marking the version does not declare), `admin.marking_blocks_create` (a required
+  attribute without a default is marked), `admin.marking_in_expression` (a rule, lifecycle guard
+  or action precondition names a marked attribute). Fix each one or record why it stays.
 
 ## Major versions on a graph with data
 

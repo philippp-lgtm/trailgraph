@@ -15,7 +15,13 @@ import ast
 import re
 
 from harness import REPO_ROOT
-from support.fixtures import MODULAR_ONTOLOGIES, TOY_ONTOLOGIES, compiled_model, ontology_versions
+from support.fixtures import (
+    MARKED_ONTOLOGIES,
+    MODULAR_ONTOLOGIES,
+    TOY_ONTOLOGIES,
+    compiled_model,
+    ontology_versions,
+)
 
 from graph_cli.ontology_layer.bundle import LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
@@ -44,7 +50,7 @@ def deny_list() -> tuple[set[str], set[str]]:
     """``(words, prefixes)`` taken from the fixture modules themselves."""
     words: set[str] = set()
     prefixes: set[str] = set()
-    for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES):
+    for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES, *MARKED_ONTOLOGIES):
         for version in ontology_versions(name):
             model = compiled_model(name, version)
             authored = [m for m in model.modules if m.id not in BUILTIN_MODULES]
@@ -123,7 +129,8 @@ def test_deny_list_is_meaningful() -> None:
     words, prefixes = deny_list()
     assert {"Item", "WebPage", "located_in", "in_stock", "serial_number"} <= words
     assert {"Position", "OrgUnit", "reports_to", "work_email"} <= words  # every authored module
-    assert prefixes == {"nas", "inv", "ppl", "org", "ops", "co"}
+    assert {"Person", "birth_date", "team_internal"} <= words  # markings are terms too
+    assert prefixes == {"nas", "inv", "ppl", "org", "ops", "co", "ex", "stf"}
     assert "about" not in words  # plain single words are excluded
     assert "retrieved_at" not in words  # also a term of the standard module files
 

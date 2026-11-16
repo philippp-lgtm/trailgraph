@@ -1,0 +1,78 @@
+{
+  "diffs": [
+    {
+      "changes": [
+        {
+          "detail": {
+            "marking": "ex:personal"
+          },
+          "kind": "remove_marking",
+          "level": "minor",
+          "path": "classes.ex:Person.attributes.birth_date"
+        },
+        {
+          "detail": {},
+          "kind": "add_attribute",
+          "level": "minor",
+          "path": "classes.ex:Person.attributes.remark"
+        },
+        {
+          "detail": {},
+          "kind": "change_summary",
+          "level": "patch",
+          "path": "markings.ex:personal"
+        },
+        {
+          "detail": {},
+          "kind": "add_marking_term",
+          "level": "minor",
+          "path": "markings.ex:team_internal"
+        }
+      ],
+      "from": "1.0.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.1.0"
+    },
+    {
+      "changes": [
+        {
+          "detail": {
+            "marking": "ex:personal"
+          },
+          "kind": "add_marking",
+          "level": "major",
+          "path": "classes.ex:Person.attributes.remark"
+        },
+        {
+          "detail": {
+            "marking": "ex:team_internal"
+          },
+          "kind": "remove_marking",
+          "level": "minor",
+          "path": "classes.ex:Person.attributes.remark"
+        },
+        {
+          "detail": {
+            "marking": "ex:personal"
+          },
+          "kind": "add_marking",
+          "level": "major",
+          "path": "classes.ex:Person.attributes.team"
+        },
+        {
+          "detail": {},
+          "kind": "remove_marking_term",
+          "level": "major",
+          "path": "markings.ex:team_internal"
+        }
+      ],
+      "from": "1.1.0",
+      "level": "major",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "2.0.0"
+    }
+  ],
+  "ontology": "personnel",
+  "schema": "graph_cli.fixture_diffs/1"
+}

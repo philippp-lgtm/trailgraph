@@ -2,8 +2,8 @@
 
 They live in the maintenance distribution, so the app distribution carries
 no maintenance vocabulary. The admin composition root registers them. Most are
-``admin.*``; the ``ontology.rename_*`` and ``migration.*`` codes belong to the release
-checks that only maintainers run.
+``admin.*``; the ``ontology.rename_*``, ``ontology.marking_*`` and ``migration.*`` codes belong
+to the release checks that only maintainers run.
 """
 
 from __future__ import annotations
@@ -53,6 +53,24 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         _C.WARNING,
         False,
         "A renamed_from was applied by the previous release.",
+    ),
+    ErrorSpec(
+        "ontology.marking_name_reused",
+        _C.REFUSED,
+        False,
+        "A release would show marked values under a name declared without the marking.",
+    ),
+    ErrorSpec(
+        "ontology.marking_name_returned",
+        _C.WARNING,
+        False,
+        "A once-marked attribute name returns unmarked; its old values map away.",
+    ),
+    ErrorSpec(
+        "admin.marking_removed",
+        _C.WARNING,
+        False,
+        "A release removes a marking: the values become readable for more callers.",
     ),
     ErrorSpec("admin.integrity_errors", _C.INVALID, False, "Verification found errors."),
     ErrorSpec(
@@ -130,6 +148,32 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         _C.WARNING,
         False,
         "A write grant of the policy can never succeed.",
+    ),
+    ErrorSpec(
+        "admin.policy_unknown_marking",
+        _C.WARNING,
+        False,
+        "A grant names a marking the graph's model does not declare.",
+    ),
+    ErrorSpec(
+        "admin.marking_ungranted",
+        _C.WARNING,
+        False,
+        "A marking in use is granted by no installed policy: only maintainers see it.",
+    ),
+    ErrorSpec(
+        "admin.marking_in_expression",
+        _C.WARNING,
+        False,
+        "A rule, guard or precondition names a marked attribute: its refusals tell callers"
+        " without the marking about it.",
+    ),
+    ErrorSpec(
+        "admin.marking_blocks_create",
+        _C.WARNING,
+        False,
+        "A required attribute without a default is marked: callers without the marking cannot"
+        " create the type.",
     ),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),
     ErrorSpec(

@@ -9,7 +9,8 @@ Order:
    action (B6.5), and a project admin (the maintenance entrypoint with a
    verified project: an admin token bound to a project) gets at most the
    actions of the ``maintain`` scope level (graph-level maintenance and
-   ``read.get``), on a graph; hard-coded, evaluated before any policy;
+   ``read.get``), on a graph; hard-coded, evaluated before any policy (so it never holds
+   a marking: ``marking:<graph>/<curie>`` is no graph resource);
 3. the first matching **deny** rule of any document: an explicit deny wins
    (B6.6);
 4. the first matching allow rule, else default deny;
@@ -77,8 +78,9 @@ def authorize(
     return _decide(actor, Action(action), resource, resource, ctx, policy)
 
 
-# Appended to the resource of ``authorize_unlisted_type``: no CURIE (so no exact rule resource)
-# ends in it, while every glob that matches the type still matches.
+# Appended to the resource of ``authorize_unlisted_type`` and ``authorize_unlisted_attribute``:
+# no CURIE or name (so no exact rule resource) ends in it, while every glob that matches the
+# type or attribute still matches.
 _UNLISTED_MARK: Final = "~"
 
 
@@ -99,6 +101,30 @@ def authorize_unlisted_type(
     if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
         raise GraphCliError("internal.error", f"unknown action {action!r}")
     resource = f"graph:{graph}/type:{type_curie}"
+    if not RESOURCE_RE.match(resource):
+        raise GraphCliError("internal.error", f"malformed resource {resource!r}")
+    return _decide(actor, Action(action), resource + _UNLISTED_MARK, resource, ctx, policy)
+
+
+def authorize_unlisted_attribute(
+    actor: ActorContext,
+    action: str,
+    graph: GraphId,
+    type_curie: str,
+    attribute: str,
+    ctx: AuthzContext,
+    policy: PolicySet,
+) -> Decision:
+    """``authorize`` for ``graph:<graph>/type:<type_curie>/attr:<attribute>`` as if no rule
+    named that attribute: the decision an attribute gets that the policy does not list, which
+    is what a name the type does not declare gets. A rule on the exact attribute (an entry of
+    a ``writes`` list, a term deny rule) does not match; the globs of the graph, of the type's
+    terms (``attr:*``) and of its prefix do. A caller who must not learn that an attribute
+    exists (a marked one it does not hold) gets its answers to a write naming it from this
+    decision (field visibility plan F6); the decision names the resource as asked."""
+    if not (is_known_action(action) or EXT_ACTION_RE.match(action)):
+        raise GraphCliError("internal.error", f"unknown action {action!r}")
+    resource = f"graph:{graph}/type:{type_curie}/attr:{attribute}"
     if not RESOURCE_RE.match(resource):
         raise GraphCliError("internal.error", f"malformed resource {resource!r}")
     return _decide(actor, Action(action), resource + _UNLISTED_MARK, resource, ctx, policy)

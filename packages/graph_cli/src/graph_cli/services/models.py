@@ -22,7 +22,12 @@ from graph_cli.kernel.ids import GraphId
 from graph_cli.kernel.json_access import JsonShapeError, as_object
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.timing import Timings
-from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
+from graph_cli.ontology_layer.model import (
+    CompiledModel,
+    load_compiled,
+    model_from_json,
+    traces_markings,
+)
 from graph_cli.ontology_layer.vocabulary import MIGRATION_FILE
 
 COMPILED_FILE: Final = "compiled.json"
@@ -40,15 +45,32 @@ class ModelCache:
 
     def load(self, entry: GraphEntry) -> CompiledModel:
         with self._timings.phase("model"):
-            pin = entry.pin
-            data = self._catalog.read_release_file(entry.id, pin.version, COMPILED_FILE)
-            key = hash_bytes(data)
-            cached = self._models.get(key)
-            if cached is not None and cached[0] == pin.artifact_hash:
-                return cached[1]
-            model = load_compiled(data, expected_hash=pin.artifact_hash)
-            self._models[key] = (pin.artifact_hash, model)
-            return model
+            data = self._catalog.read_release_file(entry.id, entry.pin.version, COMPILED_FILE)
+            return self._verified(entry, data)
+
+    def used_markings(self, entry: GraphEntry) -> frozenset[str]:
+        """The markings the pinned model uses (``CompiledModel.used_markings``), decided from
+        the raw bytes first: bytes without a trace of markings (``traces_markings``) hold
+        none, whether or not they match the pin, and are not parsed. Bytes with a trace are
+        loaded as ``load`` does: a pin mismatch or unreadable bytes raise
+        ``ontology.pin_mismatch`` (fail closed: only the pin vouches for which attributes an
+        artifact marks). Nothing is remembered beyond the verified models, so the answer
+        always follows the bytes as they are."""
+        with self._timings.phase("model"):
+            data = self._catalog.read_release_file(entry.id, entry.pin.version, COMPILED_FILE)
+            if not traces_markings(data):
+                return frozenset()
+            return self._verified(entry, data).used_markings()
+
+    def _verified(self, entry: GraphEntry, data: bytes) -> CompiledModel:
+        pin = entry.pin
+        key = hash_bytes(data)
+        cached = self._models.get(key)
+        if cached is not None and cached[0] == pin.artifact_hash:
+            return cached[1]
+        model = load_compiled(data, expected_hash=pin.artifact_hash)
+        self._models[key] = (pin.artifact_hash, model)
+        return model
 
     def load_release(self, graph: GraphId, version: str) -> CompiledModel:
         """The compiled model of an installed release by its version, for reading revisions

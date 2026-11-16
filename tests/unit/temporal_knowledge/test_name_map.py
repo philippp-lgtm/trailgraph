@@ -12,7 +12,7 @@ from graph_cli.kernel.records import Revision, revision_content_hash
 from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.migration import parse_migration
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.temporal_knowledge.name_map import Hop, NameMap, other_major
+from graph_cli.temporal_knowledge.name_map import Hop, NameMap, RenameHint, other_major
 
 V1 = """enums:
   Condition:
@@ -210,3 +210,50 @@ def test_pinned_versions_follow_the_ok_pin_intents() -> None:
         pin("2.0.0", "2.0.0"),
     ]
     assert pinned_versions(lines) == ["1.0.0", "1.1.0", "2.0.0"]
+
+
+# ---- unmapped revisions (field visibility plan R3) ------------------------------------------
+
+
+def test_a_revision_behind_an_unreadable_hop_or_outside_the_chain_is_unmapped() -> None:
+    two, three = single("2.0.0", V2), single("3.0.0", V3)
+    names = NameMap(["1.0.0", "2.0.0", "3.0.0"], {1: hop("2.0.0", "3.0.0", two, three)}, [0])
+    assert names.unreadable == {0}
+    assert names.unmapped("1.0.0")  # the switch to 2.0.0 could not be read
+    assert not names.unmapped("2.0.0")  # every hop after it was read
+    assert not names.unmapped("3.0.0") and not names.unmapped("3.4.0")  # the pinned major
+    assert names.unmapped("0.9.0")  # another major outside the chain: nothing vouches for it
+    old = revision("hammer", "ex:Item", {"name": "Hammer"})
+    assert names.map(written(old, "1.0.0")).attrs == {"name": "Hammer"}  # handed out as stored
+    longer = names.extended(hop("3.0.0", "4.0.0", three, single("4.0.0", V3)))
+    assert longer.unmapped("1.0.0") and not longer.unmapped("2.0.0")
+
+
+def test_a_complete_chain_maps_every_version_in_it() -> None:
+    names = chain()
+    assert names.unreadable == frozenset()
+    assert not any(names.unmapped(v) for v in ("1.0.0", "1.1.0", "2.0.0", "3.0.0"))
+    assert not NameMap([], {}).unmapped("1.0.0")
+
+
+def test_changes_a_caller_sees_follow_its_test_of_current_names() -> None:
+    """``changes(version, known)``: only renames, retypes, attribute maps, value maps and
+    qualifier steps whose current name ``known`` keeps count (field visibility plan R4)."""
+    names = chain()
+    assert names.changes("1.1.0", lambda kind, hint: True)
+    assert not names.changes("1.1.0", lambda kind, hint: False)
+    seen: list[tuple[str, str, str]] = []
+
+    def condition_only(kind: str, hint: RenameHint) -> bool:
+        seen.append((kind, hint.term, hint.current))
+        return kind == "attribute" and hint.current == "condition"
+
+    # the value map of 2.0.0 keeps the name: a caller who sees only the condition sees it
+    assert names.changes("1.1.0", condition_only)
+    assert ("attribute", "condition", "condition") in seen
+    # 3.0.0 renames the class and the label only
+    assert not names.changes("2.0.0", condition_only)
+    # every term of a hop is followed to its current name
+    assert ("class", "ex:Gadget", "ex:Article") in seen and ("attribute", "name", "title") in seen
+    assert not names.changes("3.0.0", lambda kind, hint: True)
+    assert not names.changes("0.9.0", lambda kind, hint: True)

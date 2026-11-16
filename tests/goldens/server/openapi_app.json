@@ -2866,6 +2866,12 @@
           },
           "deprecated": {
             "type": "boolean"
+          },
+          "markings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -4827,11 +4833,18 @@
                       "type": "string"
                     },
                     "role": {
-                      "type": "string",
-                      "enum": [
-                        "label",
-                        "alt_label",
-                        "hidden_label"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "label",
+                            "alt_label",
+                            "hidden_label"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kind": {
@@ -5250,6 +5263,12 @@
                       }
                     },
                     "reads": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "markings": {
                       "type": "array",
                       "items": {
                         "type": "string"

@@ -14,6 +14,8 @@ from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.diff import BumpCheck, derive_renames
+from graph_cli.ontology_layer.migration import parse_migration
+from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.maintenance_cli.commands.common import (
     CHANGE_ERRORS,
     DATA_ROOT,
@@ -28,7 +30,7 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
     RELEASE_OPTIONAL,
     STRINGS,
 )
-from graph_cli_admin.services_admin import graphs, ontology, renamed_terms
+from graph_cli_admin.services_admin import graphs, marking_names, ontology, renamed_terms
 from graph_cli_admin.services_admin.migration import has_renames
 from graph_cli_admin.services_admin.release import (
     catalog_affected,
@@ -81,9 +83,10 @@ def diff_command(
         functions = ctx.catalog.read_functions(entry.id, sources=True)
         actions = ctx.catalog.read_actions(entry.id, sources=True)
         renames = derive_renames(old, new.model)
+        migration = ontology.read_migration(Path(source))
         # what the release would do with the catalogs: publish them again (renames or a
         # migration file) or leave them broken (plan M8)
-        recompile = ontology.read_migration(Path(source)) is not None or has_renames(renames)
+        recompile = migration is not None or has_renames(renames)
         followed_functions, followed_actions = follow_published(
             functions, actions, new.model, new.pin, recompile=recompile
         )
@@ -93,9 +96,16 @@ def diff_command(
         affected = (
             *catalog_affected("functions", followed_functions.problems, version),
             *catalog_affected("actions", followed_actions.problems, version),
-            *policies_affected(ctx.policy.current(entry.id), entry, new.model),
+            *policies_affected(ctx.policy.current(entry.id), entry, new.model, actions),
             *renamed_terms.warning(hazards, version),
         )
+        if new.pin != entry.pin:
+            # a migration file that does not parse is the release's to refuse; its retypes
+            # count here when it does
+            doc = None if migration is None else parse_migration(migration).doc
+            hop = Hop(entry.pin.version, version, old, new.model, renames, doc)
+            preview: dict[str, JsonValue] = {"to": version, "pinned": False}
+            affected += marking_names.check(ctx, entry, hop, preview)
         republished = republished_json(followed_functions, followed_actions)
         if republished:
             graph_data["republished"] = republished
@@ -214,6 +224,7 @@ SPECS: Final = (
             "usage.missing_argument",
             "admin.model_invalid",
             "ontology.rename_invalid",
+            "ontology.marking_name_reused",
         ),
         handler=diff_command,
         output=DIFF_OUTPUT,
@@ -223,7 +234,8 @@ SPECS: Final = (
         " With --graph, authorized maint.graph_configure on the graph; published functions and"
         " actions the release would break and deny rules it would fail open are warnings, and the"
         " answer lists where renamed terms are named (references) and the catalogs the release"
-        " would publish again (republished).",
+        " would publish again (republished); a reused name of a marked attribute is"
+        " ontology.marking_name_reused, as for the release.",
         remote="hooked",
     ),
     CommandSpec(
@@ -272,6 +284,7 @@ SPECS: Final = (
             "graph.archived",
             "admin.model_invalid",
             "ontology.rename_invalid",
+            "ontology.marking_name_reused",
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",
@@ -286,7 +299,10 @@ SPECS: Final = (
         " admin.functions_broken, admin.actions_broken; fix it with graph push; a release with"
         " renames or a migration file publishes the catalogs again by itself when their sources"
         " still compile against the new version); a deny rule of the installed policy that"
-        " names a renamed term and no new one is admin.policy_renamed_term; re-running a"
+        " names a renamed term and no new one is admin.policy_renamed_term; a release that"
+        " would show values stored under a marked attribute under a name declared without that"
+        " marking is ontology.marking_name_reused (a removed marking warns"
+        " admin.marking_removed); re-running a"
         " release that is already pinned changes nothing. A major release may carry a data"
         " migration, the file migration.yaml in SOURCE: it is part of the release (the same"
         " version with another file is admin.release_exists), needs maint.migrate (maintainers"

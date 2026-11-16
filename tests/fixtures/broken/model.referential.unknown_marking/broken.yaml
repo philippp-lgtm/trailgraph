@@ -1,0 +1,22 @@
+format: graph_cli.ir/1
+module:
+  id: broken
+  prefix: brk
+  version: 1.0.0
+  summary: Minimal module with exactly one defect.
+
+markings:
+  personal:
+    summary: Personal data of a natural person.
+
+classes:
+  Thing:
+    summary: Something that is tracked.
+    attributes:
+      name:
+        summary: Display name.
+        type: string
+      contact:
+        summary: How to reach the owner.
+        type: string
+        markings: [brk:personal, brk:secret]

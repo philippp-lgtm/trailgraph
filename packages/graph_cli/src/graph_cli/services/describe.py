@@ -196,6 +196,8 @@ def _fields(model: CompiledModel, cls: ClassDef) -> list[JsonValue]:
             "summary": a.doc.summary,
             "deprecated": a.doc.deprecated,
         }
+        if a.markings:  # only on a marked attribute, so unmarked answers keep their bytes
+            field["markings"] = list(a.markings)
         fields.append(field)
     return fields
 

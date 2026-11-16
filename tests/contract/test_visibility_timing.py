@@ -25,6 +25,7 @@ from support.txbuilder import TxDraft
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, RelConstraint
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.services.visibility import VisibleSnapshot
 
 pytestmark = pytest.mark.slow
@@ -73,7 +74,7 @@ def test_a_limited_reader_stays_within_a_factor_of_an_unlimited_one(
     allowance = ALLOWANCE_S.get(backend, DEFAULT_ALLOWANCE_S)
     raw: Snapshot = env.store.snapshot()
     limited: Snapshot = VisibleSnapshot(
-        env.store.snapshot(), frozenset({env.builder.concrete_classes[0]})
+        env.store.snapshot(), ReadView(frozenset({env.builder.concrete_classes[0]}))
     )
     starts = random.Random(3).sample(seen, 20)
     operations: dict[str, Callable[[Snapshot], object]] = {
@@ -100,3 +101,69 @@ def test_a_limited_reader_stays_within_a_factor_of_an_unlimited_one(
     # the limit filters something: the answers differ, so the comparison is not of equals
     assert limited.query(Query(limit=1)).total == VISIBLE_ENTITIES
     assert raw.query(Query(limit=1)).total == VISIBLE_ENTITIES + HIDDEN_ENTITIES
+
+
+# ---- markings (field visibility plan leak item 12) -----------------------------------------
+
+MARKED_ENTITIES = 5000
+
+
+@pytest.fixture
+def marked(backend: str, tmp_path: Path) -> StoreEnv:
+    env = StoreEnv(backend, "staff", tmp_path)
+
+    def build(draft: TxDraft) -> None:
+        for n in range(MARKED_ENTITIES):
+            draft.create(
+                "stf:Employee",
+                attrs={
+                    "name": f"Person {n}",
+                    "phone": f"+1 555 {n:04d}",
+                    "email": f"p{n}@private.example",
+                    "birth_date": "1990-01-01",
+                    "weekly_hours": n % 40,
+                    "badge_code": f"B-{n}",
+                },
+                alias=None,
+            )
+
+    env.write(build)
+    return env
+
+
+def test_a_reader_without_markings_stays_within_a_factor_of_a_holder(
+    marked: StoreEnv, backend: str
+) -> None:
+    """``find``, ``lookup`` and ``search`` over 5,000 entities of a marked type: the reader
+    without the marking strips every candidate ``lookup`` and ``search`` read (all of them),
+    which must not cost more than a factor of what the holder pays. Their queries skip the
+    content hash of the stripped candidates (``Query.rehash``): with it the memory store paid
+    about 85 ms against 7 ms, without it about 30 ms; the file store about 75 ms against 50."""
+    from graph_cli.query.lookup import LookupSpec, plan_lookup
+    from graph_cli.query.plan import FindSpec, plan_find
+    from graph_cli.query.search import SearchSpec, plan_search
+    from graph_cli.services.visibility import attribute_mask, filter_model
+
+    model = marked.builder.model
+    view = ReadView(None, attribute_mask(model, frozenset()))
+    seen = filter_model(model, None, view.attributes)
+    allowance = ALLOWANCE_S.get(backend, DEFAULT_ALLOWANCE_S)
+    raw: Snapshot = marked.store.snapshot()
+    limited: Snapshot = VisibleSnapshot(marked.store.snapshot(), view)
+    plans = {
+        "find by a visible field, sorted": lambda m: plan_find(
+            m, FindSpec(types=("stf:Employee",), where=("phone:prefix=+1",), sort=("name",))
+        ),
+        "lookup": lambda m: plan_lookup(m, LookupSpec("Person 4711")).query,
+        "search": lambda m: plan_search(m, SearchSpec("person")).query,
+    }
+    for name, plan in plans.items():
+        unlimited = best_of(partial(raw.query, plan(model)))
+        paid = best_of(partial(limited.query, plan(seen)))
+        assert paid <= FACTOR * unlimited + allowance, (
+            f"{name}: {paid * 1000:.1f} ms for the reader without markings, "
+            f"{unlimited * 1000:.1f} ms for the holder"
+        )
+    # the view strips something: the answers differ, so the comparison is not of equals
+    first = limited.query(Query(limit=1)).items[0]
+    assert "email" not in first.attrs and "email" in raw.query(Query(limit=1)).items[0].attrs
