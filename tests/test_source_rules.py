@@ -45,6 +45,27 @@ ENV_AND_OS = {
     ("pwd", "getpwuid"),
 }
 
+# Read at import time, these would differ between a launcher that imports a program once
+# and the runs it forks (tests/support/launcher.py), and between real runs.
+PROCESS_STATE = {
+    ("Path", "home"),
+    ("Path", "cwd"),
+    ("os", "getcwd"),
+    ("os", "urandom"),
+    ("path", "expanduser"),
+    ("path", "expandvars"),
+    ("random", "Random"),
+    ("random", "random"),
+    ("random", "seed"),
+    ("tempfile", "gettempdir"),
+    ("locale", "getlocale"),
+    ("locale", "getpreferredencoding"),
+    ("stdin", "isatty"),
+    ("stdout", "isatty"),
+    ("stderr", "isatty"),
+    ("time", "monotonic"),
+}
+
 WALL_CLOCK_ALLOWED = {"graph_cli.kernel.clock"}
 COMMIT_ALLOWED = ("graph_cli.services.write", "graph_cli.storage")
 MIGRATE_ALLOWED = (
@@ -91,6 +112,38 @@ def _forbidden_access(tree: ast.Module, forbidden: set[tuple[str, str]]) -> list
         if isinstance(node, ast.ImportFrom) and node.module:
             module = node.module.rsplit(".", 1)[-1]
             hits += [f"{module}.{a.name}" for a in node.names if (module, a.name) in forbidden]
+    return hits
+
+
+def _import_time_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    """The nodes that run when the module is imported: module and class bodies, decorators
+    and default values, not function bodies."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+            defaults = [*child.args.defaults, *(d for d in child.args.kw_defaults if d)]
+            for expr in [*child.decorator_list, *defaults]:
+                yield expr
+                yield from _import_time_nodes(expr)
+        elif not isinstance(child, ast.Lambda):
+            yield child
+            yield from _import_time_nodes(child)
+
+
+def _import_time_reads(tree: ast.Module) -> list[str]:
+    """Calls of the forbidden functions and reads of ``os.environ`` at import time (a
+    reference such as a default ``clock=time.monotonic`` is fine: it is called later)."""
+    forbidden = ENV_AND_OS | WALL_CLOCK | PROCESS_STATE
+    environ = {("os", "environ"), ("os", "environb")}
+    hits = []
+    for node in _import_time_nodes(tree):
+        if isinstance(node, ast.Call):
+            pair = _qualified(node.func)
+            if pair in forbidden:
+                hits.append(".".join(pair))
+            elif isinstance(node.func, ast.Attribute) and _qualified(node.func.value) in environ:
+                hits.append(f"os.environ.{node.func.attr}")
+        elif isinstance(node, ast.Subscript) and _qualified(node.value) in environ:
+            hits.append("os.environ[]")
     return hits
 
 
@@ -147,6 +200,25 @@ def test_env_and_os_identity_only_in_wiring() -> None:
         lambda t: _forbidden_access(t, ENV_AND_OS), lambda n: n.startswith(ENV_ALLOWED_PREFIXES)
     )
     assert found == {}
+
+
+def test_importing_reads_nothing_of_the_process() -> None:
+    """Importing a module reads no environment, home, working directory, clock, randomness or
+    terminal: a run of a program then depends only on how it is started, and the tests may
+    fork runs from a process that imported the program once (``support.launcher``)."""
+    assert _violations(_import_time_reads, lambda name: False) == {}
+    controls = (
+        "import os\nHOME = os.environ['HOME']",
+        "from pathlib import Path\nclass C:\n    root = Path.home()",
+        "import os\ndef f(x=os.getcwd()):\n    pass",
+        "import random\nRNG = random.Random()",
+    )
+    assert all(_import_time_reads(ast.parse(source)) for source in controls)
+    allowed = (
+        "import os\ndef f():\n    return os.environ['HOME']",
+        "import time\ndef f(clock=time.monotonic):\n    return clock()",
+    )
+    assert not any(_import_time_reads(ast.parse(source)) for source in allowed)
 
 
 def test_only_the_write_service_commits() -> None:

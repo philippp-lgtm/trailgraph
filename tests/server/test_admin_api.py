@@ -13,12 +13,12 @@ import json
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR, CliRunner
+from support import launcher
 from support.admin import admin, init
 from support.admin_api import command, served, upload_tree
 from support.app import create_graph
@@ -683,7 +683,7 @@ def prepare(env: dict[str, str], cwd: Path) -> str:
         ("policy", "apply", str(policy), "--reason", "equivalence"),
         ("token", "create", "root", "--scope", "admin"),
     ):
-        result = subprocess.run(
+        result = launcher.run(
             [str(BIN_DIR / "graph-admin"), *args, "--json"],
             env=env,
             cwd=cwd,
@@ -710,7 +710,7 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
 
     def run(*args: str, text: bool = False) -> None:
         argv = [str(BIN_DIR / "graph-admin"), *args, *([] if text else ["--json"])]
-        result = subprocess.run(argv, env=env, cwd=cwd, capture_output=True, text=True, timeout=60)
+        result = launcher.run(argv, env=env, cwd=cwd, capture_output=True, text=True, timeout=60)
         if text:
             seen.append([list(args), result.returncode, result.stdout, result.stderr])
         else:
@@ -885,7 +885,7 @@ def test_remote_graph_admin_answers_as_locally(
         client["GRAPH_CLI_ADMIN_TOKEN"] = token
         actual = scenario(client, workdir)
         refused = [
-            subprocess.run(
+            launcher.run(
                 [str(BIN_DIR / "graph-admin"), *args, "--json"],
                 env=client,
                 cwd=workdir,
@@ -897,7 +897,7 @@ def test_remote_graph_admin_answers_as_locally(
                 ("graph", "list", "--data-root", str(tmp_path / "elsewhere")),
             )
         ]
-        view = subprocess.run(
+        view = launcher.run(
             [str(BIN_DIR / "graph-admin"), "view", "--graph", "example_graph", "--no-open"],
             env=client,
             cwd=workdir,
@@ -906,7 +906,7 @@ def test_remote_graph_admin_answers_as_locally(
             timeout=60,
         )
         app_token = json.loads(
-            subprocess.run(
+            launcher.run(
                 [str(BIN_DIR / "graph-admin"), "token", "create", "app", "--json"],
                 env=client,
                 cwd=workdir,
@@ -914,7 +914,7 @@ def test_remote_graph_admin_answers_as_locally(
                 text=True,
             ).stdout
         )["data"]["token"]
-        scoped = subprocess.run(  # text mode: the refusal comes before any command ran
+        scoped = launcher.run(  # text mode: the refusal comes before any command ran
             [str(BIN_DIR / "graph-admin"), "token", "list"],
             env={**client, "GRAPH_CLI_ADMIN_TOKEN": app_token},
             cwd=workdir,
@@ -922,7 +922,7 @@ def test_remote_graph_admin_answers_as_locally(
             text=True,
         )
         without = {k: v for k, v in client.items() if k != "GRAPH_CLI_ADMIN_TOKEN"}
-        unauthorized = subprocess.run(
+        unauthorized = launcher.run(
             [str(BIN_DIR / "graph-admin"), "graph", "list", "--json"],
             env={**without, "GRAPH_CLI_TOKEN": token},
             cwd=workdir,

@@ -1,6 +1,7 @@
 """Shared test harness.
 
-CLIs are tested as subprocesses, the way a user or console AI runs them. Every
+CLIs are tested as processes, the way a user or console AI runs them (forked from a
+preloaded launcher per program, ``support.launcher``, for speed). Every
 run gets a throwaway home and XDG directories, so tests never read or write the
 real user config, data or state. Every envelope a test sees is checked against the
 declared output schemas (``support.output_schemas``).
@@ -13,8 +14,13 @@ from pathlib import Path
 
 import pytest
 from harness import BIN_DIR, CliRunner
+from support import launcher
 
 pytest_plugins = ["support.output_schemas"]
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    launcher.close_all()
 
 
 @pytest.fixture
@@ -54,15 +60,20 @@ def run_cli(isolated_env: dict[str, str], tmp_path: Path) -> CliRunner:
         input: str | None = None,
         env: Mapping[str, str] | None = None,
         cwd: Path | None = None,
+        fresh: bool = False,
     ) -> subprocess.CompletedProcess[str]:
+        """``fresh=True`` starts the console script as a real process, not forked."""
         executable = BIN_DIR / program
         assert executable.exists(), f"console script not installed: {executable}"
-        completed = subprocess.run(
-            [str(executable), *args],
+        command = [str(executable), *args]
+        run_env = {**isolated_env, **(env or {})}
+        start = subprocess.run if fresh else launcher.run
+        completed = start(
+            command,
             input=input,
             capture_output=True,
             text=True,
-            env={**isolated_env, **(env or {})},
+            env=run_env,
             cwd=cwd or tmp_path,
             timeout=60,
         )

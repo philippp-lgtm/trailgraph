@@ -2,12 +2,12 @@
 (usage shapes plan U3): its ``query`` value depends on the query and the catalog only."""
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR
+from support import launcher
 from support.equivalence import home_env
 from support.fixtures import FIXTURES, ONTOLOGIES, compiled_model
 from support.serve import client_env, graph_server
@@ -32,7 +32,7 @@ def prepare(env: dict[str, str], cwd: Path) -> None:
         ("policy", "apply", str(policy), "--reason", "access log"),
         ("graph", "functions", "publish", "example_graph", str(functions)),
     ):
-        done = subprocess.run(
+        done = launcher.run(
             [str(BIN_DIR / "graph-admin"), *args], env=env, cwd=cwd, capture_output=True, text=True
         )
         assert done.returncode == 0, done.stdout + done.stderr
@@ -42,7 +42,7 @@ def prepare(env: dict[str, str], cwd: Path) -> None:
 
 def queried(env: dict[str, str], cwd: Path) -> list[Any]:
     for text in QUERIES:
-        done = subprocess.run(
+        done = launcher.run(
             [str(BIN_DIR / "graph"), "query", text, "--json"],
             env=env,
             cwd=cwd,
@@ -65,7 +65,7 @@ def test_the_query_value_is_equal_locally_and_through_the_server(
 
     owner = home_env(isolated_env, tmp_path / "server")
     prepare(owner, tmp_path)
-    created = subprocess.run(
+    created = launcher.run(
         [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
         env=owner,
         capture_output=True,
@@ -81,7 +81,7 @@ def test_the_query_value_is_equal_locally_and_through_the_server(
             extra='[device]\nid = "0192e000-0000-7000-8000-00000000d001"\n',
         )
         for text in QUERIES:
-            done = subprocess.run(
+            done = launcher.run(
                 [str(BIN_DIR / "graph"), "query", text, "--json"],
                 env=client,
                 cwd=tmp_path,
