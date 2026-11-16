@@ -148,6 +148,74 @@ def test_a_module_whose_only_terms_are_markings_the_caller_lacks_loses_its_prefi
     assert "shr" in held.prefixes and set(held.markings) == {"shr:personal"}
 
 
+CODES = """\
+format: graph_cli.ir/1
+module:
+  id: codes
+  prefix: cd
+  version: 1.0.0
+  summary: Codes no attribute uses.
+enums:
+  Colour:
+    summary: A colour.
+    values:
+      red: {summary: Red.}
+      blue: {summary: Blue.}
+"""
+LEVELS = """\
+format: graph_cli.ir/1
+module:
+  id: levels
+  prefix: lv
+  version: 1.0.0
+  summary: People with a marked tier.
+  imports:
+    - {module: codes, version: "^1.0"}
+markings:
+  personal:
+    summary: Personal data of a natural person.
+enums:
+  Level:
+    summary: A level no attribute uses.
+    values:
+      low: {summary: Low.}
+      high: {summary: High.}
+  Tier:
+    summary: A tier only the marked attribute uses.
+    values:
+      basic: {summary: Basic.}
+      gold: {summary: Gold.}
+classes:
+  Person:
+    summary: A person.
+    attributes:
+      name: {summary: Name., type: string, role: label}
+      tier: {summary: Tier., type: Tier, markings: [personal]}
+  Place:
+    summary: A place.
+    attributes:
+      name: {summary: Name., type: string, role: label}
+"""
+
+
+def test_the_attribute_half_drops_only_the_enums_its_hidden_attributes_alone_use(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "codes.yaml").write_text(CODES)
+    (tmp_path / "levels.yaml").write_text(LEVELS)
+    model = compile_dir("levels", tmp_path)
+    lacking = view_of(model, frozenset())
+    assert "lv:Tier" not in lacking.enums  # every attribute that uses it is hidden
+    assert {"lv:Level", "cd:Colour"} <= set(lacking.enums)  # no attribute uses them
+    # a module whose only term is an enum no attribute uses keeps its prefix
+    assert "cd" in lacking.prefixes and "codes" in [m.id for m in lacking.modules]
+    # the type half alone still drops what no attribute of a kept class uses (stage 3)
+    places = filter_model(model, frozenset({"lv:Place"}))
+    assert set(places.enums) == set() and "cd" not in places.prefixes
+    both = filter_model(model, frozenset({"lv:Place"}), attribute_mask(model, frozenset()))
+    assert set(both.enums) == set() and set(both.prefixes) == set(places.prefixes)
+
+
 # ---- the cache ---------------------------------------------------------------------------
 
 

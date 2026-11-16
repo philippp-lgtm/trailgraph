@@ -15,7 +15,13 @@ from typing import Any
 
 import pytest
 from support.fixtures import FIXTURES, GOLDENS, assert_golden, compiled_model
-from support.markings import ACTION_SOURCES, FUNCTION_SOURCES, twin_model
+from support.markings import (
+    ACTION_SOURCES,
+    FUNCTION,
+    FUNCTION_SOURCES,
+    NAME_ONLY,
+    twin_model,
+)
 from support.skills import GRAPH_SKILL_NAME, graph_entry, render_inputs
 
 from graph_cli.kernel.read_view import ReadView
@@ -149,6 +155,24 @@ def test_a_parameter_typed_by_an_enum_only_hidden_attributes_use_hides_the_entry
     assert action_hidden(next(a for a in ACTIONS if a.name == "set_grade"), view)
     phone = next(a for a in ACTIONS if a.name == "set_phone")
     assert not action_hidden(phone, view)
+
+
+def test_a_parameter_typed_by_an_enum_no_attribute_uses_keeps_the_entry() -> None:
+    unused = MODEL.enums["stf:PayGrade"]  # the same values under a name no attribute uses
+    model = replace(MODEL, enums={**MODEL.enums, "stf:Unused": unused})
+    source = FUNCTION.format(
+        name="by_unused",
+        summary="Names, echoing a value of an unused enum.",
+        params="\n  value:\n    type: enum\n    enum: stf:Unused\n    summary: A value.",
+        query="MATCH (n) RETURN n.name AS name, $value AS value",
+        returns=f"{NAME_ONLY}\n  - column: value\n    summary: The value.",
+    )
+    document, problems = compile_catalog({"by_unused.yaml": source}, model)
+    assert [p.to_json() for p in problems] == []
+    (entry,) = load_entries(document)
+    view = filter_model(model, None, attribute_mask(model, NOTHING))
+    assert "stf:Unused" in view.enums and "stf:PayGrade" not in view.enums
+    assert not function_hidden(entry, view)
 
 
 # ---- preconditions: the compile check leaves no gap ---------------------------------------

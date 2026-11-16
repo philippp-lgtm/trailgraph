@@ -457,12 +457,14 @@ def filter_model(
       the same way. The term match is a substring one: over-dropping is safe because the read
       side never judges data by rules. Removed markings are not matched (a marking is no name
       an expression uses).
-    - Enums, lifecycles and datatypes that no kept attribute or qualifier uses are dropped,
-      the markings are those of the kept attributes (all of them without an attribute half), and
-      a module that lost all its terms goes with its prefix (also one whose only terms are
-      markings the caller lacks). A module that has none in the full model either (a main
-      module that only imports the areas) stays: nothing was hidden from it, and the functions
-      and actions that name it as their module stay visible.
+    - With a type half, enums, lifecycles and datatypes that no attribute of a kept class and
+      no qualifier of a kept relation uses are dropped; the attribute half drops one only when
+      every such attribute that uses it is hidden and no qualifier uses it (one no attribute
+      uses stays). The markings are those of the kept attributes (all of them without an
+      attribute half), and a module that lost all its terms goes with its prefix (also one
+      whose only terms are markings the caller lacks). A module that has none in the full
+      model either (a main module that only imports the areas) stays: nothing was hidden from
+      it, and the functions and actions that name it as their module stay visible.
     """
     classes = model.classes
     if visible is None:
@@ -487,7 +489,7 @@ def filter_model(
         for name, relation in model.relations.items()
         if (new := _kept_relation(model, relation, kept)) is not None
     }
-    used = _used_types(new_classes, new_relations)
+    used = _value_types(model, kept, new_classes, new_relations, visible is not None)
     enums = {k: v for k, v in model.enums.items() if k in used}
     lifecycles = {k: v for k, v in model.lifecycles.items() if k in used}
     datatypes = {k: v for k, v in model.datatypes.items() if k in used}
@@ -631,6 +633,24 @@ def _kept_ends(model: CompiledModel, ends: tuple[str, ...], kept: set[str]) -> t
                 if not any(a in kept and model.is_a(a, end) for a in above):
                     found.setdefault(name)
     return tuple(found)
+
+
+def _value_types(
+    model: CompiledModel,
+    kept: Collection[str],
+    classes: Mapping[str, ClassDef],
+    relations: Mapping[str, RelationDef],
+    types_limited: bool,
+) -> set[str]:
+    """The datatypes, enums and lifecycles the model view keeps. The type half keeps those the
+    attributes and qualifiers of the kept classes and relations use (every one without a type
+    half); the attribute half then drops one only when it hides every kept attribute that uses
+    it and no qualifier does. One that no attribute uses is never dropped for the attribute
+    half."""
+    by_types = _used_types({name: model.classes[name] for name in kept}, relations)
+    shown = _used_types(classes, relations)
+    candidates = by_types if types_limited else {*model.enums, *model.lifecycles, *model.datatypes}
+    return {t for t in candidates if t in shown or t not in by_types}
 
 
 def _used_types(classes: Mapping[str, ClassDef], relations: Mapping[str, RelationDef]) -> set[str]:
