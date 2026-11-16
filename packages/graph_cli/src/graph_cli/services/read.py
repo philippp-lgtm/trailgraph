@@ -134,7 +134,12 @@ from graph_cli.services.names import (
 )
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
-from graph_cli.services.visibility import Visibility, VisibleSnapshot
+from graph_cli.services.visibility import (
+    SIGNATURE_VIEWS,
+    Visibility,
+    VisibleSnapshot,
+    remember,
+)
 from graph_cli.services.visible_catalog import HiddenCatalog, hidden_actions, hidden_functions
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
@@ -410,6 +415,7 @@ class ReadService:
         self.usage = usage if usage is not None else UsageNote()
         # Function signatures depend on the model they were derived from, so a limited reader
         # (a filtered model) never shares them with another; ``UNLIMITED``: the raw model.
+        # Bounded like the other view caches (the oldest view goes first).
         self._signatures: dict[ReadView, SignatureCache] = {}
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
@@ -1391,7 +1397,10 @@ class ReadService:
             found: tuple[Cover, ...] = ()
             visible = self.functions(view.actor, view.entry)
             if visible:
-                signatures = self._signatures.setdefault(view.read_view, SignatureCache())
+                signatures = self._signatures.get(view.read_view)
+                if signatures is None:
+                    signatures = SignatureCache()
+                    remember(self._signatures, view.read_view, signatures, SIGNATURE_VIEWS)
                 pairs = signatures.pairs(visible, view.model)
                 found = covers(query_signature(resolved), pairs, view.model)
             described = shape(resolved)

@@ -20,7 +20,7 @@ from graph_cli.kernel.read_view import UNLIMITED
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services import visibility as visibility_module
-from graph_cli.services.visibility import Visibility, attribute_mask
+from graph_cli.services.visibility import Visibility, attribute_mask, remember
 
 EXAMPLE = GraphId(parse_id("0192f0a1-7c3e-7a10-8b2c-1f0e5d6c7b8a"))
 MARKED = compiled_model("personnel", "1.0.0")
@@ -186,3 +186,11 @@ def test_conjunctive_markings_need_every_one() -> None:
         mask = attribute_mask(model, set(held))
         assert mask is not None and "email" not in dict(mask)["ex:Person"], held
     assert attribute_mask(model, set(both)) is None
+
+
+def test_a_bounded_cache_drops_its_oldest_entry() -> None:
+    """The helper of every per-view cache (read views, model views, function signatures)."""
+    cache: dict[int, str] = {}
+    for key in range(5):
+        remember(cache, key, str(key), 3)
+    assert cache == {2: "2", 3: "3", 4: "4"}

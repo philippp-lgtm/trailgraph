@@ -64,6 +64,7 @@ from graph_cli.services.term_model import concrete_types
 
 _ACTOR_CACHE_LIMIT: Final = 512  # (policy, graph, pin, actor) -> read view
 _MODEL_CACHE_LIMIT: Final = 64  # (pin, read view) -> filtered model
+SIGNATURE_VIEWS: Final = 64  # read view -> function signatures (``ReadService``)
 
 NamesRemoved = Callable[[JsonValue], bool]
 
@@ -138,7 +139,7 @@ class Visibility:
             else None
         )
         found = ReadView(types, attributes)
-        _remember(self._visible, key, found, _ACTOR_CACHE_LIMIT)
+        remember(self._visible, key, found, _ACTOR_CACHE_LIMIT)
         return found
 
     def types(
@@ -164,7 +165,7 @@ class Visibility:
         found = self._models.get(key)
         if found is None:
             found = filter_model(model, view.types, view.attributes)
-            _remember(self._models, key, found, _MODEL_CACHE_LIMIT)
+            remember(self._models, key, found, _MODEL_CACHE_LIMIT)
         return found
 
 
@@ -193,7 +194,8 @@ def actor_key(actor: ActorContext) -> tuple[Hashable, ...]:
     )
 
 
-def _remember[K, V](cache: dict[K, V], key: K, value: V, limit: int) -> None:
+def remember[K, V](cache: dict[K, V], key: K, value: V, limit: int) -> None:
+    """Put ``value`` into the bounded ``cache``; the oldest entry goes first when it is full."""
     if len(cache) >= limit:
         del cache[next(iter(cache))]
     cache[key] = value
