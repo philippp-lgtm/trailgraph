@@ -8,13 +8,14 @@ conditions is in [ir_format.md](ir_format.md#conditions).
 | Check | On every write | In a batch check |
 | --- | --- | --- |
 | types, facets, enum values, required, `many` | touched entities | every entity |
-| `unique`, `acyclic`, `immutable` | touched entities | every entity |
+| `unique`, `acyclic` | touched entities | every entity |
+| `immutable` | touched entities, against their previous revision | no (needs the previous revision) |
 | `domain`, `range`, `out` cardinality, qualifiers | edges of touched entities | every edge |
-| `in` cardinality | no | every entity |
+| `in` cardinality | no | every active entity |
 | edges to an inactive target (`on_target_inactive`) | edges the write adds, and the edges pointing at an entity it retracts or supersedes | every edge of an active entity |
 | lifecycle: initial state, allowed transition, guards | the transitioned entity | state names only |
-| rules with `when: write` | touched entities, and for rules with `count` or `sum` also the entities one edge away | every entity |
-| rules with `when: batch` | no | every entity |
+| rules with `when: write` | touched entities, and for rules with `count` or `sum` also the entities one edge away | every active entity |
+| rules with `when: batch` | no | every active entity |
 
 Two consequences:
 

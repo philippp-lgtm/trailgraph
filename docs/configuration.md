@@ -1,6 +1,6 @@
 # Configuration
 
-Both CLIs locate everything with the same code (`graph_cli.catalog`).
+Both CLIs locate everything the same way.
 
 ## Locations
 
@@ -17,11 +17,23 @@ Keep the data root on a local file system (see [Storage](storage.md)).
 
 ## `config.toml`
 
-`graph-admin init` creates it with a device id. It holds the device id and
-name, runtime mode, data root, identity providers, lock timeout, durability,
-audit redaction and the access log, output default, file roots, file size
-limit and the read signal. The sections described elsewhere:
+`graph-admin init` creates it with a device id. Every key is optional; an
+unset key has the default given here or in the document it links to:
 
+- `[device]`: `id` (set by `graph-admin init`), the device in the actor of an
+  invocation, and `name` (`graph-admin init --device-name`), a label for
+  people that nothing reads
+- `[paths]`: `data_root`, absolute or `~/` ([Locations](#locations))
+- `[identity]`: `providers`, the sources of the asserted agent and session,
+  by name (`generic_env`, `claude_code`; both by default; an unknown name
+  stops the command); the OS user is always the principal
+  ([Identity](access_control.md#identity))
+- `[storage]`: `lock_timeout_s` (default 10, up to 3600), how long a writer
+  waits for a graph's lock; `durability` (`"full"` by default, or
+  `"fsync"`): on macOS `"full"` flushes the drive cache as well
+  ([Storage](storage.md))
+- `[activity]`: `signal_reads` (default `false`), see
+  [Live view](live_view.md)
 - `[audit]`: `record_data_root` (default `true`) puts the data root path
   into audit events; `access_log` (default `false`) turns on the
   [access log](audit.md#access-log)
@@ -29,9 +41,8 @@ limit and the read signal. The sections described elsewhere:
   16384, 0 turns it off) and `spill_dir` (absolute or `~/`, default
   `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
-- `[roots]` and `[files]`: [Files](files.md#origins-and-roots)
+- `[roots]` and `[files] max_bytes`: [Files](files.md#origins-and-roots)
 - `[files] store` and `[files.s3]`: [Object storage](#object-storage)
-- `[activity]`: [Live view](live_view.md)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
   `false`) makes it serve the [admin API](server.md#admin-api) too;
@@ -118,6 +129,9 @@ timeout_s = 60
 # allow_plain_http = true                 # http:// to another host: the token travels in clear
 ```
 
+`timeout_s` (default 60, 1 to 3600) is the socket timeout of every request
+([Timeouts](server.md#timeouts)).
+
 The token comes from `GRAPH_CLI_TOKEN`, else from the token stored for the
 configured endpoint and the project of the pointer that applies
 (`<config dir>/tokens/<server>/<project>/token`, written by `graph
@@ -165,15 +179,15 @@ The pointer only narrows what the installation policy allows (see
 | `GRAPH_CLI_GRAPH` | the graph when `--graph` is not given ([Graph selection](cli_graph.md#graph-selection)) |
 | `GRAPH_CLI_ROOT` | the data root, with a warning ([Locations](#locations)) |
 | `GRAPH_CLI_OUTPUT` | `json` makes JSON output the default |
+| `GRAPH_CLI_DEBUG` | `1` prints the stack trace of an unexpected failure (`internal.error`, exit 6) on stderr |
 | `GRAPH_CLI_SPILL_BYTES` | overrides `[output] spill_bytes`; `0` keeps every answer on stdout |
 | `GRAPH_CLI_TOKEN` | the bearer token in [remote mode](#remote-mode), before `[remote] token_file` |
 | `GRAPH_CLI_DIST_DIR` | the directory of wheels `graph-server` hands out ([Self update](server.md#self-update)); set in the image |
 | `GRAPH_CLI_ADMIN_TOKEN` | the admin token of `graph-admin` in [remote mode](#remote-mode), before `[remote] admin_token_file` |
 | `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID`, `GRAPH_CLI_PARENT_SESSION_ID` | the asserted agent and session ([Identity](access_control.md#identity)) |
+| `CLAUDE_CONFIG_DIR` | the user's agent configuration directory, whose `skills/` is the target of `--scope user` ([Installing skills](skills.md#installing-skills)) |
 | `GRAPH_CLI_S3_BUCKET` | the object store's bucket, before `[files.s3] bucket` ([Object storage](#object-storage)) |
 | `AWS_ENDPOINT_URL_S3`, then `AWS_ENDPOINT_URL` | the object store's endpoint, before `[files.s3] endpoint_url` |
 | `AWS_REGION`, then `AWS_DEFAULT_REGION` | the object store's region, before `[files.s3] region` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | the object store's credentials (both keys or neither; the session token is optional); only from the environment |
 | `AWS_CA_BUNDLE` | an absolute path to the CA certificates for the object store's TLS |
-
-Only `catalog` and the admin wiring may read the process environment.

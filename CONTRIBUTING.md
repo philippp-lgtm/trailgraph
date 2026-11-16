@@ -33,7 +33,8 @@ uv run graph-server serve --port 0
 ## CI and releases
 
 `.github/workflows/check.yml` runs on every pull request and every push to
-`main`: the lint commands above, the suite in the image (`docker build
+`main`: the lint commands above, `scripts/lint-workflows.sh`, the suite in the
+image (`docker build
 --target test .`), `scripts/smoke_image.sh` on the runtime image (it
 starts, answers `/v1/health`, and `graph-admin audit verify` in it is
 clean) and the object store integration test against a real S3-compatible
@@ -46,8 +47,7 @@ the tree of the pull request head, and that head has a green first-attempt
 `check` run) is not tested again: every job logs "tree identical to PR #n head
 ..., validated in run ...; not re-run" and succeeds. `scripts/ci-reuse-pr-run.sh`
 decides, any doubt or API error means the full run, and
-`tests/ci-reuse/run.sh` tests it offline. The rule and why it is safe: the
-infra repository's `DECISIONS.md` I31.
+`tests/ci-reuse/run.sh` tests it offline.
 
 A release is a tag `vX.Y.Z` on a commit of `main`. Before tagging, check
 that the `check` run of that commit is green and wait for the `build` run
@@ -60,7 +60,7 @@ of the previous release has to update. `.github/workflows/build.yml`
 refuses a tag that differs from that version, is not on `main` or names an
 image that exists already.
 
-The image is built once and promoted (infra `DECISIONS.md` I32). A push to
+The image is built once and promoted. A push to
 `main` that changes the image inputs (`Dockerfile`, `.dockerignore`,
 `pyproject.toml`, `uv.lock`, `packages/`, `scripts/build_id.py`, `docker/`) builds
 the `linux/amd64` runtime image, runs the smoke test on it and pushes it as the
@@ -96,8 +96,8 @@ reader looks for it:
 | `CONTRIBUTING.md` | contributors | development, tests, fixtures, generated files, these rules |
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
-| `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md` | maintainers | operating graphs, policies, what is protected and what is not |
-| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance), `authoring-graph-actions` (named write actions: the `graph_cli.action/1` format reference, what publishing checks, writing guidance) |
+| `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md`, `server.md` | maintainers | operating graphs, policies, what is protected and what is not, running the server and its API |
+| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates: the block catalog, size budgets, what publishing checks; `docs/skills.md` keeps the concept), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance), `authoring-graph-actions` (named write actions: the `graph_cli.action/1` format reference, what publishing checks, writing guidance) |
 | `examples/<name>/README.md` | newcomers and maintainers | what one example graph shows, how to build it in a throwaway installation, how to load it into an existing one, sample queries; the example's files are its source |
 | `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
 
@@ -123,12 +123,15 @@ Update the documentation in the same change as the code:
 | a `graph` command or option | regenerate the skill; `docs/cli_graph.md`: a row in the command overview for a new command (checked), the cross-command rules when they change |
 | a `graph-admin` command or option | update the inventory golden; `docs/cli_graph_admin.md`: a row in the command overview for a new command (checked), the cross-command rules when they change; the admin skills that name it (`maintaining-graphs`; command lines are checked) |
 | a `config.toml` key, pointer key or environment variable | `docs/configuration.md` |
+| an HTTP route or parameter, a `[server]` setting, a token or enrollment rule, the container | `docs/server.md` (the OpenAPI documents are generated, see [Generated files](#generated-files)); `docs/configuration.md` for a setting |
 | a policy rule, action or identity source | `docs/access_control.md`, and `docs/security_model.md` if what is prevented or detected changes |
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a key, type, limit or check of `graph_cli.function/1`, or a rule publishing applies to functions | `bundled_skills/authoring-graph-functions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
 | a key, type, limit or check of `graph_cli.action/1`, or a rule publishing applies to actions | `bundled_skills/authoring-graph-actions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
+| a block, size budget or publish check of graph skills | `bundled_skills/authoring-graph-skills/SKILL.md` of `graph_cli_admin` (the rules have one home there; `docs/skills.md` describes the concept and links to it; `tests/skills/test_graph_skills_skill.py` pins blocks, reserved files and budgets) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
+| an example graph's files or setup | `examples/<name>/README.md`; `tests/cli/test_company_example.py` keeps the example buildable |
 | install steps or the quickstart | `README.md`; run the quickstart on a throwaway data root |
 
 `uv run pytest tests/test_docs.py` checks that every link and anchor
@@ -154,9 +157,9 @@ inventory, the change set tables and example against the parser, the
 output fields against real answers and the envelope keys against the
 renderer (docs-vs-code), and
 reject leaks: fixture vocabulary, maintenance commands, actions or codes,
-placeholders outside `<graph> <type> <id> <attr> <value> <relation>
-<module> <function> <action> <state> <file> <json> <seq> <dir>`, paths, ids and non-ASCII
-text. The skill names no graph type.
+placeholders outside the allowed set (`ALLOWED_PLACEHOLDERS` in
+`tests/skills/test_app_skill_checks.py`), paths, ids and non-ASCII text. The
+skill names no graph type.
 
 The OpenAPI documents of the server are generated from the inventories with
 output schemas and kept as goldens (`tests/goldens/server/`), so every API
@@ -188,16 +191,36 @@ headers and envelope keys per level and fails until the change is judged.
 | crash | `tests/crash/` | `kill -9` of a child process at every named fault point, for storage commits and for the write service with a retry; interrupted maintenance operations |
 | concurrency | `tests/concurrency/` | real processes: lock timeout, no lost writes, alias uniqueness, reader isolation, conflicting `expect_rev` |
 | tamper | `tests/tamper/` | hand-edited files: torn tails, interior damage, one scenario per storage and audit finding code |
-| CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the P1 exit criteria through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
-| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written `ontology-best-practices` skill: its YAML examples compile, the format reference names every accepted key, structure |
+| CLI | `tests/cli/` | `graph` and `graph-admin` as subprocesses: commands, envelopes, exit codes, one scenario per app and admin code; the write guarantees through `graph` (failing audit sink, kill -9 then retry, parallel writers, nothing written by reads) |
+| skills | `tests/skills/` | the committed `graph-cli` skill: freshness, docs-vs-code, leaks (also of every `skills emit` output, static and generated graph skills), structure; the hand-written admin skills: their YAML examples compile, their format references name every accepted key, their command lines name real commands and options (the files are listed below the table), structure |
 | server | `tests/server/` | `graph-server` in-process (routes, auth, uploads, CORS, denials audited) and as a process (threads plus a `graph-admin` process lose no writes); the remote `graph` against stub servers (lost answers, retries, versions); every command answers the same locally and remotely on both toy ontologies; the admin API (token scopes, maintainers, no paths from requests) and every `graph-admin` command it runs answering the same from a remote-mode host |
 | docker | `tests/docker/` | opt-in (`GRAPH_CLI_DOCKER_TESTS=1`): the container killed mid-write recovers, `audit verify` in it stays clean |
 | integration | `tests/integration/` | opt-in (`GRAPH_CLI_TEST_S3_ENDPOINT` and the other variables the module names): stored files in a real S3-compatible store through both programs, local and remote mode (add, read, download, verify, gc, move both ways, quota, store check, wrong settings); `tests/integration/run_garage.sh` starts the pinned Garage image, creates a bucket, a key and a quota, and runs it |
 | architecture | `tests/test_architecture.py`, `tests/test_source_rules.py` | import contracts with positive controls, source rules, wheel contents |
-| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the `ontology-best-practices` skill), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
+| docs | `tests/test_docs.py` | documentation links and anchors resolve (also inside the example's README and the admin skills), the docs index lists every document, the command overviews of `graph` and `graph-admin` match their inventories |
+
+The admin skill tests are `tests/skills/test_ontology_skill.py` (YAML examples
+of `ontology-best-practices` compile; its format reference names every key the
+parser accepts), `tests/skills/test_functions_skill.py` and
+`tests/skills/test_actions_skill.py` (the same for the function and action
+files of `authoring-graph-functions` and `authoring-graph-actions`),
+`tests/skills/test_graph_skills_skill.py` (the blocks, reserved generated
+files, size budgets and listing limits that `authoring-graph-skills` states
+match the renderer and the publish check) and
+`tests/skills/test_admin_skills.py` (every `graph-admin` and `graph` command
+line in the admin skills names a real command and only its options). In the
+checkout, link the admin skills for an agent working there (`.claude/` is not
+tracked):
+
+```sh
+mkdir -p .claude/skills
+for s in packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/*/; do
+  ln -s "../../$s" ".claude/skills/$(basename "$s")"
+done
+```
 
 Crash and concurrency tests spawn processes and are marked `slow`; they run
-by default and take a few seconds. Storage tests build transactions with a
+by default. Storage tests build transactions with a
 test-only builder (`tests/support/txbuilder.py`) driven by the compiled toy
 ontologies. Storage tests use minimal audit bodies
 (`tests/support/drafts.py`); tests that verify audit streams use real events
@@ -206,8 +229,8 @@ through `tests/support/services.py` (an in-memory catalog, a builder with
 test clock and seeded ids, and a factory for valid creates of any class).
 `uv run python scripts/bench_store.py` (not part of the suite) times reads
 and writes of `FileStore` on a generated graph, with and without the
-writer's full replay; with `--migration` it migrates a generated graph of about 6,300
-entities and 16,000 edges (every class and relation moves to a new module) with real fsyncs
+writer's full replay; with `--migration` it migrates a generated graph (sizes are
+options; every class and relation moves to a new module) with real fsyncs
 and prints the time of each phase and the peak memory.
 
 ### Which tests to run
@@ -233,9 +256,9 @@ gets a throwaway `HOME` and XDG directories, no `GRAPH_CLI_*` variables and no
 `CLAUDE_CONFIG_DIR`, so tests never touch real user config, data, state or
 installed skills.
 
-Starting `graph` or `graph-admin` costs about 200 ms, nearly all of it
-importing the program, and an end-to-end test runs a program a dozen times or
-more. So on Linux a run is forked from a launcher (`tests/support/launcher.py`):
+Starting `graph` or `graph-admin` costs time, nearly all of it importing the
+program, and an end-to-end test runs a program a dozen times or more. So on
+Linux a run is forked from a launcher (`tests/support/launcher.py`):
 one process per program and test worker that has imported the program's entry
 point the way its console script does; each run is a child of it with the
 run's arguments, environment, working directory and standard streams (pipes),
@@ -299,6 +322,11 @@ service; `company` has a second file for the classes of 1.1.0), role mappings fo
 the Cypher queries (`tests/fixtures/opencypher_tck/`, Apache-2.0; its README
 names the source commit and how to update it; runner in
 `tests/support/tck.py`).
+Two more single-module toy ontologies carry markings for the field visibility
+tests (`personnel` with a version series, and `staff`, whose twin in
+`tests/fixtures/markings/` is the module without everything a caller holding no
+marking may not see); they are listed in `MARKED_ONTOLOGIES`
+(`tests/support/fixtures.py`), not in the toy lists.
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in

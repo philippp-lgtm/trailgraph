@@ -140,7 +140,7 @@ graph do hand_over_position --param position=POS-0013 --param person=EMP-0003 --
 graph do offboard_employee --param employee=EMP-0007 --reason "HR confirmed" --dry-run
 ```
 
-Questions the graph answers (the first three also exist as functions; the rest are `graph query`; the generated skill lists more):
+Questions the graph answers (some also exist as functions, see `graph describe functions`; the others are `graph query`; the generated skill lists more):
 
 - Who holds a position, and whom does it report to, up to the top? `(:Employee)-[:holds]->(:Position)`
   and `(:Position)-[:reports_to*1..4]->(:Position)`.

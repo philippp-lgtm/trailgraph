@@ -80,10 +80,10 @@ and the same command starts over. Then `graph-admin audit verify`.
 ## Remote mode and timeouts
 
 Over a server the whole release is one request and the answer comes when the migration is done.
-A generated graph of 6,300 entities and 16,000 edges took about 7 seconds; the time grows with
-the entities migrated (the preview counts them). Before a large migration ask the user to raise
-`[remote] timeout_s` (default 60 seconds) and to check the read timeout of the ingress in front
-of the server, both above the expected duration with a margin. A dry run is safe to repeat.
+The time grows with the entities migrated (the preview counts them). Before a large migration
+ask the user to raise `[remote] timeout_s` and to check the read timeout of the ingress in front
+of the server, both above the expected duration with a margin (the answer reports `duration_s`).
+A dry run is safe to repeat.
 
 If the answer is lost (`remote.outcome_unknown`), do not guess: wait, run `graph-admin graph
 show <graph>`, then run the same release again. It waits for the lock the running migration

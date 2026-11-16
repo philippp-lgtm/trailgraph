@@ -108,7 +108,7 @@ against it and audited. The CLI is on `PATH`.
    lifecycles with states, transitions and the `guards` a dry run checks.
    On a graph with several modules (subject areas) start with
    `graph describe modules`, then `graph describe module <module>` (their text
-   is made for reading and less than half the size of `--json`) or, for a
+   is made for reading and much shorter than `--json`) or, for a
    term you can only name, `graph describe search <value> --json`
    (types, relations, fields, values; not data); never dump the whole schema.
    For a question, look for a function first (`graph describe search <value>

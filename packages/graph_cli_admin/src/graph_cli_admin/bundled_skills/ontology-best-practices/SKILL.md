@@ -1,6 +1,6 @@
 ---
 name: ontology-best-practices
-description: Design, write, review and release the ontology of a graph_cli graph (YAML format graph_cli.ir/1, checked by graph-admin ontology validate, diff and release). Use when planning a new graph, adding or changing classes, attributes, relations, enums, lifecycles or rules, deciding how to model something, choosing a version bump, or reviewing an ontology change.
+description: Design, write, review and release the ontology of a graph_cli graph (YAML format graph_cli.ir/1, checked by graph-admin ontology validate, diff and release). Use when planning a new graph, adding or changing classes, attributes, relations, enums, lifecycles or rules, deciding how to model something, choosing a version bump, or reviewing an ontology change. Not for reading or writing graph data (the graph-cli skill) and not for rolling a release out (maintaining-graphs).
 ---
 
 # Ontology best practices

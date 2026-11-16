@@ -151,20 +151,17 @@ featured: true
    `graph-admin graph push <graph> <folder> --dry-run` does the same
    together with the ontology, the skill and the functions.
 3. Fix and repeat until it passes. Have the file reviewed: an action
-   writes data on every run.
-4. Publish with `graph-admin graph push <graph> <folder> --reason "<why>"`
-   (or `graph-admin graph actions publish` with `--reason`), then
-   `graph-admin audit verify`. An empty `actions` folder unpublishes all
-   actions. `graph-admin graph actions show <graph>` lists what is
-   published and against which ontology release.
-5. Try it as an agent would, on a throwaway graph or with the dry run:
+   writes data on every run. Publish as described in `maintaining-graphs`;
+   `graph-admin graph actions show <graph>` lists what is published and
+   against which ontology release.
+4. Try it as an agent would, on a throwaway graph or with the dry run:
    `graph describe search "<the request>" --kind action`, `graph describe
    action <action>`, then `graph do <action> --param <name>=<value>
    --dry-run`. The dry run writes nothing and shows the ops the action
    expands to. If search does not find it, sharpen `summary` and
    `use_when`; try the neighbouring action with the request that should
    not fit and read the refusal of its precondition.
-6. Agents see a changed list in the generated graph skill after `graph
+5. Agents see a changed list in the generated graph skill after `graph
    skills install` or `graph self update`.
 
 ## Release refusals

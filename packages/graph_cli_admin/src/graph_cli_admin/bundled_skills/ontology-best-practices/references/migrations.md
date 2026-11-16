@@ -10,10 +10,10 @@ revision, written by the maintainer under `maint.migrate`. Old revisions keep wh
 
 Renames come from the ontology, values and shapes from the file.
 
-- **Renames.** `renamed_from` on a class, relation or attribute is the one source. It is a
-  local name for a rename inside a module, and for a class or relation it may be the CURIE of
-  the old term (`renamed_from: old:Task` on `new:Task`) to move it to another module. The data
-  follows with no step, and the alias prefix moves with the class.
+- **Renames.** `renamed_from` on a class, relation or attribute is the one source
+  ([Renames](versioning_and_release.md#renames): local name, CURIE for a move to another
+  module, the checks). The data follows with no step, and the alias prefix moves with the
+  class.
 - **The file** says what the ontology cannot: a value that no longer exists, a new required
   attribute, a merged class, data to drop.
 
@@ -23,18 +23,9 @@ opt-in. Without it the release is refused with a hint to the file and to the pre
 
 ## Renames and moves across modules
 
-`renamed_from` is the one source of renames, for classes, relations and attributes. A local
-name (`renamed_from: Task`) means the same module; for a class or a relation the CURIE of the
-old term (`renamed_from: old:Task`, kept as written, no import needed, the old module may be
-gone) moves it to another module. The diff then reports a `rename` (major) instead of a removal
-plus an addition, the data follows with no step, and the alias prefix moves with the class.
-
-`ontology diff` and `ontology release` refuse a `renamed_from` that does not fit the pinned
-release (`ontology.rename_invalid`, every problem with its path): the old term does not exist,
-it still exists in the new version, the new term existed in the old one (the two would merge),
-two terms name the same old one, or the old term is a `core:` or built-in module term
-(`files:`). A `renamed_from` the previous release applied already is only the warning
-`ontology.rename_stale`: remove it from the sources.
+The diff reports a `rename` (major) instead of a removal plus an addition, for a local rename
+and for a move by CURIE alike; the rules for `renamed_from` and its refusals are under
+[Renames](versioning_and_release.md#renames).
 
 Enum values, states, qualifiers, datatypes, enums and lifecycles have no `renamed_from`. An enum,
 datatype or lifecycle that moves to another module shows as a removal, an addition and a
@@ -177,29 +168,16 @@ classes and brings the areas together, and two areas: `planning` (prefix `plan`)
 
 ## Releasing
 
-1. Back up the graph first (a migration rewrites data; the log keeps the old revisions, but
-   a restore point is cheaper than a repair).
-2. `graph-admin graph pull <graph> <workspace>`, copy the version directory to the new
-   version, edit the modules (with `renamed_from` where terms are renamed or moved) and write
-   `migration.yaml` next to them.
-3. Preview: `graph-admin graph check <graph> --ontology <dir>` applies the migration to an
-   overlay and prints, per derived rename and step, the entities and edges changed, by type,
-   with three sample ids, and the findings that remain. `graph-admin ontology release <graph> <dir> --dry-run` and
-   `graph-admin graph push <graph> <dir> --dry-run` show the same block and also check the published functions and actions.
-4. `graph-admin ontology release <graph> <dir> --reason <why>` (or `graph-admin graph push`). The migration
-   is one transaction under the graph lock, committed before the pin switches; the answer
-   reports the entities, edges and entities per step, the transaction's seq and the duration.
-   Writers wait for the lock: run a large migration in a quiet moment. Over the remote mode the
-   release is one request that answers when the migration is done: raise `[remote] timeout_s`
-   and the ingress read timeout above the duration (about 7 seconds for 6,300 entities in a
-   benchmark; time grows with the entities migrated). If the answer is lost
-   (`remote.outcome_unknown`), run the same command again: it waits for the running migration,
-   then finds it done or finishes it, and never migrates twice.
-5. `graph-admin audit verify` must report no errors.
+The workflow (backup, preview, push, refusals, remote timeouts) is in the `maintaining-graphs`
+skill, `references/release_with_a_migration.md`. Order of the checks:
+`graph-admin ontology diff <dir> --graph <graph>` (renames, policy, functions, actions), then
+`graph-admin graph check <graph> --ontology <dir>` (the preview of what the migration changes),
+then the release. An interrupted release is finished by running the same
+release again.
 
 ## Functions and actions
 
-Check what a rename does around the data before step 4 of the release: `graph-admin ontology
+Check what a rename does around the data before the release: `graph-admin ontology
 diff <dir> --graph <graph>` lists, per renamed term, the functions, actions and policy rules
 that name the old one.
 
@@ -225,12 +203,3 @@ that name the old one.
 Only maintainers may migrate (`maint.migrate`); a project admin's release that migrates is
 refused with `access.ceiling`. The file is part of the release: the same version with another
 file is `admin.release_exists`.
-
-## An interrupted release
-
-A crash leaves either the old state or the incomplete one, in which the migration
-transaction is committed but the pin is not switched. There, reads use the new version's names
-(warning `graph.migration_incomplete`), writes are refused (`write.migration_incomplete`),
-`audit verify` warns, and any other release is refused (`admin.migration_incomplete`). Run
-the same release again: it finds the data migrated, checks it and switches the pin. After a
-lost answer in the remote mode do the same: wait, then run the release again.

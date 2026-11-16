@@ -11,22 +11,22 @@ authoring ontologies and graph skills and for rolling them out.
 ## The `graph-cli` skill
 
 `skills/graph-cli/` is the agent skill for `graph`. It is generated, never
-edited by hand: `graph_cli.skills.app_skill.render_app_skill` turns the app
-inventory (`graph describe commands --json`, `graph_cli.inventory/1`) into
-`SKILL.md` (workflow, habits, envelope, command overview, exit codes),
+edited by hand: it is rendered from the app inventory (`graph describe
+commands --json`, `graph_cli.inventory/1`) into `SKILL.md` (workflow, habits,
+envelope, command overview, exit codes),
 `references/commands.md` (arguments, options with their choices and
 defaults, limits and examples per command), `references/errors.md` (every
 error code and what to do per category), `references/query.md` (when and
 how to use `graph query`: names, parameters, the supported subset,
 examples; fixed text of the renderer), `references/changesets.md` (the
 change set documents of `graph apply`: keys, operations, values, limits,
-an example; key tables and limits from `kernel.changeset`, prose fixed in
+an example; key tables and limits from the change set code, prose fixed in
 the renderer), `references/output.md` (the fields of pages, hints,
 warnings, entities, `lookup`, `search` and `history` items and write results; fixed
 text, checked against real answers), `references/files.md` (storing,
 linking and reading files; fixed text) and `references/history.md`
 (earlier revisions and states; fixed text). The renderer reads nothing but
-that document and imports only the kernel (import contract). Its write step sends an agent
+that document. Its write step sends an agent
 to a named action first (`graph describe search <value> --kind action` or the graph skill's
 list, then `graph do <action> --dry-run`, then without) and to the primitives only when none
 fits. The frontmatter `metadata` carries the
@@ -52,28 +52,20 @@ into the graph's runtime area. Its kind follows the content:
 
 ### Blocks
 
-| Block | Renders |
-| --- | --- |
-| `start` | load the `graph-cli` skill before the first command; how to tell the graph is available (`graph graphs --json`, its name and title, `--graph <graph>`); the graph language (and the `<text>@<tag>` form when the model has language-tagged fields); then the rules of working with `graph` that apply from the first call, so that the skill also works when an agent loads it without `graph-cli`: plain `graph` calls with `--json`, retried plainly when refused; `ok`, `data` and `error.hint`; never cut an answer, ask for less (`--fields`, `graph query` with a narrow `RETURN`; on a modular graph the patterns come from the module views, not the whole schema); never guess an option or a term (`--help`, `graph describe type`); a named function before a query (an empty value in its answer means nothing is recorded) and a named action before the write commands, when the graph has them; dry runs, `--reason`, `--expect`, change sets in a file; report `data.findings` |
-| `modules` | the subject areas (ontology modules) of the graph: one row per module that is not built in (module, prefix, summary, number of types, links to other modules with the number of relations per direction), the built-in modules in one line, then the commands to read one module (`graph describe module <module>`), to find a term (`graph describe search <text>`) and to read a type (`graph describe type <type>`). For a graph with several modules it takes the place of `types` and `relations`, which would list every type |
-| `types` | one row per entity type (types with an alias prefix; without any, every concrete type): CURIE and alias example, summary and supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, the label role as main name, other names or hidden names), states and transitions |
-| `relations` | the relations from or to those types: the `graph query` pattern (`(:A)-[:rel]->(:B)`, from `describe schema`), cardinality, characteristics, qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
-| `constraints` | transition guards, rules with severity, and write-once fields unless the template also has `types`, which marks them |
-| `names` | the alias format (`ITEM-0001`; one example when the template also has `types`, whose rows name every alias) and the id forms that work; which fields `graph lookup` matches (label roles: when the template also has `types` and it lists every type with names, a pointer to the roles marked there, else per type); use a candidate only on exactly one exact match, else ask. On a modular graph: one alias example, and the module pages and `graph describe type` for the prefix and name fields of each type |
-| `model` | a pointer to `references/model.md` and `graph describe type` |
-| `functions` | the graph's named functions ([Functions](cli_graph.md#functions)): the number of active functions, then at most 12 of them, those marked `featured: true` in their file (by module, then name; further ones are not listed and nothing warns about them), one line each (`name(signature)`: summary), and the commands to run one (`graph run`), list a module's functions, search them (`graph describe search <text> --kind function`) and read one. Without published functions: one line saying so |
-| `actions` | the graph's named actions ([Actions](cli_graph.md#actions)): the number of actions the installing reader may run, the dry-run rule (`graph do <action> --param <name>=<value> --dry-run`, read, then run without), at most 8 of them, those marked `featured: true` in their file (by module, then name; the others are not listed), one line each (`name(signature)`: summary; `?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), and the commands to list a module's actions, search them (`graph describe search <text> --kind action`) and read one (`graph describe action`). Unlike the functions, the listing follows the reader's write rights: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill, and with none left the block is one line saying there are no published actions, as for a graph without any |
-
-Each block may be used once; an unknown block name is refused. Every
-generated skill also gets `references/model.md` (every type of the model,
-imported ones included, with all fields, lifecycles, relations and rules),
-so a template may not contain a file of that name. A stamp after the
-frontmatter names the graph, the ontology release and the template hash;
-the program version and the time are not in it, so a new program with the
-same render stays `fresh`. The summary of a deprecated term starts with
-"Deprecated." in every block. Blocks use only the model and the manifest,
-never graph data (no counts, no records). Curated examples may name real
-aliases.
+The blocks are generated from the graph's model, its manifest and its
+function and action catalogs. Which blocks there are, what each renders and
+how to use them in a template is the catalog of the [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template)
+admin skill, the one home of the authoring rules. Here is what holds for
+all of them. Each block may be used once; an unknown block name is refused.
+Every generated skill also gets `references/model.md` (every type of the
+model, imported ones included, with all fields, lifecycles, relations and
+rules), so a template may not contain a file of that name. A stamp after
+the frontmatter names the graph, the ontology release and the template
+hash; the program version and the time are not in it, so a new program
+with the same render stays `fresh`. The summary of a deprecated term starts
+with "Deprecated." in every block. Blocks use only the model and the
+manifest, never graph data (no counts, no records). Curated examples may
+name real aliases.
 
 A graph with two or more modules besides the built-in ones is modular. Its
 generated skill reads the model module by module instead of in one piece:
@@ -89,8 +81,7 @@ generated skill reads the model module by module instead of in one piece:
 
 A graph with published functions ([Functions](cli_graph.md#functions)) gets
 more, generated from its compiled catalog (deprecated functions are left
-out everywhere); a graph without any renders exactly as without this
-feature:
+out everywhere); a graph without any gets none of this:
 
 - the `modules` block gets a `Functions` column with the number of active
   functions of each module;
@@ -100,10 +91,6 @@ feature:
 - a single-module graph, which has no module pages, gets
   `references/functions.md` with the same table. A template may not contain
   that file either.
-
-A function costs about 180 bytes on its page (name, signature and a summary
-of the longest length), so a thousand functions take about 70 percent of the
-256 KB of the tree; the model pages share the rest.
 
 A graph with published actions ([Actions](cli_graph.md#actions)) gets the
 same, next to the functions (deprecated actions are left out as well):
@@ -120,20 +107,13 @@ so a reader who may run none gets the skill of a graph without actions.
 `graph-admin` renders and publishes with the whole catalog, so the preview
 and the name check know every action.
 
-A single-module graph renders as before; the `modules` block then lists the
+A single-module graph has no module pages; the `modules` block then lists the
 one module and does not mention pages. Use `modules` instead of `types` and
 `relations` for a modular graph, so `SKILL.md` stays short however many
 types the graph has: its generated blocks then grow with the number of
-modules only, and with the template of the test fixtures `SKILL.md` of a
-graph of 50 modules stays under 20,000 bytes (about 5,000 tokens), whatever
-the size of each module. A graph with published functions may use 2,500
-bytes more for the `functions` block and the `Functions` column, and 2,000
-more for the `actions` block and the `Actions` column (the budget
-`L0_BUDGET` is the base 20,000 plus 2,500 plus 2,000, and a graph without
-functions or actions keeps the base for that part): `SKILL.md` stays under
-24,500 bytes for 50 modules of 20 functions and 10 actions each, whatever
-the number of either, because the blocks list at most 12 functions and 8
-actions. Curated text adds to that.
+modules only, and the blocks list a fixed maximum of functions and actions,
+whatever the number of either. Curated text adds to that. The size budgets
+and what exceeding them does are in the [skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#what-the-curated-text-is-for).
 
 ### Per reader
 
@@ -142,7 +122,7 @@ For a reader with [read limits](access_control.md#read-limits) the model blocks
 and pages (`modules`, `types`, `relations`, the references), the functions and
 the actions are rendered from what that reader sees: no hidden type, relation,
 field, function or action is named, and a module with nothing left is gone. A
-reader without limits gets the skill as before. The claim of an installed
+reader without limits gets the whole skill. The claim of an installed
 copy records which set of types and which fields it was rendered for when the
 reader is limited, so a change of the policy that changes either (a type limit,
 a [marking](access_control.md#markings) grant) or a release that marks another
@@ -165,42 +145,15 @@ in curated text raises no `skills.source_unknown_names` warning that would
 itself name it. Write curated text in terms that hold for every reader, and let
 the generated blocks carry the names.
 
-### Budgets
-
-Every generated graph skill has a level 0 budget, single-module graphs
-included: `SKILL.md` after rendering at most 20,000 bytes, plus 2,500 for a
-graph with published functions and 2,000 for one with actions, and its
-curated text (the template's `SKILL.md` outside the frontmatter and the
-block markers) at most 6,000 bytes. A single-module graph lists its whole
-model in `SKILL.md`, so it reaches the budget as its model grows; past it,
-split the model into modules. Curated text past its budget belongs in
-curated `references/*.md` that `SKILL.md` links with the situation in
-which to read them (for instance the rules for entering one kind of
-document). `graph-admin graph skill render` reports the sizes (`data.size`:
-bytes of `SKILL.md` and of the curated text, both budgets and the bytes of
-each block, largest first); render, `graph skill publish` and `graph push`
-warn `admin.skill_over_budget` when either budget is exceeded. Nothing is
-refused for its size below the hard limits of the next section.
-
 ### Publishing
 
-Publishing checks the directory (`graph_cli.skills.tree`): the name equals
-the directory and the frontmatter `name`, regular UTF-8 files only, no
-dotfiles, `SKILL.md` at most 500 lines and the tree at most 256 KB, and no
-maintenance vocabulary (`graph-admin`, `maint.*`, `admin.*`, the data root
-option and variable) or local paths. A template is also rendered against
-the current pin exactly as `graph` will render it, and its curated text is
-checked against the model and the app inventory (`graph_cli.skills.names`):
-every CURIE with a model prefix names a type, relation, enum, lifecycle or
-datatype; every `graph <command>` in code names a command and only its
-flags; aliases with a graph prefix have the live format (`ITEM-1` is
-refused), and in code an alias with a prefix the graph does not use is
-reported; every `graph run <name>` in code names a published function (a
-placeholder such as `<function>` does not count; in a workspace push the
-functions of the same push count), and every `graph do <name>` names a
-published action (the same rules; a deprecated action counts, it still runs). Any problem refuses (`admin.skill_invalid`,
-`details.problems` with `rule` `template`, `term`, `command`, `alias`,
-`function`, `action` next to the tree rules).
+Publishing checks the directory, renders a template against the current pin
+exactly as `graph` will render it and checks its curated text against the
+model, the app inventory and the published functions and actions. Any
+problem refuses (`admin.skill_invalid`); a skill over its size budget is
+published with a warning (`admin.skill_over_budget`). The checks and the
+budgets are listed in the [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#what-publishing-checks)
+admin skill.
 Publishing is audited as `maint.graph_configure` and records the ontology
 version it was checked against; the same files against the same version
 publish nothing. `graph` reads published skills with `read.describe`, so a
@@ -224,15 +177,16 @@ graph skills install --scope project --dir <project>
 `render` writes `<preview>/graph-<graph>/` exactly as `graph skills
 install` would (without the marker), with this checkout's program, and
 reports what publish would refuse (exit 1, the preview is written anyway);
-it changes nothing in the data root. A non-empty preview directory is
-replaced only with `--force`. Without the authored copy at hand (another
+it changes nothing in the data root. `<preview>` must exist; an existing
+`<preview>/graph-<graph>/` is replaced only with `--force`. Without the
+authored copy at hand (another
 machine, the remote mode), `graph-admin graph pull` writes the published
 template into a workspace and `graph-admin graph push` publishes it again
 ([Workspaces](cli_graph_admin.md#workspaces-pull-and-push)).
 
 ## Admin skills
 
-Five hand-written skills for maintainers ship inside `graph-admin`
+Hand-written skills for maintainers ship inside `graph-admin`
 (`packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/`), so every
 install of it, the wheel a server hands out included, carries the version
 that fits it:
@@ -240,7 +194,7 @@ that fits it:
 | Skill | For |
 | --- | --- |
 | [`ontology-best-practices`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/ontology-best-practices/SKILL.md) | authoring an ontology: when a graph pays off, competency questions to release, modeling choices, names and summaries, rules and lifecycles, change levels, a review checklist; `references/ir_format.md` is the reference of the `graph_cli.ir/1` format |
-| [`maintaining-graphs`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/maintaining-graphs/SKILL.md) | the maintainer workflow with `graph-admin`: the workspace, new ontology versions, new graphs, publishing graph skills, giving apps roles, checks and the audit |
+| [`maintaining-graphs`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/maintaining-graphs/SKILL.md) | the maintainer workflow with `graph-admin`: the workspace, new ontology versions, new graphs, publishing graph skills, named functions and named actions, giving apps roles, moving stored files to or from an object store, checks and the audit |
 | [`authoring-graph-skills`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md) | the curated text of a graph skill template: blocks, description, rules and recipes, what publishing checks, the preview loop |
 | [`authoring-graph-functions`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/SKILL.md) | the named read functions of a graph: when to write one, names, `use_when`, typed `ref` parameters, `returns`, `featured`, the publish loop and release refusals; `references/format.md` is the reference of the `graph_cli.function/1` format |
 | [`authoring-graph-actions`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/SKILL.md) | the named write actions of a graph: when a recurring write is worth an action, names, `use_when`, typed `ref` parameters, preconditions against ontology rules, `unlink ... all: true`, `reason`, `featured`, the publish loop and release refusals; `references/format.md` is the reference of the `graph_cli.action/1` format |
@@ -257,22 +211,8 @@ Nothing refuses a command because an admin skill is stale; `skills check`
 says so, and `skills install` or `workspace sync` refreshes them after
 `graph-admin self update`.
 
-`tests/skills/test_ontology_skill.py` compiles the YAML examples of
-`ontology-best-practices` and checks that its format reference names every
-key the parser accepts, and `tests/skills/test_functions_skill.py` does the
-same for the function files of `authoring-graph-functions` and
-`tests/skills/test_actions_skill.py` for the action files of
-`authoring-graph-actions`; `tests/skills/test_admin_skills.py` checks that
-every `graph-admin` and `graph` command line in the admin skills names a
-real command and only its options. In the checkout, link them for an agent
-working there (`.claude/` is not tracked):
-
-```sh
-mkdir -p .claude/skills
-for s in packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/*/; do
-  ln -s "../../$s" ".claude/skills/$(basename "$s")"
-done
-```
+How the tests hold the admin skills to the code, and how to link them for an
+agent working in the checkout: [CONTRIBUTING.md](../CONTRIBUTING.md#tests).
 
 ## Installing skills
 

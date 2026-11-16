@@ -4,6 +4,8 @@
   Agent Skill (name equals the directory, a description, size budget, ASCII only), and
   none is named like a skill of graph (`graph-cli`, `graph-*`), whose freshness gate
   would read it.
+- They are self-contained: they are installed into maintainer workspaces, where no `docs/`
+  of this repository exists, so none cites a `docs/...` path.
 - Every `graph-admin` and `graph` command line in them names a real command and only
   options it takes, checked against the inventory goldens (kept equal to `describe
   commands` by `tests/cli/test_app_meta.py` and `tests/cli/test_admin_init.py`).
@@ -28,6 +30,7 @@ FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 WORD = re.compile(r"[a-z][a-z_-]*")
 OPTION = re.compile(r"(?<![\w-])--[a-z][a-z-]*")
+DOCS_PATH = re.compile(r"(?<![\w./-])(?:\.\./)*docs/[\w./#-]*")
 
 
 def _inventory(golden: str) -> dict[tuple[str, ...], set[str]]:
@@ -131,3 +134,16 @@ def test_positive_controls() -> None:
         "graph find --type x:Y --nope: --nope",
         "graph-admin graph fly: no such command",
     ]
+
+
+@pytest.mark.parametrize("name", admin_skills.NAMES)
+def test_no_skill_file_cites_a_docs_path(name: str) -> None:
+    """The documents of this repository are not in a maintainer workspace: state the fact in the
+    skill, or point to another skill or to ``--help``."""
+    files, _ = read_tree(ADMIN_SKILLS_DIR / name)
+    cited = [
+        f"{path}: {match}"
+        for path, data in sorted(files.items())
+        for match in DOCS_PATH.findall(data.decode())
+    ]
+    assert cited == []

@@ -21,7 +21,7 @@ permissions:
 # A newer push to the same branch or pull request supersedes a running check.
 concurrency:
   # Only a pull request run is superseded by a newer push to its branch. Every push to main keeps its own group (the run id) and
-  # is never cancelled or dropped: build.yml promotes a candidate only when check.yml ran green on its commit (infra DECISIONS.md I32).
+  # is never cancelled or dropped: build.yml promotes a candidate only when check.yml ran green on its commit.
   group: check-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -29,7 +29,7 @@ jobs:
   lint:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
     timeout-minutes: 15
-    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh (infra DECISIONS.md I31)
+    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh
       contents: read
       actions: read
       pull-requests: read
@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
 
       # A push to main whose tree equals the head of its merged pull request, with a green first-attempt run of this workflow
-      # on that head (all jobs), is not checked again (infra DECISIONS.md I31). Any doubt or API error means the full run.
+      # on that head (all jobs), is not checked again (see scripts/ci-reuse-pr-run.sh for the rule). Any doubt or API error means the full run.
       - name: Reuse the pull request run
         id: reuse
         env:
@@ -62,7 +62,7 @@ jobs:
   test:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
     timeout-minutes: 30
-    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh (infra DECISIONS.md I31)
+    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh
       contents: read
       actions: read
       pull-requests: read
@@ -120,7 +120,7 @@ jobs:
   object-store:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_RUNS_ON || '"ubuntu-24.04"') || 'ubuntu-24.04' }}
     timeout-minutes: 15
-    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh (infra DECISIONS.md I31)
+    permissions:           # actions/pull-requests: read only for ci-reuse-pr-run.sh
       contents: read
       actions: read
       pull-requests: read

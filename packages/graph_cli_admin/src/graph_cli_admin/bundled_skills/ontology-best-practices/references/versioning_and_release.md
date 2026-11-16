@@ -11,11 +11,16 @@ refuses less. A larger bump than needed is a warning.
 | Level | Changes |
 | --- | --- |
 | patch | summaries, descriptions, annotations, mappings, `display_prefix`, order of enum values, clearing `deprecated` |
-| minor | new class, attribute (optional), relation, qualifier (optional), enum value, datatype, enum, lifecycle, state (not initial), transition, import; setting `deprecated`; loosening: `required` or `unique` off, a facet, a cardinality, a wider `domain` or `range`, a looser mutability; `abstract` off; a new `role`; a changed `default`; removing a guard or a characteristic; a new or changed warning rule; removing a warning rule; declaring a marking; removing a marking from an attribute (`remove_marking`); a rule changed from error to warning; `on_target_inactive` changed to `warn` or `allow` |
-| major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a facet, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; adding a marking to an existing attribute (`add_marking`); removing a marking declaration (`remove_marking_term`); `on_target_inactive` changed to `refuse` |
+| minor | new class, attribute (optional), relation, qualifier (optional), enum value, datatype, enum, lifecycle, state (not initial), transition, import; setting `deprecated`; loosening: `required` or `unique` off, a looser or removed facet, a cardinality, a wider `domain` or `range`, a looser mutability; `abstract` off; a new `role`; a changed `default`; removing a guard or a characteristic; a new or changed warning rule; removing a warning rule; declaring a marking; removing a marking from an attribute (`remove_marking`); a rule changed from error to warning; `on_target_inactive` changed to `warn` or `allow` |
+| major | removing or renaming any term; a new required attribute or qualifier; tightening: `required` or `unique` on, a new facet, a tighter facet limit, a changed `pattern`, a cardinality, a narrower `domain` or `range`, a stricter mutability; `many` changed either way; a changed type, base type or parent class; `abstract` on; removing or changing a `role`; a new or changed guard; a new characteristic; a new initial state, changed initial or terminal states, removing a state or transition; changed `inverse_label`, `prefix` or `namespace`; removing an import; a new, changed or removed error rule; a rule changed from warning to error; adding a marking to an existing attribute (`add_marking`); removing a marking declaration (`remove_marking_term`); `on_target_inactive` changed to `refuse` |
+
+## Renames
 
 Renames are recognized only with `renamed_from`; without it a rename is a
-removal plus an addition. `ontology diff` and `ontology release` refuse a
+removal plus an addition. A local name in `renamed_from` means the same
+module; for a class or relation the CURIE of the old term
+(`renamed_from: old:Name`, kept as written, no import needed, the old module
+may be gone) moves it to another module. `ontology diff` and `ontology release` refuse a
 `renamed_from` that does not fit the pinned release (`ontology.rename_invalid`:
 the old term does not exist, still exists, the new term existed already, two
 terms name the same old one, or the old term is a `core:` or built-in module
@@ -24,17 +29,18 @@ term); one the previous release applied already only warns
 
 ## Markings
 
-A marking hides an attribute from every reader who does not hold it (what readers see is in
-`docs/access_control.md`, "Markings"). For the release it means:
+A marking hides an attribute from every reader who does not hold it: for any other reader the
+attribute reads as if the type did not declare it, and a policy grant names the markings a role
+holds (`maintaining-graphs`, `references/give_an_app_a_role.md`). For the release it means:
 
-- **Levels.** A new attribute declared with a marking is an ordinary new attribute (minor).
-  `add_marking` on an existing attribute is major (for readers without the marking the attribute
-  disappears, like a removed one, and functions, actions and skills that read it change).
-  `remove_marking` is minor, but the values, history included, become readable for every
-  reader that sees the type: the release warns `admin.marking_removed` and names the markings that
-  remain. Declaring a marking (`add_marking_term`) is minor; removing a declaration
-  (`remove_marking_term`) is major and only possible once no attribute uses it. A marking that
-  moves to another module has another CURIE: it shows as `remove_marking` plus `add_marking`.
+- **Levels** are in the table above. A new attribute declared with a marking is an ordinary new
+  attribute (minor); declaring a marking (`add_marking_term`) is minor too. `add_marking` on an
+  existing attribute is major because for readers without the marking the attribute disappears,
+  like a removed one, and functions, actions and skills that read it change. `remove_marking` is
+  minor, but the values, history included, become readable for every reader that sees the type:
+  the release warns `admin.marking_removed` and names the markings that remain. A declaration can
+  be removed (`remove_marking_term`, major) only once no attribute uses it. A marking that moves
+  to another module has another CURIE: it shows as `remove_marking` plus `add_marking`.
 - **Compiled form.** A model that uses markings compiles to `graph_cli.compiled_ontology/2` with
   `requires: ["markings"]`; a model without them stays `/1`, byte for byte. Programs before 0.23.0
   refuse `/2` (`format.unsupported_version`), so update the servers and clients before the first
@@ -131,13 +137,12 @@ version of the bundle is the version of the main (umbrella) module.
   not cover the changes to the area's terms (the release still goes on).
 - Adding a module is a minor change: a new file plus a new import in the
   main module (or in the module that builds on it).
-- Moving a term to another module changes its CURIE. Without a hint
-  `ontology diff` sees a removal plus an addition. A class or relation
-  names its old CURIE in `renamed_from` (`renamed_from: old:Name`, kept as
-  written, no import needed) and the diff reports a rename; a local name
-  still means the same module. Either way it is a major release, and on a
-  graph with data it needs a `migration.yaml` (its `steps` may be empty): the
-  entities move with their ids and aliases ([migrations](migrations.md#a-module-split-step-by-step)).
+- Moving a term to another module changes its CURIE; name the old one in
+  `renamed_from` ([Renames](#renames)), else the diff sees a removal plus an
+  addition. Either way it is a major release, and on a graph with data it
+  needs a `migration.yaml` (its `steps` may be empty): the entities move
+  with their ids and aliases
+  ([migrations](migrations.md#a-module-split-step-by-step)).
 - Removing an import is major.
 - After the release, check what agents will see: `graph describe modules`
   and `graph describe module <module>`, and the generated graph skill
@@ -158,8 +163,8 @@ graph apply <sample.jsonl> --graph <graph>_probe
 graph find --type <type> --graph <graph>_probe
 ```
 
-`graph-admin` runs from the graph_cli checkout (`uv run --project
-<checkout> graph-admin ...`). Then:
+Run `graph-admin` as for the real graphs (from a checkout:
+`uv run --project <checkout> graph-admin ...`). Then:
 
 - load sample data shaped like the real data, as change sets;
 - answer every competency question with `graph find`, `graph neighbors`
@@ -188,16 +193,21 @@ Later versions:
 4. `graph-admin graph check <graph> --ontology <dir>`: no errors; read
    the warnings (batch rules and `in` cardinality run nowhere else). With a
    `migration.yaml` it is also the preview of what the migration changes.
-5. Back up the data root and check the backup (see the backup notes in the
-   graph_cli documentation, `docs/files.md`).
+5. Back up the data root and check the backup (graph-admin has no backup command;
+   ask the user, and see `maintaining-graphs`, `references/move_stored_files.md` for
+   graphs whose stored files live in an object store: back up the data root first, the
+   bucket after it).
 6. `graph-admin ontology release <graph> <dir> --reason "<why>"` (add
    `--dry-run` first for a release with a migration); a refusal lists what the
-   data lacks. An interrupted migration is finished by running the same
-   release again ([migrations](migrations.md#an-interrupted-release)).
+   data lacks. In a maintainer workspace `graph-admin graph push` does this
+   step and publishes a changed skill, functions and actions in the same run
+   (`maintaining-graphs` skill). An interrupted migration is finished by
+   running the same release again (`maintaining-graphs`,
+   `references/release_with_a_migration.md`).
 7. `graph-admin audit verify`: clean.
 8. The graph skill: a template skill renders the new model by itself;
    reinstall it with `graph skills install`. Check its curated text with
    `graph-admin graph skill render`, and publish again when the text or a
-   static skill must change (see `docs/skills.md`).
+   static skill must change (`authoring-graph-skills`).
 9. Update the README next to the ontology: new questions, design choices,
    what is still open.

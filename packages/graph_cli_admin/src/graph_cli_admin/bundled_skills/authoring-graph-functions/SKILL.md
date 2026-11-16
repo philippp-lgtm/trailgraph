@@ -104,20 +104,14 @@ first; then write the file around it.
    Every problem of every file comes back in one answer
    (`admin.functions_invalid`, `details.problems` with the function, the
    rule `code`, the path in the file and often the line).
-3. Fix and repeat until it passes. In a workspace,
-   `graph-admin graph push <graph> <folder> --dry-run` does the same
-   together with the ontology and the skill.
-4. Publish with `graph-admin graph push <graph> <folder> --reason "<why>"`
-   (or `graph-admin graph functions publish` with `--reason`), then
-   `graph-admin audit verify`. An empty `functions` folder unpublishes
-   all functions.
-5. `graph-admin graph functions show <graph>` lists what is published and
-   against which ontology release.
-6. Try it as an agent would: `graph describe search "<the question>" --kind
+3. Fix and repeat until it passes, then publish as described in
+   `maintaining-graphs`. `graph-admin graph functions show <graph>` lists
+   what is published and against which ontology release.
+4. Try it as an agent would: `graph describe search "<the question>" --kind
    function`, `graph describe function <function>`, `graph run <function>
    --param <name>=<value>`. If the search does not find it, sharpen
    `summary` and `use_when`.
-7. Agents see a changed list in the generated graph skill after `graph
+5. Agents see a changed list in the generated graph skill after `graph
    skills install` or `graph self update`.
 
 ## Release refusals

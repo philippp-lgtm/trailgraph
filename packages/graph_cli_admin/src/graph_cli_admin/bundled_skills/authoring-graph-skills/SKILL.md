@@ -27,15 +27,15 @@ generated from the graph's model:
 
 | Block | Renders |
 | --- | --- |
-| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` (plain calls, the envelope, never guessing, functions and actions first, dry runs, `--reason`, findings), so the skill works even when an agent loads it alone. Do not repeat them in the curated text |
+| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone. Do not repeat them in the curated text |
 | `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, size, links to other modules) and the commands to read one module; replaces `types` and `relations` |
-| `types` | one row per entity type: name, alias example, summary, supertypes, fields (with their name roles), states and transitions |
-| `relations` | relations from or to those types, each with its `graph query` pattern, cardinality and qualifiers |
+| `types` | one row per entity type: name, alias example, summary, supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, their name roles), states and transitions |
+| `relations` | relations from or to those types, each with its `graph query` pattern, cardinality, characteristics and qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
 | `constraints` | transition guards and rules with severity (write-once fields too when the template has no `types`) |
-| `names` | the alias format and which fields `graph lookup` matches; next to `types` a pointer to the name roles marked there; on a modular graph one example and pointers, not every type |
+| `names` | the alias format and which fields `graph lookup` matches; next to `types` a pointer to the name roles marked there; on a modular graph one example and pointers, not every type. Tells agents to use a candidate only on exactly one exact match, else to ask |
 | `model` | a pointer to `references/model.md`, the full model, written for every generated skill |
-| `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them; one line saying so when there are none |
-| `actions` | the graph's named write actions: their number, at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run) as `name(signature)` with summary, the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
+| `functions` | the graph's named functions: their number, at most 12 of them (the ones marked `featured: true` in their file, by module then name) with signature and summary, and the commands to run, list and search them (further functions are not listed and nothing warns about them); one line saying so when there are none |
+| `actions` | the graph's named write actions: their number, at most 8 of them (the ones marked `featured: true` in their file, by module then name, that the reader may run: an action is left out when a write it needs is not allowed to the actor that installs or renders the skill) as `name(signature)` with summary (`?` marks an optional parameter, "Needs `--reason`" an action with `reason: required`), the rule to dry run first (`graph do <action> --param <name>=<value> --dry-run`) and the commands to list, search and describe them; one line saying so when there are none |
 
 Each block at most once. Put `functions` where agents decide how to answer
 a question, after the model and before the recipes, and `actions` next to
@@ -171,10 +171,15 @@ The blocks already say what the model says. Write what it cannot:
 
 `graph-admin graph skill render` and `graph-admin graph push` refuse a
 skill that breaks any of these (`admin.skill_invalid`, `details.problems`
-names the file and the rule):
+names the file and the rule: `template`, `term`, `command`, `alias`,
+`function`, `action`, next to the tree rules):
 
 - `name` in the frontmatter equals the directory name `graph-<graph>`;
-  regular UTF-8 files only, no dotfiles, no symlinks.
+  regular UTF-8 files only, no dotfiles, no symlinks; `SKILL.md` at most
+  500 lines and the tree at most 256 KB.
+- A template renders against the current ontology pin exactly as `graph`
+  will render it, and its curated text is checked against the model and
+  the `graph` inventory (the rules below).
 - No maintenance vocabulary and no local paths: the skill is for agents
   that use the graph, not for maintainers. No `graph-admin`, no `maint.*`
   or `admin.*` codes, no data root option, no absolute or home paths.
@@ -183,20 +188,24 @@ names the file and the rule):
 - Every `graph <command>` in code names a real command and only its
   options.
 - Aliases with the graph's prefix have the live format (`ITEM-0001`, not
-  `ITEM-1`).
+  `ITEM-1`); in code, an alias of four or more digits with a prefix the
+  graph does not use is reported too.
 - Each block name is known and used once.
-- Every `graph run <name>` in code names a published function (a
-  placeholder such as `<function>` does not count; in a workspace push the
-  functions of the same push count). Publish the functions first or in the
-  same push, else the rule `function` refuses the skill.
+- Every `graph run <name>` in code names a published function (deprecated
+  ones count; a placeholder such as `<function>` is not a name and is not
+  checked; in a workspace push the functions of the same push count).
+  Publish the functions first or in the same push, else the rule `function`
+  refuses the skill.
 - Every `graph do <name>` in code names a published action, by the same
-  rule (a placeholder such as `<action>` is allowed; the actions of the same
-  push count), else the rule `action` refuses the skill.
+  rules, else the rule `action` refuses the skill.
 
 Not refused, but warned (`admin.skill_over_budget`, with the sizes in
-`details` and in `data.size` of `render`): a `SKILL.md` or a curated text
-over its budget (above). Move text into references, or split a model that
-outgrew one module.
+`details` and in `data.size` of `render`; publish and push warn too): a `SKILL.md` or a curated text over its budget (above). Nothing
+is refused for its size below the hard limits. `data.size` lists the bytes
+of `SKILL.md` and of the curated text, both budgets and the bytes of each
+block, largest first. A single-module graph lists its whole model in
+`SKILL.md`, so it reaches the budget as its model grows: move text into
+references, or split the model into modules.
 
 When a later ontology release removes a name the curated text uses, agents
 get the warning `skills.source_unknown_names`: fix the text and push. The
@@ -212,10 +221,8 @@ same warning follows when a function or action the text runs is later deleted.
    text take.
 3. Fix what `render` reports (exit 1 lists the problems; the preview is
    written anyway).
-4. Publish with `graph-admin graph push <graph> <folder> --dry-run`, then
-   with `--reason "<why>"`, and `graph-admin audit verify`.
-5. Agents get it with `graph self update` or `graph skills install` where
-   they work.
+4. Publish as described in `maintaining-graphs`. Agents get the new text
+   with `graph self update` or `graph skills install` where they work.
 
 Test it: give an agent with the installed skill a few real requests and
 watch whether it loads the skill, picks the right types and follows the

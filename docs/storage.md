@@ -29,6 +29,27 @@ invariants (sequence, revision chain, hashes, aliases, edge targets).
 
 POSIX only, local filesystems only.
 
+```
+<data root>/
+  audit/                      installation audit stream (events-<first seq>.jsonl segments)
+  policy/installation.json    installed installation policy
+  tokens/                     tokens.json, enrollments.json
+  graphs/<graph id>/
+    manifest.toml             identity, state, ontology pin, [store] (see Manifest)
+    .lock                     the writer lock
+    ontology/<version>/       installed ontology releases
+    policy.json               the graph's installed policy
+    skill/  functions/  actions/   published slots (see below)
+    data/
+      txlog/                  transaction log segments (<first seq>.jsonl), the source of truth
+      entities/<xx>/<id>/     revision files r<rev>.json, derived
+      head.json               checkpoint, derived
+      index/index.sqlite      disposable index
+      migration.json          migration marker, only during a release with a migration
+    audit/                    the graph's audit stream (events-<first seq>.jsonl segments)
+    blobs/sha256/<xx>/<hash>  stored files (local location)
+```
+
 - The per-graph transaction log is the source of truth. Each line is the
   canonical JSON of one transaction, chained by hash. Revision files and the
   `head.json` checkpoint are derived and can be rebuilt from the log.
@@ -115,14 +136,18 @@ POSIX only, local filesystems only.
   directory, read-only and never changed. They are staged in
   `blobs/.tmp-*` before the lock and published by one rename under it;
   each transaction lists the hashes its revisions reference (`blobs`), so
-  verification and cleanup need no ontology.
+  verification and cleanup need no ontology. Crash windows: after
+  `blob.after_stage` or `blob.before_rename` only the staging file exists;
+  after `blob.after_rename` the file is in place but no transaction names it
+  (an orphan until `files gc`). A retry with the same idempotency key
+  publishes or finds it and commits once.
 - Stored files go through a blob backend (`storage.files.blob_backend`)
   chosen by the manifest's blob location, never by `[files] store`. Readers
   resolve it per call; a write session binds it on its first blob use under
   the lock (publish and the commit check) and keeps it, except across a
   manifest replaced in the same session. Staging is always a local file. A
-  write hands its staged blobs to the store for promotion after W.1-W.5
-  (authorization) and before the lock; local blobs need none. A graph
+  write hands its staged blobs to the store for promotion after authorization
+  and before the lock; local blobs need none. A graph
   directory whose manifest is missing or unreadable is served locally.
 
 ### Stored files in an object store
@@ -232,7 +257,8 @@ in the graph directory.
   unknown, so `audit verify` judges no blob (the manifest is `pin_mismatch`).
   Only orphans older than 24 hours by the store's clock (the listing's
   `Date`) are offered to and removed by gc, since an add is an orphan between
-  its promote and its commit; staging leftovers keep their local rule.
+  its promote and its commit. Staging files older than one hour go too, as for
+  local graphs (a younger one may belong to a write in flight).
   Misplaced copies go only when the named location holds the same bytes:
   one listing shows their hash with the same size and the bytes there, read
   in full (a verified streamed `GET`, a local rehash), have that hash. The
@@ -245,13 +271,13 @@ in the graph directory.
   after a move reads every moved file once and reports nothing until it is
   done (no progress line yet). A gc holds the graph lock for the rest, as
   the publish does. `graph-admin files store check` probes a store without any graph.
-- **Crash windows** (in addition to KB0-KB2 of local blobs):
+- **Crash windows** (in addition to the local ones above):
 
   | Point | Window | Durable after `kill -9` |
   | --- | --- | --- |
-  | `blob.after_stage` | KB0 | the staging file |
-  | `blob.after_upload` after the promote | KB0s | the object (an orphan) and the staging file; no intent |
-  | `blob.after_upload` after the publish fallback | KB1s | the same, under the lock |
+  | `blob.after_stage` | after staging, before any upload | the staging file |
+  | `blob.after_upload` after the promote | after the promote's upload | the object (an orphan) and the staging file; no intent |
+  | `blob.after_upload` after the publish fallback | after the upload under the lock | the same |
   | `blob.before_staging_removal` | after the publish confirmation | the same |
 
   A retry with the same idempotency key finds the object, commits once and
@@ -298,8 +324,8 @@ fixed key order.
   refuses the graph with `format.unsupported_version` naming the feature; a
   program that knows only format 1 refuses it by the top-level
   `format_version`, so no older program reads or rewrites such a graph.
-  A later storage feature gets a new feature name, not a new format number.
-- The one feature so far is `blobs.s3`: the stored files are
+  A new storage feature gets a new feature name, not a new format number.
+- The defined feature is `blobs.s3`: the stored files are
   in an S3-compatible object store, named by `[store.blobs]` with
   `location = "s3"` and the object store's `store_id` (a UUID). `requires`
   and `[store.blobs]` must agree, and a format-1 manifest carries neither;

@@ -24,11 +24,9 @@ Every write is a validated, audited change set against a versioned ontology.
 Access is decided by policies per principal, project and graph, and agents
 get generated skills that describe the CLI and each graph.
 
-Status: foundation. Both CLIs, the server, the ontology layer, the file
-store, audit, access control, stored files, the live view and the agent
-skills work; storage is local to the machine that owns the data (POSIX
-file systems only). To use one graph from several machines, run
-`graph-server` where the data lives and `graph` in remote mode elsewhere.
+Storage is local to the machine that owns the data (POSIX file systems
+only). To use one graph from several machines, run `graph-server` where the
+data lives and `graph` in remote mode elsewhere.
 
 ## Install
 
@@ -36,7 +34,7 @@ Requires [uv](https://docs.astral.sh/uv/). uv provisions the Python version
 from `.python-version`.
 
 ```sh
-uv sync                     # create .venv with the three distributions + dev tools
+uv sync                     # create .venv with all distributions + dev tools
 ```
 
 `graph-admin` stays in the checkout (`uv run graph-admin ...`). Install

@@ -66,13 +66,13 @@ a label role:
 
 | Role | Holds | Shown |
 | --- | --- | --- |
-| `label` | the main name, single, one per class (inherited counts) | yes |
+| `label` | the main name, one per class (inherited counts); single, except `many` on `lang_string` | yes |
 | `alt_label` | other names: abbreviations, short forms, synonyms, former names | yes |
 | `hidden_label` | misspellings and spellings that should still be found | no |
 
 Give every class people refer to by name a `label`. Add `alt_label` where
 people use abbreviations or the data uses several names. Roles work on
-`string` attributes and datatypes over `string`, not on `text`.
+`string` and `lang_string` attributes and datatypes over them, not on `text`.
 
 Name the attributes by their role, the same way in every class of the
 ontology: `alt_labels` for the `alt_label` role and `hidden_labels` for

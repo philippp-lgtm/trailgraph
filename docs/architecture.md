@@ -10,6 +10,9 @@ packages/
 tests/                                  tests for every distribution
 skills/                                 agent skills (skill directories use `-`)
 docs/                                   documentation
+examples/                               example graphs
+docker/, Dockerfile, compose.yaml       the server image and its deployment files
+scripts/                                build, CI and benchmark scripts
 ```
 
 The kernel holds ids, canonical JSON, registries and the ports. The
@@ -38,8 +41,10 @@ Dependencies point down only. Enforced by import-linter
 
 `graph_cli_admin` depends on `graph_cli`; `graph_cli` never imports
 `graph_cli_admin`. `graph_cli_server` depends on `graph_cli`,
-`graph_cli_admin` and `waitress`; of its modules only `admin_api` imports
-`graph_cli_admin`; `graph_cli` never imports `graph_cli_server`, and only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli` sits above
+`graph_cli_admin` and `waitress`; of its modules only `admin_api` and `enroll`
+import `graph_cli_admin`; `graph_cli` never imports `graph_cli_server`, and
+only the server imports `waitress`. Within `graph_cli_admin`, `maintenance_cli`
+sits above
 `services_admin`. Only the CLI layers may import the CLI framework (`click`),
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
@@ -58,7 +63,7 @@ The cross-cutting packages have their own documents:
 ## Server
 
 `graph_cli_server` serves the `graph` command surface over HTTP
-(`graph-server serve`). `app` is a small WSGI application: its command
+(`graph-server serve`). `app` is a WSGI application: its command
 routes come from the same declarations as the CLI (every command whose
 `remote` is not `client`), `cli_kit.argv` turns a request's JSON parameters
 (by API or inventory name, structured forms included) into the argv of their
@@ -73,8 +78,11 @@ failed envelope into RFC 9457 problem details and answers the error registry, `m
 process, a thread pool). `admin_api` serves the `graph-admin` declarations
 the same way under `/v1/admin/`, with an admin `Services` per request whose
 `AdminRequest` carries the request's actor (entrypoint `maint`); `main`
-plugs it in only with `[server] admin_api`, so the app routes never load
-maintenance code. Operating it: [Server](server.md).
+plugs it in only with `[server] admin_api`. `enroll` serves the enrollment
+exchange (`POST /v1/enroll`) with the same admin `Services` because it writes
+the token files under the registry lock, audited; `main` always plugs it in,
+so it is the one maintenance code the app routes load without the admin API.
+Operating it: [Server](server.md).
 
 The remote mode of `graph` is the other half: `app_cli.remote` gives every
 command the server runs a handler that sends its parsed parameters by API
@@ -134,8 +142,8 @@ builds the write and file services on first use, `services.read` imports
 the Cypher engine in `parse_query` and `query` only, and the command
 modules import the write, file and skill modules inside the handlers that
 use them. `tests/cli/test_app_startup.py` checks which modules the reads
-load. The versions are constants in `graph_cli/__init__.py` and
-`graph_cli_admin/__init__.py`, not looked up with `importlib.metadata`;
+load. The versions are constants in the `__init__.py` of each package, not
+looked up with `importlib.metadata`;
 `tests/test_smoke.py` keeps them equal to the `pyproject.toml` files.
 
 ## Catalog
@@ -150,6 +158,8 @@ load. The versions are constants in `graph_cli/__init__.py` and
 | `catalog.file_cache` | `StateFileCache`: this machine's file cache `<state>/files/<graph id>/<hex>`, the `FileCache` port of `services.files` (read-only copies, unique partial files, hash check, use time, 24-hour expiry), shared by `file path` in local mode and the remote client's download |
 | `catalog.resolve` | config path, state directory and data root, without touching the filesystem |
 | `catalog.file_catalog` | `FileCatalog`: graphs from `graphs/*/manifest.toml` (no registry file), name or id resolution, release files, `store_for` (after the manifest check of `storage.files.store_format`); the app's catalog (`follow_migration`) pins a graph whose migration is committed but not pinned to the migration's target version, so reads see the names the data has |
+| `catalog.registries` | the union of every component's finding codes (the catalog sits above every owner; codes are unique across owners) |
+| `catalog.spill` | the files for JSON answers too large for stdout (`[output] spill_bytes`): where they go and their cleanup; `cli_kit.runner` decides when an answer spills |
 | `catalog.oplog` | the operational log in the state directory (recovery notes), best effort |
 | `catalog.access_log` | the opt-in access log in the state directory: one line per `graph` command with the bytes delivered and the time per phase, best effort |
 | `catalog.activity` | the read signal for `graph-admin view`: command, reader, session, entity and edge ids as Unix datagrams to the viewer sockets in the state directory, fire and forget |
@@ -186,6 +196,8 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model |
 | `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
 | `kinetic.action_needs` | `action_needs`: what an action's ops need on concrete types against a model, with the attributes and relations they write (declared classes expanded to their non-abstract subtypes, any of which meets a need); pure, no policy |
+| `kinetic.affordances` | which published actions and functions take a given entity as a parameter, judged from the entries the actor may see, for `get --affordances` (`actions_for`, `functions_for`; pure) |
+| `kinetic.cover` | which published functions cover an ad-hoc query, for the hint and the access log of `query`: structural signatures of query and function, compared (pure, no ranking model) |
 | `kinetic.expand` | over a `Snapshot`: `check_preconditions` evaluates the preconditions on the current state (every failure in one refusal), `expand` turns bound parameters into a `ChangeSet` and replaces `all: true` by one exact unlink per current edge |
 
 The checks use the query engine without data: `query.cypher.parameters` lists the
@@ -193,7 +205,7 @@ The checks use the query engine without data: `query.cypher.parameters` lists th
 parameter, and `ontology_layer.connecting` supplies the hint of an impossible
 relationship pattern.
 
-The layers above use it in five places: `services.read` and `services.describe`
+The layers above use it in these places: `services.read` and `services.describe`
 load the published catalogs next to the model (`describe functions|function`,
 `describe actions|action`, `run`, the search kinds `function` and `action`,
 `lookup --for`); `services.actions` and `services.write` run an action for the
@@ -237,7 +249,7 @@ is paid.
 | `temporal_knowledge.migrate` | `plan_migration`: the new revision of every current revision (all record statuses) that a major release's renames and migration steps change, as a pure function of the old and new model, the derived renames, the migration file and a snapshot; no-op detection by content hash, per-step counts and samples, an overlay for `check_graph` and the blobs of the migrated revisions; `WorkingState` answers `incoming` from a reverse-edge index built on first use, so a large overlay is judged in linear time |
 | `services.migration`, `kernel.migration_marker` | `build_migration_tx`: the `AuthorizedTx` of a migration plan (changeset `graph_cli.migration/1` with no ops and a `migration` record, no aliases, no idempotency key), committed only by `MaintenanceSession.migrate`; `MigrationMarker` and `marker_committed`, the note of a migration that is not finished and the identity check of whether its tx is in the log |
 | `services.migration_state` | the app's view of a migration that is committed but not pinned (`GraphEntry.migration`, set by the app's catalog only while the pin is not switched; a marker file left after the switch is no state): `refuse_write` (`write.migration_incomplete`, for `WriteService` before and under the lock) and `read_warning` (`graph.migration_incomplete` when no writer holds the lock, which means the release crashed) |
-| `services.names` | read-time mapping (migration plan M7): `NameMaps` builds the `NameMap` of a graph at its pin from the pin history and the installed release files, `MappedSnapshot` hands out past revisions under the pin's names; a server builds its read service per request and passes every one the same `NameMapCache` (complete maps by graph and pin, bounded, thread safe) |
+| `services.names` | read-time mapping: `NameMaps` builds the `NameMap` of a graph at its pin from the pin history and the installed release files, `MappedSnapshot` hands out past revisions under the pin's names; a server builds its read service per request and passes every one the same `NameMapCache` (complete maps by graph and pin, bounded, thread safe) |
 | `graph_cli_admin.services_admin.migration` | the migration of a release for the maintenance tools: parse and judge `migration.yaml` against the old and new model (`migration.invalid`, `admin.migration_unexpected`, `admin.migration_from_mismatch`), plan the data change with the stamp of its tx, judge the migrated overlay (`admin.migration_required`), describe it for the answers; `services_admin.release` writes it, `check` and `sources` use it |
 | `temporal_knowledge.name_map` | `NameMap`: the renames and re-keyings between consecutive pinned versions (`Hop`s from the two compiled models and the installed `migration.yaml`) composed from a revision's version to the pin; `MappedSnapshot` and the mapped revisions are built on it in `services.names` |
 | `app_cli.rename_hints` | `term.unknown` for an old name says what it is called now (message and `details.renamed`), around every command; the old name is never accepted |
@@ -261,7 +273,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 
 | Module | Content |
 | --- | --- |
-| `kernel.changeset` | change set DTOs, the keys of the document, each op and an edge as data (the parser and skill 1's `references/changesets.md` read them), strict parsing (`changeset.malformed` with `details.path`), limits (1000 ops, 8 MiB), the canonical form and its hash, JSON/JSONL input readers |
+| `kernel.changeset` | change set DTOs, the keys of the document, each op and an edge as data (the parser and skill 1's `references/changesets.md` read them), strict parsing (`changeset.malformed` with `details.path`), limits (operations and bytes per document), the canonical form and its hash, JSON/JSONL input readers |
 | `services.refs` | references: full ids, aliases (a renamed alias still resolves, with a warning), `@local` names declared by creates, id abbreviations for CLI arguments; the (action, type) pairs and the attributes and relations an op is decided on; `entity_params`, the existence and class check of `ref` parameters shared by `run` and `do` |
 | `services.term_model`, `services.action_rights` | the app side of term rules: a compiled model condensed for the policy compiler and for the checks of an ontology release; which types a policy decides terms of (`fine_types`, cached per policy hash) and the any-of rule that lists an action and authorizes an empty expansion |
 | `temporal_knowledge.normalize` | applies the ops to a working copy: ids, defaults, initial lifecycle states, text coercion, aliases, supersede and retract, `derived_from` revisions; `WorkingState` reads like a snapshot of the result |

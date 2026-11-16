@@ -10,6 +10,9 @@ findings; start from it. Judgment about what to model is in
 - One directory per version, for example
   `data/<graph>/ontology/1.2.0/<module>.yaml`. A directory may hold
   several modules of one graph; name the main one with `--module` then.
+- `migration.yaml` in the directory is the data migration of a major
+  release ([migrations.md](migrations.md)), not a module; no module is
+  named `migration`.
 - A released version is never edited: copy the directory to the next
   version and change the copy. Releasing a version again with other
   content is refused.
