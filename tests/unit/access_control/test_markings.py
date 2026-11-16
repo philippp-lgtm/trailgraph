@@ -18,7 +18,11 @@ from support.txbuilder import actor
 from graph_cli.access_control.authorize import authorize, authorize_unlisted_attribute
 from graph_cli.access_control.compiler import Compiled, compile_policy
 from graph_cli.access_control.documents import document_problems, read_limited
-from graph_cli.access_control.effective import held_markings, marking_allowance
+from graph_cli.access_control.effective import (
+    held_markings,
+    holds_every_marking,
+    marking_allowance,
+)
 from graph_cli.access_control.policy import BUILTIN_POLICY_SET, policy_set
 from graph_cli.access_control.terms import (
     TermModel,
@@ -448,6 +452,18 @@ def test_the_allowance_lists_held_markings_only_when_something_is_hidden() -> No
     assert marking_allowance(maint_actor(), EXAMPLE, policy, USED) is None
     assert marking_allowance(REPORTING, EXAMPLE, policy, ()) is None
     assert marking_allowance(HR, EXAMPLE, policy, ["ex:personal"]) is None
+
+
+def test_only_a_rule_that_covers_every_resource_holds_every_marking() -> None:
+    """For a graph whose model cannot be read (``whoami`` fails closed): a grant names its
+    markings one by one, so an undeclared marking is held through the maintainer rule only."""
+    policy = installed()
+    assert holds_every_marking(maint_actor(), EXAMPLE, policy)
+    assert holds_every_marking(maint_actor(), OTHER, policy)
+    for caller in (HR, LEADS, BOTH, REPORTING):
+        assert not holds_every_marking(caller, EXAMPLE, policy)
+    app = dataclasses.replace(actor(), client=ClientInfo("graph", "0.1.0", Entrypoint.APP))
+    assert not holds_every_marking(app, EXAMPLE, BUILTIN_POLICY_SET)
 
 
 def test_held_markings_follow_the_policy_that_is_asked() -> None:

@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING, Concatenate, Final
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.effective import (
     graph_level,
+    holds_every_marking,
+    marking_allowance,
     scope_of,
     type_limits,
     visible_limits,
@@ -66,7 +68,7 @@ from graph_cli.kernel.ports.catalog import (
     SkillSlot,
     graph_not_found,
 )
-from graph_cli.kernel.ports.policy import PolicySource
+from graph_cli.kernel.ports.policy import PolicySet, PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
@@ -1516,16 +1518,20 @@ class ReadService:
                 "obligations": write_obligations(actor, entry.id, layered),
             }
             visible = self._seen_types(actor, entry)
-            if visible is None:
+            markings = self._held_markings(actor, entry, layered)
+            if visible is None and markings is None:
                 # The model is read only for a caller a write allow list names types for
                 granted = write_grant_types(actor, entry.id, layered)
                 terms = self._term_model(entry) if granted else None
             else:
-                # A caller who sees some types only gets everything over the types it sees:
-                # no hidden type, relation or attribute is named (V8)
-                terms = self._visible_terms(entry, visible)
-                item["reads"] = sorted(visible)
-                item["types"] = visible_limits(limits, terms.types)
+                # A caller who sees some types or attributes only gets everything over what it
+                # sees: no hidden type, relation or attribute is named (V8, F8)
+                terms = self._visible_terms(actor, entry)
+                if visible is not None:
+                    item["reads"] = sorted(visible)
+                    item["types"] = visible_limits(limits, terms.types)
+                if markings is not None:
+                    item["markings"] = markings
             writes = write_allowance(actor, entry.id, layered, terms, level=level)
             if writes is not None:
                 item["writes"] = writes
@@ -1550,13 +1556,31 @@ class ReadService:
         except GraphCliError:
             return frozenset()
 
-    def _visible_terms(self, entry: GraphEntry, visible: frozenset[str]) -> TermModel:
-        """The terms of the model view for ``visible``; none when the model cannot be read."""
+    def _held_markings(
+        self, actor: ActorContext, entry: GraphEntry, policy: PolicySet
+    ) -> list[JsonValue] | None:
+        """The markings ``actor`` holds in the graph when its pinned model uses markings and
+        the actor lacks one of them (``None``: nothing to say), for ``whoami``; a marking the
+        actor lacks is never named. A graph whose model cannot be read is shown as held by
+        nobody (``[]``) unless the actor holds every marking whatever the model declares:
+        fail closed, ``whoami`` still answers."""
+        try:
+            used = self._visibility.marked(
+                entry, lambda: self._models.load_for_read(entry)[0], lambda: self._unmarked(entry)
+            )
+        except GraphCliError:
+            return None if holds_every_marking(actor, entry.id, policy) else []
+        held = marking_allowance(actor, entry.id, policy, used)
+        return None if held is None else list(held)
+
+    def _visible_terms(self, actor: ActorContext, entry: GraphEntry) -> TermModel:
+        """The terms of the model view of ``actor``; none when the model cannot be read."""
         try:
             model, _ = self._models.load_for_read(entry)
+            view = self.read_view(actor, entry)
         except GraphCliError:
             return TermModel({})
-        return term_model(self._visibility.model(entry, model, ReadView(visible)))
+        return term_model(self._visibility.model(entry, model, view))
 
     def _term_model(self, entry: GraphEntry) -> TermModel | None:
         """The graph's pinned model condensed to what term rules need, cached per pin;

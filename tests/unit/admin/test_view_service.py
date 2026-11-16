@@ -1,6 +1,7 @@
 """The live graph view's data on seeded file graphs of both fixtures (graph view plan, step 3)."""
 
 import dataclasses
+import json
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -627,3 +628,77 @@ def test_the_policies_show_the_types_each_caller_sees(tmp_path: Path) -> None:
 
 def source_of_env(env: ServiceEnv) -> view.ViewSource:
     return open_view(admin_context(env.root), graph_ref=env.name)
+
+
+MARKINGS_POLICY = """\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  hr: {description: "People team"}
+  reporting: {description: "Reporting"}
+  payroll: {description: "Payroll"}
+grants:
+  - entrypoint: server
+    principal: {role: hr}
+    graphs: [GRAPH]
+    level: read
+    markings: [stf:personal]
+  - {entrypoint: server, principal: {role: reporting}, graphs: [GRAPH], level: read}
+  - entrypoint: server
+    principal: {role: payroll}
+    graphs: [GRAPH]
+    level: read
+    markings: [stf:personal, stf:pay]
+  - {entrypoint: app, graphs: [GRAPH], level: read}
+no_project: {"*": write}
+"""
+
+
+def test_the_policies_show_the_markings_each_caller_holds(tmp_path: Path) -> None:
+    env = ServiceEnv("files", "staff", tmp_path / "root")
+    ctx = admin_context(env.root)
+    authored = tmp_path / "installation.yaml"
+    authored.write_text(MARKINGS_POLICY.replace("GRAPH", env.name))
+    policy.apply(ctx, file=authored, graph_ref=None, reason="test")
+    installed = dataclasses.replace(ctx, policy=FilePolicySource(env.root))  # sees the roles
+    for name, roles in (
+        ("hr", ["hr"]),
+        ("reporting", ["reporting"]),
+        ("payroll", ["payroll"]),
+        ("both", ["hr", "reporting"]),
+    ):
+        tokens.create(installed, name=name, project=None, expires=None, reason=None, roles=roles)
+    for name, project in (("ops", None), ("padmin", "example_project")):
+        tokens.create(
+            installed, name=name, project=project, expires=None, reason=None, scope="admin"
+        )
+    data = policies_json(ctx, source_of_env(env))
+    rules = {r["id"]: r for r in data["layers"][0]["rules"]}  # type: ignore[index]
+    graph = str(env.entry.id)
+    # the compiled marking rules are grants, and the list of rules that decide on the graph
+    # includes them (their resources are markings of the graph, not the graph itself)
+    assert {i: r["kind"] for i, r in rules.items() if i.endswith(".markings")} == {
+        "grant.1.markings": "grant",
+        "grant.3.markings": "grant",
+    }
+    assert rules["grant.1.markings"]["action"] == ["read.get"]
+    assert rules["grant.1.markings"]["resource"] == [f"marking:{graph}/stf:personal"]
+    assert rules["grant.3.markings"]["resource"] == [
+        f"marking:{graph}/stf:pay",
+        f"marking:{graph}/stf:personal",
+    ]
+    access = {c.get("token"): c for c in data["callers"]}  # type: ignore[union-attr, index, misc]
+    assert access["hr"]["markings"] == ["stf:personal"]
+    assert access["both"]["markings"] == ["stf:personal"]
+    assert access["reporting"]["markings"] == []
+    assert access[None]["markings"] == []  # the app caller of this principal holds none
+    assert "markings" not in access["payroll"]  # holds everything the model uses
+    assert "markings" not in access["ops"]  # the installation admin maintains: holds every one
+    assert access["padmin"]["markings"] == []  # a project admin reads no data: no marking
+    # a marking a caller lacks is named nowhere in its entry
+    assert "stf:pay" not in json.dumps(access["hr"])
+    # a graph that uses no marking: no caller gets the key
+    plain = ServiceEnv("files", "notes_and_sources", tmp_path / "plain_root")
+    plain_ctx = admin_context(plain.root)
+    callers = policies_json(plain_ctx, source_of_env(plain))["callers"]
+    assert all("markings" not in c for c in callers)  # type: ignore[union-attr, operator]

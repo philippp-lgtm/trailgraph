@@ -5267,6 +5267,12 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "markings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [

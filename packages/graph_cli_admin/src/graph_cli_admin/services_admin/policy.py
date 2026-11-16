@@ -66,6 +66,7 @@ from graph_cli.access_control.documents import (
 )
 from graph_cli.access_control.effective import (
     graph_level,
+    held_markings,
     maintains,
     project_warning,
     read_allowance,
@@ -75,7 +76,12 @@ from graph_cli.access_control.effective import (
     write_grant_types,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
-from graph_cli.access_control.terms import TermModel, UnusableMarkedWrite, term_resource
+from graph_cli.access_control.terms import (
+    TermModel,
+    UnusableMarkedWrite,
+    marking_resource,
+    term_resource,
+)
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     InstalledPolicy,
@@ -116,7 +122,7 @@ from graph_cli.services.term_model import (
     extended_types,
     term_model,
 )
-from graph_cli.services.visibility import filter_model
+from graph_cli.services.visibility import attribute_mask, filter_model
 from graph_cli.storage.files.policy_files import installation_policy_path, read_policy_file
 from graph_cli.storage.files.token_files import read_tokens_file, tokens_path
 from graph_cli_admin.services_admin.context import AdminContext
@@ -323,7 +329,10 @@ def explain(
     roles: Sequence[str] = (),
     attribute: str | None = None,
     relation: str | None = None,
+    marking: str | None = None,
 ) -> Outcome:
+    if marking is not None:
+        _check_marking_question(marking, action, type_curie, attribute, relation)
     if attribute is not None and relation is not None:
         raise GraphCliError(
             "usage.invalid_argument",
@@ -382,6 +391,15 @@ def explain(
     if record is not None:
         project = record.project
     resource = f"graph:{entry.id}" + (f"/type:{type_curie}" if type_curie is not None else "")
+    if marking is not None:
+        marked = marking_resource(entry.id, marking)
+        if marked is None:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--marking {marking}: not a marking CURIE",
+                details={"argument": "marking"},
+            )
+        resource = marked
     if not RESOURCE_RE.match(resource):
         raise GraphCliError(
             "usage.invalid_argument",
@@ -430,35 +448,78 @@ def explain(
     if type_decision is not None:
         data["type_decision"] = _decision_json(type_decision)
     if action is None:
-        data.update(_allowances(ctx, entry, caller, policy, data["level"]))
+        data.update(_allowances(entry, caller, policy, data["level"], _pinned_model(ctx, entry)))
     return Outcome(data, (*warnings, *((warning,) if warning is not None else ())))
 
 
+def _check_marking_question(
+    marking: str,
+    action: str | None,
+    type_curie: str | None,
+    attribute: str | None,
+    relation: str | None,
+) -> None:
+    """``--marking`` asks one decision (``read.get``, the only action a policy can name on a
+    marking) on one marking of the graph: no type, attribute or relation goes with it."""
+    for other, value in (("attribute", attribute), ("relation", relation), ("type", type_curie)):
+        if value is not None:
+            raise GraphCliError(
+                "usage.invalid_argument",
+                f"--marking and --{other} exclude each other: a marking belongs to the graph,"
+                " not to a type",
+                details={"argument": "marking"},
+            )
+    if action is None:
+        raise GraphCliError(
+            "usage.missing_argument",
+            "--marking decides on a marking of the graph: name the action with --action read.get",
+            details={"argument": "action"},
+        )
+    if action != "read.get":
+        raise GraphCliError(
+            "usage.invalid_argument",
+            f"--marking {marking}: only read.get decides on a marking, not {action}",
+            details={"argument": "action"},
+        )
+
+
+def _pinned_model(ctx: AdminContext, entry: GraphEntry) -> CompiledModel | None:
+    """The graph's pinned model; ``None`` when it cannot be read."""
+    with contextlib.suppress(GraphCliError):
+        return pinned_model(ctx.catalog, entry)
+    return None
+
+
 def _allowances(
-    ctx: AdminContext,
     entry: GraphEntry,
     caller: ActorContext,
     policy: PolicySet,
     level: JsonValue,
+    model: CompiledModel | None,
 ) -> dict[str, JsonValue]:
     """What ``whoami`` shows of what the caller may read and write, as extra keys: ``reads``
-    (the types it sees, when it sees only some) and ``writes`` (its write allow list, over the
-    types it sees). The graph's pinned model is read only for a caller a read limit or a write
-    allow list applies to; when it cannot be read, ``writes`` is decided on the types alone
-    and there is no ``reads``."""
+    (the types it sees, when it sees only some), ``markings`` (the markings it holds, when the
+    graph's model uses some it lacks) and ``writes`` (its write allow list, over what it sees).
+    ``model`` is the graph's pinned model (``None`` when it cannot be read: then ``writes`` is
+    decided on the types alone and there is neither ``reads`` nor ``markings``)."""
+    used = frozenset() if model is None else model.used_markings()
+    held = held_markings(caller, entry.id, policy, used) if used else frozenset()
+    attributes = attribute_mask(model, held) if model is not None and used else None
     limited = read_limited(policy.documents, entry.id)
-    if not limited and not write_grant_types(caller, entry.id, policy):
+    if not limited and attributes is None and not write_grant_types(caller, entry.id, policy):
         return {}
-    model: CompiledModel | None = None
-    with contextlib.suppress(GraphCliError):
-        model = pinned_model(ctx.catalog, entry)
     found: dict[str, JsonValue] = {}
     terms = None if model is None else term_model(model)
+    visible = None
     if limited and model is not None:
-        visible = read_allowance(caller, entry.id, policy, concrete_types(model.classes))
-        if visible is not None:
-            found["reads"] = list(visible)
-            terms = term_model(filter_model(model, frozenset(visible)))
+        shown = read_allowance(caller, entry.id, policy, concrete_types(model.classes))
+        if shown is not None:
+            visible = frozenset(shown)
+            found["reads"] = list(shown)
+    if attributes is not None:
+        found["markings"] = sorted(held)
+    if model is not None and (visible is not None or attributes is not None):
+        terms = term_model(filter_model(model, visible, attributes))
     writes = write_allowance(caller, entry.id, policy, terms, level=str(level))
     if writes is not None:
         found["writes"] = writes
@@ -490,8 +551,9 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
             }
         )
     projects = strings(installation, "projects")
+    model = _pinned_model(ctx, entry)
     callers: list[JsonValue] = [
-        {"project": p, **_access(ctx, _app_caller(ctx.actor, p), entry, policy)}
+        {"project": p, **_access(_app_caller(ctx.actor, p), entry, policy, model)}
         for p in (*projects, None)  # the maintainer's own principal, through graph
     ]
     records = parse_tokens(read_tokens_file(tokens_path(ctx.roots.data_root)))
@@ -505,7 +567,7 @@ def for_graph(ctx: AdminContext, entry: GraphEntry) -> dict[str, JsonValue]:
                 "scope": record.scope,
                 "roles": list(record.roles),
                 "expired": not record.valid_on(today),
-                **_access(ctx, caller, entry, policy),
+                **_access(caller, entry, policy, model),
             }
         )
     graphs = ctx.catalog.list_graphs(include_archived=True)
@@ -907,9 +969,13 @@ _RULE_KINDS: Final = (
 
 
 def _decides_on(rule: Mapping[str, JsonValue], graph: str) -> bool:
-    """Whether ``rule`` can decide on ``graph:<id>`` or a type in it: a resource glob
-    covers it and no ``unless`` condition on resources alone lifts the rule there."""
-    if not any(glob(p, graph) or p.startswith(graph + "/") for p in strings(rule, "resource")):
+    """Whether ``rule`` can decide on ``graph:<id>``, a type in it or one of its markings
+    (``marking:<id>/<curie>``): a resource glob covers it and no ``unless`` condition on
+    resources alone lifts the rule there."""
+    markings = "marking:" + graph.removeprefix("graph:") + "/"
+    if not any(
+        glob(p, graph) or p.startswith((graph + "/", markings)) for p in strings(rule, "resource")
+    ):
         return False
     conditions = rule.get("unless")
     return not any(
@@ -937,7 +1003,7 @@ def _obligations(document: Mapping[str, JsonValue]) -> list[JsonValue]:
 
 
 def _access(
-    ctx: AdminContext, caller: ActorContext, entry: GraphEntry, policy: PolicySet
+    caller: ActorContext, entry: GraphEntry, policy: PolicySet, model: CompiledModel | None
 ) -> dict[str, JsonValue]:
     access: dict[str, JsonValue] = {
         "principal": caller.principal.id,
@@ -946,7 +1012,7 @@ def _access(
         "withheld": withheld_actions(caller, entry.id, policy),
         "maintains": maintains(caller, entry.id, policy),
     }
-    access.update(_allowances(ctx, entry, caller, policy, access["level"]))
+    access.update(_allowances(entry, caller, policy, access["level"], model))
     return access
 
 

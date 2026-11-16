@@ -73,6 +73,7 @@ def explain(
     role: tuple[str, ...],
     attribute: str | None,
     relation: str | None,
+    marking: str | None,
     data_root: str | None,
 ) -> Result:
     outcome = policy.explain(
@@ -86,6 +87,7 @@ def explain(
         roles=role,
         attribute=attribute,
         relation=relation,
+        marking=marking,
     )
     return Result(data=outcome.data, warnings=outcome.warnings)
 
@@ -162,6 +164,8 @@ EXPLAIN_OUTPUT: Final = obj(
         # without --action: for a caller a read limit leaves some types, the types it sees; for
         # a caller a write allow list applies to, what it may write (over the types it sees)
         "reads": STRINGS,
+        # for a caller who lacks a marking the graph's model uses: the markings it holds
+        "markings": STRINGS,
         "writes": obj(extra=obj(extra={"anyOf": [{"const": True}, array(STRING)]})),
     },
 )
@@ -298,6 +302,12 @@ SPECS: Final = (
                 "Decide on one relation of --type (needs --action), as --attribute does."
                 " Excludes --attribute.",
             ),
+            ParamSpec(
+                "--marking",
+                "string",
+                "Decide on one marking of the graph, by CURIE (needs --action read.get):"
+                " does the caller hold it. Excludes --type, --attribute and --relation.",
+            ),
             ParamSpec("--file", "file", "Explain an authored policy instead of the installed one."),
             DATA_ROOT,
         ),
@@ -316,6 +326,10 @@ SPECS: Final = (
                 "One attribute of a type, and the type decision next to it.",
             ),
             Example(
+                "graph-admin policy explain --graph <graph> --action read.get --marking <curie>",
+                "Whether the caller holds one marking.",
+            ),
+            Example(
                 "graph-admin policy explain --graph <graph> --role <value> --role <value>"
                 " --project <value>",
                 "What a server token of a project that holds roles gets.",
@@ -329,10 +343,11 @@ SPECS: Final = (
         handler=explain,
         output=EXPLAIN_OUTPUT,
         description="Records nothing. Without --action, the answer gains `reads` for a caller who"
-        " sees only some types of a read-limited graph (the types it sees) and `writes` for a"
-        " caller whose write allow list applies, over the types it sees: per type the verbs it may"
-        " write and, for create, update, link, unlink and transition, `true` or the allowed"
-        " attributes or relations.",
+        " sees only some types of a read-limited graph (the types it sees), `markings` (the"
+        " markings it holds, never one it lacks) for a caller who lacks a marking the graph's"
+        " model uses, and `writes` for a caller whose write allow list applies, over what it sees:"
+        " per type the verbs it may write and, for create, update, link, unlink and transition,"
+        " `true` or the allowed attributes or relations.",
         remote="hooked",
     ),
 )

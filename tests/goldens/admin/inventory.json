@@ -2334,6 +2334,13 @@
           "summary": "Decide on one relation of --type (needs --action), as --attribute does. Excludes --attribute."
         },
         {
+          "name": "--marking",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Decide on one marking of the graph, e.g. ex:personal (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
+        },
+        {
           "name": "--file",
           "type": "file",
           "required": false,
@@ -2360,6 +2367,10 @@
         {
           "command": "graph-admin policy explain --graph <graph> --action write.update --type <type> --attribute <name>",
           "summary": "One attribute of a type, and the type decision next to it."
+        },
+        {
+          "command": "graph-admin policy explain --graph <graph> --action read.get --marking <curie>",
+          "summary": "Whether the caller holds one marking."
         },
         {
           "command": "graph-admin policy explain --graph <graph> --role <value> --role <value> --project <value>",

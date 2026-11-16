@@ -3735,6 +3735,12 @@
               "type": "string"
             }
           },
+          "markings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "writes": {
             "type": "object",
             "additionalProperties": {
@@ -14680,6 +14686,15 @@
                       "--relation": {
                         "type": "string",
                         "description": "The inventory name of relation; never both.",
+                        "deprecated": true
+                      },
+                      "marking": {
+                        "type": "string",
+                        "description": "Decide on one marking of the graph, by CURIE (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
+                      },
+                      "--marking": {
+                        "type": "string",
+                        "description": "The inventory name of marking; never both.",
                         "deprecated": true
                       },
                       "file": {

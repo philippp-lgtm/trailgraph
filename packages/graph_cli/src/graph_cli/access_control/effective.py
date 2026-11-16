@@ -45,6 +45,7 @@ from graph_cli.kernel.ports.policy import PolicySet
 NO_PROJECT: Final = "no_project"
 # Obligations do not lower a level: a reason is given, one op at a time.
 _PROBE: Final = AuthzContext(op_count=1, has_reason=True, dry_run=False)
+_UNDECLARED_MARKING: Final = "probe:undeclared"  # a marking no model declares
 
 
 def graph_level(actor: ActorContext, graph: GraphId, policy: PolicySet) -> str:
@@ -258,6 +259,16 @@ def held_markings(
         ):
             held.add(marking)
     return frozenset(held)
+
+
+def holds_every_marking(actor: ActorContext, graph: GraphId, policy: PolicySet) -> bool:
+    """Whether ``actor`` holds every marking of ``graph`` whatever its model declares, for a
+    graph whose model cannot be read: only a rule that covers every resource (the maintainer's
+    ``*`` on ``*``) allows ``read.get`` on a marking nobody declared, because a ``markings``
+    grant names its markings one by one."""
+    resource = marking_resource(graph, _UNDECLARED_MARKING)
+    assert resource is not None
+    return authorize(actor, "read.get", resource, _PROBE, policy).effect == "allow"
 
 
 def marking_allowance(

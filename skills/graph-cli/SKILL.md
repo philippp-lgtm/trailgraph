@@ -125,6 +125,7 @@ when `graph whoami` lists `require_reason`. Details: [references/history.md](ref
   anyway (`withheld`), types you may only read, obligations (`require_reason`,
   `max_batch`), all you may write (`writes`: verbs, attributes, relations per
   type) and, if limited to some types, those you see (`reads`). Check it first.
+  A field you cannot see is unknown to you; `markings` lists the ones you hold.
 - A graph you may not use does not exist for you: `graph graphs` does not
   list it, and selecting it gives `graph.not_found`.
 - On `access.denied`, stop and tell the user what was refused
