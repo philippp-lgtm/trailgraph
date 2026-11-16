@@ -93,9 +93,10 @@ When a `query` answer names a covering function, use `graph run` for such questi
 
 A graph holds its subject (its skill names what counts), each fact in its
 field or relation, never repeated in a text. How you worked (what you read
-and how, what you checked, a doubt) goes to the user and into `--reason`,
-which each revision keeps; it is required for `supersede`, `retract` and
-when `graph whoami` lists `require_reason`. Details: [references/history.md](references/history.md).
+and how, what you checked, a doubt) goes to the user and into `--reason`
+(in English, whatever language the values are in), which each revision
+keeps; it is required for `supersede`, `retract` and when `graph whoami`
+lists `require_reason`. Details: [references/history.md](references/history.md).
 
 ## Writing safely
 

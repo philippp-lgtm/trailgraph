@@ -66,7 +66,7 @@ def test_the_start_block_carries_the_working_rules() -> None:
         "Never cut an answer short",
         "`graph <command> --help` lists the options",
         "with `--dry-run`, then run them without",
-        "Say why in `--reason`",
+        "Say why in `--reason` (in English, whatever language the values are in)",
         "`--expect <rev>`",
         "A change set for `graph apply` goes into a file in the working directory",
         "Read `data.findings` of every write",
