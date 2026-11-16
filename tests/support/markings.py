@@ -17,6 +17,7 @@ grants every marking to the app entrypoint.
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from graph_cli.kernel.records import EdgeRecord, content_hash, content_projection
@@ -165,6 +166,26 @@ def without_twin(policy: str) -> str:
     """``policy`` for an installation that holds ``example_graph`` only (no ``twin_graph``)."""
     lines = [line for line in policy.splitlines() if "[twin_graph]" not in line]
     return "\n".join(lines).replace(", twin_graph", "") + "\n"
+
+
+def write_twin(folder: Path) -> Path:
+    """The twin of ``staff`` with one marked attribute of its own (``stf:Crew.secret``), written
+    to ``folder``: a caller without markings has an attribute view of it too, so a write that
+    names an attribute ``stf:Employee`` hides in ``staff`` takes the same path in both graphs and
+    meets a name the type does not declare in this one (the oracle of the write side, field
+    visibility plan F6)."""
+    text = (STAFF_TWIN / "staff.yaml").read_text()
+    anchor = "\nenums:\n"
+    crew = "    display_prefix: CREW\n    attributes:\n"
+    assert anchor in text and crew in text
+    text = text.replace(
+        anchor, "\nmarkings:\n  personal:\n    summary: Personal data.\n" + anchor, 1
+    )
+    secret = "      secret:\n        summary: Secret.\n        type: string\n"
+    text = text.replace(crew, crew + secret + "        markings: [personal]\n", 1)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "staff.yaml").write_text(text)
+    return folder
 
 
 def twin_model() -> CompiledModel:

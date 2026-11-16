@@ -79,6 +79,16 @@ from here.
   and ``rule_id`` are gone. The ``explain`` values of a rule are dropped when an aggregate
   counts a relation that reaches a hidden type. So a refusal can show that something hidden
   exists, never which entity, type, relation or value.
+- **Hidden attributes** (``CallerView`` of a caller with an attribute view; field visibility
+  plan F6): a finding whose path is ``attrs.<name>`` with ``name`` an attribute the type has in
+  the model and not in the caller's view is concealed and its path cut to ``attrs`` (values
+  kept from the raw state or filled in by a default: ``missing_required``, ``unique_violation``,
+  ``enum_value_unknown``, ``deprecated_term`` ...). Close matches of an unknown attribute come
+  from the view; ``possible_duplicate`` compares and quotes only the label attributes of the
+  view; a rule or guard the view does not have is concealed (the view drops every one that
+  reads a hidden attribute), and the ``explain`` values of a rule are dropped when an operand
+  reads one. The write service refuses names the view lacks before normalize, so validation
+  never meets a hidden name a caller wrote.
 """
 
 from __future__ import annotations
@@ -109,6 +119,7 @@ from graph_cli.kernel.text import edit_distance, search_key
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.evaluate import evaluate, explain
 from graph_cli.ontology_layer.expr_ast import aggregate_relations
+from graph_cli.ontology_layer.expr_attributes import reads
 from graph_cli.ontology_layer.model import (
     AttributeDef,
     AttributeKind,
@@ -142,6 +153,7 @@ _MAX_SOURCES: Final = 20  # source ids a target_referenced finding lists
 _DIGITS: Final = re.compile(r"\d+")
 
 UNKNOWN_RELATION: Final = "data.referential.unknown_relation"
+UNKNOWN_ATTRIBUTE: Final = "data.structural.unknown_attribute"
 
 # What a finding says that names something the caller cannot see.
 CONCEALED: Final = "conflicts with data you cannot see"
@@ -150,7 +162,8 @@ CONCEALED: Final = "conflicts with data you cannot see"
 @dataclass(frozen=True, slots=True)
 class CallerView:
     """What the caller of a write sees: its filtered model (``services.visibility``), its read
-    view (``kernel.read_view``: the concrete types it sees) and whether it sees an entity. The
+    view (``kernel.read_view``: the concrete types and the attributes it sees) and whether it
+    sees an entity. The
     validator reads the graph itself, never through this view, so integrity holds for the whole
     graph; the view only decides what its findings may say. ``sees`` is true for an entity the
     request creates."""
@@ -210,6 +223,25 @@ def _similar(a: Sequence[str], b: Sequence[str]) -> bool:
 def _close(word: str, choices: Iterable[str]) -> list[JsonValue] | None:
     found = difflib.get_close_matches(word, sorted(choices), n=3)
     return list(found) or None
+
+
+def _unknown_attribute_text(type_curie: str, name: str) -> str:
+    return f"{type_curie} has no attribute {name!r}"
+
+
+def unknown_attribute(
+    target: Mapping[str, JsonValue], type_curie: str, name: str, choices: Iterable[str]
+) -> Finding:
+    """The ``unknown_attribute`` finding validation reports for ``name`` on ``type_curie``, with
+    close names from ``choices``; the write service reports it, before normalize, for an
+    attribute a caller's view lacks (field visibility plan F6)."""
+    return Finding(
+        Severity.ERROR,
+        UNKNOWN_ATTRIBUTE,
+        dict(target),
+        _unknown_attribute_text(type_curie, name),
+        _close(name, choices),
+    )
 
 
 def _check_scalar(base: str, value: JsonValue) -> str | None:
@@ -368,6 +400,7 @@ class _Checker:
                 conceal
                 or own_hidden
                 or (code != UNKNOWN_RELATION and self.relation_hidden(path))
+                or self.attribute_hidden(revision.type, path)
                 or any(not view.sees(e) for e in names)
             ):
                 finding = self.concealed(finding, path, own_hidden)
@@ -399,15 +432,46 @@ class _Checker:
             return False
         return rest.split(".", 1)[0] not in self.view.model.relations
 
+    def attribute_hidden(self, type_curie: str, path: str | None) -> bool:
+        """Whether ``path`` (``attrs.<name>``) names an attribute that entities of ``type_curie``
+        have in the model and not in the caller's model view: one whose marking the caller does
+        not hold (field visibility plan F6). A name the model lacks too is no hidden one."""
+        if self.view is None or path is None or not self.view.read_view.attributes_limited:
+            return False
+        head, _, name = path.partition(".")
+        cls = self.model.classes.get(type_curie)
+        if head != "attrs" or not name or cls is None or name not in cls.attributes:
+            return False
+        shown = self.view.model.classes.get(type_curie)
+        return shown is None or name not in shown.attributes
+
     def concealed(self, finding: Finding, path: str | None, own_hidden: bool) -> Finding:
         """``finding`` as the caller may see it: code, severity and a target that names only
-        what it sees (nothing at all when the entity itself is hidden)."""
+        what it sees (nothing at all when the entity itself is hidden; no hidden relation or
+        attribute in the path)."""
         target: dict[str, JsonValue] = {}
         if not own_hidden:
             target = {k: v for k, v in finding.target.items() if k != "path"}
             if path is not None:
-                target["path"] = path.split(".")[0] if self.relation_hidden(path) else path
+                cut = self.relation_hidden(path) or self.attribute_hidden(
+                    str(finding.target.get("type")), path
+                )
+                target["path"] = path.split(".")[0] if cut else path
         return Finding(finding.severity, finding.code, target, CONCEALED)
+
+    def attribute_choices(self, revision: Revision, cls: ClassDef) -> Iterable[str]:
+        """The attribute names close matches of an unknown one come from: those of the caller's
+        model view of the type, else of the class."""
+        shown = self.answer_model.classes.get(revision.type)
+        return cls.attributes if shown is None else shown.attributes
+
+    @property
+    def label_model(self) -> CompiledModel:
+        """The model whose label attributes ``possible_duplicate`` compares and quotes: for a
+        caller with an attribute view its model view (a hidden label is no name to it), else
+        the model itself (type limits act through ``sees``)."""
+        view = self.view
+        return self.model if view is None or not view.read_view.attributes_limited else view.model
 
     def connecting(self, source: str, target: str) -> JsonValue | None:
         """What would connect two types, when both exist in the model (once per pair)."""
@@ -511,11 +575,11 @@ class _Checker:
             path = f"attrs.{name}"
             if attribute is None:
                 self.add(
-                    "data.structural.unknown_attribute",
+                    UNKNOWN_ATTRIBUTE,
                     revision,
                     path,
-                    f"{revision.type} has no attribute {name!r}",
-                    expected=_close(name, cls.attributes),
+                    _unknown_attribute_text(revision.type, name),
+                    expected=_close(name, self.attribute_choices(revision, cls)),
                 )
                 continue
             problem = self.value_problem(
@@ -716,7 +780,8 @@ class _Checker:
     @cached_property
     def name_index(self) -> dict[str, list[_Name]]:
         """Every label-role value of the active entities, by match key."""
-        labelled = {c: self.model.label_attributes(c) for c in self.model.classes}
+        model = self.label_model
+        labelled = {c: model.label_attributes(c) for c in model.classes}
         types = sorted(c for c, found in labelled.items() if found)
         attrs = sorted({a for found in labelled.values() for a, _ in found})
         index: dict[str, list[_Name]] = {}
@@ -729,7 +794,7 @@ class _Checker:
             limit=sys.maxsize,
         )
         for revision in self.snapshot.query(query).items:
-            for name in _names(self.model, revision):
+            for name in _names(model, revision):
                 index.setdefault(name.key, []).append(name)
         return index
 
@@ -813,8 +878,8 @@ class _Checker:
 
     def new_names(self, revision: Revision, cls: ClassDef, previous: Revision | None) -> None:
         """Write path: names the entity did not carry before."""
-        known = {n.key for n in _names(self.model, previous)}
-        for name in _names(self.model, revision):
+        known = {n.key for n in _names(self.label_model, previous)}
+        for name in _names(self.label_model, revision):
             if name.key in known:
                 continue
             matches = self.same_names(name, cls, similar=True)
@@ -910,6 +975,8 @@ class _Checker:
                 absent = view is not None and all(r.id != rule.id for r in view.model.rules)
                 if view is not None and actual is not None and self.reaches_hidden(rule):
                     actual = None  # the values count entities the caller cannot see
+                if view is not None and isinstance(actual, list):
+                    actual = self.shown_operands(actual, revision.type)  # values of hidden ones
                 self.add(
                     "data.rule.violated",
                     revision,
@@ -936,6 +1003,19 @@ class _Checker:
                 if reached and not cls.abstract and not self.view.read_view.shows_type(name):
                     return True
         return False
+
+    def shown_operands(self, actual: list[JsonValue], type_curie: str) -> list[JsonValue] | None:
+        """The ``explain`` values of a rule, or ``None`` when an operand reads an attribute that
+        is hidden from the caller on a class it is read on. A rule the caller's view keeps reads
+        no hidden attribute (the view drops every rule that does), so this guards that promise."""
+        if self.view is None or not self.view.read_view.attributes_limited:
+            return actual
+        for item in actual:
+            operand = item.get("operand") if isinstance(item, Mapping) else None
+            for classes, name in reads(self.model, (type_curie,), operand):
+                if any(self.attribute_hidden(c, f"attrs.{name}") for c in classes):
+                    return None
+        return actual
 
     def guard_hidden(self, guard_id: str) -> bool:
         """Whether the caller's model view lacks the guard (it names a term the view lacks)."""
@@ -1236,11 +1316,11 @@ def _judge_effect(
             attribute = cls.attributes.get(name)
             if attribute is None and name not in revision.attrs:  # an unset; a set is reported
                 checker.add(
-                    "data.structural.unknown_attribute",
+                    UNKNOWN_ATTRIBUTE,
                     revision,
                     f"attrs.{name}",
-                    f"{revision.type} has no attribute {name!r}",
-                    expected=_close(name, cls.attributes),
+                    _unknown_attribute_text(revision.type, name),
+                    expected=_close(name, checker.attribute_choices(revision, cls)),
                 )
             elif attribute is not None and attribute.kind == "lifecycle":
                 checker.add(
@@ -1303,11 +1383,11 @@ def _judge_transition(
     path = "attrs" if effect.attr is None else f"attrs.{effect.attr}"
     if effect.attr is not None and effect.attr not in cls.attributes:
         checker.add(
-            "data.structural.unknown_attribute",
+            UNKNOWN_ATTRIBUTE,
             revision,
             path,
-            f"{revision.type} has no attribute {effect.attr!r}",
-            expected=_close(effect.attr, cls.attributes),
+            _unknown_attribute_text(revision.type, effect.attr),
+            expected=_close(effect.attr, checker.attribute_choices(revision, cls)),
         )
         return
     if effect.problem is not None:

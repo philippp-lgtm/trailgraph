@@ -77,6 +77,23 @@ the type unknown (``CallerView``). The refusal is audited with the real decision
 about entities the caller does not see are concealed by the validator, and the result names only
 entities of visible types. A write of any other caller is unchanged, byte for byte.
 
+Field visibility (field visibility plan F6, R6): a caller that does not hold every marking the
+pinned model uses has an attribute view, and writes only attributes it sees. The raw snapshot
+stays the truth as above (an update keeps hidden attributes; normalize and validation never read
+the view). The refusal is decided from the attribute names each op names (a create's attributes,
+an update's ``set``, ``set_text``, ``unset``, ``add`` and ``remove``, a transition's ``attr``;
+an action's expansion likewise), never from the post-state: every name the caller's model view
+lacks on a type it has, hidden or not declared at all, takes one early path, so the two cannot
+differ. The authorization answers its term decisions from a resource no rule names
+(``authorize_unlisted_attribute``: an exact ``writes`` entry does not make a hidden name
+writable), where a term decision is taken at all (types in ``fine_types``); a denial is
+``access.denied``. Otherwise the request is ``write.invalid`` with one ``unknown_attribute``
+finding per name, under the lock after the decision re-check and before W.7 (so an idempotent
+retry never replays a write that named it) and alike in a dry run. A request that names a hidden
+attribute also records the read decisions on its markings, which deny: its refusal is a
+``denied`` event; successful and ``invalid`` events never carry a marking decision. Findings
+about hidden values the raw state keeps are concealed by the validator (``CallerView``).
+
 The command's timings get the phases ``model``, ``snapshot``, ``resolve``,
 ``authorize``, ``promote`` (a request with staged blobs: their upload to an object
 store), ``lock`` (waiting for and taking the graph lock, with the
@@ -95,8 +112,13 @@ from datetime import datetime
 from typing import Final
 from uuid import UUID
 
-from graph_cli.access_control.authorize import authorize, authorize_unlisted_type
-from graph_cli.access_control.terms import term_resource
+from graph_cli.access_control.authorize import (
+    authorize,
+    authorize_unlisted_attribute,
+    authorize_unlisted_type,
+)
+from graph_cli.access_control.documents import NAME_RE
+from graph_cli.access_control.terms import marking_resource, term_resource
 from graph_cli.audit import events
 from graph_cli.audit.events import RefusalStatus
 from graph_cli.kernel.actions import Action
@@ -112,8 +134,11 @@ from graph_cli.kernel.changeset import (
     Op,
     RetractOp,
     SupersedeOp,
+    TransitionOp,
+    UpdateOp,
     changeset_hash,
     changeset_to_json,
+    op_attribute_names,
     parse_changeset,
 )
 from graph_cli.kernel.clock import Clock
@@ -150,7 +175,12 @@ from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.action_needs import action_needs
 from graph_cli.kinetic.expand import check_preconditions, expand
-from graph_cli.ontology_layer.data_validator import CallerView, blob_values, validate_write
+from graph_cli.ontology_layer.data_validator import (
+    CallerView,
+    blob_values,
+    unknown_attribute,
+    validate_write,
+)
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
 from graph_cli.services import migration_state
@@ -425,8 +455,8 @@ class WriteService:
     def _read_view(
         self, request: WriteRequest, entry: GraphEntry, model: CompiledModel
     ) -> ReadView:
-        """What the caller reads of the graph under the current policy. The write path judges
-        by its type half only (type read limits plan V6)."""
+        """What the caller reads of the graph under the current policy: its type half limits
+        what the caller reaches (V6), its attribute half what it may name (F6)."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             return self._visibility.of(request.actor, entry, policy, model)
@@ -491,37 +521,51 @@ class WriteService:
         view: ReadView = UNLIMITED,
     ) -> tuple[Decision, ...]:
         """The decisions of W.5 for ``wanted``; ``view`` (what the caller reads, with the
-        ``model`` its types are types of) matters only for a caller under a type read limit."""
+        ``model`` its types are types of) matters only for a caller under a type read limit or
+        with an attribute view."""
         pairs = wanted.pairs
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             ctx = _context(request)
             fine = self._fine.of(policy, entry.id)
             # A type the model has but the caller's view lacks answers as a type the model
-            # lacks (V6): its decisions are taken on a resource no rule names, below.
+            # lacks (V6): its decisions are taken on a resource no rule names, below. So does an
+            # attribute an op names that the view of a type lacks, hidden or not declared at all
+            # (field visibility plan F6, R6).
             unseen: frozenset[str] = frozenset()
-            if view.types_limited:
+            lacking: frozenset[tuple[str, str]] = frozenset()
+            if view.limited:
                 assert model is not None
                 limited = self._visibility.model(entry, model, view)
-                unseen = frozenset(
-                    t for _, t in pairs if t in model.classes and t not in limited.classes
-                )
+                if view.types_limited:
+                    unseen = frozenset(
+                        t for _, t in pairs if t in model.classes and t not in limited.classes
+                    )
+                if view.attributes_limited:
+                    lacking = _lacking(wanted.fine, limited)
             resources = {(a, f"graph:{entry.id}/type:{t}") for a, t in pairs}
+            unlisted: dict[tuple[Action, str], tuple[str, str]] = {}
             for a, t, kind, term in wanted.fine:
                 resource = term_resource(entry.id, t, kind, term) if t in fine else None
                 if resource is not None and t not in unseen:
                     resources.add((a, resource))
+                    if kind == "attr" and (t, term) in lacking:
+                        unlisted[(a, resource)] = (t, term)
             recorded = {
                 (a, r): authorize(request.actor, a, r, ctx, policy) for a, r in sorted(resources)
             }
-            # What the caller is answered by: the decision, or for an unseen type the one on
-            # a resource no rule names, whatever the rules say of the type itself.
+            # What the caller is answered by: the decision, or for an unseen type (a lacking
+            # attribute) the one on a resource no rule names, whatever the rules say of it.
             answering = {
                 key: (
                     authorize_unlisted_type(
                         request.actor, key[0], entry.id, _type_of(key[1]), ctx, policy
                     )
                     if _type_of(key[1]) in unseen
+                    else authorize_unlisted_attribute(
+                        request.actor, key[0], entry.id, *unlisted[key], ctx, policy
+                    )
+                    if key in unlisted
                     else d
                 )
                 for key, d in recorded.items()
@@ -534,11 +578,17 @@ class WriteService:
                         recorded[(READ_GET, resource)] = authorize(
                             request.actor, READ_GET, resource, ctx, policy
                         )
+            # F6: the read decisions on the markings that hide an attribute the request names
+            # (a write naming one is always refused, so only refusals carry them).
+            for resource in _marking_resources(entry.id, model, lacking):
+                recorded[(READ_GET, resource)] = authorize(
+                    request.actor, READ_GET, resource, ctx, policy
+                )
             decisions = tuple(recorded[key] for key in sorted(recorded))
-        denied = [d for _, d in sorted(answering.items()) if d.effect == "deny"]
+        denied = [(key, d) for key, d in sorted(answering.items()) if d.effect == "deny"]
         if not denied:
             return decisions
-        first = denied[0]
+        first_key, first = denied[0]
         assert first.code is not None
         visible_graph = authorize(request.actor, "read.list", f"graph:{entry.id}", ctx, policy)
         error = (
@@ -550,8 +600,11 @@ class WriteService:
             raise error
         # The event names the decisions taken; the one that answered the caller is among them
         # (it was taken on a resource no rule names when the type is hidden from the caller).
+        # An attribute's answer is named even when a marking denied with the same code.
         named = decisions
-        if not any(d.effect == "deny" and d.code == first.code for d in decisions):
+        if (first_key in unlisted and first not in decisions) or not any(
+            d.effect == "deny" and d.code == first.code for d in decisions
+        ):
             named = (*decisions, first)
         raise self._append_denial(request, entry, named, error, {t for _, t in pairs})
 
@@ -610,7 +663,7 @@ class WriteService:
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
             view = self._read_view(request, entry, model)
             seen = _seen_by(base, view)  # what the caller reaches; ``base`` stays the truth
-            limited = self._visibility.model(entry, model, view) if view.types_limited else None
+            limited = self._visibility.model(entry, model, view) if view.limited else None
             plan, held = request.plan, None
             if plan is not None:  # the action meets the state it will change
                 request, held = self._expand(request, seen)
@@ -628,6 +681,13 @@ class WriteService:
             ):
                 decisions = self._authorize(request, entry, wanted, model, view)
             refusal = _Refusal(self, session, request, entry, decisions, head)
+            # F6, R6: an attribute the caller's view lacks is unknown to it, before W.7 (a replay
+            # never confirms a hidden name) and before anything reads the values
+            unknown = _unknown_attributes(view, limited, resolution, seen)
+            if unknown:
+                raise refusal(
+                    _invalid(unknown), types=pairs, findings=unknown, entities=_targets(unknown)
+                )
             cs = resolution.changeset
             digest = changeset_hash(cs)
             if cs.idempotency_key is not None:  # W.7
@@ -750,9 +810,7 @@ class WriteService:
         view = prepared.view
         seen = _seen_by(snapshot, view)
         limited = (
-            self._visibility.model(prepared.entry, prepared.model, view)
-            if view.types_limited
-            else None
+            self._visibility.model(prepared.entry, prepared.model, view) if view.limited else None
         )
         plan = request.plan
         if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
@@ -764,6 +822,10 @@ class WriteService:
                 wanted = _wanted(resolution, prepared.model)
             pairs = wanted.pairs
             self._authorize(request, prepared.entry, wanted, prepared.model, view)
+        unknown = _unknown_attributes(view, limited, resolution, seen, placeholders.issued)
+        if unknown:  # as under the lock (F6, R6)
+            raise _invalid(unknown)
+        if plan is not None:
             self._check_plan(plan, seen, prepared.model, None, pairs)
             if held is not None:
                 raise held
@@ -962,7 +1024,10 @@ def _type_of(resource: str) -> str:
 
 def _seen_by(snapshot: Snapshot, view: ReadView) -> Snapshot:
     """What the caller reaches of ``snapshot``: all of it, or the entities of the types it
-    sees (the type half of ``view``)."""
+    sees (the type half of ``view``). The attribute half does not strip it: the write path
+    resolves by id, alias and abbreviation only (never by a label), a visible action's
+    preconditions read no hidden attribute (the compile check over the view hides it), and
+    the file lookups read bundled attributes, which cannot be marked."""
     return VisibleSnapshot(snapshot, view.types_only()) if view.types_limited else snapshot
 
 
@@ -974,9 +1039,11 @@ def _sees_in(seen: Snapshot) -> Callable[[EntityId], bool] | None:
 def _caller_view(
     limited: CompiledModel | None, view: ReadView, working: WorkingState
 ) -> CallerView | None:
-    """What the validator may tell the caller (``None``: everything). The caller sees the
-    entities its request creates, whatever their type: the type is judged on its own."""
-    if not view.types_limited or limited is None:
+    """What the validator may tell the caller (``None``: everything): for a caller under a type
+    read limit or with an attribute view, its model view and the entities it sees. The caller
+    sees the entities its request creates, whatever their type: the type is judged on its
+    own."""
+    if not view.limited or limited is None:
         return None
     memo: dict[EntityId, bool] = {}
 
@@ -989,6 +1056,106 @@ def _caller_view(
         return memo[entity]
 
     return CallerView(limited, view, sees)
+
+
+def _lacking(fine: Sequence[FineTerm], limited: CompiledModel) -> frozenset[tuple[str, str]]:
+    """The ``(type, attribute)`` an op names that the caller's model view lacks on a type the
+    view has: an attribute hidden from the caller or one the type does not declare, which the
+    caller cannot tell apart (field visibility plan F6). A type the view lacks is judged as a
+    type (unknown to the caller), not by its attributes."""
+    found: set[tuple[str, str]] = set()
+    for _, type_curie, kind, name in fine:
+        cls = limited.classes.get(type_curie)
+        if kind == "attr" and cls is not None and name not in cls.attributes:
+            found.add((type_curie, name))
+    return frozenset(found)
+
+
+def _marking_resources(
+    graph: GraphId, model: CompiledModel | None, lacking: Set[tuple[str, str]]
+) -> list[str]:
+    """``marking:<graph>/<curie>`` of every marking of the lacking attributes the model declares
+    (the hidden ones), sorted; nothing for a name the type does not declare."""
+    found: set[str] = set()
+    for type_curie, name in lacking:
+        cls = None if model is None else model.classes.get(type_curie)
+        attribute = None if cls is None else cls.attributes.get(name)
+        for marking in () if attribute is None else attribute.markings:
+            resource = marking_resource(graph, marking)
+            if resource is not None:
+                found.add(resource)
+    return sorted(found)
+
+
+def _unknown_attributes(
+    view: ReadView,
+    limited: CompiledModel | None,
+    resolution: Resolution,
+    snapshot: Snapshot,
+    placeholders: Set[UUID] = frozenset(),
+) -> list[Finding]:
+    """The ``unknown_attribute`` findings of a caller with an attribute view for every attribute
+    an op names that its model view lacks (``_lacking``), decided from the op's own names before
+    normalize (field visibility plan F6, R6): a create's attributes, an update's ``set``,
+    ``set_text``, ``unset``, ``add`` and ``remove`` and a transition's ``attr``. Hidden and
+    undeclared names take this one path, so no other finding, no ``changed: false`` and no
+    idempotent replay can tell them apart. The findings are those validation reports for an
+    undeclared name, close names from the view; an entity this request (or an earlier dry-run
+    document, ``placeholders``) creates is named by its local only. Empty for every other
+    caller, whose writes go the usual way."""
+    if not view.attributes_limited or limited is None:
+        return []
+    cs = resolution.changeset
+    refs = resolution.refs
+    declared = {op.local: op.type for op in cs.ops if isinstance(op, CreateOp) and op.local}
+    bound = {entity: key[1:] for key, entity in refs.items() if key.startswith("@")}
+    found: dict[tuple[object, str], Finding] = {}
+    for index, op in enumerate(cs.ops):
+        entity: EntityId | None = None
+        local: str | None = None
+        match op:
+            case CreateOp():
+                type_curie, local, names = op.type, op.local, op_attribute_names(op)
+                subject: object = ("local", local) if local is not None else ("op", index)
+            case UpdateOp() | TransitionOp():
+                names = (
+                    op_attribute_names(op)
+                    if isinstance(op, UpdateOp)
+                    else (() if op.attr is None else (op.attr,))
+                )
+                if isinstance(op.id, LocalRef) and op.id.name in declared:
+                    type_curie, local = declared[op.id.name], op.id.name
+                    subject = ("local", local)
+                else:
+                    entity = _entity_of(op.id, refs)
+                    revision = None if entity is None else snapshot.get(entity)
+                    if entity is None or revision is None:
+                        continue  # resolution refuses an op on a missing entity
+                    type_curie, local, subject = revision.type, bound.get(entity), entity
+            case _:
+                continue
+        cls = limited.classes.get(type_curie)
+        if cls is None:
+            continue
+        for name in names:
+            if name in cls.attributes or not NAME_RE.match(name):
+                continue
+            target: dict[str, JsonValue] = {}
+            if entity is not None and entity not in placeholders:
+                target["id"] = str(entity)
+            target.update(type=type_curie, path=f"attrs.{name}")
+            if local is not None:
+                target["local"] = local
+            found.setdefault(
+                (subject, name), unknown_attribute(target, type_curie, name, cls.attributes)
+            )
+    return sort_findings(found.values())
+
+
+def _targets(findings: Sequence[Finding]) -> list[EntityId]:
+    """The existing entities ``findings`` name, in order, once each."""
+    ids = [f.target["id"] for f in findings if "id" in f.target]
+    return [EntityId(parse_id(str(i))) for i in dict.fromkeys(ids)]
 
 
 def _context(request: WriteRequest) -> AuthzContext:

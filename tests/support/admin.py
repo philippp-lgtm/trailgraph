@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -100,26 +101,65 @@ def write_random_txs(root: Path, graph_id: str, *, ontology: str, version: str, 
             session.commit(tx, receipt)
 
 
+def holding_markings(entry: Any, markings: Iterable[str]) -> Any:
+    """A policy source whose installation policy lets the local app caller write ``entry``'s
+    graph and hold ``markings`` there (a test-data writer for graphs that use markings)."""
+    from graph_cli.access_control.compiler import compile_policy
+    from graph_cli.access_control.policy import policy_set
+
+    text = (
+        "schema: graph_cli.policy/1\nid: installation\ngrants:\n"
+        f"  - {{entrypoint: app, graphs: [{entry.name}], level: write,"
+        f" markings: [{', '.join(sorted(markings))}]}}\n"
+        'no_project: {"*": write}\n'
+    )
+    compiled = compile_policy(
+        text.encode(), file="installation.yaml", graphs={entry.name: entry.id}
+    )
+    assert compiled.document is not None, compiled
+    return FixedPolicy(policy_set(compiled.document))
+
+
+class FixedPolicy:
+    """A ``PolicySource`` that always answers one policy set."""
+
+    def __init__(self, policy: Any) -> None:
+        self.policy = policy
+
+    def current(self, graph: object) -> Any:
+        return self.policy
+
+    def refresh(self) -> None:
+        pass
+
+
 def write_documents(
     root: Path, graph: str, documents: list[dict[str, Any]], *, seed: int = 13
 ) -> list[int]:
     """Instance data through the real WriteService on the CLI's data root; returns the seqs.
-    Ids come from a seeded provider: a second call with the same ``seed`` repeats the ids."""
+    Ids come from a seeded provider: a second call with the same ``seed`` repeats the ids. The
+    writer is the local app caller under the built-in policy; when the graph's pinned model uses
+    markings it also holds every one of them (``holding_markings``), so the data may carry
+    values of marked attributes, which a caller without the marking cannot write."""
     from graph_cli.access_control.policy import BuiltinPolicySource
     from graph_cli.catalog.file_catalog import FileCatalog
     from graph_cli.kernel.canonical import hash_value
     from graph_cli.kernel.records import EnvInfo, RequestMeta
+    from graph_cli.services.models import ModelCache
     from graph_cli.services.write import WriteRequest, WriteService
     from graph_cli.storage.files.audit_log import FileAuditLog
     from support.clock import StepClock
     from support.ids import SeededIdProvider
     from support.services import app_actor
 
+    catalog = FileCatalog(root)
+    entry = catalog.resolve(graph)
+    used = ModelCache(catalog).load(entry).used_markings()
     clock = StepClock(start="2030-01-01T00:00:00Z")
     service = WriteService(
-        catalog=FileCatalog(root),
+        catalog=catalog,
         audit=FileAuditLog(root),
-        policy=BuiltinPolicySource(),
+        policy=holding_markings(entry, used) if used else BuiltinPolicySource(),
         clock=clock,
         ids=SeededIdProvider(clock, seed),
         env=EnvInfo("<data root>", "default"),

@@ -53,29 +53,36 @@ def ontology(request: pytest.FixtureRequest) -> str:
 @pytest.fixture
 def svc(backend: str, ontology: str, tmp_path: Path) -> ServiceEnv:
     env = ServiceEnv(backend, ontology, tmp_path / "root")
-    result = env.apply(
-        {
-            "op": "create",
-            "type": PERSON,
-            "local": "ada",
-            "attrs": {
-                "name": "Ada",
-                "email": "ada@example.org",
-                "birth_date": "1990-01-01",
-                "team": "core",
+    # the marked values are written by a holder (a caller without the marking cannot write them)
+    writer = env.make_service(Source(holding(env)))
+    result = writer.apply(
+        env.request(
+            {
+                "op": "create",
+                "type": PERSON,
+                "local": "ada",
+                "attrs": {
+                    "name": "Ada",
+                    "email": "ada@example.org",
+                    "birth_date": "1990-01-01",
+                    "team": "core",
+                },
             },
-        },
-        {"op": "create", "type": PERSON, "local": "bo", "attrs": {"name": "Bo", "team": "ops"}},
-        {"op": "create", "type": "ex:Team", "local": "core", "attrs": {"name": "core"}},
+            {"op": "create", "type": PERSON, "local": "bo", "attrs": {"name": "Bo", "team": "ops"}},
+            {"op": "create", "type": "ex:Team", "local": "core", "attrs": {"name": "core"}},
+        )
     )
     assert len(result.entities) == 3
     return env
 
 
-def holder(svc: ServiceEnv) -> ReadService:
+def holding(svc: ServiceEnv) -> PolicySet:
     graphs = {"example_graph": svc.entry.id}
-    document = compile_policy(HOLDER, file="installation.yaml", graphs=graphs).document
-    return svc.make_reader(Source(policy_set(document)))
+    return policy_set(compile_policy(HOLDER, file="installation.yaml", graphs=graphs).document)
+
+
+def holder(svc: ServiceEnv) -> ReadService:
+    return svc.make_reader(Source(holding(svc)))
 
 
 def open_view(svc: ServiceEnv, reader: ReadService) -> GraphRead:
