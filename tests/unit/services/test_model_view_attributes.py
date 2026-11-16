@@ -4,24 +4,22 @@ model as if the classes did not declare the hidden attributes.
 The oracle is the ``staff`` twin (``support.markings``): the module as a caller holding no
 marking must read it, authored by hand. The rest are the cases the twin cannot show: an abstract
 class above concrete classes that keep different attributes, a partial holder, a rule whose
-text happens to contain a marking's CURIE, a module whose only terms are markings, and the
-unreadable model of a graph without markings.
+text happens to contain a marking's CURIE, a module whose only terms are markings, and enums
+no attribute uses.
 """
 
 from pathlib import Path
 
-import pytest
 from support.fixtures import compiled_model
 from support.markings import CONTRACTOR, EMPLOYEE, STAFF, twin_model
 
-from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import GraphId, parse_id
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.ontology_layer.bundle import DirectorySource, LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
-from graph_cli.ontology_layer.model import CompiledModel, traces_markings
+from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.term_model import concrete_types
 from graph_cli.services.visibility import Visibility, attribute_mask, filter_model
 
@@ -232,17 +230,3 @@ def test_the_model_view_of_an_attribute_half_is_filtered_and_cached() -> None:
     first = visibility.model(entry(), STAFF_MODEL, view)
     assert first.to_json() == twin_model().to_json()
     assert visibility.model(entry(), STAFF_MODEL, view) is first
-
-
-def test_an_unreadable_model_without_traces_of_markings_does_not_fail_the_unlimited_path() -> None:
-    def unreadable() -> CompiledModel:
-        raise GraphCliError("ontology.pin_mismatch", "compiled ontology is unreadable")
-
-    visibility = Visibility()
-    assert visibility.marked(entry(), unreadable, lambda: True) == frozenset()
-    with pytest.raises(GraphCliError):
-        visibility.marked(entry(), unreadable, lambda: False)  # traces: fail closed
-    with pytest.raises(GraphCliError):
-        visibility.marked(entry(), unreadable)  # nothing to tell: fail closed
-    assert traces_markings(b'{"schema": "graph_cli.compiled_ontology/2"}')
-    assert not traces_markings(b'{"schema": "graph_cli.compiled_ontology/1"}')

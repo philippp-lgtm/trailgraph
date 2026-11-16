@@ -409,6 +409,13 @@ sees everything, because rights add up.
   A policy without `markings` compiles to the same document and hash as before.
   A graph whose pinned ontology uses no marking is not marking-limited: nothing
   is filtered, and its answers, events and hashes are what they were.
+- **A marked artifact must match its pin.** Reads go on with a warning
+  (`ontology.pin_mismatch_read`) when the pinned compiled ontology no longer
+  matches its hash, but not when that file shows markings: only the pin vouches
+  for which attributes are marked, so every read of the graph, a holder's
+  included, fails with `ontology.pin_mismatch` until the file is restored, and
+  `whoami` shows `markings: []` for it (nothing for a maintainer, who holds
+  every marking).
 - **The built-in policy grants no marking.** Without an installation policy no
   caller of `graph` reads or writes a marked attribute, and a type with a
   required marked attribute without a default cannot be created locally

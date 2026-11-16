@@ -8,8 +8,9 @@ raised as ``graph.not_found``, exactly like a graph that does not exist
 (B6.15), and still audited. Reads write nothing else.
 A read takes one lock-free snapshot and answers everything from it, so the
 envelope's ``graph.seq`` names the state that was read. A pinned artifact
-that does not match its hash is read with ``ontology.pin_mismatch_read``,
-an archived graph with ``graph.archived_read``. ``as_of`` reads the snapshot
+that does not match its hash is read with ``ontology.pin_mismatch_read``
+(refused when it shows markings: only the pin vouches for them), an archived
+graph with ``graph.archived_read``. ``as_of`` reads the snapshot
 at the seq it names (B8.8): it needs ``read.history`` besides the read's own
 action, a backend with ``snapshot_at_seq``, and every answer carries
 ``temporal.as_of_read``; the model stays the current pin, and revisions written under
@@ -89,7 +90,7 @@ from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.affordances import relations, transitions
-from graph_cli.ontology_layer.model import CompiledModel, traces_markings
+from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
@@ -119,7 +120,7 @@ from graph_cli.query.search import rank_key as search_rank
 from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
-from graph_cli.services.models import COMPILED_FILE, ModelCache
+from graph_cli.services.models import ModelCache
 from graph_cli.services.names import (
     GraphNames,
     MappedSnapshot,
@@ -479,17 +480,14 @@ class ReadService:
                 entry,
                 policy,
                 lambda: self._models.load_for_read(entry)[0],
-                lambda: self._unmarked(entry),
+                lambda: self._models.used_markings(entry),
             )
 
-    def _unmarked(self, entry: GraphEntry) -> bool:
-        """Whether the raw bytes of the pinned model show no trace of markings, for a model
-        that cannot be loaded (``Visibility.marked``); ``False`` when they cannot be read."""
-        try:
-            raw = self._catalog.read_release_file(entry.id, entry.pin.version, COMPILED_FILE)
-        except GraphCliError:
-            return False
-        return not traces_markings(raw)
+    @property
+    def models(self) -> ModelCache:
+        """The pinned models this service loads, cached by their bytes; a write service of
+        the same command may share them (``WriteService(models=...)``)."""
+        return self._models
 
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
         """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
@@ -497,7 +495,11 @@ class ReadService:
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             return self._visibility.types(
-                actor, entry, policy, lambda: self._models.load_for_read(entry)[0]
+                actor,
+                entry,
+                policy,
+                lambda: self._models.load_for_read(entry)[0],
+                lambda: self._models.used_markings(entry),
             )
 
     def limited_view(
@@ -786,7 +788,15 @@ class ReadService:
         # the as-of snapshot after it read the raw tx metadata, and judge mapped types.
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
-            view = self._visibility.of(actor, entry, policy, model)
+            # A model that does not match the pin tells nothing about markings: an artifact
+            # with a trace of them refuses the read (``ontology.pin_mismatch``), one without
+            # is read as before.
+            markings = (
+                model.used_markings
+                if not _mismatched(warnings)
+                else (lambda: self._models.used_markings(entry))
+            )
+            view = self._visibility.lazy(actor, entry, policy, lambda: model, markings)
         full = model
         if view.limited:
             model = self._visibility.model(entry, model, view)
@@ -1565,9 +1575,7 @@ class ReadService:
         nobody (``[]``) unless the actor holds every marking whatever the model declares:
         fail closed, ``whoami`` still answers."""
         try:
-            used = self._visibility.marked(
-                entry, lambda: self._models.load_for_read(entry)[0], lambda: self._unmarked(entry)
-            )
+            used = self._models.used_markings(entry)
         except GraphCliError:
             return None if holds_every_marking(actor, entry.id, policy) else []
         held = marking_allowance(actor, entry.id, policy, used)
@@ -1800,6 +1808,11 @@ def _attribute_effects(
             effect = {**effect, "attributes": {o: n for o, n in pairs.items() if shown(n)}}
         found.append(effect)
     return found
+
+
+def _mismatched(warnings: Sequence[WarningRecord]) -> bool:
+    """Whether ``load_for_read`` read an artifact that does not match the pin."""
+    return any(w.code == "ontology.pin_mismatch_read" for w in warnings)
 
 
 def _kind(effect: JsonValue) -> str:

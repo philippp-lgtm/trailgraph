@@ -36,7 +36,7 @@ from graph_cli.access_control.documents import principal_facts, read_limited
 from graph_cli.access_control.effective import held_markings, visibility
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue, canonical_bytes
-from graph_cli.kernel.errors import EMPTY, GraphCliError, WarningRecord
+from graph_cli.kernel.errors import EMPTY, WarningRecord
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
@@ -64,7 +64,6 @@ from graph_cli.services.term_model import concrete_types
 
 _ACTOR_CACHE_LIMIT: Final = 512  # (policy, graph, pin, actor) -> read view
 _MODEL_CACHE_LIMIT: Final = 64  # (pin, read view) -> filtered model
-_PIN_CACHE_LIMIT: Final = 64  # pin -> the markings its model uses
 
 NamesRemoved = Callable[[JsonValue], bool]
 
@@ -75,11 +74,11 @@ NamesRemoved = Callable[[JsonValue], bool]
 class Visibility:
     """What each actor sees per graph, and the filtered models, computed once and cached.
 
-    ``read_limited`` is cached per (policy hash, graph), the markings a pinned model uses per
-    pin artifact hash. The read view is cached per (policy hash, graph, pin artifact hash, actor
-    key); the key holds every fact ``authorize`` reads, so two actors that no rule can tell
-    apart share an answer and none shares one it must not. The caches are bounded (the oldest
-    entries go first): a server sees an unbounded number of asserted session and agent ids.
+    ``read_limited`` is cached per (policy hash, graph). The read view is cached per (policy
+    hash, graph, pin artifact hash, the markings the pin uses, actor key); the key holds every
+    fact ``authorize`` reads, so two actors that no rule can tell apart share an answer and
+    none shares one it must not. The caches are bounded (the oldest entries go first): a
+    server sees an unbounded number of asserted session and agent ids.
 
     The fast path: a graph that is not read limited and whose pin uses no marking gets the
     unlimited view without a probe; a caller who holds every marking the pin uses gets no
@@ -88,7 +87,6 @@ class Visibility:
 
     def __init__(self) -> None:
         self._limited: dict[tuple[str, GraphId], bool] = {}
-        self._marked: dict[str, frozenset[str]] = {}
         self._visible: dict[tuple[Hashable, ...], ReadView] = {}
         self._models: dict[tuple[str, ReadView], CompiledModel] = {}
 
@@ -100,34 +98,12 @@ class Visibility:
             found = self._limited[key] = read_limited(policy.documents, graph)
         return found
 
-    def marked(
-        self,
-        entry: GraphEntry,
-        load: Callable[[], CompiledModel],
-        unmarked: Callable[[], bool] | None = None,
-    ) -> frozenset[str]:
-        """The markings the graph's pinned model uses (``CompiledModel.used_markings``);
-        ``load`` runs once per pin. When the model cannot be loaded, ``unmarked`` may tell that
-        the pin holds no marking all the same (its raw bytes show no trace of one,
-        ``model.traces_markings``): then the answer is empty and not cached; otherwise the
-        load's error is raised (fail closed)."""
-        key = entry.pin.artifact_hash
-        found = self._marked.get(key)
-        if found is None:
-            try:
-                found = load().used_markings()
-            except GraphCliError:
-                if unmarked is None or not unmarked():
-                    raise
-                return frozenset()
-            _remember(self._marked, key, found, _PIN_CACHE_LIMIT)
-        return found
-
     def of(
         self, actor: ActorContext, entry: GraphEntry, policy: PolicySet, model: CompiledModel
     ) -> ReadView:
-        """What ``actor`` sees in the graph whose pinned model is ``model``."""
-        return self.lazy(actor, entry, policy, lambda: model)
+        """What ``actor`` sees in the graph whose pinned model is ``model``, a model verified
+        against the pin (its markings are taken from it)."""
+        return self.lazy(actor, entry, policy, lambda: model, model.used_markings)
 
     def lazy(
         self,
@@ -135,17 +111,18 @@ class Visibility:
         entry: GraphEntry,
         policy: PolicySet,
         load: Callable[[], CompiledModel],
-        unmarked: Callable[[], bool] | None = None,
+        markings: Callable[[], frozenset[str]],
     ) -> ReadView:
-        """``of`` for callers without the model at hand: ``load`` runs once per pin to learn
-        its markings (``unmarked`` as for ``marked``), and again only when the view must be
-        computed (the graph is read limited or its pin uses markings, and the answer is not
-        cached yet)."""
+        """``of`` for callers without the model at hand: ``markings`` tells the markings the
+        pin uses (``ModelCache.used_markings``: from the raw bytes, verified against the pin
+        when they show any) and runs on every call, so an answer never outlives the artifact
+        it came from; ``load`` runs only when the view must be computed (the graph is read
+        limited or its pin uses markings, and the answer is not cached yet)."""
         types_limited = self.limited(policy, entry.id)
-        marked = self.marked(entry, load, unmarked)
+        marked = markings()
         if not types_limited and not marked:
             return UNLIMITED
-        key = (policy.hash, entry.id, entry.pin.artifact_hash, *actor_key(actor))
+        key = (policy.hash, entry.id, entry.pin.artifact_hash, marked, *actor_key(actor))
         found = self._visible.get(key)
         if found is not None:
             return found
@@ -170,12 +147,13 @@ class Visibility:
         entry: GraphEntry,
         policy: PolicySet,
         load: Callable[[], CompiledModel],
+        markings: Callable[[], frozenset[str]],
     ) -> frozenset[str] | None:
-        """The type half of ``lazy`` alone (``None``: every type): ``load`` runs only when the
-        graph is read limited."""
+        """The type half of ``lazy`` alone (``None``: every type): neither ``load`` nor
+        ``markings`` runs unless the graph is read limited."""
         if not self.limited(policy, entry.id):
             return None
-        return self.lazy(actor, entry, policy, load).types
+        return self.lazy(actor, entry, policy, load, markings).types
 
     def model(self, entry: GraphEntry, model: CompiledModel, view: ReadView) -> CompiledModel:
         """The model view of ``model`` for ``view``, cached per (pin artifact hash, view);

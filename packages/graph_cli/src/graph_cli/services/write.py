@@ -369,6 +369,7 @@ class WriteService:
         env: EnvInfo,
         config: WriteConfig | None = None,
         timings: Timings | None = None,
+        models: ModelCache | None = None,
     ) -> None:
         self._catalog = catalog
         self._audit = audit
@@ -378,7 +379,9 @@ class WriteService:
         self._env = env
         self.config = config or WriteConfig()
         self.timings = timings if timings is not None else Timings()
-        self._models = ModelCache(catalog, self.timings)
+        # ``models``: those of the command's read service, so a write and its skill check
+        # parse a pinned model once
+        self._models = models if models is not None else ModelCache(catalog, self.timings)
         self._fine = FineTypes()
         self._visibility = Visibility()
 

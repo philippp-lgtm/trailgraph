@@ -110,9 +110,9 @@ def test_a_pin_without_markings_computes_nothing(monkeypatch: pytest.MonkeyPatch
     load, calls = counting(PLAIN)
     for roles in (("reporting",), ("hr",), ()):
         plain = entry("sha256:p", "notes_and_sources")
-        assert cache.lazy(token(*roles), plain, UNLIMITED_TYPES, load) == UNLIMITED
-        assert cache.lazy(token(*roles), plain, BUILTIN_POLICY_SET, load) == UNLIMITED
-    assert len(calls) == 1  # the model is read once per pin to learn its markings
+        assert cache.lazy(token(*roles), plain, UNLIMITED_TYPES, load, frozenset) == UNLIMITED
+        assert cache.lazy(token(*roles), plain, BUILTIN_POLICY_SET, load, frozenset) == UNLIMITED
+    assert calls == []  # the markings come from the raw bytes: the model is never needed
     assert cache._visible == {}  # nothing cached per actor either
 
 
@@ -129,14 +129,36 @@ def test_the_attribute_half_is_cached_per_policy_pin_and_actor(
     monkeypatch.setattr(visibility_module, "held_markings", held)
     cache = Visibility()
     load, calls = counting(MARKED)
-    first = cache.lazy(token("reporting"), entry(), POLICY, load)
-    assert cache.lazy(token("reporting"), entry(), POLICY, load) is first
+    used = MARKED.used_markings
+    first = cache.lazy(token("reporting"), entry(), POLICY, load, used)
+    assert cache.lazy(token("reporting"), entry(), POLICY, load, used) is first
     assert len(probes) == 1
-    cache.lazy(token("hr"), entry(), POLICY, load)  # another actor
-    cache.lazy(token("reporting"), entry("sha256:b"), POLICY, load)  # another pin
-    cache.lazy(token("reporting"), entry(), BUILTIN_POLICY_SET, load)  # another policy
+    cache.lazy(token("hr"), entry(), POLICY, load, used)  # another actor
+    cache.lazy(token("reporting"), entry("sha256:b"), POLICY, load, used)  # another pin
+    cache.lazy(token("reporting"), entry(), BUILTIN_POLICY_SET, load, used)  # another policy
     assert len(probes) == 4 and len(cache._visible) == 4
-    assert len(calls) == 6  # once for the markings of each pin, once per computed view
+    assert len(calls) == 4  # once per computed view
+
+
+def test_the_markings_are_asked_on_every_call_and_key_the_cached_view() -> None:
+    """An answer never outlives the artifact it came from: the bytes of a pin that showed no
+    marking (an artifact that did not match its pin, say) and show some now give the
+    attribute half at once."""
+    cache = Visibility()
+    asked: list[frozenset[str]] = []
+    answers = iter([frozenset(), MARKED.used_markings(), MARKED.used_markings()])
+
+    def markings() -> frozenset[str]:
+        asked.append(found := next(answers))
+        return found
+
+    actor = token("people")  # read limited, so a view is cached for the empty markings too
+    before = cache.lazy(actor, entry(), POLICY, lambda: MARKED, markings)
+    assert before.types == {"ex:Person"} and before.attributes is None
+    after = cache.lazy(actor, entry(), POLICY, lambda: MARKED, markings)
+    assert after.attributes is not None and after.keeps("ex:Person") == {"name", "team"}
+    assert cache.lazy(actor, entry(), POLICY, lambda: MARKED, markings) is after
+    assert len(asked) == 3
 
 
 def test_the_builtin_policy_holds_no_marking() -> None:

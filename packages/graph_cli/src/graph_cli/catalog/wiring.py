@@ -177,6 +177,7 @@ class AppContext:
             env=backend.env,
             config=WriteConfig(lock_timeout_s=self.config.lock_timeout_s),
             timings=backend.timings,
+            models=self.reader.models,
         )
 
     @functools.cached_property

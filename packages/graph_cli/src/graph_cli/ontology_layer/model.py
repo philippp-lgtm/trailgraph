@@ -627,11 +627,26 @@ def _expr(data: JsonObject, owner: str) -> JsonValue:
     return expr
 
 
+# What the raw bytes of a document with markings contain: the schema string or a key, spelled
+# plainly, or a JSON escape that could spell one (a canonical document escapes neither ``/``
+# nor printable characters, so its bytes hold none unless they hold a control character).
+_TRACE_WORDS: Final = (
+    COMPILED_SCHEMA_V2.encode(),
+    b'"requires"',
+    b'"markings"',
+    b"\\u",
+    b"\\/",
+)
+
+
 def traces_markings(raw: bytes) -> bool:
-    """Whether the raw bytes of a compiled document that cannot be loaded show markings: the
-    ``/2`` schema or a ``requires`` / ``markings`` key. Bytes that are no JSON object are
-    searched for the schema string. Markings need a program that writes ``/2``, so a document
-    without any of these traces holds none."""
+    """Whether the raw bytes of a compiled document show markings: the ``/2`` schema or a
+    ``requires`` / ``markings`` key. Bytes that are no JSON object are searched for the schema
+    string. Markings need a program that writes ``/2``, so a document without any of these
+    traces holds none. Bytes that spell none of them plainly and hold no escape that could
+    (``_TRACE_WORDS``) are answered without parsing them."""
+    if not any(word in raw for word in _TRACE_WORDS):
+        return False
     try:
         document = parse_json(raw)
     except CanonicalError:
