@@ -50,8 +50,8 @@ always use CURIEs (`rcp:Recipe`).
 
 A module file has the keys `format`, `module` and, each optional,
 `datatypes`, `enums`, `classes`, `relations`, `lifecycles` (each a map
-from term name to definition), `rules` (a list), `mappings` and
-`extensions`.
+from term name to definition), `rules` (a list), `mappings`,
+`extensions` and `markings`.
 
 ## Module header
 
@@ -163,6 +163,7 @@ imported class (`is_a: files:File`).
 | `mutability` | `content` (default), `immutable` (write once: cannot change or be removed once set), `operational` (housekeeping values that may change any time, such as a local path), `lifecycle` (implied by `lifecycle`; changes only through transitions) |
 | `role` | `label` (the main name, one per class, single; on `lang_string` it may be `many`, one value per language), `alt_label` (other names, abbreviations), `hidden_label` (misspellings, never shown); on `string` and `lang_string` attributes only; `graph lookup` searches them |
 | `renamed_from` | the old name of a renamed attribute (major) |
+| `markings` | a non-empty list of markings (see Markings); a caller sees the attribute only when it holds every one; not on lifecycle attributes |
 
 A lifecycle attribute with a single initial state is set to it on create.
 
@@ -279,6 +280,23 @@ adds `attr`, a single `integer` or `decimal` attribute declared on every
 class at the other end; the sum is absent when one of them lacks the
 value, so test `value_presence: PRESENT` in `if` first. `{attr: <name>}`
 compares with an attribute of the entity in scope.
+
+## Markings
+
+```yaml
+markings:
+  personal: {summary: "Personal data of a natural person"}
+```
+
+Marking name (lower case, like a relation name, and distinct from the module's relation
+names) to `summary` and an optional `description`. An attribute names markings of its own
+module or an imported one, as a local name or a CURIE (`[personal]`, `[ex:personal]`); a
+subclass inherits them with the attribute. The installation policy grants markings by CURIE.
+A model with markings compiles to `graph_cli.compiled_ontology/2`, which programs before
+0.23.0 refuse. Adding a marking to an existing attribute is major, removing one minor (the
+release warns `admin.marking_removed`), declaring a marking minor, removing one major. A
+release that would show values stored under a marked name under a name declared without that
+marking is refused (`ontology.marking_name_reused`).
 
 ## Mappings
 

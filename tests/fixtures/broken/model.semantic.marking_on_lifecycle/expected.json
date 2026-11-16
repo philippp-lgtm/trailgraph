@@ -1,0 +1,8 @@
+{
+  "code": "model.semantic.marking_on_lifecycle",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "module": "broken",
+    "path": "classes.Thing.attributes.state.markings"
+  }
+}

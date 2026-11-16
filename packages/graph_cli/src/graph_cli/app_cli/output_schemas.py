@@ -170,7 +170,8 @@ def _field() -> Schema:
             "declared_in": STRING,
             "summary": STRING,
             "deprecated": BOOLEAN,
-        }
+        },
+        optional={"markings": STRINGS},
     )
 
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.yaml_strict import YamlError, YamlNode, YamlScalar, load_strict
+from graph_cli.kernel.yaml_strict import YamlError, YamlNode, YamlScalar, YamlSeq, load_strict
 from graph_cli.ontology_layer.expressions import Cond, parse_conditions
 from graph_cli.ontology_layer.reader import Reader, join
 from graph_cli.ontology_layer.report import Report
@@ -52,6 +52,7 @@ _TOP_KEYS: Final = (
     "rules",
     "mappings",
     "extensions",
+    "markings",
 )
 
 
@@ -117,6 +118,18 @@ class IrAttribute:
     mutability: str
     role: str | None  # one of LABEL_ROLES
     renamed_from: str | None
+    doc: Doc
+    path: str
+    # Marking references as written (a local name or a CURIE of a visible module); a caller
+    # must hold every one of them to see the attribute. ``()`` = unmarked.
+    markings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class IrMarking:
+    """A marking declared by a module: a label for sensitive attributes, granted by policy."""
+
+    name: str
     doc: Doc
     path: str
 
@@ -222,6 +235,7 @@ class IrModule:
     rules: tuple[IrRule, ...]
     mappings: dict[str, dict[str, tuple[str, ...]]]
     extensions: dict[str, JsonValue]
+    markings: dict[str, IrMarking] = field(default_factory=dict)
 
 
 def parse_module(text: str | bytes, module_name: str, report: Report) -> IrModule | None:
@@ -351,7 +365,14 @@ class _Parser:
             rules=self.rules(top.get("rules")),
             mappings=self.mappings(top.get("mappings")),
             extensions=extensions,
+            markings=self._terms(top, "markings", LOWER_NAME_RE, self.marking),
         )
+
+    def marking(self, name: str, node: YamlNode, path: str) -> IrMarking | None:
+        data = self.r.mapping(node, path, ("summary", "description"))
+        if data is None:
+            return None
+        return IrMarking(name, _doc(self.r, data, path), path)
 
     def _terms[T](
         self,
@@ -484,12 +505,14 @@ class _Parser:
                 "mutability",
                 "role",
                 "renamed_from",
+                "markings",
                 *_DOC,
             ),
         )
         if data is None:
             return None
         doc = _doc(self.r, data, path)
+        markings = self.markings(data, path)
         type_ref = self.r.string(data.get("type"), join(path, "type"))
         lifecycle = self.r.string(data.get("lifecycle"), join(path, "lifecycle"))
         if ("type" in data) == ("lifecycle" in data):
@@ -525,7 +548,38 @@ class _Parser:
             ),
             doc=doc,
             path=path,
+            markings=markings,
         )
+
+    def markings(self, data: dict[str, YamlNode], path: str) -> tuple[str, ...]:
+        """``markings`` of an attribute: a non-empty list of marking references (a local name
+        or a CURIE), each named once. Resolution is the validator's."""
+        if "markings" not in data:
+            return ()
+        key_path = join(path, "markings")
+        node = data["markings"]
+        if not isinstance(node, YamlSeq):
+            self.r.invalid(key_path, "expected a list of markings")
+            return ()
+        refs = self.r.names(node, key_path)
+        if refs is None:
+            return ()
+        if not refs:
+            self.r.invalid(key_path, "a markings list names at least one marking")
+            return ()
+        for index, ref in enumerate(refs):
+            match = CURIE_RE.match(ref)
+            if not LOWER_NAME_RE.match(ref if match is None else match.group(2)):
+                self.r.invalid(
+                    f"{key_path}[{index}]",
+                    f"{ref!r} is not a marking name ({LOWER_NAME_RE.pattern}) or a prefix:name"
+                    " CURIE",
+                )
+                return ()
+            if ref in refs[:index]:
+                self.r.invalid(f"{key_path}[{index}]", f"marking {ref!r} is named twice")
+                return ()
+        return refs
 
     def _bounds(self, node: YamlNode | None, path: str) -> Bounds:
         data = self.r.mapping(node, path, ("min", "max"))

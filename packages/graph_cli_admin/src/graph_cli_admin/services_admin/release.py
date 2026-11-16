@@ -55,7 +55,10 @@ catalogs it still has to publish. A release without renames and file is unchange
 any of it, a release that renames or retypes a term is refused while an installed deny rule
 names the old term and none the new one (``admin.policy_renamed_term``, ``renamed_terms``):
 no deny rule fails open across a release; an unfinished migration is completed whatever the
-policy says.
+policy says. Next to it, a release that would show values stored under a marked attribute
+under a name declared without that marking is refused (``ontology.marking_name_reused``,
+``marking_names``; also when a release of the chain cannot be read); a deliberate downgrade
+warns ``admin.marking_removed``.
 
 ``plan`` makes every check under the lock and ``write`` writes, so
 ``graph push`` (``sources``) runs a release, a skill publish and a function and
@@ -90,8 +93,8 @@ from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli.temporal_knowledge.name_map import Hop
+from graph_cli_admin.services_admin import marking_names, renamed_terms
 from graph_cli_admin.services_admin import migration as migrations
-from graph_cli_admin.services_admin import renamed_terms
 from graph_cli_admin.services_admin.catalog_follow import (
     Followed,
     Republish,
@@ -334,8 +337,20 @@ def plan(
             raise migrations.incomplete(marker, current.version)
         completing, clear = marker, False  # the data is migrated: only the pin is left
     retypes = migrations.retypes(file)
+    # the release as the last step of the graph's name map: what reads will map old names
+    # through, and what problems that name an old term hint at
+    hop = Hop(
+        current.version,
+        target.version,
+        old_model,
+        compiled.model,
+        renames,
+        None if file is None else file.doc,
+    )
+    marking_notes: tuple[WarningRecord, ...] = ()
     if completing is None:  # an unfinished migration is finished first, whatever the policy
         _check_policy(ctx, entry, renames, retypes, compiled.model, bump_details)
+        marking_notes = marking_names.check(ctx, entry, hop, bump_details)
     run: MigrationRun | None = None
     if major and head.seq:
         run = _check_data(
@@ -358,14 +373,6 @@ def plan(
     recompile = file is not None or migrations.has_renames(renames)
     # a problem that names an old term says what it is called now: the graph's name map with
     # this release's hop on top (the release is not pinned yet)
-    hop = Hop(
-        current.version,
-        target.version,
-        old_model,
-        compiled.model,
-        renames,
-        None if file is None else file.doc,
-    )
     hint_problems = rename_hints(ctx, entry, compiled.model, hop)
     functions = current_catalog(session, "functions")
     followed_functions = Followed(None, [])
@@ -389,6 +396,7 @@ def plan(
             if followed_actions.problems:
                 raise actions_broken(hint_problems(followed_actions.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
+    warnings += marking_notes
     warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
     if bump == "excessive":
         warnings += (

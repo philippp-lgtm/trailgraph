@@ -30,7 +30,7 @@ from graph_cli.ontology_layer.vocabulary import (
     RESERVED_MODULE_IDS,
 )
 
-TermKind = Literal["class", "datatype", "enum", "lifecycle", "relation"]
+TermKind = Literal["class", "datatype", "enum", "lifecycle", "relation", "marking"]
 
 
 class ModuleSource(Protocol):
@@ -202,6 +202,7 @@ def _terms(module: IrModule, kind: TermKind) -> Mapping[str, object]:
         "enum": module.enums,
         "lifecycle": module.lifecycles,
         "relation": module.relations,
+        "marking": module.markings,
     }
     return sections[kind]
 

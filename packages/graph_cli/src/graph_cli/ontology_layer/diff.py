@@ -10,6 +10,13 @@ are compared once, at the class that declares them.
 ``classify`` ignores a ``renamed_from`` that names nothing; ``check_renames`` judges the
 declarations and ``derive_renames`` returns the renames ``classify`` reports.
 
+Markings: a declaration added is ``add_marking_term`` (minor), removed ``remove_marking_term``
+(major; only possible when nothing uses it). An attribute that gains a marking is
+``add_marking`` (major: for every caller without it the attribute disappears, like a removed
+one), one that loses a marking ``remove_marking`` (minor: the values become readable for more
+callers; the release warns). Both are judged in ``attribute()``, so a rename compares through
+(``rename`` plus ``remove_marking``). One change per marking, ``detail.marking`` names it.
+
 ``check_bump`` judges the bundle version (the main module's) against the report level;
 ``module_bumps`` judges the own version of every other authored module against the level
 of the changes to its terms, since importers pin those versions with ranges.
@@ -32,6 +39,7 @@ from graph_cli.ontology_layer.model import (
     DatatypeDef,
     EnumDef,
     LifecycleDef,
+    MarkingDef,
     QualifierDef,
     RelationDef,
     RuleDef,
@@ -159,6 +167,7 @@ def classify(old: CompiledModel, new: CompiledModel) -> DiffReport:
         "relations", old.relations, new.relations, differ.relation, renames=_effective_renames
     )
     differ.rules(old.rules, new.rules)
+    differ.markings(old.markings, new.markings)
     changes = tuple(sorted(differ.changes, key=lambda c: (c.path, c.kind)))
     return DiffReport(
         from_version=old.bundle_version,
@@ -646,6 +655,10 @@ class _Differ:
                 "minor" if kind == "add" else "major",
                 **{"from": old.role, "to": new.role},
             )
+        for marking in sorted(set(new.markings) - set(old.markings)):
+            self.add(path, "add_marking", "major", marking=marking)
+        for marking in sorted(set(old.markings) - set(new.markings)):
+            self.add(path, "remove_marking", "minor", marking=marking)
 
     # ---- relations ---------------------------------------------------------------------------
 
@@ -727,6 +740,20 @@ class _Differ:
                 "major" if tighter else "minor",
                 **{"from": old.max, "to": new.max},
             )
+
+    # ---- markings ----------------------------------------------------------------------------
+
+    def markings(self, old: Mapping[str, MarkingDef], new: Mapping[str, MarkingDef]) -> None:
+        for curie in sorted(old.keys() - new.keys()):
+            self.add(f"markings.{curie}", "remove_marking_term", "major")
+        for curie in sorted(new.keys() - old.keys()):
+            self.add(f"markings.{curie}", "add_marking_term", "minor")
+        for curie in sorted(old.keys() & new.keys()):
+            a, b, path = old[curie], new[curie], f"markings.{curie}"
+            if a.summary != b.summary:
+                self.add(path, "change_summary", "patch")
+            if a.description != b.description:
+                self.add(path, "change_description", "patch")
 
     # ---- rules -------------------------------------------------------------------------------
 

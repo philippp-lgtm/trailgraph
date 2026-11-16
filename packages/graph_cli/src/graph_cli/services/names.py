@@ -134,6 +134,11 @@ class NameMaps:
         self._maps[key] = found
         return found
 
+    def build(self, entry: GraphEntry) -> tuple[NameMap, bool]:
+        """The map and whether it is complete, built afresh (not cached): the release check
+        of reused marked names refuses an incomplete one (fail closed)."""
+        return self._build(entry)
+
     def _build(self, entry: GraphEntry) -> tuple[NameMap, bool]:
         """The map, and whether every file and line it draws on was readable: only a
         complete map is shared, so a request that met a damaged file does not hide the

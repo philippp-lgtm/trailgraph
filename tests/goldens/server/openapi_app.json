@@ -2866,6 +2866,12 @@
           },
           "deprecated": {
             "type": "boolean"
+          },
+          "markings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

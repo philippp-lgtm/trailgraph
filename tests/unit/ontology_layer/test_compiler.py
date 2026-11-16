@@ -3,6 +3,7 @@
 import pytest
 from support.fixtures import (
     GOLDENS,
+    MARKED_ONTOLOGIES,
     MODULAR_ONTOLOGIES,
     TOY_ONTOLOGIES,
     assert_golden,
@@ -19,7 +20,9 @@ from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel, load_compiled, model_from_json
 
 ALL_VERSIONS = [
-    (name, v) for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES) for v in ontology_versions(name)
+    (name, v)
+    for name in (*TOY_ONTOLOGIES, *MODULAR_ONTOLOGIES, *MARKED_ONTOLOGIES)
+    for v in ontology_versions(name)
 ]
 
 
@@ -50,6 +53,7 @@ def test_artifact_hash_is_stable(name: str, version: str) -> None:
         *((name, ontology_versions(name)[0]) for name in TOY_ONTOLOGIES),
         ("notes_and_sources", "1.1.0"),
         *((name, version) for name in MODULAR_ONTOLOGIES for version in ontology_versions(name)),
+        *((name, ontology_versions(name)[0]) for name in MARKED_ONTOLOGIES),
     ],
 )
 def test_compiled_golden(name: str, version: str) -> None:

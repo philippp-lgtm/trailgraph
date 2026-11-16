@@ -328,7 +328,8 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
     enums = {k: v for k, v in model.enums.items() if k in used}
     lifecycles = {k: v for k, v in model.lifecycles.items() if k in used}
     datatypes = {k: v for k, v in model.datatypes.items() if k in used}
-    terms = {*new_classes, *new_relations, *enums, *lifecycles, *datatypes}
+    # Markings stay as they are: a type limit hides no attribute (field limits filter them).
+    terms = {*new_classes, *new_relations, *enums, *lifecycles, *datatypes, *model.markings}
     removed = model.term_curies() - terms
     names_removed = _name_matcher(removed)
     rules = tuple(
@@ -352,6 +353,7 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
         classes=new_classes,
         relations=new_relations,
         rules=rules,
+        markings=model.markings,
     )
 
 

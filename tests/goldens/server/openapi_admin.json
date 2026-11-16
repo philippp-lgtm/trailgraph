@@ -8951,7 +8951,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.remote_mode, migration.invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.remote_mode, migration.invalid, ontology.marking_name_reused, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -8980,6 +8980,7 @@
               "admin.policy_renamed_term",
               "admin.remote_mode",
               "migration.invalid",
+              "ontology.marking_name_reused",
               "remote.client_outdated"
             ]
           },
@@ -10990,7 +10991,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -11025,6 +11026,7 @@
               "admin.version_bump_insufficient",
               "graph.archived",
               "migration.invalid",
+              "ontology.marking_name_reused",
               "ontology.rename_invalid",
               "remote.client_outdated"
             ]
@@ -12722,7 +12724,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.model_invalid, admin.remote_mode, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.model_invalid, admin.remote_mode, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -12743,6 +12745,7 @@
             "x-graph-cli-error-codes": [
               "admin.model_invalid",
               "admin.remote_mode",
+              "ontology.marking_name_reused",
               "ontology.rename_invalid",
               "remote.client_outdated"
             ]
@@ -13105,7 +13108,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -13137,6 +13140,7 @@
               "admin.version_bump_insufficient",
               "graph.archived",
               "migration.invalid",
+              "ontology.marking_name_reused",
               "ontology.rename_invalid",
               "remote.client_outdated"
             ]

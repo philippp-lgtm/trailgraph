@@ -1,0 +1,44 @@
+# Toy ontology for markings (field-level read visibility): a person's contact data and
+# birth date are personal data; a caller sees them only when it holds ex:personal.
+format: graph_cli.ir/1
+module:
+  id: personnel
+  prefix: ex
+  version: 1.0.0
+  summary: People and the teams they belong to.
+
+markings:
+  personal:
+    summary: Personal data of a natural person.
+    description: Visible only to callers that hold this marking.
+
+classes:
+  Person:
+    summary: A person known to the organization.
+    display_prefix: PER
+    attributes:
+      name:
+        summary: Full name.
+        type: string
+        required: true
+        role: label
+      email:
+        summary: Private e-mail address.
+        type: string
+        markings: [ex:personal]
+      birth_date:
+        summary: Date of birth.
+        type: date
+        markings: [personal]
+      team:
+        summary: Name of the team the person works in.
+        type: string
+  Team:
+    summary: A group of people working together.
+    display_prefix: TEAM
+    attributes:
+      name:
+        summary: Name of the team.
+        type: string
+        required: true
+        role: label

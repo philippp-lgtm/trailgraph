@@ -620,6 +620,7 @@ SPECS: Final = (
             "admin.migration_unexpected",
             "admin.migration_from_mismatch",
             "admin.policy_renamed_term",
+            "ontology.marking_name_reused",
             "admin.functions_broken",
             "admin.actions_broken",
         ),
@@ -635,8 +636,9 @@ SPECS: Final = (
         " renames that rewrite data) the migration is applied to an overlay, the findings are"
         " those of the migrated data, and the migration block of the answer counts what each"
         " rename and step changes, with sample ids (nothing is written); it also reports the"
-        " refusals of the release for the policy (admin.policy_renamed_term) and the catalogs it"
-        " would publish again (republished).",
+        " refusals of the release for the policy (admin.policy_renamed_term) and for reused"
+        " names of marked attributes (ontology.marking_name_reused) and the catalogs it would"
+        " publish again (republished).",
         remote="hooked",
     ),
     CommandSpec(
@@ -753,6 +755,7 @@ SPECS: Final = (
             "admin.source_conflict",
             "admin.model_invalid",
             "ontology.rename_invalid",
+            "ontology.marking_name_reused",
             "admin.version_bump_insufficient",
             "admin.release_exists",
             "admin.migration_required",

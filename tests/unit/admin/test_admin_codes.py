@@ -5,7 +5,7 @@ from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, all_error_c
 from graph_cli_admin.maintenance_cli import hints
 from graph_cli_admin.services_admin import error_codes
 
-MAINTAINER_PREFIXES = ("admin.", "ontology.rename_", "migration.")
+MAINTAINER_PREFIXES = ("admin.", "ontology.rename_", "ontology.marking_", "migration.")
 
 
 def test_admin_codes_live_in_the_admin_distribution() -> None:

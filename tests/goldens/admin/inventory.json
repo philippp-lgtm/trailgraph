@@ -912,6 +912,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
@@ -1406,6 +1407,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -1858,6 +1860,7 @@
         "config.invalid",
         "graph.not_found",
         "internal.error",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.protocol",
@@ -1971,6 +1974,7 @@
         "graph.not_found",
         "internal.error",
         "migration.invalid",
+        "ontology.marking_name_reused",
         "ontology.rename_invalid",
         "remote.client_outdated",
         "remote.outcome_unknown",
@@ -3526,6 +3530,11 @@
       "code": "ontology.artifact_missing",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "ontology.marking_name_reused",
+      "category": "refused",
+      "exit": 1
     },
     {
       "code": "ontology.rename_invalid",
