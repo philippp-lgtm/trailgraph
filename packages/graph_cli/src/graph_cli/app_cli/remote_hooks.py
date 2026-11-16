@@ -12,7 +12,9 @@
   origins are checked here.
 
 Everything else about these commands (authorization, the write, the
-answer) happens on the server.
+answer) happens on the server. The server uses an upload up once, so a
+hooked command that writes nothing (``query``, a dry run) is sent again with
+its uploads when the connection fails (``resent``); a write is sent once.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import json
 import os
 import re
 import stat
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Final
 
@@ -75,6 +77,25 @@ def upload(
     return reference
 
 
+def resent(
+    spec: CommandSpec,
+    args: dict[str, JsonValue],
+    send: Callable[[dict[str, JsonValue]], Result],
+) -> Result:
+    """``send(args)``: the uploads and the command, once. A command that writes nothing is
+    sent again, with its uploads, when the connection fails: the server uses an upload up
+    once, so the command alone cannot be repeated. A write is sent once (a lost answer is
+    ``remote.outcome_unknown``). Each try gets its own copy of ``args``."""
+    writes = spec.kind == "write" and args.get("--dry-run") is not True
+    for attempt in range(1 if writes else 2):
+        try:
+            return send(dict(args))
+        except GraphCliError as exc:
+            if exc.code != "remote.unreachable" or writes or attempt:
+                raise
+    raise GraphCliError("internal.error", "no attempt was made")
+
+
 # ---- apply, query --------------------------------------------------------------
 
 
@@ -88,8 +109,12 @@ def apply_hook(
     generate = args.get("--dry-run") is not True and KEY_OPTION not in args and _single(data)
     if generate:
         args[KEY_OPTION] = new_key()
-    args["file"] = upload(session, data, file)
-    return forward(session, spec, state, args, key=False)
+
+    def send(args: dict[str, JsonValue]) -> Result:
+        args["file"] = upload(session, data, file)
+        return forward(session, spec, state, args, key=False, retry=False)
+
+    return resent(spec, args, send)
 
 
 def _single(data: bytes) -> bool:
@@ -111,13 +136,18 @@ def query_hook(
     from graph_cli.app_cli.commands.read import STDIN, query_text
 
     text, file = args.get("text"), args.get("--file")
-    if file is not None or text == STDIN:
-        source = query_text(
-            str(text) if text is not None else None, str(file) if file is not None else None
-        )
-        args.pop("text", None)
+    if file is None and text != STDIN:
+        return forward(session, spec, state, args)
+    source = query_text(
+        str(text) if text is not None else None, str(file) if file is not None else None
+    )
+    args.pop("text", None)
+
+    def send(args: dict[str, JsonValue]) -> Result:
         args["--file"] = upload(session, source.encode(), str(file) if file else STDIN)
-    return forward(session, spec, state, args)
+        return forward(session, spec, state, args, retry=False)
+
+    return resent(spec, args, send)
 
 
 # ---- files ---------------------------------------------------------------------
@@ -144,8 +174,12 @@ def file_add_hook(
     if args.get("--no-origin") is not True:
         _, _, roots = app.remote_roots()
         origin = roots.origin_of(full.resolve())
-    args["path"] = upload(session, full, str(full), origin=origin, with_origin=True)
-    return forward(session, spec, state, args)
+
+    def send(args: dict[str, JsonValue]) -> Result:
+        args["path"] = upload(session, full, str(full), origin=origin, with_origin=True)
+        return forward(session, spec, state, args, retry=False)
+
+    return resent(spec, args, send)
 
 
 def file_path_hook(

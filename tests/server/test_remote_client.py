@@ -18,6 +18,7 @@ import pytest
 from harness import CliRunner
 from support.admin import Outcome, init, parse
 from support.app import create_graph
+from support.lossy_proxy import lossy_proxy
 from support.serve import client_env, graph_server
 from support.server import grant_server, new_token
 
@@ -260,6 +261,50 @@ def test_a_read_is_retried_once(
         env = client_env(isolated_env, tmp_path / "client", port_of(seen), "gct_x")
         outcome = remote(run_cli, env, "whoami")
     assert outcome.code == 0 and len(seen) == 2
+
+
+QUERY = "POST /v1/commands/query HTTP/1.1"
+APPLY = "POST /v1/commands/apply HTTP/1.1"
+UPLOAD = "PUT /v1/uploads HTTP/1.1"
+
+
+def test_a_read_with_an_upload_is_retried_with_its_upload(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path
+) -> None:
+    """The server uses an upload up with the first try, so a retried ``query --file`` or
+    ``apply --dry-run`` uploads its input again; a write is still sent once."""
+    init(run_cli, isolated_env)
+    create_graph(run_cli, "example_graph")
+    grant_server(run_cli, tmp_path)
+    token = new_token(run_cli, "ci")
+    query = tmp_path / "count.cypher"
+    query.write_text("MATCH (n) RETURN count(n) AS c")
+    changes = tmp_path / "changes.json"
+    create = {
+        "op": "create",
+        "type": "inv:Location",
+        "local": "l",
+        "attrs": {"name": "Shelf", "code": "S1"},
+    }
+    changes.write_text(json.dumps({"ops": [create]}))
+    with (
+        graph_server(isolated_env, tmp_path) as server,
+        lossy_proxy(server.port, lambda line, n: line in (QUERY, APPLY) and n == 1) as proxy,
+    ):
+        env = client_env(isolated_env, tmp_path / "client", proxy.port, token)
+        graph = ("--graph", "example_graph")
+        counted = remote(run_cli, env, "query", "--file", str(query), *graph)
+        assert counted.code == 0, counted.error
+        assert counted.data["items"] == [{"c": 0}], counted.data
+        assert proxy.lost == [QUERY] and proxy.seen == [UPLOAD, QUERY, UPLOAD, QUERY]
+        proxy.seen.clear()
+        dry = remote(run_cli, env, "apply", str(changes), "--dry-run", *graph)
+        assert dry.code == 0, dry.error
+        assert proxy.lost == [QUERY, APPLY] and proxy.seen == [UPLOAD, APPLY, UPLOAD, APPLY]
+        proxy.seen.clear()
+        applied = remote(run_cli, env, "apply", str(changes), *graph)  # APPLY's second answer
+        assert applied.code == 0, applied.error
+        assert proxy.seen == [UPLOAD, APPLY]
 
 
 def test_plain_http_beyond_loopback_warns_when_allowed(
