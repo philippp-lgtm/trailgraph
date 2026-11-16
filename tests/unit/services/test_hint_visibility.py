@@ -48,3 +48,38 @@ def test_a_chain_of_a_relation_through_a_hidden_relation_is_dropped() -> None:
     hint = chain(RenameStep("inv:supplied_by", "2.0.0"), RenameStep("inv:located_in", "3.0.0"))
     assert known_in(SEEN)("relation", hint)
     assert not known_in(SEEN, FULL)("relation", hint)
+
+
+# ---- attributes (field visibility plan R5) -------------------------------------------------
+
+MASKED = filter_model(
+    FULL,
+    None,
+    tuple(
+        (name, frozenset(a for a in cls.attributes if a != "serial_number"))
+        for name, cls in sorted(FULL.classes.items())
+        if not cls.abstract
+    ),
+)
+
+
+def test_a_chain_that_ends_at_a_hidden_attribute_is_dropped() -> None:
+    hint = chain(
+        RenameStep("serial", "2.0.0", owner="inv:Item"),
+        RenameStep("serial_number", "3.0.0", owner="inv:Item"),
+    )
+    assert known_in(FULL, FULL)("attribute", hint)
+    assert not known_in(MASKED)("attribute", hint)
+    assert not known_in(MASKED, FULL)("attribute", hint)
+
+
+def test_a_chain_through_a_hidden_attribute_name_is_dropped() -> None:
+    hint = chain(
+        RenameStep("serial_number", "2.0.0", owner="inv:Item"),
+        RenameStep("name", "3.0.0", owner="inv:Item"),
+    )
+    assert known_in(MASKED)("attribute", hint)  # judged by the last name alone
+    assert not known_in(MASKED, FULL)("attribute", hint)
+    # a name on the way that the class does not declare today is fine
+    gone = chain(RenameStep("serial", "2.0.0", owner="inv:Item"), hint.steps[-1])
+    assert known_in(MASKED, FULL)("attribute", gone)

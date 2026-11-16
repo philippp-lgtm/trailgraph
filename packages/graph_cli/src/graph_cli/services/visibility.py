@@ -36,7 +36,7 @@ from graph_cli.access_control.documents import principal_facts, read_limited
 from graph_cli.access_control.effective import held_markings, visibility
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue, canonical_bytes
-from graph_cli.kernel.errors import EMPTY, WarningRecord
+from graph_cli.kernel.errors import EMPTY, GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, GraphId, TermRef
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
@@ -51,6 +51,7 @@ from graph_cli.kernel.records import (
     revision_meta,
     strip_revision,
 )
+from graph_cli.ontology_layer.expr_attributes import guard_classes, reads, rule_classes
 from graph_cli.ontology_layer.model import (
     AttributeDef,
     ClassDef,
@@ -99,13 +100,26 @@ class Visibility:
             found = self._limited[key] = read_limited(policy.documents, graph)
         return found
 
-    def marked(self, entry: GraphEntry, load: Callable[[], CompiledModel]) -> frozenset[str]:
+    def marked(
+        self,
+        entry: GraphEntry,
+        load: Callable[[], CompiledModel],
+        unmarked: Callable[[], bool] | None = None,
+    ) -> frozenset[str]:
         """The markings the graph's pinned model uses (``CompiledModel.used_markings``);
-        ``load`` runs once per pin."""
+        ``load`` runs once per pin. When the model cannot be loaded, ``unmarked`` may tell that
+        the pin holds no marking all the same (its raw bytes show no trace of one,
+        ``model.traces_markings``): then the answer is empty and not cached; otherwise the
+        load's error is raised (fail closed)."""
         key = entry.pin.artifact_hash
         found = self._marked.get(key)
         if found is None:
-            found = load().used_markings()
+            try:
+                found = load().used_markings()
+            except GraphCliError:
+                if unmarked is None or not unmarked():
+                    raise
+                return frozenset()
             _remember(self._marked, key, found, _PIN_CACHE_LIMIT)
         return found
 
@@ -121,12 +135,14 @@ class Visibility:
         entry: GraphEntry,
         policy: PolicySet,
         load: Callable[[], CompiledModel],
+        unmarked: Callable[[], bool] | None = None,
     ) -> ReadView:
         """``of`` for callers without the model at hand: ``load`` runs once per pin to learn
-        its markings, and again only when the view must be computed (the graph is read limited
-        or its pin uses markings, and the answer is not cached yet)."""
+        its markings (``unmarked`` as for ``marked``), and again only when the view must be
+        computed (the graph is read limited or its pin uses markings, and the answer is not
+        cached yet)."""
         types_limited = self.limited(policy, entry.id)
-        marked = self.marked(entry, load)
+        marked = self.marked(entry, load, unmarked)
         if not types_limited and not marked:
             return UNLIMITED
         key = (policy.hash, entry.id, entry.pin.artifact_hash, *actor_key(actor))
@@ -163,14 +179,13 @@ class Visibility:
 
     def model(self, entry: GraphEntry, model: CompiledModel, view: ReadView) -> CompiledModel:
         """The model view of ``model`` for ``view``, cached per (pin artifact hash, view);
-        ``model`` itself for a view without a type limit (the attribute half does not filter
-        the model yet)."""
-        if view.types is None:
+        ``model`` itself for a view without any limit."""
+        if not view.limited:
             return model
         key = (entry.pin.artifact_hash, view)
         found = self._models.get(key)
         if found is None:
-            found = filter_model(model, view.types)
+            found = filter_model(model, view.types, view.attributes)
             _remember(self._models, key, found, _MODEL_CACHE_LIMIT)
         return found
 
@@ -221,9 +236,17 @@ class VisibleSnapshot:
     strips. Either way a transaction shows its metadata only.
     """
 
-    def __init__(self, inner: Snapshot, view: ReadView) -> None:
+    def __init__(
+        self,
+        inner: Snapshot,
+        view: ReadView,
+        unmapped: Callable[[EntityId, int], bool] | None = None,
+    ) -> None:
         self._inner = inner
         self.view = view
+        # Whether the inner snapshot handed a revision out under names the map cannot vouch
+        # for (``MappedSnapshot.unmapped``): with an attribute half it keeps no attribute (R3).
+        self._unmapped = unmapped if view.attributes_limited else None
         self._visible = view.types
         self._terms = None if view.types is None else frozenset(TermRef(t) for t in view.types)
         self._types: dict[EntityId, TermRef | None] = {}  # None: no current revision
@@ -276,7 +299,23 @@ class VisibleSnapshot:
         if self._visible is not None:
             self._prefetch(edge.target for edge in revision.edges)
             sees = self.sees
-        return strip_revision(revision, sees, self.view.keeps(revision.type), rehash=True)
+        return strip_revision(revision, sees, self.keeps(revision), rehash=True)
+
+    def keeps(self, revision: Revision) -> frozenset[str] | None:
+        """The attribute names ``revision`` (as the inner snapshot handed it out) keeps:
+        those its type keeps, none when its names cannot be vouched for (R3)."""
+        if self._unmapped is not None and self._unmapped(revision.id, revision.rev):
+            return frozenset()
+        return self.view.keeps(revision.type)
+
+    def masked(self, revision: Revision, keep: frozenset[str] | None) -> Revision:
+        """``revision`` without its edges to hidden entities and the attributes outside
+        ``keep``, the content hash not recomputed: for comparing, never to hand it out."""
+        sees = None
+        if self._visible is not None:
+            self._prefetch(edge.target for edge in revision.edges)
+            sees = self.sees
+        return strip_revision(revision, sees, keep, rehash=False)
 
     # ---- the port --------------------------------------------------------
 
@@ -391,36 +430,57 @@ class VisibleSnapshot:
 # ---- the model view ------------------------------------------------------------------------
 
 
-def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel:
-    """``model`` as if the types outside ``visible`` did not exist (a read view, never used on
-    the write path):
+def filter_model(
+    model: CompiledModel,
+    visible: frozenset[str] | None,
+    attributes: AttributeMask | None = None,
+) -> CompiledModel:
+    """``model`` as if the types outside ``visible`` (``None``: none) did not exist and the
+    classes did not declare the attributes outside ``attributes`` (a read view's attribute half,
+    ``None``: every attribute). A read view, never used on the write path:
 
     - Kept classes: every visible concrete class and every abstract class some visible
-      concrete class is. A hidden concrete class is gone even when it has visible subclasses.
+      concrete class is (every class without a type half). A hidden concrete class is gone even
+      when it has visible subclasses.
     - A kept class loses the removed ancestors (``extends`` is the first kept one); an
       attribute declared on a removed ancestor is declared on the top-most kept class of the
       chain that is a subclass of the original declarer.
+    - A kept concrete class keeps the attributes its entry of ``attributes`` lists; an abstract
+      class keeps an attribute some visible concrete subclass keeps (an unmarked one when it
+      has none), so ``describe`` shows it at its declarer.
     - A relation end that names a removed class names the maximal kept subclasses of it
       instead; a relation whose domain or range was named and is left empty is gone. An open end
       stays open.
-    - A rule is dropped when its target is gone or its expression names a removed term; a
-      guard that names one is dropped from its transition. The text match is a substring one:
-      over-dropping is safe because the read side never evaluates rules.
+    - A rule is dropped when its target is gone, its expression names a removed term, or one of
+      its attribute operands is hidden on a concrete class it reads (``expr_attributes.reads``:
+      an ``attr`` node on the rule's classes, a ``sum`` on the far end of its relation); a guard
+      the same way. The term match is a substring one: over-dropping is safe because the read
+      side never judges data by rules. Removed markings are not matched (a marking is no name
+      an expression uses).
     - Enums, lifecycles and datatypes that no kept attribute or qualifier uses are dropped,
-      and a module that lost all its terms goes with its prefix. A module that has none in the
-      full model either (a main module that only imports the areas) stays: nothing was hidden
-      from it, and the functions and actions that name it as their module stay visible.
+      the markings are those of the kept attributes (all of them without an attribute half), and
+      a module that lost all its terms goes with its prefix (also one whose only terms are
+      markings the caller lacks). A module that has none in the full model either (a main
+      module that only imports the areas) stays: nothing was hidden from it, and the functions
+      and actions that name it as their module stay visible.
     """
     classes = model.classes
-    visible_concrete = [c for c in classes if c in visible and not classes[c].abstract]
-    kept = {
-        name
-        for name, cls in classes.items()
-        if name in visible_concrete
-        or (cls.abstract and any(model.is_a(v, name) for v in visible_concrete))
-    }
+    if visible is None:
+        visible_concrete = [c for c, cls in classes.items() if not cls.abstract]
+        kept = set(classes)
+    else:
+        visible_concrete = [c for c in classes if c in visible and not classes[c].abstract]
+        kept = {
+            name
+            for name, cls in classes.items()
+            if name in visible_concrete
+            or (cls.abstract and any(model.is_a(v, name) for v in visible_concrete))
+        }
+    keep = None if attributes is None else dict(attributes)
     new_classes = {
-        name: _kept_class(model, name, cls, kept) for name, cls in classes.items() if name in kept
+        name: _kept_class(model, name, cls, kept, _shown(model, name, keep, visible_concrete))
+        for name, cls in classes.items()
+        if name in kept
     }
     new_relations = {
         name: new
@@ -431,15 +491,28 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
     enums = {k: v for k, v in model.enums.items() if k in used}
     lifecycles = {k: v for k, v in model.lifecycles.items() if k in used}
     datatypes = {k: v for k, v in model.datatypes.items() if k in used}
-    # Markings stay as they are: a type limit hides no attribute (field limits filter them).
-    terms = {*new_classes, *new_relations, *enums, *lifecycles, *datatypes, *model.markings}
-    removed = model.term_curies() - terms
-    names_removed = _name_matcher(removed)
-    rules = tuple(
-        rule for rule in model.rules if rule.target in kept and not names_removed(rule.expr)
-    )
-    lifecycles = {k: _kept_guards(v, names_removed) for k, v in lifecycles.items()}
+    if keep is None:
+        markings = model.markings  # a type limit hides no attribute
+    else:
+        held = {m for c in new_classes.values() for a in c.attributes.values() for m in a.markings}
+        markings = {k: v for k, v in model.markings.items() if k in held}
+    terms = {*new_classes, *new_relations, *enums, *lifecycles, *datatypes, *markings}
     all_terms = model.term_curies()
+    names_removed = _name_matcher(all_terms - terms - set(model.markings))
+    hidden = _hidden_reads(model, keep)
+    rules = tuple(
+        rule
+        for rule in model.rules
+        if rule.target in kept
+        and not names_removed(rule.expr)
+        and not hidden(rule_classes(model, rule), rule.expr)
+    )
+
+    def guard_dropped(lifecycle: str) -> NamesRemoved:
+        on = guard_classes(model, lifecycle)
+        return lambda expr: names_removed(expr) or hidden(on, expr)
+
+    lifecycles = {k: _kept_guards(v, guard_dropped(k)) for k, v in lifecycles.items()}
     modules = tuple(
         m for m in model.modules if _has_terms(m, terms) or not _has_terms(m, all_terms)
     )
@@ -456,16 +529,66 @@ def filter_model(model: CompiledModel, visible: frozenset[str]) -> CompiledModel
         classes=new_classes,
         relations=new_relations,
         rules=rules,
-        markings=model.markings,
+        markings=markings,
     )
 
 
-def _kept_class(model: CompiledModel, name: str, cls: ClassDef, kept: set[str]) -> ClassDef:
+def _shown(
+    model: CompiledModel,
+    name: str,
+    keep: Mapping[str, frozenset[str]] | None,
+    visible_concrete: Sequence[str],
+) -> Callable[[str, AttributeDef], bool] | None:
+    """Which attributes the kept class ``name`` keeps (``None``: all of them)."""
+    if keep is None:
+        return None
+    if not model.classes[name].abstract:
+        own = keep.get(name, frozenset())
+        return lambda attribute, _: attribute in own
+    below = [keep.get(c, frozenset()) for c in visible_concrete if model.is_a(c, name)]
+    if not below:
+        return lambda _, definition: not definition.markings
+    return lambda attribute, _: any(attribute in names for names in below)
+
+
+def _hidden_reads(
+    model: CompiledModel, keep: Mapping[str, frozenset[str]] | None
+) -> Callable[[tuple[str, ...], JsonValue], bool]:
+    """A test: does an expression evaluated on entities of the given classes read an attribute
+    that some concrete one of them declares and ``keep`` hides."""
+    if keep is None:
+        return lambda classes, expr: False
+
+    def hides(curie: str, attribute: str) -> bool:
+        cls = model.classes.get(curie)
+        return (
+            cls is not None
+            and not cls.abstract
+            and attribute in cls.attributes
+            and attribute not in keep.get(curie, frozenset())
+        )
+
+    def hidden(classes: tuple[str, ...], expr: JsonValue) -> bool:
+        return any(
+            hides(curie, attribute) for on, attribute in reads(model, classes, expr) for curie in on
+        )
+
+    return hidden
+
+
+def _kept_class(
+    model: CompiledModel,
+    name: str,
+    cls: ClassDef,
+    kept: set[str],
+    shown: Callable[[str, AttributeDef], bool] | None = None,
+) -> ClassDef:
     ancestors = tuple(a for a in cls.ancestors if a in kept)
     chain = (name, *ancestors)  # nearest first, so the top-most is the last
     attributes = {
         attribute: a if a.declared_in in kept else _redeclared(model, a, chain)
         for attribute, a in cls.attributes.items()
+        if shown is None or shown(attribute, a)
     }
     return replace(
         cls,

@@ -106,6 +106,10 @@ class Query:
     # ``where`` or ``order`` that names a masked attribute is evaluated, and the revisions
     # handed out are stripped (``query_eval`` "Attribute mask").
     attributes: AttributeMask | None = None
+    # Whether a revision stripped by ``visible`` or ``attributes`` gets the content hash of
+    # what is left. False only for internal queries whose revisions never reach a caller as
+    # such (``lookup`` and ``search`` read labels and text): their hashes are then stale.
+    rehash: bool = True
 
     def __post_init__(self) -> None:
         if self.limit < 0 or self.offset < 0:

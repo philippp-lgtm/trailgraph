@@ -1,0 +1,126 @@
+# The staff module (tests/fixtures/ontologies/staff/1.0.0) as a caller that holds no
+# marking must read it: without the marked attributes and everything only they use (the
+# BadgeCode datatype, the PayGrade enum, the guard and the rules that read them). The oracle of
+# the read visibility tests (field visibility plan section 6).
+format: graph_cli.ir/1
+module:
+  id: staff
+  prefix: stf
+  version: 1.0.0
+  summary: Employees, contractors, crews, badges and personnel files.
+  imports:
+    - {module: files, version: "^1.0"}
+
+enums:
+  ShiftKind:
+    summary: When an employee works.
+    values:
+      day: {summary: Day shift.}
+      night: {summary: Night shift.}
+
+lifecycles:
+  OnboardingFlow:
+    summary: Onboarding of an employee.
+    states:
+      started: {summary: Onboarding started., initial: true}
+      equipped: {summary: Has what the work needs.}
+      scheduled: {summary: Has a shift.}
+    transitions:
+      - from: started
+        to: equipped
+        summary: Hand out the badge.
+      - from: started
+        to: scheduled
+        summary: Plan the shift.
+        guards:
+          - id: shift_known
+            summary: The shift is recorded.
+            require:
+              - {attr: shift, value_presence: PRESENT}
+
+classes:
+  Colleague:
+    summary: Someone who works for the organization.
+    abstract: true
+    attributes:
+      name:
+        summary: Full name.
+        type: string
+        required: true
+        role: label
+      phone:
+        summary: Work phone number.
+        type: string
+  Employee:
+    summary: A colleague on the payroll.
+    is_a: Colleague
+    display_prefix: EMP
+    attributes:
+      shift:
+        summary: Usual shift.
+        type: ShiftKind
+      stage:
+        summary: Onboarding stage.
+        lifecycle: OnboardingFlow
+        required: true
+  Contractor:
+    summary: A colleague hired through an agency.
+    is_a: Colleague
+    display_prefix: CON
+    attributes:
+      email:
+        summary: Business e-mail address.
+        type: string
+      agency:
+        summary: Agency that placed the contractor.
+        type: string
+  Badge:
+    summary: An access badge.
+    display_prefix: BDG
+    attributes:
+      number:
+        summary: Running number of the badge.
+        type: integer
+  Crew:
+    summary: A group of colleagues working together.
+    display_prefix: CREW
+    attributes:
+      name:
+        summary: Name of the crew.
+        type: string
+        required: true
+        role: label
+  PersonnelFile:
+    summary: A stored document about a colleague.
+    is_a: files:File
+    display_prefix: PF
+
+relations:
+  in_crew:
+    summary: The crew a colleague works in.
+    domain: Colleague
+    range: Crew
+    cardinality: {out: {max: 1}}
+    inverse_label: crew_member
+  holds_badge:
+    summary: The badge an employee holds.
+    domain: Employee
+    range: Badge
+    cardinality: {out: {max: 1}}
+    inverse_label: held_by
+  concerns:
+    summary: The colleague a personnel file is about.
+    domain: PersonnelFile
+    range: Colleague
+    inverse_label: concerned_by
+
+rules:
+  - id: contractor_contact
+    summary: A contractor with an e-mail names the agency.
+    severity: warning
+    when: write
+    scope: Contractor
+    if:
+      - {attr: email, value_presence: PRESENT}
+    then:
+      - {attr: agency, value_presence: PRESENT}

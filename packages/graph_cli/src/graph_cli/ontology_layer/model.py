@@ -627,6 +627,24 @@ def _expr(data: JsonObject, owner: str) -> JsonValue:
     return expr
 
 
+def traces_markings(raw: bytes) -> bool:
+    """Whether the raw bytes of a compiled document that cannot be loaded show markings: the
+    ``/2`` schema or a ``requires`` / ``markings`` key. Bytes that are no JSON object are
+    searched for the schema string. Markings need a program that writes ``/2``, so a document
+    without any of these traces holds none."""
+    try:
+        document = parse_json(raw)
+    except CanonicalError:
+        return COMPILED_SCHEMA_V2.encode() in raw
+    if not isinstance(document, Mapping):
+        return False
+    return (
+        document.get("schema") == COMPILED_SCHEMA_V2
+        or "requires" in document
+        or "markings" in document
+    )
+
+
 def model_from_json(data: JsonObject) -> CompiledModel:
     """Typed view of a compiled document. Shape errors raise ``JsonShapeError``."""
     schema = req_str(data, "schema")

@@ -57,6 +57,7 @@ from graph_cli.kernel.records import (
     Revision,
     RevisionMeta,
     TxRecord,
+    revision_content_hash,
     revision_meta,
 )
 from graph_cli.kinetic.params import Problem
@@ -70,6 +71,7 @@ from graph_cli.temporal_knowledge.name_map import (
     Hop,
     NameMap,
     RenameHint,
+    TermKind,
     other_major,
 )
 
@@ -227,9 +229,19 @@ class GraphNames:
     def name_map(self) -> NameMap:
         return self._maps.of(self.entry)
 
-    def changes(self, version: str) -> bool:
-        """Whether revisions written under ``version`` show other names under the pin."""
-        return other_major(version, self.entry.pin.version) and self.name_map.changes(version)
+    def changes(
+        self, version: str, known: Callable[[TermKind, RenameHint], bool] | None = None
+    ) -> bool:
+        """Whether revisions written under ``version`` show other names under the pin
+        (``known``: names a caller with that test may see, ``NameMap.changes``)."""
+        return other_major(version, self.entry.pin.version) and self.name_map.changes(
+            version, known
+        )
+
+    def unmapped_version(self, version: str) -> bool:
+        """Whether revisions written under ``version`` reach the pin under names the map
+        cannot vouch for (``NameMap.unmapped``); the pinned major never does."""
+        return other_major(version, self.entry.pin.version) and self.name_map.unmapped(version)
 
     def map(self, revision: Revision) -> Revision:
         """``revision`` under the pin's names (the same object when nothing changes)."""
@@ -355,12 +367,12 @@ class MappedSnapshot:
     def query(self, q: Query) -> QueryPage:
         if not self._current:
             return self._inner.query(q)
-        return run_query(self, q)
+        return run_query(self if q.attributes is None else _Blind(self), q)
 
     def neighbors(self, q: NeighborQuery) -> Sequence[tuple[EntityId, EdgeRecord, Revision]]:
         if not self._current:
             return self._inner.neighbors(q)
-        return run_neighbors(self, q)
+        return run_neighbors(self if q.attributes is None else _Blind(self), q)
 
     # ---- the universe of the reference evaluator (current=True only) --------
 
@@ -378,6 +390,34 @@ class MappedSnapshot:
         return tuple(self._map(r) for r in sorted(found, key=lambda r: r.id))
 
 
+class _Blind:
+    """The universe of a ``MappedSnapshot`` for a query with an attribute mask: a revision
+    handed out under names the map cannot vouch for has no attributes (R3), so no predicate,
+    order or answer reads them; its content hash is that of what is left."""
+
+    def __init__(self, mapped: MappedSnapshot) -> None:
+        self._mapped = mapped
+
+    def _blind(self, revision: Revision) -> Revision:
+        if not revision.attrs or not self._mapped.unmapped(revision.id, revision.rev):
+            return revision
+        blind = replace(revision, attrs={})
+        return replace(blind, content_hash=revision_content_hash(blind))
+
+    def current(self, entity: EntityId) -> Revision | None:
+        found = self._mapped.current(entity)
+        return None if found is None else self._blind(found)
+
+    def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterator[Revision]:
+        for revision in self._mapped.current_revisions(types):
+            yield self._blind(revision)
+
+    def incoming(
+        self, entity: EntityId, rel: TermRef | None = None
+    ) -> Sequence[tuple[EntityId, EdgeRecord]]:
+        return self._mapped.incoming(entity, rel)
+
+
 def _edge(revision: Revision, edge: EdgeRecord) -> EdgeRecord:
     """``edge`` as the mapped ``revision`` holds it (same id)."""
     return next((e for e in revision.edges if e.edge_id == edge.edge_id), edge)
@@ -392,8 +432,10 @@ def known_in(
     """Whether a hint may be shown to a caller whose view is ``model``: its current name is a
     term of ``model``, and no step of the chain passes through a term the caller cannot see.
     ``full`` is the model without read limits: a step's name (or owning class) that is a term
-    of ``full`` and not of ``model`` is hidden from the caller, so the chain would reveal it.
-    Names that are no term of ``full`` (old names on the way) are fine."""
+    of ``full`` and not of ``model`` is hidden from the caller, so the chain would reveal it;
+    an attribute step is hidden when the owning class of ``full`` declares its name and the
+    class of ``model`` does not (field visibility plan R5). Names that are no term of ``full``
+    (old names on the way) are fine."""
 
     def hidden(kind: str, name: str | None) -> bool:
         if full is None or name is None:
@@ -402,9 +444,22 @@ def known_in(
             return name in full.relations and name not in model.relations
         return name in full.classes and name not in model.classes
 
+    def hidden_attribute(owner: str | None, name: str) -> bool:
+        if full is None or owner is None:
+            return False
+        declared, shown = full.classes.get(owner), model.classes.get(owner)
+        return (
+            declared is not None
+            and name in declared.attributes
+            and (shown is None or name not in shown.attributes)
+        )
+
     def known(kind: str, hint: RenameHint) -> bool:
         for step in hint.steps:
-            if hidden("class", step.owner) if kind == "attribute" else hidden(kind, step.to):
+            if kind != "attribute":
+                if hidden(kind, step.to):
+                    return False
+            elif hidden("class", step.owner) or hidden_attribute(step.owner, step.to):
                 return False
         if kind == "class":
             return hint.current in model.classes

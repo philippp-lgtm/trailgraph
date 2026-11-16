@@ -87,7 +87,7 @@ from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.affordances import relations, transitions
-from graph_cli.ontology_layer.model import CompiledModel
+from graph_cli.ontology_layer.model import CompiledModel, traces_markings
 from graph_cli.query.cypher.errors import did_you_mean
 from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
 from graph_cli.query.lookup import (
@@ -117,7 +117,7 @@ from graph_cli.query.search import rank_key as search_rank
 from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.describe import describe_model
-from graph_cli.services.models import ModelCache
+from graph_cli.services.models import COMPILED_FILE, ModelCache
 from graph_cli.services.names import (
     GraphNames,
     MappedSnapshot,
@@ -135,7 +135,7 @@ from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.services.visible_catalog import HiddenCatalog, hidden_actions, hidden_functions
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.history import changed_names
-from graph_cli.temporal_knowledge.name_map import NameMap, TermKind
+from graph_cli.temporal_knowledge.name_map import NameMap, RenameHint, TermKind
 
 if TYPE_CHECKING:
     from graph_cli.kinetic.cover import Cover, SignatureCache
@@ -179,8 +179,27 @@ class GraphRead:
         return graph_json(self.entry, self.snapshot.seq)
 
     def names_mapped(self, revision: Revision) -> bool:
-        """Whether ``revision`` was handed out under mapped names (``names_mapped``)."""
-        return self.mapping is not None and self.mapping.mapped(revision.id, revision.rev)
+        """Whether ``revision`` was handed out under mapped names (``names_mapped``). For a
+        limited reader only when mapping changed something it sees (R4): the stored and the
+        mapped revision differ under the same view (its type, the attributes the mapped type
+        keeps, the edges it sees, matched by id)."""
+        mapping = self.mapping
+        if mapping is None or not mapping.mapped(revision.id, revision.rev):
+            return False
+        snapshot = self.snapshot
+        if not isinstance(snapshot, VisibleSnapshot):
+            return True
+        stored = mapping.raw.get_revision(revision.id, revision.rev)
+        mapped = mapping.get_revision(revision.id, revision.rev)
+        if stored is None or mapped is None:
+            return True
+        keep = snapshot.keeps(mapped)
+        before, after = snapshot.masked(stored, keep), snapshot.masked(mapped, keep)
+        return (
+            before.type != after.type
+            or before.attrs != after.attrs
+            or {e.edge_id: e for e in before.edges} != {e.edge_id: e for e in after.edges}
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,8 +473,21 @@ class ReadService:
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             return self._visibility.lazy(
-                actor, entry, policy, lambda: self._models.load_for_read(entry)[0]
+                actor,
+                entry,
+                policy,
+                lambda: self._models.load_for_read(entry)[0],
+                lambda: self._unmarked(entry),
             )
+
+    def _unmarked(self, entry: GraphEntry) -> bool:
+        """Whether the raw bytes of the pinned model show no trace of markings, for a model
+        that cannot be loaded (``Visibility.marked``); ``False`` when they cannot be read."""
+        try:
+            raw = self._catalog.read_release_file(entry.id, entry.pin.version, COMPILED_FILE)
+        except GraphCliError:
+            return False
+        return not traces_markings(raw)
 
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
         """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
@@ -741,22 +773,32 @@ class ReadService:
             interrupted = migration_state.read_warning(entry, read)
             if interrupted is not None:
                 warnings += (interrupted,)
-            past = False
-            if as_of is not None:
-                snapshot, warning, past = _snapshot_as_of(read, snapshot, entry, as_of, names)
-                warnings += (warning,)
-        # Old revisions under the pin's names (migration plan M7); the current revisions of
-        # the head are never mapped, those of an earlier state whose names changed since are.
-        mapping = MappedSnapshot(snapshot, names, current=past)
-        snapshot = mapping
+            state = None if as_of is None else _snapshot_as_of(read, snapshot, as_of)
+            if state is not None:
+                snapshot = state.snapshot
         # Read limits: a limited caller reads views of the model and the snapshot. They wrap
         # the as-of snapshot after it read the raw tx metadata, and judge mapped types.
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             view = self._visibility.of(actor, entry, policy, model)
+        full = model
         if view.limited:
             model = self._visibility.model(entry, model, view)
-            snapshot = VisibleSnapshot(snapshot, view)
+        # Old revisions under the pin's names (migration plan M7); the current revisions of
+        # the head are never mapped, those of an earlier state whose names changed since are,
+        # and for a reader limited to some attributes also those of a state whose names the
+        # map cannot vouch for (R3: they lose their attributes).
+        past = False
+        if state is not None:
+            known = known_in(model, full) if view.limited else None
+            warning, past = state.warning(entry, names, known)
+            warnings += (warning,)
+            if not past and view.attributes_limited and state.version is not None:
+                past = state.earlier and names.unmapped_version(state.version)
+        mapping = MappedSnapshot(snapshot, names, current=past)
+        snapshot = mapping
+        if view.limited:
+            snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
         return GraphRead(entry, model, snapshot, warnings, actor, request.command, view, mapping)
@@ -1535,15 +1577,53 @@ class ReadService:
             return ()
 
 
-def _snapshot_as_of(
-    read: GraphStoreRead, head: Snapshot, entry: GraphEntry, as_of: AsOf, names: GraphNames
-) -> tuple[Snapshot, WarningRecord, bool]:
-    """The snapshot at the seq ``as_of`` names, the warning that says so (B8.8), and whether
-    its current revisions are shown under mapped names (migration plan M7).
+@dataclass(frozen=True, slots=True)
+class _AsOfState:
+    """The earlier state ``--as-of`` names (B8.8): its snapshot, seq, the head's seq and the
+    version of the revisions its last tx wrote (``tx.ontology``); every current revision of
+    the state fits that version."""
 
-    The state's version is that of the revisions its last tx wrote (``tx.ontology``); every
-    current revision of the state fits it. When names changed between that version and the
-    pin, the state's revisions are mapped and the warning says so."""
+    snapshot: Snapshot
+    as_of: AsOf
+    seq: int
+    head_seq: int
+    version: str | None
+
+    @property
+    def earlier(self) -> bool:
+        return self.seq != self.head_seq
+
+    def warning(
+        self,
+        entry: GraphEntry,
+        names: GraphNames,
+        known: Callable[[TermKind, RenameHint], bool] | None = None,
+    ) -> tuple[WarningRecord, bool]:
+        """The warning that says which state is read, and whether its current revisions are
+        shown under mapped names (migration plan M7). When names changed between the state's
+        version and the pin, the state's revisions are mapped, and the warning says so when a
+        change concerns a term the reader sees (``known``, R4; every change without it)."""
+        version = self.version
+        mapped = self.earlier and version is not None and names.changes(version)
+        shown = mapped and (known is None or names.changes(version or "", known))
+        message = f"read as of tx:{self.seq}; the graph is at tx:{self.head_seq}"
+        if version is not None and version != entry.pin.version:
+            message += f"; that state was written under ontology {version}"
+            if shown:
+                message += f", its names are mapped to those of {entry.pin.version}"
+        details: dict[str, JsonValue] = {
+            "as_of": as_of_text(self.as_of),
+            "seq": self.seq,
+            "head_seq": self.head_seq,
+            "ontology_version": version,
+        }
+        if shown:
+            details["names_mapped"] = True
+        return WarningRecord("temporal.as_of_read", message, details), mapped
+
+
+def _snapshot_as_of(read: GraphStoreRead, head: Snapshot, as_of: AsOf) -> _AsOfState:
+    """The state at the seq ``as_of`` names."""
     if CAPABILITY_SNAPSHOT_AT_SEQ not in read.capabilities():
         raise GraphCliError(
             "temporal.as_of_unsupported",
@@ -1554,21 +1634,7 @@ def _snapshot_as_of(
     snapshot = head if seq == head.seq else read.snapshot(at_seq=seq)
     tx = snapshot.tx(seq)
     version = tx.ontology.version if tx is not None else None
-    mapped = seq != head.seq and version is not None and names.changes(version)
-    message = f"read as of tx:{seq}; the graph is at tx:{head.seq}"
-    if version is not None and version != entry.pin.version:
-        message += f"; that state was written under ontology {version}"
-        if mapped:
-            message += f", its names are mapped to those of {entry.pin.version}"
-    details: dict[str, JsonValue] = {
-        "as_of": as_of_text(as_of),
-        "seq": seq,
-        "head_seq": head.seq,
-        "ontology_version": version,
-    }
-    if mapped:
-        details["names_mapped"] = True
-    return snapshot, WarningRecord("temporal.as_of_read", message, details), mapped
+    return _AsOfState(snapshot, as_of, seq, head.seq, version)
 
 
 def _findings(error: GraphCliError) -> list[JsonValue]:
@@ -1585,10 +1651,12 @@ def _migration_item(
     would hide a change of type. What applied is found by running the release's transform
     on the stored revision before (``RevisionTransform.applied``); for a type limited reader
     without the edges it cannot see, so nothing names a relation it does not reach. ``full`` is
-    the model without read limits, given for a type limited reader: an effect that names a term
+    the model without read limits, given for any limited reader: an effect that names a term
     of ``full`` the reader cannot see (a retype out of a hidden type, a rename of a hidden
     class) is left out, and when the type the entity had before is hidden none is shown (the lists
-    stay, empty)."""
+    stay, empty). For a reader limited to some attributes the effects on attributes follow
+    their attribute (R4, ``_attribute_effects``); ``before`` keeps its attributes (its keys
+    are old names) and the effects are filtered afterwards."""
     mapping = view.mapping
     record = mapping.migration_record(seq) if mapping is not None else None
     if mapping is None or record is None:
@@ -1615,6 +1683,8 @@ def _migration_item(
             # two lists, empty)
             shown = _visible_effects(view, full, mapping.names.name_map, before.type, applied)
             applied = shown if shown is not None else []
+        if view.read_view.attributes_limited:
+            applied = _attribute_effects(view, mapping, entity, rev, applied)
     elif not view.read_view.limited:
         applied = _recorded_effects(record)  # the release files are gone: the whole record
     item["renames"] = [e for e in applied if _kind(e).startswith("rename_")]
@@ -1660,6 +1730,48 @@ def _visible_effects(
         return found
 
     return [e for e in applied if not any(hidden(kind, term) for kind, term in names(e))]
+
+
+# The steps that name one attribute (of the new version) of the entity they change.
+_ATTRIBUTE_STEPS: Final = frozenset({"fill", "map_values", "convert"})
+
+
+def _attribute_effects(
+    view: GraphRead, mapping: MappedSnapshot, entity: EntityId, rev: int, applied: list[JsonValue]
+) -> list[JsonValue]:
+    """``applied`` as a reader limited to some attributes may see it (R4): an attribute named
+    by an effect is judged under its current name on the entity's current type (a probe of the
+    revision the migration wrote, mapped like any old revision) against the view; a rename,
+    ``fill``, ``map_values`` or ``convert`` of a hidden attribute is left out, so are its
+    entries of a retype's attribute map, and every ``drop`` (its name has no current
+    counterpart to judge)."""
+    written = mapping.raw.get_revision(entity, rev)
+
+    def shown(attribute: object) -> bool:
+        if written is None or not isinstance(attribute, str):
+            return False
+        probe = replace(written, attrs={attribute: True})
+        if mapping.names.unmapped(probe):
+            return False
+        current = mapping.names.map(probe)
+        keep = view.read_view.keeps(current.type)
+        return keep is None or any(name in keep for name in current.attrs)
+
+    found: list[JsonValue] = []
+    for effect in applied:
+        kind = _kind(effect)
+        if not isinstance(effect, Mapping) or kind == "drop":
+            continue
+        if kind == "rename_attribute" and not shown(effect.get("to")):
+            continue
+        if kind in _ATTRIBUTE_STEPS and not shown(effect.get("attribute")):
+            continue
+        if kind == "retype" and isinstance(effect.get("attributes"), Mapping):
+            pairs = effect["attributes"]
+            assert isinstance(pairs, Mapping)
+            effect = {**effect, "attributes": {o: n for o, n in pairs.items() if shown(n)}}
+        found.append(effect)
+    return found
 
 
 def _kind(effect: JsonValue) -> str:

@@ -49,13 +49,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Final, Literal
 
-from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, TermRef, TxId
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import Revision
-from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
-from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA_V2
+from graph_cli.ontology_layer.model import AttributeDef, CompiledModel, traces_markings
 from graph_cli.services.models import COMPILED_FILE, ModelCache
 from graph_cli.services.names import NameMaps
 from graph_cli.temporal_knowledge.name_map import Hop
@@ -296,23 +295,6 @@ class _Chain:
 class _Unreadable:
     version: str | None  # ``None``: the pin history or a migration file
     why: str
-
-
-def traces_markings(raw: bytes) -> bool:
-    """Whether the raw bytes of a compiled document that cannot be loaded show markings: the
-    ``/2`` schema or a ``requires`` / ``markings`` key. Bytes that are no JSON object are
-    searched for the schema string."""
-    try:
-        document = parse_json(raw)
-    except CanonicalError:
-        return COMPILED_SCHEMA_V2.encode() in raw
-    if not isinstance(document, Mapping):
-        return False
-    return (
-        document.get("schema") == COMPILED_SCHEMA_V2
-        or "requires" in document
-        or "markings" in document
-    )
 
 
 def _chain(ctx: AdminContext, entry: GraphEntry, hop: Hop) -> _Chain | _Unreadable | None:

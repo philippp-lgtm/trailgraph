@@ -39,7 +39,7 @@ from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kinetic.action_entries import load_action_entries
-from graph_cli.ontology_layer.expr_ast import walk
+from graph_cli.ontology_layer.expr_attributes import guard_classes, reads, rule_classes
 from graph_cli.ontology_layer.model import CompiledModel
 
 MAX_LISTED: Final = 20
@@ -170,18 +170,9 @@ class _Site:
 
 def _sites(model: CompiledModel, actions: KineticSlot | None) -> Iterator[_Site]:
     for rule in model.rules:
-        yield _Site("rule", rule.id, model.subtypes(rule.target), rule.expr)
+        yield _Site("rule", rule.id, rule_classes(model, rule), rule.expr)
     for lifecycle, definition in model.lifecycles.items():
-        # the classes that have an attribute moved by this lifecycle
-        classes = tuple(
-            sorted(
-                curie
-                for curie, cls in model.classes.items()
-                if any(
-                    a.kind == "lifecycle" and a.type == lifecycle for a in cls.attributes.values()
-                )
-            )
-        )
+        classes = guard_classes(model, lifecycle)
         for transition in definition.transitions:
             for guard in transition.guards:
                 yield _Site("guard", f"{lifecycle}.{guard.id}", classes, guard.expr)
@@ -208,25 +199,6 @@ def _sites(model: CompiledModel, actions: KineticSlot | None) -> Iterator[_Site]
             yield _Site("precondition", f"{action.name}.{pre.id}", classes, pre.expr)
 
 
-def _sum_classes(model: CompiledModel, spec: Mapping[str, JsonValue]) -> tuple[str, ...]:
-    """The classes whose entities a ``sum`` reads the attribute of: the far end of its
-    relation, narrowed by ``where.type`` when that names classes of the model; every class when
-    the relation's end is open or unknown."""
-    relation = model.relations.get(str(spec.get("rel")))
-    end = (
-        ()
-        if relation is None
-        else (relation.domain if spec.get("direction") == "in" else relation.range)
-    )
-    reachable = {c for curie in end for c in model.subtypes(curie)} or set(model.classes)
-    where = spec.get("where")
-    types = where.get("type") if isinstance(where, Mapping) else None
-    if isinstance(types, list):
-        named = {c for t in types for c in model.subtypes(str(t))}
-        reachable = (reachable & named) or reachable
-    return tuple(sorted(reachable))
-
-
 def _names(
     model: CompiledModel, classes: Iterable[str], attribute: str
 ) -> dict[str, tuple[str, ...]]:
@@ -247,11 +219,8 @@ def _in_expression(
     found: list[WarningRecord] = []
     for site in _sites(model, actions):
         marked: dict[str, tuple[str, ...]] = {}
-        for kind, arg, _ in walk(site.expr):
-            if kind == "attr" and isinstance(arg, str):
-                marked.update(_names(model, site.classes, arg))
-            elif kind == "sum" and isinstance(arg, Mapping) and isinstance(arg.get("attr"), str):
-                marked.update(_names(model, _sum_classes(model, arg), str(arg["attr"])))
+        for classes, attribute in reads(model, site.classes, site.expr):
+            marked.update(_names(model, classes, attribute))
         if not marked:
             continue
         attributes = sorted(marked)

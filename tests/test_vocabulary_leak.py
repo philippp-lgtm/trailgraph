@@ -130,7 +130,7 @@ def test_deny_list_is_meaningful() -> None:
     assert {"Item", "WebPage", "located_in", "in_stock", "serial_number"} <= words
     assert {"Position", "OrgUnit", "reports_to", "work_email"} <= words  # every authored module
     assert {"Person", "birth_date", "team_internal"} <= words  # markings are terms too
-    assert prefixes == {"nas", "inv", "ppl", "org", "ops", "co", "ex"}
+    assert prefixes == {"nas", "inv", "ppl", "org", "ops", "co", "ex", "stf"}
     assert "about" not in words  # plain single words are excluded
     assert "retrieved_at" not in words  # also a term of the standard module files
 

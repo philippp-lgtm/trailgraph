@@ -1,0 +1,201 @@
+# Toy ontology for the read side of markings (field-level read visibility): every surface a
+# hidden attribute could show through. Employees carry personal data (contact, birth date,
+# pay grade, hours, salary, badge code); a contractor's e-mail is declared independently and
+# not marked; a badge's only label is marked; rules and a guard read marked attributes; a
+# personnel file is a stored file with a marked remark. ``stf_twin`` in tests/fixtures/markings
+# is this module as a caller without any marking must read it.
+format: graph_cli.ir/1
+module:
+  id: staff
+  prefix: stf
+  version: 1.0.0
+  summary: Employees, contractors, crews, badges and personnel files.
+  imports:
+    - {module: files, version: "^1.0"}
+
+markings:
+  personal:
+    summary: Personal data of a natural person.
+  pay:
+    summary: Pay data.
+
+datatypes:
+  BadgeCode:
+    summary: Code printed on a badge.
+    base: string
+    pattern: '^[A-Z0-9-]+$'
+
+enums:
+  PayGrade:
+    summary: Pay grade of an employee.
+    values:
+      junior: {summary: Junior.}
+      senior: {summary: Senior.}
+  ShiftKind:
+    summary: When an employee works.
+    values:
+      day: {summary: Day shift.}
+      night: {summary: Night shift.}
+
+lifecycles:
+  OnboardingFlow:
+    summary: Onboarding of an employee.
+    states:
+      started: {summary: Onboarding started., initial: true}
+      equipped: {summary: Has what the work needs.}
+      scheduled: {summary: Has a shift.}
+    transitions:
+      - from: started
+        to: equipped
+        summary: Hand out the badge.
+        guards:
+          - id: badge_known
+            summary: The badge code is recorded.
+            require:
+              - {attr: badge_code, value_presence: PRESENT}
+      - from: started
+        to: scheduled
+        summary: Plan the shift.
+        guards:
+          - id: shift_known
+            summary: The shift is recorded.
+            require:
+              - {attr: shift, value_presence: PRESENT}
+
+classes:
+  Colleague:
+    summary: Someone who works for the organization.
+    abstract: true
+    attributes:
+      name:
+        summary: Full name.
+        type: string
+        required: true
+        role: label
+      phone:
+        summary: Work phone number.
+        type: string
+  Employee:
+    summary: A colleague on the payroll.
+    is_a: Colleague
+    display_prefix: EMP
+    attributes:
+      email:
+        summary: Private e-mail address.
+        type: string
+        markings: [personal]
+      birth_date:
+        summary: Date of birth.
+        type: date
+        markings: [personal]
+      pay_grade:
+        summary: Pay grade.
+        type: PayGrade
+        markings: [personal]
+      salary:
+        summary: Yearly salary.
+        type: decimal
+        markings: [personal, pay]
+      weekly_hours:
+        summary: Hours worked per week.
+        type: integer
+        markings: [personal]
+      badge_code:
+        summary: Code of the employee's badge.
+        type: BadgeCode
+        markings: [personal]
+      shift:
+        summary: Usual shift.
+        type: ShiftKind
+      stage:
+        summary: Onboarding stage.
+        lifecycle: OnboardingFlow
+        required: true
+  Contractor:
+    summary: A colleague hired through an agency.
+    is_a: Colleague
+    display_prefix: CON
+    attributes:
+      email:
+        summary: Business e-mail address.
+        type: string
+      agency:
+        summary: Agency that placed the contractor.
+        type: string
+  Badge:
+    summary: An access badge.
+    display_prefix: BDG
+    attributes:
+      holder_name:
+        summary: Name printed on the badge.
+        type: string
+        role: label
+        markings: [personal]
+      number:
+        summary: Running number of the badge.
+        type: integer
+  Crew:
+    summary: A group of colleagues working together.
+    display_prefix: CREW
+    attributes:
+      name:
+        summary: Name of the crew.
+        type: string
+        required: true
+        role: label
+  PersonnelFile:
+    summary: A stored document about a colleague.
+    is_a: files:File
+    display_prefix: PF
+    attributes:
+      remark:
+        summary: Remark of the personnel office.
+        type: text
+        markings: [personal]
+
+relations:
+  in_crew:
+    summary: The crew a colleague works in.
+    domain: Colleague
+    range: Crew
+    cardinality: {out: {max: 1}}
+    inverse_label: crew_member
+  holds_badge:
+    summary: The badge an employee holds.
+    domain: Employee
+    range: Badge
+    cardinality: {out: {max: 1}}
+    inverse_label: held_by
+  concerns:
+    summary: The colleague a personnel file is about.
+    domain: PersonnelFile
+    range: Colleague
+    inverse_label: concerned_by
+
+rules:
+  - id: employee_contact
+    summary: An employee with a private e-mail has a work phone.
+    severity: warning
+    when: write
+    scope: Employee
+    if:
+      - {attr: email, value_presence: PRESENT}
+    then:
+      - {attr: phone, value_presence: PRESENT}
+  - id: contractor_contact
+    summary: A contractor with an e-mail names the agency.
+    severity: warning
+    when: write
+    scope: Contractor
+    if:
+      - {attr: email, value_presence: PRESENT}
+    then:
+      - {attr: agency, value_presence: PRESENT}
+  - id: crew_hours
+    summary: A crew works at most 400 hours a week.
+    severity: warning
+    when: write
+    scope: Crew
+    then:
+      - sum: {rel: in_crew, direction: in, attr: weekly_hours, where: {type: [Employee]}}
+        maximum_value: 400

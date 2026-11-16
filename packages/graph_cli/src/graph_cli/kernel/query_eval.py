@@ -60,7 +60,9 @@ are sibling layers. The rules:
   and ``Not``, never orders anything and ``total`` counts what the caller can
   see; otherwise the strip happens after paging. The revisions handed out are
   stripped either way, with their ``content_hash`` recomputed (one strip with
-  the edges of ``visible``).
+  the edges of ``visible``), unless ``Query.rehash`` is false: an internal query
+  whose revisions are only read (``lookup``, ``search``) skips the hash, which is
+  then stale (unless ``content_hash`` is named, which always hashes).
 """
 
 from __future__ import annotations
@@ -478,7 +480,7 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
     rows.sort(key=_row_key(query.order))
     page = tuple(row[2] for row in rows[query.offset : query.offset + query.limit])
     if strip.active:
-        page = tuple(strip(revision) for revision in page)
+        page = tuple(strip(revision, rehash=query.rehash or hashed) for revision in page)
     return QueryPage(items=page, total=len(rows), limit=query.limit, offset=query.offset)
 
 

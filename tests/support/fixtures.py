@@ -23,7 +23,7 @@ TOY_ONTOLOGIES = ("notes_and_sources", "inventory")
 MODULAR_ONTOLOGIES = ("company",)
 # Single-module series that use markings (compiled schema /2); kept apart so the toys and
 # their goldens stay /1.
-MARKED_ONTOLOGIES = ("personnel",)
+MARKED_ONTOLOGIES = ("personnel", "staff")
 UPDATE_GOLDENS = os.environ.get("GRAPH_CLI_UPDATE_GOLDENS") == "1"
 
 

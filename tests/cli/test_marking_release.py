@@ -12,7 +12,7 @@ from support.app import ENV, app
 from support.fixtures import ONTOLOGIES
 from support.policies import write_policy
 
-from graph_cli_admin.services_admin.marking_names import traces_markings
+from graph_cli.ontology_layer.model import traces_markings
 
 PERSONNEL = ONTOLOGIES / "personnel"
 HOLDER = """\

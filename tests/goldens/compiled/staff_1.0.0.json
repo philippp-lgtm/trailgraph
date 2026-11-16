@@ -1,0 +1,1167 @@
+{
+  "bundle": {
+    "id": "staff",
+    "version": "1.0.0"
+  },
+  "classes": {
+    "files:File": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "content": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Hash of the stored bytes.",
+          "type": "blob",
+          "unique": true
+        },
+        "file_name": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "File name as it was added, without directories.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "media_type": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Media type of the stored bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "origin": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Where the file was added from, relative to a named root of each machine.",
+          "type": "local_path",
+          "unique": false
+        },
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the file was downloaded from its source address.",
+          "type": "date",
+          "unique": false
+        },
+        "source_url": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Address the file was downloaded from.",
+          "type": "iri",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the file for people; the file name stem unless given.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "The content never changes. A new version of a file is a new file that supersedes the old one. Domain meaning (a scan, a contract, a photo) belongs to a subclass in the graph's own module.",
+      "display_prefix": "FILE",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A file whose bytes the graph stores."
+    },
+    "stf:Badge": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "holder_name": {
+          "annotations": {},
+          "declared_in": "stf:Badge",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "label",
+          "summary": "Name printed on the badge.",
+          "type": "string",
+          "unique": false
+        },
+        "number": {
+          "annotations": {},
+          "declared_in": "stf:Badge",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Running number of the badge.",
+          "type": "integer",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "BDG",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "An access badge."
+    },
+    "stf:Colleague": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "name": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Full name.",
+          "type": "string",
+          "unique": false
+        },
+        "phone": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Work phone number.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Someone who works for the organization."
+    },
+    "stf:Contractor": {
+      "abstract": false,
+      "ancestors": [
+        "stf:Colleague"
+      ],
+      "annotations": {},
+      "attributes": {
+        "agency": {
+          "annotations": {},
+          "declared_in": "stf:Contractor",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Agency that placed the contractor.",
+          "type": "string",
+          "unique": false
+        },
+        "email": {
+          "annotations": {},
+          "declared_in": "stf:Contractor",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Business e-mail address.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Full name.",
+          "type": "string",
+          "unique": false
+        },
+        "phone": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Work phone number.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "CON",
+      "extends": "stf:Colleague",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A colleague hired through an agency."
+    },
+    "stf:Crew": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "name": {
+          "annotations": {},
+          "declared_in": "stf:Crew",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the crew.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "CREW",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A group of colleagues working together."
+    },
+    "stf:Employee": {
+      "abstract": false,
+      "ancestors": [
+        "stf:Colleague"
+      ],
+      "annotations": {},
+      "attributes": {
+        "badge_code": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Code of the employee's badge.",
+          "type": "stf:BadgeCode",
+          "unique": false
+        },
+        "birth_date": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Date of birth.",
+          "type": "date",
+          "unique": false
+        },
+        "email": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Private e-mail address.",
+          "type": "string",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Full name.",
+          "type": "string",
+          "unique": false
+        },
+        "pay_grade": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Pay grade.",
+          "type": "stf:PayGrade",
+          "unique": false
+        },
+        "phone": {
+          "annotations": {},
+          "declared_in": "stf:Colleague",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Work phone number.",
+          "type": "string",
+          "unique": false
+        },
+        "salary": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:pay",
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Yearly salary.",
+          "type": "decimal",
+          "unique": false
+        },
+        "shift": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Usual shift.",
+          "type": "stf:ShiftKind",
+          "unique": false
+        },
+        "stage": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "lifecycle",
+          "many": false,
+          "mutability": "lifecycle",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Onboarding stage.",
+          "type": "stf:OnboardingFlow",
+          "unique": false
+        },
+        "weekly_hours": {
+          "annotations": {},
+          "declared_in": "stf:Employee",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Hours worked per week.",
+          "type": "integer",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "EMP",
+      "extends": "stf:Colleague",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A colleague on the payroll."
+    },
+    "stf:PersonnelFile": {
+      "abstract": false,
+      "ancestors": [
+        "files:File"
+      ],
+      "annotations": {},
+      "attributes": {
+        "content": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Hash of the stored bytes.",
+          "type": "blob",
+          "unique": true
+        },
+        "file_name": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "File name as it was added, without directories.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "media_type": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Media type of the stored bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "origin": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Where the file was added from, relative to a named root of each machine.",
+          "type": "local_path",
+          "unique": false
+        },
+        "remark": {
+          "annotations": {},
+          "declared_in": "stf:PersonnelFile",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "markings": [
+            "stf:personal"
+          ],
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Remark of the personnel office.",
+          "type": "text",
+          "unique": false
+        },
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the file was downloaded from its source address.",
+          "type": "date",
+          "unique": false
+        },
+        "source_url": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Address the file was downloaded from.",
+          "type": "iri",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the file for people; the file name stem unless given.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "PF",
+      "extends": "files:File",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A stored document about a colleague."
+    }
+  },
+  "datatypes": {
+    "files:Line": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "single_line": true
+      },
+      "summary": "Text on a single line."
+    },
+    "files:MediaType": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+      },
+      "summary": "IANA media type without parameters, such as application/pdf."
+    },
+    "files:PageNumber": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 1
+      },
+      "summary": "A page number counted from 1."
+    },
+    "stf:BadgeCode": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^[A-Z0-9-]+$"
+      },
+      "summary": "Code printed on a badge."
+    }
+  },
+  "enums": {
+    "stf:PayGrade": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "Pay grade of an employee.",
+      "values": [
+        {
+          "name": "junior",
+          "summary": "Junior."
+        },
+        {
+          "name": "senior",
+          "summary": "Senior."
+        }
+      ]
+    },
+    "stf:ShiftKind": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "When an employee works.",
+      "values": [
+        {
+          "name": "day",
+          "summary": "Day shift."
+        },
+        {
+          "name": "night",
+          "summary": "Night shift."
+        }
+      ]
+    }
+  },
+  "lifecycles": {
+    "stf:OnboardingFlow": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "initial": [
+        "started"
+      ],
+      "states": [
+        {
+          "name": "started",
+          "summary": "Onboarding started."
+        },
+        {
+          "name": "equipped",
+          "summary": "Has what the work needs."
+        },
+        {
+          "name": "scheduled",
+          "summary": "Has a shift."
+        }
+      ],
+      "summary": "Onboarding of an employee.",
+      "terminal": [],
+      "transitions": [
+        {
+          "from": "started",
+          "guards": [
+            {
+              "expr": {
+                "exists": {
+                  "attr": "badge_code"
+                }
+              },
+              "id": "stf.badge_known",
+              "summary": "The badge code is recorded."
+            }
+          ],
+          "summary": "Hand out the badge.",
+          "to": "equipped"
+        },
+        {
+          "from": "started",
+          "guards": [
+            {
+              "expr": {
+                "exists": {
+                  "attr": "shift"
+                }
+              },
+              "id": "stf.shift_known",
+              "summary": "The shift is recorded."
+            }
+          ],
+          "summary": "Plan the shift.",
+          "to": "scheduled"
+        }
+      ]
+    }
+  },
+  "markings": {
+    "stf:pay": {
+      "description": null,
+      "summary": "Pay data."
+    },
+    "stf:personal": {
+      "description": null,
+      "summary": "Personal data of a natural person."
+    }
+  },
+  "modules": [
+    {
+      "extensions": {},
+      "id": "core",
+      "namespace": "urn:graph_cli:onto:core#",
+      "prefix": "core",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "files",
+      "namespace": "urn:graph_cli:onto:files#",
+      "prefix": "files",
+      "summary": "Stored files with where they came from and places inside them.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "staff",
+      "namespace": "urn:graph_cli:onto:staff#",
+      "prefix": "stf",
+      "summary": "Employees, contractors, crews, badges and personnel files.",
+      "version": "1.0.0"
+    }
+  ],
+  "prefixes": {
+    "core": "urn:graph_cli:onto:core#",
+    "files": "urn:graph_cli:onto:files#",
+    "stf": "urn:graph_cli:onto:staff#"
+  },
+  "relations": {
+    "core:derived_from": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "derivation_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source was derived from a specific revision of the target."
+    },
+    "core:retracts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "retracted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source withdraws the target; created only by the retract operation."
+    },
+    "core:source": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "source_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The target is where the information in the source came from."
+    },
+    "core:supersedes": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "superseded_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source replaces the target; created only by the supersede operation."
+    },
+    "files:from_file": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "file_source_of",
+      "mappings": {},
+      "qualifiers": {
+        "last_page": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Last page of the information when it spans several pages.",
+          "type": "files:PageNumber"
+        },
+        "locator": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Place inside the file other than a page, such as a section, region or task number.",
+          "type": "files:Line"
+        },
+        "page": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Page where the information is, or where it starts.",
+          "type": "files:PageNumber"
+        }
+      },
+      "range": [
+        "files:File"
+      ],
+      "renamed_from": null,
+      "summary": "Information in the source entity was taken from the file."
+    },
+    "stf:concerns": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "stf:PersonnelFile"
+      ],
+      "inverse_label": "concerned_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "stf:Colleague"
+      ],
+      "renamed_from": null,
+      "summary": "The colleague a personnel file is about."
+    },
+    "stf:holds_badge": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "stf:Employee"
+      ],
+      "inverse_label": "held_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "stf:Badge"
+      ],
+      "renamed_from": null,
+      "summary": "The badge an employee holds."
+    },
+    "stf:in_crew": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "stf:Colleague"
+      ],
+      "inverse_label": "crew_member",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "stf:Crew"
+      ],
+      "renamed_from": null,
+      "summary": "The crew a colleague works in."
+    }
+  },
+  "requires": [
+    "markings"
+  ],
+  "rules": [
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "implies": [
+          {
+            "exists": {
+              "attr": "email"
+            }
+          },
+          {
+            "exists": {
+              "attr": "agency"
+            }
+          }
+        ]
+      },
+      "id": "stf.contractor_contact",
+      "severity": "warning",
+      "summary": "A contractor with an e-mail names the agency.",
+      "target": "stf:Contractor",
+      "when": "write"
+    },
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "le": [
+          {
+            "sum": {
+              "attr": "weekly_hours",
+              "direction": "in",
+              "rel": "stf:in_crew",
+              "where": {
+                "type": [
+                  "stf:Employee"
+                ]
+              }
+            }
+          },
+          {
+            "const": 400
+          }
+        ]
+      },
+      "id": "stf.crew_hours",
+      "severity": "warning",
+      "summary": "A crew works at most 400 hours a week.",
+      "target": "stf:Crew",
+      "when": "write"
+    },
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "implies": [
+          {
+            "exists": {
+              "attr": "email"
+            }
+          },
+          {
+            "exists": {
+              "attr": "phone"
+            }
+          }
+        ]
+      },
+      "id": "stf.employee_contact",
+      "severity": "warning",
+      "summary": "An employee with a private e-mail has a work phone.",
+      "target": "stf:Employee",
+      "when": "write"
+    }
+  ],
+  "schema": "graph_cli.compiled_ontology/2"
+}
