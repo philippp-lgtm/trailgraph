@@ -63,8 +63,11 @@ def forward(
     args: dict[str, JsonValue],
     *,
     key: bool = True,
+    retry: bool = True,
 ) -> Result:
-    """Run ``spec`` on the server; ``key`` generates an idempotency key for a write."""
+    """Run ``spec`` on the server; ``key`` generates an idempotency key for a write.
+    ``retry=False`` leaves the retry of a read to the caller (a hook whose uploads the
+    first try used up)."""
     write = write_of(spec, args, generate=key)
     header = None
     given = args.get(KEY_OPTION)
@@ -73,7 +76,12 @@ def forward(
         header = given
         del args[KEY_OPTION]
     document, stdout, stderr = session.command(
-        spec.path, api_args(args), text=not state.json_mode, write=write, idempotency_key=header
+        spec.path,
+        api_args(args),
+        text=not state.json_mode,
+        write=write,
+        idempotency_key=header,
+        retry=retry,
     )
     return Result(forwarded=Forwarded(document, stdout, stderr))
 

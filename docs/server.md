@@ -451,7 +451,9 @@ proxy that refuses requests without one lets it through.
   connection breaks
   after a write was sent, `remote.outcome_unknown` names the key and the
   command to run again with it, which is safe. Reads are retried once;
-  writes never.
+  writes never. A read or dry run that uploads its input (`query --file`
+  or `-`, `apply --dry-run`, `file add --dry-run`) uploads it again for
+  the retry, because the server uses each upload up once.
 - `remote.unreachable`: no connection; `remote.unauthorized`: no token, or
   the server refused it; `remote.protocol`: the answer is not the API's (a
   proxy page); `remote.client_outdated`: the server runs another build of
