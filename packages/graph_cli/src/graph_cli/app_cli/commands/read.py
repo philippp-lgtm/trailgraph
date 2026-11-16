@@ -699,12 +699,15 @@ _FOUND: Final = {  # what lookup and search show of an entity
     "record_status": STRING,
     "label": NULLABLE_STRING,
 }
+_LABEL_ROLES: Final = ("label", "alt_label", "hidden_label")
 _MATCH: Final = {  # query.lookup.Match.to_json; search adds score and excerpt for value
     "attr": STRING,
-    "role": enum("label", "alt_label", "hidden_label"),
+    "role": enum(*_LABEL_ROLES),
     "kind": STRING,
     "lang": NULLABLE_STRING,
 }
+# search also reads attributes without a label role: the role is null there
+_SEARCH_MATCH: Final = {**_MATCH, "role": nullable(enum(*_LABEL_ROLES))}
 GET_OUTPUT: Final = obj(
     {
         "entity": ref("entity"),
@@ -795,7 +798,7 @@ SEARCH_OUTPUT: Final = obj(
             obj(
                 {
                     **_FOUND,
-                    "match": obj({**_MATCH, "score": INTEGER, "excerpt": NULLABLE_STRING}),
+                    "match": obj({**_SEARCH_MATCH, "score": INTEGER, "excerpt": NULLABLE_STRING}),
                     "fields": STRINGS,
                 }
             )

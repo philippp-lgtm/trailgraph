@@ -4833,11 +4833,18 @@
                       "type": "string"
                     },
                     "role": {
-                      "type": "string",
-                      "enum": [
-                        "label",
-                        "alt_label",
-                        "hidden_label"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "label",
+                            "alt_label",
+                            "hidden_label"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kind": {
