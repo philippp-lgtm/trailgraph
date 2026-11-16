@@ -11,6 +11,8 @@ from support.admin import Outcome, admin, init, write_documents
 from support.app import ENV, app
 from support.fixtures import ONTOLOGIES
 
+from graph_cli_admin.services_admin.marking_names import traces_markings
+
 PERSONNEL = ONTOLOGIES / "personnel"
 SHARED = """\
 format: graph_cli.ir/1
@@ -243,3 +245,44 @@ def test_marking_moved_to_another_module_is_a_new_marking(
     ]
     kinds = {c["kind"] for c in outcome.data["diff"]["changes"]}
     assert {"add_marking", "remove_marking", "remove_marking_term"} <= kinds
+
+
+INVENTORY = ONTOLOGIES / "inventory"
+
+
+def unmarked_graph(run_cli: CliRunner) -> str:
+    created = admin(
+        run_cli, "graph", "create", "example_graph", "--ontology", str(INVENTORY / "1.0.0")
+    )
+    assert created.code == 0, created.envelope
+    graph_id: str = created.data["id"]
+    released(run_cli, INVENTORY / "1.0.1")
+    return graph_id
+
+
+def test_unmarked_graph_with_a_missing_release_still_releases(
+    run_cli: CliRunner, root: Path
+) -> None:
+    graph_id = unmarked_graph(run_cli)
+    (root / "graphs" / graph_id / "ontology" / "1.0.0" / "compiled.json").unlink()
+    outcome = released(run_cli, INVENTORY / "1.1.0")
+    assert not [w for w in outcome.envelope["warnings"] if "marking" in w["code"]]
+
+
+def test_unreadable_release_that_shows_markings_refuses_an_unmarked_release(
+    run_cli: CliRunner, root: Path
+) -> None:
+    graph_id = unmarked_graph(run_cli)
+    path = root / "graphs" / graph_id / "ontology" / "1.0.0" / "compiled.json"
+    path.write_text('{"schema": "graph_cli.compiled_ontology/2", "requires": ["markings"]}')
+    refused = release(run_cli, INVENTORY / "1.1.0")
+    assert refused.error["code"] == "ontology.marking_name_reused", refused.envelope
+    assert refused.error["details"]["unreadable"] == "1.0.0"
+
+
+def test_raw_traces_of_markings() -> None:
+    assert traces_markings(b'{"schema": "graph_cli.compiled_ontology/2"}')
+    assert traces_markings(b'{"schema": "graph_cli.compiled_ontology/1", "markings": {}}')
+    assert traces_markings(b'{"schema": "graph_cli.compiled_ontology/2", "trunc')
+    assert not traces_markings(b'{"schema": "graph_cli.compiled_ontology/1"}')
+    assert not traces_markings(b"\x00 not json")

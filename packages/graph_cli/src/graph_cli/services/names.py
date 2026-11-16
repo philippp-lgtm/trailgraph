@@ -134,6 +134,11 @@ class NameMaps:
         self._maps[key] = found
         return found
 
+    def chain(self, entry: GraphEntry) -> tuple[list[str], bool]:
+        """The pinned versions (the last is the pin) and whether the pin history was
+        readable; reads the audit stream only, no release file."""
+        return self._chain(entry)
+
     def build(self, entry: GraphEntry) -> tuple[NameMap, bool]:
         """The map and whether it is complete, built afresh (not cached): the release check
         of reused marked names refuses an incomplete one (fail closed)."""

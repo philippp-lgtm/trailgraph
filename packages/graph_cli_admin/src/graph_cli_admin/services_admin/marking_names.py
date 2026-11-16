@@ -29,8 +29,13 @@ own release):
   maps away by rename: warning ``ontology.marking_name_returned`` (maintainer surfaces such as
   ``graph-admin view`` and transaction bodies still show the old names).
 
-A release of the chain that cannot be read, or a pin history that cannot be read completely,
-refuses the release (fail closed): it may have marked what the release reuses. The check runs
+When markings are in play (the release uses them, a readable release of the chain does, or
+the raw file of an unreadable one shows the ``/2`` schema, ``requires`` or ``markings``), a
+release of the chain that cannot be read, or a pin history or migration file that cannot be
+read, refuses the release (fail closed): it may have marked what the release reuses. When the
+release and the chain show no trace of markings, nothing is judged: markings need a program of
+0.23.0 or later, which always writes ``/2``, so such a chain cannot hide a marked name, and a
+graph without markings releases as before. The check runs
 in ``ontology release`` (next to the policy guard, skipped when an incomplete migration is
 finished), ``graph push`` (through it), ``graph check --ontology`` and ``ontology diff
 --graph``.
@@ -44,13 +49,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Final, Literal
 
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import CanonicalError, JsonValue, parse_json
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId, TermRef, TxId
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
-from graph_cli.services.models import ModelCache
+from graph_cli.ontology_layer.vocabulary import COMPILED_SCHEMA_V2
+from graph_cli.services.models import COMPILED_FILE, ModelCache
 from graph_cli.services.names import NameMaps
 from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin.context import AdminContext
@@ -277,46 +283,87 @@ def _revision(type_: str, name: str, version: str) -> Revision:
 # ---- the graph's chain ----------------------------------------------------------------------
 
 
-class _Unreadable(Exception):
-    def __init__(self, version: str | None, why: str) -> None:
-        super().__init__(why)
-        self.version = version
-        self.why = why
-
-
-def _chain(
-    ctx: AdminContext, entry: GraphEntry, hop: Hop
-) -> tuple[tuple[str, ...], list[CompiledModel], dict[int, Hop]]:
+@dataclass(frozen=True, slots=True)
+class _Chain:
     """The pin chain with the release on top, the model of every version and the hops."""
+
+    versions: tuple[str, ...]
+    models: tuple[CompiledModel, ...]
+    hops: Mapping[int, Hop]
+
+
+@dataclass(frozen=True, slots=True)
+class _Unreadable:
+    version: str | None  # ``None``: the pin history or a migration file
+    why: str
+
+
+def traces_markings(raw: bytes) -> bool:
+    """Whether the raw bytes of a compiled document that cannot be loaded show markings: the
+    ``/2`` schema or a ``requires`` / ``markings`` key. Bytes that are no JSON object are
+    searched for the schema string."""
+    try:
+        document = parse_json(raw)
+    except CanonicalError:
+        return COMPILED_SCHEMA_V2.encode() in raw
+    if not isinstance(document, Mapping):
+        return False
+    return (
+        document.get("schema") == COMPILED_SCHEMA_V2
+        or "requires" in document
+        or "markings" in document
+    )
+
+
+def _chain(ctx: AdminContext, entry: GraphEntry, hop: Hop) -> _Chain | _Unreadable | None:
+    """The chain to judge; ``None`` when markings cannot be in play (the release and every
+    release of the chain show no trace of them, so nothing can reuse a marked name: markings
+    need a program of 0.23.0 or later, which writes ``/2``); ``_Unreadable`` when they may be
+    and something cannot be read (fail closed). Each release file is loaded once; the name
+    map, which reads the migration files, is built only when markings are in play."""
     models = ModelCache(ctx.catalog)
-    name_map, complete = NameMaps(ctx.catalog, ctx.audit, models).build(entry)
-    if not complete:
-        raise _Unreadable(None, "its pin history or a migration file cannot be read")
-    extended = name_map.extended(hop)
-    chain = extended.chain
-    loaded: dict[str, CompiledModel] = {hop.old_version: hop.old}
-    found: list[CompiledModel] = []
-    for version in chain[:-1]:
-        if version not in loaded:
+    maps = NameMaps(ctx.catalog, ctx.audit, models)
+    versions, complete = maps.chain(entry)
+    loaded: dict[str, CompiledModel] = {hop.old_version: hop.old, hop.new_version: hop.new}
+    unreadable: _Unreadable | None = None
+    traced = False
+    for version in dict.fromkeys(versions):
+        if version in loaded:
+            continue
+        try:
+            loaded[version] = models.load_release(entry.id, version)
+        except GraphCliError as exc:
+            unreadable = unreadable or _Unreadable(version, exc.message)
             try:
-                loaded[version] = models.load_release(entry.id, version)
-            except GraphCliError as exc:
-                raise _Unreadable(version, exc.message) from exc
-        found.append(loaded[version])
-    found.append(hop.new)
-    return chain, found, extended.hops
+                raw = ctx.catalog.read_release_file(entry.id, version, COMPILED_FILE)
+            except GraphCliError:
+                continue
+            traced = traced or traces_markings(raw)
+    marked = traced or any(m.features() for m in loaded.values())
+    if not marked:
+        return None
+    if unreadable is not None:
+        return unreadable
+    name_map, complete_map = maps.build(entry)
+    if not (complete and complete_map):
+        return _Unreadable(None, "its pin history or a migration file cannot be read")
+    extended = name_map.extended(hop)
+    found = (*(loaded[v] for v in extended.chain[:-1]), hop.new)
+    return _Chain(extended.chain, found, extended.hops)
 
 
 def check(
     ctx: AdminContext, entry: GraphEntry, hop: Hop, bump: Mapping[str, JsonValue]
 ) -> tuple[WarningRecord, ...]:
     """The warnings of releasing ``hop.new`` on ``entry``; raises
-    ``ontology.marking_name_reused`` for a reuse or an unreadable chain."""
-    try:
-        chain, models, hops = _chain(ctx, entry, hop)
-    except _Unreadable as exc:
-        raise unreadable(entry, exc.version, exc.why, bump) from None
-    judgement = judge(chain, models, hops)
+    ``ontology.marking_name_reused`` for a reuse, or for something unreadable while markings
+    are in play. A graph whose history and release show no markings is not judged."""
+    found = _chain(ctx, entry, hop)
+    if found is None:
+        return ()
+    if isinstance(found, _Unreadable):
+        raise unreadable(entry, found.version, found.why, bump)
+    judgement = judge(found.versions, found.models, found.hops)
     if judgement.reuses:
         raise refusal(entry, judgement.reuses, bump)
     return warnings(entry, judgement, hop.new_version)
