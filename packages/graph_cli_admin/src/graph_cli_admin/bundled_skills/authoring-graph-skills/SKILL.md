@@ -162,9 +162,10 @@ The blocks already say what the model says. Write what it cannot:
    against the model (an "always link X" for a relation the ontology
    makes optional) misleads; say when it applies.
 6. **Write for every reader.** Readers with read limits get the generated
-   blocks without the types they may not see, but your text reaches every
-   reader as written: name no type, relation or function that some reader
-   of the graph may not see.
+   blocks without the types and the marked attributes they may not see, but
+   your text reaches every reader as written: name no type, relation,
+   function or marked attribute (its name, an example value, a rule that
+   mentions it) that some reader of the graph may not see.
 
 ## What publishing checks
 

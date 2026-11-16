@@ -2338,7 +2338,7 @@
           "type": "string",
           "required": false,
           "repeatable": false,
-          "summary": "Decide on one marking of the graph, e.g. ex:personal (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
+          "summary": "Decide on one marking of the graph, by CURIE (needs --action read.get): does the caller hold it. Excludes --type, --attribute and --relation."
         },
         {
           "name": "--file",

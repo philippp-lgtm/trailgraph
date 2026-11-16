@@ -134,15 +134,25 @@ class FixedPolicy:
 
 
 def write_documents(
-    root: Path, graph: str, documents: list[dict[str, Any]], *, seed: int = 13
+    root: Path,
+    graph: str,
+    documents: list[dict[str, Any]],
+    *,
+    seed: int = 13,
+    installed: bool = False,
 ) -> list[int]:
     """Instance data through the real WriteService on the CLI's data root; returns the seqs.
     Ids come from a seeded provider: a second call with the same ``seed`` repeats the ids. The
     writer is the local app caller under the built-in policy; when the graph's pinned model uses
     markings it also holds every one of them (``holding_markings``), so the data may carry
-    values of marked attributes, which a caller without the marking cannot write."""
+    values of marked attributes, which a caller without the marking cannot write. That writer's
+    policy is not the installed one, so ``audit verify`` flags its events; ``installed=True``
+    writes under the installation policy instead (a test that verifies the audit trail applies
+    a policy with an ``entrypoint: app`` grant of the markings first, writes, then applies its
+    own)."""
     from graph_cli.access_control.policy import BuiltinPolicySource
     from graph_cli.catalog.file_catalog import FileCatalog
+    from graph_cli.catalog.policy_source import FilePolicySource
     from graph_cli.kernel.canonical import hash_value
     from graph_cli.kernel.records import EnvInfo, RequestMeta
     from graph_cli.services.models import ModelCache
@@ -155,11 +165,16 @@ def write_documents(
     catalog = FileCatalog(root)
     entry = catalog.resolve(graph)
     used = ModelCache(catalog).load(entry).used_markings()
+    policy: Any = BuiltinPolicySource()
+    if installed:
+        policy = FilePolicySource(root)
+    elif used:
+        policy = holding_markings(entry, used)
     clock = StepClock(start="2030-01-01T00:00:00Z")
     service = WriteService(
         catalog=catalog,
         audit=FileAuditLog(root),
-        policy=holding_markings(entry, used) if used else BuiltinPolicySource(),
+        policy=policy,
         clock=clock,
         ids=SeededIdProvider(clock, seed),
         env=EnvInfo("<data root>", "default"),

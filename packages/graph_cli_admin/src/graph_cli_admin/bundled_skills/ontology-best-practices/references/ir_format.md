@@ -286,17 +286,24 @@ compares with an attribute of the entity in scope.
 ```yaml
 markings:
   personal: {summary: "Personal data of a natural person"}
+classes:
+  Person:
+    attributes:
+      email: {summary: "Private e-mail address.", type: string, markings: [personal]}
 ```
 
 Marking name (lower case, like a relation name, and distinct from the module's relation
-names) to `summary` and an optional `description`. An attribute names markings of its own
-module or an imported one, as a local name or a CURIE (`[personal]`, `[ex:personal]`); a
-subclass inherits them with the attribute. The installation policy grants markings by CURIE.
-A model with markings compiles to `graph_cli.compiled_ontology/2`, which programs before
-0.23.0 refuse. Adding a marking to an existing attribute is major, removing one minor (the
-release warns `admin.marking_removed`), declaring a marking minor, removing one major. A
-release that would show values stored under a marked name under a name declared without that
-marking is refused (`ontology.marking_name_reused`).
+names) to `summary` (required) and an optional `description`; no other key. An attribute
+names markings of its own module or an imported one, as a local name or a CURIE (`[personal]`,
+`[ex:personal]`); the list is non-empty and names each marking once. Several markings on one
+attribute are conjunctive: a caller sees the attribute only when it holds every one. A subclass
+inherits the markings with the attribute. Only attributes carry markings (not classes,
+relations, qualifiers or enum values), and not lifecycle attributes
+(`model.semantic.marking_on_lifecycle`); labels, `unique` and `required` attributes may. An
+unknown marking is `model.referential.unknown_marking`. The installation policy grants markings
+by CURIE. What a marking does, the compiled form, the change levels and the release checks are in
+[versioning_and_release.md](versioning_and_release.md#markings); advice on using them in
+[modeling.md](modeling.md#marking-attributes).
 
 ## Mappings
 

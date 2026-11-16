@@ -100,12 +100,12 @@ pull into another folder, carry them over and push from there.
    `graph skills install` where they work.
 
 A graph with several ontology modules is released the same way. Give `--module
-<main>` to `graph-admin ontology validate`, `graph-admin ontology diff`,
-`graph-admin ontology release`, `graph-admin graph create` and `graph-admin
-graph check` (with its `--ontology` option) whenever the directory holds more
-than one module; `graph-admin graph push` needs none. The rules are in
-`ontology-best-practices`, `references/versioning_and_release.md` ("Releasing a
-modular graph"); splitting a module is in its `references/migrations.md`.
+<main>` to `graph-admin ontology validate`, `ontology diff`, `ontology
+release`, `graph-admin graph create` and `graph-admin graph check` (with its
+`--ontology` option) when the directory holds more than one module; `graph-admin
+graph push` needs none. Rules:
+`ontology-best-practices`, `references/versioning_and_release.md` ("Releasing
+a modular graph"); splitting a module: its `references/migrations.md`.
 
 Published functions and actions must resolve under the new version.
 `ontology diff --graph` warns `admin.functions_affected` and
@@ -117,10 +117,9 @@ sources still compile (published again with it). Fix the rest in `functions/` or
 with the ontology. A deny rule naming only a renamed term is refused
 (`admin.policy_renamed_term`): apply a policy naming both first.
 
-`admin.source_conflict` means the graph changed since the folder was
-pulled: pull it into another folder, carry the edits over, push from
-there. `admin.version_bump_insufficient` means the bump is too small for
-the change `ontology diff` found.
+`admin.source_conflict` means the graph changed since the folder was pulled:
+pull it into another folder, carry the edits over, push from there.
+`admin.version_bump_insufficient`: the bump is too small for the change.
 
 ## Create a graph
 
@@ -205,8 +204,9 @@ installation policy, name it in grants (`principal: {role: <role>}` with
 policy apply <file> --reason "<why>"`. A grant with `level: read` can carry a
 `writes` list (exactly what the role may write, down to attributes and
 relations) and a `reads` list (the only types it sees; the rest of the graph
-reads as if absent); grammar: `docs/access_control.md`, "Write allow lists" and
-"Read limits". Give it to an app token with `graph-admin token create <name>
+reads as if absent) and `markings` (the marked fields it holds; any other
+reader sees them as unknown); grammar: `docs/access_control.md`, "Write allow
+lists", "Read limits" and "Markings". Give it to an app token with `graph-admin token create <name>
 --role <role>` or `graph-admin token role add <name> <role>` (`token role
 remove` takes it away), or to a client with `graph-admin enroll create
 --project <project> --role <role>`. App tokens only; `admin.role_unknown` means

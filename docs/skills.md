@@ -143,14 +143,23 @@ and pages (`modules`, `types`, `relations`, the references), the functions and
 the actions are rendered from what that reader sees: no hidden type, relation,
 field, function or action is named, and a module with nothing left is gone. A
 reader without limits gets the skill as before. The claim of an installed
-copy records which set of types it was rendered for when the reader is
-limited, so a change of the policy that changes the set makes the copy `stale`
-(see [Stale skills](#stale-skills)) and `graph skills install` renders it
-again.
+copy records which set of types and which fields it was rendered for when the
+reader is limited, so a change of the policy that changes either (a type limit,
+a [marking](access_control.md#markings) grant) or a release that marks another
+field makes the copy `stale` (see [Stale skills](#stale-skills)) and `graph
+skills install` renders it again. A marking change on a type the reader does
+not see leaves the claim alone.
+
+A field that carries [markings](access_control.md#markings) is listed only for
+a reader who holds all of them, and then with a short mark naming them (`marked
+ex:personal`, several joined by `+`; they are conjunctive). The mark costs a few
+bytes per marked field and appears only in graphs that use markings, so a
+limited reader's skill is smaller, not larger.
 
 Curated text is not filtered. The prose of the template and its curated
 `references/*.md` are shown to every reader as written, so they must not name a
-type, relation or function that some reader of the graph may not see. The name
+type, relation, function or marked field that some reader of the graph may not
+see, nor an example value of one. The name
 check at publish and at install runs against the full model, so a hidden name
 in curated text raises no `skills.source_unknown_names` warning that would
 itself name it. Write curated text in terms that hold for every reader, and let
@@ -322,7 +331,8 @@ first checks the installed copies an agent may load: those in
 1 is stale when it was rendered from another inventory than the running
 program's, a graph skill when the graph published another skill since or,
 for a generated one, when the graph's ontology pin moved or, for a reader with
-read limits, when the set of types the reader sees changed. A new function
+read limits or without some marking, when the set of types or fields the reader
+sees changed. A new function
 catalog changes the render of a generated skill, so `graph skills check`
 reports the installed copy as `stale` and `graph skills install` refreshes
 it; the commands above do not notice a catalog-only change.

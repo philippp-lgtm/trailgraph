@@ -100,6 +100,16 @@ prevents depends on what is verified:
   because they maintain the graph, so their findings, usage report and
   views show hidden data. What a limit still shows is listed under [Type read
   limits](#type-read-limits).
+- Markings ([Markings](access_control.md#markings)) hide single attributes of a
+  visible type from a subject that does not hold them: for it the attribute
+  reads as if the type did not declare it. They hold like read limits: only
+  through server tokens; locally a guardrail, since an agent with a shell can
+  read the files. The maintainers, the `graph-admin` commands, project admin
+  tokens and the live view read raw data. What markings still show is listed
+  under [Field visibility](#field-visibility). Programs before 0.23.0 refuse the
+  compiled ontology that carries markings (schema `/2`), so no older server or
+  client, an image rollback included, ever loads a model with markings and shows
+  the attributes.
 - Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
   secrets too, but narrow ones: one use, at most 24 hours, always bound to
   a project, so a code never yields an unbound token (a maintainer's). Who
@@ -189,9 +199,85 @@ are accepted and known:
   ontology prose and curated skill text so that it holds for every reader
   ([Skills](skills.md#blocks)); the generated blocks are rendered per reader
   and name nothing hidden.
-- **What it does not cover.** Single attributes and rows of a visible type are
-  visible to whoever sees the type; read limits stop at whole types. A type
-  cannot be write-only: a caller writes only types it sees.
+- **What it does not cover.** Rows of a visible type are visible to whoever
+  sees the type; read limits stop at whole types (single attributes are
+  [markings](#field-visibility)). A type cannot be write-only: a caller writes
+  only types it sees.
+
+## Field visibility
+
+A caller that lacks a marking is answered as if the attribute did not exist
+([What a caller can see](access_control.md#attributes-a-caller-lacks-a-marking-for)).
+The protection is complete for values and names: no value, attribute name,
+marking name, enum value or datatype only hidden attributes use, rule, function,
+action or skill text of a marked attribute reaches it through a read command, a
+write answer, `whoami`, `describe` or the generated skill, and a write that
+names the attribute, a guess of its current value included, is answered as a
+write of an attribute the type lacks. What is left tells that something is
+marked or that something happened, with one exception that an author controls
+(the first item). These are accepted and known:
+
+- **Rules, guards and preconditions over a marked attribute are a channel.**
+  Validation judges the whole graph, so a rule or lifecycle guard that reads a
+  marked attribute can refuse a caller's write or transition. The finding is
+  concealed (its code and the target entity stay, the operands and the path are
+  dropped), and the caller sees no rule text, yet dry runs are not audited: a
+  caller who can change the inputs of such a rule (link members into a `sum`
+  over a hidden number, say) can repeat dry runs and narrow the hidden value
+  down. The transition that such a guard blocks is listed as allowed. This is
+  not one bit but an amplifiable channel, and it exists only where an author
+  put a marked attribute into an expression: the release warns
+  (`admin.marking_in_expression`) and the ontology guidance advises against it.
+  A precondition needs no extra care for callers that see its action: an action
+  whose precondition reads a hidden attribute is hidden.
+- **Activity shows, values do not.** A revision whose only change was a hidden
+  attribute appears in `history` with an empty `changed`; the entity's `rev`,
+  `tx_seq` and `recorded_at` count it, so they jump without a visible reason,
+  and a selection by the transaction that last changed an entity matches an entity
+  changed only in a hidden attribute. The same `rev` shows in write results. The
+  `reason` of a revision is the writer's text, shown as written, and so is a
+  free-text alias.
+- **`whoami` tells that something is marked.** `markings: []` says that the graph
+  uses markings and the caller holds none, `markings: [...]` which of the
+  markings in use it holds. A marking the caller lacks is never named. A caller
+  with an attribute view is also answered through the early refusal for a name
+  the type truly lacks (no other findings of validation ride along), which tells
+  the same single fact.
+- **Integrity refusals tell that a hidden value exists.** The findings of
+  [Type read limits](#type-read-limits) apply to attributes too, with the
+  code and severity kept and the path cut to `attrs`: a marked required
+  attribute without default blocks every create of its type for a caller that
+  lacks the marking (`missing_required`; release warns with
+  `admin.marking_blocks_create`, `policy check` with
+  `admin.policy_unusable_write`); a default that fills a marked unique attribute
+  can collide (`unique_violation`); values kept from the raw state that a newer
+  release rejects refuse unrelated updates of that entity (`enum_value_unknown`,
+  which tells it is an enum, `datatype_mismatch`, `facet_violation`,
+  `missing_required`); a deprecated marked attribute that a default sets warns
+  `deprecated_term` on creates. Give a marked required attribute a default, or
+  leave it unmarked.
+- **Prose is not filtered.** The summary and description of ontology terms, the
+  text of a curated graph skill and the texts of functions and actions
+  (`summary`, `use_when`, `returns`) are written by maintainers and shown as
+  written: if they name a marked attribute or marking, a reader that cannot see
+  it reads the name. Write them so that they hold for every reader
+  ([Skills](skills.md#blocks)). The marking declarations themselves are not
+  shown to a caller that lacks them.
+- **Bundled file attributes cannot be marked.** The attributes of
+  `files:File` (title, content, media type, file name, origin) stay visible to whoever
+  sees the type, as do the download route and `file path`; a marked attribute of
+  a file subclass is an ordinary attribute and hidden like any other.
+- **Smaller points.** `possible_duplicate` warnings never compare a hidden label
+  (fewer warnings, no leak); a marked label leaves the entity without a label for
+  the caller. Timing differences, between a hidden and a missing name or in the
+  cost of reading a marked type, are not hidden. A release that downgrades or
+  reuses a marked name is refused or warned
+  ([Markings](access_control.md#markings)); a marking removed on purpose makes
+  the values, history included, readable to every caller that sees the type.
+- **What it does not cover.** Classes, relations, edge qualifiers and enum values
+  cannot be marked (personal data in an edge qualifier stays visible to whoever
+  sees the edge), a marked attribute cannot be write-only (a caller writes only
+  attributes it sees), and there are no deny rules on single attributes' reads.
 
 ## Data in backups and audit events
 

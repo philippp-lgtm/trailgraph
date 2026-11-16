@@ -98,11 +98,14 @@ streams, a reload shows a change.
   your own `graph` calls get, and for each token (with the roles it
   holds, if any) what its requests get: the level, the actions a deny
   rule withholds below it, the types it sees when it is limited to some
-  ([`reads`](access_control.md#read-limits)), what a write allow list lets it
+  ([`reads`](access_control.md#read-limits)), the [markings](access_control.md#markings)
+  it holds when the graph's ontology marks fields it does not all hold ("none"
+  for a caller that holds no marking), what a write allow list lets it
   write and, for an admin token, whether it maintains the graph, as
   `graph-admin policy explain` answers. "Installation policy" and "Graph policy" list the
   installed rules of each layer that can decide on this graph (grants,
-  maintainers, project admins, scopes, deny rules, type limits), with
+  maintainers, project admins, scopes, deny rules, type limits, the marking
+  rules of a grant: "marking `<marking>` in `<graph>`"), with
   whom they match, their actions and resources, the conditions that
   lift them, and the obligations. The view reads the installed policy
   files on every request, as `graph-admin policy show` does.
@@ -195,9 +198,9 @@ so the project's scope applies instead. A view that should show every
 graph, those hidden from callers without a project included, gets a
 scope of its own, for example `scopes: {live_view: {"*": read}}`, and
 runs with `--project live_view`; the scope also keeps it from writing.
-[Read limits](access_control.md#read-limits) do not apply to the view: it
-decides as a maintainer and shows every type, so keep its address from callers
-that must not see all of them.
+[Read limits](access_control.md#read-limits) and [markings](access_control.md#markings)
+do not apply to the view: it decides as a maintainer and shows every type and
+every marking, so keep its address from callers that must not see all of them.
 
 The view notices a `graph-admin policy apply` while it runs: it reads
 an installed policy file again once it was replaced. Each request for a
