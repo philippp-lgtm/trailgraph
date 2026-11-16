@@ -10,10 +10,18 @@ from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
 from support.app import ENV, app
 from support.fixtures import ONTOLOGIES
+from support.policies import write_policy
 
 from graph_cli_admin.services_admin.marking_names import traces_markings
 
 PERSONNEL = ONTOLOGIES / "personnel"
+HOLDER = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: write, markings: [ex:personal]}
+no_project: {"*": write}
+"""
 SHARED = """\
 format: graph_cli.ir/1
 module:
@@ -193,6 +201,15 @@ def test_rename_then_reuse_warns_and_history_keeps_the_value_away(
     ]
     found = app(run_cli, "find", "--type", "ex:Person", env=ENV)
     entity = found.data["items"][0]["id"]
+    first = app(run_cli, "get", entity, "--rev", "1", env=ENV)
+    assert first.code == 0, first.envelope
+    attrs = first.data["entity"]["attrs"]
+    # Without an installation policy no app caller holds ex:personal: the value shows under
+    # neither name; a holder sees it under the marked current name, never under ``email``.
+    assert "mail" not in attrs and "email" not in attrs
+    path = write_policy(tmp_path / "work", "installation.yaml", HOLDER)
+    applied = admin(run_cli, "policy", "apply", str(path), "--reason", "test policy")
+    assert applied.code == 0, applied.envelope
     first = app(run_cli, "get", entity, "--rev", "1", env=ENV)
     assert first.code == 0, first.envelope
     attrs = first.data["entity"]["attrs"]

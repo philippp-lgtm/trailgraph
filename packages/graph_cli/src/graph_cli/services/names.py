@@ -25,7 +25,9 @@ Three pieces, all opened by ``ReadService.open``:
 
 A mapped revision keeps its id, rev, tx, ``ontology_version`` and every identity field; its
 content hash is recomputed (as for a revision a read limit stripped). ``mapped`` tells which
-revisions a snapshot handed out mapped (``names_mapped`` of ``--full``).
+revisions a snapshot handed out mapped (``names_mapped`` of ``--full``), ``unmapped`` which it
+handed out under names the map cannot vouch for (``NameMap.unmapped``: behind an unreadable hop
+or of a version outside the chain), which a reader limited to some attributes must not trust.
 """
 
 from __future__ import annotations
@@ -150,12 +152,15 @@ class NameMaps:
         names from the next one."""
         chain, complete = self._chain(entry)
         hops: dict[int, Hop] = {}
+        unreadable: list[int] = []
         for index, (old, new) in enumerate(pairwise(chain)):
             hop, readable = self._hop(entry, old, new)
             complete = complete and readable
             if hop is not None:
                 hops[index] = hop
-        return NameMap(chain, hops), complete
+            if not readable:
+                unreadable.append(index)
+        return NameMap(chain, hops, unreadable), complete
 
     def _chain(self, entry: GraphEntry) -> tuple[list[str], bool]:
         """The pinned versions; the last is the current pin, also while a migration is
@@ -232,6 +237,13 @@ class GraphNames:
             return revision
         return self.name_map.map(revision)
 
+    def unmapped(self, revision: Revision) -> bool:
+        """Whether ``map`` hands ``revision`` out under names the map cannot vouch for
+        (``NameMap.unmapped``); a revision of the pinned major never is."""
+        if not other_major(revision.ontology_version, self.entry.pin.version):
+            return False
+        return self.name_map.unmapped(revision.ontology_version)
+
 
 class MappedSnapshot:
     """A ``Snapshot`` that hands out revisions under the pin's names (see the module
@@ -243,6 +255,7 @@ class MappedSnapshot:
         self._current = current
         self._revisions: dict[tuple[EntityId, int], Revision] = {}
         self._mapped: set[tuple[EntityId, int]] = set()
+        self._unmapped: set[tuple[EntityId, int]] = set()
 
     @property
     def raw(self) -> Snapshot:
@@ -269,6 +282,12 @@ class MappedSnapshot:
         """Whether this snapshot handed out revision ``rev`` of ``entity`` under mapped names."""
         return (entity, rev) in self._mapped
 
+    def unmapped(self, entity: EntityId, rev: int) -> bool:
+        """Whether this snapshot handed out revision ``rev`` of ``entity`` under names the map
+        cannot vouch for (as stored, behind an unreadable hop or of a version outside the
+        chain): a reader limited to some attributes sees none of its attributes (R3)."""
+        return (entity, rev) in self._unmapped
+
     def _map(self, revision: Revision) -> Revision:
         key = (revision.id, revision.rev)
         found = self._revisions.get(key)
@@ -276,6 +295,8 @@ class MappedSnapshot:
             found = self._revisions[key] = self.names.map(revision)
             if found is not revision:
                 self._mapped.add(key)
+            if self.names.unmapped(revision):
+                self._unmapped.add(key)
         return found
 
     # ---- the port --------------------------------------------------------

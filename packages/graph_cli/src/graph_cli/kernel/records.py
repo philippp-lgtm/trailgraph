@@ -6,7 +6,7 @@ documents (B4 portability test). Absent optional values are omitted (C.6).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Final, Literal
@@ -230,17 +230,33 @@ def revision_content_hash(revision: Revision) -> str:
     )
 
 
-def strip_hidden_edges(revision: Revision, sees: Callable[[EntityId], bool]) -> Revision:
-    """``revision`` without the edges whose target ``sees`` rejects.
+def strip_revision(
+    revision: Revision,
+    sees: Callable[[EntityId], bool] | None,
+    keep: Collection[str] | None,
+    *,
+    rehash: bool,
+) -> Revision:
+    """``revision`` without the edges whose target ``sees`` rejects and without the attributes
+    outside ``keep`` (``None``: that part is not stripped), in one copy.
 
-    Returns the same object when no edge is dropped. Otherwise the kept edges keep their order
-    and ids, ``content_hash`` is recomputed over the stripped content, and every other field
-    (``rev``, ``tx_seq``, ...) stays, so nothing marks an entity as having lost edges.
+    Returns the same object when nothing is dropped. Otherwise the kept edges keep their order
+    and ids, the kept attributes their values, and every other field (``rev``, ``tx_seq``, ...)
+    stays, so nothing marks an entity as having lost something. ``rehash`` recomputes
+    ``content_hash`` over the stripped content: set it for a revision handed to a caller, leave
+    it for one stripped only to be matched (the hash is then stale and must not be read).
     """
-    kept = tuple(edge for edge in revision.edges if sees(edge.target))
-    if len(kept) == len(revision.edges):
+    edges = revision.edges
+    if sees is not None:
+        edges = tuple(edge for edge in revision.edges if sees(edge.target))
+    attrs = revision.attrs
+    if keep is not None and not all(name in keep for name in attrs):
+        attrs = {name: value for name, value in attrs.items() if name in keep}
+    if len(edges) == len(revision.edges) and attrs is revision.attrs:
         return revision
-    stripped = replace(revision, edges=kept)
+    stripped = replace(revision, edges=edges, attrs=attrs)
+    if not rehash:
+        return stripped
     return replace(stripped, content_hash=revision_content_hash(stripped))
 
 

@@ -210,3 +210,27 @@ def test_pinned_versions_follow_the_ok_pin_intents() -> None:
         pin("2.0.0", "2.0.0"),
     ]
     assert pinned_versions(lines) == ["1.0.0", "1.1.0", "2.0.0"]
+
+
+# ---- unmapped revisions (field visibility plan R3) ------------------------------------------
+
+
+def test_a_revision_behind_an_unreadable_hop_or_outside_the_chain_is_unmapped() -> None:
+    two, three = single("2.0.0", V2), single("3.0.0", V3)
+    names = NameMap(["1.0.0", "2.0.0", "3.0.0"], {1: hop("2.0.0", "3.0.0", two, three)}, [0])
+    assert names.unreadable == {0}
+    assert names.unmapped("1.0.0")  # the switch to 2.0.0 could not be read
+    assert not names.unmapped("2.0.0")  # every hop after it was read
+    assert not names.unmapped("3.0.0") and not names.unmapped("3.4.0")  # the pinned major
+    assert names.unmapped("0.9.0")  # another major outside the chain: nothing vouches for it
+    old = revision("hammer", "ex:Item", {"name": "Hammer"})
+    assert names.map(written(old, "1.0.0")).attrs == {"name": "Hammer"}  # handed out as stored
+    longer = names.extended(hop("3.0.0", "4.0.0", three, single("4.0.0", V3)))
+    assert longer.unmapped("1.0.0") and not longer.unmapped("2.0.0")
+
+
+def test_a_complete_chain_maps_every_version_in_it() -> None:
+    names = chain()
+    assert names.unreadable == frozenset()
+    assert not any(names.unmapped(v) for v in ("1.0.0", "1.1.0", "2.0.0", "3.0.0"))
+    assert not NameMap([], {}).unmapped("1.0.0")

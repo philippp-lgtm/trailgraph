@@ -506,6 +506,7 @@ def test_the_result_names_entities_of_visible_types_only(world: World) -> None:
     }
     assert all(revisions.values())
     working = _working(world, [("update", "d1"), ("update", "s1")])
+    from graph_cli.kernel.read_view import ReadView
     from graph_cli.services.write import _result
 
     kwargs: dict[str, Any] = {
@@ -518,11 +519,11 @@ def test_the_result_names_entities_of_visible_types_only(world: World) -> None:
     }
     everything = _result(world.env.entry, working, **kwargs)
     assert len(everything.entities) == 2
-    shown = _result(world.env.entry, working, visible=frozenset({"ex:Doc"}), **kwargs)
+    shown = _result(world.env.entry, working, view=ReadView(frozenset({"ex:Doc"})), **kwargs)
     assert [e.type for e in shown.entities] == ["ex:Doc"]
     assert world.id_of("s1") not in str(shown.to_json())
     unchanged = replace(working, unchanged=working.revisions, revisions={})
-    quiet = _result(world.env.entry, unchanged, visible=frozenset({"ex:Doc"}), **kwargs)
+    quiet = _result(world.env.entry, unchanged, view=ReadView(frozenset({"ex:Doc"})), **kwargs)
     assert [w.code for w in quiet.warnings] == ["entity.unchanged"]
     assert world.id_of("s1") not in str([w.message for w in quiet.warnings])
 

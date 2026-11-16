@@ -258,6 +258,13 @@ class CompiledModel:
         )
         return (MARKINGS_FEATURE,) if marked else ()
 
+    def used_markings(self) -> frozenset[str]:
+        """The markings some attribute carries (a declared marking no attribute names hides
+        nothing)."""
+        return frozenset(
+            m for c in self.classes.values() for a in c.attributes.values() for m in a.markings
+        )
+
     def to_json(self) -> dict[str, JsonValue]:
         features = self.features()
         extra: dict[str, JsonValue] = {}

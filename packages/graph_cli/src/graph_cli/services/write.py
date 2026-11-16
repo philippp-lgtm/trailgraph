@@ -144,6 +144,7 @@ from graph_cli.kernel.ports.storage import (
     StagedBlob,
     WriteSession,
 )
+from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
@@ -275,7 +276,7 @@ class _Prepared:
     resolution: Resolution
     wanted: _Wanted
     decisions: tuple[Decision, ...]
-    visible: frozenset[str] | None  # the types the caller sees; None: it sees every type
+    view: ReadView  # what the caller reads of the graph (``kernel.read_view``)
 
 
 class _Placeholders:
@@ -413,21 +414,19 @@ class WriteService:
             with self.timings.phase("snapshot"):
                 snapshot = read.snapshot()
         migration_state.refuse_write(entry)
-        visible = self._visible(request, entry, model)
+        view = self._read_view(request, entry, model)
         resolution = self._resolve(  # a plan: the empty frame, no pairs
-            request, _seen_by(snapshot, visible)
+            request, _seen_by(snapshot, view)
         )
         wanted = _wanted(resolution, model)
-        decisions = self._authorize(request, entry, wanted, model, visible)
-        return _Prepared(
-            entry, model, read, write, snapshot, resolution, wanted, decisions, visible
-        )
+        decisions = self._authorize(request, entry, wanted, model, view)
+        return _Prepared(entry, model, read, write, snapshot, resolution, wanted, decisions, view)
 
-    def _visible(
+    def _read_view(
         self, request: WriteRequest, entry: GraphEntry, model: CompiledModel
-    ) -> frozenset[str] | None:
-        """The concrete types the caller sees in the graph under the current policy, ``None``
-        when the graph is not type limited or it sees every type."""
+    ) -> ReadView:
+        """What the caller reads of the graph under the current policy. The write path judges
+        by its type half only (type read limits plan V6)."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             return self._visibility.of(request.actor, entry, policy, model)
@@ -447,7 +446,7 @@ class WriteService:
         entry: GraphEntry,
         plan: ActionPlan,
         model: CompiledModel,
-        visible: frozenset[str] | None,
+        view: ReadView,
     ) -> _Wanted:
         """What an action whose expansion is empty is authorized on: for each need of the
         action on ``model`` the option the any-of rule picks (``services.action_rights``).
@@ -465,8 +464,8 @@ class WriteService:
             terms: set[FineTerm] = set()
             derived = action_needs(plan.entry, model)
             for need in derived:
-                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine, visible)
-                if visible is not None and not found.met and not found.decisions:
+                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine, view.types)
+                if view.types_limited and not found.met and not found.decisions:
                     find_action((), plan.entry.name)  # raises action.not_found
                 if found.type is None:
                     continue
@@ -486,10 +485,10 @@ class WriteService:
         entry: GraphEntry,
         wanted: _Wanted,
         model: CompiledModel | None = None,
-        visible: frozenset[str] | None = None,
+        view: ReadView = UNLIMITED,
     ) -> tuple[Decision, ...]:
-        """The decisions of W.5 for ``wanted``; ``visible`` (the types the caller sees, with
-        the ``model`` they are types of) is set only for a caller under a type read limit."""
+        """The decisions of W.5 for ``wanted``; ``view`` (what the caller reads, with the
+        ``model`` its types are types of) matters only for a caller under a type read limit."""
         pairs = wanted.pairs
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
@@ -498,9 +497,9 @@ class WriteService:
             # A type the model has but the caller's view lacks answers as a type the model
             # lacks (V6): its decisions are taken on a resource no rule names, below.
             unseen: frozenset[str] = frozenset()
-            if visible is not None:
+            if view.types_limited:
                 assert model is not None
-                limited = self._visibility.model(entry, model, visible)
+                limited = self._visibility.model(entry, model, view)
                 unseen = frozenset(
                     t for _, t in pairs if t in model.classes and t not in limited.classes
                 )
@@ -524,7 +523,7 @@ class WriteService:
                 )
                 for key, d in recorded.items()
             }
-            if visible is not None:  # V1: the read decision of every type the request names
+            if view.types_limited:  # V1: the read decision of every type the request names
                 assert model is not None
                 for t in sorted({t for _, t in pairs if t in model.classes}):
                     if t in unseen or not model.classes[t].abstract:
@@ -606,15 +605,15 @@ class WriteService:
             # a release that crashed after its migration tx while this write waited for the lock
             migration_state.refuse_write(entry)
             self._policy.refresh()  # a policy applied meanwhile decides (B6.14)
-            visible = self._visible(request, entry, model)
-            seen = _seen_by(base, visible)  # what the caller reaches; ``base`` stays the truth
-            limited = None if visible is None else self._visibility.model(entry, model, visible)
+            view = self._read_view(request, entry, model)
+            seen = _seen_by(base, view)  # what the caller reaches; ``base`` stays the truth
+            limited = self._visibility.model(entry, model, view) if view.types_limited else None
             plan, held = request.plan, None
             if plan is not None:  # the action meets the state it will change
                 request, held = self._expand(request, seen)
             resolution = self._resolve(request, seen)
             if plan is not None and held is not None:
-                wanted = self._plan_wanted(request, entry, plan, model, visible)
+                wanted = self._plan_wanted(request, entry, plan, model, view)
             else:
                 wanted = _wanted(resolution, model)
             pairs = wanted.pairs
@@ -624,7 +623,7 @@ class WriteService:
                 or wanted != prepared.wanted
                 or _stale(decisions, self._policy.current(entry.id).hash)
             ):
-                decisions = self._authorize(request, entry, wanted, model, visible)
+                decisions = self._authorize(request, entry, wanted, model, view)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             cs = resolution.changeset
             digest = changeset_hash(cs)
@@ -633,7 +632,7 @@ class WriteService:
                 previous = session.lookup_idempotency(cs.idempotency_key, principal)
                 if previous is not None:
                     if _same_request(request, previous, digest):
-                        return _replay(previous, entry, resolution.warnings, visible)
+                        return _replay(previous, entry, resolution.warnings, view)
                     raise refusal(
                         GraphCliError(
                             "conflict.idempotency_key_reuse",
@@ -670,7 +669,7 @@ class WriteService:
             with self.timings.phase("validate"):
                 stored = _blob_check(request, prepared.read)
                 findings = _validate(  # W.11
-                    model, base, working, stored, _caller_view(limited, visible, working)
+                    model, base, working, stored, _caller_view(limited, view, working)
                 )
             if any(f.severity is Severity.ERROR for f in findings):
                 # ids minted for creates are never committed: name them by local
@@ -686,7 +685,7 @@ class WriteService:
                     dry_run=False,
                     warnings=resolution.warnings,
                     findings=findings,
-                    visible=visible,
+                    view=view,
                 )
             tx = AuthorizedTx(
                 graph_id=entry.id,
@@ -732,7 +731,7 @@ class WriteService:
             dry_run=False,
             warnings=(*resolution.warnings, *committed.warnings),
             findings=findings,
-            visible=visible,
+            view=view,
         )
 
     def _dry_run(
@@ -745,23 +744,23 @@ class WriteService:
         prepared = self._prepare(request, base)
         snapshot = prepared.snapshot
         resolution = prepared.resolution
-        visible = prepared.visible
-        seen = _seen_by(snapshot, visible)
+        view = prepared.view
+        seen = _seen_by(snapshot, view)
         limited = (
-            None
-            if visible is None
-            else self._visibility.model(prepared.entry, prepared.model, visible)
+            self._visibility.model(prepared.entry, prepared.model, view)
+            if view.types_limited
+            else None
         )
         plan = request.plan
         if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
             request, held = self._expand(request, seen)
             resolution = self._resolve(request, seen)
             if held is not None:
-                wanted = self._plan_wanted(request, prepared.entry, plan, prepared.model, visible)
+                wanted = self._plan_wanted(request, prepared.entry, plan, prepared.model, view)
             else:
                 wanted = _wanted(resolution, prepared.model)
             pairs = wanted.pairs
-            self._authorize(request, prepared.entry, wanted, prepared.model, visible)
+            self._authorize(request, prepared.entry, wanted, prepared.model, view)
             self._check_plan(plan, seen, prepared.model, None, pairs)
             if held is not None:
                 raise held
@@ -790,7 +789,7 @@ class WriteService:
         with self.timings.phase("validate"):
             stored = _blob_check(request, prepared.read)
             findings = _validate(
-                prepared.model, snapshot, working, stored, _caller_view(limited, visible, working)
+                prepared.model, snapshot, working, stored, _caller_view(limited, view, working)
             )
         findings = [_scrub(f, working, hidden) for f in findings]
         if any(f.severity is Severity.ERROR for f in findings):
@@ -805,7 +804,7 @@ class WriteService:
             warnings=resolution.warnings,
             findings=findings,
             hidden=hidden,
-            visible=visible,
+            view=view,
         )
         return result, working
 
@@ -958,10 +957,10 @@ def _type_of(resource: str) -> str:
     return resource.split("/type:", 1)[1].split("/", 1)[0]
 
 
-def _seen_by(snapshot: Snapshot, visible: frozenset[str] | None) -> Snapshot:
+def _seen_by(snapshot: Snapshot, view: ReadView) -> Snapshot:
     """What the caller reaches of ``snapshot``: all of it, or the entities of the types it
-    sees (``None``: no limit)."""
-    return snapshot if visible is None else VisibleSnapshot(snapshot, visible)
+    sees (the type half of ``view``)."""
+    return VisibleSnapshot(snapshot, view.types_only()) if view.types_limited else snapshot
 
 
 def _sees_in(seen: Snapshot) -> Callable[[EntityId], bool] | None:
@@ -970,11 +969,11 @@ def _sees_in(seen: Snapshot) -> Callable[[EntityId], bool] | None:
 
 
 def _caller_view(
-    limited: CompiledModel | None, visible: frozenset[str] | None, working: WorkingState
+    limited: CompiledModel | None, view: ReadView, working: WorkingState
 ) -> CallerView | None:
     """What the validator may tell the caller (``None``: everything). The caller sees the
     entities its request creates, whatever their type: the type is judged on its own."""
-    if visible is None or limited is None:
+    if not view.types_limited or limited is None:
         return None
     memo: dict[EntityId, bool] = {}
 
@@ -983,10 +982,10 @@ def _caller_view(
             return True
         if entity not in memo:
             found = working.get(entity)
-            memo[entity] = found is not None and found.type in visible
+            memo[entity] = found is not None and view.shows_type(found.type)
         return memo[entity]
 
-    return CallerView(limited, visible, sees)
+    return CallerView(limited, view, sees)
 
 
 def _context(request: WriteRequest) -> AuthzContext:
@@ -1155,16 +1154,16 @@ def _result(
     warnings: Sequence[WarningRecord],
     findings: Sequence[Finding],
     hidden: Set[UUID] = frozenset(),
-    visible: frozenset[str] | None = None,
+    view: ReadView = UNLIMITED,
 ) -> WriteResult:
     """The result of a write. A caller who does not see every type is told about entities of
     the types it sees only: whatever else the request changed stays in the tx."""
     names = _op_names(working)
-    if visible is not None:
+    if view.types_limited:
         working = replace(
             working,
-            revisions={e: r for e, r in working.revisions.items() if r.type in visible},
-            unchanged={e: r for e, r in working.unchanged.items() if r.type in visible},
+            revisions={e: r for e, r in working.revisions.items() if view.shows_type(r.type)},
+            unchanged={e: r for e, r in working.unchanged.items() if view.shows_type(r.type)},
         )
     entities = tuple(
         EntityResult(
@@ -1226,7 +1225,7 @@ def _replay(
     tx: TxRecord,
     entry: GraphEntry,
     warnings: Sequence[WarningRecord],
-    visible: frozenset[str] | None,
+    view: ReadView,
 ) -> WriteResult:
     """The original result of an idempotent retry, rebuilt from its tx record (B3.12); for a
     caller who does not see every type, of the entities of the types it sees."""
@@ -1258,7 +1257,7 @@ def _replay(
     entities = tuple(
         EntityResult(r.id, r.alias, r.rev, r.type, tuple(names[r.id]), local_names.get(r.id))
         for r in tx.revisions
-        if visible is None or r.type in visible
+        if view.shows_type(r.type)
     )
     return WriteResult(
         graph_id=entry.id,

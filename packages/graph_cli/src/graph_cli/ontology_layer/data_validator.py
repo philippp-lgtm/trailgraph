@@ -103,6 +103,7 @@ from graph_cli.kernel.langtag import tagged_parts, text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Or, Query
 from graph_cli.kernel.query_eval import strict_equal
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import RECORD_STATUSES, EdgeRecord, Revision
 from graph_cli.kernel.text import edit_distance, search_key
 from graph_cli.ontology_layer.connecting import connecting
@@ -148,13 +149,14 @@ CONCEALED: Final = "conflicts with data you cannot see"
 
 @dataclass(frozen=True, slots=True)
 class CallerView:
-    """What the caller of a write sees: its filtered model (``services.visibility``), the
-    concrete types it sees and whether it sees an entity. The validator reads the graph
-    itself, never through this view, so integrity holds for the whole graph; the view only
-    decides what its findings may say. ``sees`` is true for an entity the request creates."""
+    """What the caller of a write sees: its filtered model (``services.visibility``), its read
+    view (``kernel.read_view``: the concrete types it sees) and whether it sees an entity. The
+    validator reads the graph itself, never through this view, so integrity holds for the whole
+    graph; the view only decides what its findings may say. ``sees`` is true for an entity the
+    request creates."""
 
     model: CompiledModel
-    visible: frozenset[str]
+    read_view: ReadView
     sees: Callable[[EntityId], bool]
 
 
@@ -931,7 +933,7 @@ class _Checker:
             covered = {c for end in ends for c in self.model.subtypes(end)} if ends else None
             for name, cls in self.model.classes.items():
                 reached = covered is None or name in covered
-                if reached and not cls.abstract and name not in self.view.visible:
+                if reached and not cls.abstract and not self.view.read_view.shows_type(name):
                     return True
         return False
 

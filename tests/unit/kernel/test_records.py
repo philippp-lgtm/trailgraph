@@ -22,7 +22,7 @@ from graph_cli.kernel.records import (
     revision_from_json,
     revision_meta,
     revision_to_json,
-    strip_hidden_edges,
+    strip_revision,
     tx_from_json,
     tx_to_json,
 )
@@ -80,23 +80,45 @@ def test_content_hash_excludes_tx_metadata() -> None:
     assert make_revision(attrs={"name": "two"}).content_hash != a.content_hash
 
 
-def test_strip_hidden_edges_keeps_the_rest_and_rehashes() -> None:
+def test_strip_revision_drops_hidden_edges_keeps_the_rest_and_rehashes() -> None:
     keep = EdgeRecord(EdgeId(uid(2)), TermRef("ex:rel"), EntityId(uid(3)), {"page": "4"})
     drop = EdgeRecord(EdgeId(uid(5)), TermRef("ex:rel"), EntityId(uid(6)))
     last = EdgeRecord(EdgeId(uid(7)), TermRef("ex:other"), EntityId(uid(8)))
     revision = make_revision(edges=(keep, drop, last), rev=3, prev_rev=2, tx_seq=9)
-    stripped = strip_hidden_edges(revision, lambda target: target != EntityId(uid(6)))
+    stripped = strip_revision(
+        revision, lambda target: target != EntityId(uid(6)), None, rehash=True
+    )
     assert stripped.edges == (keep, last)  # original order, ids and qualifiers
     expected = make_revision(edges=(keep, last), rev=3, prev_rev=2, tx_seq=9)
     assert stripped == expected  # including the recomputed content hash
     assert stripped.content_hash != revision.content_hash
-    assert strip_hidden_edges(revision, lambda target: False).edges == ()
+    assert strip_revision(revision, lambda target: False, None, rehash=True).edges == ()
 
 
-def test_strip_hidden_edges_returns_the_same_object_when_nothing_is_dropped() -> None:
+def test_strip_revision_returns_the_same_object_when_nothing_is_dropped() -> None:
     revision = make_revision()
-    assert strip_hidden_edges(revision, lambda target: True) is revision
-    assert strip_hidden_edges(make_revision(edges=()), lambda target: False).edges == ()
+    assert strip_revision(revision, lambda target: True, None, rehash=True) is revision
+    assert strip_revision(revision, None, {"name", "count", "other"}, rehash=True) is revision
+    assert strip_revision(revision, None, None, rehash=True) is revision
+    bare = make_revision(edges=())
+    assert strip_revision(bare, lambda target: False, None, rehash=True).edges == ()
+
+
+def test_strip_revision_drops_attributes_outside_keep_in_the_same_copy() -> None:
+    drop = EdgeRecord(EdgeId(uid(5)), TermRef("ex:rel"), EntityId(uid(6)))
+    revision = make_revision(edges=(drop,), rev=2, prev_rev=1, tx_seq=4)
+    stripped = strip_revision(revision, lambda target: False, {"name"}, rehash=True)
+    expected = make_revision(edges=(), attrs={"name": "one"}, rev=2, prev_rev=1, tx_seq=4)
+    assert stripped == expected  # edges and attributes in one copy, hash recomputed
+    assert strip_revision(revision, None, frozenset(), rehash=True).attrs == {}
+    assert strip_revision(revision, None, {"count"}, rehash=True).edges == (drop,)
+
+
+def test_strip_revision_without_rehash_keeps_the_stored_hash() -> None:
+    revision = make_revision()
+    stripped = strip_revision(revision, None, {"name"}, rehash=False)
+    assert stripped.attrs == {"name": "one"}
+    assert stripped.content_hash == revision.content_hash  # stale: never handed out
 
 
 def test_revision_meta() -> None:

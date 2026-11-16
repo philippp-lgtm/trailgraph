@@ -17,7 +17,10 @@ an old revision keeps what it stored.
 Renames need a major release (``diff.classify`` rates every rename major, and a migration file
 is refused on a minor or patch release), so only hops between majors are built, and a revision
 of the pinned major is never mapped. A version that is not in the chain (a stream that does
-not reach back to it) maps to itself.
+not reach back to it) maps to itself, and so does a revision behind a hop whose release files
+could not be read; ``unmapped`` tells both apart from a revision whose names are known to fit
+the pin (field visibility plan R3: a reader limited to some attributes must not trust its
+names).
 
 ``hints`` answers the other side: the current name of an old one, for the "renamed to" hint of
 ``term.unknown`` (old names are never accepted on input).
@@ -25,7 +28,7 @@ not reach back to it) maps to itself.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Final, Literal
@@ -166,11 +169,16 @@ class RenameHint:
 
 class NameMap:
     """The chain of pinned versions (the last is the pin) and the hops between them that
-    change names, keyed by the index of their old version in ``chain``."""
+    change names, keyed by the index of their old version in ``chain``. ``unreadable`` holds
+    the indices of the major switches whose hop could not be built (a release file or the
+    migration file did not read)."""
 
-    def __init__(self, chain: Sequence[str], hops: Mapping[int, Hop]) -> None:
+    def __init__(
+        self, chain: Sequence[str], hops: Mapping[int, Hop], unreadable: Iterable[int] = ()
+    ) -> None:
         self.chain = tuple(chain)
         self.hops = dict(hops)
+        self.unreadable = frozenset(unreadable)
 
     @property
     def pin(self) -> str | None:
@@ -205,11 +213,23 @@ class NameMap:
                 hop.old_version,
             )
         )
-        return NameMap((*chain, hop.new_version), {**self.hops, len(chain) - 1: hop})
+        return NameMap(
+            (*chain, hop.new_version), {**self.hops, len(chain) - 1: hop}, self.unreadable
+        )
 
     def changes(self, version: str) -> bool:
         """Whether revisions written under ``version`` can have names that changed since."""
         return bool(self._hops_from(version))
+
+    def unmapped(self, version: str) -> bool:
+        """Whether revisions written under ``version`` reach the pin under names the map
+        cannot vouch for: ``version`` is of another major than the pin and either not in the
+        chain or behind an unreadable hop. ``map`` hands such a revision out as stored."""
+        pin = self.pin
+        if pin is None or not other_major(version, pin):
+            return False
+        start = self._last_index.get(version)
+        return start is None or any(i >= start for i in self.unreadable)
 
     def map(self, revision: Revision) -> Revision:
         """``revision`` under the current names with its content hash recomputed; the same

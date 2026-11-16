@@ -52,7 +52,7 @@ from graph_cli.audit import events
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
-from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.clock import Clock, format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, IdProvider, TermRef
@@ -69,13 +69,13 @@ from graph_cli.kernel.ports.catalog import (
 from graph_cli.kernel.ports.policy import PolicySource
 from graph_cli.kernel.ports.storage import CAPABILITY_SNAPSHOT_AT_SEQ, GraphStoreRead, Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
+from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import (
     EdgeRecord,
     EnvInfo,
     OntologyPin,
     RequestMeta,
     Revision,
-    strip_hidden_edges,
 )
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
@@ -168,9 +168,9 @@ class GraphRead:
     warnings: tuple[WarningRecord, ...]
     actor: ActorContext
     command: str
-    # The concrete types the actor sees when the graph is type limited (``model`` and
-    # ``snapshot`` are then the filtered views), else ``None``: the raw model and snapshot.
-    visible: frozenset[str] | None = None
+    # What the actor sees (``kernel.read_view``); when it is ``limited``, ``model`` and
+    # ``snapshot`` are the filtered views, else the raw model and snapshot.
+    read_view: ReadView = UNLIMITED
     # The mapped layer below the read limits (migration plan M7): old revisions under the
     # pin's names; ``None`` only for views built without ``ReadService.open``.
     mapping: MappedSnapshot | None = None
@@ -386,9 +386,9 @@ class ReadService:
         self._env = env
         self.timings = timings if timings is not None else Timings()
         self.usage = usage if usage is not None else UsageNote()
-        # Function signatures depend on the model they were derived from, so a type-limited
-        # reader (a filtered model) never shares them with another; ``None``: the raw model.
-        self._signatures: dict[frozenset[str] | None, SignatureCache] = {}
+        # Function signatures depend on the model they were derived from, so a limited reader
+        # (a filtered model) never shares them with another; ``UNLIMITED``: the raw model.
+        self._signatures: dict[ReadView, SignatureCache] = {}
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
         self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
@@ -445,12 +445,12 @@ class ReadService:
             decision = authorize(actor, "read.function", f"graph:{entry.id}", _VISIBLE, policy)
         if decision.effect != "allow":
             return None
-        return self._visible_functions(entry, self._visible_set(actor, entry))
+        return self._visible_functions(entry, self.read_view(actor, entry))
 
-    def _visible_set(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
-        """The concrete types ``actor`` sees in the graph, ``None`` for no limit (what ``open``
-        puts into ``GraphRead.visible``). The model is read only when the graph is type
-        limited and the answer is not cached."""
+    def read_view(self, actor: ActorContext, entry: GraphEntry) -> ReadView:
+        """What ``actor`` sees in the graph (what ``open`` puts into ``GraphRead.read_view``).
+        The model is read once per pin, and again only when the graph is read limited or its
+        pin uses markings and the answer is not cached."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             return self._visibility.lazy(
@@ -458,22 +458,27 @@ class ReadService:
             )
 
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
-        """The concrete types ``actor`` sees in the graph, ``None`` for no limit."""
-        return self._visible_set(actor, entry)
+        """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
+        half of ``read_view``; the model is read only when the graph is type limited)."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            return self._visibility.types(
+                actor, entry, policy, lambda: self._models.load_for_read(entry)[0]
+            )
 
     def limited_view(
         self, actor: ActorContext, entry: GraphEntry, snapshot: Snapshot, model: CompiledModel
-    ) -> tuple[Snapshot, CompiledModel, frozenset[str] | None]:
-        """``snapshot`` and ``model`` as ``actor`` reaches them in a type limited graph, and the
-        types it sees (``None``, and both returned as given, when nothing is limited). For the
-        services that look things up for a write (action parameters, file content)."""
-        visible = self._visible_set(actor, entry)
-        if visible is None:
-            return snapshot, model, None
+    ) -> tuple[Snapshot, CompiledModel, ReadView]:
+        """``snapshot`` and ``model`` as ``actor`` reaches them, and its read view (both
+        returned as given when nothing is limited). For the services that look things up for
+        a write (action parameters, file content)."""
+        view = self.read_view(actor, entry)
+        if not view.limited:
+            return snapshot, model, view
         return (
-            VisibleSnapshot(snapshot, visible),
-            self._visibility.model(entry, model, visible),
-            visible,
+            VisibleSnapshot(snapshot, view),
+            self._visibility.model(entry, model, view),
+            view,
         )
 
     def _published_slot(
@@ -508,31 +513,31 @@ class ReadService:
         self,
         entry: GraphEntry,
         found: tuple[tuple[FunctionEntry, ...], FunctionsSlot],
-        visible: frozenset[str],
+        view: ReadView,
     ) -> frozenset[str]:
-        """The functions of the catalog a reader who sees ``visible`` must not see."""
+        """The functions of the catalog a reader with ``view`` must not see."""
         entries, slot = found
 
         def compute() -> frozenset[str]:
             full, _ = self._models.load_for_read(entry)
-            limited = self._visibility.model(entry, full, visible)
+            limited = self._visibility.model(entry, full, view)
             return hidden_functions(entries, slot.compiled, full, limited)
 
         return self._hidden.of(
-            "functions", slot.compiled_hash, entry.pin.artifact_hash, visible, compute
+            "functions", slot.compiled_hash, entry.pin.artifact_hash, view, compute
         )
 
     def _visible_functions(
-        self, entry: GraphEntry, visible: frozenset[str] | None
+        self, entry: GraphEntry, view: ReadView
     ) -> tuple[FunctionEntry, ...] | None:
-        """The functions of the catalog that fit a reader who sees ``visible`` (``None``: all),
-        ``None`` when there are none."""
+        """The functions of the catalog that fit a reader with ``view`` (all of them without a
+        limit), ``None`` when there are none."""
         found = self._published_slot(entry)
         if found is None:
             return None
         entries = found[0]
-        if visible is not None:
-            hidden = self._hidden_functions(entry, found, visible)
+        if view.limited:
+            hidden = self._hidden_functions(entry, found, view)
             entries = tuple(e for e in entries if e.name not in hidden)
         return entries or None
 
@@ -585,8 +590,8 @@ class ReadService:
         limits plan V7, ``services.visible_catalog``); ``limits=False`` leaves that out (the full
         model's view of the actor's rights). Records nothing, like ``functions``."""
         needs = self.action_needs(entry, catalog)
-        visible = self._visible_set(actor, entry) if limits else None
-        hidden = frozenset() if visible is None else self._hidden_actions(entry, catalog, visible)
+        view = self.read_view(actor, entry) if limits else UNLIMITED
+        hidden = self._hidden_actions(entry, catalog, view) if view.limited else frozenset()
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
             fine = self._fine.of(policy, entry.id)
@@ -596,23 +601,23 @@ class ReadService:
                 for a in catalog.entries
                 if a.name not in hidden
                 and all(
-                    need_decisions(actor, entry.id, need, ctx, policy, fine, visible).met
+                    need_decisions(actor, entry.id, need, ctx, policy, fine, view.types).met
                     for need in needs[a.name]
                 )
             )
 
     def _hidden_actions(
-        self, entry: GraphEntry, catalog: ActionCatalog, visible: frozenset[str]
+        self, entry: GraphEntry, catalog: ActionCatalog, view: ReadView
     ) -> frozenset[str]:
-        """The actions of the catalog whose terms a reader who sees ``visible`` lacks."""
+        """The actions of the catalog whose terms a reader with ``view`` lacks."""
 
         def compute() -> frozenset[str]:
             full, _ = self._models.load_for_read(entry)
-            limited = self._visibility.model(entry, full, visible)
+            limited = self._visibility.model(entry, full, view)
             return hidden_actions(catalog.entries, catalog.compiled, full, limited)
 
         return self._hidden.of(
-            "actions", catalog.compiled_hash, entry.pin.artifact_hash, visible, compute
+            "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
         )
 
     def action_needs(
@@ -744,17 +749,17 @@ class ReadService:
         # the head are never mapped, those of an earlier state whose names changed since are.
         mapping = MappedSnapshot(snapshot, names, current=past)
         snapshot = mapping
-        # Type read limits: a limited caller reads views of the model and the snapshot. They
-        # wrap the as-of snapshot after it read the raw tx metadata, and judge mapped types.
+        # Read limits: a limited caller reads views of the model and the snapshot. They wrap
+        # the as-of snapshot after it read the raw tx metadata, and judge mapped types.
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
-            visible = self._visibility.of(actor, entry, policy, model)
-        if visible is not None:
-            model = self._visibility.model(entry, model, visible)
-            snapshot = VisibleSnapshot(snapshot, visible)
+            view = self._visibility.of(actor, entry, policy, model)
+        if view.limited:
+            model = self._visibility.model(entry, model, view)
+            snapshot = VisibleSnapshot(snapshot, view)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
-        return GraphRead(entry, model, snapshot, warnings, actor, request.command, visible, mapping)
+        return GraphRead(entry, model, snapshot, warnings, actor, request.command, view, mapping)
 
     def rename_hint(
         self, actor: ActorContext, entry: GraphEntry, error: GraphCliError
@@ -776,9 +781,9 @@ class ReadService:
                 return error
             full, _ = self._models.load_for_read(entry)
             model = full
-            visible = self._visible_set(actor, entry)
-            if visible is not None:
-                model = self._visibility.model(entry, full, visible)
+            view = self.read_view(actor, entry)
+            if view.limited:
+                model = self._visibility.model(entry, full, view)
         except GraphCliError:
             return error
         if not isinstance(kind, str) or not isinstance(term, str):
@@ -809,10 +814,10 @@ class ReadService:
         so the skill names nothing the actor cannot see."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
         model, warnings = self._models.load_for_read(entry)
-        visible = self._visible_set(actor, entry)
-        if visible is not None:
-            model = self._visibility.model(entry, model, visible)
-        return self._skill_documents(actor, entry, model, visible, limits=True), warnings
+        view = self.read_view(actor, entry)
+        if view.limited:
+            model = self._visibility.model(entry, model, view)
+        return self._skill_documents(actor, entry, model, view, limits=True), warnings
 
     def skill_names_model(
         self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
@@ -823,38 +828,38 @@ class ReadService:
         type to the reader. ``None`` when the actor has no limit (``skill_model`` is the full
         model then). The documents are used for the check only, never rendered."""
         self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
-        if self._visible_set(actor, entry) is None:
+        if not self.read_view(actor, entry).limited:
             return None
         model, _ = self._models.load_for_read(entry)
-        return self._skill_documents(actor, entry, model, None, limits=False)
+        return self._skill_documents(actor, entry, model, UNLIMITED, limits=False)
 
     def skill_digest(self, actor: ActorContext, entry: GraphEntry) -> str | None:
-        """A digest of the types the actor sees, recorded in the claim of an installed graph
-        skill so a policy change makes the copy stale; ``None`` for an actor without a read
-        limit, whose claims stay as they were."""
-        visible = self._visible_set(actor, entry)
-        return None if visible is None else hash_value(sorted(visible))
+        """A digest of what the actor sees (``ReadView.digest``), recorded in the claim of an
+        installed graph skill so a policy change makes the copy stale; ``None`` for an actor
+        without a read limit, whose claims stay as they were. Without an attribute half it is
+        the digest of the visible types, as before markings existed."""
+        return self.read_view(actor, entry).digest
 
     def _skill_documents(
         self,
         actor: ActorContext,
         entry: GraphEntry,
         model: CompiledModel,
-        visible: frozenset[str] | None,
+        view: ReadView,
         *,
         limits: bool,
     ) -> dict[str, JsonValue]:
         """``describe_model`` of ``model`` with the compiled function catalog (the functions
-        that fit a reader who sees ``visible``) and the action catalog narrowed to the
+        that fit a reader with ``view``) and the action catalog narrowed to the
         actions ``actor`` may run (within its read limits when ``limits``)."""
         found = self._published_slot(entry)
         catalog: JsonObject | None = None
         if found is not None and found[1].count:
             document = found[1].compiled
-            if visible is None:
+            if not view.limited:
                 catalog = document
             else:
-                hidden = self._hidden_functions(entry, found, visible)
+                hidden = self._hidden_functions(entry, found, view)
                 kept = [
                     e
                     for e in req_list(document, "functions")
@@ -988,8 +993,8 @@ class ReadService:
         shown = metas[::-1][offset : offset + limit]
         session = actor.session.id
         items: list[JsonValue] = []
-        # a type limited reader sees what a migration did only as far as its view reaches
-        full = self._models.load_for_read(view.entry)[0] if view.visible is not None else None
+        # a limited reader sees what a migration did only as far as its view reaches
+        full = self._models.load_for_read(view.entry)[0] if view.read_view.limited else None
         for meta in shown:
             tx = view.snapshot.tx(meta.tx_seq)
             before = view.snapshot.get_revision(entity, meta.rev - 1) if meta.rev > 1 else None
@@ -1328,7 +1333,7 @@ class ReadService:
             found: tuple[Cover, ...] = ()
             visible = self.functions(view.actor, view.entry)
             if visible:
-                signatures = self._signatures.setdefault(view.visible, SignatureCache())
+                signatures = self._signatures.setdefault(view.read_view, SignatureCache())
                 pairs = signatures.pairs(visible, view.model)
                 found = covers(query_signature(resolved), pairs, view.model)
             described = shape(resolved)
@@ -1392,7 +1397,7 @@ class ReadService:
         the activity signal names the function, never a value."""
         from graph_cli.query.cypher.resolve import resolve
 
-        function = find_entry(self._visible_functions(view.entry, view.visible), name)
+        function = find_entry(self._visible_functions(view.entry, view.read_view), name)
         self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []
         if function.deprecated:
@@ -1495,7 +1500,7 @@ class ReadService:
         """The types ``actor`` sees in the graph (``None``: all), for ``whoami``. A graph whose
         model cannot be read is shown as seen by nobody: fail closed, ``whoami`` still answers."""
         try:
-            return self._visible_set(actor, entry)
+            return self.visible_types(actor, entry)
         except GraphCliError:
             return frozenset()
 
@@ -1505,7 +1510,7 @@ class ReadService:
             model, _ = self._models.load_for_read(entry)
         except GraphCliError:
             return TermModel({})
-        return term_model(self._visibility.model(entry, model, visible))
+        return term_model(self._visibility.model(entry, model, ReadView(visible)))
 
     def _term_model(self, entry: GraphEntry) -> TermModel | None:
         """The graph's pinned model condensed to what term rules need, cached per pin;
@@ -1603,14 +1608,14 @@ def _migration_item(
             hop = None
     if before is not None and hop is not None:
         if isinstance(view.snapshot, VisibleSnapshot):
-            before = strip_hidden_edges(before, view.snapshot.sees)
+            before = view.snapshot.strip_edges(before)
         applied = hop.migrating.applied(before)
         if full is not None:
             # an entity that was of a hidden type shows no effects at all (the schema keeps the
             # two lists, empty)
             shown = _visible_effects(view, full, mapping.names.name_map, before.type, applied)
             applied = shown if shown is not None else []
-    elif view.visible is None:
+    elif not view.read_view.limited:
         applied = _recorded_effects(record)  # the release files are gone: the whole record
     item["renames"] = [e for e in applied if _kind(e).startswith("rename_")]
     item["steps"] = [e for e in applied if not _kind(e).startswith("rename_")]

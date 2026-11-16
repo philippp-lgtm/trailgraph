@@ -25,6 +25,7 @@ from support.txbuilder import TxDraft
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, RelConstraint
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.services.visibility import VisibleSnapshot
 
 pytestmark = pytest.mark.slow
@@ -73,7 +74,7 @@ def test_a_limited_reader_stays_within_a_factor_of_an_unlimited_one(
     allowance = ALLOWANCE_S.get(backend, DEFAULT_ALLOWANCE_S)
     raw: Snapshot = env.store.snapshot()
     limited: Snapshot = VisibleSnapshot(
-        env.store.snapshot(), frozenset({env.builder.concrete_classes[0]})
+        env.store.snapshot(), ReadView(frozenset({env.builder.concrete_classes[0]}))
     )
     starts = random.Random(3).sample(seen, 20)
     operations: dict[str, Callable[[Snapshot], object]] = {

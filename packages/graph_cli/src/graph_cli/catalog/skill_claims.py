@@ -59,7 +59,7 @@ class SkillClaim:
     hash: str  # skill 1: the inventory hash; a graph skill: the slot hash
     graph: str | None = None  # the graph id of a graph skill; None for skill 1
     model: tuple[str, str] | None = None  # (bundle, version) a template was rendered with
-    visible: str | None = None  # digest of the types a type limited reader saw; else None
+    visible: str | None = None  # ``ReadView.digest`` of a limited reader; else None
 
 
 def read_claims(dirs: Sequence[tuple[Scope, Path]]) -> tuple[SkillClaim, ...]:
@@ -136,7 +136,7 @@ def _is_token(value: object) -> bool:
 
 def claims_header(claims: Sequence[SkillClaim]) -> str | None:
     """``Graph-Cli-Skills``: one item per graph claim, ``graph=<id>;hash=<hash>``, for a
-    template ``;bundle=<bundle>;version=<version>``, for a type limited reader
+    template ``;bundle=<bundle>;version=<version>``, for a limited reader
     ``;visible=<digest>``, then ``;scope=<scope>``; items separated by ``, ``. ``None``
     without a graph claim."""
     items = []
@@ -190,7 +190,8 @@ class SkillGate:
     write: bool  # the command is a write: a stale copy refuses it
     warnings: list[WarningRecord]  # the command's warnings
     project_dir: Path | None  # where the project scope is, for the refresh command
-    # The digest of the types the caller sees in a graph, ``None`` without a read limit
+    # The digest of what the caller sees in a graph (``ReadView.digest``), ``None`` without a
+    # read limit
     visible: Callable[[GraphEntry], str | None] = lambda entry: None
 
     def check(self, catalog: Catalog, entry: GraphEntry) -> None:
@@ -213,14 +214,14 @@ def graph_stale(
     claim: SkillClaim, entry: GraphEntry, slot: SkillSlot, visible: str | None = None
 ) -> dict[str, JsonValue] | None:
     """The stale entry of a graph claim; ``None`` when the copy is what the graph has now.
-    ``visible`` is the digest of the types the caller sees (``None``: no read limit); a copy
-    rendered for another set is stale."""
+    ``visible`` is the digest of what the caller sees (``ReadView.digest``; ``None``: no read
+    limit); a copy rendered for another view is stale."""
     model = (entry.pin.bundle, entry.pin.version) if slot.kind == GENERATED else None
     if claim.hash == slot.hash and claim.model == model and claim.visible == visible:
         return None
     installed: dict[str, JsonValue] = {"hash": claim.hash, "model": _model_json(claim.model)}
     current: dict[str, JsonValue] = {"hash": slot.hash, "model": _model_json(model)}
-    if claim.visible is not None or visible is not None:  # only for type limited readers
+    if claim.visible is not None or visible is not None:  # only for limited readers
         installed["visible"] = claim.visible
         current["visible"] = visible
     return {

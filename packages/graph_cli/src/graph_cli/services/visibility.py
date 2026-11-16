@@ -1,16 +1,20 @@
-"""The read views of a type-limited graph (type read limits plan V4, V5, V9).
+"""The read views of a limited caller (type read limits plan V4, V5, V9; field visibility
+plan F4, F5).
 
-A caller who may see only some types reads the graph as if the others did not exist. Three
-pieces, all opened in one place (``ReadService.open``):
+A caller who may see only some types reads the graph as if the others did not exist, and one
+who lacks a marking reads its attributes as if their types did not declare them. What a caller
+sees is one ``ReadView`` (``kernel.read_view``) per (policy, graph, pin, actor). Three pieces,
+all opened in one place (``ReadService.open``):
 
-- ``Visibility`` is the cache the service owns, like ``FineTypes``. ``of`` answers which concrete
-  types an actor sees on a graph (``None``: all, so nothing is filtered); ``model`` hands out
-  the filtered model for such a set. Nothing is decided on the record: the probes of
-  ``effective.visibility`` are no audited decisions.
+- ``Visibility`` is the cache the service owns, like ``FineTypes``. ``of`` answers what an
+  actor sees on a graph (``ReadView``; both halves ``None``: nothing is filtered); ``model``
+  hands out the filtered model for such a view. Nothing is decided on the record: the probes of
+  ``effective.visibility`` and ``effective.held_markings`` are no audited decisions.
 - ``VisibleSnapshot`` implements the ``Snapshot`` port over a raw snapshot: a hidden entity
-  answers as a missing one, every revision handed out loses its edges to hidden entities (with
-  its content hash recomputed), a transaction shows its metadata only, and queries carry the
-  visible set into the kernel (``Query.visible``).
+  answers as a missing one, every revision handed out loses its edges to hidden entities and
+  the attributes it may not see (with its content hash recomputed), a transaction shows its
+  metadata only, and queries carry the view into the kernel (``Query.visible``,
+  ``Query.attributes``).
 - ``filter_model`` is the pure model view: a ``CompiledModel`` without the hidden types and
   everything that depends on them, so every read consumer keeps working on the same class. It
   is a read view; the write path validates against the full model.
@@ -29,7 +33,7 @@ from typing import Final
 
 from graph_cli.access_control.authorize import is_project_admin
 from graph_cli.access_control.documents import principal_facts, read_limited
-from graph_cli.access_control.effective import visibility
+from graph_cli.access_control.effective import held_markings, visibility
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue, canonical_bytes
 from graph_cli.kernel.errors import EMPTY, WarningRecord
@@ -38,13 +42,14 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, QueryPage
+from graph_cli.kernel.read_view import UNLIMITED, AttributeMask, ReadView
 from graph_cli.kernel.records import (
     EdgeRecord,
     Revision,
     RevisionMeta,
     TxRecord,
     revision_meta,
-    strip_hidden_edges,
+    strip_revision,
 )
 from graph_cli.ontology_layer.model import (
     AttributeDef,
@@ -56,8 +61,9 @@ from graph_cli.ontology_layer.model import (
 )
 from graph_cli.services.term_model import concrete_types
 
-_ACTOR_CACHE_LIMIT: Final = 512  # (policy, graph, pin, actor) -> visible set
-_MODEL_CACHE_LIMIT: Final = 64  # (pin, visible set) -> filtered model
+_ACTOR_CACHE_LIMIT: Final = 512  # (policy, graph, pin, actor) -> read view
+_MODEL_CACHE_LIMIT: Final = 64  # (pin, read view) -> filtered model
+_PIN_CACHE_LIMIT: Final = 64  # pin -> the markings its model uses
 
 NamesRemoved = Callable[[JsonValue], bool]
 
@@ -68,17 +74,22 @@ NamesRemoved = Callable[[JsonValue], bool]
 class Visibility:
     """What each actor sees per graph, and the filtered models, computed once and cached.
 
-    ``read_limited`` is cached per (policy hash, graph). The visible set is cached per (policy
-    hash, graph, pin artifact hash, actor key); the key holds every fact ``authorize`` reads, so
-    two actors that no rule can tell apart share an answer and none shares one it must not. The
-    caches are bounded (the oldest entries go first): a server sees an unbounded number of
-    asserted session and agent ids.
+    ``read_limited`` is cached per (policy hash, graph), the markings a pinned model uses per
+    pin artifact hash. The read view is cached per (policy hash, graph, pin artifact hash, actor
+    key); the key holds every fact ``authorize`` reads, so two actors that no rule can tell
+    apart share an answer and none shares one it must not. The caches are bounded (the oldest
+    entries go first): a server sees an unbounded number of asserted session and agent ids.
+
+    The fast path: a graph that is not read limited and whose pin uses no marking gets the
+    unlimited view without a probe; a caller who holds every marking the pin uses gets no
+    attribute half.
     """
 
     def __init__(self) -> None:
         self._limited: dict[tuple[str, GraphId], bool] = {}
-        self._visible: dict[tuple[Hashable, ...], frozenset[str] | None] = {}
-        self._models: dict[tuple[str, frozenset[str]], CompiledModel] = {}
+        self._marked: dict[str, frozenset[str]] = {}
+        self._visible: dict[tuple[Hashable, ...], ReadView] = {}
+        self._models: dict[tuple[str, ReadView], CompiledModel] = {}
 
     def limited(self, policy: PolicySet, graph: GraphId) -> bool:
         """Whether some rule of the policy set names a read action on a type of ``graph``."""
@@ -88,11 +99,20 @@ class Visibility:
             found = self._limited[key] = read_limited(policy.documents, graph)
         return found
 
+    def marked(self, entry: GraphEntry, load: Callable[[], CompiledModel]) -> frozenset[str]:
+        """The markings the graph's pinned model uses (``CompiledModel.used_markings``);
+        ``load`` runs once per pin."""
+        key = entry.pin.artifact_hash
+        found = self._marked.get(key)
+        if found is None:
+            found = load().used_markings()
+            _remember(self._marked, key, found, _PIN_CACHE_LIMIT)
+        return found
+
     def of(
         self, actor: ActorContext, entry: GraphEntry, policy: PolicySet, model: CompiledModel
-    ) -> frozenset[str] | None:
-        """The concrete types of ``model`` that ``actor`` sees in the graph, or ``None`` when the
-        graph is not read limited or the actor sees every type (no filter at all)."""
+    ) -> ReadView:
+        """What ``actor`` sees in the graph whose pinned model is ``model``."""
         return self.lazy(actor, entry, policy, lambda: model)
 
     def lazy(
@@ -101,28 +121,72 @@ class Visibility:
         entry: GraphEntry,
         policy: PolicySet,
         load: Callable[[], CompiledModel],
-    ) -> frozenset[str] | None:
-        """``of`` for callers without the model at hand: ``load`` runs only when the graph is
-        read limited and the answer is not cached yet."""
-        if not self.limited(policy, entry.id):
-            return None
+    ) -> ReadView:
+        """``of`` for callers without the model at hand: ``load`` runs once per pin to learn
+        its markings, and again only when the view must be computed (the graph is read limited
+        or its pin uses markings, and the answer is not cached yet)."""
+        types_limited = self.limited(policy, entry.id)
+        marked = self.marked(entry, load)
+        if not types_limited and not marked:
+            return UNLIMITED
         key = (policy.hash, entry.id, entry.pin.artifact_hash, *actor_key(actor))
-        if key in self._visible:
-            return self._visible[key]
-        found = visibility(actor, entry.id, policy, concrete_types(load().classes))
+        found = self._visible.get(key)
+        if found is not None:
+            return found
+        model = load()
+        types = (
+            visibility(actor, entry.id, policy, concrete_types(model.classes))
+            if types_limited
+            else None
+        )
+        attributes = (
+            attribute_mask(model, held_markings(actor, entry.id, policy, marked))
+            if marked
+            else None
+        )
+        found = ReadView(types, attributes)
         _remember(self._visible, key, found, _ACTOR_CACHE_LIMIT)
         return found
 
-    def model(
-        self, entry: GraphEntry, model: CompiledModel, visible: frozenset[str]
-    ) -> CompiledModel:
-        """``filter_model(model, visible)``, cached per (pin artifact hash, visible set)."""
-        key = (entry.pin.artifact_hash, visible)
+    def types(
+        self,
+        actor: ActorContext,
+        entry: GraphEntry,
+        policy: PolicySet,
+        load: Callable[[], CompiledModel],
+    ) -> frozenset[str] | None:
+        """The type half of ``lazy`` alone (``None``: every type): ``load`` runs only when the
+        graph is read limited."""
+        if not self.limited(policy, entry.id):
+            return None
+        return self.lazy(actor, entry, policy, load).types
+
+    def model(self, entry: GraphEntry, model: CompiledModel, view: ReadView) -> CompiledModel:
+        """The model view of ``model`` for ``view``, cached per (pin artifact hash, view);
+        ``model`` itself for a view without a type limit (the attribute half does not filter
+        the model yet)."""
+        if view.types is None:
+            return model
+        key = (entry.pin.artifact_hash, view)
         found = self._models.get(key)
         if found is None:
-            found = filter_model(model, visible)
+            found = filter_model(model, view.types)
             _remember(self._models, key, found, _MODEL_CACHE_LIMIT)
         return found
+
+
+def attribute_mask(model: CompiledModel, held: Collection[str]) -> AttributeMask | None:
+    """The attribute half of a read view: per concrete type of ``model``, sorted by type, the
+    attributes all of whose markings are in ``held`` (unmarked ones always). ``None`` when the
+    caller holds every marking the model uses, so it sees every attribute."""
+    kept = frozenset(held)
+    if model.used_markings() <= kept:
+        return None
+    return tuple(
+        (name, frozenset(a for a, d in cls.attributes.items() if kept.issuperset(d.markings)))
+        for name, cls in sorted(model.classes.items())
+        if not cls.abstract
+    )
 
 
 def actor_key(actor: ActorContext) -> tuple[Hashable, ...]:
@@ -146,19 +210,22 @@ def _remember[K, V](cache: dict[K, V], key: K, value: V, limit: int) -> None:
 
 
 class VisibleSnapshot:
-    """A ``Snapshot`` that shows the entities of the ``visible`` types only (see the module
-    docstring). One per request: it memoises the type of every entity it looked at, so each
-    edge target and incoming source is read once.
+    """A ``Snapshot`` that shows what ``view`` lets through (see the module docstring). One per
+    request: it memoises the type of every entity it looked at, so each edge target and
+    incoming source is read once.
 
-    A hidden entity answers exactly as the inner snapshot answers for an id it does not hold
-    (no revision, no history, no incoming edges, an unknown alias). An entity is visible when
-    the type of its current revision at the snapshot is; one without a current revision is not.
+    With a type half, a hidden entity answers exactly as the inner snapshot answers for an id
+    it does not hold (no revision, no history, no incoming edges, an unknown alias). An entity
+    is visible when the type of its current revision at the snapshot is; one without a current
+    revision is not. Without a type half no entity is hidden and only the attribute half
+    strips. Either way a transaction shows its metadata only.
     """
 
-    def __init__(self, inner: Snapshot, visible: frozenset[str]) -> None:
+    def __init__(self, inner: Snapshot, view: ReadView) -> None:
         self._inner = inner
-        self._visible = visible
-        self._terms = frozenset(TermRef(t) for t in visible)
+        self.view = view
+        self._visible = view.types
+        self._terms = None if view.types is None else frozenset(TermRef(t) for t in view.types)
         self._types: dict[EntityId, TermRef | None] = {}  # None: no current revision
 
     @property
@@ -174,7 +241,11 @@ class VisibleSnapshot:
     def sees(self, entity: EntityId) -> bool:
         """Whether ``entity`` exists at this snapshot with a visible type."""
         type_ = self._type_of(entity)
-        return type_ is not None and type_ in self._visible
+        return type_ is not None and self.view.shows_type(type_)
+
+    def _hidden(self, entity: EntityId) -> bool:
+        """Whether the type half hides ``entity`` (never without a type half)."""
+        return self._visible is not None and not self.sees(entity)
 
     def _type_of(self, entity: EntityId) -> TermRef | None:
         if entity not in self._types:
@@ -192,16 +263,27 @@ class VisibleSnapshot:
             current = found.get(entity)
             self._types[entity] = None if current is None else current.type
 
-    def _strip(self, revision: Revision) -> Revision:
+    def strip_edges(self, revision: Revision) -> Revision:
+        """``revision`` without its edges to hidden entities, attributes untouched and the
+        content hash not recomputed: for reading it internally, never to hand it out."""
+        if self._visible is None:
+            return revision
         self._prefetch(edge.target for edge in revision.edges)
-        return strip_hidden_edges(revision, self.sees)
+        return strip_revision(revision, self.sees, None, rehash=False)
+
+    def _strip(self, revision: Revision) -> Revision:
+        sees = None
+        if self._visible is not None:
+            self._prefetch(edge.target for edge in revision.edges)
+            sees = self.sees
+        return strip_revision(revision, sees, self.view.keeps(revision.type), rehash=True)
 
     # ---- the port --------------------------------------------------------
 
     def get(self, entity: EntityId) -> Revision | None:
         current = self._inner.get(entity)
         self._types[entity] = None if current is None else current.type
-        if current is None or current.type not in self._visible:
+        if current is None or not self.view.shows_type(current.type):
             return None
         return self._strip(current)
 
@@ -211,10 +293,11 @@ class VisibleSnapshot:
         for entity in entities:
             current = found.get(entity)
             self._types[entity] = None if current is None else current.type
-            if current is not None and current.type in self._visible:
+            if current is not None and self.view.shows_type(current.type):
                 kept[entity] = current
-        self._prefetch(edge.target for revision in kept.values() for edge in revision.edges)
-        return {entity: strip_hidden_edges(r, self.sees) for entity, r in kept.items()}
+        if self._visible is not None:
+            self._prefetch(edge.target for revision in kept.values() for edge in revision.edges)
+        return {entity: self._strip(r) for entity, r in kept.items()}
 
     def get_revision(self, entity: EntityId, rev: int) -> Revision | None:
         revision = self._inner.get_revision(entity, rev)
@@ -222,12 +305,12 @@ class VisibleSnapshot:
             return None
         current_type = self._type_of(entity)
         # An entity without a current revision at this snapshot is judged by the revision asked.
-        if (revision.type if current_type is None else current_type) not in self._visible:
+        if not self.view.shows_type(revision.type if current_type is None else current_type):
             return None
         return self._strip(revision)
 
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]:
-        if not self.sees(entity):
+        if self._hidden(entity):
             return []
         found = []
         for meta in self._inner.history(entity):
@@ -241,8 +324,8 @@ class VisibleSnapshot:
 
     def tx(self, seq: int) -> TxRecord | None:
         """The transaction's metadata only: what was changed is a body that names hidden
-        entities, so the changeset, resolution, revisions, alias allocations and blobs are
-        empty. No read command prints a tx body (a test keeps it so)."""
+        entities and attributes, so the changeset, resolution, revisions, alias allocations and
+        blobs are empty. No read command prints a tx body (a test keeps it so)."""
         record = self._inner.tx(seq)
         if record is None:
             return None
@@ -258,6 +341,8 @@ class VisibleSnapshot:
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
     ) -> Sequence[tuple[EntityId, EdgeRecord]]:
+        if self._visible is None:
+            return self._inner.incoming(entity, rel)
         if not self.sees(entity):
             return []
         found = self._inner.incoming(entity, rel)
@@ -266,23 +351,41 @@ class VisibleSnapshot:
 
     def resolve_alias(self, alias: str) -> tuple[EntityId, bool] | None:
         found = self._inner.resolve_alias(alias)
+        if self._visible is None:
+            return found
         return found if found is not None and self.sees(found[0]) else None
 
     def match_suffix(self, hex_suffix: str, *, limit: int = 10) -> Sequence[EntityId]:
         """The visible entities whose id ends with ``hex_suffix``; hidden ones never eat the
         limit, so the inner snapshot is asked without one."""
+        if self._visible is None:
+            return self._inner.match_suffix(hex_suffix, limit=limit)
         found = self._inner.match_suffix(hex_suffix, limit=sys.maxsize)
         self._prefetch(found)
         return [entity for entity in found if self.sees(entity)][:limit]
 
     def query(self, q: Query) -> QueryPage:
-        return self._inner.query(replace(q, visible=self._narrowed(q.visible)))
+        return self._inner.query(
+            replace(q, visible=self._narrowed(q.visible), attributes=self._masked(q.attributes))
+        )
 
     def neighbors(self, q: NeighborQuery) -> Sequence[tuple[EntityId, EdgeRecord, Revision]]:
-        return self._inner.neighbors(replace(q, visible=self._narrowed(q.visible)))
+        return self._inner.neighbors(
+            replace(q, visible=self._narrowed(q.visible), attributes=self._masked(q.attributes))
+        )
 
-    def _narrowed(self, asked: frozenset[TermRef] | None) -> frozenset[TermRef]:
+    def _narrowed(self, asked: frozenset[TermRef] | None) -> frozenset[TermRef] | None:
+        if self._terms is None:
+            return asked
         return self._terms if asked is None else self._terms & asked
+
+    def _masked(self, asked: AttributeMask | None) -> AttributeMask | None:
+        """The attribute mask of the view, narrowed by one the query already carries."""
+        own = self.view.attributes
+        if own is None or asked is None:
+            return asked if own is None else own
+        theirs = dict(asked)
+        return tuple((t, names & theirs[t]) for t, names in own if t in theirs)
 
 
 # ---- the model view ------------------------------------------------------------------------

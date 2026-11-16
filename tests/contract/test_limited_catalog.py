@@ -133,7 +133,7 @@ def test_a_reader_lists_and_runs_only_the_functions_that_fit_its_view(svc: Servi
     limited = svc.make_reader(hiding(svc, "inv:Location", "inv:Category"))
     assert names(limited.functions(svc.actor, svc.entry)) == ["items_by_condition"]
     view = open_view(svc, limited)
-    assert view.visible == {"inv:Item"}
+    assert view.read_view.types == {"inv:Item"}
     data, page, _ = limited.run(
         view, "items_by_condition", [("condition", "damaged")], limit=50, offset=0
     )

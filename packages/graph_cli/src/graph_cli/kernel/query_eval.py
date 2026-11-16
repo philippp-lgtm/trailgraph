@@ -47,9 +47,20 @@ are sibling layers. The rules:
   entity. ``total`` counts what is left. A hidden or missing start has no
   neighbors; the walk never steps onto or through a hidden node at any depth.
   The revisions handed out (page items, neighbor revisions) lose their edges to
-  hidden targets (``strip_hidden_edges``), after paging; a ``where`` or ``order``
+  hidden targets (``strip_revision``), after paging; a ``where`` or ``order``
   that reads ``content_hash`` (the one field that depends on edges) compares the
   stripped revision.
+- **Attribute mask.** ``attributes`` set on a ``Query`` or ``NeighborQuery``
+  lists per concrete type the attribute names the caller may see; ``None`` is
+  no mask and changes nothing. A revision keeps only the attributes its type's
+  entry lists (a type without an entry keeps none: fail closed). Whenever a
+  ``where`` predicate or an ``order`` key names an attribute some type the query
+  can meet masks, or ``content_hash``, each revision is stripped **before**
+  matching and ordering, so a hidden attribute is absent to ``exists``, ``ne``
+  and ``Not``, never orders anything and ``total`` counts what the caller can
+  see; otherwise the strip happens after paging. The revisions handed out are
+  stripped either way, with their ``content_hash`` recomputed (one strip with
+  the edges of ``visible``).
 """
 
 from __future__ import annotations
@@ -76,11 +87,30 @@ from graph_cli.kernel.query_ast import (
     QueryPage,
     RelConstraint,
 )
-from graph_cli.kernel.records import EdgeRecord, Revision, strip_hidden_edges
+from graph_cli.kernel.read_view import AttributeMask
+from graph_cli.kernel.records import EdgeRecord, Revision, strip_revision
 
 _ORDERING_OPS: Final = frozenset({"lt", "le", "gt", "ge"})
 _NUMERIC_OPS: Final = _ORDERING_OPS | {"eq", "ne", "in"}
 _ALL_OPS: Final = _NUMERIC_OPS | {"contains", "prefix", "exists", "lang"}
+# The fields ``field_value`` reads off the revision itself; every other name is an attribute.
+REVISION_FIELDS: Final = frozenset(
+    {
+        "id",
+        "type",
+        "rev",
+        "record_status",
+        "alias",
+        "created_at",
+        "recorded_at",
+        "tx_id",
+        "tx_seq",
+        "valid_from",
+        "valid_to",
+        "content_hash",
+        "ontology_version",
+    }
+)
 
 
 class Universe(Protocol):
@@ -326,7 +356,7 @@ def _match_rel(
 
 
 _SortKey = tuple[int, object] | None
-_Row = tuple[Revision, list[_SortKey]]
+_Row = tuple[Revision, list[_SortKey], Revision]  # as matched, its sort keys, as stored
 _TYPE_RANK: Final = {bool: 0, int: 1, Decimal: 1, str: 2, list: 3, tuple: 3}
 
 
@@ -379,6 +409,39 @@ def _names_content_hash(query: Query) -> bool:
     return query.where is not None and "content_hash" in _pred_fields(query.where)
 
 
+def _names_masked(
+    query: Query, types: frozenset[TermRef], masks: Mapping[str, frozenset[str]]
+) -> bool:
+    """Whether ``where`` or ``order`` names an attribute that some type the query can meet
+    (``types``; empty: any type, also one without an entry) does not keep."""
+    fields = {key.field for key in query.order}
+    if query.where is not None:
+        fields.update(_pred_fields(query.where))
+    named = fields - REVISION_FIELDS
+    if not named:
+        return False
+    if not types:
+        return True  # a type without an entry keeps nothing
+    return any(type_ not in masks or not named <= masks[type_] for type_ in types)
+
+
+class _Strip:
+    """How the revisions of one query are stripped: edges to entities ``sight`` hides and
+    attributes outside the type's entry of ``masks`` (``None``: that part is kept)."""
+
+    def __init__(self, sight: _Sight | None, masks: AttributeMask | None) -> None:
+        self.sees = None if sight is None else sight.sees
+        self.masks: dict[str, frozenset[str]] | None = None if masks is None else dict(masks)
+
+    @property
+    def active(self) -> bool:
+        return self.sees is not None or self.masks is not None
+
+    def __call__(self, revision: Revision, *, rehash: bool = True) -> Revision:
+        keep = None if self.masks is None else self.masks.get(revision.type, frozenset())
+        return strip_revision(revision, self.sees, keep, rehash=rehash)
+
+
 def run_query(universe: Universe, query: Query) -> QueryPage:
     if query.as_of is not None:
         raise _invalid("as_of must be None at the port (B8.8)")
@@ -389,35 +452,33 @@ def run_query(universe: Universe, query: Query) -> QueryPage:
         if not types:  # nothing visible: never fall back to "any type"
             return QueryPage(items=(), total=0, limit=query.limit, offset=query.offset)
         sight = _Sight(universe, query.visible)
-    # ``content_hash`` is the one field that depends on edges: compare the stripped revision.
-    strip_first = sight is not None and _names_content_hash(query)
-    found = []
-    for revision in universe.current_revisions(types):
-        if types and revision.type not in types:
+    strip = _Strip(sight, query.attributes)
+    # ``content_hash`` is the one field that depends on edges and attributes, and a masked
+    # attribute must be absent to the predicate and the order: compare stripped revisions.
+    hashed = strip.active and _names_content_hash(query)
+    masked = strip.masks is not None and _names_masked(query, types, strip.masks)
+    strip_first = hashed or masked
+    rows: list[_Row] = []
+    for stored in universe.current_revisions(types):
+        if types and stored.type not in types:
             continue
-        if revision.record_status not in query.record_status:
+        if stored.record_status not in query.record_status:
             continue
-        if query.changed_since_seq is not None and revision.tx_seq <= query.changed_since_seq:
+        if query.changed_since_seq is not None and stored.tx_seq <= query.changed_since_seq:
             continue
-        if strip_first:
-            assert sight is not None
-            revision = strip_hidden_edges(revision, sight.sees)
+        revision = strip(stored, rehash=hashed) if strip_first else stored
         if query.where is not None and not matches(revision, query.where):
             continue
         if not all(_match_rel(universe, revision, rel, sight) for rel in query.rels):
             continue
-        found.append(revision)
-    rows = [
-        (
-            revision,
-            [_sort_value(field_value(revision, k.field), k.numeric, k.tagged) for k in query.order],
-        )
-        for revision in found
-    ]
+        keys = [
+            _sort_value(field_value(revision, k.field), k.numeric, k.tagged) for k in query.order
+        ]
+        rows.append((revision, keys, stored))
     rows.sort(key=_row_key(query.order))
-    page = tuple(row[0] for row in rows[query.offset : query.offset + query.limit])
-    if sight is not None:
-        page = tuple(strip_hidden_edges(revision, sight.sees) for revision in page)
+    page = tuple(row[2] for row in rows[query.offset : query.offset + query.limit])
+    if strip.active:
+        page = tuple(strip(revision) for revision in page)
     return QueryPage(items=page, total=len(rows), limit=query.limit, offset=query.offset)
 
 
@@ -425,6 +486,7 @@ def run_neighbors(
     universe: Universe, query: NeighborQuery
 ) -> list[tuple[EntityId, EdgeRecord, Revision]]:
     sight = None if query.visible is None else _Sight(universe, query.visible)
+    strip = _Strip(sight, query.attributes)
     if universe.current(query.start) is None or (sight is not None and not sight.sees(query.start)):
         return []
     rels = None if query.rels is None else frozenset(query.rels)
@@ -462,7 +524,7 @@ def run_neighbors(
                 (
                     neighbor,
                     edge,
-                    target if sight is None else strip_hidden_edges(target, sight.sees),
+                    strip(target) if strip.active else target,
                 )
             )
         result += level

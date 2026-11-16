@@ -29,6 +29,7 @@ from support.txbuilder import TxDraft
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, NeighborQuery, Not, OrderKey, Query, RelConstraint
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import Revision, TxRecord, revision_content_hash
 from graph_cli.services.visibility import VisibleSnapshot
 from graph_cli.storage.common.snapshot import ViewSnapshot
@@ -248,7 +249,7 @@ def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
         ref = ViewSnapshot(sides.reference.at(at))
         for store in stores:
-            view = VisibleSnapshot(store.snapshot(at_seq=at), visible)
+            view = VisibleSnapshot(store.snapshot(at_seq=at), ReadView(visible))
             check_point_reads(seed, view, ref, sides, ids, rng)
             check_queries(seed, view, ref, sides, ids, concrete, rng)
             # a hidden entity is a missing one: no revision, history, edges or neighbours
@@ -265,7 +266,9 @@ def test_the_comparison_catches_a_view_that_shows_too_much(env: StoreEnv) -> Non
     sides = split(env, frozenset({first}))
     everything = Query(record_status=STATUSES[1])
     reference = ViewSnapshot(sides.reference.at()).query(everything)
-    exact = VisibleSnapshot(env.store.snapshot(), frozenset({first})).query(everything)
-    wider = VisibleSnapshot(env.store.snapshot(), frozenset({first, second})).query(everything)
+    exact = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({first}))).query(everything)
+    wider = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({first, second}))).query(
+        everything
+    )
     assert exact == reference and reference.total == 1
     assert wider != reference and wider.total == 2
