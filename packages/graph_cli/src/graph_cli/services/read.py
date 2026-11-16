@@ -1770,17 +1770,31 @@ def _visible_effects(
 
 # The steps that name one attribute (of the new version) of the entity they change.
 _ATTRIBUTE_STEPS: Final = frozenset({"fill", "map_values", "convert"})
+# The effects that carry no attribute name or value: classes, relations, qualifiers and edges
+# (a qualifier cannot be marked). Any other kind, also one a later version adds, is left out
+# for a reader limited to some attributes unless ``_attribute_effects`` judges it.
+_ATTRIBUTE_FREE_EFFECTS: Final = frozenset(
+    {
+        "rename_class",
+        "rename_relation",
+        "rename_qualifier",
+        "map_qualifier_values",
+        "drop_qualifier",
+        "drop_edges",
+    }
+)
 
 
 def _attribute_effects(
     view: GraphRead, mapping: MappedSnapshot, entity: EntityId, rev: int, applied: list[JsonValue]
 ) -> list[JsonValue]:
-    """``applied`` as a reader limited to some attributes may see it (R4): an attribute named
-    by an effect is judged under its current name on the entity's current type (a probe of the
-    revision the migration wrote, mapped like any old revision) against the view; a rename,
-    ``fill``, ``map_values`` or ``convert`` of a hidden attribute is left out, so are its
-    entries of a retype's attribute map, and every ``drop`` (its name has no current
-    counterpart to judge)."""
+    """``applied`` as a reader limited to some attributes may see it (R4), by an allow list:
+    the effects that carry no attribute (``_ATTRIBUTE_FREE_EFFECTS``) stay; an attribute named
+    by a rename, ``fill``, ``map_values``, ``convert`` or a retype's attribute map is judged
+    under its current name on the entity's current type (a probe of the revision the migration
+    wrote, mapped like any old revision) against the view, and the effect (or the entry of the
+    map) is left out when it is hidden; every ``drop`` is left out (its name has no current
+    counterpart to judge), and so is an effect of any other kind."""
     written = mapping.raw.get_revision(entity, rev)
 
     def shown(attribute: object) -> bool:
@@ -1795,18 +1809,21 @@ def _attribute_effects(
 
     found: list[JsonValue] = []
     for effect in applied:
+        if not isinstance(effect, Mapping):
+            continue
         kind = _kind(effect)
-        if not isinstance(effect, Mapping) or kind == "drop":
-            continue
-        if kind == "rename_attribute" and not shown(effect.get("to")):
-            continue
-        if kind in _ATTRIBUTE_STEPS and not shown(effect.get("attribute")):
-            continue
-        if kind == "retype" and isinstance(effect.get("attributes"), Mapping):
-            pairs = effect["attributes"]
-            assert isinstance(pairs, Mapping)
-            effect = {**effect, "attributes": {o: n for o, n in pairs.items() if shown(n)}}
-        found.append(effect)
+        if kind in _ATTRIBUTE_FREE_EFFECTS:
+            found.append(effect)
+        elif kind == "rename_attribute":
+            if shown(effect.get("to")):
+                found.append(effect)
+        elif kind in _ATTRIBUTE_STEPS:
+            if shown(effect.get("attribute")):
+                found.append(effect)
+        elif kind == "retype":
+            pairs = effect.get("attributes")
+            pairs = pairs if isinstance(pairs, Mapping) else {}
+            found.append({**effect, "attributes": {o: n for o, n in pairs.items() if shown(n)}})
     return found
 
 
