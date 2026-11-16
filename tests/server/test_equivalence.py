@@ -13,13 +13,13 @@ import json
 import os
 import shutil
 import stat
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR
+from support import launcher
 from support.app import create_args
 from support.equivalence import differences, home_env, normalized
 from support.fake_s3 import ACCESS_KEY_ID, SECRET_ACCESS_KEY, FakeS3
@@ -41,7 +41,7 @@ GRAPH_SKILL = FIXTURES / "skills" / "graph-example-graph"
 def runner(env: dict[str, str], cwd: Path) -> Run:
     def run(*args: str, text: bool = False, input: str | None = None) -> tuple[int, Any, str, str]:
         argv = [str(BIN_DIR / "graph"), *args, *([] if text else ["--json"])]
-        result = subprocess.run(
+        result = launcher.run(
             argv, env=env, cwd=cwd, capture_output=True, text=True, timeout=60, input=input
         )
         document = None if text else json.loads(result.stdout)
@@ -74,7 +74,7 @@ def prepare(
     version = version or compiled_model(ontology).bundle_version
     policy = cwd / "installation.yaml"
     policy.write_text(SERVER_POLICY)
-    init = subprocess.run(
+    init = launcher.run(
         [str(BIN_DIR / "graph-admin"), "init"], env=env, cwd=cwd, capture_output=True, text=True
     )
     assert init.returncode == 0, init.stdout + init.stderr
@@ -88,7 +88,7 @@ def prepare(
         *functions_step(ontology),
         *actions_step(ontology),
     ):
-        result = subprocess.run(
+        result = launcher.run(
             [str(BIN_DIR / "graph-admin"), *args], env=env, cwd=cwd, capture_output=True, text=True
         )
         assert result.returncode == 0, result.stdout + result.stderr
@@ -272,7 +272,7 @@ def test_local_and_remote_answers_are_equal(
     assert bool(replays) == (ontology == "inventory")  # the recorded result again is covered
     owner = home_env(isolated_env, tmp_path / "server")
     prepare(owner, tmp_path, ontology)
-    created = subprocess.run(
+    created = launcher.run(
         [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
         env=owner,
         capture_output=True,
@@ -387,7 +387,7 @@ def files_answer_the_same(
 
     owner = home_env(installation_env, tmp_path / "server")
     prepare(owner, tmp_path, "notes_and_sources", "1.1.0", s3=s3)
-    created = subprocess.run(
+    created = launcher.run(
         [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
         env=owner,
         capture_output=True,
@@ -460,7 +460,7 @@ def freshness_scenario(run: Run, owner: dict[str, str], project: Path) -> list[A
         with (changed / GRAPH_SKILL.name / "SKILL.md").open("a") as handle:
             handle.write(f"\n{line}\n")
         args = ("graph", "skill", "publish", "example_graph", str(changed / GRAPH_SKILL.name))
-        result = subprocess.run(
+        result = launcher.run(
             [str(BIN_DIR / "graph-admin"), *args], env=owner, capture_output=True, text=True
         )
         assert result.returncode == 0, result.stdout + result.stderr
@@ -493,7 +493,7 @@ def test_installed_skills_are_judged_the_same(isolated_env: dict[str, str], tmp_
 
     owner = home_env(isolated_env, tmp_path / "server")
     prepare(owner, tmp_path, "inventory")
-    created = subprocess.run(
+    created = launcher.run(
         [str(BIN_DIR / "graph-admin"), "token", "create", "ci", "--json"],
         env=owner,
         capture_output=True,

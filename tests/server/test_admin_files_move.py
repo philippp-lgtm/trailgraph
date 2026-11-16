@@ -10,13 +10,13 @@ both directions, with the 30 s budget.
 
 import hashlib
 import json
-import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR, CliRunner
+from support import launcher
 from support.admin import admin, data_root, init
 from support.admin_api import command, served
 from support.equivalence import home_env
@@ -193,7 +193,7 @@ def test_unconfigured_target_is_refused_by_the_dry_run(
 
 
 def admin_cli(env: dict[str, str], cwd: Path, *args: str, json_mode: bool = True) -> Any:
-    result = subprocess.run(
+    result = launcher.run(
         [str(BIN_DIR / "graph-admin"), *args, *(["--json"] if json_mode else [])],
         env=env,
         cwd=cwd,

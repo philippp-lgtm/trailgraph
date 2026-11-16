@@ -11,6 +11,7 @@ uv sync                     # create .venv with the three distributions + dev to
 uv run pytest               # all tests (includes import contracts and wheel checks)
 uv run pytest -m "not slow" # skip distribution builds, crash and process tests
 uv run pytest -n 8          # in parallel (pytest-xdist); the image's test stage does the same
+uv run pytest tests/unit/services --lf  # one area, only what failed last time (see "Which tests to run")
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
@@ -209,12 +210,51 @@ writer's full replay; with `--migration` it migrates a generated graph of about 
 entities and 16,000 edges (every class and relation moves to a new module) with real fsyncs
 and prints the time of each phase and the peak memory.
 
+### Which tests to run
+
+The whole suite runs on every pull request in CI, and a green `check` is the
+gate for merging. Locally, run it once before pushing, not after every edit:
+
+| When | Run |
+| --- | --- |
+| while changing code | the tests of the area: its unit tests and the end-to-end tests of the commands it touches, e.g. `uv run pytest tests/unit/services tests/cli/test_app_read.py`; `--lf` reruns only the tests that failed last time, `--sw` stops at the first failure and starts there next time |
+| a quick check across all layers but the end-to-end tests | `uv run pytest -n 4 --ignore=tests/cli --ignore=tests/server` |
+| before pushing | the whole suite, `uv run pytest -n 4` (or more workers where the machine has the cores) |
+
+There is no selection by changed files: the end-to-end tests in `tests/cli`
+and `tests/server`, which take most of the suite's time, run `graph`,
+`graph-admin` and `graph-server`, and those import nearly all of the code, so
+a selector would keep almost the whole suite for any code change.
+
 ### Test harness
 
-CLIs are tested as subprocesses (`tests/conftest.py`: `run_cli`). Every run
+CLIs are tested as processes (`tests/conftest.py`: `run_cli`). Every run
 gets a throwaway `HOME` and XDG directories, no `GRAPH_CLI_*` variables and no
 `CLAUDE_CONFIG_DIR`, so tests never touch real user config, data, state or
 installed skills.
+
+Starting `graph` or `graph-admin` costs about 200 ms, nearly all of it
+importing the program, and an end-to-end test runs a program a dozen times or
+more. So on Linux a run is forked from a launcher (`tests/support/launcher.py`):
+one process per program and test worker that has imported the program's entry
+point the way its console script does; each run is a child of it with the
+run's arguments, environment, working directory and standard streams (pipes),
+and ends with the run's exit status once its pipes are closed. No state of one
+run reaches the next, because every run forks from the same untouched
+launcher. That only holds while importing a program reads nothing of the
+process (environment, home, working directory, clock, randomness, terminal)
+and writes nothing: `tests/test_source_rules.py` checks the source,
+`tests/test_harness.py` traces the import and compares forked runs with fresh
+processes, and the launcher refuses to start when the import writes to stderr.
+
+What a fork cannot give is a run's own interpreter start: a run whose
+environment sets `PYTHON*`, `LANG` or `LC_*` differently starts as a real
+process, and all runs of one launcher share a string hash seed, so a test that
+checks that output stays the same between runs makes one of them fresh.
+Tests that build their own command line call `launcher.run` instead of
+`subprocess.run`. `run_cli(..., fresh=True)` starts a real process, as
+`tests/test_smoke.py` does; `GRAPH_CLI_TEST_FORK=0` does so for every run
+(and is what happens on macOS, where `fork` without `exec` is not safe).
 
 Every envelope the suite sees is checked against the declared schemas
 (`tests/support/output_schemas.py`, a pytest plugin): in-process renders, the

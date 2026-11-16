@@ -34,7 +34,9 @@ graph_cli_server = { workspace = true }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
-addopts = ["--strict-markers", "--import-mode=importlib"]
+# worksteal: with -n, an idle worker takes tests queued for a busy one (the end-to-end tests vary
+# from milliseconds to half a minute); without -n it changes nothing.
+addopts = ["--strict-markers", "--import-mode=importlib", "--dist", "worksteal"]
 markers = ["slow: builds distributions or spawns many processes"]
 
 [tool.ruff]

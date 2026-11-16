@@ -11,12 +11,12 @@ programs are the checkout's, which have no build id.
 
 import json
 import stat
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR, CliRunner
+from support import launcher
 from support.admin import admin, init
 from support.app import create_graph
 from support.fixtures import FIXTURES
@@ -66,7 +66,7 @@ def machine(base: dict[str, str], home: Path) -> dict[str, str]:
 
 
 def run(env: dict[str, str], cwd: Path, program: str, *args: str) -> tuple[int, dict[str, Any]]:
-    result = subprocess.run(
+    result = launcher.run(
         [str(BIN_DIR / program), *args, "--json"],
         env=env,
         cwd=cwd,

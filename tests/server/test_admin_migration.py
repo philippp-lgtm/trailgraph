@@ -11,12 +11,12 @@ safe, and a dry run is retried once.
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from harness import BIN_DIR, CliRunner
+from support import launcher
 from support.admin import data_root, init, write_documents
 from support.admin_api import command, served, upload_tree
 from support.admin_context import admin_context
@@ -308,7 +308,7 @@ def test_the_server_builds_one_name_map_for_all_its_requests(
 
 
 def admin_cli(env: dict[str, str], cwd: Path, *args: str) -> tuple[int, dict[str, Any]]:
-    result = subprocess.run(
+    result = launcher.run(
         [str(BIN_DIR / "graph-admin"), *args, "--json"],
         env=env,
         cwd=cwd,

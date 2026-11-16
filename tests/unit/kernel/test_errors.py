@@ -3,6 +3,7 @@
 import pytest
 
 from graph_cli.cli_kit.exit_codes import EXIT_BY_CATEGORY, exit_code_for
+from graph_cli.kernel import error_codes
 from graph_cli.kernel.error_codes import (
     ERROR_CODE_RE,
     ERROR_CODES,
@@ -71,7 +72,10 @@ def test_unregistered_or_warning_code_becomes_internal_error(code: str) -> None:
     assert error.details["unregistered_code"] == code
 
 
-def test_register_error_codes() -> None:
+def test_register_error_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A copy of the registry: the test-only code must not reach later tests in this process
+    # (the hint check of tests/unit/admin/test_admin_codes.py sees every registered code).
+    monkeypatch.setattr(error_codes, "_registered", dict(error_codes._registered))
     spec = ErrorSpec("testonly.example", ErrorCategory.REFUSED, False, "Test-only code.")
     register_error_codes([spec])
     register_error_codes([spec])  # identical re-registration is a no-op

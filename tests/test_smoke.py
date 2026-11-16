@@ -14,7 +14,7 @@ from harness import REPO_ROOT, CliRunner
     ("program", "distribution"), [("graph", "graph_cli"), ("graph-admin", "graph_cli_admin")]
 )
 def test_version(run_cli: CliRunner, program: str, distribution: str) -> None:
-    result = run_cli(program, "--version")
+    result = run_cli(program, "--version", fresh=True)
     assert result.returncode == 0, result.stderr
     assert result.stdout == f"{program}, version {version(distribution)}\n"
 
