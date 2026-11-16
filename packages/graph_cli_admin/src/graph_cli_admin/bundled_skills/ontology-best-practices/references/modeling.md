@@ -187,13 +187,10 @@ How to cut:
   relation with a `domain` and `range` is, and the write path refuses a
   wrong edge and names the relations that do connect the two types.
 - **Moving a term to another module changes its CURIE.** The term names its
-  old CURIE in `renamed_from` (`renamed_from: old:Name`, for a class or a
-  relation): `ontology diff` reports a rename, and on a graph with data the
-  release carries a `migration.yaml` that moves the entities in place, with
-  their ids, aliases and history ([migrations](migrations.md), with a worked
-  split). Without the hint the move is a removal plus an addition, which
-  data cannot follow: add the term in the new module, move the data with
-  normal writes, then remove the old term in a major release.
+  old CURIE in `renamed_from`, and on a graph with data the release carries
+  a `migration.yaml` that moves the entities in place
+  ([releasing a modular graph](versioning_and_release.md#releasing-a-modular-graph),
+  [migrations](migrations.md) with a worked split).
 
 ## Marking attributes
 

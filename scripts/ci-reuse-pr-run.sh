@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# ci-reuse-pr-run.sh WORKFLOW_FILE - decides whether a push to main needs its own check run (infra DECISIONS.md I31).
+# ci-reuse-pr-run.sh WORKFLOW_FILE - decides whether a push to main needs its own check run.
 # Reuse only when ALL hold (anything else, including every API error, means "run the full check"):
 #   - the event is a push to the default branch (tags, pull requests, schedules and the like always run in full),
 #   - the pushed commit is the merge commit of exactly one merged pull request,
 #   - the base side of that merge (first parent) is an ancestor of the pull request head, i.e. the head was
-#     rebased on main right before the merge (I30), so the pull request run tested the head tree itself and not
+#     rebased on main right before the merge, so the pull request run tested the head tree itself and not
 #     a test merge with an older base,
 #   - the commit's tree equals the tree of the pull request head: identical inputs,
 #   - the newest `pull_request` run of the same workflow file on that exact head, belonging to this pull request
 #     (into this repository's main; the head commit must belong to that pull request only, always checked,
 #     because a run cannot name its pull request once the head branch is deleted); ALL its runs are completed, successful
-#     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check, I15).
+#     first attempts (a green re-run hides a failed attempt and must stay visible to the tag check).
 # Prints the decision and writes `reuse=true|false` to $GITHUB_OUTPUT; the steps after it run `if: steps.<id>.outputs.reuse != 'true'`.
 # Needs: gh and jq; GH_TOKEN with actions: read and pull-requests: read; GITHUB_REPOSITORY, GITHUB_SHA,
 # GITHUB_EVENT_NAME, GITHUB_REF (set by Actions). Only the GitHub API is read, no checkout is needed.

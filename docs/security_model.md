@@ -23,8 +23,9 @@ rebuilds it (see [Storage](storage.md#filestore)). Writers trust the index
 only after its SHA-256 digest of the transaction log matches and check
 what they copy from it, so an edited log is found by the next writer; an
 index edited consistently with its digest is found by `audit verify` and
-replaced by the full replay a writer runs at least every 200
-transactions. A data migration (a maintainer's release that rewrites entities
+replaced by the full replay a writer runs regularly
+([Storage](storage.md#filestore)). A data migration (a maintainer's release
+that rewrites entities
 as new revisions) is announced by its own intent, and `audit verify` checks the
 transaction against it: the identity every revision keeps, the versions, a digest
 of the revisions and the pin that follows
@@ -111,7 +112,7 @@ prevents depends on what is verified:
   client, an image rollback included, ever loads a model with markings and shows
   the attributes.
 - Enrollment codes ([Enrollment](server.md#enrollment)) are bearer
-  secrets too, but narrow ones: one use, at most 24 hours, always bound to
+  secrets too, but narrow ones: one use, a short lifetime, always bound to
   a project, so a code never yields an unbound token (a maintainer's). Who
   holds a code gets that project's token, app or project admin, with the
   roles of an app code, as the maintainer chose; hand it over like a password, out of band, and revoke
@@ -197,7 +198,7 @@ are accepted and known:
   a change are text the maintainers and writers wrote, shown as they wrote
   them. If that text names a hidden type, the caller reads the name. Write
   ontology prose and curated skill text so that it holds for every reader
-  ([Skills](skills.md#blocks)); the generated blocks are rendered per reader
+  ([Skills](skills.md#per-reader)); the generated blocks are rendered per reader
   and name nothing hidden.
 - **What it does not cover.** Rows of a visible type are visible to whoever
   sees the type; read limits stop at whole types (single attributes are
@@ -261,7 +262,7 @@ marked or that something happened, with one exception that an author controls
   (`summary`, `use_when`, `returns`) are written by maintainers and shown as
   written: if they name a marked attribute or marking, a reader that cannot see
   it reads the name. Write them so that they hold for every reader
-  ([Skills](skills.md#blocks)). The marking declarations themselves are not
+  ([Skills](skills.md#per-reader)). The marking declarations themselves are not
   shown to a caller that lacks them.
 - **Bundled file attributes cannot be marked.** The attributes of
   `files:File` (title, content, media type, file name, origin) stay visible to whoever

@@ -1,13 +1,13 @@
 # Access control
 
-Two policy layers decide what `graph` may do; maintenance stays the
-entrypoint question it was (the app never gets `maint.*`). What this
+Two policy layers decide what `graph` may do; maintenance is decided by the
+entrypoint (the app never gets `maint.*`). What this
 protects against, and what it does not, is in the
 [security model](security_model.md).
 
 ## Identity
 
-Every invocation has one actor (`graph_cli.catalog.identity`). The OS user
+Every invocation has one actor. The OS user
 is the verified principal. Agent and session are asserted, from the
 `GRAPH_CLI_AGENT_ID`, `GRAPH_CLI_AGENT_TYPE`, `GRAPH_CLI_SESSION_ID` and
 `GRAPH_CLI_PARENT_SESSION_ID` variables first, then from the coding agent
@@ -334,9 +334,9 @@ sees everything, because rights add up.
   action on a type (`policy.invalid`); the rules on attributes and relations
   stay write-only.
 - **A deny of `read.get` on a whole graph.** A rule that denies `read.get` on
-  the graph (no `type`) matches every type of it as well. It only withheld the
-  `get` command so far; once some rule decides the visibility of a type in the
-  graph, it hides every type from the subjects it names. Check such rules
+  the graph (no `type`) matches every type of it as well. It withholds the
+  `get` command and, once some rule decides the visibility of a type in the
+  graph, also hides every type from the subjects it names. Check such rules
   before adding a read limit to the graph.
 - **Compiled rules.** A grant with `reads` keeps its read rule as
   `grant.<n>` but on the graph itself instead of the glob `graph:<id>*`, which
@@ -498,12 +498,13 @@ graph admin gives them to tokens:
 `scopes.<project>.<graph>: maintain` lets an admin token bound to the
 project (`graph-admin token create NAME --scope admin --project P`) run
 the graph-level maintenance of that graph: `ontology release` (release
-and pin), `graph skill publish`, `graph functions publish` and `graph push`
-(`graph_configure`),
+and pin), `graph skill publish`, `graph functions publish`, `graph actions publish`
+and `graph push` (`graph_configure`),
 `graph check` and `files verify` (`audit_verify`) and `graph reindex`;
 reads that show the graph's configuration (`graph show`, `graph pull`,
-`graph skill render`, `graph functions show`, `ontology diff --graph`) need `graph_configure`
-too. Check and release findings quote the graph's data, so `maintain`
+`graph skill render`, `graph functions show`, `graph actions show`, `ontology
+diff --graph`) need `graph_configure` too. Check and release findings quote the
+graph's data, so `maintain`
 includes `read.get` on the graph, and `graph check`, `ontology release`
 and a `graph push` that releases also authorize it for a project admin: a
 deny rule on reads (by project, for example) holds there too. Everything
@@ -529,8 +530,9 @@ command is refused. `graph-admin policy explain --graph G
 
 ## Decisions
 
-`graph_cli.access_control.authorize()` is the one decision point. It is pure
-and answers for one (action, resource) pair: the app and server entrypoints
+One decision point decides every request
+([Architecture](architecture.md#access-control-modules)). It is pure and
+answers for one (action, resource) pair: the app and server entrypoints
 never get a `maint.*` action and a project admin only the graph-level
 maintenance of its `maintain` graphs, then the first matching deny rule of any policy layer
 wins, then the first matching allow rule, else deny, then the obligations
@@ -686,7 +688,7 @@ exactly as before. The graph itself stays as visible as the grant makes it
   are dropped when it counts a relation that reaches a hidden type. What this
   still shows is in the [security model](security_model.md#type-read-limits).
 - **Skills.** The generated graph skill is rendered per reader
-  ([Skills](skills.md#blocks)).
+  ([Skills](skills.md#per-reader)).
 
 ### Functions and actions of a limited reader
 
@@ -735,7 +737,7 @@ every graph whose ontology uses no marking, is answered as before.
   the field. A function or action that reads or sets the attribute, or takes an
   enum only hidden attributes use, is hidden like one that touches a hidden type
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
-  The claim of an installed skill ([Skills](skills.md#blocks)) goes stale when
+  The claim of an installed skill ([Skills](skills.md#per-reader)) goes stale when
   a marking grant or a release changes what the reader sees.
 - **Writes.** A write that names the attribute (`create`, `set`, `set_text`,
   `unset`, `add`, `remove`, a transition's `attr`, an action's operations)
@@ -806,8 +808,8 @@ level. It shows nothing `find` and `neighbors` could not show, but in one
 call; a deny rule on `read.query` withholds that expressive path from, for
 example, an agent type, while `find`, `neighbors` and `lookup` keep working
 (`whoami` names the action in `withheld`). Levels expand when a policy is
-compiled, so a policy installed before `read.query` existed grants it only
-after `policy apply` runs again with the same source.
+compiled, so a policy installed by a program that did not know `read.query`
+grants it only after `policy apply` runs again with the same source.
 
 ## Functions
 
@@ -838,8 +840,8 @@ own action, `read.function`, in the `read` level.
   curated functions without ad-hoc Cypher for an agent type or a machine
   actor.
 - **Grants are per graph**, not per function. Levels expand when a policy is
-  compiled, so a policy installed before `read.function` existed grants it
-  only after `policy apply` runs again with the same source.
+  compiled, so a policy installed by a program that did not know `read.function`
+  grants it only after `policy apply` runs again with the same source.
 - **Publishing** the catalog is `maint.graph_configure`, as for the graph
   skill (see [Project admins](#project-admins)).
 
@@ -887,17 +889,16 @@ after an update.
   ([Functions and actions of a limited reader](#functions-and-actions-of-a-limited-reader)).
 - **Graph skill.** Unlike the functions, the generated graph skill lists
   only the featured actions the installing reader may run
-  ([Skills](skills.md#blocks)).
+  ([Skills](skills.md#per-reader)).
 - **Publishing** the catalog is `maint.graph_configure`, as for the functions.
-- **Not available: writes only through actions.** A policy that lets an agent
-  type run reviewed actions while it may not use the primitives would let an
-  action grant what its op would not; that is not built, and the policy
-  language cannot express it.
+- **No writes only through actions.** The policy language cannot let an agent
+  type run reviewed actions while it may not use the primitives: that would
+  let an action grant what its op would not.
 
 ## Authoring and installing policies
 
 Authored policies live in the maintainer workspace. `graph-admin policy
-check` compiles them (`access_control.compiler`): levels become actions,
+check` compiles them: levels become actions,
 graph names become ids, and every problem is reported at once
 (`policy.invalid`). `policy apply` installs the compiled document; without
 an installed installation policy the built-in policy applies (every graph

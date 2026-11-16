@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lint-workflows.sh - static check of every workflow and local composite action (infra DECISIONS.md I32): `bash -n` over every
+# lint-workflows.sh - static check of every workflow and local composite action: `bash -n` over every
 # `run:` block (the ${{ }} expressions replaced by a word), then actionlint (expressions, contexts, job graph; its shellcheck
 # integration is off, the repositories do not shellcheck inline scripts). Jobs that only run on push or tag events are never
 # exercised by a pull request, so a syntax error there would otherwise surface on the first merge or release.

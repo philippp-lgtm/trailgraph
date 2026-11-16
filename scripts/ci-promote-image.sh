@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci-promote-image.sh - tags the candidate image of a release commit with the release version instead of rebuilding it
-# (infra DECISIONS.md I32). Promotes only when ALL hold (anything else, including every error, means "build in full"):
+# Promotes only when ALL hold (anything else, including every error, means "build in full"):
 #   - the image inputs (INPUT_PATHS) of the tagged commit are those of a commit Y on the first-parent history of the tagged
 #     commit (Y = the newest first-parent commit that changed them; the tagged commit itself when it changed them),
 #   - the push run of BUILD_WORKFLOW on main for Y (exactly one) recorded the digest it pushed in the artifact ARTIFACT_NAME
@@ -10,7 +10,7 @@
 #   - every workflow in CANDIDATE_WORKFLOWS has runs for push to main on Y (the commit that built the candidate), and every
 #     workflow in TREE_WORKFLOWS has runs for push to main on the tagged commit itself (the checks of the tagged tree, e.g. the
 #     test suite, when it differs from Y); ALL those runs are completed first-attempt successes (a green re-run hides a
-#     failed attempt, as in I31/I15),
+#     failed attempt and must stay visible),
 #   - IMAGE:VERSION_TAG does not exist yet, or already points at that same digest (a re-run of the job).
 # The promotion PUTs the very bytes of the candidate manifest (fetched by digest and checked against it) under the version tag
 # through the registry API, then reads the new tag back: a different digest is an error (exit 1), because the version tag then

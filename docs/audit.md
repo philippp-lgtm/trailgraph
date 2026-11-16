@@ -114,6 +114,7 @@ claimed, so the phases add up to `total`:
 | `query` | a read answering from the state: `get`, `history`, `find`, `lookup`, `neighbors` |
 | `parse` | `query` reading the Cypher text |
 | `resolve` | a write resolving its references; `query` resolving names, fields and parameters against the model |
+| `shape` | `query` computing its [shape](#query-shape) and finding the published functions that cover it |
 | `execute` | `query` matching patterns and computing the rows |
 | `stage` | `file add` hashing and staging the file |
 | `promote` | `file add` handing the staged file to the graph's file store once the write is authorized (the upload when the graph keeps its files in an object store) |

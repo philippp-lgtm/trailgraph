@@ -10,7 +10,10 @@ Start with the [project README](../README.md) (install, quickstart).
   [commands](../skills/graph-cli/references/commands.md),
   [error codes](../skills/graph-cli/references/errors.md),
   [change sets](../skills/graph-cli/references/changesets.md),
-  [output fields](../skills/graph-cli/references/output.md)
+  [output fields](../skills/graph-cli/references/output.md),
+  [Cypher queries](../skills/graph-cli/references/query.md),
+  [files](../skills/graph-cli/references/files.md),
+  [history](../skills/graph-cli/references/history.md)
 - [Configuration](configuration.md): locations, `config.toml`, the project
   pointer, environment variables
 - [Files](files.md): storing files, origins and roots, backups

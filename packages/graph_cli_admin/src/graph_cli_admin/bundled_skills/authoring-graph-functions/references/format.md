@@ -43,7 +43,7 @@ featured: true
 | --- | --- | --- |
 | `schema` | yes | exactly `graph_cli.function/1` |
 | `name` | yes | `^[a-z][a-z0-9_]{1,62}$`; equals the file name without `.yaml`; unique in the graph |
-| `module` | with several modules | id or prefix of a module of the graph that is not built in; optional when the graph has one module; bare names resolve through its imports; a reader with read limits (`docs/access_control.md`) sees the function only while its module has a term that reader sees; a main module that holds none of its own is no such module and does not hide it |
+| `module` | with several modules | id or prefix of a module of the graph that is not built in; optional when the graph has one module; bare names resolve through its imports; a reader with read limits (a policy grant's `reads` list, see `maintaining-graphs`, `references/give_an_app_a_role.md`) sees the function only while its module has a term that reader sees; a main module that holds none of its own is no such module and does not hide it |
 | `summary` | yes | one line, at most 100 characters: what the function returns |
 | `use_when` | yes | at most 600 characters: the situations and questions the function answers, in users' words; what search and agents match a request against |
 | `params` | no | mapping of parameter name to declaration (below); omit for none |

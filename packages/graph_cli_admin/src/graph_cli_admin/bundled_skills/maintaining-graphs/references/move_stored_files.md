@@ -1,15 +1,21 @@
 # Moving a graph's stored files to an object store (and back)
 
 The bytes of stored files live in the data root by default. An installation can keep them in an
-S3-compatible object store instead, graph by graph (`docs/files.md`, "Object storage
-(optional)"). Only the bytes move: the transaction log, the audit trail and everything else
+S3-compatible object store instead, graph by graph. Only the bytes move: the transaction log, the audit trail and everything else
 stay in the data root. Agents see no difference. Only a maintainer moves graphs; ask the user
 before starting, and run the steps for one graph at a time.
 
 ## Before the move
 
-1. The store must be configured where the data lives (`[files.s3]` and the credentials in the
-   environment, `docs/configuration.md`). Check it:
+1. The store must be configured where the data lives: `[files.s3]` in `config.toml` with
+   `bucket` and `region` (and `endpoint_url` for a store other than AWS itself,
+   `addressing = "path"` or `"virtual"`). The environment wins over the file for these:
+   `GRAPH_CLI_S3_BUCKET`, `AWS_ENDPOINT_URL_S3` (then `AWS_ENDPOINT_URL`), `AWS_REGION` (then
+   `AWS_DEFAULT_REGION`). Credentials come only from the environment (`AWS_ACCESS_KEY_ID` and
+   `AWS_SECRET_ACCESS_KEY`, both or neither); the key needs `GetObject`, `PutObject`,
+   `DeleteObject` and `ListBucket` on its bucket and nothing else. Every process that reads or
+   writes stored files needs the settings, `graph-admin` included. `[files] store = "s3"` only
+   decides where new graphs put their files; it never moves a graph. Check the store:
 
    ```sh
    graph-admin files store check

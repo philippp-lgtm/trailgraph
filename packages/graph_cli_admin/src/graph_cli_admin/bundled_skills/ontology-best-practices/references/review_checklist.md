@@ -66,8 +66,9 @@ Only for a graph that marks attributes.
 - [ ] No rule, guard or action precondition names a marked attribute.
 - [ ] A name that was marked is never declared again without the marking.
 - [ ] Every marking in use is granted by the installation policy (or the release warned
-      `admin.marking_ungranted` on purpose); servers and clients are 0.23.0 or later before the
-      first release that marks an attribute (compiled schema `/2`).
+      `admin.marking_ungranted` on purpose); servers and clients were updated before the
+      first release that marks an attribute
+      ([compiled schema `/2`](versioning_and_release.md#markings)).
 - [ ] Curated text (summaries, graph skill, function and action prose) names no marked value.
 
 ## Names and descriptions

@@ -509,8 +509,8 @@ as `graph` does.
 The server puts no limit on how long a command runs; it answers when the
 command is done. Three clocks can end the wait earlier:
 
-- **The client's** `[remote] timeout_s` (60 seconds by default,
-  [Configuration](configuration.md#remote-mode)) is the socket timeout of
+- **The client's** `[remote] timeout_s`
+  ([Configuration](configuration.md#remote-mode)) is the socket timeout of
   every request: it ends a request that sends or receives nothing for that
   long, which for a command is the time until the answer starts. A release
   with a data migration sends nothing back until the migration is done.
@@ -525,12 +525,11 @@ command is done. Three clocks can end the wait earlier:
 A command that outlasts one of them is applied anyway and the client sees
 `remote.outcome_unknown` (a write) or `remote.unreachable`. Only a data
 migration takes long enough to matter. It rewrites every entity it
-touches in one transaction and materializes each revision with fsyncs: on
-a generated graph of 6,300 entities and 16,000 edges the migration took
-about 7 seconds with full durability (plan, check and commit together) and
-the process stayed near 120 MiB. Measure the preview on the real data
-(`graph check --ontology <dir>` counts what would change), expect time
-roughly proportional to the entities migrated, and before a large
+touches in one transaction and materializes each revision with fsyncs.
+Measure the preview on the real data
+(`graph-admin graph check <graph> --ontology <dir>` counts what would
+change), expect time roughly proportional to the entities migrated, and
+before a large
 migration set `[remote] timeout_s` and the ingress read timeout above the
 expected duration with a margin (the answer reports `duration_s`). App
 writers wait for the graph's lock up to `lock_timeout_s` and then get the

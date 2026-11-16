@@ -1,6 +1,6 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, move a graph's stored files between the data root and an object store, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, give an app a role, move a graph's stored files between the data root and an object store, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, an app's role set up, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
@@ -21,8 +21,8 @@ graph skill with `authoring-graph-skills`, its function files with
 2. Who you are decides what works. A maintainer may do everything. A
    project admin (an admin token bound to a project) releases, publishes,
    pushes and checks only the graphs its project maintains; it cannot create
-   graphs, apply policies or create tokens. On `access.denied` stop and tell
-   the user.
+   graphs, release a migration, apply policies or create tokens. On
+   `access.denied` stop and tell the user.
 3. `graph-admin describe commands --json` lists every command with its
    options; `graph-admin <command> --help` shows one.
 
@@ -37,7 +37,8 @@ graph skill with `authoring-graph-skills`, its function files with
 4. On a refusal, read `error.code`, `error.message` and `error.hint`; fix
    the cause instead of trying variants. Never retry a write that ended
    with `remote.outcome_unknown`: check the state first (`graph-admin
-   graph show <graph>`), it may have happened.
+   graph show <graph>`), it may have happened; only a release (`graph-admin
+   ontology release`, `graph-admin graph push`) is safe to run again.
 5. Policies, tokens and enrollment codes only when the user asks for
    them. Never print a token or a code into a file or a commit.
 6. Ask before what cannot be undone: a major release on a graph with
@@ -68,7 +69,8 @@ Each graph folder holds:
   .graph_cli_source.json            the base: what the folder was pulled from
 ```
 
-The answer lists every graph with an `action`: `pulled`, `present`, `behind`
+The answer lists every graph with an `action`: `pulled` (`pull` in a dry
+run), `present`, `behind`
 (the graph has another ontology release pinned than the folder was pulled
 from), `conflict` (the folder name is taken by something else) or `failed`.
 Folders are never replaced. A `behind` folder without unpushed edits is
@@ -138,15 +140,16 @@ Only a maintainer can create a graph.
    ```
 
    `--language <tag>` sets the default language of its values; it cannot
-   change later. Graph names are lowercase letters, digits and `_`, unique
-   per installation (`admin.graph_name_taken`).
+   change later. Graph names are lowercase letters, digits and `_`, starting
+   with a letter, unique per installation (`admin.graph_name_taken`).
 4. `graph-admin workspace sync .` pulls it into its folder. Move the
    draft's `README.md` there and delete the draft.
 5. Write and publish its graph skill (below), then `graph-admin audit verify`.
 6. Agents reach the graph only when the policy lets their project use it
    and their project's `.graph_cli.toml` lists it. Tell the user what is
    missing; change the policy only when asked (`graph-admin policy diff
-   <file>` first, then apply it as under "Give an app a role").
+   <file>` first, then apply it as in
+   [give_an_app_a_role.md](references/give_an_app_a_role.md)).
 
 ## Publish or change a graph skill
 
@@ -181,37 +184,29 @@ graph-admin graph functions show <graph>
 
 The dry run reports every problem of every file together
 (`admin.functions_invalid`); a missing or empty `functions/` folder
-unpublishes all functions. Agents run functions only with `read.function`;
-a policy installed before that action existed needs `graph-admin policy
-apply` with the same source once. `access.denied` for that: tell the user.
+unpublishes all functions. Agents run functions only with `read.function`; a
+policy installed by a build that did not know it grants it only after
+`graph-admin policy apply` runs again with the same source (`access.denied`
+for that: tell the user).
 
 ## Publish or change actions
 
 The named actions of a graph (`actions/<name>.yaml`) are published by
-`graph-admin graph push` last, after the release, the skill and the functions. Write
-them with the `authoring-graph-actions` skill. `graph-admin graph actions publish <graph> <folder>/actions --dry-run`
-reports every problem together (`admin.actions_invalid`), then `graph-admin graph
-push` as above publishes; an empty `actions/` folder unpublishes all actions and
-`graph-admin graph actions show <graph>` lists them. Functions and actions share one
-namespace per graph. An action needs no policy: a caller without the write
-rights of its ops does not see it.
+`graph-admin graph push` last, after the release, the skill and the functions.
+Write them with the `authoring-graph-actions` skill.
+`graph-admin graph actions publish <graph> <folder>/actions --dry-run` reports
+every problem together (`admin.actions_invalid`), then `graph-admin graph push`
+as above publishes; an empty `actions/` folder unpublishes all actions and
+`graph-admin graph actions show <graph>` lists them. Functions and actions
+share one namespace per graph. An action needs no policy: a caller without the
+write rights of its ops does not see it.
 
 ## Give an app a role
 
-Roles let apps of one project differ. Declare the role under `roles:` in the
-installation policy, name it in grants (`principal: {role: <role>}` with
-`entrypoint: server`) and deny rules (`role: [<role>]`), then `graph-admin
-policy apply <file> --reason "<why>"`. A grant with `level: read` can carry a
-`writes` list (exactly what the role may write, down to attributes and
-relations) and a `reads` list (the only types it sees; the rest of the graph
-reads as if absent) and `markings` (the marked fields it holds; any other
-reader sees them as unknown); grammar: `docs/access_control.md`, "Write allow
-lists", "Read limits" and "Markings". Give it to an app token with `graph-admin token create <name>
---role <role>` or `graph-admin token role add <name> <role>` (`token role
-remove` takes it away), or to a client with `graph-admin enroll create
---project <project> --role <role>`. App tokens only; `admin.role_unknown` means
-the policy does not declare it. `graph-admin policy explain --graph <graph>
---role <role>` shows what a token with it gets.
+Roles let apps of one project differ: declared in the installation policy,
+given to app tokens or to enrollment codes. Only when the user asks; the steps
+and the policy grammar are in
+[give_an_app_a_role.md](references/give_an_app_a_role.md).
 
 ## Check a graph
 
@@ -242,7 +237,7 @@ the policy does not declare it. `graph-admin policy explain --graph <graph>
 | `admin.migration_incomplete` | an interrupted release; run the same release again (`references/release_with_a_migration.md`) |
 | `access.denied` | not allowed for this token; stop and tell the user |
 | `remote.unauthorized` | no valid admin token; tell the user, never search for one |
-| `remote.client_outdated` | this graph-admin is not the build the server runs; stop and tell the user to run `graph-admin self update` |
+| `remote.client_outdated` | this graph-admin build is not compatible with the server's; stop and tell the user to run `graph-admin self update` |
 
 The warning `remote.version_differs` means the server runs another build;
 with `details.compatible: true` the commands and these skills are the same:

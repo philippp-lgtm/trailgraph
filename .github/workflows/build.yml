@@ -1,6 +1,6 @@
 name: build
 
-# The container image of graph-server (Dockerfile target runtime), built once per change (infra DECISIONS.md I32).
+# The container image of graph-server (Dockerfile target runtime), built once per change.
 #   push to main:  when the image inputs changed (see `paths` below; keep them equal to INPUT_PATHS in the release job), the
 #                  linux/amd64 runtime image passes the smoke test and is pushed as the candidate
 #                  ghcr.io/<owner>/<repository>:sha-<commit>; its digest goes to the job summary. The suite runs in check.yml

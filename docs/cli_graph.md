@@ -26,9 +26,9 @@ exit codes stay the same (see [Server: remote mode](server.md#remote-mode-of-gra
 ## Output and exit codes
 
 Both CLIs print the `graph_cli.envelope/1` envelope: text by default, one
-JSON document with `--json` (or `GRAPH_CLI_OUTPUT=json`). Exit codes follow
-the error category (0 ok, 1 refused or invalid, 2 usage, 3 denied, 4
-conflict, 5 unavailable, 6 internal error).
+JSON document with `--json` (or `GRAPH_CLI_OUTPUT=json`). The exit code
+follows the error category:
+[error codes](../skills/graph-cli/references/errors.md).
 
 ### The short envelope
 
@@ -45,8 +45,8 @@ it whole. A spilled answer's file holds what stdout would have shown.
 
 Agent harnesses cut long tool output or put all of it into the agent's
 context. So a `graph` JSON envelope larger than `[output] spill_bytes`
-(16384 bytes by default; see [Configuration](configuration.md#configtoml))
-is written whole, pretty-printed for line-wise reading, to a new file, and
+(see [Configuration](configuration.md#configtoml)) is written whole,
+pretty-printed for line-wise reading, to a new file, and
 stdout gets the same envelope with `data: null` (left out of the short
 envelope), the warning
 `output.spilled {path, bytes, limit}` and, on success, a first hint to ask
@@ -76,7 +76,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe commands` | every command as data (`graph_cli.inventory/1`): arguments, options, examples, error codes, exit codes |
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
 | `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions you may read, each module also has a `functions` count of its active functions; likewise an `actions` count when you may run actions |
-| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read and is less than half the size of `--json` (it leaves out cardinalities and the summaries of links, which `describe type` gives); the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`), likewise an `actions` section (text: `Actions:`) when you may run actions |
+| `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read: it leaves out cardinalities and the summaries of links, which `describe type` gives; the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`), likewise an `actions` section (text: `Actions:`) when you may run actions |
 | `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`; a function's or action's `curie` is its name, see [Functions](#functions) and [Actions](#actions)), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
 | `describe functions [--module M] [--include-deprecated]` | the named functions of the graph (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`. See [Functions](#functions) |
 | `describe actions [--module M] [--include-deprecated]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; an action whose write rights you lack does not exist for you. See [Actions](#actions) |
@@ -86,9 +86,9 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
-| `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); up to 50 names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
+| `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); several names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
-| `neighbors REF` | connected entities up to three hops (`--rel`, `--direction`, `--depth`); `--fields` and `--full` as for `get` |
+| `neighbors REF` | connected entities (`--rel`, `--direction`, `--depth`); `--fields` and `--full` as for `get` |
 | `query TEXT` | a read-only Cypher query (`-` or `--file` reads it from stdin or a file, `--param name=value` binds `$name`): patterns over several hops, OR and NOT across relations, counts and grouping; rows paged like `find`, `--explain` shows the resolved query (see [Cypher queries](#cypher-queries)) |
 | `run NAME` | run a named function of the graph (`--param name=value`, once per value for a list parameter; `--limit`, `--offset`): the parameters are read by the types the function declares, the answer is `data.function` (`name`, `hash`), `data.columns` and `data.items` with a `page`, like `query`. See [Functions](#functions) |
 | `create TYPE`, `update REF`, `link REF REL TARGET`, `unlink REF ...` | single-op writes; `--set attr=value` is converted by the attribute's datatype, `--set-json attr=<json>` is typed; `update --add`/`--remove` change a list attribute (see [References, filters and writes](#references-filters-and-writes)) |
@@ -115,10 +115,11 @@ decides what a project may see, the pointer only narrows that (see
 
 The global options `--json` and `--graph` may stand before or after the
 command (`graph --graph <graph> find ...` equals `graph find ... --graph
-<graph>`). Given twice with different values is a usage error (a
-repeatable `--graph`, as in `skills install`, collects both), and a
+<graph>`). Given in both positions with different values is a usage error
+(a repeatable `--graph`, as in `skills install`, collects both), and a
 command that takes no graph (`graphs`, `whoami`) refuses `--graph` in
-either position.
+either position. A non-repeatable option given twice on the same side of
+the command keeps the last value.
 
 ## References, filters and writes
 
@@ -346,7 +347,7 @@ or `lang_string` (or a datatype over one) may carry `role: label` (the main
 name, single or one per language, at most one per class), `alt_label` (synonyms, abbreviations) or
 `hidden_label` (searchable, never shown), as in SKOS. `describe` shows the
 role of each field and the JSON Schema export annotates it as
-`x-graph_cli-role`. `lookup` matches normalized text (`kernel.text`: NFKC,
+`x-graph_cli-role`. `lookup` matches normalized text (NFKC,
 casefold, whitespace collapsed; never stored) and ranks exact before prefix
 matches, main before alternative before hidden labels, then shorter names;
 a hidden-label match does not echo its value. Labels are not identifiers:
@@ -469,27 +470,14 @@ candidates. `labels(n)` and `type(r)` return names the same way: the local
 name when it is unique, else the CURIE. Unknown labels, relationship types
 and fields are `term.unknown` with did-you-mean, as for `find`.
 
-The subset: `MATCH` (several patterns and clauses), `OPTIONAL MATCH`,
-`WHERE`, `WITH` (with `WHERE`), `UNWIND`, `RETURN` (`AS`, `DISTINCT`, `*`),
-`ORDER BY`, `SKIP`, `LIMIT`; node and relationship patterns with labels
-(`:A|B`, `:A:B`), property maps, both directions, type alternatives and
-bounded variable length up to five hops (`*1..3`); pattern predicates
-(`WHERE NOT (n)-[:r]->()`), label predicates (`n:A`), `CASE`, list and map
-literals, the list predicates `all`, `any`, `none` and `single`
-(`any(x IN n.tags WHERE x STARTS WITH 'a')`), list comprehensions
-(`[x IN list WHERE ... | ...]`), list indexing and slicing (`l[0]`, `l[-1]`,
-`l[1..3]`), `+ - * / %`, comparisons, `IN`, `STARTS WITH`, `ENDS WITH`,
-`CONTAINS`, `IS [NOT] NULL`; the aggregates `count` (`count(*)`,
-`DISTINCT`), `collect`, `min`, `max`, `sum`, `avg` and the functions
-`labels`, `type`, `keys`, `properties`, `coalesce`, `size`, `head`, `last`,
-`toString`, `toInteger`, `toFloat`, `toLower`, `toUpper`, `trim`,
-`substring`, `split`, `replace`, `abs`, `ceil`, `floor` and `round`. A null
-argument makes a function null (`coalesce` excepted). Everything else
-(write clauses, `CALL`, `UNION`, named paths, unbounded `*`,
+The supported clauses, patterns, expressions and functions are listed in
+the generated [`references/query.md`](../skills/graph-cli/references/query.md).
+Everything else (write clauses, `CALL`, `UNION`, named paths, unbounded `*`,
 `shortestPath`, pattern comprehensions, `reduce`, map projections,
-subqueries, `id()`) is
-`query.unsupported` with the construct and, where one exists, the
-alternative.
+subqueries, `id()`) is `query.unsupported` with the construct and, where one
+exists, the alternative. Variable-length relationships have an upper bound of
+at most five hops. A null argument makes a function null (`coalesce`
+excepted).
 
 Semantics follow openCypher: three-valued null logic, a missing property is
 null, comparisons across types are null, a relationship is used once per
@@ -587,15 +575,15 @@ are found and read, never changed, with the `describe` commands:
 
 Functions are shown only to callers who may `read.function` on the graph
 (see [Access control](access_control.md#functions)); for everyone else the
-graph reads as if it had none. A graph that has no functions answers every
-`describe` command exactly as before.
+graph reads as if it had none. A graph that has no functions shows nothing
+about them in any `describe` command.
 
 Maintainers write functions as one YAML file each and publish them with
 `graph-admin` ([`graph functions publish`](cli_graph_admin.md#commands)). The
 file format, the types of parameters and the checks publishing applies are
 described once, in the format reference of the `authoring-graph-functions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md)); the
-[generated graph skill](skills.md#blocks) lists a graph's featured
+[generated graph skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template) lists a graph's featured
 functions.
 
 ## Actions
@@ -665,7 +653,7 @@ An action needs no right of its own: it is allowed when every write it
 expands to is allowed to you, and an action whose writes you may not make
 is not shown and is `action.not_found` (see
 [Access control](access_control.md#actions)). A graph that has no actions
-(or none you may run) answers every `describe` command exactly as before.
+(or none you may run) shows nothing about them in any `describe` command.
 When no action fits, use the primitives.
 
 Maintainers write actions as one YAML file each and publish them with
@@ -673,5 +661,5 @@ Maintainers write actions as one YAML file each and publish them with
 file format, the checks publishing applies and the rules for preconditions
 are described once, in the format reference of the `authoring-graph-actions`
 admin skill ([`references/format.md`](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md)); the
-[generated graph skill](skills.md#blocks) lists the featured actions you may
+[generated graph skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-skills/SKILL.md#the-template) lists the featured actions you may
 run.
