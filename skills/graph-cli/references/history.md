@@ -24,8 +24,9 @@
   repeat in a text field what a field or an edge already says.
 - How you worked is not data: what you read and how (a page image, a text
   extraction), what you checked or left unchanged, a doubt, what is still
-  to do. Say it in `--reason` (or `reason` of a change set), which the
-  history keeps with the revision, and to the user. A gap you notice is
+  to do. Say it in `--reason` (or `reason` of a change set) in English,
+  whatever language the values are in; the history keeps it with the
+  revision. Tell the user too. A gap you notice is
   closed (create the missing entity) or reported, not written into an
   entity.
 - Who wrote a revision and when is in the history; write it into a field

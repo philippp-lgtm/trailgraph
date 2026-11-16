@@ -543,7 +543,8 @@ def _start(doc: _Model) -> list[str]:
         )
         + " `create`, `apply`, `transition`, `supersede` and `retract` with `--dry-run`, then"
         " run them without; one `update`, `link` or `unlink` may run directly. Say why in"
-        " `--reason`, and pass `--expect <rev>` when the write depends on what you read. A"
+        " `--reason` (in English, whatever language the values are in), and pass `--expect"
+        " <rev>` when the write depends on what you read. A"
         " change set for `graph apply` goes into a file in the working directory.",
         "- Read `data.findings` of every write and tell the user about each warning.",
         *(

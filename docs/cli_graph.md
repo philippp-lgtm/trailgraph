@@ -131,7 +131,9 @@ when exactly one CURIE has it (`Topic` for `ex:Topic`); an ambiguous local
 name is `query.ambiguous_term` with the candidates. Writes and change set
 documents take the CURIE: what is recorded stays explicit.
 Writes take `--dry-run`, `--reason`, `--idempotency-key` and, on
-single-entity commands, `--expect REV`. `find` filters are flags without
+single-entity commands, `--expect REV`. A reason is written in English,
+whatever the graph language: like a commit message it records how the
+change was made, not the graph's subject. `find` filters are flags without
 shell metacharacters: `--where attr=value` or `--where attr:op=value` with
 `op` in `eq ne lt le gt ge contains prefix in exists lang`, all AND-ed. `apply`
 reads and checks every document first (broken input writes nothing), then
