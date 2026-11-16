@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.json_access import as_object, req_bool, req_list, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, SlotKind, sources_hash
 from graph_cli.kernel.ports.storage import MaintenanceSession
@@ -43,6 +43,7 @@ class Published:
     entry: GraphEntry
     data: dict[str, JsonValue]
     seq: int
+    warnings: tuple[WarningRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,9 @@ Check = Callable[
     ],
     Checked,
 ]
+# What a kind warns about the slot it would publish, judged against the model it was checked
+# against (actions: marked attributes in preconditions).
+Warn = Callable[[GraphEntry, CompiledModel, KineticSlot], tuple[WarningRecord, ...]]
 
 
 def read_dir(source: Path, kind: SlotKind) -> tuple[dict[str, bytes], list[Problem]]:
@@ -177,8 +181,11 @@ def publish(
     source: Path,
     reason: str | None,
     dry_run: bool,
+    warn: Warn | None = None,
 ) -> Published:
-    """The publish flow of ``graph <kind> publish`` (see ``functions`` and ``actions``)."""
+    """The publish flow of ``graph <kind> publish`` (see ``functions`` and ``actions``).
+    ``warn`` judges the slot it would publish, also on a dry run and when nothing changes
+    (the warnings describe a state, like those of a release)."""
     command = f"graph {kind} publish"
     entry = ctx.resolve(graph_ref, command)
     check_state(entry)
@@ -216,12 +223,13 @@ def publish(
             "dry_run": dry_run,
         }
         seq = session.head().seq
+        warnings = warn(entry, model, slot) if warn is not None else ()
         unchanged = current.summary() == slot.summary() if current is not None else not slot.files
         if unchanged or dry_run:
-            return Published(entry, data, seq)
+            return Published(entry, data, seq, warnings)
         write(ctx, session, entry, decisions, meta, current, slot, reason=reason)
         data["published"] = True
-        return Published(entry, data, seq)
+        return Published(entry, data, seq, warnings)
 
 
 def show(
