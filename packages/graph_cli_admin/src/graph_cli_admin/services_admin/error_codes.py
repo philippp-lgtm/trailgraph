@@ -149,6 +149,32 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
         False,
         "A write grant of the policy can never succeed.",
     ),
+    ErrorSpec(
+        "admin.policy_unknown_marking",
+        _C.WARNING,
+        False,
+        "A grant names a marking the graph's model does not declare.",
+    ),
+    ErrorSpec(
+        "admin.marking_ungranted",
+        _C.WARNING,
+        False,
+        "A marking in use is granted by no installed policy: only maintainers see it.",
+    ),
+    ErrorSpec(
+        "admin.marking_in_expression",
+        _C.WARNING,
+        False,
+        "A rule, guard or precondition names a marked attribute: its refusals tell callers"
+        " without the marking about it.",
+    ),
+    ErrorSpec(
+        "admin.marking_blocks_create",
+        _C.WARNING,
+        False,
+        "A required attribute without a default is marked: callers without the marking cannot"
+        " create the type.",
+    ),
     ErrorSpec("admin.policy_fallback", _C.WARNING, False, "An installed policy is invalid."),
     ErrorSpec(
         "admin.view_port_unavailable", _C.UNAVAILABLE, True, "The view port cannot be bound."

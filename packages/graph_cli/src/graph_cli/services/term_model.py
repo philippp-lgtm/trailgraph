@@ -3,8 +3,9 @@
 ``access_control`` imports only the kernel and never sees a compiled ontology, so the
 app side condenses a graph's pinned model into a ``TermModel`` (per type: its attributes,
 the relations whose domain covers it, the concrete ranges of its required relations, whether
-it is extended or a stored file). The policy compiler checks ``writes`` grants and term deny
-rules against it, and an ontology release checks the installed ones against the new model.
+it is extended or a stored file) and the markings the model declares. The policy compiler checks
+``writes`` and ``markings`` grants and term deny rules against it, and an ontology release checks
+the installed ones against the new model.
 Pure and total.
 """
 
@@ -46,8 +47,8 @@ def _concrete_range(model: CompiledModel, range_: tuple[str, ...]) -> tuple[str,
 
 def term_model(model: CompiledModel) -> TermModel:
     """What the policy compiler needs of ``model``: per type its attributes (is it a
-    lifecycle; must a create give it), the relations whose domain covers it, the concrete
-    ranges of its required relations, and whether it is extended or a stored file. A stored
+    lifecycle; must a create give it; its markings), the relations whose domain covers it, the
+    concrete ranges of its required relations, and whether it is extended or a stored file. A stored
     file's create gives what ``graph file add`` sets itself, so those attributes count as given
     by the writer."""
     extended = extended_types(model.classes)
@@ -62,7 +63,9 @@ def term_model(model: CompiledModel) -> TermModel:
             else:
                 must_give = definition.required and definition.default is None
             attributes[attribute] = AttributeTerms(
-                lifecycle, must_give or (file and attribute in FILE_ADD_ATTRIBUTES)
+                lifecycle,
+                must_give or (file and attribute in FILE_ADD_ATTRIBUTES),
+                definition.markings,
             )
         covering = {
             r: rel for r, rel in model.relations.items() if model.is_a_any(name, rel.domain)
@@ -78,4 +81,4 @@ def term_model(model: CompiledModel) -> TermModel:
                 if rel.out.min >= 1 and rel.range and (ranged := _concrete_range(model, rel.range))
             },
         )
-    return TermModel(types)
+    return TermModel(types, frozenset(model.markings))

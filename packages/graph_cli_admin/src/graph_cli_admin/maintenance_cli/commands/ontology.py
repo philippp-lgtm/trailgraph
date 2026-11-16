@@ -96,7 +96,7 @@ def diff_command(
         affected = (
             *catalog_affected("functions", followed_functions.problems, version),
             *catalog_affected("actions", followed_actions.problems, version),
-            *policies_affected(ctx.policy.current(entry.id), entry, new.model),
+            *policies_affected(ctx.policy.current(entry.id), entry, new.model, actions),
             *renamed_terms.warning(hazards, version),
         )
         if new.pin != entry.pin:

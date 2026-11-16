@@ -43,6 +43,15 @@ link right on its relation). Resources are ``graph:<id>/type:<T>`` plus ``/attr:
 across every named graph and type that grants the verb, sorted. The compiled document never
 depends on a model.
 
+``markings`` is a grant's list of markings (CURIEs, ``ex:personal``): the grant's callers may
+see the attributes that carry them (field visibility). It takes any level and needs named
+graphs, like ``writes`` and ``reads``: markings belong to an ontology. It compiles to one more
+allow rule, ``grant.<n>.markings`` (action ``read.get``), after the read rules, naming the
+resource ``marking:<graph id>/<curie>`` of every named graph and marking, sorted. Such a
+resource lies outside ``graph:`` so that no grant, scope or deny rule that names a graph covers
+it: a marked attribute is hidden from everybody until a grant names its marking. A grant
+without ``markings`` compiles as before, to the same hash.
+
 ``types: {T: none}`` of a graph layer hides ``T`` from the app and server entrypoints: the deny
 rule ``type.<T>`` names ``read.get`` and ``write.*`` on the exact type and carries
 ``principal: {entrypoint: [app, server]}``, so a maintainer is not hit. A graph deny rule with
@@ -84,6 +93,7 @@ from graph_cli.access_control.documents import (
     CURIE_RE,
     GRAPH_LAYER,
     INSTALLATION_LAYER,
+    MARKING_RE,
     NAME_RE,
     POLICY_SCHEMA,
     TYPE_GLOB_RE,
@@ -97,10 +107,13 @@ from graph_cli.access_control.terms import (
     HiddenRangeCreate,
     TermModel,
     TypeTerms,
+    UnknownMarking,
     UnknownReadType,
     UnknownTerm,
     UnknownWriteType,
+    UnusableMarkedWrite,
     UnusableWrite,
+    marking_resource,
 )
 from graph_cli.kernel.actions import (
     ACCESS_LEVELS,
@@ -187,6 +200,8 @@ class Compiled:
     unknown_terms: tuple[UnknownTerm, ...] = ()
     unusable_writes: tuple[UnusableWrite, ...] = ()
     hidden_range_creates: tuple[HiddenRangeCreate, ...] = ()
+    unknown_markings: tuple[UnknownMarking, ...] = ()
+    unusable_marked_writes: tuple[UnusableMarkedWrite, ...] = ()
 
 
 # One verb's terms of a type: sorted, without duplicates; ``()`` = every term (``true``).
@@ -213,6 +228,8 @@ class _Context:
     unknown_terms: set[UnknownTerm] = field(default_factory=set)
     unusable_writes: set[UnusableWrite] = field(default_factory=set)
     hidden_range_creates: set[HiddenRangeCreate] = field(default_factory=set)
+    unknown_markings: set[UnknownMarking] = field(default_factory=set)
+    unusable_marked_writes: set[UnusableMarkedWrite] = field(default_factory=set)
     _models: dict[GraphId, TermModel | None] = field(default_factory=dict)
 
     def add(self, path: str, message: str) -> None:
@@ -261,10 +278,10 @@ def compile_policy(
     so naming one of them would miss its subclasses' entities. ``roles`` are the roles
     the installed installation policy declares (``None``: not checked); a graph policy's
     deny rules naming others are collected in ``unknown_roles``. ``models`` is asked,
-    lazily and once per graph, for the term model of each graph a ``reads`` or ``writes`` grant
-    names and of the graph of a graph policy that has term deny rules (``None``, or no model
-    for a graph: not checked); abstract or extended read and write types are problems, unknown
-    types and terms and unusable writes are collected."""
+    lazily and once per graph, for the term model of each graph a ``reads``, ``writes`` or
+    ``markings`` grant names and of the graph of a graph policy that has term deny rules
+    (``None``, or no model for a graph: not checked); abstract or extended read and write types
+    are problems, unknown types, markings and terms and unusable writes are collected."""
     ctx = _Context(graphs, graph, known_types, extended_types, roles, models)
     try:
         root = load_strict(data)
@@ -304,6 +321,8 @@ def compile_policy(
         tuple(sorted(ctx.unknown_terms)),
         tuple(sorted(ctx.unusable_writes)),
         tuple(sorted(ctx.hidden_range_creates)),
+        tuple(sorted(ctx.unknown_markings)),
+        tuple(sorted(ctx.unusable_marked_writes)),
     )
 
 
@@ -383,7 +402,7 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
         return []
     _unknown_keys(
         node,
-        frozenset({"principal", "entrypoint", "graphs", "level", "writes", "reads"}),
+        frozenset({"principal", "entrypoint", "graphs", "level", "writes", "reads", "markings"}),
         path,
         ctx,
     )
@@ -424,6 +443,14 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
                 f"{path}.graphs",
                 'must name graphs, not "*", when reads is given: types belong to an ontology',
             )
+    markings = (
+        _markings(entry["markings"], f"{path}.markings", ctx) if "markings" in entry else None
+    )
+    if "markings" in entry and resources == ["graph:*"]:
+        ctx.add(
+            f"{path}.graphs",
+            'must name graphs, not "*", when markings is given: markings belong to an ontology',
+        )
     if reads is not None and writes:
         for name in sorted(writes):
             if not _covered(name, reads):
@@ -451,8 +478,11 @@ def _grant(node: YamlNode, path: str, number: int, ctx: _Context) -> list[JsonVa
     if reads and limited:
         _check_reads(reads, graphs, f"{path}.reads", ctx)
         rules.append(_reads_rule(number, principal, graphs, reads))
+    if markings and named:
+        _check_markings(markings, graphs, ctx)
+        rules.append(_markings_rule(number, principal, graphs, markings))
     if writes and named:
-        _check_writes(writes, graphs, reads, f"{path}.writes", ctx)
+        _check_writes(writes, graphs, reads, frozenset(markings or ()), f"{path}.writes", ctx)
         rules += _write_rules(number, principal, graphs, writes)
     return rules
 
@@ -509,6 +539,49 @@ def _reads_rule(
         "principal": dict(principal),
         "action": ["read.get"],
         "resource": sorted({f"graph:{g}/type:{name}" for g in graphs for name in reads}),
+    }
+
+
+def _markings(node: YamlNode, path: str, ctx: _Context) -> tuple[str, ...] | None:
+    """The ``markings`` of a grant: marking CURIEs, sorted and without duplicates."""
+    names = _texts(node, path, ctx)
+    if names is None:
+        return None
+    valid = True
+    for index, name in enumerate(names):
+        if not MARKING_RE.match(name):
+            ctx.add(f"{path}[{index}]", f"{name!r} is not a marking CURIE (prefix:name)")
+            valid = False
+    return tuple(sorted(set(names))) if valid else None
+
+
+def _check_markings(markings: Sequence[str], graphs: Sequence[GraphId], ctx: _Context) -> None:
+    """The model check of ``markings``: a marking the graph's model does not declare is
+    collected (a later release may declare it)."""
+    for graph in graphs:
+        model = ctx.model_of(graph)
+        if model is None:
+            continue
+        for name in markings:
+            if name not in model.markings:
+                ctx.unknown_markings.add(UnknownMarking(graph, name))
+
+
+def _markings_rule(
+    number: int,
+    principal: Mapping[str, JsonValue],
+    graphs: Sequence[GraphId],
+    markings: Sequence[str],
+) -> dict[str, JsonValue]:
+    """``grant.<n>.markings``: ``read.get`` on the resource of every named marking of every
+    named graph."""
+    resources = {marking_resource(g, name) for g in graphs for name in markings}
+    return {
+        "id": f"grant.{number}.markings",
+        "effect": "allow",
+        "principal": dict(principal),
+        "action": ["read.get"],
+        "resource": sorted(r for r in resources if r is not None),
     }
 
 
@@ -580,11 +653,12 @@ def _check_writes(
     writes: _Writes,
     graphs: Sequence[GraphId],
     reads: Sequence[str] | None,
+    held: frozenset[str],
     path: str,
     ctx: _Context,
 ) -> None:
     """The model checks of ``writes`` (W8) against every graph the grant names; ``reads`` is
-    the grant's own allow list (``None``: it reads every type)."""
+    the grant's own allow list (``None``: it reads every type), ``held`` its own markings."""
     for graph in graphs:
         model = ctx.model_of(graph)
         if model is None:
@@ -600,13 +674,18 @@ def _check_writes(
                     "name the concrete types",
                 )
             else:
-                _check_terms(graph, name, found, verbs, ctx)
+                _check_terms(graph, name, found, verbs, held, ctx)
                 if reads is not None and "create" in verbs:
                     _check_hidden_ranges(graph, name, found, reads, ctx)
 
 
 def _check_terms(
-    graph: GraphId, name: str, found: TypeTerms, verbs: Mapping[str, _Terms], ctx: _Context
+    graph: GraphId,
+    name: str,
+    found: TypeTerms,
+    verbs: Mapping[str, _Terms],
+    held: frozenset[str],
+    ctx: _Context,
 ) -> None:
     """Terms the type does not have, and verbs no write can satisfy."""
 
@@ -638,6 +717,39 @@ def _check_terms(
     )
     if listed and missing:
         ctx.unusable_writes.add(UnusableWrite(graph, name, "create", missing, found.file))
+    _check_marked(graph, name, found, verbs, held, ctx)
+
+
+def _check_marked(
+    graph: GraphId,
+    name: str,
+    found: TypeTerms,
+    verbs: Mapping[str, _Terms],
+    held: frozenset[str],
+    ctx: _Context,
+) -> None:
+    """Write rights over marked attributes the grant does not hold the markings of (field
+    visibility plan F3). A caller must see an attribute to write it, so such an entry is dead
+    for a caller with only this grant. ``create`` and ``update`` name attributes (``true``
+    covers every one of the type; an update leaves the lifecycle ones out, and those carry no
+    marking); a create of a required marked attribute without a default can never succeed."""
+    for verb in ("create", "update"):
+        if verb not in verbs:
+            continue
+        covered = verbs[verb] or tuple(found.attributes)
+        lacking = {
+            a: tuple(m for m in found.attributes[a].markings if m not in held)
+            for a in covered
+            if a in found.attributes
+        }
+        lacking = {a: m for a, m in lacking.items() if m}
+        blocking = {a for a in lacking if verb == "create" and found.attributes[a].must_give}
+        for names, blocks in ((blocking, True), (set(lacking) - blocking, False)):
+            if names:
+                missing = tuple(sorted({m for a in names for m in lacking[a]}))
+                ctx.unusable_marked_writes.add(
+                    UnusableMarkedWrite(graph, name, verb, tuple(sorted(names)), missing, blocks)
+                )
 
 
 def _check_hidden_ranges(

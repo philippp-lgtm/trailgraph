@@ -384,3 +384,52 @@ def test_a_grant_heavy_policy_compiles_to_the_same_hash_as_before_writes() -> No
         roles=frozenset({"importer"}),
     )
     assert graph.hash == GRANT_HEAVY_GRAPH_HASH
+
+
+# A policy that uses ``reads``, ``writes`` and ``markings`` together (field visibility, step 2).
+# The hash is pinned: the compiled form of ``markings`` (rule ``grant.<n>.markings`` after the
+# read rules and before the write rules, sorted exact marking resources) must not drift, as a
+# policy installed with markings keeps its hash through later releases.
+MARKINGS_INSTALLATION = b"""\
+schema: graph_cli.policy/1
+id: installation
+roles:
+  hr: {description: "HR: personal data of people"}
+  reporting: {description: "Reporting: people without personal data"}
+grants:
+  - {principal: {name: tester}, graphs: "*", level: write}
+  - entrypoint: server
+    principal: {role: hr}
+    graphs: [example_graph, other_graph]
+    level: read
+    reads: ["ex:*", "files:File"]
+    writes:
+      ex:Person:
+        create: [name, email]
+        update: [email, team]
+        supersede: true
+    markings: [ex:team_internal, ex:personal]
+  - {entrypoint: server, principal: {role: reporting}, graphs: [example_graph], level: write,
+     markings: [ex:personal]}
+maintainers:
+  - {name: boss}
+no_project: {"*": read}
+"""
+MARKINGS_INSTALLATION_HASH = (
+    "sha256:c499430a79c979581e87e3d0aa8306a6431e8b444c5278d011e36ed6112839fe"
+)
+
+
+def test_a_policy_with_reads_writes_and_markings_keeps_its_pinned_hash() -> None:
+    compiled = compile_policy(MARKINGS_INSTALLATION, file="i.yaml", graphs=GRAPHS)
+    assert compiled.hash == MARKINGS_INSTALLATION_HASH
+    ids = [r["id"] for r in compiled.document["rules"]]  # type: ignore[union-attr,index]
+    assert ids[:6] == [
+        "grant.1",
+        "grant.2",
+        "grant.2.reads",
+        "grant.2.markings",
+        "grant.2.create",
+        "grant.2.update",
+    ]
+    assert "grant.3.markings" in ids

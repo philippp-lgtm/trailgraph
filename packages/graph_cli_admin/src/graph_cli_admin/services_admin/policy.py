@@ -9,6 +9,9 @@ grants are checked against the pinned model of each graph they name, and a graph
 deny rules against its graph's: an unknown type warns with ``admin.policy_unknown_type``, an
 attribute or relation the type lacks with ``admin.policy_unknown_term``, a write no call
 can satisfy with ``admin.policy_unusable_write``; an abstract type is ``policy.invalid``.
+A grant's ``markings`` are checked against the same models: a marking the model does not declare
+warns with ``admin.policy_unknown_marking``, and a ``writes`` entry that names or covers a marked
+attribute without the grant holding its markings warns with ``admin.policy_unusable_write``.
 Its ``id`` says which layer it is; a graph policy needs ``--graph``, an installation
 policy refuses it.
 
@@ -72,7 +75,7 @@ from graph_cli.access_control.effective import (
     write_grant_types,
 )
 from graph_cli.access_control.policy import BUILTIN_POLICY, policy_set
-from graph_cli.access_control.terms import TermModel, term_resource
+from graph_cli.access_control.terms import TermModel, UnusableMarkedWrite, term_resource
 from graph_cli.audit import events
 from graph_cli.audit.verify import (
     InstalledPolicy,
@@ -642,6 +645,29 @@ def _compile(ctx: AdminContext, file: Path, graph_ref: str | None, command: str)
             )
             for h in compiled.hidden_range_creates
         ),
+        *(
+            WarningRecord(
+                "admin.policy_unknown_marking",
+                f"the model of graph {names[m.graph]} declares no marking {m.marking}; the grant"
+                " shows nobody anything until a release declares it",
+                {"graph": names[m.graph], "marking": m.marking},
+            )
+            for m in compiled.unknown_markings
+        ),
+        *(
+            WarningRecord(
+                "admin.policy_unusable_write",
+                _marked_message(w, names[w.graph]),
+                {
+                    "graph": names[w.graph],
+                    "type": w.type,
+                    "verb": w.verb,
+                    "attributes": list(w.attributes),
+                    "markings": list(w.markings),
+                },
+            )
+            for w in compiled.unusable_marked_writes
+        ),
     )
     return _Source(compiled, entry, (*warnings, *(role_warning if compiled.unknown_roles else ())))
 
@@ -651,6 +677,24 @@ _KIND_TEXT: Final = {
     "relation": "relation",
     "lifecycle": "lifecycle attribute",
 }
+
+
+def _marked_message(write: UnusableMarkedWrite, graph: str) -> str:
+    attributes, markings = ", ".join(write.attributes), ", ".join(write.markings)
+    plural = "s" if len(write.attributes) != 1 else ""
+    head = f"{write.verb} of {write.type} in graph {graph} names or covers marked attribute{plural}"
+    if write.blocks_create:
+        return (
+            f"{head} {attributes}, which every create must give, and the grant does not hold"
+            f" {markings}; a caller must see an attribute to write it, so no caller with only"
+            " this grant can create it (rights add up: another grant of the caller may hold"
+            " the marking)"
+        )
+    return (
+        f"{head} {attributes} and the grant does not hold {markings}; a caller must see an"
+        " attribute to write it, so the right is dead for a caller with only this grant (rights"
+        " add up: another grant of the caller may hold the marking)"
+    )
 
 
 # What ``graph file add`` sets itself (services/files.py): a create list must name these.

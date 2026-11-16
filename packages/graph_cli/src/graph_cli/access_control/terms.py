@@ -14,8 +14,15 @@ collected, never raised, because a later release may add the term: the caller wa
 - ``UnusableWrite``: a ``writes`` entry no write can satisfy (``update`` of a lifecycle
   attribute; a ``create`` list that leaves out an attribute a create must give);
 - ``HiddenRangeCreate``: a ``create`` of a type with a required relation whose range the
-  same grant's ``reads`` hide entirely, so a caller with only that grant cannot create it.
+  same grant's ``reads`` hide entirely, so a caller with only that grant cannot create it;
+- ``UnknownMarking``: a marking a ``markings`` grant names that the graph's model does not
+  declare (nobody holds a marking that does not exist yet: the grant has no effect);
+- ``UnusableMarkedWrite``: a ``writes`` entry that names, or covers with ``true``, a marked
+  attribute the same grant does not hold the markings of: a write right no caller with only
+  this grant can use (rights add up, so another grant may supply the marking).
 
+``marking_resource`` builds the resource a marking is held on (``marking:<graph>/<curie>``) and
+``named_markings`` reads back which markings the installed documents grant for one graph.
 ``term_resource`` builds the resource a write of one term is decided on; ``named_terms``
 and ``named_read_types`` read back which types and terms, and which types a read rule
 names, the installed documents name for one graph (an ontology release checks them against
@@ -30,7 +37,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from graph_cli.access_control.documents import CURIE_RE, NAME_RE, glob, layer_of, rules, strings
+from graph_cli.access_control.documents import (
+    CURIE_RE,
+    INSTALLATION_LAYER,
+    MARKING_RE,
+    MARKING_RESOURCE_PREFIX,
+    NAME_RE,
+    glob,
+    layer_of,
+    rules,
+    strings,
+)
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import GraphId
 
@@ -42,6 +59,9 @@ class AttributeTerms:
     # initial states (a single initial state is filled in), or, for a stored file, one that
     # ``graph file add`` sets itself.
     must_give: bool
+    # The markings a caller must hold to see (and write) the attribute, sorted CURIEs; ``()``
+    # for an unmarked attribute.
+    markings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +79,8 @@ class TypeTerms:
 @dataclass(frozen=True, slots=True)
 class TermModel:
     types: Mapping[str, TypeTerms]
+    # The markings the model declares (CURIEs): what a ``markings`` grant may name.
+    markings: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -98,6 +120,35 @@ class HiddenRangeCreate:
     type: str  # the type a ``create`` is granted for
     relation: str  # a required relation of the type
     range: tuple[str, ...]  # the concrete types of its range, all outside the grant's ``reads``
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class UnknownMarking:
+    graph: GraphId
+    marking: str
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class UnusableMarkedWrite:
+    """The write grant lists (or, with ``true``, covers) marked ``attributes`` of ``type`` without
+    holding ``markings``, the markings those attributes need that the grant lacks (sorted).
+    ``blocks_create``: the attributes are required without a default, so no create succeeds;
+    otherwise only the writes of these attributes are dead."""
+
+    graph: GraphId
+    type: str
+    verb: str  # create | update
+    attributes: tuple[str, ...]  # sorted
+    markings: tuple[str, ...]  # sorted
+    blocks_create: bool
+
+
+def marking_resource(graph: GraphId | str, marking: str) -> str | None:
+    """``marking:<graph>/<curie>``, the resource a marking is held on (B6.9); ``None`` for a
+    string that is no marking CURIE, which no rule can name (fail closed)."""
+    if not MARKING_RE.match(marking):
+        return None
+    return f"{MARKING_RESOURCE_PREFIX}{graph}/{marking}"
 
 
 def term_resource(graph: GraphId | str, type_curie: str, kind: str, term: str) -> str | None:
@@ -167,6 +218,7 @@ def named_terms(
 
 
 _READS_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.reads$")
+_MARKINGS_RULE_RE: Final = re.compile(r"^grant\.[0-9]+\.markings$")
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -202,6 +254,24 @@ def named_read_types(
             for resource in strings(rule, "resource"):
                 if resource.startswith(prefix) and CURIE_RE.match(resource[len(prefix) :]):
                     found.add(NamedReadType(resource[len(prefix) :], grant))
+    return tuple(sorted(found))
+
+
+def named_markings(documents: Sequence[Mapping[str, JsonValue]], graph: GraphId) -> tuple[str, ...]:
+    """The markings the ``grant.<n>.markings`` rules (installation layer) of ``documents`` grant
+    for ``graph`` (their ``marking:<graph>/<curie>`` resources), sorted and unique."""
+    prefix = f"{MARKING_RESOURCE_PREFIX}{graph}/"
+    found: set[str] = set()
+    for document in documents:
+        if layer_of(document) != INSTALLATION_LAYER:
+            continue
+        for rule in rules(document):
+            rule_id = rule.get("id")
+            if not isinstance(rule_id, str) or _MARKINGS_RULE_RE.match(rule_id) is None:
+                continue
+            for resource in strings(rule, "resource"):
+                if resource.startswith(prefix) and MARKING_RE.match(resource[len(prefix) :]):
+                    found.add(resource[len(prefix) :])
     return tuple(sorted(found))
 
 

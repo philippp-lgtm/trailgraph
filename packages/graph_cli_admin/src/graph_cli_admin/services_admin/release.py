@@ -93,7 +93,7 @@ from graph_cli.ontology_layer.semver import Version
 from graph_cli.services.migration import build_migration_tx, migration_record
 from graph_cli.services.term_model import extended_types, term_model
 from graph_cli.temporal_knowledge.name_map import Hop
-from graph_cli_admin.services_admin import marking_names, renamed_terms
+from graph_cli_admin.services_admin import marking_names, marking_warnings, renamed_terms
 from graph_cli_admin.services_admin import migration as migrations
 from graph_cli_admin.services_admin.catalog_follow import (
     Followed,
@@ -381,8 +381,10 @@ def plan(
         if followed_functions.problems:
             raise functions_broken(hint_problems(followed_functions.problems), bump_details)
     followed_actions = Followed(None, [])
+    published_actions: KineticSlot | None = None
     if not actions_replaced:
         actions = current_catalog(session, "actions")
+        published_actions = actions
         if actions is not None:
             if function_names is None:
                 function_names = names_of(functions)
@@ -397,7 +399,9 @@ def plan(
                 raise actions_broken(hint_problems(followed_actions.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += marking_notes
-    warnings += policies_affected(ctx.policy.current(entry.id), entry, compiled.model)
+    warnings += policies_affected(
+        ctx.policy.current(entry.id), entry, compiled.model, published_actions
+    )
     if bump == "excessive":
         warnings += (
             WarningRecord(
@@ -790,7 +794,10 @@ def follow_published(
 
 
 def policies_affected(
-    policy: PolicySet, entry: GraphEntry, model: CompiledModel
+    policy: PolicySet,
+    entry: GraphEntry,
+    model: CompiledModel,
+    actions: KineticSlot | None = None,
 ) -> tuple[WarningRecord, ...]:
     """What the installed policies name for ``entry`` that ``model`` no longer has (write
     allow lists plan W8): the types and terms of the installation's write grants and of the
@@ -805,8 +812,22 @@ def policies_affected(
     a type of a ``reads`` allow list that is unknown, or now abstract or with subclasses (the
     subclasses stay hidden: fail closed, but probably not meant), and a type a deny rule hides
     that is unknown or now abstract or with subclasses (the subclasses are visible: the deny
-    names the exact type). A policy without write grants, term rules and read rules gives
-    none."""
+    names the exact type).
+
+    The marking warnings of ``marking_warnings`` come last (field visibility plan F2): an
+    installed grant naming a marking the release does not declare, a marking in use that no
+    grant names, a required marked attribute without default, and rules, lifecycle guards and
+    the preconditions of the published ``actions`` that name marked attributes. A policy and a
+    model without write grants, term rules, read rules and markings give none."""
+    return (
+        *_type_term_warnings(policy, entry, model),
+        *marking_warnings.warnings(policy, entry, model, actions),
+    )
+
+
+def _type_term_warnings(
+    policy: PolicySet, entry: GraphEntry, model: CompiledModel
+) -> tuple[WarningRecord, ...]:
     named = named_terms(policy.documents, entry.id)
     read_named = named_read_types(policy.documents, entry.id)
     if not named and not read_named:
