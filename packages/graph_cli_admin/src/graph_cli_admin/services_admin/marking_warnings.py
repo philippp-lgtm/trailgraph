@@ -21,8 +21,8 @@ maintainer may mean to show an attribute to nobody):
   marking, which repeated dry runs can amplify.
 
 Pure over the installed policy, the release's model and, for preconditions, the published
-action catalog (only its stored form is read; the actions a ``graph push`` is about to replace
-are not looked at).
+action catalog (only its stored form is read). The actions a ``graph push`` is about to replace
+are not the published ones: ``precondition_warnings`` judges the pushed catalog on its own.
 """
 
 from __future__ import annotations
@@ -62,6 +62,15 @@ def warnings(
     found += _blocks_create(model, entry)
     found += _in_expression(model, actions, entry)
     return tuple(found)
+
+
+def precondition_warnings(
+    model: CompiledModel, actions: KineticSlot, entry: GraphEntry
+) -> tuple[WarningRecord, ...]:
+    """``admin.marking_in_expression`` for the preconditions of the action catalog ``actions``
+    alone, against ``model`` (what a push that replaces the actions answers about the actions
+    it publishes; the rules and guards are judged by ``warnings``)."""
+    return tuple(_in_expression(model, actions, entry, rules=False))
 
 
 def _declared(model: CompiledModel) -> dict[str, list[str]]:
@@ -168,10 +177,12 @@ class _Site:
     expr: JsonValue
 
 
-def _sites(model: CompiledModel, actions: KineticSlot | None) -> Iterator[_Site]:
-    for rule in model.rules:
+def _sites(
+    model: CompiledModel, actions: KineticSlot | None, *, rules: bool = True
+) -> Iterator[_Site]:
+    for rule in model.rules if rules else ():
         yield _Site("rule", rule.id, rule_classes(model, rule), rule.expr)
-    for lifecycle, definition in model.lifecycles.items():
+    for lifecycle, definition in model.lifecycles.items() if rules else ():
         classes = guard_classes(model, lifecycle)
         for transition in definition.transitions:
             for guard in transition.guards:
@@ -214,10 +225,10 @@ def _names(
 
 
 def _in_expression(
-    model: CompiledModel, actions: KineticSlot | None, entry: GraphEntry
+    model: CompiledModel, actions: KineticSlot | None, entry: GraphEntry, *, rules: bool = True
 ) -> list[WarningRecord]:
     found: list[WarningRecord] = []
-    for site in _sites(model, actions):
+    for site in _sites(model, actions, rules=rules):
         marked: dict[str, tuple[str, ...]] = {}
         for classes, attribute in reads(model, site.classes, site.expr):
             marked.update(_names(model, classes, attribute))

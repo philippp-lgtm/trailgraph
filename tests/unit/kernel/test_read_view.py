@@ -35,6 +35,20 @@ def test_the_attribute_half_changes_the_digest_and_both_halves_count() -> None:
     assert narrower.digest != both.digest
 
 
+def test_the_digest_counts_the_attributes_of_the_visible_types_only() -> None:
+    seen, other = frozenset({"ex:Person"}), "ex:Team"
+
+    def view(person: set[str], team: set[str]) -> ReadView:
+        return ReadView.of(seen, {"ex:Person": person, other: team})
+
+    base = view({"name"}, {"name"})
+    assert view({"name"}, {"name", "extra"}).digest == base.digest  # a type it never sees
+    assert view({"name"}, set()).digest == base.digest
+    assert view({"name", "extra"}, {"name"}).digest != base.digest
+    assert base.digest != ReadView.of(seen).digest  # the attribute half still counts
+    assert base.digest != ReadView.of(None, {"ex:Person": {"name"}, other: {"name"}}).digest
+
+
 def test_the_view_is_hashable_and_ignores_the_order_of_its_attribute_half() -> None:
     reordered = ReadView(TYPES, tuple(reversed(ATTRIBUTES)))
     same = ReadView(TYPES, ATTRIBUTES)

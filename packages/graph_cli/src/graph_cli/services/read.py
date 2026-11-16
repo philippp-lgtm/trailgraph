@@ -619,8 +619,10 @@ class ReadService:
         the action writes there where the policy has term rules for the type
         (``services.action_rights``). For a type limited actor also: a type the need is met on
         is one it sees, and no term the action names is missing from its model view (type read
-        limits plan V7, ``services.visible_catalog``); ``limits=False`` leaves that out (the full
-        model's view of the actor's rights). Records nothing, like ``functions``."""
+        limits plan V7, ``services.visible_catalog``); with an attribute view, an attribute the
+        action writes is met only where the actor sees it (field visibility plan F6);
+        ``limits=False`` leaves that out (the full model's view of the actor's rights). Records
+        nothing, like ``functions``."""
         needs = self.action_needs(entry, catalog)
         view = self.read_view(actor, entry) if limits else UNLIMITED
         hidden = self._hidden_actions(entry, catalog, view) if view.limited else frozenset()
@@ -633,7 +635,9 @@ class ReadService:
                 for a in catalog.entries
                 if a.name not in hidden
                 and all(
-                    need_decisions(actor, entry.id, need, ctx, policy, fine, view.types).met
+                    need_decisions(
+                        actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
+                    ).met
                     for need in needs[a.name]
                 )
             )

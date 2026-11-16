@@ -91,10 +91,14 @@ class ReadView:
     @property
     def digest(self) -> str | None:
         """A digest of what the caller sees, ``None`` without any limit. Without an attribute
-        half it is the stage 3 digest of the visible types."""
+        half it is the stage 3 digest of the visible types. The attribute half counts for the
+        types the caller sees only: a marking change on a type it never sees leaves its claim
+        as it was."""
         if self.attributes is None:
             return None if self.types is None else hash_value(sorted(self.types))
-        attributes: dict[str, JsonValue] = {t: sorted(names) for t, names in self.attributes}
+        attributes: dict[str, JsonValue] = {
+            t: sorted(names) for t, names in self.attributes if self.shows_type(t)
+        }
         types: JsonValue = None if self.types is None else sorted(self.types)
         return hash_value({"attributes": attributes, "types": types})
 

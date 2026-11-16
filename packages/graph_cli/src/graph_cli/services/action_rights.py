@@ -23,10 +23,19 @@ limit, nothing changes) and skips every option outside it. The set is the V1 dec
 so membership is that decision without a second ``authorize`` per option and without new
 decision records: the decisions of a need stay exactly those of the write rights. A need
 without an option the caller sees is not met and carries no decisions.
+
+The same holds for the attributes of an option (field visibility plan F6, defence in depth):
+``keeps`` gives the attribute names a type keeps visible for the caller (``ReadView.keeps``;
+``None``: no attribute is hidden), and an option whose fine terms name an attribute the
+caller does not see is skipped like a type it does not see. The check is made for every
+option, whether or not its type has term rules (``fine``), and needs no decision of its own:
+the compile check over the caller's model view hides an action that sets or reads a hidden
+attribute, this keeps the any-of rule from ever meeting a need through one.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from graph_cli.access_control.authorize import authorize
@@ -81,6 +90,18 @@ def _option_decisions(
     return tuple(decisions)
 
 
+def attribute_hidden(
+    keeps: Callable[[str], frozenset[str] | None] | None,
+    type_curie: str,
+    terms: tuple[FineNeed, ...],
+) -> bool:
+    """Whether an option names an attribute its type does not keep visible (``keeps``)."""
+    if keeps is None:
+        return False
+    kept = keeps(type_curie)
+    return kept is not None and any(kind == "attr" and name not in kept for _, kind, name in terms)
+
+
 def need_decisions(
     actor: ActorContext,
     graph: GraphId,
@@ -89,6 +110,8 @@ def need_decisions(
     policy: PolicySet,
     fine: frozenset[str],
     visible: frozenset[str] | None = None,
+    *,
+    keeps: Callable[[str], frozenset[str] | None] | None = None,
 ) -> NeedResult:
     """The decisions that decide ``need`` and whether it is met (see the module docstring)."""
     if not need.options:
@@ -101,6 +124,8 @@ def need_decisions(
     first: NeedResult | None = None
     for type_curie, terms in need.options:
         if visible is not None and type_curie not in visible:
+            continue
+        if attribute_hidden(keeps, type_curie, terms):
             continue
         decisions = _option_decisions(
             actor, graph, need.action, type_curie, terms, ctx, policy, fine

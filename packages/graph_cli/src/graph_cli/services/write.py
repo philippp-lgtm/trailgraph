@@ -451,7 +451,8 @@ class WriteService:
         """What an action whose expansion is empty is authorized on: for each need of the
         action on ``model`` the option the any-of rule picks (``services.action_rights``).
 
-        A caller who does not see every type meets a need only through a type it sees. An
+        A caller who does not see every type meets a need only through a type it sees, and
+        through an attribute only where it sees it (field visibility plan F6). An
         action with a need it cannot meet is hidden from it (``ActionService`` answers
         ``action.not_found``); should one get here anyway (the policy changed meanwhile), the
         answer is the one for an action that does not exist, never an authorization of
@@ -464,8 +465,10 @@ class WriteService:
             terms: set[FineTerm] = set()
             derived = action_needs(plan.entry, model)
             for need in derived:
-                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine, view.types)
-                if view.types_limited and not found.met and not found.decisions:
+                found = need_decisions(
+                    request.actor, entry.id, need, ctx, policy, fine, view.types, keeps=view.keeps
+                )
+                if view.limited and not found.met and not found.decisions:
                     find_action((), plan.entry.name)  # raises action.not_found
                 if found.type is None:
                     continue

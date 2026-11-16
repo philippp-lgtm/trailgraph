@@ -1,0 +1,48 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "staff",
+    "version": "1.0.0"
+  },
+  "actions": [
+    {
+      "name": "set_email",
+      "module": "staff",
+      "summary": "Set email of an employee.",
+      "signature": "who: ref stf:Employee, value: string",
+      "status": "active"
+    },
+    {
+      "name": "set_grade",
+      "module": "staff",
+      "summary": "Set pay_grade of an employee.",
+      "signature": "who: ref stf:Employee, value: enum stf:PayGrade",
+      "status": "active"
+    },
+    {
+      "name": "set_phone",
+      "module": "staff",
+      "summary": "Set phone of an employee.",
+      "signature": "who: ref stf:Employee, value: string",
+      "status": "active"
+    },
+    {
+      "name": "set_phone_badged",
+      "module": "staff",
+      "summary": "Set phone of an employee.",
+      "signature": "who: ref stf:Employee, value: string",
+      "status": "active"
+    },
+    {
+      "name": "set_salary",
+      "module": "staff",
+      "summary": "Set salary of an employee.",
+      "signature": "who: ref stf:Employee, value: decimal",
+      "status": "active"
+    }
+  ]
+}

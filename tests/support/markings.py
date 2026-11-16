@@ -69,6 +69,104 @@ no_project: {"*": write}
 """
 
 
+# Published functions and actions over ``staff`` (file name -> source), for the catalog tests:
+# ``set_phone`` and ``colleague_names`` touch nothing marked; ``set_email``, ``set_salary``,
+# ``set_grade`` (an enum only a marked attribute uses), ``set_phone_badged`` (a precondition on
+# a marked attribute), ``employee_mail`` and ``by_grade`` (a parameter typed by that enum, no
+# marked attribute in the query) each name something a caller without markings may not see.
+ACTION = """\
+schema: graph_cli.action/1
+name: {name}
+summary: {summary}
+use_when: {summary}
+params:
+  who: {{type: ref, class: stf:Employee, summary: The employee.}}
+{params}\
+{pre}\
+ops:
+  - {{op: update, id: $who, set: {{{attr}: ${param}}}}}
+examples:
+  - request: {summary}
+"""
+
+
+def action(name: str, attr: str, *, param: str, type_: str = "string", pre: str = "") -> str:
+    kind = (
+        f"{{type: enum, enum: {type_}, summary: A value.}}"
+        if "stf:" in type_
+        else (f"{{type: {type_}, summary: A value.}}")
+    )
+    return ACTION.format(
+        name=name,
+        summary=f"Set {attr} of an employee.",
+        params=f"  {param}: {kind}\n",
+        pre=pre,
+        attr=attr,
+        param=param,
+    )
+
+
+BADGE_PRE = """\
+preconditions:
+  - id: has_badge
+    on: who
+    summary: The employee has a badge code.
+    require:
+      - {attr: badge_code, value_presence: PRESENT}
+"""
+ACTION_SOURCES = {
+    "set_phone.yaml": action("set_phone", "phone", param="value"),
+    "set_email.yaml": action("set_email", "email", param="value"),
+    "set_salary.yaml": action("set_salary", "salary", param="value", type_="decimal"),
+    "set_grade.yaml": action("set_grade", "pay_grade", param="value", type_="stf:PayGrade"),
+    "set_phone_badged.yaml": action("set_phone_badged", "phone", param="value", pre=BADGE_PRE),
+}
+FUNCTION = """\
+schema: graph_cli.function/1
+name: {name}
+summary: {summary}
+use_when: {summary}
+params: {params}
+query: |
+  {query}
+returns:
+{returns}
+examples:
+  - question: {summary}
+"""
+NAME_ONLY = "  - column: name\n    summary: Name."
+FUNCTION_SOURCES = {
+    "colleague_names.yaml": FUNCTION.format(
+        name="colleague_names",
+        summary="Names of colleagues.",
+        params="{}",
+        query="MATCH (c:Colleague) RETURN c.name AS name ORDER BY name",
+        returns=NAME_ONLY,
+    ),
+    "employee_mail.yaml": FUNCTION.format(
+        name="employee_mail",
+        summary="Private e-mail of employees.",
+        params="{}",
+        query="MATCH (e:Employee) RETURN e.email AS name",
+        returns=NAME_ONLY,
+    ),
+    # names no hidden attribute: only its parameter is typed by an enum a hidden one uses
+    "by_grade.yaml": FUNCTION.format(
+        name="by_grade",
+        summary="Names, echoing a pay grade.",
+        params="\n  grade:\n    type: enum\n    enum: stf:PayGrade\n    summary: A grade.",
+        query="MATCH (n) RETURN n.name AS name, $grade AS grade",
+        returns=f"{NAME_ONLY}\n  - column: grade\n    summary: The grade.",
+    ),
+}
+
+
+def without_twin(policy: str) -> str:
+    """``policy`` for an installation that holds ``example_graph`` only (no ``twin_graph``)."""
+    lines = [line for line in policy.splitlines() if "[twin_graph]" not in line]
+    return "\n".join(lines).replace(", twin_graph", "") + "\n"
+
+
 def twin_model() -> CompiledModel:
     """The compiled twin of ``staff`` 1.0.0."""
     outcome = compile_bundle("staff", LayeredSource(DirectorySource(STAFF_TWIN)))

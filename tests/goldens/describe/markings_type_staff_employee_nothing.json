@@ -1,0 +1,179 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "staff",
+    "version": "1.0.0"
+  },
+  "type": {
+    "curie": "stf:Employee",
+    "module": "staff",
+    "abstract": false,
+    "extends": "stf:Colleague",
+    "ancestors": [
+      "stf:Colleague"
+    ],
+    "subtypes": [],
+    "alias_prefix": "EMP",
+    "summary": "A colleague on the payroll.",
+    "description": null,
+    "deprecated": false,
+    "fields": [
+      {
+        "name": "name",
+        "type": "string",
+        "kind": "base",
+        "base": "string",
+        "required": true,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": "label",
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Colleague",
+        "summary": "Full name.",
+        "deprecated": false
+      },
+      {
+        "name": "phone",
+        "type": "string",
+        "kind": "base",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Colleague",
+        "summary": "Work phone number.",
+        "deprecated": false
+      },
+      {
+        "name": "shift",
+        "type": "stf:ShiftKind",
+        "kind": "enum",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": [
+          "day",
+          "night"
+        ],
+        "declared_in": "stf:Employee",
+        "summary": "Usual shift.",
+        "deprecated": false
+      },
+      {
+        "name": "stage",
+        "type": "stf:OnboardingFlow",
+        "kind": "lifecycle",
+        "base": "string",
+        "required": true,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "lifecycle",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Onboarding stage.",
+        "deprecated": false
+      }
+    ],
+    "lifecycles": [
+      {
+        "attr": "stage",
+        "lifecycle": "stf:OnboardingFlow",
+        "states": [
+          {
+            "name": "started",
+            "summary": "Onboarding started."
+          },
+          {
+            "name": "equipped",
+            "summary": "Has what the work needs."
+          },
+          {
+            "name": "scheduled",
+            "summary": "Has a shift."
+          }
+        ],
+        "initial": [
+          "started"
+        ],
+        "terminal": [],
+        "transitions": [
+          {
+            "from": "started",
+            "to": "equipped",
+            "guards": []
+          },
+          {
+            "from": "started",
+            "to": "scheduled",
+            "guards": [
+              {
+                "id": "stf.shift_known",
+                "summary": "The shift is recorded."
+              }
+            ]
+          }
+        ],
+        "summary": "Onboarding of an employee.",
+        "deprecated": false
+      }
+    ],
+    "relations_out": [
+      {
+        "curie": "stf:holds_badge",
+        "range": [
+          "stf:Badge"
+        ],
+        "cardinality": "0..1",
+        "inverse_label": "held_by",
+        "qualifiers": [],
+        "summary": "The badge an employee holds.",
+        "deprecated": false
+      },
+      {
+        "curie": "stf:in_crew",
+        "range": [
+          "stf:Crew"
+        ],
+        "cardinality": "0..1",
+        "inverse_label": "crew_member",
+        "qualifiers": [],
+        "summary": "The crew a colleague works in.",
+        "deprecated": false
+      }
+    ],
+    "relations_in": [
+      {
+        "curie": "stf:concerns",
+        "from": [
+          "stf:PersonnelFile"
+        ],
+        "cardinality": "0..n",
+        "on_target_inactive": "allow",
+        "inverse_label": "concerned_by",
+        "summary": "The colleague a personnel file is about.",
+        "deprecated": false
+      }
+    ],
+    "rules": []
+  }
+}

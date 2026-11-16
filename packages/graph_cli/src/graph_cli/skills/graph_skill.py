@@ -30,7 +30,10 @@ Blocks (each one optional):
   ``relations`` in the template.
 - ``types``: the entity types (types with an alias prefix; without any, every
   concrete type) with their supertypes, fields (label roles named), enum values inline
-  (F11), and states.
+  (F11), and states. A field the model marks (``markings``, field visibility plan F7) shows
+  ``marked <curie>`` with its markings joined by ``+``, here and in the ``Flags`` column of
+  the model file; the documents of a reader hold only the fields it sees, so a graph without
+  markings, or a reader without a marked field, renders as before.
 - ``relations``: the relations touching those types, each with its ``graph query`` pattern
   (``(:A)-[:rel]->(:B)``, from ``describe schema``) in place of its ends; inverse labels
   only in ``references/model.md``.
@@ -632,8 +635,16 @@ def _field(field: JsonObject) -> str:
     role = field.get("role")
     if isinstance(role, str) and role in ROLE_MARKS:
         notes.append(ROLE_MARKS[role])
+    notes += _marked(field)
     name = _code(req_str(field, "name"))
     return f"{name} ({', '.join(notes)})" if notes else name
+
+
+def _marked(field: JsonObject) -> list[str]:
+    """The mark of a marked field, ``marked ex:personal`` (conjunctive markings joined by
+    ``+``); nothing for an unmarked one."""
+    markings = _strings(field.get("markings"))
+    return [f"marked {'+'.join(markings)}"] if markings else []
 
 
 def _states(body: JsonObject) -> str:
@@ -1297,6 +1308,7 @@ def _flags(field: JsonObject) -> str:
     role = field.get("role")
     if isinstance(role, str):
         flags.append(role)
+    flags += _marked(field)
     return ", ".join(flags)
 
 

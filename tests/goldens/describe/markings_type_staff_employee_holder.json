@@ -1,0 +1,318 @@
+{
+  "schema": "graph_cli.model/1",
+  "graph": {
+    "name": "example_graph",
+    "language": "en"
+  },
+  "ontology": {
+    "bundle": "staff",
+    "version": "1.0.0"
+  },
+  "type": {
+    "curie": "stf:Employee",
+    "module": "staff",
+    "abstract": false,
+    "extends": "stf:Colleague",
+    "ancestors": [
+      "stf:Colleague"
+    ],
+    "subtypes": [],
+    "alias_prefix": "EMP",
+    "summary": "A colleague on the payroll.",
+    "description": null,
+    "deprecated": false,
+    "fields": [
+      {
+        "name": "badge_code",
+        "type": "stf:BadgeCode",
+        "kind": "datatype",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {
+          "pattern": "^[A-Z0-9-]+$"
+        },
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Code of the employee's badge.",
+        "deprecated": false,
+        "markings": [
+          "stf:personal"
+        ]
+      },
+      {
+        "name": "birth_date",
+        "type": "date",
+        "kind": "base",
+        "base": "date",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Date of birth.",
+        "deprecated": false,
+        "markings": [
+          "stf:personal"
+        ]
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "kind": "base",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Private e-mail address.",
+        "deprecated": false,
+        "markings": [
+          "stf:personal"
+        ]
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "kind": "base",
+        "base": "string",
+        "required": true,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": "label",
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Colleague",
+        "summary": "Full name.",
+        "deprecated": false
+      },
+      {
+        "name": "pay_grade",
+        "type": "stf:PayGrade",
+        "kind": "enum",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": [
+          "junior",
+          "senior"
+        ],
+        "declared_in": "stf:Employee",
+        "summary": "Pay grade.",
+        "deprecated": false,
+        "markings": [
+          "stf:personal"
+        ]
+      },
+      {
+        "name": "phone",
+        "type": "string",
+        "kind": "base",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Colleague",
+        "summary": "Work phone number.",
+        "deprecated": false
+      },
+      {
+        "name": "salary",
+        "type": "decimal",
+        "kind": "base",
+        "base": "decimal",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Yearly salary.",
+        "deprecated": false,
+        "markings": [
+          "stf:pay",
+          "stf:personal"
+        ]
+      },
+      {
+        "name": "shift",
+        "type": "stf:ShiftKind",
+        "kind": "enum",
+        "base": "string",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": [
+          "day",
+          "night"
+        ],
+        "declared_in": "stf:Employee",
+        "summary": "Usual shift.",
+        "deprecated": false
+      },
+      {
+        "name": "stage",
+        "type": "stf:OnboardingFlow",
+        "kind": "lifecycle",
+        "base": "string",
+        "required": true,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "lifecycle",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Onboarding stage.",
+        "deprecated": false
+      },
+      {
+        "name": "weekly_hours",
+        "type": "integer",
+        "kind": "base",
+        "base": "integer",
+        "required": false,
+        "many": false,
+        "unique": false,
+        "default": null,
+        "mutability": "content",
+        "role": null,
+        "limits": {},
+        "values": null,
+        "declared_in": "stf:Employee",
+        "summary": "Hours worked per week.",
+        "deprecated": false,
+        "markings": [
+          "stf:personal"
+        ]
+      }
+    ],
+    "lifecycles": [
+      {
+        "attr": "stage",
+        "lifecycle": "stf:OnboardingFlow",
+        "states": [
+          {
+            "name": "started",
+            "summary": "Onboarding started."
+          },
+          {
+            "name": "equipped",
+            "summary": "Has what the work needs."
+          },
+          {
+            "name": "scheduled",
+            "summary": "Has a shift."
+          }
+        ],
+        "initial": [
+          "started"
+        ],
+        "terminal": [],
+        "transitions": [
+          {
+            "from": "started",
+            "to": "equipped",
+            "guards": [
+              {
+                "id": "stf.badge_known",
+                "summary": "The badge code is recorded."
+              }
+            ]
+          },
+          {
+            "from": "started",
+            "to": "scheduled",
+            "guards": [
+              {
+                "id": "stf.shift_known",
+                "summary": "The shift is recorded."
+              }
+            ]
+          }
+        ],
+        "summary": "Onboarding of an employee.",
+        "deprecated": false
+      }
+    ],
+    "relations_out": [
+      {
+        "curie": "stf:holds_badge",
+        "range": [
+          "stf:Badge"
+        ],
+        "cardinality": "0..1",
+        "inverse_label": "held_by",
+        "qualifiers": [],
+        "summary": "The badge an employee holds.",
+        "deprecated": false
+      },
+      {
+        "curie": "stf:in_crew",
+        "range": [
+          "stf:Crew"
+        ],
+        "cardinality": "0..1",
+        "inverse_label": "crew_member",
+        "qualifiers": [],
+        "summary": "The crew a colleague works in.",
+        "deprecated": false
+      }
+    ],
+    "relations_in": [
+      {
+        "curie": "stf:concerns",
+        "from": [
+          "stf:PersonnelFile"
+        ],
+        "cardinality": "0..n",
+        "on_target_inactive": "allow",
+        "inverse_label": "concerned_by",
+        "summary": "The colleague a personnel file is about.",
+        "deprecated": false
+      }
+    ],
+    "rules": [
+      {
+        "id": "stf.employee_contact",
+        "severity": "warning",
+        "when": "write",
+        "summary": "An employee with a private e-mail has a work phone.",
+        "deprecated": false
+      }
+    ]
+  }
+}

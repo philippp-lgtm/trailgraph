@@ -344,3 +344,57 @@ def test_a_published_action_precondition_over_a_marked_attribute_warns(
                 "markings": ["ex:personal"],
             }
         ]
+
+
+TIDY = {
+    "admin.marking_in_expression": {
+        "graph": "example_graph",
+        "kind": "precondition",
+        "name": "tidy_person.has_mail",
+        "attributes": ["ex:Person.email"],
+        "markings": ["ex:personal"],
+    }
+}
+
+
+def test_push_looks_at_the_actions_it_publishes(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    """The published catalog is replaced by the push, so the warning is about the pushed one:
+    with a release in the same push and without, once, and also as a dry run."""
+    assert apply(run_cli, tmp_path, policy("ex:personal")).code == 0
+    work = tmp_path / "work_tree"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(work)).code == 0
+    (work / "actions").mkdir(exist_ok=True)
+    (work / "actions" / "tidy_person.yaml").write_text(ACTION)
+    dry = admin(run_cli, "graph", "push", "example_graph", str(work), "--dry-run")
+    assert dry.code == 0, dry.envelope
+    assert details(dry, "admin.marking_in_expression") == [TIDY["admin.marking_in_expression"]]
+    pushed = admin(run_cli, "graph", "push", "example_graph", str(work))
+    assert pushed.code == 0, pushed.envelope
+    assert details(pushed, "admin.marking_in_expression") == [TIDY["admin.marking_in_expression"]]
+    # an unchanged catalog is not looked at again; a release in the push judges the pushed one
+    shutil.copytree(
+        release_dir(tmp_path, "1.0.1", {"Full name.": "The full name."}),
+        work / "ontology" / "1.0.1",
+    )
+    (work / "actions" / "tidy_person.yaml").write_text(
+        ACTION.replace("A person changes the team.", "A person moves.")
+    )
+    again = admin(run_cli, "graph", "push", "example_graph", str(work))
+    assert again.code == 0, again.envelope
+    assert details(again, "admin.marking_in_expression") == [TIDY["admin.marking_in_expression"]]
+
+
+def test_a_pushed_action_without_a_marked_precondition_adds_no_warning(
+    run_cli: CliRunner, graph_id: str, tmp_path: Path
+) -> None:
+    assert apply(run_cli, tmp_path, policy("ex:personal")).code == 0
+    work = tmp_path / "work_tree"
+    assert admin(run_cli, "graph", "pull", "example_graph", str(work)).code == 0
+    (work / "actions").mkdir(exist_ok=True)
+    plain = ACTION.replace("attr: email", "attr: team")
+    (work / "actions" / "tidy_person.yaml").write_text(plain)
+    pushed = admin(run_cli, "graph", "push", "example_graph", str(work))
+    assert pushed.code == 0, pushed.envelope
+    assert "admin.marking_in_expression" not in pushed.warning_codes
