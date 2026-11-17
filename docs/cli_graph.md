@@ -84,7 +84,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
-| `view REF` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state |
+| `view REF` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)); not `graph-admin view`, the live view |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `changes --since POSITION` | what changed in the whole graph after a position (`tx:<seq>`, `tx:<seq>/<entity id>` or an RFC 3339 time with offset), oldest first: per tx its time, command, reason and the entities it changed as ids, types, revisions and the names (not values) that changed; continue with the `next` of the answer while `more`; paged by entity items (`--limit`) |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
@@ -545,6 +545,88 @@ functions` list them (what the caller may not see stays out, nothing is
 recorded); transitions and relations are model-level and not filtered by the
 caller's write rights, which still apply when writing. `--affordances` with
 `--rev` is `usage.invalid_argument`: a past revision has no next step.
+
+## An entity at a glance
+
+`view REF` answers "what is relevant about this entity?" in one call, where
+the same question is otherwise a walk of `get` and `neighbors` calls to learn
+what the neighbours are called. It is a state, not a record: it shows `rev`,
+but the revision for `--expect`, the system fields and the edge ids stay with
+`get`, which is unchanged. The card is computed from the snapshot the caller
+reads (with `--as-of`, that of the point), by the same code for every graph;
+nothing is stored or cached, and a caller who may not see a type, an
+attribute or a relation sees no trace of it in counts, names, labels or
+files. `--rev`, `--fields`, `--full` and a size option do not exist: the
+size is fixed. `--as-of` needs `read.history`, as for `get`.
+
+The JSON `data` (`graph_cli.view_model/1`, `view_model` in `describe commands
+--output-schemas`) is the contract; the text form is one rendering of it. It
+holds `view` (`name: card`, `origin: generated`), `entity` (id, alias, type,
+`rev`, `record_status`, `label`, and `superseded_by` or `retracted_by` as for
+`get`), `sections` and `bytes`. A section has a `kind`; a consumer ignores a
+kind it does not know. No key has an empty value. The sections, in order:
+
+- `fields`: at most eight items, in this order: the main label (`role:
+  label`, in the graph's language), the alternative labels (`alt_label`, at
+  most three values), the lifecycle states (`state`), then the attributes
+  marked `required` and those marked `unique`, by name (not hidden labels,
+  not the hash of a stored file). Every other attribute with a value is only
+  named in `other` (twelve names, then `other_more`), to be read with
+  `get --fields`. A string is cut at 100 characters (`chars` is its length),
+  a list at five elements (`more`).
+- `relations`: one group per relation and direction with at least one edge
+  the caller sees, out before in; within a direction the relations that
+  place an entity (at most one edge) and the required ones come first, then
+  by name. The relations of the `core` module and `files:from_file` are not
+  groups. A group has `count`, `items` (the first three neighbours by name,
+  not by importance, each with `ref`, `label`, `type` when the group mixes
+  types, `state`, `record_status` when not active, and the edge's
+  `qualifiers`), `more`, and `states` (the neighbours per lifecycle state)
+  when they share one lifecycle attribute and some are not shown; `missing`
+  when the edges are below the relation's minimum. At most eight groups;
+  the other relations are named in `more_groups`. The count of an in-group
+  counts active sources. A group of more than a hundred edges is read from
+  the first hundred in stored order (`sampled`), and an in-group then shows
+  the number of in-edges as `count` with `approx: true`.
+- `files`: the stored files an entity was taken from (`files:from_file`),
+  five at most ordered by title and page, with `page`, `last_page` and
+  `locator`, never a path or a hash; for a stored file itself the variant
+  `cited_by`: `count` of citing entities, `page_min`, `page_max`,
+  `pages_cited` and the first five citations by page (`ref`, `label`,
+  `page`). It does not say what is on a page.
+- `affordances`: what `get --affordances` lists, by name: per lifecycle
+  attribute the states it may move to (`allowed`) and those it may not
+  (`blocked`, with the ids of the failing guards), the actions that apply
+  and how many are blocked, the functions, at most five names per list and
+  the rest counted (`actions_more`, `functions_more`), and `detail`, the
+  command that shows everything. Judged as `get --affordances` judges
+  (`applies` means no known obstacle). A superseded or retracted entity has
+  none.
+
+The whole data stays below 6 KiB: the caps above, then, if a card is still
+larger (long labels, ids instead of aliases), a fixed order of trimming
+(neighbours per group to one, trailing groups to `more_groups`, values to 40
+characters, trailing fields to `other`, file references), after which `cut`
+is true. Whatever is left out is counted, never dropped silently, and an
+envelope hint names the command that reads it: `neighbors REF --rel
+<relation>` for neighbours, `get REF --fields <names>` for attributes. The
+same input gives the same bytes. The text form puts each group, the files
+and what applies next on one line:
+
+```text
+PRJ-0007  Example project  (ex:Project, rev 4, active)
+  name: Example project
+  status: active [state]
+  other fields: description, notes
+ex:owned_by ->   1  TEAM-0002 Example team
+ex:has_task ->  12  first 3 by name: TASK-0031 Draft the spec [open]; TASK-0032 Review the spec [open]; TASK-0040 Ship [done]  (+9; 3 open, 9 done)
+files: FILE-0003 "Project brief" p. 5-7
+can: status -> paused; do close_project; run project_tasks
+detail: graph get PRJ-0007 --affordances
+```
+
+`graph view` is not `graph-admin view`: that one starts the live view, which
+composes its entity panel by itself ([Live view](live_view.md#using-the-view)).
 
 ## Names and lookup
 

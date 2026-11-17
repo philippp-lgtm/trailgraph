@@ -54,7 +54,10 @@ against it and audited. The CLI is on `PATH`.
    `query` when none fits. An empty value in a function's answer means
    nothing is recorded: say so instead of searching further.
 3. Read: `graph find --type <type> --where <attr>=<value> --json`,
-   `graph get <id> --json`, `graph neighbors <id> --json`. Lists are
+   `graph get <id> --json`, `graph neighbors <id> --json`. For what is known
+   about one entity, `graph view <id> --json` is one answer (key fields,
+   relations with counts and the first neighbours, files, what applies next):
+   use it before walking edges with `get` and `neighbors`. Lists are
    paged: follow `page.next_offset` or the hint until `page.truncated` is
    false. To find something by name, `graph lookup <value> --json` lists
    the candidates named exactly so (`--match prefix` adds names that

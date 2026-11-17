@@ -409,8 +409,9 @@ class TestStructure:
         # covering-function hint line (224); --full and the empty function value (225);
         # the `writes` object of `graph whoami` (226); the line on unseen fields and
         # `markings` (227); reasons in English (228); the row of `graph changes` in the command
-        # table (229: generated, the prose is unchanged); the row of `graph view` (230: generated)
-        assert len(files["SKILL.md"].splitlines()) <= 230
+        # table (229: generated, the prose is unchanged); the row of `graph view` (230:
+        # generated); the sentence on `graph view` in the read step (233)
+        assert len(files["SKILL.md"].splitlines()) <= 233
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB;

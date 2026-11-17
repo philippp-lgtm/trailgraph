@@ -123,6 +123,13 @@ graph describe types --module ops        # --module also limits types, relations
 graph describe schema --module legal --compact
 ```
 
+Read one entity at a glance (key fields, relations with counts and the first neighbours, what
+applies next):
+
+```sh
+graph view POS-0013
+```
+
 Run a named function (parameters are ids or aliases, found with `graph lookup`):
 
 ```sh
