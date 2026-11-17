@@ -6,6 +6,7 @@ documents (B4 portability test). Absent optional values are omitted (C.6).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -71,10 +72,76 @@ class ActionRef:
         return cls(req_str(data, "name", path), req_str(data, "hash", path))
 
 
+SOURCE_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+MAX_SOURCE_TEXT: Final = 128
+# In-process callers only (never parsed from a document): the extraction service names itself.
+SOURCE_KINDS: Final = ("extractor",)
+_SOURCE_KEYS: Final = frozenset({"name", "version", "run", "kind"})
+
+
+def is_source_text(value: object) -> bool:
+    """Whether ``value`` is a ``version`` or ``run`` of a source: 1 to ``MAX_SOURCE_TEXT``
+    printable characters, no blank at either end. One definition for the document parser and
+    the audit schema."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_SOURCE_TEXT
+        and value.isprintable()
+        and value == value.strip()
+    )
+
+
+def is_source_ref_json(value: JsonValue) -> bool:
+    """Whether ``value`` has the persisted shape of a ``SourceRef``: ``name`` plus optional
+    ``version``, ``run`` and ``kind``, nothing else."""
+    return (
+        isinstance(value, Mapping)
+        and "name" in value
+        and set(value) <= _SOURCE_KEYS
+        and isinstance(value["name"], str)
+        and SOURCE_NAME_RE.match(value["name"]) is not None
+        and all(is_source_text(value[key]) for key in ("version", "run") if key in value)
+        and ("kind" not in value or value["kind"] in SOURCE_KINDS)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRef:
+    """The source run a request hands over: the producer's logical ``name``, its ``version``
+    (a collector release, a git sha) and the ``run`` (its run id or start time).
+
+    A claim recorded with the authenticated actor, like a reason; it grants nothing. ``kind``
+    is set by in-process callers only (``SOURCE_KINDS``); a document cannot name it.
+    """
+
+    name: str
+    version: str | None = None
+    run: str | None = None
+    kind: str | None = None
+
+    def to_json(self) -> dict[str, JsonValue]:
+        data: dict[str, JsonValue] = {"name": self.name}
+        for key in ("version", "run", "kind"):
+            value = getattr(self, key)
+            if value is not None:
+                data[key] = value
+        return data
+
+    @classmethod
+    def from_json(cls, data: JsonObject, path: str = "") -> SourceRef:
+        return cls(
+            req_str(data, "name", path),
+            opt_str(data, "version", path),
+            opt_str(data, "run", path),
+            opt_str(data, "kind", path),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class RequestMeta:
     """What was asked: command name and ``args_digest`` (C.10); ``action`` names the
-    published action of a ``do`` (actions plan A7).
+    published action of a ``do`` (actions plan A7), ``source`` the source run of a document
+    that names one (reconcile plan R-K10).
 
     Lives in the kernel (contract draft: ``services.write``) because tx records
     and authorized txs carry it.
@@ -83,20 +150,27 @@ class RequestMeta:
     command: str
     args_digest: str
     action: ActionRef | None = None
+    source: SourceRef | None = None
 
     @classmethod
     def of(
-        cls, command: str, args: Mapping[str, JsonValue], action: ActionRef | None = None
+        cls,
+        command: str,
+        args: Mapping[str, JsonValue],
+        action: ActionRef | None = None,
+        source: SourceRef | None = None,
     ) -> RequestMeta:
         """C.10: the digest covers the request DTO, not raw argv."""
-        return cls(command, hash_value({"command": command, "args": dict(args)}), action)
+        return cls(command, hash_value({"command": command, "args": dict(args)}), action, source)
 
     def to_json(self) -> dict[str, JsonValue]:
-        """The ``request`` object of an audit event or a tx record; ``action`` only when set,
-        so requests without one keep their bytes."""
+        """The ``request`` object of an audit event or a tx record; ``action`` and ``source``
+        only when set, so requests without one keep their bytes."""
         data: dict[str, JsonValue] = {"command": self.command, "args_digest": self.args_digest}
         if self.action is not None:
             data["action"] = self.action.to_json()
+        if self.source is not None:
+            data["source"] = self.source.to_json()
         return data
 
     @classmethod
@@ -106,6 +180,9 @@ class RequestMeta:
             req_str(data, "args_digest", path),
             ActionRef.from_json(req_obj(data, "action", path), f"{path}action.")
             if "action" in data
+            else None,
+            SourceRef.from_json(req_obj(data, "source", path), f"{path}source.")
+            if "source" in data
             else None,
         )
 

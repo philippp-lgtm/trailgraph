@@ -11,6 +11,13 @@ references and timestamps are normalized. The tx stores it, and
 ``changeset_hash`` is C.2 over it, so two documents that differ only in key
 order or explicit defaults hash the same (idempotent retries, B3.12).
 
+A document may also carry a ``source`` (the source run it comes from) and a ``reconcile``
+part (the desired state of declared scopes, reconcile plan R-K1 to R-K5). Both are parsed
+here; the write service turns the reconcile part into ops under the graph lock, so the
+tx records the expanded ops only (``changeset_to_json`` leaves both out) and the source in
+``request.source``. ``document_to_json`` is the canonical form of the whole document, the
+input a request digest of a reconcile document covers.
+
 Input readers parse JSON floats into ``FloatLiteral`` so that a float in an
 attribute or qualifier value reaches the validator as
 ``data.structural.float_not_allowed`` (C.1); a float anywhere else is
@@ -42,7 +49,12 @@ from graph_cli.kernel.ids import (
     parse_id,
     ref_text,
 )
-from graph_cli.kernel.records import EdgeRecord
+from graph_cli.kernel.records import (
+    SOURCE_NAME_RE,
+    EdgeRecord,
+    SourceRef,
+    is_source_text,
+)
 
 CHANGESET_SCHEMA: Final = "graph_cli.changeset/1"
 # The changeset of a migration tx (plan M4): no ops, a ``migration`` record; not an input document.
@@ -50,6 +62,8 @@ MIGRATION_CHANGESET_SCHEMA: Final = "graph_cli.migration/1"
 MAX_OPS: Final = 1000
 MAX_BYTES: Final = 8 * 1024 * 1024
 MAX_REASON: Final = 2000
+MAX_RECONCILE_SCOPES: Final = 32
+MAX_KEY_BYTES: Final = 512  # an item key, ``under`` or a ``keep``/``moves`` key, in UTF-8
 
 NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")  # attributes, qualifiers, states, locals
 IDEMPOTENCY_KEY_RE: Final = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
@@ -62,7 +76,40 @@ NO_TEXTS: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType({})
 # (required, optional) keys of the document, an edge and each op; the parser and
 # skill 1's change set reference read them, so the two cannot drift.
 Keys = tuple[tuple[str, ...], tuple[str, ...]]
-DOCUMENT_KEYS: Final[Keys] = (("ops",), ("schema", "reason", "idempotency_key", "expect_seq"))
+# ``ops`` is optional because a document may carry ``reconcile`` instead (at least one of the
+# two); the parser enforces that.
+DOCUMENT_KEYS: Final[Keys] = (
+    (),
+    ("ops", "schema", "reason", "idempotency_key", "expect_seq", "source", "reconcile"),
+)
+SOURCE_KEYS: Final[Keys] = (("name",), ("version", "run"))
+SCOPE_KEYS: Final[Keys] = (
+    ("type", "key", "items"),
+    (
+        "under",
+        "complete",
+        "fields",
+        "edges",
+        "retire",
+        "allow_retire",
+        "allow_empty",
+        "keep",
+        "moves",
+        "expect",
+    ),
+)
+ITEM_KEYS: Final[Keys] = (
+    ("key",),
+    ("type", "local", "attrs", "attrs_text", "edges", "valid_from", "valid_to"),
+)
+ITEM_EDGE_KEYS: Final[Keys] = (("rel", "target"), ("qualifiers",))
+VALUE_REF_KEYS: Final[Keys] = (("type", "attr", "value"), ())
+RETIRE_KEYS: Final[Keys] = (("transition",), ("attr", "revive"))
+EXPECT_KEYS: Final[Keys] = ((), ("min_items", "max_items"))
+# A move names the entity by its old key (``from``) or by a reference (``id``, an adoption).
+MOVE_KEYS: Final[Mapping[str, Keys]] = MappingProxyType(
+    {"from": (("from", "to"), ()), "id": (("id", "to"), ())}
+)
 EDGE_KEYS: Final[Keys] = (("rel", "target"), ("qualifiers", "target_rev"))
 OP_KEYS: Final[Mapping[str, Keys]] = MappingProxyType(
     {
@@ -223,11 +270,108 @@ OP_ACTIONS: Final[Mapping[str, Action]] = MappingProxyType(
 
 
 @dataclass(frozen=True, slots=True)
+class ValueRef:
+    """An edge target of a reconcile item given by a unique value: the active entity of the
+    ``type`` family whose unique attribute ``attr`` holds ``value`` (reconcile plan R-K5)."""
+
+    type: TermRef
+    attr: str
+    value: str | int
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileEdge:
+    """One desired outgoing edge of a reconcile item; ``rel`` is one of the scope's ``edges``."""
+
+    rel: TermRef
+    target: EntityRef | ValueRef
+    qualifiers: Mapping[str, JsonValue] = field(default=EMPTY)
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileItem:
+    """One desired entity of a scope. ``key`` is the item key, without the source name that
+    the stored key value is prefixed with. Attributes are limited to the scope's ``fields``,
+    relations to its ``edges``."""
+
+    key: str
+    type: TermRef | None = None  # a concrete subtype of the scope type
+    local: str | None = None
+    attrs: Mapping[str, JsonValue] = field(default=EMPTY)
+    attrs_text: Mapping[str, str] = field(default=EMPTY_TEXT)
+    edges: tuple[ReconcileEdge, ...] = ()
+    valid_from: str | None = None
+    valid_to: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MoveSpec:
+    """An entity that keeps its identity under a new key: the one holding ``old_key``, or the
+    keyless one ``id`` names (an adoption). Exactly one of the two is set."""
+
+    to: str
+    old_key: str | None = None
+    id: EntityRef | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RetireSpec:
+    """What happens to an entity that left a complete scope: a retract (no ``transition``) or a
+    lifecycle transition to ``transition`` of ``attr`` (default: the type's lifecycle), and
+    with ``revive`` a transition back when its item returns."""
+
+    transition: str | None = None
+    attr: str | None = None
+    revive: str | None = None
+
+
+RETRACT: Final = RetireSpec()
+
+
+@dataclass(frozen=True, slots=True)
+class ExpectSpec:
+    """Plausible item counts of a scope (``reconcile.shape`` when the items fall outside)."""
+
+    min_items: int | None = None
+    max_items: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileScope:
+    """The desired state of the entities one entry speaks for: active entities of ``type``
+    (and its subtypes) whose ``key`` attribute starts with ``<source>/<under>``. With
+    ``complete`` the items are the whole scope and absent entities retire; otherwise the scope
+    is partial (create and update only). ``fields`` and ``edges``, sorted, are all the
+    attributes and relations the source sets; ``keep`` lists item keys left as they are."""
+
+    type: TermRef
+    key: str  # the key attribute of ``type``
+    items: tuple[ReconcileItem, ...]
+    under: str = ""
+    complete: bool = False
+    fields: tuple[str, ...] = ()
+    edges: tuple[TermRef, ...] = ()
+    retire: RetireSpec = RETRACT
+    allow_retire: int | None = None
+    allow_empty: bool = False
+    keep: tuple[str, ...] = ()
+    moves: tuple[MoveSpec, ...] = ()
+    expect: ExpectSpec | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeSet:
+    """A parsed document: the frame (``reason``, key, ``expect_seq``) with its ``ops``, and
+    separately the ``source`` claim and the ``reconcile`` part. The write service expands the
+    reconcile part into more ops under the graph lock and records the expanded change set
+    (``reconcile=()``); ``ops`` of a document with a reconcile part run first."""
+
     ops: tuple[Op, ...]
     reason: str | None = None
     idempotency_key: str | None = None
     expect_seq: int | None = None
+    source: SourceRef | None = None
+    reconcile: tuple[ReconcileScope, ...] = ()
 
 
 def op_action(op: Op) -> Action:
@@ -683,6 +827,303 @@ def _op(value: JsonValue, path: str) -> Op:
     return parser(obj, path)
 
 
+# ---- source and reconcile -----------------------------------------------------------------
+
+
+def _flag(value: JsonValue, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise _malformed(path, "expected true or false")
+    return value
+
+
+def _array(value: JsonValue, path: str) -> list[JsonValue] | tuple[JsonValue, ...]:
+    if not isinstance(value, list | tuple):
+        raise _malformed(path, "expected an array")
+    return value
+
+
+def _key_text(value: JsonValue, path: str, *, minimum: int) -> str:
+    """A source key (or ``under``): ``minimum`` to ``MAX_KEY_BYTES`` bytes of printable text,
+    no blank at either end (a text value may be trimmed on storage, and the key would then
+    never match again) and no leading ``/`` (the stored value is ``<source>/<key>``)."""
+    text = _str(value, path)
+    if (
+        not text.isprintable()
+        or text != text.strip()
+        or text.startswith("/")
+        or not minimum <= len(text.encode("utf-8")) <= MAX_KEY_BYTES
+    ):
+        raise _malformed(
+            path,
+            f"expected {minimum} to {MAX_KEY_BYTES} bytes of printable text without a leading"
+            " '/' or a blank at either end",
+        )
+    return text
+
+
+def _scoped_key(value: JsonValue, path: str, under: str) -> str:
+    """An item, ``keep`` or move key: a key that lies inside the scope's ``under``."""
+    text = _key_text(value, path, minimum=1)
+    if not text.startswith(under):
+        raise _malformed(path, "the key lies outside the scope's under", under=under)
+    return text
+
+
+def _source(value: JsonValue) -> SourceRef:
+    obj = _object(value, "source")
+    if "kind" in obj:
+        raise _malformed("source.kind", "set by the program for its own writers, not by a document")
+    _keys(obj, "source", SOURCE_KEYS)
+    texts: dict[str, str | None] = {}
+    for key in ("version", "run"):
+        item = None
+        if key in obj:
+            item = _str(obj[key], f"source.{key}")
+            if not is_source_text(item):
+                raise _malformed(
+                    f"source.{key}",
+                    "expected 1 to 128 printable characters without a blank at either end",
+                )
+        texts[key] = item
+    return SourceRef(
+        name=_grammar(obj["name"], "source.name", SOURCE_NAME_RE, "a lowercase name"),
+        version=texts["version"],
+        run=texts["run"],
+    )
+
+
+def _unique_names(
+    value: JsonValue, path: str, parse: Callable[[JsonValue, str], str]
+) -> tuple[str, ...]:
+    """A set of names (or CURIEs) given as an array: valid, listed once, sorted."""
+    names: list[str] = []
+    for index, item in enumerate(_array(value, path)):
+        name = parse(item, _join(path, index))
+        if name in names:
+            raise _malformed(_join(path, index), "listed twice")
+        names.append(name)
+    return tuple(sorted(names))
+
+
+def _value_ref(obj: Mapping[str, JsonValue], path: str) -> ValueRef:
+    _keys(obj, path, VALUE_REF_KEYS)
+    value = obj["value"]
+    value_path = _join(path, "value")
+    if isinstance(value, bool | FloatLiteral) or not isinstance(value, str | int):
+        raise _malformed(value_path, "expected a string or an integer")
+    return ValueRef(
+        type=_term(obj["type"], _join(path, "type")),
+        attr=_name(obj["attr"], _join(path, "attr")),
+        value=value,
+    )
+
+
+def _reconcile_edge(value: JsonValue, path: str, rels: tuple[TermRef, ...]) -> ReconcileEdge:
+    obj = _object(value, path)
+    _keys(obj, path, ITEM_EDGE_KEYS)
+    rel = _term(obj["rel"], _join(path, "rel"))
+    if rel not in rels:
+        raise _malformed(
+            _join(path, "rel"),
+            "the relation is not listed in the scope's edges",
+            expected=list(rels),
+        )
+    raw = obj["target"]
+    target_path = _join(path, "target")
+    target: EntityRef | ValueRef = (
+        _value_ref(raw, target_path) if isinstance(raw, Mapping) else _ref(raw, target_path)
+    )
+    return ReconcileEdge(
+        rel=rel,
+        target=target,
+        qualifiers=_values(obj.get("qualifiers", {}), _join(path, "qualifiers")),
+    )
+
+
+def _reconcile_item(
+    value: JsonValue,
+    path: str,
+    *,
+    under: str,
+    key_attr: str,
+    fields: tuple[str, ...],
+    rels: tuple[TermRef, ...],
+) -> ReconcileItem:
+    obj = _object(value, path)
+    _keys(obj, path, ITEM_KEYS)
+    attrs = _values(obj.get("attrs", {}), _join(path, "attrs"))
+    attrs_text = _texts(obj.get("attrs_text", {}), _join(path, "attrs_text"))
+    _disjoint(attrs, attrs_text, _join(path, "attrs_text"), "attrs and attrs_text")
+    for part, given in (("attrs", attrs), ("attrs_text", attrs_text)):
+        for name in given:
+            if name not in fields:
+                where = _join(_join(path, part), name)
+                if name == key_attr:
+                    raise _malformed(where, "the key attribute is set from the key, not as a field")
+                raise _malformed(
+                    where,
+                    "the attribute is not listed in the scope's fields",
+                    expected=list(fields),
+                )
+    edges_path = _join(path, "edges")
+    edges: list[ReconcileEdge] = []
+    for index, raw in enumerate(_array(obj.get("edges", []), edges_path)):
+        edge = _reconcile_edge(raw, _join(edges_path, index), rels)
+        if edge in edges:
+            raise _malformed(_join(edges_path, index), "listed twice")
+        edges.append(edge)
+    local = obj.get("local")
+    return ReconcileItem(
+        key=_scoped_key(obj["key"], _join(path, "key"), under),
+        type=None if "type" not in obj else _term(obj["type"], _join(path, "type")),
+        local=None if local is None else _name(local, _join(path, "local")),
+        attrs=attrs,
+        attrs_text=attrs_text,
+        edges=tuple(edges),
+        valid_from=None
+        if "valid_from" not in obj
+        else _valid_time(obj["valid_from"], _join(path, "valid_from")),
+        valid_to=None
+        if "valid_to" not in obj
+        else _valid_time(obj["valid_to"], _join(path, "valid_to")),
+    )
+
+
+def _retire(value: JsonValue, path: str) -> RetireSpec:
+    if isinstance(value, str) and not isinstance(value, FloatLiteral):
+        if value != "retract":
+            raise _malformed(path, 'expected "retract" or {transition, attr?, revive?}')
+        return RETRACT
+    obj = _object(value, path)
+    _keys(obj, path, RETIRE_KEYS)
+    spec = RetireSpec(
+        transition=_name(obj["transition"], _join(path, "transition")),
+        attr=None if "attr" not in obj else _name(obj["attr"], _join(path, "attr")),
+        revive=None if "revive" not in obj else _name(obj["revive"], _join(path, "revive")),
+    )
+    if spec.revive == spec.transition:
+        raise _malformed(_join(path, "revive"), "the revive state is the retire state")
+    return spec
+
+
+def _move(value: JsonValue, path: str, under: str) -> MoveSpec:
+    obj = _object(value, path)
+    if "from" in obj and "id" in obj:
+        raise _malformed(path, "a move names from or id, not both")
+    form = "from" if "from" in obj else "id" if "id" in obj else None
+    if form is None:
+        raise _malformed(path, "a move needs from (an old key) or id (an adoption)")
+    _keys(obj, path, MOVE_KEYS[form])
+    to = _scoped_key(obj["to"], _join(path, "to"), under)
+    if form == "id":
+        return MoveSpec(to=to, id=_ref(obj["id"], _join(path, "id")))
+    old = _scoped_key(obj["from"], _join(path, "from"), under)
+    if old == to:
+        raise _malformed(path, "from and to are the same key")
+    return MoveSpec(to=to, old_key=old)
+
+
+def _expect(value: JsonValue, path: str) -> ExpectSpec:
+    obj = _object(value, path)
+    _keys(obj, path, EXPECT_KEYS)
+    spec = ExpectSpec(
+        _opt_int(obj, "min_items", path, minimum=0), _opt_int(obj, "max_items", path, minimum=0)
+    )
+    if spec.min_items is None and spec.max_items is None:
+        raise _malformed(path, "expected min_items or max_items")
+    if (
+        spec.min_items is not None
+        and spec.max_items is not None
+        and spec.min_items > spec.max_items
+    ):
+        raise _malformed(path, "min_items is above max_items")
+    return spec
+
+
+def _reconcile_scope(value: JsonValue, path: str) -> ReconcileScope:
+    obj = _object(value, path)
+    _keys(obj, path, SCOPE_KEYS)
+    scope_type = _term(obj["type"], _join(path, "type"))
+    key_attr = _name(obj["key"], _join(path, "key"))
+    under = "" if "under" not in obj else _key_text(obj["under"], _join(path, "under"), minimum=0)
+    fields = _unique_names(obj["fields"], _join(path, "fields"), _name) if "fields" in obj else ()
+    if key_attr in fields:
+        raise _malformed(
+            _join(path, "fields"), "the key attribute is set from the key, not as a field"
+        )
+    rels = (
+        tuple(TermRef(r) for r in _unique_names(obj["edges"], _join(path, "edges"), _term))
+        if "edges" in obj
+        else ()
+    )
+    keep_path = _join(path, "keep")
+    keep: list[str] = []
+    for index, raw in enumerate(_array(obj.get("keep", []), keep_path)):
+        kept = _scoped_key(raw, _join(keep_path, index), under)
+        if kept in keep:
+            raise _malformed(_join(keep_path, index), "listed twice")
+        keep.append(kept)
+    moves_path = _join(path, "moves")
+    moves = tuple(
+        _move(raw, _join(moves_path, index), under)
+        for index, raw in enumerate(_array(obj.get("moves", []), moves_path))
+    )
+    items_path = _join(path, "items")
+    items: list[ReconcileItem] = []
+    first_at: dict[str, str] = {}
+    for index, raw in enumerate(_array(obj["items"], items_path)):
+        item_path = _join(items_path, index)
+        item = _reconcile_item(
+            raw, item_path, under=under, key_attr=key_attr, fields=fields, rels=rels
+        )
+        if item.key in first_at:
+            raise _malformed(
+                _join(item_path, "key"),
+                "the key is used by an earlier item",
+                first_path=_join(first_at[item.key], "key"),
+            )
+        first_at[item.key] = item_path
+        if item.key in keep:
+            raise _malformed(
+                _join(item_path, "key"), "the key is also listed in keep", keep=_join(path, "keep")
+            )
+        items.append(item)
+    return ReconcileScope(
+        type=scope_type,
+        key=key_attr,
+        items=tuple(items),
+        under=under,
+        complete=False
+        if "complete" not in obj
+        else _flag(obj["complete"], _join(path, "complete")),
+        fields=fields,
+        edges=rels,
+        retire=RETRACT if "retire" not in obj else _retire(obj["retire"], _join(path, "retire")),
+        allow_retire=_opt_int(obj, "allow_retire", path, minimum=0),
+        allow_empty=False
+        if "allow_empty" not in obj
+        else _flag(obj["allow_empty"], _join(path, "allow_empty")),
+        keep=tuple(sorted(keep)),
+        moves=moves,
+        expect=None if "expect" not in obj else _expect(obj["expect"], _join(path, "expect")),
+    )
+
+
+def _reconcile(value: JsonValue) -> tuple[ReconcileScope, ...]:
+    raw = _array(value, "reconcile")
+    if not raw:
+        raise _malformed("reconcile", "expected a non-empty array")
+    if len(raw) > MAX_RECONCILE_SCOPES:
+        raise GraphCliError(
+            "changeset.too_large",
+            f"the document has {len(raw)} reconcile scopes, the limit is {MAX_RECONCILE_SCOPES}",
+            details={"limit_scopes": MAX_RECONCILE_SCOPES, "actual_scopes": len(raw)},
+        )
+    return tuple(
+        _reconcile_scope(item, _join("reconcile", index)) for index, item in enumerate(raw)
+    )
+
+
 def parse_changeset(doc: JsonValue, *, max_ops: int = MAX_OPS) -> ChangeSet:
     """Check a parsed change set document strictly (W.1)."""
     obj = _object(doc, "")
@@ -707,20 +1148,32 @@ def parse_changeset(doc: JsonValue, *, max_ops: int = MAX_OPS) -> ChangeSet:
         key = _grammar(
             obj["idempotency_key"], "idempotency_key", IDEMPOTENCY_KEY_RE, "[A-Za-z0-9._:-]{1,128}"
         )
-    raw_ops = obj["ops"]
-    if not isinstance(raw_ops, list | tuple) or not raw_ops:
-        raise _malformed("ops", "expected a non-empty array")
-    if len(raw_ops) > max_ops:
-        raise GraphCliError(
-            "changeset.too_large",
-            f"the change set has {len(raw_ops)} ops, the limit is {max_ops}",
-            details={"limit_ops": max_ops, "actual_ops": len(raw_ops)},
-        )
+    if "ops" not in obj and "reconcile" not in obj:
+        raise _malformed("ops", "missing: a document needs ops, reconcile or both")
+    source = None
+    if "source" in obj:
+        source = _source(obj["source"])
+    elif "reconcile" in obj:
+        raise _malformed("source", "missing: a document with reconcile names its source")
+    ops: tuple[Op, ...] = ()
+    if "ops" in obj:
+        raw_ops = obj["ops"]
+        if not isinstance(raw_ops, list | tuple) or not raw_ops:
+            raise _malformed("ops", "expected a non-empty array")
+        if len(raw_ops) > max_ops:
+            raise GraphCliError(
+                "changeset.too_large",
+                f"the change set has {len(raw_ops)} ops, the limit is {max_ops}",
+                details={"limit_ops": max_ops, "actual_ops": len(raw_ops)},
+            )
+        ops = tuple(_op(item, _join("ops", index)) for index, item in enumerate(raw_ops))
     return ChangeSet(
-        ops=tuple(_op(item, _join("ops", index)) for index, item in enumerate(raw_ops)),
+        ops=ops,
         reason=reason,
         idempotency_key=key,
         expect_seq=_opt_int(obj, "expect_seq", "", minimum=0),
+        source=source,
+        reconcile=_reconcile(obj["reconcile"]) if "reconcile" in obj else (),
     )
 
 
@@ -794,8 +1247,70 @@ def op_to_json(op: Op) -> dict[str, JsonValue]:
     return data
 
 
+def _target_json(target: EntityRef | ValueRef) -> JsonValue:
+    if isinstance(target, ValueRef):
+        return {"type": target.type, "attr": target.attr, "value": target.value}
+    return _ref_json(target)
+
+
+def _reconcile_edge_json(edge: ReconcileEdge) -> dict[str, JsonValue]:
+    data: dict[str, JsonValue] = {"rel": edge.rel, "target": _target_json(edge.target)}
+    _put(data, "qualifiers", dict(edge.qualifiers))
+    return data
+
+
+def _item_json(item: ReconcileItem) -> dict[str, JsonValue]:
+    data: dict[str, JsonValue] = {"key": item.key}
+    _put(data, "type", item.type)
+    _put(data, "local", item.local)
+    _put(data, "attrs", dict(item.attrs))
+    _put(data, "attrs_text", dict(item.attrs_text))
+    _put(data, "edges", [_reconcile_edge_json(e) for e in item.edges])
+    _put(data, "valid_from", item.valid_from)
+    _put(data, "valid_to", item.valid_to)
+    return data
+
+
+def _move_json(move: MoveSpec) -> dict[str, JsonValue]:
+    if move.id is not None:
+        return {"id": _ref_json(move.id), "to": move.to}
+    assert move.old_key is not None
+    return {"from": move.old_key, "to": move.to}
+
+
+def scope_to_json(scope: ReconcileScope) -> dict[str, JsonValue]:
+    """The canonical form of one scope: defaults omitted, sets sorted, items and moves in the
+    order given (the plan orders its ops by them)."""
+    data: dict[str, JsonValue] = {"type": scope.type, "key": scope.key}
+    if scope.under:
+        data["under"] = scope.under
+    if scope.complete:
+        data["complete"] = True
+    _put(data, "fields", list(scope.fields))
+    _put(data, "edges", list(scope.edges))
+    if scope.retire != RETRACT:
+        retire: dict[str, JsonValue] = {"transition": scope.retire.transition}
+        _put(retire, "attr", scope.retire.attr)
+        _put(retire, "revive", scope.retire.revive)
+        data["retire"] = retire
+    _put(data, "allow_retire", scope.allow_retire)
+    if scope.allow_empty:
+        data["allow_empty"] = True
+    _put(data, "keep", list(scope.keep))
+    _put(data, "moves", [_move_json(m) for m in scope.moves])
+    if scope.expect is not None:
+        expect: dict[str, JsonValue] = {}
+        _put(expect, "min_items", scope.expect.min_items)
+        _put(expect, "max_items", scope.expect.max_items)
+        data["expect"] = expect
+    data["items"] = [_item_json(i) for i in scope.items]
+    return data
+
+
 def changeset_to_json(cs: ChangeSet) -> dict[str, JsonValue]:
-    """The canonical form (C.6): what the tx stores and what is hashed."""
+    """The canonical form (C.6) of the frame and its ops: what the tx stores and what is
+    hashed. The ``source`` and the ``reconcile`` part are not in it: the tx records the ops a
+    reconcile expanded to, and the source in ``request.source``."""
     data: dict[str, JsonValue] = {
         "schema": CHANGESET_SCHEMA,
         "ops": [op_to_json(op) for op in cs.ops],
@@ -809,3 +1324,23 @@ def changeset_to_json(cs: ChangeSet) -> dict[str, JsonValue]:
 def changeset_hash(cs: ChangeSet) -> str:
     """C.2 over the canonical form (B4.4)."""
     return hash_value(changeset_to_json(cs))
+
+
+def document_to_json(cs: ChangeSet) -> dict[str, JsonValue]:
+    """The canonical form of the whole document: ``changeset_to_json`` plus ``source`` and
+    ``reconcile``, each only when present, so a document without them has the bytes of its
+    change set. Parsing it gives ``cs`` again."""
+    data = changeset_to_json(cs)
+    if not cs.ops:
+        del data["ops"]  # a reconcile-only document has no ops key
+    if cs.source is not None:
+        data["source"] = cs.source.to_json()
+    if cs.reconcile:
+        data["reconcile"] = [scope_to_json(s) for s in cs.reconcile]
+    return data
+
+
+def document_hash(cs: ChangeSet) -> str:
+    """C.2 over ``document_to_json``: what a request digest of a reconcile document covers
+    (C.10)."""
+    return hash_value(document_to_json(cs))

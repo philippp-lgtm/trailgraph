@@ -430,6 +430,14 @@ class WriteService:
     # ---- W.1-W.5 -------------------------------------------------------
 
     def _prepare(self, request: WriteRequest, snapshot: Snapshot | None) -> _Prepared:
+        if request.changeset.reconcile:
+            # parsed since the document grammar, planned by a later step of the reconcile plan;
+            # until then nothing may drop the part and report an empty write
+            raise GraphCliError(
+                "changeset.malformed",
+                "reconcile: this build does not apply reconcile documents yet",
+                details={"path": "reconcile"},
+            )
         if len(request.changeset.ops) > self.config.max_ops:
             raise GraphCliError(
                 "changeset.too_large",

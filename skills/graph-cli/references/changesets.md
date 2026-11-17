@@ -23,11 +23,13 @@ a single change the single-operation commands are simpler.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `ops` | yes | The operations, 1 to 1000, applied in order. |
+| `ops` | no | The operations, 1 to 1000, applied in order. Needed unless `reconcile` is given. |
 | `schema` | no | Always `graph_cli.changeset/1`. |
 | `reason` | no | Why the change is made, for all ops. Needed when an op needs one (`supersede`, `retract`, or `require_reason` in `graph whoami`). |
 | `idempotency_key` | no | Up to 128 characters of `A-Z a-z 0-9 . _ : -`. Retrying the same document with the same key never writes twice. |
 | `expect_seq` | no | Refuse unless the graph is still at this seq (`graph.seq` of the answer you read). |
+| `source` | no | The source run the document comes from: `name` (lowercase, `a-z 0-9 _`), and optionally `version` and `run`. Recorded in the audit. Needed with `reconcile`. |
+| `reconcile` | no | For pipelines that hand over the desired state of a source, not for agents: scopes with their items, applied by key in one transaction. |
 
 ## Operations
 

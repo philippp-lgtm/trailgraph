@@ -294,6 +294,11 @@ def cross_check(
         if migration_tx or "changeset_size" in change:  # old write intents lack the size
             expected["changeset_size"] = changeset_size(tx.changeset)
         recorded = {k: change.get(k) for k in expected}
+        # the source run of a request, in the intent and in the tx record (reconcile plan R-K10)
+        expected["request.source"] = (
+            None if tx.request.source is None else tx.request.source.to_json()
+        )
+        recorded["request.source"] = _intent_source(event)
         if recorded != expected:
             differing = sorted(k for k in expected if recorded[k] != expected[k])
             findings.append(
@@ -320,6 +325,12 @@ def cross_check(
                 )
             )
     return findings
+
+
+def _intent_source(event: Mapping[str, JsonValue]) -> JsonValue:
+    """``request.source`` of an intent, ``None`` when it names none."""
+    request = event.get("request")
+    return request.get("source") if isinstance(request, Mapping) else None
 
 
 def _is_migration_tx(tx: TxRecord) -> bool:

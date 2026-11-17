@@ -398,7 +398,7 @@ Examples:
 # What each change set key and op means; the renderer refuses a kernel key or op
 # missing here, so a new one cannot reach `graph apply` undocumented.
 CHANGESET_DOCUMENT_GUIDANCE: Final[Mapping[str, str]] = {
-    "ops": f"The operations, 1 to {MAX_OPS}, applied in order.",
+    "ops": f"The operations, 1 to {MAX_OPS}, applied in order. Needed unless `reconcile` is given.",
     "schema": f"Always `{CHANGESET_SCHEMA}`.",
     "reason": "Why the change is made, for all ops. Needed when an op needs one"
     " (`supersede`, `retract`, or `require_reason` in `graph whoami`).",
@@ -406,6 +406,10 @@ CHANGESET_DOCUMENT_GUIDANCE: Final[Mapping[str, str]] = {
     " document with the same key never writes twice.",
     "expect_seq": "Refuse unless the graph is still at this seq (`graph.seq` of the answer"
     " you read).",
+    "source": "The source run the document comes from: `name` (lowercase, `a-z 0-9 _`), and"
+    " optionally `version` and `run`. Recorded in the audit. Needed with `reconcile`.",
+    "reconcile": "For pipelines that hand over the desired state of a source, not for"
+    " agents: scopes with their items, applied by key in one transaction.",
 }
 CHANGESET_OP_GUIDANCE: Final[Mapping[str, str]] = {
     "create": "Create one entity, like `graph create`. `local` names it for later ops.",
