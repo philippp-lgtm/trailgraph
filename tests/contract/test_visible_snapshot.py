@@ -19,7 +19,8 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query
 from graph_cli.kernel.read_view import ReadView
-from graph_cli.kernel.records import revision_content_hash
+from graph_cli.kernel.records import Revision, revision_content_hash
+from graph_cli.services.names import MappedSnapshot
 from graph_cli.services.visibility import VisibleSnapshot
 from graph_cli.temporal_knowledge import changes
 
@@ -179,6 +180,110 @@ def test_no_revision_of_a_hidden_type_is_shown_from_either_side(world: World) ->
     assert view.get(a3) is None and view.history(a3) == []
     assert [view.get_revision(a3, rev) for rev in (1, 2)] == [None, None]
     assert world.view(3).get(a3) is not None  # as of before the move it is of the visible type
+
+
+class RetypeNames:
+    """The name mapping of a major release that retyped one class into another, for the layer
+    between the store and the view: revisions of ``source`` written before ``seq`` read as
+    ``target`` (``GraphNames.map``), and their own class is the one they were stored under
+    (``GraphNames.own_class``)."""
+
+    def __init__(self, source: str, target: str, seq: int) -> None:
+        self.source, self.target, self.seq = source, target, seq
+
+    def _moved(self, revision: Revision) -> bool:
+        return revision.type == self.source and revision.tx_seq < self.seq
+
+    def map(self, revision: Revision) -> Revision:
+        if not self._moved(revision):
+            return revision
+        moved = replace(revision, type=TermRef(self.target))
+        return replace(moved, content_hash=revision_content_hash(moved))
+
+    def own_class(self, revision: Revision) -> str:
+        return revision.type
+
+    def unmapped(self, revision: Revision) -> bool:
+        return False
+
+
+def mapped_view(
+    world: World, seq: int | None = None, *, known: tuple[str, ...] | None = None
+) -> VisibleSnapshot:
+    """The view of the visible type over the mapping of ``RetypeNames`` (B moved to A by the
+    migration tx that ``retype_b2`` writes), over the state at ``seq``; ``known`` are the classes
+    the pinned model has (both by default)."""
+    names = RetypeNames(world.b, world.a, HEAD + 1)
+    shown = frozenset({world.a})
+    mapping = MappedSnapshot(
+        world.raw(seq),
+        names,  # type: ignore[arg-type]
+        current=seq is not None,
+        classes=(world.a, world.b) if known is None else known,
+        shown=shown.__contains__,
+    )
+    return VisibleSnapshot(mapping, ReadView(shown), mapping.unmapped, mapping.own_class)
+
+
+def test_a_mapped_revision_is_judged_by_the_class_it_was_stored_under(world: World) -> None:
+    """F1b: a retype of a major release maps the revisions before it to the new class; the view
+    still leaves out those stored under a class it hides, and the migration revision is the
+    first it shows."""
+    retype_b2(world)
+    view = mapped_view(world)
+    b2 = world.ids["B2"]
+    plain = world.view()
+    assert plain.get_revision(b2, 1) is None  # judged by the stored type: the unmapped path
+    # the mapped snapshot hands the old revision out as A, the view still omits it
+    mapped = MappedSnapshot(
+        world.raw(),
+        RetypeNames(world.b, world.a, HEAD + 1),  # type: ignore[arg-type]
+        current=False,
+        classes=(world.a, world.b),
+    )
+    handed = mapped.get_revision(b2, 1)
+    assert handed is not None and handed.type == world.a
+    assert mapped.own_class(b2, 1) == world.b and mapped.own_class(b2, 3) is None
+    assert view.get_revision(b2, 1) is None and view.get_revision(b2, 2) is None
+    assert view.get_revision(b2, 3) is not None
+    assert [m.rev for m in view.history(b2)] == [3]
+    # an entity that stays of the visible type is untouched
+    a1 = world.ids["A1"]
+    assert [m.rev for m in view.history(a1)] == [1]
+
+
+def test_an_earlier_state_does_not_show_an_entity_stored_under_a_hidden_class(
+    world: World,
+) -> None:
+    """F1b, ``--as-of``: before the migration B2 was of the hidden class, which the mapping
+    shows as the visible one; the view still treats it as absent, in point reads, queries,
+    relation filters and walks."""
+    retype_b2(world)
+    view = mapped_view(world, HEAD)
+    b2, b1 = world.ids["B2"], world.ids["B1"]
+    assert view.get(b2) is None and view.get_many([b2]) == {}
+    assert view.get_revision(b2, 1) is None and view.history(b2) == []
+    assert not view.sees(b2)
+    found = view.query(Query(record_status=frozenset({"active", "retracted", "superseded"})))
+    assert world.names([r.id for r in found.items]) == ["A1", "A2", "A3"]
+    assert found.total == 3
+    assert view.incoming(b1) == []
+    walk = view.neighbors(NeighborQuery(world.ids["A1"], None, "both", 3))
+    assert world.names([r.id for _, _, r in walk]) == ["A2", "A3"]
+    # at the migration the entity is of the visible class, with one revision shown
+    after = mapped_view(world, HEAD + 1)
+    assert after.get(b2) is not None
+    assert [m.rev for m in after.history(b2)] == [3]
+
+
+def test_a_class_the_pinned_model_no_longer_has_judges_nothing(world: World) -> None:
+    """F1b: when the class a revision was stored under is gone from the pinned model, only the
+    mapped type counts, so the revision shows as the class it was moved to."""
+    retype_b2(world)
+    view = mapped_view(world, known=(world.a,))
+    b2 = world.ids["B2"]
+    assert [m.rev for m in view.history(b2)] == [1, 2, 3]
+    assert view.get_revision(b2, 1) is not None
 
 
 def test_incoming_keeps_visible_sources_only(world: World) -> None:

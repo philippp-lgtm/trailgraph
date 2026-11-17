@@ -110,6 +110,17 @@ def test_a_retyped_class_follows_later_renames() -> None:
     assert (mapped.type, mapped.attrs) == ("ex:Article", {"title": "Drill"})
 
 
+def test_the_own_class_follows_renames_and_never_a_retype() -> None:
+    names = chain()
+    gadget = written(revision("drill", "ex:Gadget", {"name": "Drill"}), "1.1.0")
+    assert names.map(gadget).type == "ex:Article"
+    assert names.own_class(gadget) == "ex:Gadget"  # the class it was stored under, as named now
+    item = written(revision("hammer", "ex:Item", {"name": "Hammer"}), "1.1.0")
+    assert names.own_class(item) == names.map(item).type == "ex:Article"  # a rename
+    current = written(revision("a", "ex:Article", {"title": "A"}), "3.0.0")
+    assert names.own_class(current) == "ex:Article"
+
+
 def test_what_needs_no_mapping_is_the_same_object() -> None:
     names = chain()
     current = written(revision("a", "ex:Article", {"title": "A"}), "3.0.0")
