@@ -144,7 +144,8 @@ def test_a_failure_after_the_first_byte_cuts_the_body_off(
     content = os.urandom(2 * 1024 * 1024 + 4096)  # more than one chunk of the client
     entity = add_file(served, content, "data.bin")
     digest = "sha256:" + hashlib.sha256(content).hexdigest()
-    fake.corrupt_get(blob_key(served["graph"], digest), content[:-1] + b"\0")
+    # flip the last byte: a fixed replacement equals it in 1 of 256 random contents
+    fake.corrupt_get(blob_key(served["graph"], digest), content[:-1] + bytes([content[-1] ^ 0xFF]))
     route = f"/v1/graphs/files_graph/files/{entity}"
     cut = call(app, "GET", route, token=token)
     assert cut.status == 200  # the headers were sent before the bytes turned out wrong
