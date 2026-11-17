@@ -577,10 +577,11 @@ kind it does not know. No key has an empty value. The sections, in order:
 - `relations`: one group per relation and direction with at least one edge
   the caller sees, out before in; within a direction the relations that
   place an entity (at most one edge) and the required ones come first, then
-  by name. The relations of the `core` module and `files:from_file` are not
-  groups. A group has `count`, `items` (the first three neighbours by name,
-  not by importance, each with `ref`, `label`, `type` when the group mixes
-  types, `state`, `record_status` when not active, and the edge's
+  by name. Relations of the `core` module (what an entity replaced, withdrew
+  or was derived from) are groups like any other; `files:from_file` is not
+  (see `files`). A group has `count`, `items` (the first three neighbours by
+  name, not by importance, each with `ref`, `label`, `type` when the group
+  mixes types, `state`, `record_status` when not active, and the edge's
   `qualifiers`), `more`, and `states` (the neighbours per lifecycle state)
   when they share one lifecycle attribute and some are not shown; `missing`
   when the edges are below the relation's minimum. At most eight groups;

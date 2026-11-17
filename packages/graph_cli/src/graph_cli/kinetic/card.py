@@ -35,7 +35,7 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.records import EdgeRecord, Revision
 from graph_cli.kernel.text import normalize_label
-from graph_cli.ontology_layer.affordances import ACTIVE, CORE_PREFIX
+from graph_cli.ontology_layer.affordances import ACTIVE
 from graph_cli.ontology_layer.model import AttributeDef, Bound, CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
 from graph_cli.query.lookup import label_text, text_values
@@ -700,7 +700,7 @@ def _candidates(
     out: dict[str, list[tuple[EntityId, EdgeRecord]]] = {}
     for edge in entity.edges:
         name = str(edge.rel)
-        if name.startswith(CORE_PREFIX) or name == FILES_MODULE_RELATION:
+        if name == FILES_MODULE_RELATION:
             continue
         out.setdefault(name, []).append((edge.target, edge))
     found = [_Candidate(name, "out", tuple(edges)) for name, edges in out.items()]
@@ -711,7 +711,7 @@ def _candidates(
         if cited:
             citations.append(_Candidate(FILES_MODULE_RELATION, "in", tuple(cited)))
     for name in sorted(model.relations):
-        if name.startswith(CORE_PREFIX) or name == FILES_MODULE_RELATION:
+        if name == FILES_MODULE_RELATION:
             continue
         if not model.is_a_any(str(entity.type), model.relations[name].range):
             continue

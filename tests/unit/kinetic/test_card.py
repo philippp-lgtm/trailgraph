@@ -308,17 +308,32 @@ def test_an_inactive_neighbour_says_so_and_a_missing_one_shows_its_id() -> None:
     assert items[1]["ref"].count("-") == 4 and "label" not in items[1]  # the id of a missing target
 
 
-def test_core_relations_are_not_groups_and_a_missing_minimum_is_flagged() -> None:
+def test_a_missing_minimum_is_flagged() -> None:
     relations_ = {
         **MODEL.relations,
         "nas:about": replace(MODEL.relations["nas:about"], out=Bound(3, None)),
     }
     model = replace(MODEL, relations=relations_)
-    entity = note("n1", "T", [edge("nas:about", "t1"), edge("core:supersedes", "n0")])
-    data = card(entity, topic("t1", "Physics"), note("n0", "Old"), model=model)
-    groups = section(data, "relations")["groups"]
-    assert [g["relation"] for g in groups] == ["nas:about"]
-    assert groups[0]["missing"] == 2
+    entity = note("n1", "T", [edge("nas:about", "t1"), edge("nas:about", "t2")])
+    topics = [topic("t1", "Physics"), topic("t2", "Optics")]
+    groups = section(card(entity, *topics, model=model), "relations")["groups"]
+    assert [(g["relation"], g["count"], g["missing"]) for g in groups] == [("nas:about", 2, 1)]
+
+
+def test_what_an_entity_replaced_and_who_replaced_it_are_groups() -> None:
+    new = note("n1", "New", [edge("core:supersedes", "n0")], alias="NOTE-0002")
+    old = note("n0", "Old", status="superseded", alias="NOTE-0001")
+    replaces = section(card(new, old), "relations")["groups"]
+    assert [(g["relation"], g["direction"], g["count"]) for g in replaces] == [
+        ("core:supersedes", "out", 1)
+    ]
+    assert replaces[0]["items"] == [
+        {"ref": "NOTE-0001", "label": "Old", "record_status": "superseded"}
+    ]
+    data = card(old, new, superseded_by=[str(new.id)])
+    replaced = section(data, "relations")["groups"]
+    assert [(g["relation"], g["direction"]) for g in replaced] == [("core:supersedes", "in")]
+    assert data["entity"]["superseded_by"] == [str(new.id)]
 
 
 def test_at_most_eight_groups_and_the_others_are_named() -> None:
