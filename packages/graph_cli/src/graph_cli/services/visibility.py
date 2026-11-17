@@ -20,7 +20,12 @@ all opened in one place (``ReadService.open``):
   is a read view; the write path validates against the full model.
 
 Visibility is decided under the policy installed now and the pinned model, also for ``--as-of``
-and past revisions (V9): an entity is visible when its type at the snapshot is.
+and past revisions (V9): an entity is visible when its type at the snapshot is, and one of its
+revisions is shown when that revision's own type is (F82 fix, F1): a retype moves an entity from
+one class to another, and what it was before is as absent for a reader who may not see that class
+as an entity of it. A revision left out is not marked: it answers as one that was never stored,
+the others keep their numbers (a gap, F2), and the first one shown is a creation for the reader
+(F3, ``read._revision_change``).
 """
 
 from __future__ import annotations
@@ -212,8 +217,11 @@ class VisibleSnapshot:
     With a type half, a hidden entity answers exactly as the inner snapshot answers for an id
     it does not hold (no revision, no history, no incoming edges, an unknown alias). An entity
     is visible when the type of its current revision at the snapshot is; one without a current
-    revision is not. Without a type half no entity is hidden and only the attribute half
-    strips. Either way a transaction shows its metadata only.
+    revision is not. A revision of a visible entity is shown when its own type is visible too
+    (F1): the others answer as revisions that were never stored (``get_revision`` is ``None``,
+    ``history`` skips them) and keep no trace (F2). Without a type half no entity or revision
+    is hidden and only the attribute half strips. Either way a transaction shows its metadata
+    only.
     """
 
     def __init__(
@@ -322,11 +330,21 @@ class VisibleSnapshot:
         revision = self._inner.get_revision(entity, rev)
         if revision is None:
             return None
-        current_type = self._type_of(entity)
-        # An entity without a current revision at this snapshot is judged by the revision asked.
-        if not self.view.shows_type(revision.type if current_type is None else current_type):
+        if not self._shows_revision(entity, revision):
             return None
         return self._strip(revision)
+
+    def _shows_revision(self, entity: EntityId, revision: Revision) -> bool:
+        """Whether the type half lets ``revision`` of ``entity`` through (always without one):
+        its own type is visible (F1, from the revision already read) and so is the type of the
+        entity at this snapshot. An entity without a current revision at this snapshot is
+        judged by the revision asked alone."""
+        if self._visible is None:
+            return True
+        if not self.view.shows_type(revision.type):
+            return False
+        current_type = self._type_of(entity)
+        return current_type is None or self.view.shows_type(current_type)
 
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]:
         if self._hidden(entity):
@@ -335,6 +353,8 @@ class VisibleSnapshot:
         for meta in self._inner.history(entity):
             revision = self._inner.get_revision(entity, meta.rev)
             if revision is not None:
+                if self._visible is not None and not self.view.shows_type(revision.type):
+                    continue  # F1: a revision of a hidden type is absent
                 stripped = self._strip(revision)
                 if stripped is not revision:
                     meta = revision_meta(stripped)
