@@ -6,6 +6,8 @@ writes nothing (exit 2). Each document is one tx, in order; locals bound by
 earlier documents stay resolvable. Processing stops at the first failure:
 ``data.results[]`` reports each processed document and the failure is the
 envelope error, so the exit code is that of the first failure.
+A document may carry ``source`` and ``reconcile`` (the desired state of a source, planned
+by the write service under the graph lock); the answer of such a document has ``reconcile``.
 ``--idempotency-key`` sets the key of a single document; JSONL input keeps
 one ``idempotency_key`` per document. ``--summary`` leaves out the entities
 of each result (``entities: null``) and keeps their count and the findings.
@@ -179,6 +181,18 @@ APPLY_ERRORS: Final = (
     "format.unsupported_version",
     "conflict.seq_mismatch",
     "access.batch_too_large",
+    # a reconcile document: a type or relation it names that the caller does not see, and the
+    # guards of the plan (audited refusals)
+    "term.unknown",
+    "reconcile.source_empty",
+    "reconcile.retire_limit",
+    "reconcile.shape",
+    "reconcile.key_attribute",
+    "reconcile.scope_overlap",
+    "reconcile.scope_conflict",
+    "reconcile.move_invalid",
+    "reconcile.target_not_found",
+    "reconcile.type_mismatch",
 )
 
 APPLY_OUTPUT: Final = obj(  # B3.9: one result per committed document, then the failed one
@@ -215,7 +229,9 @@ APPLY: Final = CommandSpec(
         '"attrs": {"<attr>": "<value>"}, "edges": [{"rel": "<relation>", "target": "<id>"}]}, '
         '{"op": "link", "id": "@a", "rel": "<relation>", "target": "<id>"}]}; '
         "more ops: update (id, set), unlink, transition (id, to), supersede, retract. "
-        "Every key: references/changesets.md of the graph-cli skill."
+        "A pipeline can also hand over the desired state of a source as a reconcile "
+        "document (source, reconcile), applied by key in one transaction; agents do not "
+        "write those. Every key: references/changesets.md of the graph-cli skill."
     ),
     params=(
         ParamSpec(

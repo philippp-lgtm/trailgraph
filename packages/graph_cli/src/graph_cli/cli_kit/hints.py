@@ -73,6 +73,21 @@ def _precondition(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe action {action}" if isinstance(action, str) else None
 
 
+def _scope(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A refused reconcile scope: the entities that hold its keys now."""
+    kind, attribute, prefix = details.get("type"), details.get("attribute"), details.get("prefix")
+    if isinstance(kind, str) and isinstance(attribute, str) and isinstance(prefix, str):
+        where = shlex.quote(f"{attribute}:prefix={prefix}")
+        return f"{program} find --type {kind} --where {where}"
+    return None
+
+
+def _key_attribute(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A key attribute that cannot be one: the fields of the scope's type."""
+    kind = details.get("type")
+    return f"{program} describe type {kind}" if isinstance(kind, str) else None
+
+
 def _lookup_class(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A reference of the wrong class: find the entity that fits the parameter by its name."""
     function = details.get("function", details.get("action"))
@@ -210,11 +225,12 @@ _BASE: Final[dict[str, Hint | None]] = {
     "changeset.local_ref_duplicate": None,
     "changeset.too_large": None,
     "write.invalid": None,
-    # the message of a reconcile refusal names the document field to change
-    "reconcile.source_empty": None,
-    "reconcile.retire_limit": None,
+    # the message of a reconcile refusal names the document field to change; where a command
+    # shows what the field is about, the hint is that command
+    "reconcile.source_empty": _scope,
+    "reconcile.retire_limit": _scope,
     "reconcile.shape": None,
-    "reconcile.key_attribute": None,
+    "reconcile.key_attribute": _key_attribute,
     "reconcile.scope_overlap": None,
     "reconcile.scope_conflict": None,
     "reconcile.move_invalid": None,

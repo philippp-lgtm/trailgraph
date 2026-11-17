@@ -184,4 +184,5 @@ These are the fields an agent reads most. The envelope leaves out `data`,
 | `entities[].ops` | The operations that touched it. |
 | `entities[].local` | Its `local` name from a change set, or null. |
 | `entities` | Null with `graph apply --summary`. |
+| `reconcile` | Only for a reconcile document: its `source` and, per scope, the counts (`created`, `updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`, `revived`) and `retired_keys`: all of them on a dry run, at most 20 when written. |
 | `findings` | Warnings about the written data: `severity`, `code`, `message`. |

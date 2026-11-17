@@ -115,7 +115,7 @@ def test_output_reference_lists_the_fields_of_real_answers(
 
     retracted = app(run_cli, "retract", entity["id"], "--reason", "test", env=ENV)
     assert retracted.code == 0, retracted.envelope
-    check("Write results", [retracted.data])
+    check("Write results", [retracted.data], when_set=frozenset({"reconcile"}))
     history = app(run_cli, "history", entity["id"], env=ENV)
     assert set(history.data) == {"id", "current_rev", "items"}
     check("History", history.data["items"], when_set=frozenset({"migration", "source"}))

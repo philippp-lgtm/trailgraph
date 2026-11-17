@@ -5726,6 +5726,96 @@
             "items": {
               "$ref": "#/components/schemas/finding"
             }
+          },
+          "reconcile": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "run": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "under": {
+                      "type": "string"
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    },
+                    "created": {
+                      "type": "integer"
+                    },
+                    "updated": {
+                      "type": "integer"
+                    },
+                    "unchanged": {
+                      "type": "integer"
+                    },
+                    "moved": {
+                      "type": "integer"
+                    },
+                    "adopted": {
+                      "type": "integer"
+                    },
+                    "kept": {
+                      "type": "integer"
+                    },
+                    "retired": {
+                      "type": "integer"
+                    },
+                    "revived": {
+                      "type": "integer"
+                    },
+                    "retired_keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "under",
+                    "complete",
+                    "created",
+                    "updated",
+                    "unchanged",
+                    "moved",
+                    "adopted",
+                    "kept",
+                    "retired",
+                    "revived",
+                    "retired_keys"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "source",
+              "scopes"
+            ]
           }
         },
         "required": [
@@ -6743,7 +6833,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: entity.not_found, graph.not_found.",
+            "description": "Not Found: entity.not_found, graph.not_found, term.unknown.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -6763,7 +6853,8 @@
             },
             "x-graph-cli-error-codes": [
               "entity.not_found",
-              "graph.not_found"
+              "graph.not_found",
+              "term.unknown"
             ]
           },
           "409": {
@@ -6792,7 +6883,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: changeset.local_ref_duplicate, changeset.local_ref_unresolved, changeset.too_large, entity.ambiguous_ref, graph.archived, graph.not_in_project, graph.readonly, remote.client_outdated, skills.outdated, write.invalid.",
+            "description": "Unprocessable Content: changeset.local_ref_duplicate, changeset.local_ref_unresolved, changeset.too_large, entity.ambiguous_ref, graph.archived, graph.not_in_project, graph.readonly, reconcile.key_attribute, reconcile.move_invalid, reconcile.retire_limit, reconcile.scope_conflict, reconcile.scope_overlap, reconcile.shape, reconcile.source_empty, reconcile.target_not_found, reconcile.type_mismatch, remote.client_outdated, skills.outdated, write.invalid.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -6818,6 +6909,15 @@
               "graph.archived",
               "graph.not_in_project",
               "graph.readonly",
+              "reconcile.key_attribute",
+              "reconcile.move_invalid",
+              "reconcile.retire_limit",
+              "reconcile.scope_conflict",
+              "reconcile.scope_overlap",
+              "reconcile.shape",
+              "reconcile.source_empty",
+              "reconcile.target_not_found",
+              "reconcile.type_mismatch",
               "remote.client_outdated",
               "skills.outdated",
               "write.invalid"

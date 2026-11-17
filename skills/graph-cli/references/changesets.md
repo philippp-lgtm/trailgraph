@@ -93,6 +93,60 @@ An edge in `edges` of a `create` has `rel`, `target` and optionally `qualifiers`
   `max_batch` operations (JSONL, in order) and tell the user that it is no
   longer one transaction.
 
+## Reconcile documents
+
+A pipeline (a scheduled job, a collector) hands over the desired state of a
+source with `source` and `reconcile`; agents do not write these. `graph
+apply` plans the difference by key under the graph lock and writes one
+transaction: it creates what is new, updates what differs and leaves the
+rest. `data.results[].result.reconcile` has, per scope, `created`,
+`updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`, `revived`
+and `retired_keys`.
+
+| Scope key | Required | Meaning |
+|---|---|---|
+| `type` | yes | The type of the entities the scope speaks for (its subtypes too). |
+| `key` | yes | The attribute that holds the key: unique, one value, plain text. |
+| `items` | yes | The desired entities, each with its `key`; may be empty. |
+| `under` | no | Only the keys that start with this text belong to the scope; default all. |
+| `complete` | no | True when the items are the whole scope: entities not listed are retired. Default false. |
+| `fields` | no | The attributes the source sets; one an item leaves out is unset. |
+| `edges` | no | The relations the source sets, outgoing edges only. |
+| `retire` | no | `"retract"` (default) or `{"transition": "<state>"}` with optionally `attr` (the lifecycle attribute) and `"revive": "<state>"` for an item that returns. |
+| `allow_retire` | no | Accept this many retires; needed above 5 and a tenth of the scope. |
+| `allow_empty` | no | Accept a complete scope without items, which retires everything. |
+| `keep` | no | Keys the source did not observe this run: left as they are. |
+| `moves` | no | `{from, to}` gives the entity with the key `from` the key `to`; `{id, to}` gives a keyless entity its key. |
+| `expect` | no | `min_items` and `max_items`: refuse a run whose item count lies outside. |
+
+| Key in an item | Required | Meaning |
+|---|---|---|
+| `key` | yes | The item's key, within `under`; stored as `<source name>/<item key>`. |
+| `type` | no | A concrete type of the scope's type; needed when that is abstract. |
+| `local` | no | Names the entity for the edges of other items. |
+| `attrs` | no | Typed values, only of attributes in `fields`. |
+| `attrs_text` | no | The same as text, converted by the datatype. |
+| `edges` | no | The desired edges: `rel` (one of the scope's `edges`), `target` and optionally `qualifiers`. |
+| `valid_from` | no | Applies when the entity is created. |
+| `valid_to` | no | Applies when the entity is created. |
+
+- An item's key is stored as `<source name>/<item key>`, so a source only
+  reaches its own entities.
+- A scope is partial unless it is `complete`; only a complete scope
+  retires. A retract is final (a key that comes back is a new entity); a
+  `transition` keeps the entity and its key.
+- Guards refuse the whole document and are audited, so a run that went
+  wrong leaves the last good state: an empty complete scope
+  (`reconcile.source_empty`, override `allow_empty`), more retires than 5
+  or a tenth of the scope (`reconcile.retire_limit`, override
+  `allow_retire`), an item count outside `expect` (`reconcile.shape`). A
+  source that failed sends no entry for its scope.
+- An edge target of an item is an id, an alias, an `@local`, or
+  `{"type": "<type>", "attr": "<attr>", "value": "<value>"}`: the entity
+  that holds that unique value, or the item of the document that will.
+- At most 32 scopes, and 5000 operations after planning, the document's
+  own `ops` included.
+
 ## Example
 
 ```json

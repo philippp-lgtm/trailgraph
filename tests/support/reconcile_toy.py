@@ -154,6 +154,23 @@ class World:
             "memory", "inventory", tmp_path, model_override=MODEL, language="en", **kw
         )
 
+    @classmethod
+    def on_files(cls, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> "World":
+        """The same graph on the files backend: the toy module is written to a scratch
+        ontologies folder, which the fixtures and the service environment read instead of the
+        tracked one."""
+        import support.fixtures
+        import support.services
+
+        folder = tmp_path / "ontologies" / "example_module" / "1.0.0"
+        folder.mkdir(parents=True)
+        (folder / "example_module.yaml").write_text(_MODULE)
+        monkeypatch.setattr(support.fixtures, "ONTOLOGIES", tmp_path / "ontologies")
+        monkeypatch.setattr(support.services, "ONTOLOGIES", tmp_path / "ontologies")
+        found = cls.__new__(cls)
+        found.env = ServiceEnv("files", "example_module", tmp_path / "root", language="en")
+        return found
+
     # ---- planning and applying ----
 
     def plan(

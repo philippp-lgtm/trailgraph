@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:ab23b878256b6d145ad7c2b9d3797547c500c0bb016ca58d4d4afd6af608e981"
+  inventory_hash: "sha256:4563d7fcf457e885ceda0ad9bfed6fdafee8f9a90760e9dd100e2598324d2235"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.24.1"

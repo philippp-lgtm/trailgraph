@@ -694,6 +694,16 @@ def test_source_is_in_history_and_the_feed(world: World) -> None:
 # ---- a bulk write reads the unique values in one pass ------------------------------------------
 
 
+@pytest.fixture(params=["memory", "files"])
+def stored(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> World:
+    """The graph on each store: the query behind the unique check differs."""
+    if request.param == "memory":
+        return World(tmp_path)
+    return World.on_files(tmp_path, monkeypatch)
+
+
 def _installations(count: int, *, clash: dict[int, str] | None = None) -> list[dict[str, Any]]:
     keys = {n: f"inventory/bulk/{n:04d}" for n in range(count)} | (clash or {})
     return [
@@ -702,37 +712,37 @@ def _installations(count: int, *, clash: dict[int, str] | None = None) -> list[d
     ]
 
 
-def test_a_bulk_write_finds_a_unique_value_used_twice_in_it(world: World) -> None:
+def test_a_bulk_write_finds_a_unique_value_used_twice_in_it(stored: World) -> None:
     ops = _installations(100, clash={99: "inventory/bulk/0003"})
     with pytest.raises(GraphCliError) as info:
-        world.plain(*ops)
+        stored.plain(*ops)
     findings = info.value.details["findings"]
     assert [f["code"] for f in findings] == ["data.semantic.unique_violation"] * 2  # type: ignore[index,union-attr]
-    assert world.env.head_seq() == 0
+    assert stored.env.head_seq() == 0
 
 
-def test_a_bulk_write_finds_a_unique_value_an_existing_entity_holds(world: World) -> None:
-    world.plain({"op": "create", "type": "ex:Installation", "attrs": {"source_key": "inventory/x"}})
+def test_a_bulk_write_finds_a_unique_value_an_existing_entity_holds(stored: World) -> None:
+    stored.plain(
+        {"op": "create", "type": "ex:Installation", "attrs": {"source_key": "inventory/x"}}
+    )
     with pytest.raises(GraphCliError) as info:
-        world.plain(*_installations(100, clash={50: "inventory/x"}))
+        stored.plain(*_installations(100, clash={50: "inventory/x"}))
     findings = info.value.details["findings"]
     assert [f["code"] for f in findings] == ["data.semantic.unique_violation"]  # type: ignore[index,union-attr]
-    assert world.env.head_seq() == 1
-    world.plain(*_installations(100))  # without the clash it is written
-    assert world.env.head_seq() == 2
+    assert stored.env.head_seq() == 1
+    stored.plain(*_installations(100))  # without the clash it is written
+    assert stored.env.head_seq() == 2
 
 
-def test_a_bulk_reconcile_run_is_as_valid_as_a_small_one(world: World) -> None:
+def test_a_bulk_reconcile_run_is_as_valid_as_a_small_one(stored: World) -> None:
     items = [{"key": f"b/{n:04d}", "attrs": {"package": f"p{n}"}} for n in range(300)]
     document = doc(scope(under="b/", fields=["package"], items=items))
-    assert counts(run(world, document))["created"] == 300
+    assert counts(run(stored, document))["created"] == 300
     renamed = [{**i, "attrs": {"package": "same"}} for i in items]
-    assert (
-        counts(run(world, doc(scope(under="b/", fields=["package"], items=renamed))))["updated"]
-        == 300
-    )
+    changed = run(stored, doc(scope(under="b/", fields=["package"], items=renamed)))
+    assert counts(changed)["updated"] == 300
     # a person writing the same key by hand is refused as before
     taken = {"op": "create", "type": "ex:Installation", "attrs": {"source_key": "inventory/b/0007"}}
     with pytest.raises(GraphCliError) as info:
-        world.plain(taken)
+        stored.plain(taken)
     assert info.value.code == "write.invalid"
