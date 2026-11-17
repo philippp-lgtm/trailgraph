@@ -44,8 +44,11 @@ def command_line(
     switches: tuple[str, ...],
     limit: int,
     offset: int | None = None,
+    *,
+    default_limit: int = DEFAULT_LIMIT,
 ) -> str:
-    """A copy-pasteable read command; ``offset`` given for the next page."""
+    """A copy-pasteable read command; ``offset`` given for the next page; ``--limit`` is left
+    out when it is ``default_limit`` and there is no offset."""
     dashed = any(value.startswith("-") for value in positional)
     # A positional that looks like an option goes after "--", so options stay in front.
     parts = [PROGRAM, *command.split(), *(() if dashed else positional), "--graph", graph]
@@ -53,7 +56,7 @@ def command_line(
         for value in values:
             parts += [flag, value]
     parts += switches
-    if limit != DEFAULT_LIMIT or offset is not None:
+    if limit != default_limit or offset is not None:
         parts += ["--limit", str(limit)]
     if offset is not None:
         parts += ["--offset", str(offset)]

@@ -5,14 +5,14 @@ reads notes and web pages of ``example_graph`` and may write notes (``reads`` an
 one grant), ``auditor`` reads everything. Token A holds the first role, token B both. Requests go
 through ``ServerApp`` without a socket.
 
-A gets every read command (get, find, lookup, search, neighbors, query, run, history, ``--as-of``,
-``describe *``, the graph skill) without a trace of the other types: no id, alias, label, count,
-relation, term or skill text of a hidden type, scanned in every answer. What A asks about a hidden
-entity, type, function or action is answered as about one that does not exist. B, with both
-roles, sees everything. A graph policy that denies ``read.get`` on one more type hides it from
-both. A's writes keep what A cannot see and treat a hidden type as an unknown one. ``whoami``
-says what was observed, the refusals are audited with the decision that hides the type and
-``audit verify`` stays clean.
+A gets every read command (get, find, lookup, search, neighbors, query, run, history, changes,
+``--as-of``, ``describe *``, the graph skill) without a trace of the other types: no id, alias,
+label, count, relation, term or skill text of a hidden type, scanned in every answer. What A asks
+about a hidden entity, type, function or action is answered as about one that does not exist. B,
+with both roles, sees everything. A graph policy that denies ``read.get`` on one more type hides
+it from both. A's writes keep what A cannot see and treat a hidden type as an unknown one.
+``whoami`` says what was observed, the refusals are audited with the decision that hides the type
+and ``audit verify`` stays clean.
 """
 
 import base64
@@ -520,6 +520,9 @@ def read_everything(world: World, who: str) -> dict[str, Reply]:
         "neighbors_full": ("neighbors", {"ref": m, "--depth": 2, "--full": True}),
         "history": ("history", {"ref": n}),
         "history_m": ("history", {"ref": m}),
+        "changes": ("changes", {"--since": "tx:0", "--limit": 500}),
+        "changes_page": ("changes", {"--since": "tx:0", "--limit": 2}),
+        "changes_from": ("changes", {"--since": f"tx:{world.first_tx}"}),
         "query_count": ("query", {"text": "MATCH (x) RETURN count(x) AS c"}),
         "query_edges": ("query", {"text": cypher}),
         "query_nodes": ("query", {"text": "MATCH (x:Note) RETURN x"}),
@@ -590,6 +593,27 @@ def test_type_read_limits_end_to_end(
     nothing = {"attrs": [], "edges": {"added": [], "removed": [], "changed": []}, "record": []}
     history = seen_by_a["history"].json["data"]["items"]
     assert [h["changed"] for h in history[:2]] == [nothing, nothing]
+    # the feed lists the same revisions: the visible entities of the first tx, then the two
+    # revisions that only added hidden edges, with nothing changed and no hidden target
+    feed = seen_by_a["changes"].json["data"]
+    assert (feed["head"], feed["next"], feed["more"]) == (3, "tx:3", False)
+    assert feed["view"] is not None  # A reads under a limit: its consumers rebuild when it moves
+    assert [e["tx_seq"] for e in feed["items"]] == [1, 2, 3]
+    assert sorted(i["type"] for i in feed["items"][0]["entities"]) == [
+        "nas:Note",
+        "nas:Note",
+        "nas:WebPage",
+    ]
+    assert [i["changed"] for e in feed["items"][1:] for i in e["entities"]] == [nothing, nothing]
+    assert [e["reason"] for e in feed["items"][1:]] == ["one more subject", "cite the book too"]
+    first_note = next(i for i in feed["items"][0]["entities"] if i["id"] == n)
+    assert first_note["targets"] == [w]
+    page = seen_by_a["changes_page"].json["data"]  # two items of a tx of three: it is split
+    assert (page["more"], page["next"].startswith("tx:1/")) == (True, True)
+    assert page["items"][0].get("partial") is True and len(page["items"][0]["entities"]) == 2
+    after_first = seen_by_a["changes_from"].json["data"]  # what follows the first tx
+    assert after_first["items"] == feed["items"][1:]
+    assert after_first["since_tx_id"] == feed["items"][0]["tx_id"]
     types = [t["curie"] for t in seen_by_a["describe_types"].json["data"]["types"]]
     assert types == ["nas:Note", "nas:Source", "nas:WebPage"]
     assert [a["name"] for a in seen_by_a["describe_actions"].json["data"]["actions"]] == [
@@ -620,6 +644,13 @@ def test_type_read_limits_end_to_end(
     assert rows(seen_by_b["lookup_hidden_label"]) != []
     assert seen_by_b["search_book"].json["page"]["total"] == 1
     assert "nas:about" in seen_by_b["history"].body.decode()
+    feed_b = seen_by_b["changes"].json["data"]
+    assert feed_b["view"] is None and [e["tx_seq"] for e in feed_b["items"]] == [1, 2, 3]
+    assert len(feed_b["items"][0]["entities"]) == 6  # the topics and the book too
+    assert feed_b["items"][1]["entities"][0]["changed"]["edges"]["added"] == ["nas:about"]
+    assert [i["id"] for i in feed_b["items"][1]["entities"][0:1]] == [n]
+    assert feed_b["items"][1]["entities"][0]["targets"] == [ids["t2"]]
+    assert "nas:Topic" in seen_by_b["changes"].body.decode()
     text_b, source_b = skill_text(world, "b")
     assert "nas:Topic" in text_b and "visible" not in source_b  # no limit, no digest
     assert [f["name"] for f in seen_by_b["describe_actions"].json["data"]["actions"]] == [
@@ -763,6 +794,11 @@ def test_type_read_limits_end_to_end(
     after_b = read_everything(world, "b")
     assert after_b["find"].json["page"]["total"] == 6  # topics, book and notes, no page
     assert [t for t in (w, *PAGE_TERMS) if t in after_b["find"].body.decode()] == []
+    for who, reply in (("a", limited_a["changes"]), ("b", after_b["changes"])):
+        items = [i for e in reply.json["data"]["items"] for i in e["entities"]]
+        assert w not in [i["id"] for i in items] and "nas:WebPage" not in str(items), who
+        assert [t for t in (w, *PAGE_TERMS) if t in reply.body.decode()] == [], who
+    assert limited_a["changes"].json["data"]["view"] != seen_by_a["changes"].json["data"]["view"]
     # the function over sources needs a source type A can see: it is hidden, B's runs on the book
     assert [f["name"] for f in limited_a["describe_functions"].json["data"]["functions"]] == [
         "notes_by_kind"

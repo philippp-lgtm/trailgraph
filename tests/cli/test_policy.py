@@ -646,6 +646,8 @@ def test_a_deny_rule_withholds_history(run_cli: CliRunner, root: Path, tmp_path:
         ("get", entity, "--rev", "1"),
         ("find", "--as-of", "tx:1"),
         ("get", entity, "--as-of", "tx:1"),
+        ("changes", "--since", "tx:0"),  # the feed is merged history
+        ("changes", "--since", "tx:99"),  # denied before the position is looked at
     ):
         refused = app(run_cli, *args, env=explore)
         assert (refused.code, refused.error["code"]) == (3, "access.denied"), args
@@ -654,8 +656,8 @@ def test_a_deny_rule_withholds_history(run_cli: CliRunner, root: Path, tmp_path:
     assert app(run_cli, "get", entity, env=explore).code == 0  # current state stays readable
     who = app(run_cli, "whoami", env=explore).data["permissions"]["graphs"]
     assert [(g["level"], g["withheld"]) for g in who] == [("none", ["read.history"])]
-    recorded = [d["authz"]["decisions"][0]["action"] for d in denials(root)[-4:]]
-    assert recorded == ["read.history"] * 4
+    recorded = [d["authz"]["decisions"][0]["action"] for d in denials(root)[-6:]]
+    assert recorded == ["read.history"] * 6
 
 
 POINTER = 'format_version = 1\nproject = "{project}"\ngraphs = ["example_graph", "other_graph"]\n'

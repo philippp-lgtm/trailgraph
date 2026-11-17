@@ -85,6 +85,7 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
+| `changes --since POSITION` | what changed in the whole graph after a position (`tx:<seq>`, `tx:<seq>/<entity id>` or an RFC 3339 time with offset), oldest first: per tx its time, command, reason and the entities it changed as ids, types, revisions and the names (not values) that changed; continue with the `next` of the answer while `more`; paged by entity items (`--limit`) |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
 | `lookup TEXT...` | entities by name: main, alternative and hidden labels, case- and Unicode-insensitive (`--match exact\|prefix`, `--ignore-accents`, `--type`, `--for`, `--for-source`); several names in one call; ranked candidates, paged per name (see [Names and lookup](#names-and-lookup)) |
 | `search TEXT` | entities whose names or text fields match: whole value, inside a word, every word, or a close spelling (`--type`, `--field`); ranked suggestions, paged (see [Search](#search)) |
@@ -257,7 +258,7 @@ revisions keep the names they were written with; reads show them under the
 names of the pinned ontology instead, so an answer never holds a name the
 model does not know:
 
-- `get --rev`, the revisions behind `history` (its `changed` names) and every
+- `get --rev`, the revisions behind `history` and `changes` (their `changed` names) and every
   revision of an `--as-of` state are mapped: renamed classes, relations and
   attributes, a `retype` of the migration, and enum values, states and
   qualifiers its `map_values`, `map_qualifier_values` and `rename_qualifier`
@@ -291,6 +292,91 @@ warns when no release is running, which means it crashed, and every write is ref
 `write.migration_incomplete` until a maintainer runs the release again ([graph-admin: An
 interrupted release](cli_graph_admin.md#releasing-with-a-data-migration)). Nothing helps from
 the app side: ask the maintainer.
+
+## Changes since a position
+
+`graph changes --since <position>` answers the question of a consumer that keeps
+something derived from the graph (an index, a cache, a report): what changed
+after the point it has read up to. It lists the transactions after a position,
+oldest first, and per transaction the entities it changed, as ids, types,
+revisions and the names of what changed, never values; a consumer reads
+values with `get` or `find` (`find --where tx_seq:gt=<N>` selects what changed
+after a transaction). It needs `read.history`, like `history` (see
+[Access control: History](access_control.md#history)), and has no `--as-of`:
+the position is the start, the head of the graph is the end.
+
+**Positions.** `--since` is `tx:<seq>`, `tx:0` for the start of the graph; every
+change through that transaction is taken as read. `tx:<seq>/<entity id>` is a
+cursor inside a transaction that did not fit a page: the transaction is
+delivered through that entity, the others of it follow in ascending id order.
+The id of a cursor only sorts, nothing looks it up. An RFC 3339 time with an
+offset is the position after the last transaction recorded at or before it,
+and the answer names it as `tx:<seq>` in `since`; a time without an offset, a
+malformed position and a seq beyond the graph's last are
+`usage.invalid_argument` (the last one with `details.head_seq`).
+
+**Paging.** A page holds at most `--limit` entity items (default 100, at most
+500); whole transactions are taken while their items fit. A transaction with
+more items than the limit is cut into entries marked `partial: true` that
+continue on the next page. At most 1,000 transactions are read per call, so a
+page can be empty and still have `more: true` when the caller sees nothing of
+the transactions it went through; `next` has moved on. Keep calling with `next`
+until `more` is false. A write that commits between two pages is on the next
+page.
+
+**The answer.** `data` has these keys, in this order:
+
+| Key | Meaning |
+| --- | --- |
+| `since` | the position asked for, a time as `tx:<seq>` |
+| `since_tx_id` | the id of the transaction at that seq, `null` for `tx:0` |
+| `head` | the graph's seq |
+| `next` | the position after this page: the `--since` of the next call |
+| `next_tx_id` | the id of the transaction at the seq of `next`, `null` for `tx:0` |
+| `more` | `true` when another call may return more |
+| `view` | `null` without read limits, else a digest of what the caller may see |
+| `items` | one entry per transaction in which the caller sees a change |
+
+An entry has `tx_seq`, `tx_id`, `recorded_at`, `command`, `reason` and
+`own_session` as `history` shows them, `action` (`name`, `hash`) for a write
+by `do`, `migration` (below), `partial` and `entities`. Each item of `entities` has
+`id`, `type`, `rev` (1 is the creation), `record_status`, `changed` (the names
+of `history`, `null` for a creation) and `targets`: the ids of the entities at
+the other end of the relations the revision added, removed or changed, since
+their view of the graph changed too (at most 50, then `targets_more` counts the
+rest). The text form prints a header line per transaction and a line per
+entity.
+
+**Migrations.** A data migration of a major ontology release is always an
+entry, with `migration: {from, to, summary}` (`summary` when the release had a
+migration file) and the entities of it that the caller sees, possibly none:
+names may have changed, and an entity may have left the caller's view by a
+retype. A consumer re-reads what it holds when it meets one.
+
+**Gaps.** The `tx_seq` of entries are not consecutive: a transaction that
+changed nothing the caller sees has no entry. A gap is no loss.
+
+**Consumer contract.**
+
+1. Start with `--since tx:0`. After each page store `next`, `next_tx_id` and `view`,
+   and loop while `more`.
+2. Start again from `tx:0` when `view` differs from the stored one, when
+   `since_tx_id` differs from the stored `next_tx_id` (the graph was restored
+   or rebuilt: the log you read is gone) or when `--since` is refused with
+   `head_seq`.
+3. On an entry with `migration`, re-read every entity you hold or rebuild.
+4. Take values with `get` or `find`; a `get` of an id you hold that answers
+   `entity.not_found` means the entity is gone for you.
+5. A projection built from one caller's feed holds what that caller sees: serve it
+   only to callers with the same `view` on the same graph.
+
+A caller with [read limits or markings](access_control.md#read-limits) gets the
+feed of the entities and attributes it sees, built like `history`: no hidden id,
+type or attribute name appears, a transaction with nothing visible has no entry
+(the gaps), and a revision whose only change was hidden has an empty `changed`.
+[Security model](security_model.md#type-read-limits) lists what stays visible.
+Consumers poll the command; the server offers no long poll or stream for it
+([Server: API](server.md#api)).
 
 ## Fewer fields
 

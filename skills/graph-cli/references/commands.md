@@ -29,6 +29,30 @@ Usage: `graph apply FILE [OPTIONS]`
 | `graph apply <file> --dry-run --json` | Check a file without writing. |
 | `graph apply <file> --summary --json` | Apply a large file, findings without the list. |
 
+## graph changes
+
+List what changed in the whole graph after a position, oldest first; paged.
+
+Kind: read. Surface: trace. Action: `read.history`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph changes [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--since` | string | yes | no | Where to start: tx:<seq>, tx:<seq>/<entity id> (a next of the answer) or an RFC 3339 time with offset. |
+| `--limit` | integer | no | no | Entity items per page, at most 500. Default: `100`. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Limit | Value |
+|---|---|
+| `limit` | 500 |
+
+| Example | Summary |
+|---|---|
+| `graph changes --since tx:0 --json` | Every change from the start. |
+| `graph changes --since tx:<seq> --graph <graph> --json` | Continue after a position, the next of the last answer. |
+| `graph changes --since 2030-01-01T12:00:00Z --json` | What changed since a time. |
+
 ## graph connect
 
 Set up this machine and a folder for a server, from a one-time enrollment code.

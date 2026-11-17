@@ -19,6 +19,11 @@ with and without targets, ``exists`` false, statuses, ordering, paging, ``total`
 ``neighbors`` (every direction, depth 1-3, relation filters), at the head and at earlier
 sequences. Not compared: the snapshot's ``seq`` and the body of a transaction (a view hands out its
 metadata only, by design).
+
+The change feed (change feed plan CF5, section 6) is compared too: every page of the feed over the
+view, followed from ``tx:0`` and from the middle of the log through every cursor at several limits
+and scan caps, equals the page of the feed over the reference store (which keeps the original
+``tx_seq`` of every tx, so a tx that held hidden entities only is an empty one there).
 """
 
 import random
@@ -36,10 +41,12 @@ from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, NeighborQuery, Not, OrderKey, Query, RelConstraint
 from graph_cli.kernel.read_view import AttributeMask, ReadView
 from graph_cli.kernel.records import Revision, TxRecord, revision_content_hash
+from graph_cli.services.read import change_page
 from graph_cli.services.visibility import VisibleSnapshot
 from graph_cli.storage.common.snapshot import ViewSnapshot
 from graph_cli.storage.common.view import GraphView
 from graph_cli.storage.files.store import FileStore
+from graph_cli.temporal_knowledge.changes import SCAN_CAP, FeedPosition
 
 CASES = 40  # graphs per backend and toy ontology
 MISSING = EntityId(UUID(int=7))
@@ -51,6 +58,7 @@ STATUSES = (
 )
 LIMITS = (1, 2, 5, 50)
 OFFSETS = (0, 0, 0, 1, 3, 40)
+FEED_PAGES = ((1, SCAN_CAP), (2, 3), (5, 1), (500, SCAN_CAP))  # (limit, scan cap)
 
 
 def stripped(
@@ -244,6 +252,34 @@ def check_queries(
             compare(f"neighbors {q}", seed, list(view.neighbors(q)), list(ref.neighbors(q)))
 
 
+def feed(
+    snapshot: Snapshot, raw: Snapshot, start: FeedPosition, limit: int, cap: int
+) -> list[object]:
+    """Every page of the change feed after ``start``, each resumed from the ``next`` of the one
+    before, until one says nothing more follows."""
+    pages: list[object] = []
+    position = start
+    while True:
+        found = change_page(
+            snapshot, raw, position, limit, session=None, migration=lambda _: None, scan_cap=cap
+        )
+        pages.append(found)
+        if not found["more"]:
+            return pages
+        assert len(pages) <= 10 * raw.seq + 10, "the feed does not advance"
+        text = str(found["next"]).removeprefix("tx:")
+        seq, _, entity = text.partition("/")
+        position = FeedPosition(int(seq), EntityId(UUID(entity)) if entity else None)
+
+
+def check_feed(seed: int, view: Snapshot, raw: Snapshot, ref: Snapshot) -> None:
+    for start in sorted({0, raw.seq // 2}):
+        for limit, cap in FEED_PAGES:
+            got = feed(view, raw, FeedPosition(start), limit, cap)
+            want = feed(ref, ref, FeedPosition(start), limit, cap)
+            compare(f"changes since tx:{start} limit {limit} cap {cap}", seed, got, want)
+
+
 @pytest.mark.parametrize("seed", range(CASES))
 def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     backend: str, ontology: str, tmp_path: Path, seed: int
@@ -260,9 +296,12 @@ def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
         ref = ViewSnapshot(sides.reference.at(at))
         for store in stores:
-            view = VisibleSnapshot(store.snapshot(at_seq=at), ReadView(visible))
+            raw = store.snapshot(at_seq=at)
+            view = VisibleSnapshot(raw, ReadView(visible))
             check_point_reads(seed, view, ref, sides, ids, rng)
             check_queries(seed, view, ref, sides, ids, concrete, rng)
+            if at == sides.head:  # the feed reads up to the head
+                check_feed(seed, view, raw, ref)
             # a hidden entity is a missing one: no revision, history, edges or neighbours
             for entity in ids:
                 if entity not in sides.kept:
@@ -340,9 +379,12 @@ def test_every_answer_over_an_attribute_view_is_the_answer_over_the_store_withou
     ids = sorted({r.id for tx in sides.raw for r in tx.revisions})
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
         ref = ViewSnapshot(sides.reference.at(at))
-        view = VisibleSnapshot(env.store.snapshot(at_seq=at), ReadView(types, mask))
+        raw = env.store.snapshot(at_seq=at)
+        view = VisibleSnapshot(raw, ReadView(types, mask))
         check_point_reads(seed, view, ref, sides, ids, rng)
         check_queries(seed, view, ref, sides, ids, concrete, rng)
+        if at == sides.head:
+            check_feed(seed, view, raw, ref)
         for query in attribute_queries(rng, sides, concrete):
             compare(f"query {query}", seed, view.query(query), ref.query(query))
 
@@ -380,3 +422,26 @@ def test_the_comparison_catches_a_view_that_shows_an_attribute_too_many(env: Sto
     exact = VisibleSnapshot(env.store.snapshot(), ReadView(None, narrow)).query(everything)
     wider = VisibleSnapshot(env.store.snapshot(), ReadView(None, wide)).query(everything)
     assert exact == reference and wider != reference
+
+
+def test_the_feed_comparison_catches_a_view_that_shows_too_much(env: StoreEnv) -> None:
+    """Positive control of the feed: over a view of one type more, or of one attribute more,
+    than the reference holds, the feed differs from the reference feed."""
+    first, second = env.builder.concrete_classes[:2]
+    created: list[EntityId] = []
+    env.write(lambda d: created.extend((d.create(first), d.create(second))))
+    env.write(lambda d: d.update(created[0], {"extra": "changed"}))
+    start = FeedPosition(0)
+    sides = split(env, frozenset({first}))
+    raw = env.store.snapshot()
+    ref = ViewSnapshot(sides.reference.at())
+    reference = feed(ref, ref, start, 50, SCAN_CAP)
+    exact = VisibleSnapshot(raw, ReadView(frozenset({first})))
+    wider = VisibleSnapshot(raw, ReadView(frozenset({first, second})))
+    assert feed(exact, raw, start, 50, SCAN_CAP) == reference
+    assert feed(wider, raw, start, 50, SCAN_CAP) != reference
+    narrow = ((first, frozenset()),)
+    masked = ViewSnapshot(split(env, frozenset({first}), narrow).reference.at())
+    hidden_attrs = VisibleSnapshot(raw, ReadView(frozenset({first}), narrow))
+    assert feed(hidden_attrs, raw, start, 50, SCAN_CAP) == feed(masked, masked, start, 50, SCAN_CAP)
+    assert feed(exact, raw, start, 50, SCAN_CAP) != feed(masked, masked, start, 50, SCAN_CAP)

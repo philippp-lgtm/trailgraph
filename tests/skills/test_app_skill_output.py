@@ -119,3 +119,35 @@ def test_output_reference_lists_the_fields_of_real_answers(
     history = app(run_cli, "history", entity["id"], env=ENV)
     assert set(history.data) == {"id", "current_rev", "items"}
     check("History", history.data["items"], when_set=frozenset({"migration"}))
+
+
+def paths(data: dict[str, Any], prefix: str = "") -> set[str]:
+    """Field paths as the Changes section writes them: ``key``, ``list[].key``. Objects below
+    a key (``changed``, ``action``, ``migration``) are one row, not walked."""
+    found: set[str] = set()
+    for key, value in data.items():
+        found.add(prefix + key)
+        if isinstance(value, list):
+            for element in value:
+                if isinstance(element, dict):
+                    found |= paths(element, f"{prefix}{key}[].")
+    return found
+
+
+def test_output_reference_lists_the_fields_of_a_change_feed_answer(
+    run_cli: CliRunner, seeded: Path
+) -> None:
+    answer = app(run_cli, "changes", "--since", "tx:0", "--limit", "500", env=ENV)
+    assert answer.code == 0, answer.envelope
+    assert answer.data["items"] and any(e["entities"] for e in answer.data["items"])
+    listed = documented()["Changes"]
+    found = paths(answer.data)
+    assert found <= listed, found - listed
+    # a field of an answer only some transactions or entities have
+    when_set = {
+        "items[].action",  # a write by ``do``
+        "items[].migration",  # an ontology release that migrated data
+        "items[].partial",  # a transaction cut by the page size
+        "items[].entities[].targets_more",  # more than 50 targets
+    }
+    assert listed - when_set <= found, listed - when_set - found

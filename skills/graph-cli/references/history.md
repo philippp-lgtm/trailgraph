@@ -7,6 +7,9 @@
   the `tx_seq`. It shows who wrote a revision only as `own_session` (your
   session or not); who else did, only the maintainer can see.
 - `graph get <id> --rev <value> --json` shows one earlier revision.
+- `graph changes --since tx:<seq> --json` (or a time, as for `--as-of`)
+  lists what changed in the whole graph after a position, oldest first,
+  names and ids only; continue with `next`.
 - `--as-of tx:<seq>` on any read answers from the graph as it was after
   that transaction; just before a change is its `tx_seq` minus one. A
   time works too, with an offset (`2030-01-01T12:00:00Z`). Such answers

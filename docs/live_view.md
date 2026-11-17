@@ -166,6 +166,10 @@ path is limited to about 100 bytes, and some shared mounts refuse socket
 files; then the view starts without reads and says why. In a container
 whose state is such a mount, put that one directory on a `tmpfs`.
 
+The view's `/events` stream is the view's own, for maintainers and unfiltered;
+a program that follows the graph reads `graph changes` instead
+([Changes since a position](cli_graph.md#changes-since-a-position)).
+
 ### Trail
 
 The view numbers what it sees in a graph as steps: one per read command

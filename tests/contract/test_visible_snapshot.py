@@ -21,6 +21,7 @@ from graph_cli.kernel.query_ast import NeighborQuery, Query
 from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import revision_content_hash
 from graph_cli.services.visibility import VisibleSnapshot
+from graph_cli.temporal_knowledge import changes
 
 REL = TermRef("core:source")
 MISSING = EntityId(UUID(int=7))
@@ -234,22 +235,31 @@ def test_every_type_visible_equals_the_raw_snapshot(world: World) -> None:
 # ---- no command prints a transaction body --------------------------------------------------
 
 TX_BODY = {"changeset", "resolution", "revisions", "alias_allocations", "blobs"}
+TX_READS = {"tx", "changes_since"}  # the calls that hand out a tx record, body included
 TX_READERS = {  # the modules of the app and server distributions that read a tx through a snapshot
-    "services/read.py",  # history: request, reason, actor session; as-of: ontology version
+    "services/read.py",  # history and the change feed: request, reason, actor session, tx id;
+    # as-of: ontology version
     "services/visibility.py",  # the wrapper itself
     "temporal_knowledge/as_of.py",  # the time of a tx
+    "temporal_knowledge/changes.py",  # the change feed's raw read: ``touched``, see below
     "kernel/migration_marker.py",  # marker_committed: the tx id at a seq, on a raw snapshot
     "services/names.py",  # the mapped layer below the view: delegates, and the migration record
 }
 # Modules that read a tx body on purpose, below the read limits, and hand out only what the
 # caller may see (``history``'s ``migration``: versions, summary, what changed the entity).
 BODY_READERS = {"services/names.py"}
+# Modules that read the revisions of a tx: the change feed takes ``(id, rev)`` pairs of a raw tx
+# (``touched``) and reads every revision through the caller's view (change feed plan CF4).
+REVISION_READERS = {"temporal_knowledge/changes.py"}
 WRITE_SIDE = {"temporal_knowledge/working.py"}  # the write path's overlay; it delegates to a base
 
 
-def tx_calls_and_body_reads(root: Path) -> tuple[set[str], set[str]]:
+def tx_calls_and_body_reads(root: Path) -> tuple[set[str], set[str], set[str]]:
+    """The modules that call ``.tx(`` or ``.changes_since(``, those of them that touch a body
+    field other than ``revisions``, and those that touch ``revisions``."""
     callers: set[str] = set()
     readers: set[str] = set()
+    revision_readers: set[str] = set()
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
         if relative.startswith(("storage/", "kernel/ports/")) or relative in WRITE_SIDE:
@@ -257,27 +267,52 @@ def tx_calls_and_body_reads(root: Path) -> tuple[set[str], set[str]]:
         tree = ast.parse(path.read_text())
         attributes = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
         calls = any(
-            isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "tx"
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr in TX_READS
             for n in ast.walk(tree)
         )
         if calls:
             callers.add(relative)
             if attributes & TX_BODY - {"revisions"}:
                 readers.add(relative)
-    return callers, readers
+            if "revisions" in attributes:
+                revision_readers.add(relative)
+    return callers, readers, revision_readers
 
 
 def test_no_read_command_reads_the_body_of_a_tx() -> None:
     """The view hands out tx metadata only, and nothing on the read side asks for more: a
-    module that reads a tx must not touch its changeset, resolution, alias allocations or blobs,
+    module that reads a tx (``tx`` or ``changes_since``) must not touch its changeset,
+    resolution, alias allocations or blobs, only the change feed's core touches its revisions,
     and the modules that read one are the known ones."""
-    callers, readers = tx_calls_and_body_reads(
+    callers, readers, revision_readers = tx_calls_and_body_reads(
         REPO_ROOT / "packages" / "graph_cli" / "src" / "graph_cli"
     )
-    server, _ = tx_calls_and_body_reads(REPO_ROOT / "packages" / "graph_cli_server" / "src")
+    server, _, _ = tx_calls_and_body_reads(REPO_ROOT / "packages" / "graph_cli_server" / "src")
     assert callers == TX_READERS
     assert server == set()
     assert readers == BODY_READERS
-    # positive control: the scanner sees an attribute read next to a tx call
+    assert revision_readers == REVISION_READERS
+    # positive controls: the scanner sees an attribute read next to a tx call, and a
+    # ``changes_since`` call as a tx read
     probe = ast.parse("def f(s):\n    return s.tx(1).changeset\n")
     assert any(isinstance(n, ast.Attribute) and n.attr in TX_BODY for n in ast.walk(probe))
+    feed = ast.parse("def f(s):\n    return s.changes_since(0)\n")
+    assert any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in TX_READS
+        for n in ast.walk(feed)
+    )
+
+
+def test_the_feed_takes_ids_and_revision_numbers_only_from_a_raw_tx() -> None:
+    """``touched`` is the feed's one read of a raw tx body (CF4): it hands out ``(id, rev)``
+    pairs and nothing of what a revision holds."""
+    source = ast.parse(Path(changes.__file__).read_text())
+    body_reads = {
+        node.name
+        for node in ast.walk(source)
+        if isinstance(node, ast.FunctionDef)
+        and any(isinstance(n, ast.Attribute) and n.attr in TX_BODY for n in ast.walk(node))
+    }
+    assert body_reads == {"touched"}

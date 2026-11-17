@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from support.snapshots import edge, eid, revision
 
-from graph_cli.temporal_knowledge.history import changed_names
+from graph_cli.temporal_knowledge.history import changed_names, edge_changes
 
 
 def test_nothing_changed_gives_empty_lists() -> None:
@@ -47,3 +47,19 @@ def test_record_fields_never_values() -> None:
     changed = changed_names(before, after)
     assert changed["record"] == ["record_status", "alias", "valid_from"]
     assert "old" not in repr(changed)
+
+
+def test_edge_changes_hold_the_records_and_treat_a_creation_as_all_added() -> None:
+    kept = edge("ex:keeps", "b")
+    moved = edge("ex:moves", "b", name="m")
+    before = revision("a", "ex:Thing", edges=(kept, moved, edge("ex:drops", "b")))
+    after = replace(
+        before, rev=2, edges=(kept, replace(moved, target=eid("c")), edge("ex:adds", "c"))
+    )
+    changes = edge_changes(before, after)
+    assert [e.rel for e in changes.added] == ["ex:adds"]
+    assert [e.rel for e in changes.removed] == ["ex:drops"]
+    assert [(old.target, new.target) for old, new in changes.changed] == [(eid("b"), eid("c"))]
+    created = edge_changes(None, before)
+    assert len(created.added) == 3
+    assert not created.removed and not created.changed

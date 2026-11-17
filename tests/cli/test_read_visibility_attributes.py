@@ -25,6 +25,7 @@ from support.admin import Outcome, admin, init, write_documents
 from support.app import app
 from support.files import write_pdf
 from support.markings import (
+    HIDDEN_NAMES,
     HIDDEN_ONLY,
     HOLDER,
     PERSONAL_ONLY,
@@ -358,6 +359,63 @@ def test_history_and_as_of_answer_as_over_the_twin(world: World) -> None:
     latest = world.ask(GRAPH, "history", E4).data["items"][0]
     assert latest["changed"]["attrs"] == [] and latest["reason"] == "more hours"
     assert leaks(world.ask(GRAPH, "history", E4).envelope) == []
+
+
+def same_feed(world: World, *args: str) -> Outcome:
+    """The feed over ``example_graph`` equals the feed over the twin but for ``view`` (the
+    digest of the reader's read limits: null over the twin, which has none) and holds no
+    hidden value or term."""
+    marked, twin = world.ask(GRAPH, *args), world.ask(TWIN, *args)
+    assert marked.code == 0 and twin.code == 0, (args, marked.envelope, twin.envelope)
+    got, want = world.answer(marked, "example_graph"), world.answer(twin, "twin_graph")
+    assert got["data"].pop("view") is not None and want["data"].pop("view") is None
+    assert got == want, json.dumps({"args": args, "marked": got, "twin": want}, indent=1)
+    found = [t for t in leaks(marked.envelope) if not any(t in arg for arg in args)]
+    assert found == [], (args, found)
+    return marked
+
+
+def test_changes_answer_as_over_the_twin(world: World) -> None:
+    every = same_feed(world, "changes", "--since", "tx:0", "--limit", "500")
+    assert every.data["more"] is False
+    # a hidden attribute is in no ``changed``; the twin has no such attribute at all
+    names = {n for e in every.data["items"] for i in e["entities"] for n in _names(i["changed"])}
+    assert "phone" in names and not names & set(HIDDEN_NAMES), names
+    everything = {(i["id"], i["rev"]) for e in every.data["items"] for i in e["entities"]}
+    # paged, resumed through every cursor: the same pages over both graphs, adding up to the
+    # whole feed
+    for limit in ("1", "2", "3"):
+        seen, since = set(), "tx:0"
+        while True:
+            page = same_feed(world, "changes", "--since", since, "--limit", limit)
+            seen |= {(i["id"], i["rev"]) for e in page.data["items"] for i in e["entities"]}
+            since = page.data["next"]
+            if not page.data["more"]:
+                break
+        assert seen == everything, limit
+    same_feed(world, "changes", "--since", "tx:1")
+    same_feed(world, "changes", "--since", every.data["items"][0]["recorded_at"])
+    # a revision that changed a hidden attribute only: the feed lists it with an empty
+    # ``changed``, as history does (a documented residual); the twin has no such revision
+    write_documents(world.root, "example_graph", [HIDDEN_ONLY], seed=99)
+    head = world.ask(GRAPH, "changes", "--since", "tx:0", "--limit", "500")
+    last = head.data["items"][-1]
+    assert (last["reason"], last["tx_seq"]) == ("more hours", head.data["head"])
+    [item] = last["entities"]
+    assert item["changed"]["attrs"] == [] and item["rev"] > 1
+    assert leaks(head.envelope) == []
+    # a holder of every marking sees the hidden names in the same feed, under another view
+    install(world.run_cli, world.work, HOLDER)
+    holder = world.ask(GRAPH, "changes", "--since", "tx:0", "--limit", "500")
+    holder_names = {
+        n for e in holder.data["items"] for i in e["entities"] for n in _names(i["changed"])
+    }
+    assert holder_names & set(HIDDEN_NAMES), holder_names
+    assert holder.data["view"] != every.data["view"]  # the consumer must rebuild
+
+
+def _names(changed: dict[str, Any] | None) -> set[str]:
+    return set() if changed is None else set(changed["attrs"])
 
 
 # ---- describe ------------------------------------------------------------------------------

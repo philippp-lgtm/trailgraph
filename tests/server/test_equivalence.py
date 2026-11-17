@@ -168,6 +168,16 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     call("update", entity, "--set", f"{attr}=changed value", "--idempotency-key", "k-1")
     call("update", entity, "--set", f"{attr}=other", "--dry-run")
     call("history", entity)
+    first = call("changes", "--since", "tx:0", "--limit", "1")  # paged by entity items
+    assert first["data"]["more"], first
+    call("changes", "--since", first["data"]["next"], "--limit", "2")
+    call("changes", "--since", "tx:0")
+    call("changes", "--since", "2000-01-01T00:00:00Z")  # a time before every tx
+    call("changes", "--since", "tx:9999")  # above the head
+    call("changes", "--since", "garbage")
+    call("changes", "--since", "tx:0", "--limit", "0")
+    text("changes", "--since", "tx:0")
+    text("changes", "--since", "tx:0", "--limit", "1")  # the next-page hint
     text("get", entity)
     guarded = roles.get("guarded_transition")
     assert isinstance(guarded, dict)
@@ -238,6 +248,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call("get", stock, "--affordances")  # actions and a retired item
         call("get", place, "--affordances")  # functions
         call("history", stock)
+        call("changes", "--since", "tx:0", "--limit", "500")  # a ``do`` and its action
+        text("changes", "--since", "tx:0", "--limit", "500")
         text(*move, "--dry-run")
         call("lookup", "x", "--for", "move_item.location")
         call("lookup", "x", "--for", "move_item.no_such_param")

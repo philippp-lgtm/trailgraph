@@ -268,6 +268,9 @@ class MappedSnapshot:
         self._revisions: dict[tuple[EntityId, int], Revision] = {}
         self._mapped: set[tuple[EntityId, int]] = set()
         self._unmapped: set[tuple[EntityId, int]] = set()
+        # The last tx read: the change feed asks for one tx several times in a row (its
+        # revisions, its migration record, its metadata through the view).
+        self._last_tx: tuple[int, TxRecord | None] | None = None
 
     @property
     def raw(self) -> Snapshot:
@@ -286,7 +289,7 @@ class MappedSnapshot:
         """The ``migration`` record of tx ``seq`` when a migration wrote it, read from the raw
         tx below any read limit (``history`` shows only its versions, its summary and what
         changed the entity it lists, plan M7); ``None`` for any other tx."""
-        tx = self._inner.tx(seq)
+        tx = self.tx(seq)
         record = tx.changeset.get("migration") if tx is not None else None
         return record if isinstance(record, Mapping) else None
 
@@ -343,7 +346,10 @@ class MappedSnapshot:
         return found
 
     def tx(self, seq: int) -> TxRecord | None:
-        return self._inner.tx(seq)
+        """Tx ``seq`` as stored (a tx is never mapped)."""
+        if self._last_tx is None or self._last_tx[0] != seq:
+            self._last_tx = (seq, self._inner.tx(seq))
+        return self._last_tx[1]
 
     def incoming(
         self, entity: EntityId, rel: TermRef | None = None
