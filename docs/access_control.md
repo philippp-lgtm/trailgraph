@@ -649,7 +649,18 @@ exactly as before. The graph itself stays as visible as the grant makes it
   ontology pinned now, also for `--as-of`, `get --rev`, `history` and `changes`
   (like every read, [History](#history)). An entity is visible in a past state when its type
   there is visible, and the history of a hidden entity is
-  `entity.not_found`.
+  `entity.not_found`. Each past revision of a visible entity is shown when its own type is
+  visible too: a migration's `retype` can move an entity out of a class the caller cannot
+  see into one it sees, and the revisions it had before the move are absent for that caller.
+  `get --rev` of such a revision is `entity.revision_not_found`, exactly as for a revision
+  that was never stored, and `history` and `changes` skip it. The other revisions keep the
+  numbers they were stored under, so the numbers can have a gap. The first revision shown is
+  a creation for the caller (`changed` is `null`, every edge is a target of the feed item),
+  and every later one is compared with the latest revision shown before it. An entity moved
+  into a hidden class is hidden as a whole. A revision that a major release maps to the
+  current names is judged by its mapped type ([Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)):
+  a `retype` maps the old class to the new one, so such a revision reads as the class the
+  entity has now.
 - **The model.** `describe types|type|fields|relations|lifecycle|modules|
   module|schema|search` show a model without the hidden types and what only they
   carry: a relation whose domain or range has no visible type, attributes

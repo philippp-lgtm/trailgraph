@@ -193,6 +193,17 @@ are accepted and known:
   is the `action` name of a history item, even when the action is hidden from
   the caller. The `superseded_by` of an entity that a
   hidden entity superseded is empty. Timing differences are not hidden either.
+- **Revision numbers can have gaps.** A revision of a hidden type that an entity had
+  before a `retype` moved it into a visible type is absent for the caller, and the
+  numbers of the others are as stored, so a gap in `history` or a `get --rev` that
+  answers `entity.revision_not_found` below the first revision shown tells that such
+  revisions exist, never what they held
+  ([Time](access_control.md#what-a-caller-can-see)).
+- **Edges of a past revision are judged by the target's type now.** A visible entity's
+  earlier revision keeps an edge to an entity that has a visible type now, also when that
+  entity had a hidden type at the time of the revision (a `retype` moved it since). The
+  edge shows that a link to something existed then, and the target is one the caller can read
+  today.
 - **The change feed shows the same activity.** `graph changes` lists only the
   entities the caller sees, and a transaction with none has no entry, so the
   `tx_seq` of its entries have gaps; a gap tells that a transaction happened
