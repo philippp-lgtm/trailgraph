@@ -239,6 +239,25 @@ def test_as_of_answers_with_current_names(run_cli: CliRunner, root: Path, tmp_pa
     assert "names_mapped" not in plain["details"] and "mapped" not in plain["message"]
 
 
+def test_view_as_of_names_the_state_under_the_pinned_names(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    hammer = migrated(run_cli, root, tmp_path)
+    release(run_cli, third(tmp_path))
+    then = app(run_cli, "view", hammer, "--as-of", "tx:1", env=ENV)
+    assert then.code == 0, then.envelope
+    assert then.data["entity"]["type"] == "inv:Article"
+    assert then.data["entity"]["label"] == "Hammer"
+    fields = next(s for s in then.data["sections"] if s["kind"] == "fields")
+    assert fields["items"][0] == {"name": "title", "role": "label", "value": "Hammer"}
+    groups = next(s for s in then.data["sections"] if s["kind"] == "relations")["groups"]
+    assert {g["relation"] for g in groups} == {"inv:stored_in", "inv:in_category"}
+    [warning] = [w for w in then.warnings if w["code"] == "temporal.as_of_read"]
+    assert warning["details"]["names_mapped"] is True
+    head = app(run_cli, "view", hammer, env=ENV).data
+    assert head["entity"]["label"] == "Big hammer"
+
+
 def test_old_names_fail_with_their_current_name(
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:

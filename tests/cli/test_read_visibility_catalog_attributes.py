@@ -289,6 +289,11 @@ def test_affordances_offer_no_hidden_action(run_cli: CliRunner, world: Path) -> 
     assert [a["action"] for a in limited["actions"]] == ["set_phone"]
     for name in HIDDEN:
         assert name not in json.dumps(limited), name
+    card = ok(run_cli, "view", E1)
+    summary = next(s for s in card.data["sections"] if s["kind"] == "affordances")
+    assert summary["actions"]["apply"] == ["set_phone"]
+    for name in HIDDEN:
+        assert name not in json.dumps(card.envelope), name
 
 
 # ---- the skill -----------------------------------------------------------------------------

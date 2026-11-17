@@ -157,6 +157,9 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     call("get", entity)
     call("get", entity, "--affordances")
     call("get", entity, "--affordances", "--rev", "1")  # refused
+    call("view", entity)
+    call("view", entity, "--as-of", "tx:1")
+    call("view", "0" * 16)
     call("get", "0" * 16)
     call("find", "--type", cls, "--limit", "2")
     call("lookup", str(factory.attrs(cls)[attr]))
@@ -179,6 +182,7 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     text("changes", "--since", "tx:0")
     text("changes", "--since", "tx:0", "--limit", "1")  # the next-page hint
     text("get", entity)
+    text("view", entity)
     guarded = roles.get("guarded_transition")
     assert isinstance(guarded, dict)
     lifecycle = factory.model.lifecycles[guarded["lifecycle"]]

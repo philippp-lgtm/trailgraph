@@ -269,6 +269,29 @@ def test_search_does_not_search_a_hidden_field(world: World) -> None:
     assert world.ok("search", "private").data["items"] == []
 
 
+# ---- view --------------------------------------------------------------------------------
+
+
+def test_view_answers_as_over_the_twin(world: World) -> None:
+    for ref in EVERY:
+        world.ok("view", ref)
+        world.same("view", ref, "--as-of", "tx:2")
+    ada = world.ok("view", E1).data
+    fields = next(s for s in ada["sections"] if s["kind"] == "fields")
+    named = [i["name"] for i in fields["items"]] + fields.get("other", [])
+    assert all(hidden not in named for hidden in HIDDEN_NAMES), named
+    # a label that only a marking shows: the badge has none for a reader without it
+    assert "label" not in world.ok("view", B1).data["entity"]
+    install(world.run_cli, world.work, HOLDER)
+    held = world.ask(GRAPH, "view", B1).data
+    assert held["entity"]["label"], held
+    full = world.ask(GRAPH, "view", E1).data
+    held_fields = next(s for s in full["sections"] if s["kind"] == "fields")
+    assert {"salary", "email"} <= {i["name"] for i in held_fields["items"]} | set(
+        held_fields.get("other", [])
+    )
+
+
 # ---- neighbors, query, run ---------------------------------------------------------------
 
 

@@ -264,6 +264,12 @@ def test_affordances_offer_no_hidden_function_or_action(
     assert [a["action"] for a in limited.data["affordances"]["actions"]] == ["retire_item"]
     for name in HIDDEN:
         assert name not in json.dumps(limited.data["affordances"]), name
+    # the card summarizes the same listing: names of what the reader may see, none hidden
+    card = ok(run_cli, "view", ids["chair"])
+    summary = next(s for s in card.data["sections"] if s["kind"] == "affordances")
+    assert summary["actions"]["apply"] == ["retire_item"]
+    for name in HIDDEN:
+        assert name not in json.dumps(card.envelope), name
 
 
 def test_doing_a_hidden_action_is_doing_a_missing_one(

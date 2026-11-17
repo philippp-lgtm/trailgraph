@@ -1021,6 +1021,29 @@ Usage: `graph update REF [OPTIONS]`
 | `graph update <id> --add <attr>=<value> --dry-run --json` | Add one value to a list, no read needed. |
 | `graph update <id> --unset <attr> --expect 3 --json` | Remove one, guarded by revision. |
 
+## graph view
+
+Show what is known about one entity in one answer.
+
+Kind: read. Surface: retrieve. Action: `read.get`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph view REF [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `ref` | entity_ref | yes | no | Full id, alias or trailing hex of the id. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+| `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
+
+| Example | Summary |
+|---|---|
+| `graph view <id>` | The card of one entity. |
+| `graph view <id> --json` | The card as JSON. |
+| `graph view <id> --as-of tx:<seq> --json` | The card as it was after that tx. |
+
 ## graph whoami
 
 Show who is acting: the identity facets and what the policy allows.

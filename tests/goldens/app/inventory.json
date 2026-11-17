@@ -4055,6 +4055,84 @@
     },
     {
       "path": [
+        "view"
+      ],
+      "kind": "read",
+      "surface": "retrieve",
+      "action": "read.get",
+      "summary": "Show what is known about one entity in one answer.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "entity_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Full id, alias or trailing hex of the id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        },
+        {
+          "name": "--as-of",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Read the state after tx:<seq>, or at an RFC 3339 time; needs history access."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph view <id>",
+          "summary": "The card of one entity."
+        },
+        {
+          "command": "graph view <id> --json",
+          "summary": "The card as JSON."
+        },
+        {
+          "command": "graph view <id> --as-of tx:<seq> --json",
+          "summary": "The card as it was after that tx."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "entity.ambiguous_ref",
+        "entity.not_found",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "temporal.as_of_unsupported",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
         "whoami"
       ],
       "kind": "meta",

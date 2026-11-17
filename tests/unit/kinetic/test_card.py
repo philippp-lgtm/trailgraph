@@ -245,23 +245,33 @@ def test_groups_are_ordered_out_before_in_functional_and_required_first() -> Non
 
 def test_in_groups_follow_the_out_groups_and_count_active_sources() -> None:
     physics = topic("t1", "Physics")
+    about = [edge("nas:about", "t1")]
     notes = [
-        note("n1", "Beta", edges=[edge("nas:about", "t1")], alias="NOTE-0002", state="published"),
-        note("n2", "alpha", edges=[edge("nas:about", "t1")], alias="NOTE-0001"),
-        note("n3", "Gone", edges=[edge("nas:about", "t1")], status="retracted"),
-        note("n4", None, edges=[edge("nas:about", "t1")]),
+        note("n1", "Beta", about, alias="NOTE-0002", state="published"),
+        note("n2", "alpha", about, alias="NOTE-0001"),
+        note("n3", "Gone", about, status="retracted"),
+        note("n4", None, about),
+        note("n5", "Gamma", about),
+        note("n6", "Delta", about),
     ]
     data = card(physics, *notes)
     groups = section(data, "relations")["groups"]
     assert len(groups) == 1
     group = groups[0]
-    assert (group["relation"], group["direction"], group["count"]) == ("nas:about", "in", 3)
-    assert group["states"] == {"draft": 2, "published": 1}
+    assert (group["relation"], group["direction"], group["count"]) == ("nas:about", "in", 5)
     # first by name (normalized), a neighbour without a label last
-    assert [i["ref"] for i in group["items"]][:2] == ["NOTE-0001", "NOTE-0002"]
-    assert [i.get("label") for i in group["items"]] == ["alpha", "Beta", None]
+    assert [i.get("label") for i in group["items"]] == ["alpha", "Beta", "Delta"]
+    assert group["items"][0]["ref"] == "NOTE-0001" and group["items"][1]["ref"] == "NOTE-0002"
     assert group["items"][0]["state"] == "draft" and group["items"][1]["state"] == "published"
-    assert "more" not in group and "type" not in group["items"][0]
+    assert group["more"] == 2 and "type" not in group["items"][0]
+    assert group["states"] == {"draft": 4, "published": 1}  # the retracted source is not counted
+
+
+def test_states_are_left_out_when_every_neighbour_is_shown_with_its_state() -> None:
+    notes = [note(f"n{i}", f"Note {i}", [edge("nas:about", "t1")]) for i in range(3)]
+    group = section(card(topic("t1", "Physics"), *notes), "relations")["groups"][0]
+    assert group["count"] == 3 and "states" not in group and "more" not in group
+    assert [i["state"] for i in group["items"]] == ["draft"] * 3
 
 
 def test_items_are_the_first_three_by_name_and_the_rest_is_counted() -> None:

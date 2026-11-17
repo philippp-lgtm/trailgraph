@@ -91,6 +91,7 @@ from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
 from graph_cli.kinetic.affordances import actions_for, functions_for
 from graph_cli.kinetic.bind import bind_cli
+from graph_cli.kinetic.card import file_classes_of, generated_spec, render
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.affordances import relations, transitions
@@ -1012,33 +1013,13 @@ class ReadService:
         if affordances and rev is not None:
             raise refuse_affordances_with_rev()
         shown = check_fields(view.model, (), fields)
-        entity, ref_warnings = resolve_ref(ref, view.snapshot)
-        current = view.snapshot.get(entity)
-        if current is None:
-            raise GraphCliError(
-                "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
-            )
+        entity, current, warnings, superseded_by, retracted_by = _current_entity(view, ref)
         revision = current if rev is None else view.snapshot.get_revision(entity, rev)
         if revision is None:
             raise GraphCliError(
                 "entity.revision_not_found",
                 f"{ref} has no revision {rev}",
                 details={"ref": ref, "id": str(entity), "rev": rev, "current_rev": current.rev},
-            )
-        warnings = list(ref_warnings)
-        superseded_by = _sources(view.snapshot, entity, SUPERSEDES)
-        retracted_by = _sources(view.snapshot, entity, RETRACTS)
-        if current.record_status == "superseded":
-            warnings.append(
-                WarningRecord(
-                    "entity.superseded",
-                    f"{ref} is superseded; it is shown as recorded, without redirect",
-                    {"id": str(entity), "superseded_by": list(superseded_by)},
-                )
-            )
-        elif current.record_status == "retracted":
-            warnings.append(
-                WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
             )
         data: dict[str, JsonValue] = {
             "entity": entity_json(
@@ -1052,6 +1033,35 @@ class ReadService:
             data["affordances"] = self._affordances(view, current)
         self._signal(view, [entity])
         return data, warnings
+
+    @_query
+    def view(self, view: GraphRead, ref: str) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """The generated entity card (T17): key fields, relations with counts and the first
+        neighbours, files with pages, what applies next, in one bounded answer built from the
+        reader's own snapshot and model. The status warnings and ``superseded_by`` /
+        ``retracted_by`` are those of ``get``; the affordances are ``get --affordances`` summed
+        up by names. The entity ids the card names go to the read signal."""
+        _entity, current, warnings, superseded_by, retracted_by = _current_entity(view, ref)
+        card = render(
+            generated_spec(view.model, str(current.type)),
+            current,
+            view.snapshot,
+            view.model,
+            language=view.entry.language,
+            affordances=self._affordances(view, current),
+            superseded_by=superseded_by,
+            retracted_by=retracted_by,
+            file_classes=self._file_classes(view),
+        )
+        self._signal(view, [current.id, *card.shown()])
+        return dict(card.to_json()), warnings
+
+    def _file_classes(self, view: GraphRead) -> frozenset[str]:
+        """The stored-file classes the reader sees. The family comes from the stored model: the
+        view of a limited reader lacks a hidden ``files:File`` that a visible class extends (as
+        in ``FileService``)."""
+        stored = self._models.load_for_read(view.entry)[0] if view.read_view.limited else view.model
+        return file_classes_of(stored) & frozenset(view.model.classes)
 
     def _affordances(self, view: GraphRead, current: Revision) -> dict[str, JsonValue]:
         """The ``affordances`` object of ``get``: the four groups, composed here because
@@ -2073,6 +2083,35 @@ def _recorded_effects(record: Mapping[str, JsonValue]) -> list[JsonValue]:
             if isinstance(body, Mapping):
                 found.append({"kind": name, **body, "index": index})
     return found
+
+
+def _current_entity(
+    view: GraphRead, ref: str
+) -> tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]]:
+    """The entity ``ref`` names and its current revision, the warnings (alias notices, and
+    superseded or retracted) and the ids of the entities that superseded and retracted it."""
+    entity, ref_warnings = resolve_ref(ref, view.snapshot)
+    current = view.snapshot.get(entity)
+    if current is None:
+        raise GraphCliError(
+            "entity.not_found", f"no entity {ref}", details={"ref": ref, "id": str(entity)}
+        )
+    warnings = list(ref_warnings)
+    superseded_by = _sources(view.snapshot, entity, SUPERSEDES)
+    retracted_by = _sources(view.snapshot, entity, RETRACTS)
+    if current.record_status == "superseded":
+        warnings.append(
+            WarningRecord(
+                "entity.superseded",
+                f"{ref} is superseded; it is shown as recorded, without redirect",
+                {"id": str(entity), "superseded_by": list(superseded_by)},
+            )
+        )
+    elif current.record_status == "retracted":
+        warnings.append(
+            WarningRecord("entity.retracted", f"{ref} is retracted", {"id": str(entity)})
+        )
+    return entity, current, warnings, superseded_by, retracted_by
 
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:

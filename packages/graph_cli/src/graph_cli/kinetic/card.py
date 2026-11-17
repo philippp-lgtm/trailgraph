@@ -26,7 +26,7 @@ fixed order and sets ``cut``. Every cut is counted (``more``, ``more_groups``, `
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Final, Literal
 
@@ -217,6 +217,7 @@ class Neighbour:
     state: str | None = None
     record_status: str | None = None  # only when the neighbour is not active
     qualifiers: Mapping[str, JsonValue] = field(default_factory=dict)
+    entity: EntityId | None = None  # for the read signal; not in the JSON
 
     def to_json(self) -> Json:
         found: Json = {"ref": self.ref}
@@ -283,6 +284,7 @@ class FileRef:
     page: int | None = None
     last_page: int | None = None
     locator: str | None = None
+    entity: EntityId | None = None  # for the read signal; not in the JSON
 
     def to_json(self) -> Json:
         found: Json = {"ref": self.ref}
@@ -318,6 +320,7 @@ class Citation:
     label: str | None = None
     page: int | None = None
     last_page: int | None = None
+    entity: EntityId | None = None  # for the read signal; not in the JSON
 
     def to_json(self) -> Json:
         found: Json = {"ref": self.ref}
@@ -405,6 +408,20 @@ class ViewModel:
 
     def size(self) -> int:
         return len(dumps(self.to_json()))
+
+    def shown(self) -> tuple[EntityId, ...]:
+        """The entities the card names besides its own: the neighbours, files and citations
+        that are in the answer (after the byte guard), each once."""
+        found: dict[EntityId, None] = {}
+        for section in self.sections:
+            if isinstance(section, RelationsSection):
+                named = [i.entity for g in section.groups for i in g.items]
+            elif isinstance(section, FilesSection | CitedBySection):
+                named = [i.entity for i in section.items]
+            else:
+                continue
+            found.update({e: None for e in named if e is not None})
+        return tuple(found)
 
 
 def dumps(data: JsonValue) -> bytes:
@@ -520,10 +537,14 @@ def render(
     affordances: Mapping[str, JsonValue] | None = None,
     superseded_by: Sequence[str] = (),
     retracted_by: Sequence[str] = (),
+    file_classes: Collection[str] | None = None,
 ) -> ViewModel:
     """The card of ``entity`` as ``snapshot`` and ``model`` show it (pure; reads only through
     ``snapshot``). ``language`` is the graph's language, the one a main label is shown in;
     ``affordances`` the object ``get --affordances`` builds (None: no affordances section content).
+    ``file_classes`` are the classes that count as stored files (the family of ``files:File``);
+    a limited reader's model may lack ``files:File`` itself although it sees a subclass, so the
+    service passes the family of the stored model; None: the family of ``model``.
     """
     ref = entity.alias or str(entity.id)
     header: Json = {"id": str(entity.id)}
@@ -539,7 +560,8 @@ def render(
         header["superseded_by"] = list(superseded_by)
     if retracted_by:
         header["retracted_by"] = list(retracted_by)
-    candidates, citations = _candidates(entity, snapshot, model)
+    is_file = str(entity.type) in (file_classes_of(model) if file_classes is None else file_classes)
+    candidates, citations = _candidates(entity, snapshot, model, is_file)
     sections: list[Section] = []
     for section_spec in spec.sections:
         built: Section | None = None
@@ -548,7 +570,7 @@ def render(
         elif isinstance(section_spec, RelationsSpec):
             built = _relations(section_spec, candidates, snapshot, model, language)
         elif isinstance(section_spec, FilesSpec):
-            built = _files(section_spec, entity, citations, snapshot, model, language)
+            built = _files(section_spec, entity, is_file, citations, snapshot, model, language)
         elif isinstance(section_spec, AffordancesSpec):
             summary = affordance_summary(affordances or {}, section_spec)
             if summary:
@@ -665,12 +687,13 @@ def _bound(model: CompiledModel, relation: str, direction: Direction) -> Bound:
     return declared.out if direction == "out" else declared.into
 
 
-def _is_file(model: CompiledModel, entity: Revision) -> bool:
-    return FILE_CLASS in model.classes and model.is_a(str(entity.type), FILE_CLASS)
+def file_classes_of(model: CompiledModel) -> frozenset[str]:
+    """The classes of the ``files:File`` family of ``model`` (none without the files module)."""
+    return frozenset(model.subtypes(FILE_CLASS)) if FILE_CLASS in model.classes else frozenset()
 
 
 def _candidates(
-    entity: Revision, snapshot: Snapshot, model: CompiledModel
+    entity: Revision, snapshot: Snapshot, model: CompiledModel, is_file: bool
 ) -> tuple[list[_Candidate], list[_Candidate]]:
     """The (relation, direction) pairs that have at least one edge the reader sees, in card order;
     the second list is the ``files:from_file`` edges of a stored file (its citations)."""
@@ -682,20 +705,19 @@ def _candidates(
         out.setdefault(name, []).append((edge.target, edge))
     found = [_Candidate(name, "out", tuple(edges)) for name, edges in out.items()]
     citations: list[_Candidate] = []
+    if is_file:  # read whatever the model of the reader says about the relation: its range is
+        # ``files:File``, a class a limited reader may not see although it sees a subclass
+        cited = snapshot.incoming(entity.id, TermRef(FILES_MODULE_RELATION))
+        if cited:
+            citations.append(_Candidate(FILES_MODULE_RELATION, "in", tuple(cited)))
     for name in sorted(model.relations):
-        if name.startswith(CORE_PREFIX):
+        if name.startswith(CORE_PREFIX) or name == FILES_MODULE_RELATION:
             continue
         if not model.is_a_any(str(entity.type), model.relations[name].range):
             continue
         incoming = snapshot.incoming(entity.id, TermRef(name))
-        if not incoming:
-            continue
-        candidate = _Candidate(name, "in", tuple(incoming))
-        if name == FILES_MODULE_RELATION:
-            if _is_file(model, entity):
-                citations.append(candidate)
-            continue
-        found.append(candidate)
+        if incoming:
+            found.append(_Candidate(name, "in", tuple(incoming)))
 
     def order(candidate: _Candidate) -> tuple[bool, bool, bool, str]:
         bound = _bound(model, candidate.relation, candidate.direction)
@@ -786,8 +808,8 @@ def _group(
         state = _state(model, r)
         if state is not None:
             states[state] = states.get(state, 0) + 1
-    if len(attrs) != 1 or None in attrs:
-        states = {}
+    if len(attrs) != 1 or None in attrs or count <= len(items):
+        states = {}  # one lifecycle attribute, and only when some neighbours are not shown
     bound = _bound(model, candidate.relation, candidate.direction)
     return Group(
         candidate.relation,
@@ -812,7 +834,7 @@ def _neighbour(
 ) -> Neighbour:
     qualifiers = dict(edge.qualifiers)
     if revision is None:
-        return Neighbour(str(neighbour), qualifiers=qualifiers)
+        return Neighbour(str(neighbour), qualifiers=qualifiers, entity=neighbour)
     return Neighbour(
         revision.alias or str(revision.id),
         None if label is None else _cut(label, spec.label_chars)[0],
@@ -820,6 +842,7 @@ def _neighbour(
         _state(model, revision) if revision.record_status == ACTIVE else None,
         None if revision.record_status == ACTIVE else revision.record_status,
         qualifiers,
+        revision.id,
     )
 
 
@@ -834,12 +857,13 @@ def _locator(value: JsonValue) -> str | None:
 def _files(
     spec: FilesSpec,
     entity: Revision,
+    is_file: bool,
     citations: Sequence[_Candidate],
     snapshot: Snapshot,
     model: CompiledModel,
     language: str | None,
 ) -> FilesSection | CitedBySection | None:
-    if _is_file(model, entity):
+    if is_file:
         return _cited_by(spec, citations, snapshot, model, language)
     edges = [(e.target, e) for e in entity.edges if str(e.rel) == FILES_MODULE_RELATION]
     if not edges:
@@ -856,6 +880,7 @@ def _files(
             _page(edge.qualifiers.get("page")),
             _page(edge.qualifiers.get("last_page")),
             _locator(edge.qualifiers.get("locator")),
+            target,
         )
         rows.append(
             (
@@ -936,6 +961,7 @@ def _cited_by(
             None if label is None else _cut(label, spec.label_chars)[0],
             _page(edge.qualifiers.get("page")),
             _page(edge.qualifiers.get("last_page")),
+            revision.id,
         )
         for _s, edge, revision, label in labelled[: spec.max_items]
     )
