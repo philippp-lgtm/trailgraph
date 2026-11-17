@@ -2,7 +2,8 @@
 leak item 12): a ``find`` with a relation filter and a ``neighbors`` walk over a graph with many
 edges stay within a generous factor of what the reader who sees everything pays, on each store;
 so does a page of the change feed over a thousand txs that write entities of a hidden type
-(change feed plan leak item 12).
+(change feed plan leak item 12) and one over entities that were retyped out of a hidden class
+(each revision is judged by its own type, F7).
 
 The factor catches an evaluation that reads every edge target of every candidate one by one
 (a read per edge instead of a memoised, batched type lookup); it is no benchmark. A small
@@ -225,3 +226,53 @@ def test_a_feed_page_over_txs_of_a_hidden_type_stays_within_a_factor_of_the_unli
     assert everything["more"] is False and visible["more"] is False
     assert len(everything["items"]) == FEED_TXS  # type: ignore[arg-type]
     assert len(visible["items"]) == FEED_TXS // 10  # type: ignore[arg-type]
+
+
+MOVED_ENTITIES, HIDDEN_REVISIONS = 500, 4
+
+
+def test_a_feed_page_over_entities_retyped_out_of_a_hidden_class_stays_within_a_factor(
+    backend: str, tmp_path: Path
+) -> None:
+    """500 entities of the hidden class get four revisions of it, then a migration moves them
+    to the visible one: the limited reader shows the move only, as a creation, after looking
+    back over the four revisions it omits. The factor catches a walk that is not bounded by
+    the revisions it omits, or one that reads every revision of the log per item."""
+    env = StoreEnv(backend, "inventory", tmp_path)
+    visible_type, hidden_type = env.builder.concrete_classes[:2]
+    moved: list[EntityId] = []
+    env.write(
+        lambda d: moved.extend(d.create(hidden_type, alias=None) for _ in range(MOVED_ENTITIES))
+    )
+    for _ in range(HIDDEN_REVISIONS - 1):
+        env.write(lambda d: [d.update(e) for e in moved])
+    env.migrate(lambda d: [d.revise(e, type=TermRef(visible_type)) for e in moved])
+    allowance = ALLOWANCE_S.get(backend, DEFAULT_ALLOWANCE_S)
+    raw: Snapshot = env.store.snapshot()
+    limited: Snapshot = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({visible_type})))
+
+    def page(view: Snapshot) -> dict[str, object]:
+        return change_page(
+            view,
+            raw,
+            FeedPosition(0),
+            MOVED_ENTITIES * (HIDDEN_REVISIONS + 1),
+            session=None,
+            migration=lambda _: None,
+        )
+
+    unlimited = best_of(partial(page, raw), FEED_REPEATS)
+    paid = best_of(partial(page, limited), FEED_REPEATS)
+    assert paid <= FACTOR * unlimited + allowance, (
+        f"{paid * 1000:.1f} ms for the limited reader, {unlimited * 1000:.1f} ms for the "
+        "unlimited one"
+    )
+    # the limit filters something: the limited page holds the moves only, as creations
+    everything, shown = page(raw), page(limited)
+    assert len(everything["items"]) == HIDDEN_REVISIONS + 1  # type: ignore[arg-type]
+    (entry,) = shown["items"]  # type: ignore[misc]
+    assert len(entry["entities"]) == MOVED_ENTITIES
+    assert all(
+        item["changed"] is None and item["rev"] == HIDDEN_REVISIONS + 1
+        for item in entry["entities"]
+    )

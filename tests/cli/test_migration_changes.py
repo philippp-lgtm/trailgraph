@@ -6,7 +6,10 @@ entry of its own with the versions and the summary and the entities it rewrote, 
 changed in them; revisions before it show the current names. A second release retypes an entity
 into a class that a reader's graph policy hides: for that reader the entity has no item in any
 tx (the rule of the type at the head), the migration entry is still there and names nothing,
-and the entity is gone like one that never existed.
+and the entity is gone like one that never existed. In the other direction (a retype out of a
+hidden class into a visible one) the entity is visible and the revisions it had as the hidden
+class are as absent as a revision that was never stored: ``get --rev``, ``history`` and the feed
+(F82 fix).
 """
 
 import json
@@ -218,3 +221,56 @@ def test_a_retype_into_a_hidden_type_leaves_the_entity_out_and_keeps_the_migrati
     missing = app(run_cli, "get", "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", env=ENV)
     assert hidden.code == missing.code == 1
     assert hidden.error["code"] == missing.error["code"] == "entity.not_found"
+
+
+MOVE_OUT = """\
+format: graph_cli.migration/1
+from: 1.1.0
+summary: Reorganised.
+steps:
+  - retype: {from: inv:Supplier, to: inv:Category}
+"""
+
+
+def test_the_earlier_revisions_of_an_entity_retyped_out_of_a_hidden_type_are_read_mapped(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """The release is a major one, so the revisions before it are mapped to the current names,
+    a retype included (``services/names.py``): read limits judge the mapped type, and the
+    entity's earlier revisions read as the class it is now, never under the hidden one. The
+    name of the hidden class is in no answer."""
+    create(run_cli)
+    ops = [{"op": "create", "type": "inv:Supplier", "attrs": {"name": "Acme"}}]
+    write_documents(root, "example_graph", [{"ops": ops}])
+    supplier = app(run_cli, "find", "--type", "inv:Supplier", env=ENV).data["items"][0]["id"]
+    update(root, supplier, {"name": "Acme Ltd"}, seed=14)
+    source = tmp_path / "moved_out"
+    source.mkdir()
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    (source / "inventory.yaml").write_text(
+        text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    )
+    (source / "migration.yaml").write_text(MOVE_OUT)
+    release(run_cli, source)
+    policy = write_policy(tmp_path / "policies", "hide.yaml", HIDE_SUPPLIERS)
+    applied = admin(
+        run_cli, "policy", "apply", str(policy), "--graph", "example_graph", "--reason", "test"
+    )
+    assert applied.code == 0, applied.envelope
+
+    answers = []
+    for rev in ("1", "2", "3"):
+        found = app(run_cli, "get", supplier, "--rev", rev, env=ENV)
+        assert found.code == 0, found.envelope
+        assert found.data["entity"]["type"] == "inv:Category"
+        answers.append(found.envelope)
+    listed = app(run_cli, "history", supplier, env=ENV)
+    assert [i["rev"] for i in listed.data["items"]] == [3, 2, 1]
+    data = feed(run_cli)
+    assert [e["tx_seq"] for e in data["items"]] == [1, 2, 3]
+    assert [(i["rev"], i["type"]) for e in data["items"] for i in e["entities"]] == [
+        (1, "inv:Category"),
+        (2, "inv:Category"),
+        (3, "inv:Category"),
+    ]
+    assert "Supplier" not in json.dumps([answers, listed.envelope, data])

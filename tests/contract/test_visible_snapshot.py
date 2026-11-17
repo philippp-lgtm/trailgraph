@@ -130,7 +130,7 @@ def test_get_revision_and_history_are_stripped_and_hashes_match(world: World) ->
     assert view.history(world.ids["A3"]) == raw.history(world.ids["A3"])
 
 
-def test_a_past_revision_is_judged_by_the_current_type(world: World) -> None:
+def test_a_past_revision_is_judged_by_the_current_type_of_its_entity(world: World) -> None:
     other = VisibleSnapshot(world.raw(), ReadView(frozenset({world.b})))
     # B2 is retracted but of a visible type for ``other``: still visible, edges to A* stripped
     assert other.get(world.ids["B2"]) is not None
@@ -139,6 +139,46 @@ def test_a_past_revision_is_judged_by_the_current_type(world: World) -> None:
     early = VisibleSnapshot(world.raw(1), ReadView(frozenset({world.a})))
     assert early.get_revision(world.ids["A2"], 2) is None
     assert [m.rev for m in early.history(world.ids["A2"])] == [1]
+
+
+def retype_b2(world: World) -> None:
+    """A migration moves B2, an entity of the hidden type with two revisions, to the visible
+    type: its third revision is the first of a visible type."""
+    world.env.migrate(lambda d: d.revise(world.ids["B2"], type=TermRef(world.a)))
+
+
+def test_a_revision_of_a_hidden_type_is_absent_after_a_retype_into_a_visible_one(
+    world: World,
+) -> None:
+    """F1, F2: the entity is visible by its type now, its revisions of the hidden type are not;
+    they answer as revisions that were never stored, and the numbers are those stored."""
+    retype_b2(world)
+    raw, view = world.raw(), world.view()
+    b2 = world.ids["B2"]
+    stored = [raw.get_revision(b2, rev) for rev in (1, 2, 3)]
+    assert [r.type if r else None for r in stored] == [world.b, world.b, world.a]
+    current = view.get(b2)
+    assert current is not None and (current.rev, current.type) == (3, world.a)
+    assert view.get_revision(b2, 1) is None and view.get_revision(b2, 2) is None
+    assert view.get_revision(b2, 3) == current
+    assert view.get_revision(b2, 4) is None  # as for one that never existed
+    assert [m.rev for m in view.history(b2)] == [3]
+    assert [m.rev for m in raw.history(b2)] == [1, 2, 3]
+    # before the migration the entity is of the hidden type: absent as a whole
+    early = world.view(3)
+    assert early.get(b2) is None and early.get_revision(b2, 2) is None
+    assert early.history(b2) == []
+
+
+def test_no_revision_of_a_hidden_type_is_shown_from_either_side(world: World) -> None:
+    """The other direction: an entity moved from the visible type to the hidden one is absent as
+    a whole, whatever type its first revisions had."""
+    world.env.migrate(lambda d: d.revise(world.ids["A3"], type=TermRef(world.b)))
+    view = world.view()
+    a3 = world.ids["A3"]
+    assert view.get(a3) is None and view.history(a3) == []
+    assert [view.get_revision(a3, rev) for rev in (1, 2)] == [None, None]
+    assert world.view(3).get(a3) is not None  # as of before the move it is of the visible type
 
 
 def test_incoming_keeps_visible_sources_only(world: World) -> None:

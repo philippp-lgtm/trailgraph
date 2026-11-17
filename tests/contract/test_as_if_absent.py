@@ -8,6 +8,13 @@ the edges to entities that are not copied, which are dropped, and the content ha
 That reference is a plain in-memory ``GraphView`` replay, so the comparison tests the filter
 against the evaluation the memory store has always run.
 
+An entity is visible when its type at the snapshot is, and each of its revisions is shown when its
+own type is (F82 fix, rules F1-F3, F5): a retype moves an entity between classes, and a revision
+of a hidden class is as absent as an entity of one. So the reference is built per snapshot
+(``split`` with ``upto``): it holds the entities whose type at that seq is visible, without their
+revisions of a hidden type, and it keeps the rev numbers as stored, a gap where one was dropped
+(``NumberedSnapshot``).
+
 The same holds with a random attribute half (field visibility plan F4, F5, section 6): per
 concrete type a random set of visible attributes, and the reference store holds the revisions
 without the others (a type without an entry loses every attribute), the content hash recomputed.
@@ -33,7 +40,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from support.stores import StoreEnv
+from support.stores import StoreEnv, snapshot_state
 from support.txbuilder import TxDraft
 
 from graph_cli.kernel.ids import EntityId, TermRef
@@ -50,6 +57,7 @@ from graph_cli.temporal_knowledge.changes import SCAN_CAP, FeedPosition
 
 CASES = 40  # graphs per backend and toy ontology
 MISSING = EntityId(UUID(int=7))
+REL = TermRef("core:source")
 STATUSES = (
     frozenset({"active"}),
     frozenset({"active", "superseded", "retracted"}),
@@ -91,20 +99,51 @@ class Sides:
         return len(self.raw)
 
 
-def split(env: StoreEnv, visible: frozenset[str], mask: AttributeMask | None = None) -> Sides:
-    records = list(env.store.changes_since(0, limit=10**6))
-    types = {r.id: r.type for tx in records for r in tx.revisions}
+def split(
+    env: StoreEnv,
+    visible: frozenset[str],
+    mask: AttributeMask | None = None,
+    upto: int | None = None,
+) -> Sides:
+    """The reference store of the log up to ``upto`` (all of it by default): the entities whose
+    type at that seq is visible, each with the revisions of a visible type only."""
+    records = list(env.store.changes_since(0, limit=10**6))[:upto]
+    types = {r.id: r.type for tx in records for r in tx.revisions}  # the type at that seq
     kept = {entity for entity, type_ in types.items() if type_ in visible}
     reference = GraphView()
     for tx in records:
         reference.apply(
             replace(
                 tx,
-                revisions=tuple(stripped(r, kept, mask) for r in tx.revisions if r.id in kept),
+                revisions=tuple(
+                    stripped(r, kept, mask)
+                    for r in tx.revisions
+                    if r.id in kept and r.type in visible
+                ),
                 alias_allocations=tuple((e, a) for e, a in tx.alias_allocations if e in kept),
             )
         )
     return Sides(records, visible, kept, reference)
+
+
+class NumberedSnapshot(ViewSnapshot):
+    """The reference snapshot: revisions are found by their number, not their position, so a
+    revision that was dropped leaves a gap and the others keep the number they were stored
+    under (F2)."""
+
+    def get_revision(self, entity: EntityId, rev: int) -> Revision | None:
+        for position, meta in enumerate(self._view.history(entity), start=1):
+            if meta.rev == rev:
+                return self._view.revision(entity, position)
+        return None
+
+
+def reference_at(
+    env: StoreEnv, visible: frozenset[str], mask: AttributeMask | None, at: int
+) -> tuple[Sides, Snapshot]:
+    """The reference of the state at seq ``at`` and its snapshot."""
+    sides = split(env, visible, mask, at)
+    return sides, NumberedSnapshot(sides.reference.at())
 
 
 def more_links(draft: TxDraft, rng: random.Random) -> None:
@@ -116,6 +155,28 @@ def more_links(draft: TxDraft, rng: random.Random) -> None:
         draft.create()
 
 
+def retype(env: StoreEnv, entity: EntityId, cls: str) -> None:
+    """Move ``entity`` to class ``cls``: a migration tx with a next revision of that type (a
+    write never changes a type)."""
+    env.migrate(lambda d: d.revise(entity, type=TermRef(cls)))
+
+
+def retype_some(env: StoreEnv, rng: random.Random) -> None:
+    """Now and then move an entity to another class (most often followed by an update), so some
+    entities have revisions of several types."""
+    classes = env.builder.concrete_classes
+    for _ in range(rng.choice((0, 1, 2, 3))):
+        snapshot = env.store.snapshot()
+        found = snapshot.get_many(snapshot_state(snapshot).ids())
+        active = sorted(e for e, r in found.items() if r.record_status == "active")
+        if not active:
+            return
+        entity = rng.choice(active)
+        retype(env, entity, rng.choice(classes))
+        if rng.random() < 0.7:
+            env.write(lambda d, e=entity: d.update(e))
+
+
 def random_graph(env: StoreEnv, rng: random.Random) -> frozenset[str]:
     """Write a random graph; return a random set of visible types (none and all included)."""
     env.random(rng.randint(8, 26))
@@ -124,7 +185,9 @@ def random_graph(env: StoreEnv, rng: random.Random) -> frozenset[str]:
     classes = env.builder.concrete_classes
     extreme = rng.random() < 0.1
     size = rng.choice((0, len(classes))) if extreme else rng.randint(1, len(classes) - 1)
-    return frozenset(rng.sample(classes, size))
+    visible = frozenset(rng.sample(classes, size))
+    retype_some(env, rng)
+    return visible
 
 
 def pick[T](rng: random.Random, items: Sequence[T], count: int) -> list[T]:
@@ -196,7 +259,7 @@ def check_point_reads(
     for entity in everything:
         compare(f"get {entity}", seed, view.get(entity), ref.get(entity))
         compare(f"history {entity}", seed, list(view.history(entity)), list(ref.history(entity)))
-        for rev in (1, 2, 3, 9):
+        for rev in (1, 2, 3, 4, 5, 9):
             compare(
                 f"get_revision {entity} {rev}",
                 seed,
@@ -294,7 +357,7 @@ def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
     if isinstance(env.store, FileStore):  # the file store reads through its index or without it
         stores.append(FileStore(env.store.layout.root, env.graph_id, use_index=False))
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
-        ref = ViewSnapshot(sides.reference.at(at))
+        at_sides, ref = reference_at(env, visible, None, at)
         for store in stores:
             raw = store.snapshot(at_seq=at)
             view = VisibleSnapshot(raw, ReadView(visible))
@@ -304,7 +367,7 @@ def test_every_answer_over_the_view_is_the_answer_over_the_visible_part(
                 check_feed(seed, view, raw, ref)
             # a hidden entity is a missing one: no revision, history, edges or neighbours
             for entity in ids:
-                if entity not in sides.kept:
+                if entity not in at_sides.kept:
                     assert view.get(entity) is None and not view.history(entity)
 
 
@@ -378,7 +441,7 @@ def test_every_answer_over_an_attribute_view_is_the_answer_over_the_store_withou
     concrete = env.builder.concrete_classes
     ids = sorted({r.id for tx in sides.raw for r in tx.revisions})
     for at in sorted({1, max(1, sides.head // 2), sides.head}):
-        ref = ViewSnapshot(sides.reference.at(at))
+        _, ref = reference_at(env, visible, mask, at)
         raw = env.store.snapshot(at_seq=at)
         view = VisibleSnapshot(raw, ReadView(types, mask))
         check_point_reads(seed, view, ref, sides, ids, rng)
@@ -445,3 +508,83 @@ def test_the_feed_comparison_catches_a_view_that_shows_too_much(env: StoreEnv) -
     hidden_attrs = VisibleSnapshot(raw, ReadView(frozenset({first}), narrow))
     assert feed(hidden_attrs, raw, start, 50, SCAN_CAP) == feed(masked, masked, start, 50, SCAN_CAP)
     assert feed(exact, raw, start, 50, SCAN_CAP) != feed(masked, masked, start, 50, SCAN_CAP)
+
+
+def retyped(env: StoreEnv) -> tuple[str, str, dict[str, EntityId]]:
+    """An entity of a hidden class that is retyped into a visible one (F82): created with an edge
+    to an anchor (rev 1), updated (2), retyped (3), updated (4), given a second edge (5).
+    Returns the hidden and the visible class and the ids."""
+    hidden, shown = env.builder.concrete_classes[:2]
+    ids: dict[str, EntityId] = {}
+
+    def create(d: TxDraft) -> None:
+        ids["moved"] = d.create(hidden, alias=None)
+        ids["anchor"] = d.create(shown, alias=None)
+        d.link(ids["moved"], REL, ids["anchor"])
+
+    env.write(create)
+    env.write(lambda d: d.update(ids["moved"]))
+    retype(env, ids["moved"], shown)
+    env.write(lambda d: d.update(ids["moved"]))
+    env.write(lambda d: d.link(ids["moved"], REL, ids["anchor"]))
+    return hidden, shown, ids
+
+
+def test_a_retype_out_of_a_hidden_class_leaves_the_earlier_revisions_absent(
+    env: StoreEnv,
+) -> None:
+    """F1-F3, F5: ``get_revision``, ``history``, queries and the feed over the view are those over
+    the reference at every seq (before the retype the entity is hidden as a whole), and the
+    revisions of the hidden class are absent: no answer says they were omitted."""
+    hidden, shown, ids = retyped(env)
+    visible = frozenset({shown})
+    moved = ids["moved"]
+    everyone = sorted(ids.values())
+    sides = split(env, visible)
+    rng = random.Random(0)
+    for at in range(1, sides.head + 1):
+        _, ref = reference_at(env, visible, None, at)
+        raw = env.store.snapshot(at_seq=at)
+        view = VisibleSnapshot(raw, ReadView(visible))
+        check_point_reads(0, view, ref, sides, everyone, rng)
+        check_queries(0, view, ref, sides, everyone, [hidden, shown], rng)
+        if at == sides.head:
+            check_feed(0, view, raw, ref)
+    view = VisibleSnapshot(env.store.snapshot(), ReadView(visible))
+    assert [m.rev for m in view.history(moved)] == [3, 4, 5]
+    assert [view.get_revision(moved, rev) is None for rev in (1, 2, 3, 4, 5, 6)] == [
+        True,
+        True,
+        False,
+        False,
+        False,
+        True,
+    ]
+    # the stored revision before the retype is of the hidden class, and none of those shown is
+    stored = env.store.snapshot().get_revision(moved, 2)
+    assert stored is not None and stored.type == hidden
+    shown_types = {r.type for m in view.history(moved) if (r := view.get_revision(moved, m.rev))}
+    assert shown_types == {shown}
+    # before the retype the entity is hidden as a whole
+    early = VisibleSnapshot(env.store.snapshot(at_seq=2), ReadView(visible))
+    assert early.get(moved) is None and not early.history(moved)
+
+
+def test_the_comparison_catches_a_view_that_shows_a_revision_of_a_hidden_class(
+    env: StoreEnv,
+) -> None:
+    """Positive control of F5: a reference that copies the revisions of a visible entity
+    verbatim (the oracle before the F82 fix) differs from the view of a retyped entity."""
+    _, shown, ids = retyped(env)
+    visible = frozenset({shown})
+    moved = ids["moved"]
+    view = VisibleSnapshot(env.store.snapshot(), ReadView(visible))
+    _, exact = reference_at(env, visible, None, 5)
+    assert list(view.history(moved)) == list(exact.history(moved))
+    verbatim = GraphView()
+    kept = set(ids.values())
+    for tx in env.store.changes_since(0, limit=10**6):
+        verbatim.apply(replace(tx, revisions=tuple(stripped(r, kept) for r in tx.revisions)))
+    copied = ViewSnapshot(verbatim.at())
+    assert [m.rev for m in copied.history(moved)] == [1, 2, 3, 4, 5]
+    assert list(view.history(moved)) != list(copied.history(moved))
