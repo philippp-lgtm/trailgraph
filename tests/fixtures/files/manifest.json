@@ -1,0 +1,21 @@
+{
+  "archive.zip": {},
+  "binary_renamed.csv": {},
+  "database.sqlite": {},
+  "empty.txt": {},
+  "letter.docx": {},
+  "notes.txt": {},
+  "notes_bom.txt": {},
+  "notes_gzip.txt": {},
+  "notes_utf16.txt": {},
+  "one_page.pdf": {},
+  "pixel.png": {},
+  "pixel_named.jpg": {
+    "recorded_media_type": "image/jpeg"
+  },
+  "table.csv": {},
+  "table_semicolon.csv": {},
+  "text.odt": {},
+  "text_renamed.pdf": {},
+  "three_pages.pdf": {}
+}

@@ -2,7 +2,7 @@
 
 import pytest
 
-from graph_cli.services.media_types import OCTET_STREAM, detect
+from graph_cli.extractors.media_types import OCTET_STREAM, detect
 
 
 @pytest.mark.parametrize(

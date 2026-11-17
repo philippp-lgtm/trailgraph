@@ -47,6 +47,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import BinaryIO, Final, Protocol
 
+from graph_cli.extractors import media_types
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet, CreateOp
@@ -60,7 +61,6 @@ from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.values import check_facets
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
-from graph_cli.services import media_types
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import GraphRead, Page, ReadService
 from graph_cli.services.refs import resolve_ref

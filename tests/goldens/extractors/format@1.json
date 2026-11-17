@@ -1,0 +1,230 @@
+{
+  "archive.zip": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/zip",
+        "media_type_mismatch": false,
+        "size": 112
+      }
+    }
+  },
+  "binary_renamed.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/octet-stream",
+        "media_type_mismatch": true,
+        "size": 512
+      }
+    }
+  },
+  "database.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/vnd.sqlite3",
+        "media_type_mismatch": false,
+        "size": 2560
+      }
+    }
+  },
+  "empty.txt": {
+    "recorded_media_type": "text/plain",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 0,
+        "text_encoding": "utf_8"
+      }
+    }
+  },
+  "letter.docx": {
+    "recorded_media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/zip",
+        "media_type_mismatch": false,
+        "size": 138
+      }
+    }
+  },
+  "notes.txt": {
+    "recorded_media_type": "text/plain",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 47,
+        "text_encoding": "utf_8"
+      }
+    }
+  },
+  "notes_bom.txt": {
+    "recorded_media_type": "text/plain",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 29,
+        "text_encoding": "utf_8_sig"
+      }
+    }
+  },
+  "notes_gzip.txt": {
+    "recorded_media_type": "text/plain",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/gzip",
+        "media_type_mismatch": true,
+        "size": 35
+      }
+    }
+  },
+  "notes_utf16.txt": {
+    "recorded_media_type": "text/plain",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 52,
+        "text_encoding": "utf_16_le"
+      }
+    }
+  },
+  "one_page.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/pdf",
+        "media_type_mismatch": false,
+        "size": 329
+      }
+    }
+  },
+  "pixel.png": {
+    "recorded_media_type": "image/png",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/png",
+        "media_type_mismatch": false,
+        "size": 71
+      }
+    }
+  },
+  "pixel_named.jpg": {
+    "recorded_media_type": "image/jpeg",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/png",
+        "media_type_mismatch": true,
+        "size": 67
+      }
+    }
+  },
+  "table.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 47,
+        "text_encoding": "utf_8"
+      }
+    }
+  },
+  "table_semicolon.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 38,
+        "text_encoding": "utf_8"
+      }
+    }
+  },
+  "text.odt": {
+    "recorded_media_type": "application/vnd.oasis.opendocument.text",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/vnd.oasis.opendocument.text",
+        "media_type_mismatch": false,
+        "size": 262
+      }
+    }
+  },
+  "text_renamed.pdf": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 45,
+        "text_encoding": "utf_8"
+      }
+    }
+  },
+  "three_pages.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/pdf",
+        "media_type_mismatch": false,
+        "size": 523
+      }
+    }
+  }
+}
