@@ -19,7 +19,8 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query
 from graph_cli.kernel.read_view import ReadView
-from graph_cli.kernel.records import revision_content_hash
+from graph_cli.kernel.records import Revision, revision_content_hash
+from graph_cli.services.names import MappedSnapshot
 from graph_cli.services.visibility import VisibleSnapshot
 from graph_cli.temporal_knowledge import changes
 
@@ -130,7 +131,7 @@ def test_get_revision_and_history_are_stripped_and_hashes_match(world: World) ->
     assert view.history(world.ids["A3"]) == raw.history(world.ids["A3"])
 
 
-def test_a_past_revision_is_judged_by_the_current_type(world: World) -> None:
+def test_a_past_revision_is_judged_by_the_current_type_of_its_entity(world: World) -> None:
     other = VisibleSnapshot(world.raw(), ReadView(frozenset({world.b})))
     # B2 is retracted but of a visible type for ``other``: still visible, edges to A* stripped
     assert other.get(world.ids["B2"]) is not None
@@ -139,6 +140,150 @@ def test_a_past_revision_is_judged_by_the_current_type(world: World) -> None:
     early = VisibleSnapshot(world.raw(1), ReadView(frozenset({world.a})))
     assert early.get_revision(world.ids["A2"], 2) is None
     assert [m.rev for m in early.history(world.ids["A2"])] == [1]
+
+
+def retype_b2(world: World) -> None:
+    """A migration moves B2, an entity of the hidden type with two revisions, to the visible
+    type: its third revision is the first of a visible type."""
+    world.env.migrate(lambda d: d.revise(world.ids["B2"], type=TermRef(world.a)))
+
+
+def test_a_revision_of_a_hidden_type_is_absent_after_a_retype_into_a_visible_one(
+    world: World,
+) -> None:
+    """F1, F2: the entity is visible by its type now, its revisions of the hidden type are not;
+    they answer as revisions that were never stored, and the numbers are those stored."""
+    retype_b2(world)
+    raw, view = world.raw(), world.view()
+    b2 = world.ids["B2"]
+    stored = [raw.get_revision(b2, rev) for rev in (1, 2, 3)]
+    assert [r.type if r else None for r in stored] == [world.b, world.b, world.a]
+    current = view.get(b2)
+    assert current is not None and (current.rev, current.type) == (3, world.a)
+    assert view.get_revision(b2, 1) is None and view.get_revision(b2, 2) is None
+    assert view.get_revision(b2, 3) == current
+    assert view.get_revision(b2, 4) is None  # as for one that never existed
+    assert [m.rev for m in view.history(b2)] == [3]
+    assert [m.rev for m in raw.history(b2)] == [1, 2, 3]
+    # before the migration the entity is of the hidden type: absent as a whole
+    early = world.view(3)
+    assert early.get(b2) is None and early.get_revision(b2, 2) is None
+    assert early.history(b2) == []
+
+
+def test_no_revision_of_a_hidden_type_is_shown_from_either_side(world: World) -> None:
+    """The other direction: an entity moved from the visible type to the hidden one is absent as
+    a whole, whatever type its first revisions had."""
+    world.env.migrate(lambda d: d.revise(world.ids["A3"], type=TermRef(world.b)))
+    view = world.view()
+    a3 = world.ids["A3"]
+    assert view.get(a3) is None and view.history(a3) == []
+    assert [view.get_revision(a3, rev) for rev in (1, 2)] == [None, None]
+    assert world.view(3).get(a3) is not None  # as of before the move it is of the visible type
+
+
+class RetypeNames:
+    """The name mapping of a major release that retyped one class into another, for the layer
+    between the store and the view: revisions of ``source`` written before ``seq`` read as
+    ``target`` (``GraphNames.map``), and their own class is the one they were stored under
+    (``GraphNames.own_class``)."""
+
+    def __init__(self, source: str, target: str, seq: int) -> None:
+        self.source, self.target, self.seq = source, target, seq
+
+    def _moved(self, revision: Revision) -> bool:
+        return revision.type == self.source and revision.tx_seq < self.seq
+
+    def map(self, revision: Revision) -> Revision:
+        if not self._moved(revision):
+            return revision
+        moved = replace(revision, type=TermRef(self.target))
+        return replace(moved, content_hash=revision_content_hash(moved))
+
+    def own_class(self, revision: Revision) -> str:
+        return revision.type
+
+    def unmapped(self, revision: Revision) -> bool:
+        return False
+
+
+def mapped_view(
+    world: World, seq: int | None = None, *, known: tuple[str, ...] | None = None
+) -> VisibleSnapshot:
+    """The view of the visible type over the mapping of ``RetypeNames`` (B moved to A by the
+    migration tx that ``retype_b2`` writes), over the state at ``seq``; ``known`` are the classes
+    the pinned model has (both by default)."""
+    names = RetypeNames(world.b, world.a, HEAD + 1)
+    shown = frozenset({world.a})
+    mapping = MappedSnapshot(
+        world.raw(seq),
+        names,  # type: ignore[arg-type]
+        current=seq is not None,
+        classes=(world.a, world.b) if known is None else known,
+        shown=shown.__contains__,
+    )
+    return VisibleSnapshot(mapping, ReadView(shown), mapping.unmapped, mapping.own_class)
+
+
+def test_a_mapped_revision_is_judged_by_the_class_it_was_stored_under(world: World) -> None:
+    """F1b: a retype of a major release maps the revisions before it to the new class; the view
+    still leaves out those stored under a class it hides, and the migration revision is the
+    first it shows."""
+    retype_b2(world)
+    view = mapped_view(world)
+    b2 = world.ids["B2"]
+    plain = world.view()
+    assert plain.get_revision(b2, 1) is None  # judged by the stored type: the unmapped path
+    # the mapped snapshot hands the old revision out as A, the view still omits it
+    mapped = MappedSnapshot(
+        world.raw(),
+        RetypeNames(world.b, world.a, HEAD + 1),  # type: ignore[arg-type]
+        current=False,
+        classes=(world.a, world.b),
+    )
+    handed = mapped.get_revision(b2, 1)
+    assert handed is not None and handed.type == world.a
+    assert mapped.own_class(b2, 1) == world.b and mapped.own_class(b2, 3) is None
+    assert view.get_revision(b2, 1) is None and view.get_revision(b2, 2) is None
+    assert view.get_revision(b2, 3) is not None
+    assert [m.rev for m in view.history(b2)] == [3]
+    # an entity that stays of the visible type is untouched
+    a1 = world.ids["A1"]
+    assert [m.rev for m in view.history(a1)] == [1]
+
+
+def test_an_earlier_state_does_not_show_an_entity_stored_under_a_hidden_class(
+    world: World,
+) -> None:
+    """F1b, ``--as-of``: before the migration B2 was of the hidden class, which the mapping
+    shows as the visible one; the view still treats it as absent, in point reads, queries,
+    relation filters and walks."""
+    retype_b2(world)
+    view = mapped_view(world, HEAD)
+    b2, b1 = world.ids["B2"], world.ids["B1"]
+    assert view.get(b2) is None and view.get_many([b2]) == {}
+    assert view.get_revision(b2, 1) is None and view.history(b2) == []
+    assert not view.sees(b2)
+    found = view.query(Query(record_status=frozenset({"active", "retracted", "superseded"})))
+    assert world.names([r.id for r in found.items]) == ["A1", "A2", "A3"]
+    assert found.total == 3
+    assert view.incoming(b1) == []
+    walk = view.neighbors(NeighborQuery(world.ids["A1"], None, "both", 3))
+    assert world.names([r.id for _, _, r in walk]) == ["A2", "A3"]
+    # at the migration the entity is of the visible class, with one revision shown
+    after = mapped_view(world, HEAD + 1)
+    assert after.get(b2) is not None
+    assert [m.rev for m in after.history(b2)] == [3]
+
+
+def test_a_class_the_pinned_model_no_longer_has_judges_nothing(world: World) -> None:
+    """F1b: when the class a revision was stored under is gone from the pinned model, only the
+    mapped type counts, so the revision shows as the class it was moved to."""
+    retype_b2(world)
+    view = mapped_view(world, known=(world.a,))
+    b2 = world.ids["B2"]
+    assert [m.rev for m in view.history(b2)] == [1, 2, 3]
+    assert view.get_revision(b2, 1) is not None
 
 
 def test_incoming_keeps_visible_sources_only(world: World) -> None:

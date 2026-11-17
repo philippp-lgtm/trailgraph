@@ -649,7 +649,23 @@ exactly as before. The graph itself stays as visible as the grant makes it
   ontology pinned now, also for `--as-of`, `get --rev`, `history` and `changes`
   (like every read, [History](#history)). An entity is visible in a past state when its type
   there is visible, and the history of a hidden entity is
-  `entity.not_found`.
+  `entity.not_found`. Each past revision of a visible entity is shown when its own type is
+  visible too: a migration's `retype` can move an entity out of a class the caller cannot
+  see into one it sees, and the revisions it had before the move are absent for that caller.
+  `get --rev` of such a revision is `entity.revision_not_found`, exactly as for a revision
+  that was never stored, and `history` and `changes` skip it. The other revisions keep the
+  numbers they were stored under, so the numbers can have a gap. The first revision shown is
+  a creation for the caller (`changed` is `null`, every edge is a target of the feed item),
+  and every later one is compared with the latest revision shown before it. An entity moved
+  into a hidden class is hidden as a whole. A major release shows the revisions before it
+  under the current names, and a `retype` shows the old class as the new one
+  ([Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)).
+  The caller's view judges such a revision by that mapped class and also by the class it was
+  stored under, followed through renames only: when the pinned model still has that class and
+  the caller cannot see it, the revision is absent, and so are the values in it, though the
+  entity reads as the new class today. The same holds for `--as-of`: an entity that was of
+  the hidden class then is absent in that state. A class the pinned model no longer has judges
+  nothing, so those revisions read as the class the entity was moved to.
 - **The model.** `describe types|type|fields|relations|lifecycle|modules|
   module|schema|search` show a model without the hidden types and what only they
   carry: a relation whose domain or range has no visible type, attributes

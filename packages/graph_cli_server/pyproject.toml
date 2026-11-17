@@ -1,6 +1,6 @@
 [project]
 name = "graph_cli_server"
-version = "0.24.0"
+version = "0.24.1"
 description = "Domain-agnostic knowledge graph shell: HTTP API server (graph-server)."
 requires-python = ">=3.12"
 dependencies = ["graph_cli", "graph_cli_admin", "waitress>=3.0.2"]

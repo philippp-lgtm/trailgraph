@@ -6,7 +6,10 @@ entry of its own with the versions and the summary and the entities it rewrote, 
 changed in them; revisions before it show the current names. A second release retypes an entity
 into a class that a reader's graph policy hides: for that reader the entity has no item in any
 tx (the rule of the type at the head), the migration entry is still there and names nothing,
-and the entity is gone like one that never existed.
+and the entity is gone like one that never existed. In the other direction (a retype out of a
+hidden class into a visible one) the entity is visible and the revisions it had as the hidden
+class are as absent as a revision that was never stored: ``get --rev``, ``history``, the feed and
+an ``--as-of`` read, though the release maps them to the current class (F82 fix, F1b).
 """
 
 import json
@@ -218,3 +221,100 @@ def test_a_retype_into_a_hidden_type_leaves_the_entity_out_and_keeps_the_migrati
     missing = app(run_cli, "get", "0192f3c0-11aa-7e01-b2c3-d4e5f6a7b8c9", env=ENV)
     assert hidden.code == missing.code == 1
     assert hidden.error["code"] == missing.error["code"] == "entity.not_found"
+
+
+MOVE_OUT = """\
+format: graph_cli.migration/1
+from: 1.1.0
+summary: Reorganised.
+steps:
+  - retype: {from: inv:Supplier, to: inv:Category}
+"""
+
+
+def test_a_retype_out_of_a_hidden_type_leaves_its_earlier_revisions_absent(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """The release is a major one, so the revisions before it are mapped to the current names,
+    a retype included (``services/names.py``). A reader who may not see the class they were
+    stored under sees none of them, nor the values in them: the entity starts, for this reader,
+    with the revision the migration wrote (F1b, F2, F3)."""
+    create(run_cli)
+    ops = [{"op": "create", "type": "inv:Supplier", "attrs": {"name": "Alpha"}}]
+    write_documents(root, "example_graph", [{"ops": ops}])
+    supplier = app(run_cli, "find", "--type", "inv:Supplier", env=ENV).data["items"][0]["id"]
+    update(root, supplier, {"name": "Beta"}, seed=14)
+    update(root, supplier, {"name": "Gamma"}, seed=15)
+    source = tmp_path / "moved_out"
+    source.mkdir()
+    text = (INVENTORY / "1.1.0" / "inventory.yaml").read_text()
+    (source / "inventory.yaml").write_text(
+        text.replace("  version: 1.1.0\n", "  version: 2.0.0\n", 1)
+    )
+    (source / "migration.yaml").write_text(MOVE_OUT)
+    release(run_cli, source)
+    # without a read limit every revision is there, mapped to the class it has now
+    plain = app(run_cli, "history", supplier, env=ENV)
+    assert [i["rev"] for i in plain.data["items"]] == [4, 3, 2, 1]
+    first = app(run_cli, "get", supplier, "--rev", "1", env=ENV)
+    assert first.data["entity"]["type"] == "inv:Category"
+    policy = write_policy(tmp_path / "policies", "hide.yaml", HIDE_SUPPLIERS)
+    applied = admin(
+        run_cli, "policy", "apply", str(policy), "--graph", "example_graph", "--reason", "test"
+    )
+    assert applied.code == 0, applied.envelope
+
+    # the entity is a category now, and visible, with the revision the migration wrote
+    current = app(run_cli, "get", supplier, env=ENV)
+    assert current.code == 0, current.envelope
+    assert (current.data["entity"]["type"], current.data["current_rev"]) == ("inv:Category", 4)
+    assert app(run_cli, "get", supplier, "--rev", "4", env=ENV).code == 0
+    # its revisions of the hidden class answer as revisions that were never stored
+    never = app(run_cli, "get", supplier, "--rev", "99", env=ENV)
+    assert never.code == 1 and never.error["code"] == "entity.revision_not_found"
+    seen = [never.envelope, current.envelope]
+    for rev in ("1", "2", "3"):
+        omitted = app(run_cli, "get", supplier, "--rev", rev, env=ENV)
+        assert (omitted.code, omitted.error["code"]) == (1, "entity.revision_not_found")
+        assert (
+            omitted.error["message"].replace(f"revision {rev}", "revision 99")
+            == (never.error["message"])
+        )
+        assert omitted.error["details"] == {**never.error["details"], "rev": int(rev)}
+        seen.append(omitted.envelope)
+        # the text form too
+        text = run_cli("graph", "get", supplier, "--rev", rev, env=ENV)
+        assert text.returncode == 1
+        seen.append(text.stdout + text.stderr)
+    # history lists the migration revision only, as a creation and without effects
+    listed = app(run_cli, "history", supplier, env=ENV)
+    assert listed.code == 0, listed.envelope
+    assert [i["rev"] for i in listed.data["items"]] == [4]
+    shown = listed.data["items"][0]
+    assert shown.get("changed") is None
+    assert not shown["migration"].get("renames") and not shown["migration"].get("steps")
+    assert listed.envelope["page"]["total"] == 1
+    seen.append(listed.envelope)
+    seen.append(run_cli("graph", "history", supplier, env=ENV).stdout)
+    # the feed: the creation for this reader is the migration revision
+    data = feed(run_cli)
+    assert [e["tx_seq"] for e in data["items"]] == [4]  # tx 1-3 hold revisions of the hidden class
+    entities = data["items"][0]["entities"]
+    assert [(i["id"], i["type"], i["rev"]) for i in entities] == [(supplier, "inv:Category", 4)]
+    assert entities[0].get("changed") is None
+    seen.append(data)
+    seen.append(run_cli("graph", "changes", "--since", "tx:0", env=ENV).stdout)
+    # an earlier state, when the entity was of the hidden class: absent as a whole
+    for at in ("tx:1", "tx:3"):
+        gone = app(run_cli, "get", supplier, "--as-of", at, env=ENV)
+        assert (gone.code, gone.error["code"]) == (1, "entity.not_found")
+        found = app(run_cli, "find", "--type", "inv:Category", "--as-of", at, env=ENV)
+        assert found.code == 0 and found.data["items"] == [], found.envelope
+        seen += [gone.envelope, found.envelope]
+    ahead = app(run_cli, "get", supplier, "--as-of", "tx:4", env=ENV)
+    assert ahead.code == 0 and ahead.data["entity"]["rev"] == 4
+    # no old value and no hidden class name in any answer
+    for answer in seen:
+        rendered = answer if isinstance(answer, str) else json.dumps(answer)
+        assert "Alpha" not in rendered and "Beta" not in rendered, rendered
+        assert "Supplier" not in rendered, rendered

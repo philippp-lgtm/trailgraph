@@ -832,10 +832,18 @@ class ReadService:
             warnings += (warning,)
             if not past and view.attributes_limited and state.version is not None:
                 past = state.earlier and names.unmapped_version(state.version)
-        mapping = MappedSnapshot(snapshot, names, current=past)
+        # A class the pinned model has and the reader may not see judges the revisions
+        # that were stored under it too, though a retype maps them to another class (F1b).
+        mapping = MappedSnapshot(
+            snapshot,
+            names,
+            current=past,
+            classes=full.classes,
+            shown=view.shows_type if view.types_limited else None,
+        )
         snapshot = mapping
         if view.limited:
-            snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped)
+            snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped, mapping.own_class)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
         return GraphRead(entry, model, snapshot, warnings, actor, request.command, view, mapping)
@@ -1721,8 +1729,9 @@ def _findings(error: GraphCliError) -> list[JsonValue]:
 
 @dataclass(frozen=True, slots=True)
 class _RevisionChange:
-    """One revision and the one before it, as the caller's view hands them out, and the names
-    of what changed between them (``None`` for a creation or a revision the view hides)."""
+    """One revision and the one it is compared with, as the caller's view hands them out, and
+    the names of what changed between them (``None`` for a creation or a revision the view
+    hides)."""
 
     before: Revision | None
     after: Revision | None
@@ -1732,9 +1741,20 @@ class _RevisionChange:
 def _revision_change(snapshot: Snapshot, entity: EntityId, rev: int) -> _RevisionChange:
     """The per-revision part shared by every list of changes (``history``, the change feed):
     both revisions through the caller's snapshot (its view), so hidden edges and attributes are
-    already gone, and ``changed_names`` between them."""
-    before = snapshot.get_revision(entity, rev - 1) if rev > 1 else None
+    already gone, and ``changed_names`` between them.
+
+    The revision compared with is the latest one the view shows before ``rev`` (F3): a view
+    omits a revision of a hidden type (a number it leaves a gap at), and the first one it shows
+    is a creation for this reader (``before`` and ``changed`` are ``None``), never a diff against
+    what it does not show. The walk back reads a revision only where the one after it is
+    omitted, so a view that omits nothing reads exactly one revision before ``rev``."""
     after = snapshot.get_revision(entity, rev)
+    before = None
+    if after is not None:
+        for earlier in range(rev - 1, 0, -1):
+            before = snapshot.get_revision(entity, earlier)
+            if before is not None:
+                break
     changed = changed_names(before, after) if before and after else None
     return _RevisionChange(before, after, changed)
 

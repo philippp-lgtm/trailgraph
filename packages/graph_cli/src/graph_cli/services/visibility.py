@@ -20,7 +20,14 @@ all opened in one place (``ReadService.open``):
   is a read view; the write path validates against the full model.
 
 Visibility is decided under the policy installed now and the pinned model, also for ``--as-of``
-and past revisions (V9): an entity is visible when its type at the snapshot is.
+and past revisions (V9): an entity is visible when its type at the snapshot is, and one of its
+revisions is shown when that revision's own type is (F82 fix, F1): a retype moves an entity from
+one class to another, and what it was before is as absent for a reader who may not see that class
+as an entity of it. Under the name mapping of a major release a revision before the retype
+reads as the new class, so it is judged by the class it was stored under too (``own_class`` of
+``MappedSnapshot``, F1b) when the pinned model still has that class. A revision left out is not
+marked: it answers as one that was never stored, the others keep their numbers (a gap, F2), and
+the first one shown is a creation for the reader (F3, ``read._revision_change``).
 """
 
 from __future__ import annotations
@@ -212,8 +219,11 @@ class VisibleSnapshot:
     With a type half, a hidden entity answers exactly as the inner snapshot answers for an id
     it does not hold (no revision, no history, no incoming edges, an unknown alias). An entity
     is visible when the type of its current revision at the snapshot is; one without a current
-    revision is not. Without a type half no entity is hidden and only the attribute half
-    strips. Either way a transaction shows its metadata only.
+    revision is not. A revision of a visible entity is shown when its own type is visible too
+    (F1): the others answer as revisions that were never stored (``get_revision`` is ``None``,
+    ``history`` skips them) and keep no trace (F2). Without a type half no entity or revision
+    is hidden and only the attribute half strips. Either way a transaction shows its metadata
+    only.
     """
 
     def __init__(
@@ -221,15 +231,20 @@ class VisibleSnapshot:
         inner: Snapshot,
         view: ReadView,
         unmapped: Callable[[EntityId, int], bool] | None = None,
+        own_class: Callable[[EntityId, int], str | None] | None = None,
     ) -> None:
         self._inner = inner
         self.view = view
         # Whether the inner snapshot handed a revision out under names the map cannot vouch
         # for (``MappedSnapshot.unmapped``): with an attribute half it keeps no attribute (R3).
         self._unmapped = unmapped if view.attributes_limited else None
+        # The class the inner snapshot handed a revision out as another class than it was
+        # stored under (``MappedSnapshot.own_class``, F1b): judged too, with a type half.
+        self._own_class = own_class if view.types is not None else None
         self._visible = view.types
         self._terms = None if view.types is None else frozenset(TermRef(t) for t in view.types)
         self._types: dict[EntityId, TermRef | None] = {}  # None: no current revision
+        self._barred: set[EntityId] = set()  # current revision of an own class the view hides
 
     @property
     def seq(self) -> int:
@@ -244,7 +259,7 @@ class VisibleSnapshot:
     def sees(self, entity: EntityId) -> bool:
         """Whether ``entity`` exists at this snapshot with a visible type."""
         type_ = self._type_of(entity)
-        return type_ is not None and self.view.shows_type(type_)
+        return type_ is not None and self.view.shows_type(type_) and entity not in self._barred
 
     def _hidden(self, entity: EntityId) -> bool:
         """Whether the type half hides ``entity`` (never without a type half)."""
@@ -252,9 +267,26 @@ class VisibleSnapshot:
 
     def _type_of(self, entity: EntityId) -> TermRef | None:
         if entity not in self._types:
-            current = self._inner.get(entity)
-            self._types[entity] = None if current is None else current.type
+            self._remember(entity, self._inner.get(entity))
         return self._types[entity]
+
+    def _remember(self, entity: EntityId, current: Revision | None) -> None:
+        """Record the type of the current revision of ``entity`` (``None``: it has none), and
+        whether its own class is one the view hides (F1b)."""
+        self._types[entity] = None if current is None else current.type
+        if current is not None and self._hides_own(current):
+            self._barred.add(entity)
+        else:
+            self._barred.discard(entity)
+
+    def _hides_own(self, revision: Revision) -> bool:
+        """Whether ``revision`` was stored under a class the view hides, though the inner
+        snapshot handed it out as another one (F1b): the class an entity had before a retype
+        of a major release, which the name mapping shows as the class it has now."""
+        if self._own_class is None:
+            return False
+        own = self._own_class(revision.id, revision.rev)
+        return own is not None and not self.view.shows_type(own)
 
     def _prefetch(self, entities: Iterable[EntityId]) -> None:
         """Learn the type of every entity not known yet with one batched read."""
@@ -263,8 +295,7 @@ class VisibleSnapshot:
             return
         found = self._inner.get_many(unknown)
         for entity in unknown:
-            current = found.get(entity)
-            self._types[entity] = None if current is None else current.type
+            self._remember(entity, found.get(entity))
 
     def strip_edges(self, revision: Revision) -> Revision:
         """``revision`` without its edges to hidden entities, attributes untouched and the
@@ -301,8 +332,8 @@ class VisibleSnapshot:
 
     def get(self, entity: EntityId) -> Revision | None:
         current = self._inner.get(entity)
-        self._types[entity] = None if current is None else current.type
-        if current is None or not self.view.shows_type(current.type):
+        self._remember(entity, current)
+        if current is None or not self.sees(entity):
             return None
         return self._strip(current)
 
@@ -311,8 +342,8 @@ class VisibleSnapshot:
         kept: dict[EntityId, Revision] = {}
         for entity in entities:
             current = found.get(entity)
-            self._types[entity] = None if current is None else current.type
-            if current is not None and self.view.shows_type(current.type):
+            self._remember(entity, current)
+            if current is not None and self.sees(entity):
                 kept[entity] = current
         if self._visible is not None:
             self._prefetch(edge.target for revision in kept.values() for edge in revision.edges)
@@ -322,11 +353,21 @@ class VisibleSnapshot:
         revision = self._inner.get_revision(entity, rev)
         if revision is None:
             return None
-        current_type = self._type_of(entity)
-        # An entity without a current revision at this snapshot is judged by the revision asked.
-        if not self.view.shows_type(revision.type if current_type is None else current_type):
+        if not self._shows_revision(entity, revision):
             return None
         return self._strip(revision)
+
+    def _shows_revision(self, entity: EntityId, revision: Revision) -> bool:
+        """Whether the type half lets ``revision`` of ``entity`` through (always without one):
+        its own type is visible (F1, from the revision already read) and so is the type of the
+        entity at this snapshot. An entity without a current revision at this snapshot is
+        judged by the revision asked alone."""
+        if self._visible is None:
+            return True
+        if not self.view.shows_type(revision.type) or self._hides_own(revision):
+            return False
+        current_type = self._type_of(entity)
+        return current_type is None or self.sees(entity)
 
     def history(self, entity: EntityId) -> Sequence[RevisionMeta]:
         if self._hidden(entity):
@@ -335,6 +376,10 @@ class VisibleSnapshot:
         for meta in self._inner.history(entity):
             revision = self._inner.get_revision(entity, meta.rev)
             if revision is not None:
+                if self._visible is not None and (
+                    not self.view.shows_type(revision.type) or self._hides_own(revision)
+                ):
+                    continue  # F1, F1b: a revision of a hidden class is absent
                 stripped = self._strip(revision)
                 if stripped is not revision:
                     meta = revision_meta(stripped)
