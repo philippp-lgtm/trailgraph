@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.23.2",
+  "program_version": "0.24.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
