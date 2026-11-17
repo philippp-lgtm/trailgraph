@@ -79,6 +79,7 @@ from graph_cli.kernel.records import (
     OntologyPin,
     RequestMeta,
     Revision,
+    TxRecord,
 )
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
@@ -1061,19 +1062,14 @@ class ReadService:
         full = self._models.load_for_read(view.entry)[0] if view.read_view.limited else None
         for meta in shown:
             tx = view.snapshot.tx(meta.tx_seq)
-            before = view.snapshot.get_revision(entity, meta.rev - 1) if meta.rev > 1 else None
-            after = view.snapshot.get_revision(entity, meta.rev)
+            change = _revision_change(view, entity, meta.rev)
             item: dict[str, JsonValue] = {
                 "rev": meta.rev,
                 "tx_seq": meta.tx_seq,
                 "recorded_at": format_timestamp(meta.recorded_at),
                 "record_status": meta.record_status,
-                "command": tx.request.command if tx else None,
-                "reason": tx.reason if tx else None,
-                "own_session": tx is not None
-                and session is not None
-                and tx.actor.session.id == session,
-                "changed": changed_names(before, after) if before and after else None,
+                **_tx_fields(tx, session),
+                "changed": change.changed,
             }
             if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
                 item["action"] = tx.request.action.to_json()
@@ -1685,6 +1681,36 @@ def _snapshot_as_of(read: GraphStoreRead, head: Snapshot, as_of: AsOf) -> _AsOfS
 def _findings(error: GraphCliError) -> list[JsonValue]:
     found = error.details.get("findings")
     return found if isinstance(found, list) else []
+
+
+@dataclass(frozen=True, slots=True)
+class _RevisionChange:
+    """One revision and the one before it, as the caller's view hands them out, and the names
+    of what changed between them (``None`` for a creation or a revision the view hides)."""
+
+    before: Revision | None
+    after: Revision | None
+    changed: dict[str, JsonValue] | None
+
+
+def _revision_change(view: GraphRead, entity: EntityId, rev: int) -> _RevisionChange:
+    """The per-revision part shared by every list of changes (``history``, the change feed):
+    both revisions through the view, so hidden edges and attributes are already gone, and
+    ``changed_names`` between them."""
+    before = view.snapshot.get_revision(entity, rev - 1) if rev > 1 else None
+    after = view.snapshot.get_revision(entity, rev)
+    changed = changed_names(before, after) if before and after else None
+    return _RevisionChange(before, after, changed)
+
+
+def _tx_fields(tx: TxRecord | None, session: str | None) -> dict[str, JsonValue]:
+    """The tx-level keys of a list item: ``command``, ``reason`` and whether the tx was
+    written by the caller's own session (never who wrote it, B8.15)."""
+    return {
+        "command": tx.request.command if tx else None,
+        "reason": tx.reason if tx else None,
+        "own_session": tx is not None and session is not None and tx.actor.session.id == session,
+    }
 
 
 def _migration_item(
