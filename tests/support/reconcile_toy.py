@@ -68,6 +68,12 @@ classes:
       tags: {summary: Tags., type: string, many: true}
       state: {summary: State., lifecycle: RowState, required: true}
       owner: {summary: Who installed it., type: string, markings: [personal]}
+  Folder:
+    summary: A folder of a host that a scan found or expects.
+    attributes:
+      source_key: {summary: Key., type: Line, unique: true}
+      path: {summary: Path., type: string}
+      present: {summary: Whether the scan found it., type: boolean}
   Pinned:
     summary: A row whose key never changes.
     attributes:
@@ -108,6 +114,10 @@ relations:
   installed_on:
     summary: The host of an installation.
     domain: Installation
+    range: Host
+  folder_on:
+    summary: The host of a folder.
+    domain: Folder
     range: Host
 """
 
