@@ -193,6 +193,19 @@ are accepted and known:
   is the `action` name of a history item, even when the action is hidden from
   the caller. The `superseded_by` of an entity that a
   hidden entity superseded is empty. Timing differences are not hidden either.
+- **The change feed shows the same activity.** `graph changes` lists only the
+  entities the caller sees, and a transaction with none has no entry, so the
+  `tx_seq` of its entries have gaps; a gap tells that a transaction happened
+  that the caller does not see, as the envelope's `seq` does. A transaction that changed visible and hidden entities appears
+  with the visible ones and its `command`, `reason` and `action` as written. A
+  revision whose only change was an edge to a hidden entity or a hidden
+  attribute is an item with an empty `changed` and no hidden id as a target.
+  The entry of a data migration of an ontology release always appears, with its
+  versions and its summary (prose, not filtered), even when the caller sees none
+  of its entities. A consumer's
+  projection built from the feed holds what its caller sees, so it is served
+  only to callers with the same `view` digest
+  ([Changes since a position](cli_graph.md#changes-since-a-position)).
 - **Prose is not filtered.** The summary and description of an ontology term
   that stays visible, the text of a curated graph skill and the `reason` of
   a change are text the maintainers and writers wrote, shown as they wrote
@@ -238,6 +251,9 @@ marked or that something happened, with one exception that an author controls
   changed only in a hidden attribute. The same `rev` shows in write results. The
   `reason` of a revision is the writer's text, shown as written, and so is a
   free-text alias.
+  The change feed lists such a revision as an item with an empty `changed`, and
+  a transaction that only changed hidden attributes of entities the caller
+  otherwise sees is an entry like any other.
 - **`whoami` tells that something is marked.** `markings: []` says that the graph
   uses markings and the caller holds none, `markings: [...]` which of the
   markings in use it holds. A marking the caller lacks is never named. A caller

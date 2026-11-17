@@ -125,7 +125,8 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 `values` hold the expressions and openCypher's comparisons and null logic;
 `services.read` parses before opening the graph, then resolves and runs.
 `temporal_knowledge.history` names what changed between two revisions for
-`history`.
+`history`; `temporal_knowledge.changes` holds the pure core of `changes`
+(positions, the one read of a raw tx body, edge targets, the paging of a page).
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root

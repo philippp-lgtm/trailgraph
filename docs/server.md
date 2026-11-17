@@ -154,6 +154,10 @@ exit code `graph` would have. A route called with another method answers
 | `GET /v1/dist/manifest`, `GET /v1/dist/{file}` | the programs the server hands out ([Self update](#self-update)); no token needed, except for the `graph-admin` wheel |
 | `POST /v1/enroll` | an enrollment code exchanged for a token ([Enrollment](#enrollment)); no token needed |
 
+Consumers that follow the graph poll `changes` through `/v1/commands/changes`
+([Changes since a position](cli_graph.md#changes-since-a-position)); the server
+offers neither long polling nor a stream for it.
+
 A command request names each parameter by its API name, the option without
 leading dashes and with `_` for `-` (`--dry-run` is `dry_run`, `--set-json`
 is `set_json`, an argument such as `type` keeps its name):

@@ -646,8 +646,8 @@ exactly as before. The graph itself stays as visible as the grant makes it
   counts, paths and variable-length patterns run over the visible entities, and
   a returned node has no hidden edges.
 - **Time.** Visibility is decided under the policy installed now and the
-  ontology pinned now, also for `--as-of`, `get --rev` and `history` (like every
-  read, [History](#history)). An entity is visible in a past state when its type
+  ontology pinned now, also for `--as-of`, `get --rev`, `history` and `changes`
+  (like every read, [History](#history)). An entity is visible in a past state when its type
   there is visible, and the history of a hidden entity is
   `entity.not_found`.
 - **The model.** `describe types|type|fields|relations|lifecycle|modules|
@@ -726,7 +726,7 @@ every graph whose ontology uses no marking, is answered as before.
   property of it is absent (`null`) on a node without a label. Totals count what
   is left. A hidden label is no label: the entity shows no label, `lookup` and
   `search` do not match it and `lookup` facts leave it out.
-- **Time.** `history`, `get --rev`, `--as-of` and the migration items of
+- **Time.** `history`, `changes`, `get --rev`, `--as-of` and the migration items of
   `history` show past revisions mapped to current names and stripped the same
   way: `changed` never names the attribute, and an attribute whose name no
   longer maps (dropped, or an old release that cannot be read) is hidden for a
@@ -786,7 +786,8 @@ every graph whose ontology uses no marking, is answered as before.
 
 Earlier revisions are part of reading: the `read` level includes
 `read.history`, so whoever reads a graph reads the history of all its
-entities (`graph history`, `graph get --rev`, every read with `--as-of`).
+entities (`graph history`, `graph changes`, `graph get --rev`, every read with
+`--as-of`).
 Read access is per graph, not per entity. A deny rule on `read.history`
 withholds the history and leaves the current state readable; `whoami`
 then reports a lower level and names the action in `withheld`. Like every read, history is decided
@@ -800,6 +801,9 @@ their revisions without edges into hidden entities: a revision whose only change
 was such an edge shows an empty `changed` ([What a caller can
 see](#what-a-caller-can-see)). The same holds for a revision whose only change was
 an attribute the caller lacks a marking for.
+`graph changes` lists the same history merged over the whole graph: the
+changes of the entities the caller sees, nothing of the others ([Changes since a
+position](cli_graph.md#changes-since-a-position)).
 
 ## Queries
 
