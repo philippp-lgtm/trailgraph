@@ -44,6 +44,10 @@ POSITIVE_CONTROLS = {
         "graph_cli/storage/s3/__init__.py",
         "import graph_cli.storage.files.blobs\n",
     ),
+    "Sources import only the kernel and the ontology layer": (
+        "graph_cli/sources/__init__.py",
+        "import graph_cli.query\n",
+    ),
     "Audit and access control import only the kernel": (
         "graph_cli/audit/__init__.py",
         "import graph_cli.query\n",

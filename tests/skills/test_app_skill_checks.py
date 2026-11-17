@@ -34,9 +34,11 @@ from graph_cli.cli_kit.envelope import (
 )
 from graph_cli.kernel.changeset import (
     DOCUMENT_KEYS,
+    ITEM_KEYS,
     MAX_BYTES,
     MAX_OPS,
     OP_KEYS,
+    SCOPE_KEYS,
     parse_changeset,
 )
 from graph_cli.kernel.errors import GraphCliError
@@ -199,6 +201,12 @@ class TestDocsVsCode:
         assert [row[:2] for row in document] == [
             [k, yes(k in required)] for k in (*required, *optional)
         ]
+        for header, keys in (("Scope key", SCOPE_KEYS), ("Key in an item", ITEM_KEYS)):
+            _, found = table_with(text, header)
+            assert [row[:2] for row in found] == [
+                [k, yes(k in keys[0])] for k in (*keys[0], *keys[1])
+            ]
+            assert all(row[-1] for row in found)
         _, ops = table_with(text, "Op")
         assert [
             (

@@ -109,6 +109,38 @@ occurrence.
   `alt_label` for abbreviations and other names
   ([naming_and_descriptions.md](naming_and_descriptions.md#label-roles-and-lookup)).
 
+## Fields an external source sets
+
+A class that a pipeline keeps equal to an external source (a collector, a scheduled export, an
+extractor) needs a **key attribute**. The pipeline hands over the desired state by key and graph_cli
+creates, updates and retires entities against it.
+
+- **The key attribute** is optional, `unique: true`, single-valued, plain text (a `string` or a
+  datatype on it, no language tag) and **mutable** when the source may rename keys; an
+  `immutable` one cannot be moved to a new key, only given once to an entity that has none.
+  Recommended name: `source_key`. Optional, so entities written by people have none and no scope
+  reaches them. Use the same name on every fed class.
+- **What it holds** is `<source name>/<item key>`, composed by graph_cli. Model it for that:
+  facets (`max_length`, `pattern`) must admit the source name, a slash and the longest key the
+  source produces. Never use it as a name people read or search by; give the class a label.
+- **Synced and curated fields stay apart.** A scope lists the attributes and relations the source
+  sets; an attribute it does not list is never touched. Model what the source owns and what
+  people add as different attributes, not as one text field both write. A field a source sets
+  is overwritten, and unset when the source stops giving it: keep corrections people make in
+  attributes outside the scope.
+- **Lifecycle for rows that come and go.** A retract is final: when the same key returns, a new
+  entity is made, and everything that pointed at the old one stays on it. For a source whose
+  rows disappear and reappear (a device offline, a seasonal item) give the class a lifecycle
+  with a state for "gone" and retire by transition, so the entity keeps its id, its incoming edges and its
+  key, and can be revived. For removals that are final, retract.
+- **Required attributes** of a fed class must be given by the source or have a default; a
+  required attribute that only people can fill makes every create of the pipeline invalid.
+- **Edges the source sets** point at entities the source also feeds or that have a unique value
+  to name them by; an edge to a class nobody feeds needs an id the pipeline looks up first.
+- **Key attributes are stable terms.** A rename or a changed meaning of the key attribute, or of
+  a field a pipeline sets, needs the pipeline paused and its documents changed
+  ([migrations](migrations.md); the roll-out is in `maintaining-graphs`).
+
 ## Time
 
 - The graph keeps every revision with its time; do not add "created on"

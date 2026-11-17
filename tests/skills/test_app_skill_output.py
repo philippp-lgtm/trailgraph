@@ -115,10 +115,10 @@ def test_output_reference_lists_the_fields_of_real_answers(
 
     retracted = app(run_cli, "retract", entity["id"], "--reason", "test", env=ENV)
     assert retracted.code == 0, retracted.envelope
-    check("Write results", [retracted.data])
+    check("Write results", [retracted.data], when_set=frozenset({"reconcile"}))
     history = app(run_cli, "history", entity["id"], env=ENV)
     assert set(history.data) == {"id", "current_rev", "items"}
-    check("History", history.data["items"], when_set=frozenset({"migration"}))
+    check("History", history.data["items"], when_set=frozenset({"migration", "source"}))
 
 
 def paths(data: dict[str, Any], prefix: str = "") -> set[str]:
@@ -146,6 +146,7 @@ def test_output_reference_lists_the_fields_of_a_change_feed_answer(
     # a field of an answer only some transactions or entities have
     when_set = {
         "items[].action",  # a write by ``do``
+        "items[].source",  # a write for a source (a reconcile document)
         "items[].migration",  # an ontology release that migrated data
         "items[].partial",  # a transaction cut by the page size
         "items[].entities[].targets_more",  # more than 50 targets

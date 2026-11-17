@@ -140,7 +140,8 @@ shell metacharacters: `--where attr=value` or `--where attr:op=value` with
 reads and checks every document first (broken input writes nothing), then
 commits one transaction per document in order and stops at the first
 failure; `data.results` reports each processed document and the exit code is
-that of the failure. Its idempotency key is `idempotency_key` in each
+that of the failure. A document may also hand over the desired state of a
+source ([Reconciling a source](#reconciling-a-source)). Its idempotency key is `idempotency_key` in each
 document; `apply --idempotency-key` sets it for input with a single document
 and refuses JSONL with several or a document with a different key. Reads, `--help`, dry runs and usage errors write
 nothing, audit files included.
@@ -163,6 +164,122 @@ read before nor `--expect`. On an attribute that holds one value the write
 is refused with `data.structural.cardinality_many`. One op names an
 attribute in only one of `set`, `set_text`, `unset`, `add`, `add_text`,
 `remove`, `remove_text`.
+
+## Reconciling a source
+
+A pipeline that mirrors an external source (a collector, a scheduled job, an
+extractor) hands `apply` the **desired state** of declared scopes instead of
+ops. graph_cli computes what to create, update, leave and retire **by key**,
+on the state under the graph lock, and writes one transaction that names the
+source run in the audit. It holds no connector and no credential of the
+source and reads no database; the pipeline keeps its matching rules. Agents
+write ops; the keys of a reconcile document are listed in the change set
+reference of the generated skill (`references/changesets.md`).
+
+```json
+{
+  "source": {"name": "collector", "version": "3", "run": "2026-11-17T10:00:00Z"},
+  "idempotency_key": "collector-2026-11-17T10-00-00Z",
+  "ops": [{"op": "create", "type": "ex:Thing", "local": "thing", "attrs": {"name": "a"}}],
+  "reconcile": [{
+    "type": "ex:Row", "key": "source_key", "under": "host_a/", "complete": true,
+    "fields": ["label"], "edges": ["ex:row_of"],
+    "items": [{"key": "host_a/one", "attrs": {"label": "x"},
+               "edges": [{"rel": "ex:row_of", "target": "@thing"}]}]
+  }]
+}
+```
+
+- **Source and keys.** `source.name` is a logical name (`a-z`, digits, `_`, at
+  most 64 characters), never a location; `version` and `run` are optional
+  text of at most 128 characters. A scope names a `type` (its subtypes
+  belong to it) and a `key`: a unique, single-valued, plain text attribute
+  of that type. An item's `key` (1 to 512 bytes of printable text, no
+  leading `/`, no blank at either end) is stored as `<source name>/<key>`.
+  That is the ordinary uniqueness among active entities, so it holds against
+  every writer, and a source can only reach entities under its own name;
+  `under` narrows a scope to the keys that start with it. The ontology
+  declares the attribute (an optional unique text; the recommended name is
+  `source_key`, see the `ontology-best-practices` admin skill), nothing else
+  changes in it.
+- **Fields and edges.** `fields` lists the attributes the source sets: an
+  item sets them, and a listed field an item leaves out is unset on its
+  entity. An attribute outside `fields` is never touched, so curated
+  attributes can sit beside synced ones. `edges` does the same for outgoing
+  relations: the edges the entity has now are compared with the item's by
+  relation, target and qualifiers, missing ones are linked and extra ones
+  unlinked (unlinks first). An item may use only its scope's fields and
+  relations. A target is an id, an alias, an `@local` (of the document's
+  `ops`, of an item, or of an earlier document) or
+  `{"type": "<type>", "attr": "<unique attribute>", "value": <value>}`: the
+  active entity of that type that holds the value, or the item of the
+  document that will. An item that restates the stored values changes
+  nothing: values are compared as a write would store them (text converted
+  by the datatype, the graph language on language-tagged text).
+  `valid_from` and `valid_to` of an item apply when its entity is created.
+- **Partial and complete.** A scope is partial unless it says
+  `"complete": true`: it creates and updates, never retires, so a pipeline
+  that forgets the flag leaves stale data, not wrong retires. In a complete
+  scope the entities no item names retire, unless `keep` lists their keys
+  (what the source did not observe this run). A retire is a retract (the
+  default; final, a key that returns is a new entity) or, with
+  `"retire": {"transition": "<state>"}`, a lifecycle transition that keeps
+  the entity, its id, its incoming edges and its key; `attr` names the
+  lifecycle attribute when the type has several, and `revive` is the state
+  an entity moves back to when its item returns. An entity already in the
+  retire state is neither counted nor retired again.
+- **Moves and adoption.** `moves` keep an entity's identity when the source
+  changes its key: `{"from": <old key>, "to": <new key>}` gives the entity
+  with the old key the new one (the key attribute must not be immutable);
+  `{"id": <ref>, "to": <key>}` gives an entity that has no key yet its key,
+  how a graph adopts entities written before it had keys. A move that
+  already happened (the old key gone, the new one held) is a no-op, so a
+  rerun is safe. graph_cli takes the mapping and never guesses it.
+- **Guards.** Each refuses the whole document, writes nothing and, as the
+  planner finds it under the lock, is an audited `invalid` refusal (exit 1):
+
+  | Guard | Code | Override |
+  | --- | --- | --- |
+  | a complete scope without items while entities would retire | `reconcile.source_empty` | `allow_empty: true`; a source that failed sends no entry |
+  | more retires than 5 and a tenth of the scope | `reconcile.retire_limit` | `allow_retire: N`, N at least the count the refusal names |
+  | item count outside `expect` (`min_items`, `max_items`) | `reconcile.shape` | change `expect` |
+  | the key attribute is missing, not unique, not single-valued or not plain text, or immutable with `from` moves | `reconcile.key_attribute` | the ontology or the document |
+  | two scopes cover the same entities | `reconcile.scope_overlap` | the document |
+  | the document's own `ops` touch an entity of a scope or create under its keys | `reconcile.scope_conflict` | the document |
+  | a move names no entity, a taken or repeated key, or an item that is not there | `reconcile.move_invalid` | the document |
+  | an item's type is no concrete type of the scope or differs from its entity's | `reconcile.type_mismatch` | retire and recreate explicitly |
+  | an edge target by value or alias matches no single entity | `reconcile.target_not_found` | the document |
+
+  Malformed input (a duplicate item key, a key outside `under`, an
+  attribute outside `fields`, an unknown key) is `changeset.malformed`, exit
+  2, nothing audited; a type or relation the caller does not see is
+  `term.unknown`, like any unknown term.
+- **Order and limits.** The document's own `ops` run first; the plan then
+  moves keys, creates, updates, changes edges, revives and retires, one
+  transaction for all of it. At most 32 scopes; at most 5,000 ops after
+  planning, the document's own included (`changeset.too_large`): hand a large
+  first import over as partial scopes in several documents, then one
+  complete run. A run that finds nothing to do writes no transaction and no
+  audit event.
+- **Answer.** The write result has `reconcile`: the `source` and, per scope,
+  `created`, `updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`,
+  `revived` and `retired_keys` (item keys; at most 20 in a write, all of them
+  in a dry run). `--dry-run` shows the plan and writes nothing; `--summary`
+  keeps the block. A retry that replays a recorded run has no `reconcile`
+  block, because the transaction holds the expanded ops only. The locals of
+  matched items are bound like those of created ones.
+- **Retries and concurrency.** An idempotency key matches the whole request
+  (the document and its source), not the resulting change: a retry with the
+  same key replays the recorded result even when the state moved on, and
+  another request with the key is `conflict.idempotency_key_reuse`. The plan
+  runs under the lock, so a second run that overlaps the first finds its
+  result and writes nothing.
+- **Rights and audit.** What a document declares it may do is authorized
+  before anything is planned, and its concrete ops again under the lock
+  ([Access control](access_control.md#reconcile-documents)). The source is
+  recorded as `request.source` ([Audit](audit.md)) and shown by `history` and
+  `changes`; it is a claim, not an authentication
+  ([Security model](security_model.md#documents-from-a-source)).
 
 ## Language-tagged values
 

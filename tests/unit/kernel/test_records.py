@@ -7,7 +7,7 @@ import pytest
 from support.clock import FixedClock
 
 from graph_cli.kernel.actor import ABSENT, ActorContext, Assurance, ClientInfo, Entrypoint, Facet
-from graph_cli.kernel.canonical import GENESIS_HASH, hash_document, hash_value
+from graph_cli.kernel.canonical import GENESIS_HASH, canonical_bytes, hash_document, hash_value
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, TermRef, TxId
 from graph_cli.kernel.json_access import JsonShapeError
@@ -17,7 +17,10 @@ from graph_cli.kernel.records import (
     OntologyPin,
     RequestMeta,
     Revision,
+    SourceRef,
     TxRecord,
+    is_source_ref_json,
+    is_source_text,
     revision_content_hash,
     revision_from_json,
     revision_meta,
@@ -210,3 +213,68 @@ def test_request_meta_digest_covers_command_and_args() -> None:
     assert meta.args_digest == hash_value({"command": "get", "args": {"graph": "g", "ref": "x"}})
     assert RequestMeta.of("get", {"ref": "x", "graph": "g"}) == meta
     assert RequestMeta.of("find", {"graph": "g", "ref": "x"}).args_digest != meta.args_digest
+
+
+def test_a_request_names_its_source_only_when_there_is_one() -> None:
+    plain = RequestMeta("apply", "sha256:" + "b" * 64)
+    # the bytes of a request without a source are what they were before the key existed
+    assert canonical_bytes(plain.to_json()) == (
+        b'{"args_digest":"sha256:' + b"b" * 64 + b'","command":"apply"}'
+    )
+    assert "source" not in plain.to_json()
+    named = RequestMeta(
+        "apply",
+        "sha256:" + "b" * 64,
+        source=SourceRef("inventory", "collector 3", "2026-11-17T10:00:00Z"),
+    )
+    assert named.to_json() == {
+        "command": "apply",
+        "args_digest": "sha256:" + "b" * 64,
+        "source": {
+            "name": "inventory",
+            "version": "collector 3",
+            "run": "2026-11-17T10:00:00Z",
+        },
+    }
+    both = RequestMeta(
+        "apply",
+        "sha256:" + "b" * 64,
+        ActionRef("assign_position", "sha256:" + "d" * 64),
+        SourceRef("inventory"),
+    )
+    assert both.to_json()["source"] == {"name": "inventory"}
+    for meta in (plain, named, both):
+        assert RequestMeta.from_json(meta.to_json()) == meta
+    with pytest.raises(JsonShapeError):
+        RequestMeta.from_json({"command": "apply", "args_digest": "x", "source": {"version": "1"}})
+    assert RequestMeta.of("apply", {"a": 1}, source=SourceRef("inventory")).source == SourceRef(
+        "inventory"
+    )
+
+
+def test_a_source_ref_keeps_the_kind_of_an_in_process_writer() -> None:
+    ref = SourceRef("pdf_text", kind="extractor")
+    assert ref.to_json() == {"name": "pdf_text", "kind": "extractor"}
+    assert SourceRef.from_json(ref.to_json()) == ref
+
+
+def test_the_persisted_shape_of_a_source() -> None:
+    assert is_source_ref_json({"name": "inventory"})
+    assert is_source_ref_json(
+        {"name": "inventory", "version": "v 1", "run": "r", "kind": "extractor"}
+    )
+    for broken in (
+        "inventory",
+        None,
+        {},
+        {"version": "1"},
+        {"name": "Inventory"},
+        {"name": "inventory", "version": ""},
+        {"name": "inventory", "version": 1},
+        {"name": "inventory", "run": "x" * 129},
+        {"name": "inventory", "kind": "other"},
+        {"name": "inventory", "extra": 1},
+    ):
+        assert not is_source_ref_json(broken), broken  # type: ignore[arg-type]
+    assert is_source_text("x" * 128) and not is_source_text("x" * 129)
+    assert not any(is_source_text(text) for text in ("", " a", "a ", "a\nb", 3, None))

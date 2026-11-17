@@ -251,6 +251,33 @@ BROKEN: dict[str, tuple[Callable[[], Event], Callable[[Event], None], str]] = {
         _set("request.action", {"name": "assign_position", "hash": H1, "x": 1}),
         "request.action is not",
     ),
+    "source_shape": (intent, _set("request.source", {"version": "1"}), "request.source is not"),
+    "source_type": (intent, _set("request.source", "inventory"), "request.source is not"),
+    "source_name": (
+        intent,
+        _set("request.source", {"name": "Bad-Name"}),
+        "request.source is not",
+    ),
+    "source_version": (
+        intent,
+        _set("request.source", {"name": "inventory", "version": ""}),
+        "request.source is not",
+    ),
+    "source_run": (
+        intent,
+        _set("request.source", {"name": "inventory", "run": 7}),
+        "request.source is not",
+    ),
+    "source_kind": (
+        intent,
+        _set("request.source", {"name": "inventory", "kind": "pipeline"}),
+        "request.source is not",
+    ),
+    "source_extra": (
+        intent,
+        _set("request.source", {"name": "inventory", "x": 1}),
+        "request.source is not",
+    ),
     "graph_missing": (intent, _set("graph", DELETE), "needs graph"),
     "graph_other": (intent, _set("graph.id", ENTITY), "graph.id differs"),
     "graph_shape": (intent, _set("graph.ontology", DELETE), "graph is not"),
@@ -393,6 +420,40 @@ def test_a_request_may_name_its_action() -> None:
         "action": {"name": "assign_position", "hash": H3},
     }
     assert event_problems(event) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"name": "inventory"},
+        {"name": "inventory", "version": "collector 3", "run": "2026-11-17T10:00:00Z"},
+        {"name": "pdf_text", "kind": "extractor"},
+    ],
+)
+def test_a_request_may_name_its_source(source: JsonValue) -> None:
+    event = intent()
+    event["request"] = {"command": "apply", "args_digest": H2, "source": source}
+    assert event_problems(event) == []
+    event["request"] = {
+        "command": "do",
+        "args_digest": H2,
+        "action": {"name": "assign_position", "hash": H3},
+        "source": source,
+    }
+    assert event_problems(event) == []
+
+
+def test_a_request_without_a_source_is_as_it_was() -> None:
+    assert "source" not in intent()["request"]  # type: ignore[operator]
+    assert event_problems(intent()) == []
+
+
+def test_a_broken_action_and_a_broken_source_are_both_reported() -> None:
+    event = intent()
+    event["request"] = {"command": "do", "args_digest": H2, "action": "x", "source": "y"}
+    problems = event_problems(event)
+    assert any("request.action is not" in p for p in problems)
+    assert any("request.source is not" in p for p in problems)
 
 
 def test_intent_classification() -> None:

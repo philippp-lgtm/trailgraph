@@ -176,6 +176,28 @@ def test_a_request_may_name_an_action_but_only_well_formed() -> None:
     assert (codes.HASH_MISMATCH, 3) in codes_of(report)
 
 
+def test_a_request_may_name_a_source_but_only_well_formed() -> None:
+    lines = stream(2)
+    named = {"name": "inventory", "version": "collector 3", "run": "2026-11-17T10:00:00Z"}
+    body = _body(lines[1])
+    body["request"] = {**body["request"], "source": named}  # type: ignore[dict-item]
+    assert verify(_append(lines, body)).findings == ()
+    for broken in (
+        {"version": "1"},
+        {**named, "name": "Bad-Name"},
+        {**named, "kind": "x"},
+        "inventory",
+    ):
+        body["request"] = {**body["request"], "source": broken}  # type: ignore[dict-item]
+        report = verify(_append(lines, body))
+        assert codes_of(report) == [(codes.EVENT_MALFORMED, 3)]
+        assert "request.source is not" in report.findings[0].message
+    edited = doc(_append(lines, body)[-1])
+    edited["request"] = {**edited["request"], "source": named}  # type: ignore[dict-item]
+    report = verify([*lines, jsonl_line(edited)])  # an edit that was not rehashed
+    assert (codes.HASH_MISMATCH, 3) in codes_of(report)
+
+
 def test_unknown_action_is_a_warning() -> None:
     lines = stream(2)
     body = _body(lines[1])

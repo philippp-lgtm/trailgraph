@@ -46,6 +46,16 @@ action in `request.action`. Not audited: `--dry-run`, an action with nothing to 
 and an unknown or hidden action. `history` shows the `action` next to the `command` of a
 revision it wrote.
 
+A write that hands over a source run names it: `request.source` is `{name, version?, run?}`
+in the intent, in a refusal event and in the transaction record (`name` is the producer's
+logical name, `version` and `run` are text of up to 128 characters; the program's own writers
+may add `kind`). It is a claim recorded next to the actor, not an authentication. The key is
+optional and appears only for such writes, so the bytes of every other write are unchanged.
+Verification checks its shape, and that the intent and the transaction record name the same
+source (`integrity.audit.tx_without_intent` otherwise); `request.action` is only checked for its shape, not against the transaction. For a document that names a source or reconciles scopes, `args_digest` covers the whole document, since the transaction holds the ops the run expanded to. `history` and `changes` show it as
+`source` next to `action`. A refusal that a guard of a reconcile document causes
+(`reconcile.*`) is an `invalid` event of the graph's stream and names the source like a write.
+
 The decisions of an event (`authz.decisions`: action, resource, effect, rule) name
 resources of a graph, a type or, below a type, one attribute (`graph:<id>/type:<curie>/attr:<name>`)
 or one relation (`.../rel:<curie>`). A write is decided on the attributes and relations it

@@ -69,7 +69,7 @@ layers = [
     "graph_cli.extensions",
     "graph_cli.services",
     "graph_cli.audit | graph_cli.access_control | graph_cli.temporal_knowledge | graph_cli.storage",
-    "graph_cli.kinetic",
+    "graph_cli.kinetic | graph_cli.sources",
     "graph_cli.query",
     "graph_cli.ontology_layer",
     "graph_cli.kernel",
@@ -146,6 +146,28 @@ source_modules = ["graph_cli.query.cypher"]
 forbidden_modules = [
     "graph_cli.query.plan",
     "graph_cli.query.lookup",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.skills",
+    "graph_cli.app_cli",
+]
+
+# The reconcile planner is pure over the Snapshot port and the model (reconcile plan R-K12):
+# the layers contract keeps it beside kinetic, this one keeps the query layer out as well, so
+# the extraction service and tests can import it without I/O.
+[[tool.importlinter.contracts]]
+name = "Sources import only the kernel and the ontology layer"
+type = "forbidden"
+source_modules = ["graph_cli.sources"]
+forbidden_modules = [
+    "graph_cli.query",
+    "graph_cli.kinetic",
     "graph_cli.storage",
     "graph_cli.audit",
     "graph_cli.access_control",

@@ -34,7 +34,7 @@ Dependencies point down only. Enforced by import-linter
 | Extensions | `extensions` |
 | Services | `services` |
 | Cross-cutting (independent of each other) | `audit`, `access_control`, `temporal_knowledge`, `storage` |
-| Named read functions and write actions | `kinetic` |
+| Named read functions and write actions; source planners | `kinetic`, `sources` (independent of each other) |
 | Query model | `query` |
 | Schema IR | `ontology_layer` |
 | Kernel | `kernel` |
@@ -49,7 +49,8 @@ sits above
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
-`query`; the layers above may use it. The storage maintenance port
+`query`; the layers above may use it. `sources` imports only `kernel` and
+`ontology_layer`. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. The S3 client
 (`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,
@@ -180,6 +181,15 @@ looked up with `importlib.metadata`;
 `catalog` and the admin wiring may read the process environment.
 Locations and keys: [Configuration](configuration.md).
 
+## Source planners
+
+`graph_cli.sources` holds the pure planners for data that external sources hand over;
+like `kinetic` it needs no storage and no services, and the layers above use it.
+
+| Module | Content |
+| --- | --- |
+| `sources.reconcile` | `plan_reconcile` turns the `reconcile` part of a change set document into ops over a `Snapshot` and the model: key namespace of each scope, moves and adoptions, field and edge diff after the coercion a write applies (`ontology_layer.stored_values`), retire and revive, the guards that refuse a document (`reconcile.*` codes), op order and the per-scope counts; `expanded` appends the plan to the document's own ops |
+
 ## Named read functions and write actions
 
 `graph_cli.kinetic` holds the pure part of named read functions and of named
@@ -282,6 +292,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | `ontology_layer.connecting` | the relations and two-hop paths that connect two types, from the compiled model alone; used for the `connecting` of domain and range findings |
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
+| `services.reconcile_rights` | the declared needs of the scopes of a reconcile document as needs of write actions (`NeedOptions`), decided by the any-of rule of `services.action_rights` before the lock |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
 | `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path` (the backend's file, else a copy in the injected `FileCache`), `open` (the one streaming read of a stored file, for the server's download and, through `open_stored`, the live view), `check`; the built-in media type table |
 
@@ -298,6 +309,10 @@ A write by `graph do` hands the action to the same pipeline as a plan: under the
 lock the template is expanded on the locked state and the expansion authorized, then
 come the idempotency check (a replay matches the request digest, not the expansion)
 and the preconditions, and the write continues as for any change set.
+A document with a `reconcile` part runs the same way: its declared needs are authorized
+before the lock, then under the lock the idempotency key is looked up (before planning),
+`sources.reconcile` plans the scopes on the state the caller sees, and the write continues
+on the expanded change set.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
 along with the result. The `connecting` of a domain or range finding

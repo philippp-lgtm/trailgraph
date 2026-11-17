@@ -1,6 +1,6 @@
 ---
 name: maintaining-graphs
-description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, give an app a role, move a graph's stored files between the data root and an object store, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, an app's role set up, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
+description: Maintain the graphs of a graph_cli installation with graph-admin, locally or against a server in remote mode - set up and sync a maintainer workspace (one folder per graph), create a graph, release a new ontology version, publish a graph skill, the named functions or the named actions, give an app a role, feed a graph from an external pipeline, move a graph's stored files between the data root and an object store, check a graph's data and verify the audit trail. Use when the user wants a new graph, an ontology or graph skill change rolled out, an app's role set up, a graph checked, or the workspace refreshed. Not for reading or writing graph data (the graph-cli skill) and not for how to model (ontology-best-practices).
 ---
 
 # Maintaining graphs
@@ -206,7 +206,9 @@ write rights of its ops does not see it.
 Roles let apps of one project differ: declared in the installation policy,
 given to app tokens or to enrollment codes. Only when the user asks; the steps
 and the policy grammar are in
-[give_an_app_a_role.md](references/give_an_app_a_role.md).
+[give_an_app_a_role.md](references/give_an_app_a_role.md). A pipeline that keeps part
+of a graph equal to an external source needs a role, a first run and a pause across
+releases that touch its keys: [feed_a_graph_from_a_pipeline.md](references/feed_a_graph_from_a_pipeline.md).
 
 ## Check a graph
 

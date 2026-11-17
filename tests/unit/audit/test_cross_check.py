@@ -29,7 +29,7 @@ from graph_cli.kernel.findings import Severity
 from graph_cli.kernel.ids import EntityId, EventId
 from graph_cli.kernel.json_access import as_object
 from graph_cli.kernel.ports.audit import AuditEventDraft, AuditLine, AuditReceipt, graph_stream
-from graph_cli.kernel.records import TxRecord
+from graph_cli.kernel.records import SourceRef, TxRecord
 
 Event = dict[str, JsonValue]
 
@@ -130,6 +130,60 @@ def test_an_intent_without_a_changeset_size_still_matches() -> None:
     change = dict(as_object(events[0]["change"], "change"))
     del change["changeset_size"]
     events[0] = {**events[0], "change": change}
+    assert cross_check(graph.graph_id, events, graph.txs) == []
+
+
+def _with_source(tx: TxRecord, **source: str) -> TxRecord:
+    return dataclasses.replace(
+        tx,
+        request=dataclasses.replace(
+            tx.request, source=SourceRef(**{"name": "inventory", **source})
+        ),
+    )
+
+
+def _intent_with_source(event: Event, source: JsonValue) -> Event:
+    request = as_object(event["request"], "request")
+    return {**event, "request": {**request, "source": source}}
+
+
+def test_the_source_of_a_request_must_be_the_same_in_the_intent_and_the_tx() -> None:
+    graph = Graph()
+    graph.random(3)
+    run = {"name": "inventory", "version": "collector 3", "run": "run-1"}
+    events = graph.events()
+    events[1] = _intent_with_source(events[1], run)
+    txs = [
+        graph.txs[0],
+        _with_source(graph.txs[1], version="collector 3", run="run-1"),
+        graph.txs[2],
+    ]
+    assert cross_check(graph.graph_id, events, txs) == []
+    # a source in the tx that the intent does not name
+    (finding,) = cross_check(graph.graph_id, graph.events(), txs)
+    assert finding.code == codes.TX_WITHOUT_INTENT
+    assert finding.target == {"graph_id": str(graph.graph_id), "tx_seq": 2}
+    assert "request.source" in finding.message
+    assert (finding.expected, finding.actual) == ({"request.source": run}, {"request.source": None})
+    # a source in the intent that the tx does not carry
+    (finding,) = cross_check(graph.graph_id, events, graph.txs)
+    assert (finding.expected, finding.actual) == ({"request.source": None}, {"request.source": run})
+    # another run
+    other = [
+        graph.txs[0],
+        _with_source(graph.txs[1], version="collector 3", run="run-2"),
+        graph.txs[2],
+    ]
+    (finding,) = cross_check(graph.graph_id, events, other)
+    assert finding.expected == {"request.source": {**run, "run": "run-2"}}
+    assert finding.actual == {"request.source": run}
+
+
+def test_a_request_without_a_source_matches_as_before() -> None:
+    graph = Graph()
+    graph.random(2)
+    events = graph.events()
+    assert all("source" not in as_object(e["request"], "request") for e in events)
     assert cross_check(graph.graph_id, events, graph.txs) == []
 
 

@@ -31,6 +31,9 @@ deliberate choice in the README next to the ontology.
       provenance.
 - [ ] Facts about a link are qualifiers; links with their own life are
       classes.
+- [ ] A class that a pipeline feeds has an optional, unique, plain text key attribute (mutable
+      if keys may move), apart from the attributes people curate; a source whose rows come
+      and go has a lifecycle state to retire into.
 
 ## Modules
 
@@ -103,5 +106,7 @@ Only for a graph that marks attributes.
       errors, and its warnings were read.
 - [ ] A major change was tried on a restored backup copy and the existing
       data passes.
+- [ ] A release that renames or rewrites a key attribute, or a field or relation a pipeline
+      sets, is announced to its owner and the pipeline is paused across it.
 - [ ] Deprecated terms name their replacement in the summary.
 - [ ] Backup first, `audit verify` after, graph skill and README updated.

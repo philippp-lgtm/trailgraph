@@ -1095,6 +1095,8 @@ class ReadService:
             }
             if tx is not None and tx.request.action is not None:  # additive: set by a ``do``
                 item["action"] = tx.request.action.to_json()
+            if tx is not None and tx.request.source is not None:  # additive: a source run
+                item["source"] = tx.request.source.to_json()
             migration = _migration_item(view, entity, meta.rev, meta.tx_seq, full)
             if migration is not None:  # additive: the revision a migration wrote (M7)
                 item["migration"] = migration
@@ -1860,6 +1862,8 @@ def _feed_entry(
     }
     if tx.request.action is not None:  # additive: set by a ``do``
         found["action"] = tx.request.action.to_json()
+    if tx.request.source is not None:  # additive: the source run the tx hands over
+        found["source"] = tx.request.source.to_json()
     if migration is not None:  # additive: a migration tx (CF7), its versions and summary
         found["migration"] = _feed_migration(migration)
     if entry.partial:  # additive: the tx goes on on the next page

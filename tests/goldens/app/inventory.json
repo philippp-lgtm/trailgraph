@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.24.1",
+  "program_version": "0.25.0",
   "surface": "app",
   "global_options": [
     {
@@ -110,12 +110,22 @@
         "internal.error",
         "ontology.artifact_missing",
         "ontology.pin_mismatch",
+        "reconcile.key_attribute",
+        "reconcile.move_invalid",
+        "reconcile.retire_limit",
+        "reconcile.scope_conflict",
+        "reconcile.scope_overlap",
+        "reconcile.shape",
+        "reconcile.source_empty",
+        "reconcile.target_not_found",
+        "reconcile.type_mismatch",
         "remote.client_outdated",
         "remote.outcome_unknown",
         "remote.protocol",
         "remote.unauthorized",
         "remote.unreachable",
         "skills.outdated",
+        "term.unknown",
         "usage.invalid_argument",
         "usage.invalid_input",
         "write.invalid",
@@ -4390,6 +4400,51 @@
     {
       "code": "query.unsupported",
       "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.key_attribute",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.move_invalid",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.retire_limit",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.scope_conflict",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.scope_overlap",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.shape",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.source_empty",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.target_not_found",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "reconcile.type_mismatch",
+      "category": "invalid",
       "exit": 1
     },
     {

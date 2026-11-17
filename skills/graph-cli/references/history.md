@@ -7,6 +7,8 @@
   the `tx_seq`. It shows who wrote a revision only as `own_session` (your
   session or not); who else did, only the maintainer can see.
 - `graph get <id> --rev <value> --json` shows one earlier revision.
+- A revision a pipeline wrote for a source (`graph apply` with `source`) has
+  `source` (`name`, `version`, `run`); `graph changes` shows it per transaction.
 - `graph changes --since tx:<seq> --json` (or a time, as for `--as-of`)
   lists what changed in the whole graph after a position, oldest first,
   names and ids only; continue with `next`.

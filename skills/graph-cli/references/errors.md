@@ -102,6 +102,15 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `query.too_large` | refused | 1 |
 | `query.unbound_variable` | usage | 2 |
 | `query.unsupported` | refused | 1 |
+| `reconcile.key_attribute` | invalid | 1 |
+| `reconcile.move_invalid` | invalid | 1 |
+| `reconcile.retire_limit` | invalid | 1 |
+| `reconcile.scope_conflict` | invalid | 1 |
+| `reconcile.scope_overlap` | invalid | 1 |
+| `reconcile.shape` | invalid | 1 |
+| `reconcile.source_empty` | invalid | 1 |
+| `reconcile.target_not_found` | invalid | 1 |
+| `reconcile.type_mismatch` | invalid | 1 |
 | `remote.client_outdated` | refused | 1 |
 | `remote.outcome_unknown` | unavailable | 5 |
 | `remote.protocol` | unavailable | 5 |

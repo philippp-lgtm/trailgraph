@@ -21,6 +21,7 @@ from graph_cli.kernel.clock import format_timestamp, parse_timestamp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import format_id, parse_id
 from graph_cli.kernel.json_access import JsonShapeError
+from graph_cli.kernel.records import is_source_ref_json
 
 AUDIT_SCHEMA: Final = "graph_cli.audit/1"
 INSTALLATION: Final = "installation"
@@ -42,6 +43,7 @@ MIGRATE_ACTION: Final = "maint.migrate"
 POLICY_ACTION: Final = "maint.policy_change"
 TOKEN_ACTIONS: Final = ("maint.token_create", "maint.token_revoke", "maint.token_update")
 _ACTION_NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{1,62}$")  # as kinetic.format.NAME_RE
+_OPTIONAL_REQUEST_KEYS: Final = ("action", "source")  # optional keys of ``request``
 _GRAPH_STREAM_RE: Final = re.compile(r"^graph:(.+)$")
 _EXT_STATE_RE: Final = re.compile(r"^ext\.[a-z][a-z0-9_]{1,31}\.state$")
 _TOKEN_PREFIX_RE: Final = re.compile(r"^sha256:[0-9a-f]{16}$")
@@ -259,17 +261,24 @@ def _is_decision(decision: JsonValue) -> bool:
 
 
 def _request_problems(request: JsonValue) -> list[str]:
-    """``{command, args_digest}``, plus ``action: {name, hash}`` for a ``do`` (actions plan A7)."""
+    """``{command, args_digest}``, plus ``action: {name, hash}`` for a ``do`` (actions plan A7)
+    and ``source: {name, version?, run?, kind?}`` for a document that names its source run
+    (reconcile plan R-K10)."""
     if (
         not isinstance(request, Mapping)
-        or not {"command", "args_digest"} <= set(request) <= {"command", "args_digest", "action"}
+        or not {"command", "args_digest"}
+        <= set(request)
+        <= {"command", "args_digest", *_OPTIONAL_REQUEST_KEYS}
         or not isinstance(request["command"], str)
         or not _is_hash(request["args_digest"])
     ):
         return ["request is not {command, args_digest}"]
+    problems = []
     if "action" in request and not _is_action_ref(request["action"]):
-        return ["request.action is not {name, hash}"]
-    return []
+        problems.append("request.action is not {name, hash}")
+    if "source" in request and not is_source_ref_json(request["source"]):
+        problems.append("request.source is not {name, version?, run?, kind?}")
+    return problems
 
 
 def _is_action_ref(action: JsonValue) -> bool:

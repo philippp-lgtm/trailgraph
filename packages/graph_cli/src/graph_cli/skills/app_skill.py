@@ -18,9 +18,11 @@ from graph_cli.kernel.changeset import (
     CHANGESET_SCHEMA,
     DOCUMENT_KEYS,
     EDGE_KEYS,
+    ITEM_KEYS,
     MAX_BYTES,
     MAX_OPS,
     OP_KEYS,
+    SCOPE_KEYS,
 )
 from graph_cli.kernel.json_access import as_list, as_object, req_int, req_list, req_obj, req_str
 from graph_cli.skills.markdown import cell, code, table
@@ -398,7 +400,7 @@ Examples:
 # What each change set key and op means; the renderer refuses a kernel key or op
 # missing here, so a new one cannot reach `graph apply` undocumented.
 CHANGESET_DOCUMENT_GUIDANCE: Final[Mapping[str, str]] = {
-    "ops": f"The operations, 1 to {MAX_OPS}, applied in order.",
+    "ops": f"The operations, 1 to {MAX_OPS}, applied in order. Needed unless `reconcile` is given.",
     "schema": f"Always `{CHANGESET_SCHEMA}`.",
     "reason": "Why the change is made, for all ops. Needed when an op needs one"
     " (`supersede`, `retract`, or `require_reason` in `graph whoami`).",
@@ -406,6 +408,10 @@ CHANGESET_DOCUMENT_GUIDANCE: Final[Mapping[str, str]] = {
     " document with the same key never writes twice.",
     "expect_seq": "Refuse unless the graph is still at this seq (`graph.seq` of the answer"
     " you read).",
+    "source": "The source run the document comes from: `name` (lowercase, `a-z 0-9 _`), and"
+    " optionally `version` and `run`. Recorded in the audit. Needed with `reconcile`.",
+    "reconcile": "For pipelines that hand over the desired state of a source, not for"
+    " agents: scopes with their items, applied by key in one transaction.",
 }
 CHANGESET_OP_GUIDANCE: Final[Mapping[str, str]] = {
     "create": "Create one entity, like `graph create`. `local` names it for later ops.",
@@ -416,6 +422,36 @@ CHANGESET_OP_GUIDANCE: Final[Mapping[str, str]] = {
     "supersede": "`by` replaces every entity in `targets`.",
     "retract": "Withdraw `id`; `by` names the entity that retracts it.",
     "set_alias": "Rename the alias of `id`; the old alias still resolves.",
+}
+# The keys of a reconcile scope and of its items (for pipelines); checked like the ones above.
+CHANGESET_SCOPE_GUIDANCE: Final[Mapping[str, str]] = {
+    "type": "The type of the entities the scope speaks for (its subtypes too).",
+    "key": "The attribute that holds the key: unique, one value, plain text.",
+    "items": "The desired entities, each with its `key`; may be empty.",
+    "under": "Only the keys that start with this text belong to the scope; default all.",
+    "complete": "True when the items are the whole scope: entities not listed are retired."
+    " Default false.",
+    "fields": "The attributes the source sets; one an item leaves out is unset.",
+    "edges": "The relations the source sets, outgoing edges only.",
+    "retire": '`"retract"` (default) or `{"transition": "<state>"}` with optionally `attr`'
+    ' (the lifecycle attribute) and `"revive": "<state>"` for an item that returns.',
+    "allow_retire": "Accept this many retires; needed above 5 and a tenth of the scope.",
+    "allow_empty": "Accept a complete scope without items, which retires everything.",
+    "keep": "Keys the source did not observe this run: left as they are.",
+    "moves": "`{from, to}` gives the entity with the key `from` the key `to`; `{id, to}` gives"
+    " a keyless entity its key.",
+    "expect": "`min_items` and `max_items`: refuse a run whose item count lies outside.",
+}
+CHANGESET_ITEM_GUIDANCE: Final[Mapping[str, str]] = {
+    "key": "The item's key, within `under`; stored as `<source name>/<item key>`.",
+    "type": "A concrete type of the scope's type; needed when that is abstract.",
+    "local": "Names the entity for the edges of other items.",
+    "attrs": "Typed values, only of attributes in `fields`.",
+    "attrs_text": "The same as text, converted by the datatype.",
+    "edges": "The desired edges: `rel` (one of the scope's `edges`), `target` and optionally"
+    " `qualifiers`.",
+    "valid_from": "Applies when the entity is created.",
+    "valid_to": "Applies when the entity is created.",
 }
 
 CHANGESET_EXAMPLE: Final = """\
@@ -512,6 +548,37 @@ An edge in `edges` of a `create` has {edge_keys}.
   `access.batch_too_large`. Then split the work into documents of at most
   `max_batch` operations (JSONL, in order) and tell the user that it is no
   longer one transaction.
+
+## Reconcile documents
+
+A pipeline (a scheduled job, a collector) hands over the desired state of a
+source with `source` and `reconcile`; agents do not write these. `graph
+apply` plans the difference by key under the graph lock and writes one
+transaction: it creates what is new, updates what differs and leaves the
+rest. `data.results[].result.reconcile` has, per scope, `created`,
+`updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`, `revived`
+and `retired_keys`.
+
+{scope_table}
+
+{item_table}
+
+- An item's key is stored as `<source name>/<item key>`, so a source only
+  reaches its own entities.
+- A scope is partial unless it is `complete`; only a complete scope
+  retires. A retract is final (a key that comes back is a new entity); a
+  `transition` keeps the entity and its key.
+- Guards refuse the whole document and are audited, so a run that went
+  wrong leaves the last good state: an empty complete scope
+  (`reconcile.source_empty`, override `allow_empty`), more retires than 5
+  or a tenth of the scope (`reconcile.retire_limit`, override
+  `allow_retire`), an item count outside `expect` (`reconcile.shape`). A
+  source that failed sends no entry for its scope.
+- An edge target of an item is an id, an alias, an `@local`, or
+  `{{"type": "<type>", "attr": "<attr>", "value": "<value>"}}`: the entity
+  that holds that unique value, or the item of the document that will.
+- At most 32 scopes, and 5000 operations after planning, the document's
+  own `ops` included.
 
 ## Example
 
@@ -658,6 +725,11 @@ OUTPUT_SECTIONS: Final = (
                 " `record`; null for the first revision.",
             ),
             (
+                "source",
+                "Only on a revision a pipeline wrote for a source: `name`, `version` and `run`"
+                " of the source run.",
+            ),
+            (
                 "migration",
                 "Only on a revision an ontology release wrote: `from` and `to` (versions),"
                 " `summary`, and the `renames` and `steps` that changed this entity.",
@@ -698,6 +770,10 @@ OUTPUT_SECTIONS: Final = (
             ("items[].reason", "The reason given, or null."),
             ("items[].own_session", "True when your own session wrote it."),
             ("items[].action", "Only on a write by `do`: `name` and `hash` of the action."),
+            (
+                "items[].source",
+                "Only on a write for a source: `name`, `version` and `run` of the source run.",
+            ),
             (
                 "items[].migration",
                 "Only on a data migration of an ontology release: `from`, `to` (versions)"
@@ -744,6 +820,13 @@ OUTPUT_SECTIONS: Final = (
             ("entities[].ops", "The operations that touched it."),
             ("entities[].local", "Its `local` name from a change set, or null."),
             ("entities", "Null with `graph apply --summary`."),
+            (
+                "reconcile",
+                "Only for a reconcile document: its `source` and, per scope, the counts"
+                " (`created`, `updated`, `unchanged`, `moved`, `adopted`, `kept`, `retired`,"
+                " `revived`) and `retired_keys`: all of them on a dry run, at most 20 when"
+                " written.",
+            ),
             ("findings", "Warnings about the written data: `severity`, `code`, `message`."),
         ),
     ),
@@ -765,6 +848,8 @@ HISTORY_BODY: Final = """\
   the `tx_seq`. It shows who wrote a revision only as `own_session` (your
   session or not); who else did, only the maintainer can see.
 - `graph get <id> --rev <value> --json` shows one earlier revision.
+- A revision a pipeline wrote for a source (`graph apply` with `source`) has
+  `source` (`name`, `version`, `run`); `graph changes` shows it per transaction.
 - `graph changes --since tx:<seq> --json` (or a time, as for `--as-of`)
   lists what changed in the whole graph after a position, oldest first,
   names and ids only; continue with `next`.
@@ -865,6 +950,8 @@ def _changesets_file() -> str:
     for given, documented, what in (
         ({*DOCUMENT_KEYS[0], *DOCUMENT_KEYS[1]}, CHANGESET_DOCUMENT_GUIDANCE, "document key"),
         (set(OP_KEYS), CHANGESET_OP_GUIDANCE, "op"),
+        ({*SCOPE_KEYS[0], *SCOPE_KEYS[1]}, CHANGESET_SCOPE_GUIDANCE, "reconcile scope key"),
+        ({*ITEM_KEYS[0], *ITEM_KEYS[1]}, CHANGESET_ITEM_GUIDANCE, "reconcile item key"),
     ):
         if given != set(documented):
             raise ValueError(
@@ -890,6 +977,20 @@ def _changesets_file() -> str:
             for op, keys in OP_KEYS.items()
         ],
     )
+    scope_table = table(
+        ["Scope key", "Required", "Meaning"],
+        [
+            [code(key), _yes(key in SCOPE_KEYS[0]), CHANGESET_SCOPE_GUIDANCE[key]]
+            for key in (*SCOPE_KEYS[0], *SCOPE_KEYS[1])
+        ],
+    )
+    item_table = table(
+        ["Key in an item", "Required", "Meaning"],
+        [
+            [code(key), _yes(key in ITEM_KEYS[0]), CHANGESET_ITEM_GUIDANCE[key]]
+            for key in (*ITEM_KEYS[0], *ITEM_KEYS[1])
+        ],
+    )
     edge_keys = " and ".join(
         [
             ", ".join(code(k) for k in EDGE_KEYS[0]),
@@ -900,6 +1001,8 @@ def _changesets_file() -> str:
         document_table="\n".join(document_table),
         ops_table="\n".join(ops_table),
         edge_keys=edge_keys,
+        scope_table="\n".join(scope_table),
+        item_table="\n".join(item_table),
         max_ops=MAX_OPS,
         max_mib=MAX_BYTES // (1024 * 1024),
         example=CHANGESET_EXAMPLE,

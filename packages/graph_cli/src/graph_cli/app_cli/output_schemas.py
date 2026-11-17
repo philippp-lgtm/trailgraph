@@ -24,6 +24,8 @@ from graph_cli.cli_kit.output_schemas import (
 )
 
 NULLABLE_STRING: Final = nullable(STRING)
+# ``request.source`` as ``history`` and ``changes`` show it (kernel.records.SourceRef)
+SOURCE: Final = obj({"name": STRING}, {"version": STRING, "run": STRING, "kind": STRING})
 STRINGS: Final = array(STRING)
 
 
@@ -84,6 +86,33 @@ def _write_result() -> dict[str, Schema]:
 
 # The keys of a write result, for answers that add their own (``file add``).
 WRITE_RESULT: Final = _write_result()
+# ``services.write.WriteResult.to_json`` of a reconcile document: the source and, per scope, what
+# the plan did (``sources.reconcile.ScopeSummary``); ``retired_keys`` are item keys, in a write
+# at most 20 of the ``retired`` entities, in a dry run all of them.
+RECONCILE: Final = obj(
+    {
+        "source": SOURCE,
+        "scopes": array(
+            obj(
+                {
+                    "type": STRING,
+                    "under": STRING,
+                    "complete": BOOLEAN,
+                    "created": INTEGER,
+                    "updated": INTEGER,
+                    "unchanged": INTEGER,
+                    "moved": INTEGER,
+                    "adopted": INTEGER,
+                    "kept": INTEGER,
+                    "retired": INTEGER,
+                    "revived": INTEGER,
+                    "retired_keys": STRINGS,
+                }
+            )
+        ),
+    }
+)
+WRITE_RESULT_OPTIONAL: Final = {"reconcile": RECONCILE}  # only for a reconcile document
 
 
 def _facet() -> Schema:
@@ -206,7 +235,7 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
             {"rel": STRING, "target": STRING},
             {"edge_id": STRING, "qualifiers": obj(extra=ANY), "target_rev": INTEGER},
         ),
-        "write_result": obj(WRITE_RESULT),
+        "write_result": obj(WRITE_RESULT, WRITE_RESULT_OPTIONAL),
         "facet": _facet(),
         "actor": _actor(),
         "program": obj({"name": STRING, "version": STRING}),

@@ -17,7 +17,7 @@ from graph_cli.kernel.canonical import canonical_bytes
 from graph_cli.kernel.changeset import ChangeSet, UpdateOp
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import AbbrevRef, EntityId, parse_id
-from graph_cli.kernel.records import RequestMeta
+from graph_cli.kernel.records import RequestMeta, SourceRef
 from graph_cli.services.write import WriteRequest
 from graph_cli.storage.common.faults import CrashPoint
 
@@ -57,6 +57,21 @@ def test_create_commits_one_tx_after_its_intent(svc: ServiceEnv, roles: Roles) -
     assert change["tx_id"] == str(tx.tx_id) and change["changeset_hash"] == tx.changeset_hash
     assert canonical_bytes(intent["actor"]) == canonical_bytes(tx.actor.to_json())  # B2.9
     assert [r.id for r in tx.revisions] == [e.id for e in result.entities]
+    assert not [f for f in svc.verify().findings if f.severity.value == "error"]
+
+
+def test_the_source_of_a_request_is_in_the_intent_and_the_tx_record(
+    svc: ServiceEnv, roles: Roles
+) -> None:
+    source = SourceRef("inventory", "collector 3", "2026-11-17T10:00:00Z")
+    request = svc.request(*svc.factory.create(roles.term("lifecycle_type"), "x"))
+    svc.service.apply(replace(request, request=RequestMeta.of("apply", {"ops": 1}, source=source)))
+    svc.create(roles.term("lifecycle_type"), "y")  # a write that names no source
+    named, plain = svc.txs()
+    assert named.request.source == source and plain.request.source is None
+    intents = [e for e in svc.graph_events() if "change" in e]
+    assert intents[0]["request"]["source"] == source.to_json()  # type: ignore[index]
+    assert "source" not in intents[1]["request"]  # type: ignore[operator]
     assert not [f for f in svc.verify().findings if f.severity.value == "error"]
 
 
