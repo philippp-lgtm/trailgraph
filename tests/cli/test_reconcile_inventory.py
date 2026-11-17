@@ -164,7 +164,7 @@ def scan(**scopes: Any) -> dict[str, Any]:
     )
 
 
-# ---- the patterns of the estate sync, as runs --------------------------------------------------
+# ---- the patterns of an inventory sync, as runs ------------------------------------------------
 
 
 def test_a_scan_is_one_tx_and_the_same_scan_again_writes_none(
