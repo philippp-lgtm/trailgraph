@@ -292,6 +292,7 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | `ontology_layer.connecting` | the relations and two-hop paths that connect two types, from the compiled model alone; used for the `connecting` of domain and range findings |
 | `ontology_layer.evaluate` | guards and rules of the compiled expression AST; exact `sum` over related entities; the aggregate values carried by rule findings |
 | `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
+| `services.reconcile_rights` | the declared needs of the scopes of a reconcile document as needs of write actions (`NeedOptions`), decided by the any-of rule of `services.action_rights` before the lock |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
 | `services.files`, `services.media_types` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path` (the backend's file, else a copy in the injected `FileCache`), `open` (the one streaming read of a stored file, for the server's download and, through `open_stored`, the live view), `check`; the built-in media type table |
 
@@ -308,6 +309,10 @@ A write by `graph do` hands the action to the same pipeline as a plan: under the
 lock the template is expanded on the locked state and the expansion authorized, then
 come the idempotency check (a replay matches the request digest, not the expansion)
 and the preconditions, and the write continues as for any change set.
+A document with a `reconcile` part runs the same way: its declared needs are authorized
+before the lock, then under the lock the idempotency key is looked up (before planning),
+`sources.reconcile` plans the scopes on the state the caller sees, and the write continues
+on the expanded change set.
 Validation reports findings (`data.*`) instead of stopping at the first
 problem; error findings refuse the write (`write.invalid`), warnings ride
 along with the result. The `connecting` of a domain or range finding

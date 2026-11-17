@@ -126,6 +126,7 @@ These are the fields an agent reads most. The envelope leaves out `data`,
 | `reason` | The reason given, or null. |
 | `own_session` | True when your own session wrote it; the writer is not shown. |
 | `changed` | Names, not values: `attrs`, `edges` (`added`, `removed`, `changed`) and `record`; null for the first revision. |
+| `source` | Only on a revision a pipeline wrote for a source: `name`, `version` and `run` of the source run. |
 | `migration` | Only on a revision an ontology release wrote: `from` and `to` (versions), `summary`, and the `renames` and `steps` that changed this entity. |
 
 ## Changes
@@ -149,6 +150,7 @@ These are the fields an agent reads most. The envelope leaves out `data`,
 | `items[].reason` | The reason given, or null. |
 | `items[].own_session` | True when your own session wrote it. |
 | `items[].action` | Only on a write by `do`: `name` and `hash` of the action. |
+| `items[].source` | Only on a write for a source: `name`, `version` and `run` of the source run. |
 | `items[].migration` | Only on a data migration of an ontology release: `from`, `to` (versions) and `summary`. Re-read what you hold: names may have changed and an entity may have left your view. |
 | `items[].partial` | True when the transaction goes on on the next page. |
 | `items[].entities` | The entities it changed that you see. |

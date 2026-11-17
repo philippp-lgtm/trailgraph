@@ -662,6 +662,11 @@ OUTPUT_SECTIONS: Final = (
                 " `record`; null for the first revision.",
             ),
             (
+                "source",
+                "Only on a revision a pipeline wrote for a source: `name`, `version` and `run`"
+                " of the source run.",
+            ),
+            (
                 "migration",
                 "Only on a revision an ontology release wrote: `from` and `to` (versions),"
                 " `summary`, and the `renames` and `steps` that changed this entity.",
@@ -702,6 +707,10 @@ OUTPUT_SECTIONS: Final = (
             ("items[].reason", "The reason given, or null."),
             ("items[].own_session", "True when your own session wrote it."),
             ("items[].action", "Only on a write by `do`: `name` and `hash` of the action."),
+            (
+                "items[].source",
+                "Only on a write for a source: `name`, `version` and `run` of the source run.",
+            ),
             (
                 "items[].migration",
                 "Only on a data migration of an ontology release: `from`, `to` (versions)"

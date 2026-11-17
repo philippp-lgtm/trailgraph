@@ -21,7 +21,7 @@ from graph_cli.app_cli.commands.common import (
     next_page,
 )
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
-from graph_cli.app_cli.output_schemas import NULLABLE_STRING, STRINGS
+from graph_cli.app_cli.output_schemas import NULLABLE_STRING, SOURCE, STRINGS
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import (
     ANY,
@@ -830,6 +830,7 @@ HISTORY_OUTPUT: Final = obj(
                 },
                 {
                     "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
+                    "source": SOURCE,  # set by a document that names its source run
                     # the revision a migration wrote (services.read._migration_item)
                     "migration": obj(
                         {
@@ -880,6 +881,7 @@ CHANGES_OUTPUT: Final = obj(
                 },
                 {
                     "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
+                    "source": SOURCE,  # set by a document that names its source run
                     "migration": obj(  # a migration tx (services.read._feed_migration)
                         {"from": NULLABLE_STRING, "to": NULLABLE_STRING}, {"summary": STRING}
                     ),

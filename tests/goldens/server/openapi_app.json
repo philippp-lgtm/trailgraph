@@ -351,6 +351,26 @@
                     "hash"
                   ]
                 },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                },
                 "migration": {
                   "type": "object",
                   "properties": {
@@ -3985,6 +4005,26 @@
                   "required": [
                     "name",
                     "hash"
+                  ]
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
                   ]
                 },
                 "migration": {

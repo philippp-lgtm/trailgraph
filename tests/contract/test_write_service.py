@@ -75,26 +75,6 @@ def test_the_source_of_a_request_is_in_the_intent_and_the_tx_record(
     assert not [f for f in svc.verify().findings if f.severity.value == "error"]
 
 
-def test_a_reconcile_part_is_refused_until_it_is_planned_and_writes_nothing(
-    svc: ServiceEnv, roles: Roles
-) -> None:
-    document = {
-        "source": {"name": "inventory"},
-        "reconcile": [{"type": roles.term("lifecycle_type"), "key": "source_key", "items": []}],
-    }
-    for dry_run in (False, True):
-        request = replace(
-            svc.request(*svc.factory.create(roles.term("lifecycle_type"), "x")),
-            changeset=svc.service.parse(document),
-            dry_run=dry_run,
-        )
-        with pytest.raises(GraphCliError) as caught:
-            svc.service.apply(request)
-        assert caught.value.code == "changeset.malformed"
-        assert caught.value.details["path"] == "reconcile"
-    assert svc.txs() == [] and svc.head_seq() == 0
-
-
 class SwitchingPolicy:
     """One policy until the writer reads it again under its lock, then another: a policy
     applied between the decision and the lock."""

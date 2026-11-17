@@ -146,6 +146,7 @@ PROVENANCE_RELATIONS: Final = frozenset({"core:supersedes", "core:retracts"})
 _IRI_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S+$")
 _ALL: Final = Query(record_status=frozenset(RECORD_STATUSES), limit=sys.maxsize)
 _ACTIVE: Final = frozenset({"active"})
+BATCH_UNIQUE: Final = 64  # unique values of one attribute from which one pass reads them all
 _MAX_CANDIDATES: Final = 5
 _MAX_SOURCES: Final = 20  # source ids a target_referenced finding lists
 
@@ -363,6 +364,11 @@ class _Checker:
         default_factory=dict, init=False, repr=False
     )
     _connecting: dict[tuple[str, str], JsonValue | None] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    # (declaring class, attribute) -> text value -> the active entities that hold it, read in
+    # one pass for a write that touches many entities (``prepare_unique``)
+    _held: dict[tuple[str, str], dict[str, list[EntityId]]] = field(
         default_factory=dict, init=False, repr=False
     )
 
@@ -886,19 +892,56 @@ class _Checker:
             if matches:
                 self.duplicate_name(name, matches)
 
+    def prepare_unique(self, revisions: Sequence[tuple[Revision, ClassDef]]) -> None:
+        """Read who holds the unique text values of ``revisions`` in one pass per attribute, when
+        the write touches many entities (``BATCH_UNIQUE`` values or more): a query per entity
+        made a bulk write quadratic in its size. The holders are those the per-entity query
+        finds (``eq`` compares strictly), so ``unique_values`` judges alike."""
+        wanted: dict[tuple[str, str], set[str]] = {}
+        for revision, cls in revisions:
+            for name, attribute in cls.attributes.items():
+                value = revision.attrs.get(name)
+                if (
+                    attribute.unique
+                    and isinstance(value, str)
+                    and self.model.value_base(attribute.kind, attribute.type) != "decimal"
+                ):
+                    wanted.setdefault((attribute.declared_in, name), set()).add(value)
+        for (declared, name), values in wanted.items():
+            if len(values) < BATCH_UNIQUE:
+                continue
+            page = self.snapshot.query(
+                Query(
+                    types=tuple(TermRef(t) for t in self.model.subtypes(declared)),
+                    where=Cmp(name, "exists", True),
+                    record_status=_ACTIVE,
+                    limit=sys.maxsize,
+                )
+            )
+            held: dict[str, list[EntityId]] = {}
+            for found in page.items:
+                value = found.attrs.get(name)
+                if isinstance(value, str) and value in values:
+                    held.setdefault(value, []).append(found.id)
+            self._held[(declared, name)] = held
+
     def unique_values(self, revision: Revision, cls: ClassDef) -> None:
         for name, attribute in cls.attributes.items():
             value = revision.attrs.get(name)
             if not attribute.unique or value is None:
                 continue
-            numeric = self.model.value_base(attribute.kind, attribute.type) == "decimal"
-            query = Query(
-                types=tuple(TermRef(t) for t in self.model.subtypes(attribute.declared_in)),
-                where=Cmp(name, "eq", value, numeric=numeric),
-                record_status=_ACTIVE,
-                limit=11,
-            )
-            others = [r.id for r in self.snapshot.query(query).items if r.id != revision.id]
+            held = self._held.get((attribute.declared_in, name))
+            if held is not None and isinstance(value, str):
+                others = [i for i in held.get(value, ()) if i != revision.id]
+            else:
+                numeric = self.model.value_base(attribute.kind, attribute.type) == "decimal"
+                query = Query(
+                    types=tuple(TermRef(t) for t in self.model.subtypes(attribute.declared_in)),
+                    where=Cmp(name, "eq", value, numeric=numeric),
+                    record_status=_ACTIVE,
+                    limit=11,
+                )
+                others = [r.id for r in self.snapshot.query(query).items if r.id != revision.id]
             if others:
                 self.add(
                     "data.semantic.unique_violation",
@@ -1111,6 +1154,7 @@ def validate_write(
         if blob_exists is not None:
             _stored_blobs(checker, previous, revision, cls, blob_exists)
     active = [rev for rev, _ in checkable.values() if rev.record_status == "active"]
+    checker.prepare_unique([(rev, checkable[rev.id][1]) for rev in active])
     for revision in active:
         checker.unique_values(revision, checkable[revision.id][1])
         checker.new_names(revision, checkable[revision.id][1], before.get(revision.id))

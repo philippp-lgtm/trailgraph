@@ -52,7 +52,9 @@ logical name, `version` and `run` are text of up to 128 characters; the program'
 may add `kind`). It is a claim recorded next to the actor, not an authentication. The key is
 optional and appears only for such writes, so the bytes of every other write are unchanged.
 Verification checks its shape, and that the intent and the transaction record name the same
-source (`integrity.audit.tx_without_intent` otherwise).
+source (`integrity.audit.tx_without_intent` otherwise). `history` and `changes` show it as
+`source` next to `action`. A refusal that a guard of a reconcile document causes
+(`reconcile.*`) is an `invalid` event of the graph's stream and names the source like a write.
 
 The decisions of an event (`authz.decisions`: action, resource, effect, rule) name
 resources of a graph, a type or, below a type, one attribute (`graph:<id>/type:<curie>/attr:<name>`)

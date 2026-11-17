@@ -42,6 +42,23 @@ is an audited ``invalid`` refusal), then raises the held ``nothing_to_do`` (not 
 and continues with W.8 on the expanded change set, which is what the tx records. A dry-run
 does the same on its lock-free snapshot, without audit and idempotency.
 
+Reconcile documents (reconcile plan R-K6, R-K11): a document whose ``reconcile`` part names
+scopes is run like an action plan, on the state under the lock. Before the lock the frame's own
+ops and the *declared needs* of the scopes (``services.reconcile_rights``: create and update on
+the type with the attributes, link and unlink with the relations, retract or transition for a
+complete scope) are authorized, so a token without the retract right is denied on its first run
+and a marked attribute among the fields is refused like an unknown one, before anything is
+planned. Under the lock the service: re-decides those needs, looks for the idempotency key (on
+the request digest and the source, before planning, so a retry replays the first answer whatever
+the state is now), plans the scopes on the snapshot the caller sees with the model it sees
+(``sources.reconcile``; a ``reconcile.*`` guard is an audited ``invalid`` refusal, any other
+planner error is raised as for plain ops), appends the plan's ops to the document's own, resolves
+and authorizes the concrete ops again, and continues with W.8 on the expanded change set, which
+is what the tx records (``request.source`` names the source run). A plan without ops is a write
+that changes nothing: no tx, no audit event. A reconcile document without a reason is given
+``sources.reconcile.default_reason``. The answer carries ``reconcile``, the per-scope counts. A
+dry run does the same on its lock-free snapshot, unaudited.
+
 Terms (write allow lists plan W4, W7): besides its (action, type) decision an op is decided on
 the attributes and relations it names below its type (``Resolution.fine``), but only for a
 type some rule of the graph's policy names terms of (``fine_types``); every other type is
@@ -97,8 +114,8 @@ about hidden values the raw state keeps are concealed by the validator (``Caller
 The command's timings get the phases ``model``, ``snapshot``, ``resolve``,
 ``authorize``, ``promote`` (a request with staged blobs: their upload to an object
 store), ``lock`` (waiting for and taking the graph lock, with the
-recovery of an interrupted write), ``normalize``, ``validate``, ``audit``
-(the intent or a refusal) and ``commit``.
+recovery of an interrupted write), ``plan`` (the reconcile planner), ``normalize``,
+``validate``, ``audit`` (the intent or a refusal) and ``commit``.
 """
 
 from __future__ import annotations
@@ -170,7 +187,7 @@ from graph_cli.kernel.ports.storage import (
     WriteSession,
 )
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
-from graph_cli.kernel.records import EnvInfo, RequestMeta, TxRecord
+from graph_cli.kernel.records import EnvInfo, RequestMeta, SourceRef, TxRecord
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
 from graph_cli.kinetic.action_needs import action_needs
@@ -187,8 +204,16 @@ from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
+from graph_cli.services.reconcile_rights import reconcile_needs
 from graph_cli.services.refs import NO_BINDINGS, FineTerm, Resolution, resolve_refs
 from graph_cli.services.visibility import Visibility, VisibleSnapshot
+from graph_cli.sources.reconcile import (
+    MAX_LISTED_KEYS,
+    ReconcilePlan,
+    default_reason,
+    expanded,
+    plan_reconcile,
+)
 from graph_cli.temporal_knowledge.normalize import normalize
 from graph_cli.temporal_knowledge.working import WorkingState
 
@@ -260,11 +285,14 @@ class WriteResult:
     warnings: tuple[WarningRecord, ...] = ()
     findings: tuple[Finding, ...] = ()  # warning findings (additive to B3)
     bindings: Mapping[str, EntityId] = field(default=NO_BINDINGS)  # locals bound by this tx
+    # a reconcile document: the source and the counts per scope (``ReconcilePlan.to_json``);
+    # absent on a replay, whose tx holds the expanded ops only
+    reconcile: JsonValue = None
 
     def to_json(self, *, summary: bool = False) -> dict[str, JsonValue]:
         """``summary`` leaves out the per-entity list (``entities: null``), not its count."""
         single = self.entities[0] if len(self.entities) == 1 else None
-        return {
+        data: dict[str, JsonValue] = {
             "tx_id": None if self.tx_id is None else str(self.tx_id),
             "seq": self.seq,
             "event_id": None if self.event_id is None else str(self.event_id),
@@ -276,6 +304,9 @@ class WriteResult:
             "entities": None if summary else [e.to_json() for e in self.entities],
             "findings": [f.to_json() for f in self.findings],
         }
+        if self.reconcile is not None:  # additive: only for a reconcile document
+            data["reconcile"] = self.reconcile
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +450,7 @@ class WriteService:
                     bindings.update(
                         {n: e for n, e in working.locals.items() if e in working.created}
                     )
+                    bindings.update(result.bindings)  # the locals of matched reconcile items
                 else:
                     result = self._apply(current)
                     bindings.update(result.bindings)
@@ -430,14 +462,6 @@ class WriteService:
     # ---- W.1-W.5 -------------------------------------------------------
 
     def _prepare(self, request: WriteRequest, snapshot: Snapshot | None) -> _Prepared:
-        if request.changeset.reconcile:
-            # parsed since the document grammar, planned by a later step of the reconcile plan;
-            # until then nothing may drop the part and report an empty write
-            raise GraphCliError(
-                "changeset.malformed",
-                "reconcile: this build does not apply reconcile documents yet",
-                details={"path": "reconcile"},
-            )
         if len(request.changeset.ops) > self.config.max_ops:
             raise GraphCliError(
                 "changeset.too_large",
@@ -460,6 +484,8 @@ class WriteService:
             request, _seen_by(snapshot, view)
         )
         wanted = _wanted(resolution, model)
+        if request.changeset.reconcile:  # R-K11: what the scopes declare, before the lock
+            wanted = _union(wanted, self._declared_wanted(request, entry, model, view))
         decisions = self._authorize(request, entry, wanted, model, view)
         return _Prepared(entry, model, read, write, snapshot, resolution, wanted, decisions, view)
 
@@ -521,6 +547,38 @@ class WriteService:
             for published in plan.entry.needs:  # a published need the derivation did not see
                 if (published.action, published.type) not in covered:
                     pairs.add((Action(published.action), TermRef(published.type)))
+        return _Wanted(tuple(sorted(pairs)), tuple(sorted(terms)))
+
+    def _declared_wanted(
+        self, request: WriteRequest, entry: GraphEntry, model: CompiledModel, view: ReadView
+    ) -> _Wanted:
+        """What the scopes of a reconcile document declare they may do, decided like the needs of
+        an action (``services.reconcile_rights``): for each need the option the any-of rule
+        picks. A caller who sees no type of a scope is answered as for a type the model lacks
+        (``term.unknown``). The options are not narrowed by the attributes the caller sees: a
+        hidden attribute among the fields is refused by name (``_declared_unknown``) or, for a
+        type with term rules, denied by ``_authorize``, never by the absence of an option."""
+        scopes = request.changeset.reconcile
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            fine = self._fine.of(policy, entry.id)
+            ctx = _context(request)
+            pairs: set[tuple[Action, TermRef]] = set()
+            terms: set[FineTerm] = set()
+            for need in reconcile_needs(scopes, model):
+                found = need_decisions(request.actor, entry.id, need, ctx, policy, fine, view.types)
+                if found.type is None:
+                    index = next(i for i, sc in enumerate(scopes) if sc.type == need.type)
+                    path = f"reconcile[{index}].type"
+                    raise GraphCliError(
+                        "term.unknown",
+                        f"{path}: unknown type {need.type!r}",
+                        details={"kind": "type", "term": str(need.type), "path": path},
+                    )
+                pairs.add((Action(need.action), TermRef(found.type)))
+                terms.update(
+                    (Action(a), TermRef(found.type), kind, term) for a, kind, term in found.terms
+                )
         return _Wanted(tuple(sorted(pairs)), tuple(sorted(terms)))
 
     def _authorize(
@@ -654,6 +712,7 @@ class WriteService:
     # ---- W.6-W.16 ------------------------------------------------------
 
     def _apply(self, request: WriteRequest) -> WriteResult:
+        request = _normalized(request)
         prepared = self._prepare(request, None)
         if request.blobs:  # W.5b
             with self.timings.phase("promote"):
@@ -676,21 +735,30 @@ class WriteService:
             seen = _seen_by(base, view)  # what the caller reaches; ``base`` stays the truth
             limited = self._visibility.model(entry, model, view) if view.limited else None
             plan, held = request.plan, None
-            if plan is not None:  # the action meets the state it will change
-                request, held = self._expand(request, seen)
-            resolution = self._resolve(request, seen)
-            if plan is not None and held is not None:
-                wanted = self._plan_wanted(request, entry, plan, model, view)
+            outcome: ReconcilePlan | None = None
+            if request.changeset.reconcile:  # the scopes meet the state they will change
+                planned = self._plan_locked(
+                    request, prepared, session, entry, model, head, view, seen, limited
+                )
+                if isinstance(planned, WriteResult):  # an idempotent retry
+                    return planned
+                request, resolution, wanted, decisions, outcome = planned
             else:
-                wanted = _wanted(resolution, model)
+                if plan is not None:  # the action meets the state it will change
+                    request, held = self._expand(request, seen)
+                resolution = self._resolve(request, seen)
+                if plan is not None and held is not None:
+                    wanted = self._plan_wanted(request, entry, plan, model, view)
+                else:
+                    wanted = _wanted(resolution, model)
+                decisions = prepared.decisions
+                if (
+                    plan is not None
+                    or wanted != prepared.wanted
+                    or _stale(decisions, self._policy.current(entry.id).hash)
+                ):
+                    decisions = self._authorize(request, entry, wanted, model, view)
             pairs = wanted.pairs
-            decisions = prepared.decisions
-            if (
-                plan is not None
-                or wanted != prepared.wanted
-                or _stale(decisions, self._policy.current(entry.id).hash)
-            ):
-                decisions = self._authorize(request, entry, wanted, model, view)
             refusal = _Refusal(self, session, request, entry, decisions, head)
             # F6, R6: an attribute the caller's view lacks is unknown to it, before W.7 (a replay
             # never confirms a hidden name) and before anything reads the values
@@ -701,7 +769,7 @@ class WriteService:
                 )
             cs = resolution.changeset
             digest = changeset_hash(cs)
-            if cs.idempotency_key is not None:  # W.7
+            if cs.idempotency_key is not None and outcome is None:  # W.7
                 principal = request.actor.principal.id or ""
                 previous = session.lookup_idempotency(cs.idempotency_key, principal)
                 if previous is not None:
@@ -760,6 +828,8 @@ class WriteService:
                     warnings=resolution.warnings,
                     findings=findings,
                     view=view,
+                    outcome=outcome,
+                    source=request.changeset.source,
                 )
             tx = AuthorizedTx(
                 graph_id=entry.id,
@@ -806,6 +876,8 @@ class WriteService:
             warnings=(*resolution.warnings, *committed.warnings),
             findings=findings,
             view=view,
+            outcome=outcome,
+            source=request.changeset.source,
         )
 
     def _dry_run(
@@ -815,6 +887,7 @@ class WriteService:
         placeholders: _Placeholders,
         offset: int,
     ) -> tuple[WriteResult, WorkingState]:
+        request = _normalized(request)
         prepared = self._prepare(request, base)
         snapshot = prepared.snapshot
         resolution = prepared.resolution
@@ -824,6 +897,17 @@ class WriteService:
             self._visibility.model(prepared.entry, prepared.model, view) if view.limited else None
         )
         plan = request.plan
+        outcome: ReconcilePlan | None = None
+        if request.changeset.reconcile:  # as under the lock, unaudited and without idempotency
+            declared = self._declared_wanted(request, prepared.entry, prepared.model, view)
+            unknown = _declared_unknown(view, limited, declared)
+            if unknown:
+                raise _invalid(unknown)
+            request, outcome = self._plan(request, prepared.entry, prepared.model, limited, seen)
+            resolution = self._resolve(request, seen)
+            wanted = _union(declared, _wanted(resolution, prepared.model))
+            pairs = wanted.pairs
+            self._authorize(request, prepared.entry, wanted, prepared.model, view)
         if plan is not None:  # as under the lock, on the lock-free snapshot, unaudited
             request, held = self._expand(request, seen)
             resolution = self._resolve(request, seen)
@@ -881,8 +965,93 @@ class WriteService:
             findings=findings,
             hidden=hidden,
             view=view,
+            outcome=outcome,
+            source=request.changeset.source,
         )
         return result, working
+
+    def _plan(
+        self,
+        request: WriteRequest,
+        entry: GraphEntry,
+        model: CompiledModel,
+        limited: CompiledModel | None,
+        seen: Snapshot,
+    ) -> tuple[WriteRequest, ReconcilePlan]:
+        """The request with the reconcile plan's ops appended to the document's own, and the
+        plan. The planner reads the state as the caller sees it, through the model the caller
+        sees (a type or an attribute it cannot see is unknown to it)."""
+        cs = request.changeset
+        assert cs.source is not None
+        with self.timings.phase("plan"):
+            plan = plan_reconcile(
+                cs.source,
+                cs.reconcile,
+                seen,
+                limited or model,
+                frame_ops=cs.ops,
+                bindings=request.bindings,
+                language=entry.language,
+            )
+        return replace(request, changeset=expanded(cs, plan)), plan
+
+    def _plan_locked(
+        self,
+        request: WriteRequest,
+        prepared: _Prepared,
+        session: WriteSession,
+        entry: GraphEntry,
+        model: CompiledModel,
+        head: Head,
+        view: ReadView,
+        seen: Snapshot,
+        limited: CompiledModel | None,
+    ) -> (
+        WriteResult | tuple[WriteRequest, Resolution, _Wanted, tuple[Decision, ...], ReconcilePlan]
+    ):
+        """A reconcile document under the lock (see the module docstring): the declared needs
+        are decided again, the idempotency key is looked up, then the scopes are planned. A
+        guard of the planner is an audited refusal, with the decisions on the declared needs."""
+        frame = self._resolve(request, seen)
+        declared = self._declared_wanted(request, entry, model, view)
+        wanted = _union(_wanted(frame, model), declared)
+        decisions = prepared.decisions
+        if wanted != prepared.wanted or _stale(decisions, self._policy.current(entry.id).hash):
+            decisions = self._authorize(request, entry, wanted, model, view)
+        refusal = _Refusal(self, session, request, entry, decisions, head)
+        unknown = [
+            *_unknown_attributes(view, limited, frame, seen),
+            *_declared_unknown(view, limited, declared),
+        ]
+        if unknown:
+            raise refusal(
+                _invalid(unknown), types=wanted.pairs, findings=unknown, entities=_targets(unknown)
+            )
+        key = request.changeset.idempotency_key
+        if key is not None:  # W.7, before planning: a retry replays whatever the state is now
+            previous = session.lookup_idempotency(key, request.actor.principal.id or "")
+            if previous is not None:
+                if _same_request(request, previous, ""):
+                    return _replay(previous, entry, frame.warnings, view)
+                raise refusal(
+                    GraphCliError(
+                        "conflict.idempotency_key_reuse",
+                        f"idempotency key {key!r} was used for other content",
+                        details={"idempotency_key": key, "seq": previous.seq},
+                    ),
+                    types=wanted.pairs,
+                )
+        try:
+            request, outcome = self._plan(request, entry, model, limited, seen)
+        except GraphCliError as exc:
+            if exc.code.startswith("reconcile."):
+                raise refusal(exc, types=wanted.pairs) from None
+            raise
+        resolution = self._resolve(request, seen)
+        concrete = _union(declared, _wanted(resolution, model))
+        if concrete != wanted:  # the ops need more than the scopes declared
+            decisions = self._authorize(request, entry, concrete, model, view)
+        return request, resolution, concrete, decisions, outcome
 
     def _expand(
         self, request: WriteRequest, snapshot: Snapshot
@@ -1188,15 +1357,55 @@ def _wanted(resolution: Resolution, model: CompiledModel) -> _Wanted:
 
 
 def _same_request(request: WriteRequest, previous: TxRecord, digest: str) -> bool:
-    """Whether a retry with the same idempotency key asks for what ``previous`` recorded: an
-    action matches on the request digest and the action (its expansion depends on the state),
-    a change set on its hash."""
-    if request.plan is None:
+    """Whether a retry with the same idempotency key asks for what ``previous`` recorded, from
+    the same source. An action or a reconcile document matches on the request digest (their
+    expansion depends on the state; the digest covers the whole input), a change set on its
+    hash."""
+    if previous.request.source != request.request.source:
+        return False
+    if request.plan is None and not request.changeset.reconcile:
         return previous.changeset_hash == digest
     return (
         previous.request.args_digest == request.request.args_digest
         and previous.request.action == request.request.action
     )
+
+
+def _normalized(request: WriteRequest) -> WriteRequest:
+    """The request as the pipeline runs it: a document that names its source run puts it in
+    ``request.source`` (the audit key), and a reconcile document without a reason is given
+    the default one (reconcile plan R-K8), so the policy's reason rule and the tx see it."""
+    cs, meta = request.changeset, request.request
+    if cs.source is not None and meta.source is None:
+        meta = replace(meta, source=cs.source)
+    if cs.reconcile and cs.reason is None and cs.source is not None:
+        cs = replace(cs, reason=default_reason(cs.source))
+    if cs is request.changeset and meta is request.request:
+        return request
+    return replace(request, changeset=cs, request=meta)
+
+
+def _union(first: _Wanted, second: _Wanted) -> _Wanted:
+    return _Wanted(
+        tuple(sorted({*first.pairs, *second.pairs})), tuple(sorted({*first.fine, *second.fine}))
+    )
+
+
+def _declared_unknown(
+    view: ReadView, limited: CompiledModel | None, declared: _Wanted
+) -> list[Finding]:
+    """The ``unknown_attribute`` findings of a caller with an attribute view for every attribute
+    the scopes of a reconcile document declare (the key attribute and the fields) that its model
+    view lacks: refused by name before anything is planned, so whether a run is refused never
+    depends on which ops it happens to emit. Hidden and undeclared names take this one path."""
+    if not view.attributes_limited or limited is None:
+        return []
+    found = []
+    for type_curie, name in sorted(_lacking(declared.fine, limited)):
+        cls = limited.classes[type_curie]
+        target: dict[str, JsonValue] = {"type": type_curie, "path": f"attrs.{name}"}
+        found.append(unknown_attribute(target, type_curie, name, cls.attributes))
+    return sort_findings(found)
 
 
 def _not_recorded(exc: GraphCliError) -> WarningRecord:
@@ -1336,6 +1545,8 @@ def _result(
     findings: Sequence[Finding],
     hidden: Set[UUID] = frozenset(),
     view: ReadView = UNLIMITED,
+    outcome: ReconcilePlan | None = None,
+    source: SourceRef | None = None,
 ) -> WriteResult:
     """The result of a write. A caller who does not see every type is told about entities of
     the types it sees only: whatever else the request changed stays in the tx."""
@@ -1375,6 +1586,12 @@ def _result(
         if dry_run
         else {name: entity for name, entity in working.locals.items() if entity in working.created}
     )
+    block: JsonValue = None
+    if outcome is not None:
+        assert source is not None
+        # the locals of matched items are real ids, also in a dry run
+        bound = {**bound, **outcome.bound}
+        block = outcome.to_json(source, max_keys=None if dry_run else MAX_LISTED_KEYS)
     return WriteResult(
         graph_id=entry.id,
         graph_name=entry.name,
@@ -1387,6 +1604,7 @@ def _result(
         warnings=tuple(warnings),
         findings=tuple(f for f in findings if f.severity is not Severity.ERROR),
         bindings=bound,
+        reconcile=block,
     )
 
 

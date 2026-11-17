@@ -24,6 +24,8 @@ from graph_cli.cli_kit.output_schemas import (
 )
 
 NULLABLE_STRING: Final = nullable(STRING)
+# ``request.source`` as ``history`` and ``changes`` show it (kernel.records.SourceRef)
+SOURCE: Final = obj({"name": STRING}, {"version": STRING, "run": STRING, "kind": STRING})
 STRINGS: Final = array(STRING)
 
 

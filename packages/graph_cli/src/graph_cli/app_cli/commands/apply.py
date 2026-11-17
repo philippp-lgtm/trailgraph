@@ -29,6 +29,7 @@ from graph_cli.kernel.changeset import (
     IDEMPOTENCY_KEY_RE,
     ChangeSet,
     changeset_hash,
+    document_hash,
     read_documents,
 )
 from graph_cli.kernel.errors import GraphCliError
@@ -102,6 +103,16 @@ def _with_key(changesets: list[ChangeSet], key: str | None) -> list[ChangeSet]:
     return [replace(changeset, idempotency_key=key)]
 
 
+def _content(changeset: ChangeSet) -> dict[str, JsonValue]:
+    """What the request digest (C.10) covers of a document: the hash of its change set, which
+    for a document that names a source or reconciles scopes is the hash of the whole document
+    (the tx records the ops a reconcile expanded to, so its hash does not say what was asked).
+    A document without either keeps the digest it always had."""
+    if changeset.source is None and not changeset.reconcile:
+        return {"changeset_hash": changeset_hash(changeset)}
+    return {"document_hash": document_hash(changeset)}
+
+
 def apply(
     state: CommandState,
     file: str,
@@ -127,7 +138,7 @@ def apply(
                     "graph": entry.name,
                     "dry_run": dry_run,
                     "document_index": index,
-                    "changeset_hash": changeset_hash(changeset),
+                    **_content(changeset),
                 },
             ),
         )

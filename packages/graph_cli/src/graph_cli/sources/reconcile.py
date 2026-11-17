@@ -127,6 +127,9 @@ class ReconcilePlan:
 
     ops: tuple[Op, ...]
     scopes: tuple[ScopeSummary, ...]
+    # the locals of items that matched an entity, so the answer binds them like the locals of
+    # created entities: a pipeline gets the id of everything it sent
+    bound: Mapping[str, EntityId] = field(default_factory=dict)
 
     def to_json(self, source: SourceRef, *, max_keys: int | None = MAX_LISTED_KEYS) -> JsonValue:
         """The ``reconcile`` block of a write answer."""
@@ -272,6 +275,7 @@ class _Planner:
         self.by_key: dict[tuple[str, str], list[_Item]] = {}  # (key attribute, stored key)
         self.locals: dict[str, EntityId | LocalRef] = {}
         self.taken: set[str] = set(bindings)
+        self.matched: dict[str, EntityId] = {}  # local of an item -> the entity it matched
         self.lookups: dict[tuple[str, str, str | int], EntityId] = {}
         self.lifecycles: dict[tuple[str, RetireSpec], tuple[str, frozenset[str]]] = {}
 
@@ -308,7 +312,9 @@ class _Planner:
                 limit_ops=max_ops,
                 actual_ops=total,
             )
-        return ReconcilePlan(tuple(ops), tuple(self.summary(state) for state in states))
+        return ReconcilePlan(
+            tuple(ops), tuple(self.summary(state) for state in states), dict(self.matched)
+        )
 
     @staticmethod
     def summary(state: _Scope) -> ScopeSummary:
@@ -619,7 +625,10 @@ class _Planner:
                     )
                 declared[name] = f"{found.path}.local"
                 found.local = name
-                self.locals[name] = LocalRef(name) if found.entity is None else found.entity.id
+                if found.entity is None:
+                    self.locals[name] = LocalRef(name)
+                else:
+                    self.locals[name] = self.matched[name] = found.entity.id
         self.taken = set(declared)
 
     # ---- edge targets ----
