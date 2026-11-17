@@ -312,6 +312,42 @@ marked or that something happened, with one exception that an author controls
   sees the edge), a marked attribute cannot be write-only (a caller writes only
   attributes it sees), and there are no deny rules on single attributes' reads.
 
+## Documents from a source
+
+A change set document can hand over the desired state of an external source
+([Reconciling a source](cli_graph.md#reconciling-a-source)). What that does
+and does not prevent:
+
+- The `source` of a document (`name`, `version`, `run`) is a **claim**. It is
+  recorded in `request.source` next to the authenticated actor, like a
+  reason, and it grants nothing: what a run may do is the rights of its
+  actor ([Reconcile documents](access_control.md#reconcile-documents)). A
+  caller can name any source it likes; the key namespace `<source>/...` keeps
+  honest pipelines apart, it does not stop a caller that may write the type
+  from writing keys under another name. Whoever may retract a type can
+  retract its entities with plain ops. Binding a source to a verified
+  caller is not built.
+- The guards (an empty complete scope, a mass retire, item counts) limit
+  **accidents**: a failed collector, a broken query, a renamed key
+  attribute. They are not a barrier against a writer with retract rights,
+  who can raise `allow_retire` or `allow_empty` in the same document.
+- What the declared needs refuse comes before planning, so it does not
+  depend on the state: a scope type the caller does not see is an unknown
+  type, and a key attribute or field it lacks the marking for is refused by
+  name as an unknown attribute, with the same answer as for a name the type
+  does not declare. A marked attribute outside `fields` is never read or
+  written by the run.
+- The plan reads the graph as the caller sees it. An entity of a hidden type
+  that holds a wanted key is not found, so the create fails on the unique
+  check, and the finding is concealed as for any write: its code and the
+  visible target stay, nothing about the hidden entity.
+- Refusals of the guards are audited as `invalid` events of the graph's
+  stream with the source, so a refused run is visible; `audit verify` checks
+  that the intent and the transaction name the same source. The source is
+  not part of the transaction's `changeset_hash` (the transaction holds the
+  ops the run expanded to) but of the request digest, which covers the whole
+  document.
+
 ## Data in backups and audit events
 
 Audit events carry ids, types, hashes and reason text, never attribute

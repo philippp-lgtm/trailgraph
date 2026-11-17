@@ -915,6 +915,53 @@ after an update.
   type run reviewed actions while it may not use the primitives: that would
   let an action grant what its op would not.
 
+## Reconcile documents
+
+A document that hands over the desired state of a source
+([Reconciling a source](cli_graph.md#reconciling-a-source)) has no action of
+its own: nothing in the taxonomy and nothing to apply again. It can do
+nothing its caller could not do with ops, and it is decided like the ops it
+expands to.
+
+- **Declared needs, before the lock.** Each scope declares what it may do,
+  and the write is authorized on that before anything is planned, so a token
+  that lacks a right fails on its first run, not on the day the right is
+  needed: `write.create` and `write.update` on the scope's type with the
+  attributes `fields` plus the key attribute (a create also with the
+  relations `edges`, an inline edge being decided as `write.create`);
+  `write.link` and `write.unlink` with the relations `edges`, for a scope that
+  sets any; for a complete scope `write.retract` (or, with a lifecycle
+  retire, `write.transition` with the lifecycle attribute), and
+  `write.transition` for a scope that revives. A need on an abstract type
+  stands for its concrete subtypes and is met when one of them is allowed
+  (any-of, as for [actions](#actions)). A deny is `access.denied`, audited
+  like any write denial in the installation stream, and it names the
+  source. A dry run is denied unaudited.
+- **Concrete ops, under the lock.** The plan's ops are authorized again as
+  any change set is: one decision per (`write.*` op action, type) and, for a
+  type with rules on terms, per attribute and relation written, with the
+  `require_reason` and `max_batch` obligations on the expanded ops (a
+  document without a reason gets the default reason
+  `reconcile <name> <version> run <run>`). The decisions of the event record
+  the declared needs and the concrete ops.
+- **Read limits.** A scope type the caller cannot see is `term.unknown`, as
+  for a type the model lacks; the plan reads only what the caller sees, so a
+  key held by an entity of a hidden subtype is not found and the create
+  fails on the unique check with the finding concealed
+  ([Type read limits](security_model.md#type-read-limits)).
+- **Markings.** A key attribute or field the caller lacks the marking for is
+  refused by name, before anything is planned, as an unknown attribute
+  (`write.invalid`, or `access.denied` for a type whose policy has rules on
+  terms), whether or not an item names it; an attribute outside `fields` is
+  never read or touched, so a pipeline without the marking leaves marked
+  values as they are.
+- **The source grants nothing.** `source` is recorded with the actor and
+  decides no right ([Security model](security_model.md#documents-from-a-source)).
+  A role for a pipeline lists `writes` on its types (`create` and `update`
+  with the key attribute and its fields, `link` and `unlink` with its
+  relations, `retract` or `transition` for complete scopes) and the `reads` and
+  `markings` its fields need.
+
 ## Authoring and installing policies
 
 Authored policies live in the maintainer workspace. `graph-admin policy
