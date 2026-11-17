@@ -1,5 +1,5 @@
-"""Read services: graphs, get, history, find, lookup, search, neighbors, query, whoami (contracts
-§4.3, B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7, B13).
+"""Read services: graphs, get, history, changes, find, lookup, search, neighbors, query, whoami
+(contracts §4.3, B2.10, B6.3, B6.12, B8.8, B8.12, B8.13, B8.15, B9.7, B13).
 
 Every read authorizes its action before touching storage; a denial is
 appended to the installation stream and raised. A graph is visible iff
@@ -21,7 +21,9 @@ entities it returns, and the edges ``neighbors`` walked or ``query`` rows hold, 
 activity sink with the command and actor that opened the graph (a transient signal for
 ``graph-admin view``, no log).
 ``history`` shows of a tx's actor only whether it is the caller's own
-session: who wrote a revision is audit content (B8.15).
+session: who wrote a revision is audit content (B8.15). ``changes`` (the change
+feed) is the merged history of every entity the caller sees, in tx order, and
+signals no entities (a poller would flood the views' trails).
 The command's timings get the phases ``authorize``, ``audit`` (a denial),
 ``model``, ``snapshot`` and ``query`` (answering from the snapshot); a
 Cypher ``query`` has ``parse``, ``resolve`` and ``execute`` instead.
@@ -35,6 +37,7 @@ import difflib
 import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import TYPE_CHECKING, Concatenate, Final
 
 from graph_cli.access_control.authorize import authorize
@@ -110,6 +113,7 @@ from graph_cli.query.plan import (
     DEFAULT_LIMIT,
     FindSpec,
     check_fields,
+    check_paging,
     plan_find,
     plan_neighbors,
     resolve_term,
@@ -143,6 +147,16 @@ from graph_cli.services.visibility import (
 )
 from graph_cli.services.visible_catalog import HiddenCatalog, hidden_actions, hidden_functions
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
+from graph_cli.temporal_knowledge.changes import (
+    SCAN_CAP,
+    FeedEntry,
+    FeedPosition,
+    page,
+    position_text,
+    resolve_since,
+    targets,
+    touched_at,
+)
 from graph_cli.temporal_knowledge.history import changed_names
 from graph_cli.temporal_knowledge.name_map import NameMap, RenameHint, TermKind
 
@@ -1062,7 +1076,7 @@ class ReadService:
         full = self._models.load_for_read(view.entry)[0] if view.read_view.limited else None
         for meta in shown:
             tx = view.snapshot.tx(meta.tx_seq)
-            change = _revision_change(view, entity, meta.rev)
+            change = _revision_change(view.snapshot, entity, meta.rev)
             item: dict[str, JsonValue] = {
                 "rev": meta.rev,
                 "tx_seq": meta.tx_seq,
@@ -1084,6 +1098,28 @@ class ReadService:
         }
         self._signal(view, [entity])
         return data, Page(len(metas), len(shown), limit, offset), list(warnings)
+
+    @_query
+    def changes(
+        self, view: GraphRead, since: FeedPosition | datetime, *, limit: int
+    ) -> dict[str, JsonValue]:
+        """The change feed: what changed in the whole graph after ``since``, oldest first, as
+        far as the caller sees it, one page of at most ``limit`` entity items (change feed
+        plan CF3-CF13). The txs are read from the opened snapshot up to its head, so a write
+        after it waits for the next page. No read signal (CF13)."""
+        check_paging(limit, 0)
+        mapping = view.mapping
+        if mapping is None:
+            raise GraphCliError("internal.error", "the change feed needs a view opened to read")
+        return change_page(
+            view.snapshot,
+            mapping,  # below the read limits; its txs are those of ``mapping.raw``, memoised
+            resolve_since(view.snapshot, since),
+            limit,
+            session=view.actor.session.id,
+            migration=mapping.migration_record,
+            digest=view.read_view.digest,
+        )
 
     @_query
     def find(
@@ -1693,12 +1729,12 @@ class _RevisionChange:
     changed: dict[str, JsonValue] | None
 
 
-def _revision_change(view: GraphRead, entity: EntityId, rev: int) -> _RevisionChange:
+def _revision_change(snapshot: Snapshot, entity: EntityId, rev: int) -> _RevisionChange:
     """The per-revision part shared by every list of changes (``history``, the change feed):
-    both revisions through the view, so hidden edges and attributes are already gone, and
-    ``changed_names`` between them."""
-    before = view.snapshot.get_revision(entity, rev - 1) if rev > 1 else None
-    after = view.snapshot.get_revision(entity, rev)
+    both revisions through the caller's snapshot (its view), so hidden edges and attributes are
+    already gone, and ``changed_names`` between them."""
+    before = snapshot.get_revision(entity, rev - 1) if rev > 1 else None
+    after = snapshot.get_revision(entity, rev)
     changed = changed_names(before, after) if before and after else None
     return _RevisionChange(before, after, changed)
 
@@ -1711,6 +1747,126 @@ def _tx_fields(tx: TxRecord | None, session: str | None) -> dict[str, JsonValue]
         "reason": tx.reason if tx else None,
         "own_session": tx is not None and session is not None and tx.actor.session.id == session,
     }
+
+
+def change_page(
+    snapshot: Snapshot,
+    raw: Snapshot,
+    start: FeedPosition,
+    limit: int,
+    *,
+    session: str | None,
+    migration: Callable[[int], Mapping[str, JsonValue] | None],
+    digest: str | None = None,
+    scan_cap: int = SCAN_CAP,
+) -> dict[str, JsonValue]:
+    """One page of the change feed after ``start`` (resolved, at most the head), as the reader
+    whose view ``snapshot`` is sees it; ``raw`` is the snapshot below the view (txs as stored),
+    ``migration`` the migration record of a seq (``MappedSnapshot.migration_record``),
+    ``digest`` the reader's ``ReadView.digest``.
+
+    Of a raw tx only ``touched`` is read (ids and revision numbers); each revision and the one
+    before come through ``snapshot``, so a hidden entity has no item (CF5), its id is in no
+    ``targets`` and a hidden attribute is in no ``changed``. A tx with no visible item has no
+    entry (CF6), a migration always has one (CF7); the tx-level keys are those of
+    ``history`` (CF10), from ``snapshot.tx`` (metadata only for a limited reader)."""
+    head = snapshot.seq
+    records: dict[int, Mapping[str, JsonValue] | None] = {}
+
+    def record(seq: int) -> Mapping[str, JsonValue] | None:
+        if seq not in records:
+            records[seq] = migration(seq)
+        return records[seq]
+
+    def items(seq: int, after: EntityId | None) -> Iterator[tuple[EntityId, dict[str, JsonValue]]]:
+        for entity, rev in touched_at(raw, seq):
+            if after is not None and entity <= after:
+                continue
+            item = _feed_item(snapshot, entity, rev)
+            if item is not None:
+                yield entity, item
+
+    found = page(start, head, limit, items, lambda seq: record(seq) is not None, scan_cap=scan_cap)
+    return {
+        "since": position_text(start),
+        "since_tx_id": _tx_id(snapshot, start.seq),
+        "head": head,
+        "next": position_text(found.next),
+        "next_tx_id": _tx_id(snapshot, found.next.seq),
+        "more": found.more,
+        "view": digest,
+        "items": [
+            _feed_entry(snapshot, entry, session, record(entry.seq)) for entry in found.entries
+        ],
+    }
+
+
+def _feed_item(snapshot: Snapshot, entity: EntityId, rev: int) -> dict[str, JsonValue] | None:
+    """The entity item of revision ``rev`` (CF9), ``None`` when the view hides the entity:
+    names and ids, never values."""
+    change = _revision_change(snapshot, entity, rev)
+    after = change.after
+    if after is None:
+        return None
+    shown, beyond = targets(change.before, after)
+    item: dict[str, JsonValue] = {
+        "id": str(entity),
+        "type": str(after.type),
+        "rev": rev,
+        "record_status": after.record_status,
+        "changed": change.changed,
+        "targets": [str(target) for target in shown],
+    }
+    if beyond:  # additive: more targets than an item lists
+        item["targets_more"] = beyond
+    return item
+
+
+def _feed_entry(
+    snapshot: Snapshot,
+    entry: FeedEntry[dict[str, JsonValue]],
+    session: str | None,
+    migration: Mapping[str, JsonValue] | None,
+) -> dict[str, JsonValue]:
+    """A tx of a feed page: the tx-level keys of ``history`` and the entity items."""
+    tx = snapshot.tx(entry.seq)
+    if tx is None:
+        raise GraphCliError("internal.error", f"tx {entry.seq} is missing below the head")
+    found: dict[str, JsonValue] = {
+        "tx_seq": entry.seq,
+        "tx_id": str(tx.tx_id),
+        "recorded_at": format_timestamp(tx.recorded_at),
+        **_tx_fields(tx, session),
+    }
+    if tx.request.action is not None:  # additive: set by a ``do``
+        found["action"] = tx.request.action.to_json()
+    if migration is not None:  # additive: a migration tx (CF7), its versions and summary
+        found["migration"] = _feed_migration(migration)
+    if entry.partial:  # additive: the tx goes on on the next page
+        found["partial"] = True
+    found["entities"] = list(entry.entities)
+    return found
+
+
+def _feed_migration(record: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """``{from, to, summary}`` of a migration record; ``summary`` only when the release had a
+    migration file, as in ``history``."""
+    found: dict[str, JsonValue] = {"from": record.get("from"), "to": record.get("to")}
+    summary = record.get("summary")
+    if isinstance(summary, str):
+        found["summary"] = summary
+    return found
+
+
+def _tx_id(snapshot: Snapshot, seq: int) -> str | None:
+    """The id of tx ``seq`` (``None`` for 0, before any tx): random, so it tells nothing
+    beyond the seq, also for a tx the reader sees nothing of (CF11)."""
+    if seq == 0:
+        return None
+    tx = snapshot.tx(seq)
+    if tx is None:
+        raise GraphCliError("internal.error", f"tx {seq} is missing below the head")
+    return str(tx.tx_id)
 
 
 def _migration_item(

@@ -1,5 +1,6 @@
-"""The pure core of the change feed: positions, the body read of a tx, edge targets."""
+"""The pure core of the change feed: positions, the body read of a tx, edge targets, paging."""
 
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -13,7 +14,9 @@ from graph_cli.kernel.ids import EntityId, EventId, GraphId
 from graph_cli.kernel.records import OntologyPin, RequestMeta, Revision, TxRecord
 from graph_cli.temporal_knowledge.changes import (
     TARGET_CAP,
+    FeedPage,
     FeedPosition,
+    page,
     parse_since,
     position_text,
     targets,
@@ -227,3 +230,89 @@ def test_targets_cap_is_a_parameter() -> None:
     listed, more = targets(None, created, cap=2)
     assert len(listed) == 2
     assert more == 1
+
+
+# ---- paging ----------------------------------------------------------------------------------
+
+
+class Log:
+    """What a reader sees of a log: per seq the visible entity names (ascending), the
+    migrations, and how many items each call of ``items`` handed out."""
+
+    def __init__(self, txs: dict[int, str], migrations: frozenset[int] = frozenset()) -> None:
+        self.txs = {seq: sorted(eid(name) for name in names) for seq, names in txs.items()}
+        self.migrations = migrations
+        self.pulled: list[int] = []
+
+    @property
+    def head(self) -> int:
+        return max(self.txs, default=0)
+
+    def items(self, seq: int, after: EntityId | None) -> Iterator[tuple[EntityId, str]]:
+        self.pulled.append(0)
+        for entity in self.txs.get(seq, []):
+            if after is None or entity > after:
+                self.pulled[-1] += 1
+                yield entity, f"{seq}:{entity}"
+
+    def page(self, start: FeedPosition, limit: int, cap: int = 1000) -> FeedPage[str]:
+        return page(start, self.head, limit, self.items, self.migrations.__contains__, scan_cap=cap)
+
+
+def seqs(found: FeedPage[str]) -> list[tuple[int, int, bool]]:
+    return [(e.seq, len(e.entities), e.partial) for e in found.entries]
+
+
+def test_a_page_holds_whole_txs_while_they_fit() -> None:
+    log = Log({1: "ab", 2: "", 3: "cde", 4: "f", 5: ""})
+    found = log.page(FeedPosition(0), 4)
+    assert seqs(found) == [(1, 2, False)]  # tx 3 does not fit behind tx 1
+    assert (found.next, found.more) == (FeedPosition(2), True)
+    rest = log.page(FeedPosition(2), 4)
+    assert seqs(rest) == [(3, 3, False), (4, 1, False)]
+    assert (rest.next, rest.more) == (FeedPosition(5), False)
+
+
+def test_a_tx_larger_than_a_page_is_split_and_resumed() -> None:
+    log = Log({1: "abcde"})
+    found = log.page(FeedPosition(0), 2)
+    assert seqs(found) == [(1, 2, True)]
+    assert found.next == FeedPosition(1, sorted(eid(n) for n in "abcde")[1])
+    middle = log.page(found.next, 2)
+    last = log.page(middle.next, 2)
+    assert seqs(middle) == [(1, 2, True)] and seqs(last) == [(1, 1, False)]
+    assert (last.next, last.more) == (FeedPosition(1), False)
+
+
+def test_items_are_read_no_further_than_the_page_needs() -> None:
+    log = Log({1: "ab", 2: "cdefgh"})
+    log.page(FeedPosition(0), 3)
+    assert log.pulled == [2, 2]  # tx 2: one item over the budget tells it does not fit
+    log.pulled.clear()
+    log.page(FeedPosition(1), 3)
+    assert log.pulled == [4]  # split: the budget and one more
+
+
+def test_a_migration_has_an_entry_without_items_but_a_remainder_never() -> None:
+    log = Log({1: "", 2: "a", 3: ""}, migrations=frozenset({1, 2}))
+    assert seqs(log.page(FeedPosition(0), 5)) == [(1, 0, False), (2, 1, False)]
+    assert seqs(log.page(FeedPosition(2, eid("a")), 5)) == []
+
+
+def test_the_scan_cap_bounds_the_txs_read() -> None:
+    log = Log({1: "", 2: "", 3: "", 4: "a"})
+    found = log.page(FeedPosition(0), 5, cap=2)
+    assert (seqs(found), found.next, found.more) == ([], FeedPosition(2), True)
+    first = EntityId(UUID(int=0))  # before every id
+    inside = log.page(FeedPosition(4, first), 5, cap=1)  # a remainder counts as a tx read
+    assert inside.next == FeedPosition(4) and not inside.more
+    assert len(log.pulled) == 3
+
+
+def test_a_page_at_the_head_is_empty_and_final() -> None:
+    log = Log({1: "a"})
+    found = log.page(FeedPosition(1), 5)
+    assert (seqs(found), found.next, found.more) == ([], FeedPosition(1), False)
+    assert log.pulled == []
+    with pytest.raises(ValueError, match="positive"):
+        log.page(FeedPosition(0), 0)
