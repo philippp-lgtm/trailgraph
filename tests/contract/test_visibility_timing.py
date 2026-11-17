@@ -1,6 +1,8 @@
 """A limited reader does not pay for its limit with the size of the graph (type read limits plan
 leak item 12): a ``find`` with a relation filter and a ``neighbors`` walk over a graph with many
-edges stay within a generous factor of what the reader who sees everything pays, on each store.
+edges stay within a generous factor of what the reader who sees everything pays, on each store;
+so does a page of the change feed over a thousand txs that write entities of a hidden type
+(change feed plan leak item 12).
 
 The factor catches an evaluation that reads every edge target of every candidate one by one
 (a read per edge instead of a memoised, batched type lookup); it is no benchmark. A small
@@ -26,7 +28,9 @@ from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import NeighborQuery, Query, RelConstraint
 from graph_cli.kernel.read_view import ReadView
+from graph_cli.services.read import change_page
 from graph_cli.services.visibility import VisibleSnapshot
+from graph_cli.temporal_knowledge.changes import FeedPosition
 
 pytestmark = pytest.mark.slow
 
@@ -38,9 +42,9 @@ DEFAULT_ALLOWANCE_S = 0.05
 REPEATS = 5
 
 
-def best_of(operation: Callable[[], object]) -> float:
+def best_of(operation: Callable[[], object], repeats: int = REPEATS) -> float:
     times = []
-    for _ in range(REPEATS):
+    for _ in range(repeats):
         started = time.perf_counter()
         operation()
         times.append(time.perf_counter() - started)
@@ -167,3 +171,57 @@ def test_a_reader_without_markings_stays_within_a_factor_of_a_holder(
     # the view strips something: the answers differ, so the comparison is not of equals
     first = limited.query(Query(limit=1)).items[0]
     assert "email" not in first.attrs and "email" in raw.query(Query(limit=1)).items[0].attrs
+
+
+# ---- the change feed (change feed plan leak item 12) ---------------------------------------
+
+FEED_TXS = 1000
+FEED_REPEATS = 3
+
+
+def test_a_feed_page_over_txs_of_a_hidden_type_stays_within_a_factor_of_the_unlimited_page(
+    backend: str, tmp_path: Path
+) -> None:
+    """One page reads 1,000 txs, each creating an entity of the hidden type and linking the
+    one before to it (two hidden revisions per tx), every tenth also a visible entity. The
+    limited reader reads each tx once and decides the type of every hidden revision once;
+    the factor catches a page that replays the log or looks a type up per revision."""
+    env = StoreEnv(backend, "inventory", tmp_path)
+    visible_type, hidden_type = env.builder.concrete_classes[:2]
+    previous: list[EntityId] = []
+
+    def tx(n: int) -> Callable[[TxDraft], None]:
+        def build(draft: TxDraft) -> None:
+            created = draft.create(hidden_type, alias=None)
+            if previous:
+                draft.link(previous[-1], REL, created)
+            previous.append(created)
+            if n % 10 == 0:
+                draft.create(visible_type, alias=None)
+
+        return build
+
+    for n in range(FEED_TXS):
+        env.write(tx(n))
+    allowance = ALLOWANCE_S.get(backend, DEFAULT_ALLOWANCE_S)
+    raw: Snapshot = env.store.snapshot()
+    limited: Snapshot = VisibleSnapshot(env.store.snapshot(), ReadView(frozenset({visible_type})))
+    assert raw.seq == FEED_TXS
+
+    def page(view: Snapshot) -> dict[str, object]:
+        return change_page(
+            view, raw, FeedPosition(0), 3 * FEED_TXS, session=None, migration=lambda _: None
+        )
+
+    unlimited = best_of(partial(page, raw), FEED_REPEATS)
+    paid = best_of(partial(page, limited), FEED_REPEATS)
+    assert paid <= FACTOR * unlimited + allowance, (
+        f"{paid * 1000:.1f} ms for the limited reader, {unlimited * 1000:.1f} ms for the "
+        "unlimited one"
+    )
+    # the limit filters something: the pages differ, so the comparison is not of equals
+    everything, visible = page(raw), page(limited)
+    assert (everything["next"], visible["next"]) == (f"tx:{FEED_TXS}",) * 2
+    assert everything["more"] is False and visible["more"] is False
+    assert len(everything["items"]) == FEED_TXS  # type: ignore[arg-type]
+    assert len(visible["items"]) == FEED_TXS // 10  # type: ignore[arg-type]

@@ -844,6 +844,155 @@ def test_as_of_reads_are_views_of_the_past(world: World) -> None:
     assert scan["error"]["code"] == "entity.not_found"
 
 
+# ---- changes -----------------------------------------------------------------------------
+
+
+def feed(run_cli: CliRunner, *args: str, since: str = "tx:0", limit: int = 500) -> Outcome:
+    return ok(run_cli, "changes", "--since", since, "--limit", str(limit), *args)
+
+
+def listed(outcome: Outcome, world: World) -> list[tuple[int, list[tuple[str, int]]]]:
+    """``[(tx_seq, [(local name, rev)])]`` of a feed page, the entities in feed order."""
+    return [
+        (e["tx_seq"], [(world.local(i["id"]), i["rev"]) for i in e["entities"]])
+        for e in outcome.data["items"]
+    ]
+
+
+def items(outcome: Outcome, world: World) -> dict[tuple[str, int], dict[str, Any]]:
+    return {
+        (world.local(i["id"]), i["rev"]): i for e in outcome.data["items"] for i in e["entities"]
+    }
+
+
+def test_changes_list_the_visible_part_of_every_tx(world: World) -> None:
+    run_cli = world.run_cli
+    everything = feed(run_cli)
+    assert everything.data["view"] is None and everything.data["more"] is False
+    full = listed(everything, world)
+    assert [seq for seq, _ in full] == [1, 2, 3, 4, 5, 6, 7]
+    assert (6, [("hidden_file", 1)]) in full  # the tx that stored the hidden plain file
+    raw_items = items(everything, world)
+    world.limit()
+    limited = feed(run_cli)
+    assert limited.data["view"] is not None
+    assert leaks(limited, world) == []
+    # the feed of the view is the full one without the hidden entities; a tx with nothing
+    # left has no entry, and ``next`` passes it
+    hidden = {*HIDDEN_LOCALS, "hidden_file"}
+    expected = [(seq, [e for e in ents if e[0] not in hidden]) for seq, ents in full]
+    expected = [(seq, ents) for seq, ents in expected if ents]
+    assert listed(limited, world) == expected
+    assert 6 not in {seq for seq, _ in expected}
+    assert (limited.data["head"], limited.data["next"]) == (7, "tx:7")
+    assert limited.data["more"] is False
+    assert (limited.data["since"], limited.data["since_tx_id"]) == ("tx:0", None)
+    assert limited.data["next_tx_id"] == everything.data["next_tx_id"]  # random ids tell nothing
+    shown = items(limited, world)
+    # a note with edges to a hidden topic and a visible page: only the visible target, and a
+    # revision that only linked a hidden topic is there with nothing changed
+    assert shown[("n", 1)]["targets"] == [world.ids["w"]]
+    assert sorted(raw_items[("n", 1)]["targets"]) == sorted([world.ids["t1"], world.ids["w"]])
+    none = {"attrs": [], "edges": {"added": [], "removed": [], "changed": []}, "record": []}
+    assert raw_items[("n", 2)]["changed"]["edges"]["added"] == ["nas:about"]
+    assert (shown[("n", 2)]["changed"], shown[("n", 2)]["targets"]) == (none, [])
+    assert shown[("o", 2)]["changed"]["attrs"] == ["title"]
+    assert (shown[("o", 3)]["changed"], shown[("o", 3)]["targets"]) == (none, [])
+    # a supersession by a hidden topic changes the status and nothing else; by a visible note
+    # the note that replaces shows the link to the old one
+    assert shown[("p", 2)]["record_status"] == "superseded"
+    assert shown[("p", 2)]["changed"] == {**none, "record": ["record_status"]}
+    assert ("t3", 2) in raw_items and ("t3", 2) not in shown
+    assert shown[("r", 2)]["changed"]["edges"]["added"] == ["core:supersedes"]
+    assert shown[("r", 2)]["targets"] == [world.ids["q"]]
+    assert shown[("q", 2)]["record_status"] == "superseded"
+    # the writer's words stay, as in history; the visible scan is there, the plain file not
+    by_seq = {e["tx_seq"]: e for e in limited.data["items"]}
+    assert by_seq[2]["reason"] == "one more topic" and by_seq[2]["command"] == "apply"
+    assert [i["type"] for i in by_seq[7]["entities"]] == ["nas:Scan"]
+    # the item lines agree with history of the same entity
+    for local in ("n", "o", "p"):
+        for item in ok(run_cli, "history", world.ids[local]).data["items"]:
+            entry = by_seq[item["tx_seq"]]
+            feed_item = next(i for i in entry["entities"] if i["id"] == world.ids[local])
+            assert (feed_item["rev"], feed_item["changed"]) == (item["rev"], item["changed"])
+            assert (entry["reason"], entry["command"]) == (item["reason"], item["command"])
+
+
+def test_changes_page_over_visible_items_and_resume_through_every_cursor(world: World) -> None:
+    run_cli = world.run_cli
+    world.limit()
+    whole = listed(feed(run_cli), world)
+    flat = [(seq, entity) for seq, ents in whole for entity in ents]
+    for limit in (1, 2, 3, 20):
+        got: list[tuple[int, tuple[str, int]]] = []
+        since, pages = "tx:0", 0
+        while True:
+            page = feed(run_cli, since=since, limit=limit)
+            assert leaks(page, world) == [], limit
+            pages += 1
+            shown = [(seq, e) for seq, ents in listed(page, world) for e in ents]
+            assert len(shown) <= limit  # counted over what the reader sees
+            got += shown
+            assert page.data["since"] == since
+            since = page.data["next"]
+            if not page.data["more"]:
+                break
+            assert shown or since != page.data["since"]
+        assert got == flat, limit
+        assert pages >= -(-len(flat) // limit), limit
+    # a page ends before a tx that does not fit: its ``next`` is the whole tx before
+    page = feed(run_cli, limit=9)  # the nine visible entities of tx 1 fill it
+    assert (page.data["next"], page.data["more"]) == ("tx:1", True)
+    assert [e["tx_seq"] for e in page.data["items"]] == [1]
+    assert not page.data["items"][0].get("partial")
+
+
+def test_a_cursor_inside_a_tx_is_a_sort_key_only(world: World) -> None:
+    """The entity id of a cursor is never looked up: a hidden, a visible and an unknown id
+    give the entities of that tx after it and the txs after, and no error."""
+    run_cli = world.run_cli
+    world.limit()
+    first = feed(run_cli).data["items"][0]
+    assert first["tx_seq"] == 1 and len(first["entities"]) > 2
+    for local in (*HIDDEN_LOCALS, "hidden_file", "n", "w"):
+        cursor = world.ids[local]
+        page = ok(run_cli, "changes", "--since", f"tx:1/{cursor}", "--limit", "500")
+        after = [i for i in first["entities"] if i["id"] > cursor]
+        seqs = [e["tx_seq"] for e in page.data["items"]]
+        assert seqs == [*([1] if after else []), 2, 3, 4, 5, 7], local
+        if after:
+            assert page.data["items"][0]["entities"] == after, local
+    missing = ok(run_cli, "changes", "--since", f"tx:1/{NOT_THERE}", "--limit", "500")
+    assert missing.data["items"][0]["entities"] == first["entities"]  # sorts before every id
+    # the hidden id is echoed as given, like any value the caller asked with
+    assert missing.data["since"] == f"tx:1/{NOT_THERE}"
+
+
+def test_a_position_can_be_a_time_and_a_seq_above_the_head_is_refused(world: World) -> None:
+    run_cli = world.run_cli
+    world.limit()
+    whole = feed(run_cli)
+    second = next(e for e in whole.data["items"] if e["tx_seq"] == 2)
+    by_time = feed(run_cli, since=second["recorded_at"])  # after the last tx at or before it
+    assert by_time.data["since"] == "tx:2"
+    assert [e["tx_seq"] for e in by_time.data["items"]] == [3, 4, 5, 7]
+    assert by_time.data["since_tx_id"] == second["tx_id"]
+    before = feed(run_cli, since="2000-01-01T00:00:00Z")
+    assert before.data["since"] == "tx:0" and before.data["items"] == whole.data["items"]
+    up_to_date = feed(run_cli, since="tx:7")
+    assert (up_to_date.data["items"], up_to_date.data["more"]) == ([], False)
+    assert up_to_date.data["since_tx_id"] == whole.data["next_tx_id"]
+    # a hidden tx at the end: nothing to deliver, the same answer as at the head
+    after_hidden = feed(run_cli, since="tx:6")
+    assert [e["tx_seq"] for e in after_hidden.data["items"]] == [7]
+    # above the head: the same refusal for a limited reader, naming the seq and the head
+    refused = read(run_cli, "changes", "--since", "tx:8")
+    assert (refused.code, refused.error["code"]) == (2, "usage.invalid_argument")
+    assert refused.error["details"] == {"argument": "--since", "actual": "tx:8", "head_seq": 7}
+    assert leaks(refused, world) == []
+
+
 # ---- describe ----------------------------------------------------------------------------
 
 SCHEMA_HIDDEN = (*HIDDEN_TERMS, '"Topic"', '"Book"', '"File"', '"about"', '"broader"')

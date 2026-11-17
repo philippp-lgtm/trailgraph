@@ -128,6 +128,38 @@ These are the fields an agent reads most. The envelope leaves out `data`,
 | `changed` | Names, not values: `attrs`, `edges` (`added`, `removed`, `changed`) and `record`; null for the first revision. |
 | `migration` | Only on a revision an ontology release wrote: `from` and `to` (versions), `summary`, and the `renames` and `steps` that changed this entity. |
 
+## Changes
+
+`graph changes --since tx:<seq>` lists what changed in the whole graph after a position, oldest first, as names and ids, never values (read those with `graph get` or `graph find`). `data.items` has one entry per transaction in which you see a change.
+
+| Field | Meaning |
+|---|---|
+| `since` | The position asked for, as `tx:<seq>` (or with an entity id). |
+| `since_tx_id` | The id of that transaction, null for `tx:0`. A stored `next_tx_id` that differs from it means the log you read is gone: start again from `tx:0`. |
+| `head` | The graph's seq. |
+| `next` | The position after this page: the `--since` of the next call. |
+| `next_tx_id` | The id of the transaction `next` names, null for `tx:0`. |
+| `more` | True when another call may return more. A page can be empty and still have `more`; you are up to date when it is false. |
+| `view` | Null without a read limit, else a digest of what you may see; start again from `tx:0` when it differs from the one you stored. |
+| `items` | The transactions, oldest first. |
+| `items[].tx_seq` | The transaction's seq. |
+| `items[].tx_id` | Its id. |
+| `items[].recorded_at` | When it was written. |
+| `items[].command` | The command that wrote it. |
+| `items[].reason` | The reason given, or null. |
+| `items[].own_session` | True when your own session wrote it. |
+| `items[].action` | Only on a write by `do`: `name` and `hash` of the action. |
+| `items[].migration` | Only on a data migration of an ontology release: `from`, `to` (versions) and `summary`. Re-read what you hold: names may have changed and an entity may have left your view. |
+| `items[].partial` | True when the transaction goes on on the next page. |
+| `items[].entities` | The entities it changed that you see. |
+| `items[].entities[].id` | The id. |
+| `items[].entities[].type` | The type. |
+| `items[].entities[].rev` | The revision; 1 is the creation. |
+| `items[].entities[].record_status` | `active`, `superseded` or `retracted`. |
+| `items[].entities[].changed` | Names, not values, as in History; null for the first revision. |
+| `items[].entities[].targets` | Ids of the entities at the other end of the relations this revision added, removed or changed; their view changed too. |
+| `items[].entities[].targets_more` | Only with more than 50 targets: how many more. |
+
 ## Write results
 
 `data` of a write; `graph apply` has one per document in `data.results[].result`. Error findings refuse the write and come in `error.details.findings`; warning findings ride along here.

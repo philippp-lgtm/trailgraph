@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:4ea3d614761b6045b794e3250e17b94b12376451c17e34bafe984b4dcd2babc3"
+  inventory_hash: "sha256:31ff74168854f81dc1e04cfa14beda0e23da888d7b0e0e7254a2116fabced502"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.23.2"
@@ -163,6 +163,7 @@ Every `--json` call prints one JSON object on stdout.
 | Command | Kind | Summary |
 |---|---|---|
 | `graph apply` | write | Apply change set documents (JSON or JSONL) from a file or stdin. |
+| `graph changes` | read | List what changed in the whole graph after a position, oldest first; paged. |
 | `graph connect` | meta | Set up this machine and a folder for a server, from a one-time enrollment code. |
 | `graph create` | write | Create one entity of a type. |
 | `graph describe action` | read | Describe one action: parameters, preconditions, operations and needed rights. |

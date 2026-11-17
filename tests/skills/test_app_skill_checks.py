@@ -400,8 +400,9 @@ class TestStructure:
         # rows, the action guidance in the write step; get --affordances (223); the
         # covering-function hint line (224); --full and the empty function value (225);
         # the `writes` object of `graph whoami` (226); the line on unseen fields and
-        # `markings` (227); reasons in English (228)
-        assert len(files["SKILL.md"].splitlines()) <= 228
+        # `markings` (227); reasons in English (228); the row of `graph changes` in the command
+        # table (229: generated, the prose is unchanged)
+        assert len(files["SKILL.md"].splitlines()) <= 229
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB

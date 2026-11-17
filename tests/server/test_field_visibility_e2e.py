@@ -7,7 +7,7 @@ markings, ``payroll`` reads and holds the personal marking only, ``reporting`` r
 update employees but holds no marking. Token A holds ``reporting``, token B ``hr``, token C
 ``payroll``. Requests go through ``ServerApp`` without a socket.
 
-A gets every read command (get, find, lookup, search, neighbors, query, run, history,
+A gets every read command (get, find, lookup, search, neighbors, query, run, history, changes,
 ``--as-of``, ``describe *``, the graph skill) without a trace of a marked attribute: no value,
 name, marking, count, rule or skill text. A filter, a sort, a field list or a write that names
 one is answered exactly as one that names an attribute the type does not declare, a write of the
@@ -263,6 +263,8 @@ def read_everything(world: World, who: str) -> dict[str, Reply]:
         "neighbors_full": ("neighbors", {"ref": "CREW-0001", "--depth": 2, "--full": True}),
         "history": ("history", {"ref": E1}),
         "history_e2": ("history", {"ref": E2}),
+        "changes": ("changes", {"--since": "tx:0", "--limit": 500}),
+        "changes_page": ("changes", {"--since": "tx:0", "--limit": 3}),
         "query_count": ("query", {"text": "MATCH (e:Employee) RETURN count(e) AS c"}),
         "query_edges": ("query", {"text": cypher}),
         "query_nodes": ("query", {"text": "MATCH (e:Employee) RETURN e"}),
@@ -338,6 +340,27 @@ def test_field_visibility_end_to_end(run_cli: CliRunner, world: World) -> None:
     for item in seen_by_a["history"].json["data"]["items"]:
         assert not set((item["changed"] or {"attrs": []})["attrs"]) & set(HIDDEN_NAMES)
 
+    # the feed names the same changes and never a marked attribute; a page resumes through
+    # its cursor to the same whole
+    feed = seen_by_a["changes"].json["data"]
+    assert feed["view"] is not None and feed["more"] is False
+    names = {
+        n
+        for e in feed["items"]
+        for i in e["entities"]
+        for n in (i["changed"] or {"attrs": []})["attrs"]
+    }
+    assert "phone" in names and not names & set(HIDDEN_NAMES), names
+    page, resumed = seen_by_a["changes_page"].json["data"], []
+    while True:
+        resumed += [i["id"] for e in page["items"] for i in e["entities"]]
+        if not page["more"]:
+            break
+        reply = world.ok("a", "changes", **{"--since": page["next"], "--limit": 3})
+        assert traces("changes_page", reply) == []
+        page = reply.json["data"]
+    assert resumed == [i["id"] for e in feed["items"] for i in e["entities"]]
+
     # 2. what A asks about a marked attribute is answered as about one the type lacks
     for hidden in ("weekly_hours", "salary", "badge_code", "pay_grade", "birth_date"):
         for path, make in (
@@ -374,6 +397,15 @@ def test_field_visibility_end_to_end(run_cli: CliRunner, world: World) -> None:
     text_b, source_b = skill_text(world, "b")
     assert "weekly_hours" in text_b and "marked stf:pay+stf:personal" in text_b
     assert "visible" not in source_b  # no limit, no digest
+    # the feed of a holder names the hidden attributes, under another view digest
+    feed_b = seen_by_b["changes"].json["data"]
+    names_b = {
+        n
+        for e in feed_b["items"]
+        for i in e["entities"]
+        for n in (i["changed"] or {"attrs": []})["attrs"]
+    }
+    assert {"weekly_hours", "email", "pay_grade"} <= names_b and feed_b["view"] is None
     held_by_c = world.attrs("c", E1)
     assert held_by_c["email"] == "ada@new.example" and "salary" not in held_by_c
     assert held_by_c["weekly_hours"] == 35
@@ -449,6 +481,13 @@ def test_field_visibility_end_to_end(run_cli: CliRunner, world: World) -> None:
     world.ok("b", "update", ref=E1, **{"--set": ["weekly_hours=36", "salary=95000.00"]})
     assert world.attrs("b", E1)["weekly_hours"] == 36
     assert world.attrs("b", E1)["salary"] == "95000.00"
+    # the feed of A lists both writes: the phone, and the hidden-only update with nothing
+    # changed (a documented residual) and no trace of what it set
+    after_feed = world.ok("a", "changes", **{"--since": "tx:0", "--limit": 500})
+    assert traces("changes", after_feed) == []
+    last_two = after_feed.json["data"]["items"][-2:]
+    assert [e["entities"][0]["changed"]["attrs"] for e in last_two] == [["phone"], []]
+    assert [e["entities"][0]["id"] for e in last_two] == [last_two[0]["entities"][0]["id"]] * 2
     assert world.ask("c", "update", ref=E1, **{"--set": ["weekly_hours=37"]}).status == 403
     # an action that sets a marked attribute is not found for A and runs for B
     for name in ("set_email", "set_salary", "set_grade", "set_phone_badged"):

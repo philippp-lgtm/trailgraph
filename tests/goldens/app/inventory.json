@@ -135,6 +135,83 @@
     },
     {
       "path": [
+        "changes"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": "read.history",
+      "summary": "List what changed in the whole graph after a position, oldest first; paged.",
+      "args": [],
+      "options": [
+        {
+          "name": "--since",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "Where to start: tx:<seq>, tx:<seq>/<entity id> (a next of the answer) or an RFC 3339 time with offset."
+        },
+        {
+          "name": "--limit",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Entity items per page, at most 500.",
+          "default": 100
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph changes --since tx:0 --json",
+          "summary": "Every change from the start."
+        },
+        {
+          "command": "graph changes --since tx:<seq> --graph <graph> --json",
+          "summary": "Continue after a position, the next of the last answer."
+        },
+        {
+          "command": "graph changes --since 2030-01-01T12:00:00Z --json",
+          "summary": "What changed since a time."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {
+        "limit": 500
+      },
+      "remote": "server"
+    },
+    {
+      "path": [
         "connect"
       ],
       "kind": "meta",
