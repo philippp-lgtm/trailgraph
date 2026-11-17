@@ -22,7 +22,8 @@ from support.fixtures import EXAMPLES, example_model
 from support.services import OpsFactory
 
 ONTOLOGY = EXAMPLES / "company" / "ontology" / "1.1.0"
-ENV = {"GRAPH_CLI_GRAPH": "company"}
+# A fixed session, so ``own_session`` does not depend on the environment the tests run in.
+ENV = {"GRAPH_CLI_GRAPH": "company", "GRAPH_CLI_SESSION_ID": "feed-session"}
 FACTORY = OpsFactory(example_model("company", "1.1.0"))
 
 
