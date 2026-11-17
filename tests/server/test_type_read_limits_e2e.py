@@ -242,6 +242,7 @@ def build() -> list[dict[str, Any]]:
 GRAPH = {"--graph": "example_graph"}
 CONCRETE = (
     "files:File",
+    "files:FormatMetadata",
     "nas:Book",
     "nas:Note",
     "nas:Scan",
@@ -638,7 +639,7 @@ def test_type_read_limits_end_to_end(
     ]
     assert rows(seen_by_b["query_count"]) == [{"c": 6}]
     assert sorted(t["curie"] for t in seen_by_b["describe_types"].json["data"]["types"]) == sorted(
-        [*CONCRETE, "nas:Source"]
+        [*CONCRETE, "files:Metadata", "files:MetadataPart", "nas:Source"]
     )
     assert world.traces(seen_by_b["describe_schema"].body.decode()) != []
     assert rows(seen_by_b["lookup_hidden_label"]) != []

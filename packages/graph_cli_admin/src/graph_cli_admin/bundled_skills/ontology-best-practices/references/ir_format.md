@@ -340,6 +340,7 @@ never use `edge_id`, `rel`, `target`, `target_rev`, `valid_from`,
 | `core` (always) | relations `core:supersedes`, `core:retracts` (written only by `graph supersede` and `graph retract`), `core:derived_from`, `core:source` | always available |
 | `provenance` | class `provenance:Claim` (`statement`, `confidence`), relations `provenance:supported_by`, `provenance:contradicts` | statements whose evidence and confidence matter |
 | `files` | class `files:File` (stored bytes, `title`, `media_type`, origin), relation `files:from_file` with qualifiers `page`, `last_page`, `locator` | the graph stores documents or points into them |
+| `files_pdf`, `files_image`, `files_table`, `files_sqlite` (each imports `files ^1.1`) | the record class of one kind of file (`PdfMetadata`, `ImageMetadata`, `TableMetadata`, `SqliteMetadata` with `SqliteObject` parts), subclass of the abstract `files:Metadata` | the graph stores that kind of file and wants its derived metadata (page count, pixel size, columns, tables); importing the module enables the extractor, never model such records by hand |
 
 Import with `imports: [{module: files, version: "^1.0"}]`. Subclass
 `files:File` for a domain meaning of a file (a scan, a contract).

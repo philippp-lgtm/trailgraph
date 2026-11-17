@@ -12,7 +12,43 @@
           "detail": {},
           "kind": "add_class",
           "level": "minor",
+          "path": "classes.files:FormatMetadata"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files:Metadata"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files:MetadataPart"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
           "path": "classes.nas:Scan"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:ColumnName"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:Count"
+        },
+        {
+          "detail": {},
+          "kind": "add_datatype",
+          "level": "minor",
+          "path": "datatypes.files:ExtractorVersion"
         },
         {
           "detail": {},
@@ -34,6 +70,18 @@
         },
         {
           "detail": {},
+          "kind": "add_enum",
+          "level": "minor",
+          "path": "enums.files:ExtractionStatus"
+        },
+        {
+          "detail": {},
+          "kind": "add_enum",
+          "level": "minor",
+          "path": "enums.files:TextEncoding"
+        },
+        {
+          "detail": {},
           "kind": "add_import",
           "level": "minor",
           "path": "modules.files"
@@ -43,6 +91,12 @@
           "kind": "add_relation",
           "level": "minor",
           "path": "relations.files:from_file"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.files:metadata_of"
         }
       ],
       "from": "1.0.0",
@@ -69,6 +123,56 @@
       "level": "minor",
       "schema": "graph_cli.ontology_diff/1",
       "to": "1.2.0"
+    },
+    {
+      "changes": [
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files_pdf:PdfMetadata"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files_sqlite:SqliteMetadata"
+        },
+        {
+          "detail": {},
+          "kind": "add_class",
+          "level": "minor",
+          "path": "classes.files_sqlite:SqliteObject"
+        },
+        {
+          "detail": {},
+          "kind": "add_enum",
+          "level": "minor",
+          "path": "enums.files_sqlite:SqliteObjectKind"
+        },
+        {
+          "detail": {},
+          "kind": "add_import",
+          "level": "minor",
+          "path": "modules.files_pdf"
+        },
+        {
+          "detail": {},
+          "kind": "add_import",
+          "level": "minor",
+          "path": "modules.files_sqlite"
+        },
+        {
+          "detail": {},
+          "kind": "add_relation",
+          "level": "minor",
+          "path": "relations.files_sqlite:has_object"
+        }
+      ],
+      "from": "1.2.0",
+      "level": "minor",
+      "schema": "graph_cli.ontology_diff/1",
+      "to": "1.3.0"
     }
   ],
   "ontology": "notes_and_sources",

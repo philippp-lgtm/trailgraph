@@ -1,0 +1,230 @@
+# Toy ontology A (test_fixtures.md): provenance, supersede, claims through
+# the opt-in provenance module, inheritance, qualifiers, a DAG relation.
+# 1.1.0 imports the opt-in files module: scans are stored files, and notes
+# point to the file and page they were taken from.
+# 1.2.0 adds glossary entries named and explained in several languages
+# (language-tagged values).
+# 1.3.0 imports two kinds of derived file metadata, PDF and SQLite, which enables
+# their extractors (the files module is imported at its metadata version).
+format: graph_cli.ir/1
+module:
+  id: notes_and_sources
+  prefix: nas
+  version: 1.3.0
+  summary: Notes about topics that cite their sources and assert claims.
+  imports:
+    - {module: provenance, version: "^1.0"}
+    - {module: files, version: "^1.1"}
+    - {module: files_pdf, version: "^1.0"}
+    - {module: files_sqlite, version: "^1.0"}
+
+datatypes:
+  Isbn:
+    summary: ISBN-10 or ISBN-13 without separators.
+    base: string
+    pattern: '^(?:[0-9]{9}[0-9X]|[0-9]{13})$'
+  Heading:
+    summary: A short name in one language.
+    base: lang_string
+    max_length: 80
+    single_line: true
+
+enums:
+  NoteKind:
+    summary: What a note records.
+    values:
+      observation: {summary: Something seen or measured.}
+      summary: {summary: A condensed restatement of sources.}
+      question: {summary: An open question.}
+
+lifecycles:
+  NoteLifecycle:
+    summary: Editorial state of a note.
+    states:
+      draft: {summary: Being written., initial: true}
+      published: {summary: Visible and citable.}
+      archived: {summary: Kept for history only., terminal: true}
+    transitions:
+      - from: draft
+        to: published
+        summary: Publish the note.
+        guards:
+          - id: body_not_empty
+            summary: A note needs a body before it is published.
+            require:
+              - {attr: body, nonempty: true}
+      - {from: published, to: draft, summary: Take the note back for editing.}
+      - {from: [draft, published], to: archived, summary: Archive the note.}
+
+classes:
+  Source:
+    summary: Where information comes from.
+    abstract: true
+    attributes:
+      title:
+        summary: Title of the source.
+        type: string
+        required: true
+        role: label
+      retrieved_at:
+        summary: When the source was last retrieved.
+        type: date
+        mutability: operational
+  WebPage:
+    summary: A page on the web.
+    is_a: Source
+    attributes:
+      url:
+        summary: Address of the page.
+        type: iri
+        required: true
+        mutability: immutable
+  Book:
+    summary: A published book.
+    is_a: Source
+    attributes:
+      isbn:
+        summary: ISBN of the edition.
+        type: Isbn
+        mutability: immutable
+      publisher:
+        summary: Publishing house.
+        type: string
+  Note:
+    summary: A short piece of writing about one or more topics.
+    display_prefix: NOTE
+    attributes:
+      title:
+        summary: Headline of the note.
+        type: string
+        required: true
+        role: label
+      body:
+        summary: Text of the note.
+        type: text
+        required: true
+      kind:
+        summary: What the note records.
+        type: NoteKind
+        required: true
+      status:
+        summary: Editorial state.
+        lifecycle: NoteLifecycle
+        required: true
+  Scan:
+    summary: A scanned paper document.
+    is_a: files:File
+    display_prefix: SCAN
+    attributes:
+      scanned_on:
+        summary: Day the paper was scanned.
+        type: date
+        mutability: immutable
+  GlossaryEntry:
+    summary: A word of the notes, named and explained in several languages.
+    display_prefix: GLOSS
+    attributes:
+      heading:
+        summary: The main name, at most one per language.
+        type: Heading
+        many: true
+        required: true
+        role: label
+      variant_names:
+        summary: Other names and abbreviations, in any language.
+        type: lang_string
+        many: true
+        role: alt_label
+      explanation:
+        summary: What the word means.
+        type: lang_text
+        many: true
+      usage_hint:
+        summary: When to use the word.
+        type: lang_string
+        default: '"in notes"@en'
+  Topic:
+    summary: A subject that notes are about.
+    display_prefix: TOPIC
+    attributes:
+      label:
+        summary: Unique name of the topic.
+        type: string
+        required: true
+        unique: true
+        role: label
+      synonyms:
+        summary: Other names of the topic, including abbreviations.
+        type: string
+        many: true
+        role: alt_label
+      misspellings:
+        summary: Wrong spellings that should still find the topic; never shown.
+        type: string
+        many: true
+        role: hidden_label
+      description:
+        summary: What the topic covers.
+        type: text
+
+relations:
+  cites:
+    summary: The note uses information from the source.
+    domain: Note
+    range: Source
+    inverse_label: cited_by
+    qualifiers:
+      locator:
+        summary: Page, section or anchor within the source.
+        type: string
+  about:
+    summary: The note is about the topic.
+    domain: Note
+    range: Topic
+    cardinality: {out: {min: 1}}
+    inverse_label: has_note
+  broader:
+    summary: The target topic is more general than the source topic.
+    domain: Topic
+    range: Topic
+    characteristics: [acyclic, transitive]
+    inverse_label: narrower
+  asserts:
+    summary: The note asserts the claim.
+    domain: Note
+    range: provenance:Claim
+    inverse_label: asserted_in
+
+rules:
+  - id: summary_cites_source
+    summary: A published summary note cites at least one source.
+    severity: error
+    when: write
+    scope: Note
+    if:
+      - {attr: status, equals_string: published}
+      - {attr: kind, equals_string: summary}
+    then:
+      - count: {rel: cites}
+        minimum_value: 1
+  - id: topic_not_orphan
+    summary: A topic has notes or narrower topics.
+    severity: warning
+    when: batch
+    scope: Topic
+    then:
+      - any_of:
+          - {count: {rel: about, direction: in}, minimum_value: 1}
+          - {count: {rel: broader, direction: in}, minimum_value: 1}
+  - id: source_cited
+    summary: Every source is cited by at least one note.
+    severity: warning
+    when: batch
+    scope: Source
+    then:
+      - {count: {rel: cites, direction: in}, minimum_value: 1}
+
+mappings:
+  Note: {close: ["schema:NoteDigitalDocument"]}
+  WebPage: {exact: ["schema:WebPage"]}
+  Book: {exact: ["schema:Book"]}

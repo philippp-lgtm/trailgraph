@@ -59,6 +59,7 @@ types:
 """
 CONCRETE = (
     "files:File",
+    "files:FormatMetadata",
     "nas:Book",
     "nas:Note",
     "nas:Scan",

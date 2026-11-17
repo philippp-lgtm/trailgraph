@@ -36,6 +36,7 @@ from graph_cli.ontology_layer.values import check_facets, coerce_text
 from graph_cli.ontology_layer.vocabulary import (
     ATTRIBUTE_ONLY_BASES,
     BASE_TYPES,
+    BUILTIN_MODULES,
     EDGE_FIELDS,
     FACETS_BY_BASE,
     LABEL_BASES,
@@ -279,8 +280,12 @@ class _Validator:
                             actual=attribute.name,
                         )
                     labels.append(f"{curie}.{attribute.name}")
-            if cls.abstract and not any(
-                self.b.parent(m, c) == curie for m, _, c in self.b.classes()
+            # A standard module's abstract class is an extension point (``files:MetadataPart``):
+            # its subclasses live in the modules that import it, so it is not judged alone.
+            if (
+                cls.abstract
+                and module_id not in BUILTIN_MODULES
+                and not any(self.b.parent(m, c) == curie for m, _, c in self.b.classes())
             ):
                 self.add(
                     "model.semantic.abstract_never_subclassed",

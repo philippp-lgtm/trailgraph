@@ -10,7 +10,7 @@ no attribute uses.
 
 from pathlib import Path
 
-from support.fixtures import compiled_model
+from support.fixtures import assert_same_but_unused_standard_terms, compiled_model
 from support.markings import CONTRACTOR, EMPLOYEE, STAFF, twin_model
 
 from graph_cli.kernel.ids import GraphId, parse_id
@@ -44,7 +44,7 @@ def test_the_view_of_a_caller_without_markings_is_the_twin() -> None:
 def test_a_view_without_an_attribute_half_keeps_every_attribute() -> None:
     types = concrete_types(STAFF_MODEL.classes)
     kept = filter_model(STAFF_MODEL, types)
-    assert kept.to_json() == STAFF_MODEL.to_json()  # every type visible: nothing changes
+    assert_same_but_unused_standard_terms(kept, STAFF_MODEL)  # every type visible: no change
     assert filter_model(STAFF_MODEL, None).to_json() == STAFF_MODEL.to_json()
     # a holder of every marking has no attribute half at all
     assert attribute_mask(STAFF_MODEL, {"stf:personal", "stf:pay"}) is None

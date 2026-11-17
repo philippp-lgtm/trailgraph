@@ -1,12 +1,16 @@
 # Opt-in standard module for stored files (document ingestion slice 1).
 # Graphs that keep files import it; the bytes live in the graph's blob store,
 # entities point to a file and a place inside it with files:from_file.
+# Since 1.1.0 it also holds the derived metadata of a file: one record per
+# extractor (files:Metadata), written only by graph_cli's extractors. The
+# opt-in modules files_pdf, files_image, files_table and files_sqlite add the
+# record classes of one kind of file each; importing one enables its extractor.
 format: graph_cli.ir/1
 module:
   id: files
   prefix: files
-  version: 1.0.0
-  summary: Stored files with where they came from and places inside them.
+  version: 1.1.0
+  summary: Stored files with where they came from, places inside them and derived metadata.
 
 datatypes:
   MediaType:
@@ -17,10 +21,45 @@ datatypes:
     summary: A page number counted from 1.
     base: integer
     min: 1
+  Count:
+    summary: A number of things or bytes, zero or more.
+    base: integer
+    min: 0
+  ExtractorVersion:
+    summary: Version number of an extractor, counted from 1.
+    base: integer
+    min: 1
   Line:
     summary: Text on a single line.
     base: string
     single_line: true
+  ColumnName:
+    summary: The name of a column on one line, shortened to 200 characters.
+    base: string
+    single_line: true
+    max_length: 200
+
+enums:
+  ExtractionStatus:
+    summary: What an extractor made of a file.
+    values:
+      ok:
+        summary: The metadata were extracted; the record holds them.
+      failed:
+        summary: The type applies but the bytes cannot be read as it; the problem says why.
+      not_applicable:
+        summary: An earlier version of the extractor applied to the file, the current one does not.
+  TextEncoding:
+    summary: Character encoding of a file detected as text.
+    values:
+      utf_8:
+        summary: UTF-8 without a byte order mark.
+      utf_8_sig:
+        summary: UTF-8 with a byte order mark.
+      utf_16_le:
+        summary: UTF-16, little endian, with a byte order mark.
+      utf_16_be:
+        summary: UTF-16, big endian, with a byte order mark.
 
 classes:
   File:
@@ -64,7 +103,80 @@ classes:
         type: date
         mutability: immutable
 
+  Metadata:
+    abstract: true
+    summary: Derived metadata of one file, the current result of one extractor.
+    description: >-
+      Read only: written by graph_cli's extractors and refused for anyone
+      else. A new version of an extractor updates the same record, `history`
+      shows what earlier versions said. A failed or no longer applicable run
+      is recorded as such, and then the attributes of a subclass are unset.
+    attributes:
+      key:
+        summary: The extractor name and the id of the file, `<extractor>/<file id>`.
+        type: Line
+        required: true
+        unique: true
+        mutability: immutable
+      extractor:
+        summary: Name of the extractor that wrote the record.
+        type: Line
+        required: true
+        mutability: immutable
+      extractor_version:
+        summary: Version of the extractor that wrote the current content.
+        type: ExtractorVersion
+        required: true
+      status:
+        summary: Whether the extraction succeeded, failed or no longer applies.
+        type: ExtractionStatus
+        required: true
+      problem:
+        summary: Stable code of why the extraction failed, such as pdf.unreadable or limit.time.
+        type: Line
+  MetadataPart:
+    abstract: true
+    summary: An entity owned by one metadata record, such as a table of a database file.
+    description: >-
+      Written only by graph_cli's extractors, together with its record: a new
+      version of an extractor keeps the parts it still produces, adds new ones
+      and retracts the ones it no longer produces.
+    attributes:
+      key:
+        summary: The key of the record and the name of the part, `<record key>/<part name>`.
+        type: Line
+        required: true
+        unique: true
+        mutability: immutable
+      name:
+        summary: Name of the part inside its record.
+        type: Line
+        required: true
+        role: label
+  FormatMetadata:
+    is_a: Metadata
+    summary: Format of a file decided from its bytes, never from its name.
+    attributes:
+      detected_media_type:
+        summary: Media type detected from the bytes.
+        type: MediaType
+      media_type_mismatch:
+        summary: The media type the file was added with cannot be true of the detected one.
+        type: boolean
+      size:
+        summary: Size of the file in bytes.
+        type: Count
+      text_encoding:
+        summary: Character encoding, for files detected as text.
+        type: TextEncoding
+
 relations:
+  metadata_of:
+    summary: The metadata record describes the file.
+    domain: Metadata
+    range: File
+    cardinality: {out: {min: 1, max: 1}}
+    inverse_label: has_metadata
   from_file:
     summary: Information in the source entity was taken from the file.
     range: File

@@ -1,0 +1,30 @@
+# Opt-in standard module: metadata of image files (file metadata plan, stage 1).
+# Importing it enables the image extractor for the graph: every stored PNG, JPEG, GIF
+# or WebP image gets one files_image:ImageMetadata record. Camera and location data
+# (EXIF) are not extracted.
+format: graph_cli.ir/1
+module:
+  id: files_image
+  prefix: files_image
+  version: 1.0.0
+  summary: Derived metadata of image files, such as the size in pixels.
+  imports:
+    - {module: files, version: "^1.1"}
+
+datatypes:
+  Pixels:
+    summary: A length in pixels, at least 1.
+    base: integer
+    min: 1
+
+classes:
+  ImageMetadata:
+    is_a: files:Metadata
+    summary: What the header of an image file declares about itself.
+    attributes:
+      width:
+        summary: Width in pixels as stored, before any rotation the file asks for.
+        type: Pixels
+      height:
+        summary: Height in pixels as stored, before any rotation the file asks for.
+        type: Pixels

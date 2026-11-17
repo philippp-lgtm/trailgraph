@@ -1,0 +1,69 @@
+# Opt-in standard module: metadata of delimited text tables (file metadata plan, stage 1).
+# Importing it enables the table extractor for the graph: a stored file added as CSV or
+# TSV whose bytes are text with a recognizable dialect gets one
+# files_table:TableMetadata record.
+format: graph_cli.ir/1
+module:
+  id: files_table
+  prefix: files_table
+  version: 1.0.0
+  summary: Derived metadata of CSV and TSV files, such as delimiter, columns and rows.
+  imports:
+    - {module: files, version: "^1.1"}
+
+enums:
+  Delimiter:
+    summary: The character that separates the fields of a row.
+    values:
+      comma:
+        summary: A comma.
+      semicolon:
+        summary: A semicolon.
+      tab:
+        summary: A tab.
+      pipe:
+        summary: A vertical bar.
+      colon:
+        summary: A colon.
+      space:
+        summary: A space.
+  QuoteChar:
+    summary: The character that encloses a field containing the delimiter.
+    values:
+      double:
+        summary: A double quote.
+      single:
+        summary: A single quote.
+      none:
+        summary: Fields are not enclosed.
+
+classes:
+  TableMetadata:
+    is_a: files:Metadata
+    summary: The dialect and shape of a delimited text table.
+    description: >-
+      A file whose bytes are text but show no recognizable dialect has status
+      failed. Rows are counted after the header row when there is one.
+    attributes:
+      delimiter:
+        summary: Field separator.
+        type: Delimiter
+      quote_char:
+        summary: Enclosing character of fields.
+        type: QuoteChar
+      has_header:
+        summary: The first row holds column names.
+        type: boolean
+      column_count:
+        summary: Number of columns of the first row.
+        type: files:Count
+      row_count:
+        summary: Number of data rows, without the header row.
+        type: files:Count
+      column_names:
+        summary: Names of the first 200 columns when the table has a header row.
+        type: files:ColumnName
+        many: true
+      columns_truncated:
+        summary: The table has more columns than column_names lists.
+        type: boolean
