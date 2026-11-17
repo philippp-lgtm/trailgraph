@@ -63,6 +63,8 @@ MAX_OPS: Final = 1000
 MAX_BYTES: Final = 8 * 1024 * 1024
 MAX_REASON: Final = 2000
 MAX_RECONCILE_SCOPES: Final = 32
+# Ops of a document after its reconcile part is expanded, its own ops included (R-K13).
+MAX_RECONCILE_OPS: Final = 5000
 MAX_KEY_BYTES: Final = 512  # an item key, ``under`` or a ``keep``/``moves`` key, in UTF-8
 
 NAME_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")  # attributes, qualifiers, states, locals

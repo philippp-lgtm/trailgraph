@@ -93,8 +93,12 @@ from graph_cli.kernel.records import (
     content_projection,
 )
 from graph_cli.ontology_layer.model import AttributeDef, ClassDef, CompiledModel, QualifierDef
-from graph_cli.ontology_layer.values import coerce_text, with_language
-from graph_cli.ontology_layer.vocabulary import LANG_BASES
+from graph_cli.ontology_layer.stored_values import (
+    coerce_attribute,
+    coerce_attribute_item,
+    is_tagged,
+    language_tagged,
+)
 from graph_cli.temporal_knowledge.working import WorkingState
 
 SUPERSEDES: Final = TermRef("core:supersedes")
@@ -238,17 +242,13 @@ class _Run:
         return edge
 
     def is_tagged(self, field: AttributeDef | QualifierDef | None) -> bool:
-        return field is not None and self.model.value_base(field.kind, field.type) in LANG_BASES
+        return is_tagged(self.model, field)
 
     def with_language(
         self, field: AttributeDef | QualifierDef | None, value: JsonValue
     ) -> JsonValue:
         """A value of ``field`` with the graph language on untagged language-tagged text."""
-        if not self.is_tagged(field):
-            return value
-        if isinstance(value, list | tuple):
-            return [with_language(item, self.default_language) for item in value]
-        return with_language(value, self.default_language)
+        return language_tagged(self.model, field, value, self.default_language)
 
     def tag(self, type: str, attrs: dict[str, JsonValue], names: Iterable[str]) -> None:
         cls = self.cls(type)
@@ -258,20 +258,14 @@ class _Run:
 
     def coerce(self, type: str, name: str, text: str) -> JsonValue:
         cls = self.cls(type)
-        attribute = None if cls is None else cls.attributes.get(name)
-        value = self.coerce_item(type, name, text)
-        return [value] if attribute is not None and attribute.many else value
+        return coerce_attribute(self.model, None if cls is None else cls.attributes.get(name), text)
 
     def coerce_item(self, type: str, name: str, text: str) -> JsonValue:
         """One value of the attribute from text; the text itself if it does not coerce."""
         cls = self.cls(type)
-        attribute = None if cls is None else cls.attributes.get(name)
-        if attribute is None:
-            return text
-        try:
-            return coerce_text(self.model.value_base(attribute.kind, attribute.type), text)
-        except ValueError:
-            return text
+        return coerce_attribute_item(
+            self.model, None if cls is None else cls.attributes.get(name), text
+        )
 
     def array_texts(self, type: str, texts: Mapping[str, Sequence[str]]) -> tuple[str, ...]:
         """The ``many`` attributes given a text that reads as a JSON array."""

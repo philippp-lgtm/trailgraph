@@ -34,7 +34,7 @@ Dependencies point down only. Enforced by import-linter
 | Extensions | `extensions` |
 | Services | `services` |
 | Cross-cutting (independent of each other) | `audit`, `access_control`, `temporal_knowledge`, `storage` |
-| Named read functions and write actions | `kinetic` |
+| Named read functions and write actions; source planners | `kinetic`, `sources` (independent of each other) |
 | Query model | `query` |
 | Schema IR | `ontology_layer` |
 | Kernel | `kernel` |
@@ -49,7 +49,8 @@ sits above
 and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
-`query`; the layers above may use it. The storage maintenance port
+`query`; the layers above may use it. `sources` imports only `kernel` and
+`ontology_layer`. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. The S3 client
 (`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,
@@ -179,6 +180,15 @@ looked up with `importlib.metadata`;
 `catalog.identity` builds the one `ActorContext` per invocation. Only
 `catalog` and the admin wiring may read the process environment.
 Locations and keys: [Configuration](configuration.md).
+
+## Source planners
+
+`graph_cli.sources` holds the pure planners for data that external sources hand over;
+like `kinetic` it needs no storage and no services, and the layers above use it.
+
+| Module | Content |
+| --- | --- |
+| `sources.reconcile` | `plan_reconcile` turns the `reconcile` part of a change set document into ops over a `Snapshot` and the model: key namespace of each scope, moves and adoptions, field and edge diff after the coercion a write applies (`ontology_layer.stored_values`), retire and revive, the guards that refuse a document (`reconcile.*` codes), op order and the per-scope counts; `expanded` appends the plan to the document's own ops |
 
 ## Named read functions and write actions
 
