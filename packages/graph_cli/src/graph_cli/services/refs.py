@@ -35,6 +35,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Literal
+from uuid import UUID
 
 from graph_cli.access_control.documents import CURIE_RE, NAME_RE
 from graph_cli.kernel.actions import Action
@@ -75,6 +76,29 @@ NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
 
 
 FineTerm = tuple[Action, TermRef, str, str]  # (action, type, "attr" | "rel", name or CURIE)
+
+
+def subject_refs(op: Op) -> list[EntityRef]:
+    """The references an op changes the entities of (a create has none: its entity is new)."""
+    match op:
+        case CreateOp():
+            return []
+        case SupersedeOp():
+            return [op.by, *op.targets]
+        case RetractOp():
+            return [op.id] if op.by is None else [op.id, op.by]
+    return [op.id]
+
+
+def entity_of(ref: EntityRef, refs: Mapping[str, EntityId]) -> EntityId | None:
+    """The existing entity a reference names; ``None`` for a create of this document."""
+    match ref:
+        case LocalRef(name):
+            return refs.get(f"@{name}")
+        case AliasRef(alias):
+            return refs[alias]
+    assert isinstance(ref, UUID)
+    return ref
 
 
 @dataclass(frozen=True, slots=True)
