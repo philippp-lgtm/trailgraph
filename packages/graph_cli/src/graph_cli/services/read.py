@@ -832,10 +832,18 @@ class ReadService:
             warnings += (warning,)
             if not past and view.attributes_limited and state.version is not None:
                 past = state.earlier and names.unmapped_version(state.version)
-        mapping = MappedSnapshot(snapshot, names, current=past)
+        # A class the pinned model has and the reader may not see judges the revisions
+        # that were stored under it too, though a retype maps them to another class (F1b).
+        mapping = MappedSnapshot(
+            snapshot,
+            names,
+            current=past,
+            classes=full.classes,
+            shown=view.shows_type if view.types_limited else None,
+        )
         snapshot = mapping
         if view.limited:
-            snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped)
+            snapshot = VisibleSnapshot(snapshot, view, mapping.unmapped, mapping.own_class)
         warnings = (*warnings, *snapshot.warnings)
         self.usage.graph = graph_json(entry, snapshot.seq)
         return GraphRead(entry, model, snapshot, warnings, actor, request.command, view, mapping)

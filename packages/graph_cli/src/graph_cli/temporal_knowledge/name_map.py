@@ -269,6 +269,16 @@ class NameMap:
             mapped = hop.mapping.apply(mapped)
         return revision if mapped is revision else with_content_hash(mapped)
 
+    def own_class(self, revision: Revision) -> str:
+        """The class ``revision`` was stored under, under the current names: followed through
+        the class renames of the hops it is mapped through, never through a ``retype`` (the
+        class an entity had before a retype is another class than the one it has now, and
+        stays the name the stored class is judged by). ``map`` gives the retyped name."""
+        name: str = revision.type
+        for hop in self._hops_from(revision.ontology_version):
+            name = hop.renames.classes.get(name, name)
+        return name
+
     def hop(self, old_version: str, new_version: str) -> Hop | None:
         """The hop of the pin switch ``old_version`` -> ``new_version`` (the latest one)."""
         found = [

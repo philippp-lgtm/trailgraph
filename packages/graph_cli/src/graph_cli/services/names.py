@@ -14,7 +14,9 @@ Three pieces, all opened by ``ReadService.open``:
 - ``GraphNames`` is one graph at one pin for one request: ``map`` returns a revision of the
   pinned major as it is, without building anything.
 - ``MappedSnapshot`` implements the ``Snapshot`` port over a raw snapshot (layered raw store
-  -> mapped -> ``VisibleSnapshot``, so read limits judge the mapped type). **Current
+  -> mapped -> ``VisibleSnapshot``, so read limits judge the mapped type, and for a revision a
+  ``retype`` moved to another class also the class it was stored under, ``own_class``: F82,
+  F1b). **Current
   revisions are never mapped** (``current=False``, every head read): after a major release
   every current revision fits the pin whatever its ``ontology_version``. Past revisions
   (``get_revision``, ``history``) are mapped. An ``--as-of`` state whose names changed since
@@ -35,7 +37,7 @@ from __future__ import annotations
 import re
 import sys
 import threading
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import replace
 from functools import cached_property
 from itertools import pairwise
@@ -249,6 +251,14 @@ class GraphNames:
             return revision
         return self.name_map.map(revision)
 
+    def own_class(self, revision: Revision) -> str:
+        """The class ``revision`` was stored under, under the pin's names, followed through
+        renames only (``NameMap.own_class``); the stored type for a revision of the pinned
+        major."""
+        if not other_major(revision.ontology_version, self.entry.pin.version):
+            return revision.type
+        return self.name_map.own_class(revision)
+
     def unmapped(self, revision: Revision) -> bool:
         """Whether ``map`` hands ``revision`` out under names the map cannot vouch for
         (``NameMap.unmapped``); a revision of the pinned major never is."""
@@ -261,13 +271,28 @@ class MappedSnapshot:
     """A ``Snapshot`` that hands out revisions under the pin's names (see the module
     docstring). One per request; it remembers every revision it mapped."""
 
-    def __init__(self, inner: Snapshot, names: GraphNames, *, current: bool) -> None:
+    def __init__(
+        self,
+        inner: Snapshot,
+        names: GraphNames,
+        *,
+        current: bool,
+        classes: Container[str] = (),
+        shown: Callable[[str], bool] | None = None,
+    ) -> None:
         self._inner = inner
         self.names = names
         self._current = current
+        # The concrete classes of the pinned model: the class a retyped revision was stored
+        # under is kept (``own_class``) only when the pinned model still has it.
+        self._classes = classes
+        # With ``current``, whether a reader may see a class: the evaluation universe leaves
+        # out the revisions it may not see by their own class (``own_class``).
+        self._shown = shown
         self._revisions: dict[tuple[EntityId, int], Revision] = {}
         self._mapped: set[tuple[EntityId, int]] = set()
         self._unmapped: set[tuple[EntityId, int]] = set()
+        self._own: dict[tuple[EntityId, int], str] = {}
         # The last tx read: the change feed asks for one tx several times in a row (its
         # revisions, its migration record, its metadata through the view).
         self._last_tx: tuple[int, TxRecord | None] | None = None
@@ -303,6 +328,19 @@ class MappedSnapshot:
         chain): a reader limited to some attributes sees none of its attributes (R3)."""
         return (entity, rev) in self._unmapped
 
+    def own_class(self, entity: EntityId, rev: int) -> str | None:
+        """The class this snapshot handed out revision ``rev`` of ``entity`` as another class
+        than the one it was stored under (a ``retype`` of a major release moved the entity),
+        as the pinned model names it; ``None`` for any other revision, and when the pinned
+        model no longer has that class (nothing judges the revision but its mapped type)."""
+        return self._own.get((entity, rev))
+
+    def _barred(self, revision: Revision) -> bool:
+        """Whether the evaluation universe leaves ``revision`` out: its own class is one the
+        reader may not see."""
+        own = self._own.get((revision.id, revision.rev))
+        return own is not None and self._shown is not None and not self._shown(own)
+
     def _map(self, revision: Revision) -> Revision:
         key = (revision.id, revision.rev)
         found = self._revisions.get(key)
@@ -310,6 +348,10 @@ class MappedSnapshot:
             found = self._revisions[key] = self.names.map(revision)
             if found is not revision:
                 self._mapped.add(key)
+                if found.type != revision.type:
+                    own = self.names.own_class(revision)
+                    if own != found.type and own in self._classes:
+                        self._own[key] = own
             if self.names.unmapped(revision):
                 self._unmapped.add(key)
         return found
@@ -359,6 +401,8 @@ class MappedSnapshot:
         found = []
         for source, edge in self._inner.incoming(entity):
             revision = self.get(source)
+            if revision is not None and self._barred(revision):
+                continue
             mapped = _edge(revision, edge) if revision is not None else edge
             if rel is None or mapped.rel == rel:
                 found.append((source, mapped))
@@ -383,12 +427,15 @@ class MappedSnapshot:
     # ---- the universe of the reference evaluator (current=True only) --------
 
     def current(self, entity: EntityId) -> Revision | None:
-        return self.get(entity)
+        found = self.get(entity)
+        return None if found is None or self._barred(found) else found
 
     def current_revisions(self, types: frozenset[TermRef] = frozenset()) -> Iterator[Revision]:
         """Every current revision, mapped, in id order. The type hint names current types,
         which stored revisions may not carry yet, so it is not passed down (callers filter)."""
-        yield from self._universe
+        for revision in self._universe:
+            if not self._barred(revision):
+                yield revision
 
     @cached_property
     def _universe(self) -> tuple[Revision, ...]:

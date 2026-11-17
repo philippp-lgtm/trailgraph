@@ -204,6 +204,11 @@ are accepted and known:
   entity had a hidden type at the time of the revision (a `retype` moved it since). The
   edge shows that a link to something existed then, and the target is one the caller can read
   today.
+- **A class the model dropped judges nothing.** Revisions that an entity had under a class
+  the pinned model no longer has (a `retype` moved it, a later release removed the class) are
+  judged by the class the mapping shows, as the class the entity has now. A caller who may
+  see that class reads those revisions, the values in them included, although it could not
+  have read them as the dropped class, whose visibility no policy can decide.
 - **The change feed shows the same activity.** `graph changes` lists only the
   entities the caller sees, and a transaction with none has no entry, so the
   `tx_seq` of its entries have gaps; a gap tells that a transaction happened

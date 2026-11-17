@@ -657,10 +657,15 @@ exactly as before. The graph itself stays as visible as the grant makes it
   numbers they were stored under, so the numbers can have a gap. The first revision shown is
   a creation for the caller (`changed` is `null`, every edge is a target of the feed item),
   and every later one is compared with the latest revision shown before it. An entity moved
-  into a hidden class is hidden as a whole. A revision that a major release maps to the
-  current names is judged by its mapped type ([Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)):
-  a `retype` maps the old class to the new one, so such a revision reads as the class the
-  entity has now.
+  into a hidden class is hidden as a whole. A major release shows the revisions before it
+  under the current names, and a `retype` shows the old class as the new one
+  ([Earlier revisions under current names](cli_graph.md#earlier-revisions-under-current-names)).
+  The caller's view judges such a revision by that mapped class and also by the class it was
+  stored under, followed through renames only: when the pinned model still has that class and
+  the caller cannot see it, the revision is absent, and so are the values in it, though the
+  entity reads as the new class today. The same holds for `--as-of`: an entity that was of
+  the hidden class then is absent in that state. A class the pinned model no longer has judges
+  nothing, so those revisions read as the class the entity was moved to.
 - **The model.** `describe types|type|fields|relations|lifecycle|modules|
   module|schema|search` show a model without the hidden types and what only they
   carry: a relation whose domain or range has no visible type, attributes
