@@ -615,9 +615,9 @@ in order:
 
 The whole data stays below 6 KiB: the caps above, then, if a card is still
 larger (long labels, ids instead of aliases), a fixed order of trimming
-(the `field` of the neighbours, neighbours per group to one, trailing groups to `more_groups`, values to 40
-characters, trailing fields to `other`, file references), after which `cut`
-is true. Whatever is left out is counted, never dropped silently, and an
+(the `field` of the neighbours, neighbours per group to one, trailing groups to
+`more_groups`, values to 40 characters, trailing fields to `other`, file
+references), after which `cut` is true. Whatever is left out is counted, never dropped silently, and an
 envelope hint names the command that reads it: `neighbors REF --rel
 <relation>` for neighbours, `get REF --fields <names>` for attributes. The
 same input gives the same bytes. The text form puts each group, the files
