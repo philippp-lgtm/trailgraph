@@ -12,10 +12,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from support.extractor_corpus import CORPUS
+from support.extractor_corpus import CORPUS, corpus_names, recorded_media_type
 
 from graph_cli.extractors import runner
-from graph_cli.extractors.model import ExtractionResult, Transient
+from graph_cli.extractors.detect import DETECT_BYTES, detect_content
+from graph_cli.extractors.model import ExtractionResult, RunInput, Transient
+from graph_cli.extractors.registry import extractors
 from graph_cli.extractors.runner import ExtractLimits, materialized, run_extractor
 
 CHILD = (
@@ -182,3 +184,24 @@ def test_the_real_child_reads_a_materialized_blob() -> None:
         result = run_extractor("format", path, "text/csv")
     assert isinstance(result, ExtractionResult)
     assert result.values["size"] == len(data)
+
+
+def _applicable() -> list[tuple[str, str]]:
+    detected = {
+        name: detect_content((CORPUS / name).read_bytes()[:DETECT_BYTES]).media_type
+        for name in corpus_names()
+    }
+    return [
+        (extractor.name, name)
+        for extractor in extractors().values()
+        for name in corpus_names()
+        if extractor.accepts(detected[name], recorded_media_type(name))
+    ]
+
+
+@pytest.mark.parametrize(("extractor", "name"), _applicable())
+def test_a_child_answers_what_the_extractor_computes_in_process(extractor: str, name: str) -> None:
+    """The process boundary changes nothing: the answer is the same JSON the golden pins."""
+    recorded = recorded_media_type(name)
+    expected = extractors()[extractor].run(RunInput(CORPUS / name, recorded))
+    assert run_extractor(extractor, CORPUS / name, recorded) == expected

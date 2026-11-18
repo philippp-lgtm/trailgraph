@@ -645,6 +645,22 @@
           "type": "files:Line",
           "unique": true
         },
+        "objects_truncated": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The database has more tables and views than the 500 listed as objects.",
+          "type": "boolean",
+          "unique": false
+        },
         "problem": {
           "annotations": {},
           "declared_in": "files:Metadata",

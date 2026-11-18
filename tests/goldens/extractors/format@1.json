@@ -25,6 +25,32 @@
       }
     }
   },
+  "corrupt.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/vnd.sqlite3",
+        "media_type_mismatch": false,
+        "size": 83
+      }
+    }
+  },
+  "damaged.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/pdf",
+        "media_type_mismatch": false,
+        "size": 65
+      }
+    }
+  },
   "database.sqlite": {
     "recorded_media_type": "application/octet-stream",
     "result": {
@@ -52,6 +78,32 @@
       }
     }
   },
+  "encrypted.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/pdf",
+        "media_type_mismatch": false,
+        "size": 635
+      }
+    }
+  },
+  "header.jpg": {
+    "recorded_media_type": "image/jpeg",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/jpeg",
+        "media_type_mismatch": false,
+        "size": 47
+      }
+    }
+  },
   "letter.docx": {
     "recorded_media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "result": {
@@ -62,6 +114,45 @@
         "detected_media_type": "application/zip",
         "media_type_mismatch": false,
         "size": 138
+      }
+    }
+  },
+  "lossless.webp": {
+    "recorded_media_type": "image/webp",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/webp",
+        "media_type_mismatch": false,
+        "size": 27
+      }
+    }
+  },
+  "lossy.webp": {
+    "recorded_media_type": "image/webp",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/webp",
+        "media_type_mismatch": false,
+        "size": 30
+      }
+    }
+  },
+  "names.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "application/vnd.sqlite3",
+        "media_type_mismatch": false,
+        "size": 3584
       }
     }
   },
@@ -159,6 +250,33 @@
       }
     }
   },
+  "single_column.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 17,
+        "text_encoding": "utf8"
+      }
+    }
+  },
+  "small.gif": {
+    "recorded_media_type": "image/gif",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/gif",
+        "media_type_mismatch": false,
+        "size": 28
+      }
+    }
+  },
   "table.csv": {
     "recorded_media_type": "text/csv",
     "result": {
@@ -173,6 +291,48 @@
       }
     }
   },
+  "table.tsv": {
+    "recorded_media_type": "text/tab-separated-values",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 36,
+        "text_encoding": "utf8"
+      }
+    }
+  },
+  "table_noheader.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 24,
+        "text_encoding": "utf8"
+      }
+    }
+  },
+  "table_quoted.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 65,
+        "text_encoding": "utf8"
+      }
+    }
+  },
   "table_semicolon.csv": {
     "recorded_media_type": "text/csv",
     "result": {
@@ -183,6 +343,20 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 38,
+        "text_encoding": "utf8"
+      }
+    }
+  },
+  "table_wide.csv": {
+    "recorded_media_type": "text/csv",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "text/plain",
+        "media_type_mismatch": false,
+        "size": 1304,
         "text_encoding": "utf8"
       }
     }
@@ -224,6 +398,19 @@
         "detected_media_type": "application/pdf",
         "media_type_mismatch": false,
         "size": 523
+      }
+    }
+  },
+  "truncated.png": {
+    "recorded_media_type": "image/png",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "detected_media_type": "image/png",
+        "media_type_mismatch": false,
+        "size": 20
       }
     }
   }

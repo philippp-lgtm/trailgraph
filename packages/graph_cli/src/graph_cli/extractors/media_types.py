@@ -31,6 +31,7 @@ EXTENSIONS: Final[Mapping[str, str]] = {
     ".txt": "text/plain",
     ".md": "text/markdown",
     ".csv": "text/csv",
+    ".tsv": "text/tab-separated-values",
     ".html": "text/html",
     ".htm": "text/html",
     ".json": "application/json",

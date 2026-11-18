@@ -40,6 +40,9 @@ classes:
       user_version:
         summary: The user_version pragma the application stored in the file header.
         type: files:Count
+      objects_truncated:
+        summary: The database has more tables and views than the 500 listed as objects.
+        type: boolean
   SqliteObject:
     is_a: files:MetadataPart
     summary: A table or view of a SQLite database file.

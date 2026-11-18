@@ -60,30 +60,28 @@ def golden_path(extractor: Extractor) -> Path:
 
 
 def assert_version_golden(extractor: Extractor, produced: dict[str, JsonValue]) -> None:
-    """Pin the output of ``name@version``.
+    """Pin the output of ``name@version`` per corpus file.
 
-    The golden of a version is append-only. ``GRAPH_CLI_UPDATE_GOLDENS=1`` creates a missing
-    one and adds the entries of corpus files the golden does not have yet, but never changes
-    an entry that is there: output that changes without a version bump fails.
+    An entry of the golden is written once: ``GRAPH_CLI_UPDATE_GOLDENS=1`` adds the entries of
+    new corpus files (or the whole golden of a new version) and never rewrites one that exists.
+    Output that changes without a version bump therefore fails; the corpus can still grow.
     """
     path = golden_path(extractor)
-    text = json.dumps(produced, indent=2, sort_keys=True) + "\n"
-    if UPDATE_GOLDENS:
-        if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
-        else:
-            existing = json.loads(path.read_text())
-            unchanged = all(produced.get(name) == entry for name, entry in existing.items())
-            if unchanged and set(produced) - set(existing):
-                path.write_text(text)
-    assert path.exists(), (
-        f"missing golden {path.name}; a new extractor or version needs one: "
-        "run with GRAPH_CLI_UPDATE_GOLDENS=1"
+    pinned: dict[str, JsonValue] = json.loads(path.read_text()) if path.exists() else {}
+    missing = sorted(set(produced) - set(pinned))
+    if UPDATE_GOLDENS and missing:
+        pinned.update({name: produced[name] for name in missing})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(pinned, indent=2, sort_keys=True) + "\n")
+        missing = []
+    assert not missing, (
+        f"{path.name} has no entry for {missing}; a new extractor, version or corpus file "
+        "needs one: run with GRAPH_CLI_UPDATE_GOLDENS=1"
     )
-    assert path.read_text() == text, (
-        f"{extractor.name}@{extractor.version} produces other output than its golden: bump "
-        f"`version` of the extractor (any change that can change output does, a library "
-        f"upgrade included) and create the new golden; for a version that was never released, "
-        f"delete {path.name} and regenerate"
+    changed = sorted(name for name in produced if produced[name] != pinned[name])
+    assert not changed, (
+        f"{extractor.name}@{extractor.version} produces other output than its golden for "
+        f"{changed}: bump `version` of the extractor (any change that can change output does, "
+        "a library upgrade included) and create the new golden; for a version that was never "
+        f"released, delete {path.name} and regenerate"
     )

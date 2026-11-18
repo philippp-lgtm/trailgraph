@@ -1,0 +1,107 @@
+{
+  "archive.zip": "not_applicable",
+  "binary_renamed.csv": "not_applicable",
+  "corrupt.sqlite": "not_applicable",
+  "damaged.pdf": "not_applicable",
+  "database.sqlite": "not_applicable",
+  "empty.txt": "not_applicable",
+  "encrypted.pdf": "not_applicable",
+  "header.jpg": {
+    "recorded_media_type": "image/jpeg",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 3,
+        "width": 4
+      }
+    }
+  },
+  "letter.docx": "not_applicable",
+  "lossless.webp": {
+    "recorded_media_type": "image/webp",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 8,
+        "width": 7
+      }
+    }
+  },
+  "lossy.webp": {
+    "recorded_media_type": "image/webp",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 6,
+        "width": 5
+      }
+    }
+  },
+  "names.sqlite": "not_applicable",
+  "notes.txt": "not_applicable",
+  "notes_bom.txt": "not_applicable",
+  "notes_gzip.txt": "not_applicable",
+  "notes_utf16.txt": "not_applicable",
+  "one_page.pdf": "not_applicable",
+  "pixel.png": {
+    "recorded_media_type": "image/png",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 2,
+        "width": 3
+      }
+    }
+  },
+  "pixel_named.jpg": {
+    "recorded_media_type": "image/jpeg",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 1,
+        "width": 1
+      }
+    }
+  },
+  "single_column.csv": "not_applicable",
+  "small.gif": {
+    "recorded_media_type": "image/gif",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "height": 3,
+        "width": 2
+      }
+    }
+  },
+  "table.csv": "not_applicable",
+  "table.tsv": "not_applicable",
+  "table_noheader.csv": "not_applicable",
+  "table_quoted.csv": "not_applicable",
+  "table_semicolon.csv": "not_applicable",
+  "table_wide.csv": "not_applicable",
+  "text.odt": "not_applicable",
+  "text_renamed.pdf": "not_applicable",
+  "three_pages.pdf": "not_applicable",
+  "truncated.png": {
+    "recorded_media_type": "image/png",
+    "result": {
+      "parts": [],
+      "problem": "image.unreadable",
+      "status": "failed",
+      "values": {}
+    }
+  }
+}
