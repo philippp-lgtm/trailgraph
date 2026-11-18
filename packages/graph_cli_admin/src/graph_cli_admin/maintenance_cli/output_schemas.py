@@ -96,7 +96,7 @@ def _republished() -> Schema:
             "compiled_hash": obj({"from": STRING, "to": STRING}),
         }
     )
-    return obj({}, {"functions": one, "actions": one})
+    return obj({}, {"functions": one, "actions": one, "views": one})
 
 
 def _references() -> Schema:
@@ -121,7 +121,8 @@ def _references() -> Schema:
                 "functions": array(named),
                 "actions": array(named),
                 "policy": array(rule),
-            }
+            },
+            {"views": array(named)},  # only when the graph has published views
         )
     )
 
@@ -273,6 +274,16 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
                 "details": OPEN,
             }
         ),
+        "view_problem": obj(  # graph_cli.kinetic.params.Problem.to_json for views
+            {
+                "view": STRING,
+                "code": STRING,
+                "message": STRING,
+                "path": NULLABLE_STRING,
+                "line": nullable(INTEGER),
+                "details": OPEN,
+            }
+        ),
         "functions_summary": obj(CATALOG_SUMMARY),  # kernel.ports.catalog.KineticSlot.summary
         "actions_summary": obj(CATALOG_SUMMARY),  # the same for kind actions
         "views_summary": obj(CATALOG_SUMMARY),  # the same for kind views
@@ -283,6 +294,9 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
             {"count": INTEGER, "hash": STRING}
         ),
         "source_actions": obj(  # the same for the actions
+            {"count": INTEGER, "hash": STRING}
+        ),
+        "source_views": obj(  # the same for the views
             {"count": INTEGER, "hash": STRING}
         ),
         "policy_document": _policy_document(),

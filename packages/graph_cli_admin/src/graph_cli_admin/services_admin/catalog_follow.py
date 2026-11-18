@@ -1,5 +1,5 @@
-"""Published function and action catalogs follow a release that renames terms (migration plan
-M8).
+"""Published function, action and view catalogs follow a release that renames terms (migration
+plan M8).
 
 A published catalog keeps the authored sources and the compiled document the app reads. The
 compiled queries hold the resolved names, CURIEs even where the source used bare names, so a
@@ -13,7 +13,11 @@ published catalog and the model a release brings:
   hash stays, so ``change.<kind>.from`` equals ``to`` and ``compiled_hash`` differs, which the
   audit verifier accepts (an interrupted republish of the same sources);
 - otherwise its problems stand and the release is refused (``admin.functions_broken``,
-  ``admin.actions_broken``), unless the push that carries the release replaces the catalog.
+  ``admin.actions_broken``, ``admin.views_broken``), unless the push that carries the release
+  replaces the catalog.
+
+The actions are checked against the names of the functions, the views against the function
+entries the graph will have (the ``rows`` sections run them).
 
 ``write`` is the W.e shape of a catalog switch, shared by ``graph <kind> publish`` and by a
 release that republishes.
@@ -28,13 +32,15 @@ from graph_cli.audit import events
 from graph_cli.kernel.authz import Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_value
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.json_access import as_object, req_list, req_str
+from graph_cli.kernel.json_access import JsonShapeError, as_object, req_list, req_str
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kinetic.action_compile import check_actions, compile_actions
 from graph_cli.kinetic.compile import check_catalog, compile_catalog
+from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.params import Problem
+from graph_cli.kinetic.view_compile import check_views, compile_views
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.models import ModelCache
 from graph_cli.services.names import NameMaps, hinted_problems
@@ -76,28 +82,48 @@ def names_of(slot: KineticSlot | None) -> frozenset[str]:
     return frozenset(req_str(as_object(e, key), "name") for e in req_list(slot.compiled, key))
 
 
+def function_entries(slot: KineticSlot | None) -> tuple[FunctionEntry, ...]:
+    """The functions of a published catalog (none for a missing one); a catalog that does not
+    read counts as none, so the views that need a function are the ones that refuse."""
+    if slot is None:
+        return ()
+    try:
+        return load_entries(slot.compiled)
+    except JsonShapeError:
+        return ()
+
+
 def catalog_problems(
     slot: KineticSlot | None,
     model: CompiledModel,
     *,
     function_names: frozenset[str] | None = None,
+    functions: tuple[FunctionEntry, ...] = (),
 ) -> list[Problem]:
     """The problems a published catalog has against ``model``; none for a missing one.
-    ``function_names`` are the functions the graph has: an action may not share a name."""
+    ``function_names`` are the functions the graph has: an action may not share a name;
+    ``functions`` are their entries, which the ``rows`` sections of a view run."""
     if slot is None:
         return []
     if slot.kind == "functions":
         return check_catalog(slot.compiled, model)
+    if slot.kind == "views":
+        return check_views(slot.compiled, model, functions)
     return check_actions(slot.compiled, model, function_names=function_names or frozenset())
 
 
 def compiled_from_sources(
-    slot: KineticSlot, model: CompiledModel, function_names: frozenset[str]
+    slot: KineticSlot,
+    model: CompiledModel,
+    function_names: frozenset[str],
+    functions: tuple[FunctionEntry, ...] = (),
 ) -> tuple[JsonObject, list[Problem]]:
     """The authored sources of ``slot`` compiled against ``model`` (what publishing them
     again would store)."""
     if slot.kind == "functions":
         compiled, problems = compile_catalog(slot.files, model)
+    elif slot.kind == "views":
+        compiled, problems = compile_views(slot.files, model, functions)
     else:
         compiled, problems = compile_actions(slot.files, model, function_names=function_names)
     return dict(compiled), problems
@@ -110,16 +136,17 @@ def follow(
     *,
     recompile: bool,
     function_names: frozenset[str] | None = None,
+    functions: tuple[FunctionEntry, ...] = (),
 ) -> Followed:
     """The published catalog against ``model``, the model of the release pinned as ``pin``.
     ``recompile``: the release carries renames or a migration, so a catalog that does not
     resolve is compiled again from its sources before it blocks."""
-    problems = catalog_problems(slot, model, function_names=function_names)
+    problems = catalog_problems(slot, model, function_names=function_names, functions=functions)
     if not problems or slot is None:
         return Followed(None, [])
     if not recompile or not slot.files:
         return Followed(None, problems)
-    compiled, found = compiled_from_sources(slot, model, function_names or frozenset())
+    compiled, found = compiled_from_sources(slot, model, function_names or frozenset(), functions)
     if found:
         return Followed(None, found)
     names = tuple(sorted({p.name for p in problems}))

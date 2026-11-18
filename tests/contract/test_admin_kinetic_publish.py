@@ -1,7 +1,9 @@
 """Publishing functions, actions and views re-checks under the graph lock (W.6): what the first,
 lock-free check saw may be stale when the lock is taken."""
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support.admin_context import admin_context
@@ -155,3 +157,77 @@ def test_a_view_published_after_the_first_check_still_blocks_the_functions(
     assert caught.value.code == "admin.views_broken"
     slot = ctx.catalog.read_functions(graph.id)
     assert slot is not None and slot.count == 2  # the old catalog stays
+
+
+def one_function(tmp_path: Path) -> Path:
+    """The functions folder without ``items_by_condition``."""
+    folder = tmp_path / "one_function"
+    folder.mkdir()
+    (folder / "items_in_location.yaml").write_bytes(
+        (FUNCTIONS / "items_in_location.yaml").read_bytes()
+    )
+    return folder
+
+
+def between(
+    ctx: AdminContext, monkeypatch: pytest.MonkeyPatch, action: Callable[[], object]
+) -> None:
+    """Run ``action`` once, right before the publish under test takes the graph lock: no stamp is
+    replaced, so the real comparison of what the first check saw with what the lock sees runs."""
+    real = ctx.maintenance.maintenance_session
+    done: list[bool] = []
+
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        if not done:
+            done.append(True)
+            action()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(ctx.maintenance, "maintenance_session", wrapped)
+
+
+def test_functions_that_shrink_before_the_views_take_the_lock_refuse_the_views(
+    ctx: AdminContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    functions.publish(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    shrunk = one_function(tmp_path)
+    between(
+        ctx,
+        monkeypatch,
+        lambda: functions.publish(
+            ctx, graph_ref="example_graph", source=shrunk, reason=None, dry_run=False
+        ),
+    )
+    with pytest.raises(GraphCliError) as caught:
+        authored_views.publish(
+            ctx, graph_ref="example_graph", source=VIEWS, reason=None, dry_run=False
+        )
+    assert caught.value.code == "admin.views_invalid"
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_views(graph.id) is None
+    functions_slot = ctx.catalog.read_functions(graph.id)
+    assert functions_slot is not None and functions_slot.count == 1
+
+
+def test_views_published_before_the_functions_take_the_lock_refuse_the_functions(
+    ctx: AdminContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    functions.publish(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    shrunk = one_function(tmp_path)
+    between(
+        ctx,
+        monkeypatch,
+        lambda: authored_views.publish(
+            ctx, graph_ref="example_graph", source=VIEWS, reason=None, dry_run=False
+        ),
+    )
+    with pytest.raises(GraphCliError) as caught:
+        functions.publish(ctx, graph_ref="example_graph", source=shrunk, reason=None, dry_run=False)
+    assert caught.value.code == "admin.views_broken"
+    graph = ctx.catalog.resolve("example_graph")
+    functions_slot, views_slot = (
+        ctx.catalog.read_functions(graph.id),
+        ctx.catalog.read_views(graph.id),
+    )
+    assert functions_slot is not None and functions_slot.count == 2
+    assert views_slot is not None and views_slot.count == 3

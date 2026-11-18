@@ -14,7 +14,10 @@
   ``admin.functions_broken``; ``functions`` in the data lists the problems. The
   published action catalog is checked the same way (``check_actions``, against the
   function names of the graph): ``admin.actions_broken``, ``actions`` in the data.
-  When both are broken, the functions are refused first (fix, check again).
+  The published view catalog is checked against the model and those functions
+  (``check_views``): ``admin.views_broken``, ``views`` in the data (only when views are
+  published). When several are broken, the functions are refused first, then the actions, then
+  the views (fix, check again).
 - Error findings fail with ``admin.data_errors`` (counts and findings in the
   details); warnings and info findings alone succeed.
 - An authored ontology of another version with a ``migration.yaml`` is previewed as the
@@ -29,8 +32,8 @@
   deny rule that names a renamed term and no new one fails with ``admin.policy_renamed_term``,
   as the release would; published functions and actions that would be compiled again and
   published with the release are listed in ``republished``; those that cannot be are
-  ``admin.functions_broken`` / ``admin.actions_broken`` as before. A release that would show
-  marked values under a name declared without the marking fails with
+  ``admin.functions_broken`` / ``admin.actions_broken`` / ``admin.views_broken`` as before. A
+  release that would show marked values under a name declared without the marking fails with
   ``ontology.marking_name_reused`` (``marking_names``), its warnings come along.
 """
 
@@ -69,6 +72,7 @@ from graph_cli_admin.services_admin.release import (
     follow_published,
     functions_broken,
     republished_json,
+    views_broken,
 )
 
 
@@ -138,10 +142,11 @@ def check(
     codes = Counter(f.code for f in findings)
     slot = ctx.catalog.read_functions(entry.id, sources=True)
     published = ctx.catalog.read_actions(entry.id, sources=True)
+    catalog = ctx.catalog.read_views(entry.id, sources=True)
     # what the release would do with the catalogs: publish them again or leave them broken
     recompile = file is not None or (renames is not None and migrations.has_renames(renames))
-    followed_functions, followed_actions = follow_published(
-        slot, published, model, pin, recompile=recompile
+    followed_functions, followed_actions, followed_views = follow_published(
+        slot, published, catalog, model, pin, recompile=recompile
     )
     problems, action_problems = followed_functions.problems, followed_actions.problems
     data: dict[str, JsonValue] = {
@@ -160,9 +165,14 @@ def check(
             "problems": [p.to_json() for p in action_problems],
         },
     }
+    if catalog is not None:  # a graph without views answers as it did
+        data["views"] = {
+            "count": catalog.count,
+            "problems": [p.to_json() for p in followed_views.problems],
+        }
     if block is not None:
         data["migration"] = block
-    republished = republished_json(followed_functions, followed_actions)
+    republished = republished_json(followed_functions, followed_actions, followed_views)
     if republished:
         data["republished"] = republished
     if has_errors(findings):
@@ -183,6 +193,8 @@ def check(
         raise functions_broken(problems, bump, advice="")
     if action_problems:
         raise actions_broken(action_problems, bump, advice="")
+    if followed_views.problems:
+        raise views_broken(followed_views.problems, bump, advice="")
     return CheckOutcome(entry, data, snapshot.seq, warnings)
 
 

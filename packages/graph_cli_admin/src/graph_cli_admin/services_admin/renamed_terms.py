@@ -222,22 +222,25 @@ def references(
     *,
     functions: KineticSlot | None,
     actions: KineticSlot | None,
+    views: KineticSlot | None = None,
 ) -> list[JsonValue]:
-    """Per renamed term, where the graph's policy, functions and actions name the old one;
-    terms nobody names are left out. Classes and relations are found in the catalogs (their
-    CURIEs appear in the stored form); attributes are bare names there and show through the
-    ``admin.functions_affected`` / ``admin.actions_affected`` warnings instead."""
+    """Per renamed term, where the graph's policy, functions, actions and views name the old
+    one; terms nobody names are left out. Classes and relations are found in the catalogs
+    (their CURIEs appear in the stored form); attributes are bare names there and show through
+    the ``admin.functions_affected`` / ``admin.actions_affected`` / ``admin.views_affected``
+    warnings instead. The ``views`` key is there only when the graph has published views."""
     items: dict[tuple[str, str, str], dict[str, list[JsonValue]]] = {}
 
     def item(kind: str, source: str, target: str) -> dict[str, list[JsonValue]]:
-        return items.setdefault(
-            (kind, source, target), {"functions": [], "actions": [], "policy": []}
-        )
+        found: dict[str, list[JsonValue]] = {"functions": [], "actions": [], "policy": []}
+        if views is not None:
+            found["views"] = []
+        return items.setdefault((kind, source, target), found)
 
     for old, target in renames.classes.items():
-        _catalog_references(item("class", old, target), old, functions, actions)
+        _catalog_references(item("class", old, target), old, functions, actions, views)
     for old, target in renames.relations.items():
-        _catalog_references(item("relation", old, target), old, functions, actions)
+        _catalog_references(item("relation", old, target), old, functions, actions, views)
     for probe in probes(entries, graph, renames, (), new):
         item(probe.kind, probe.source, probe.target)["policy"].append(
             {
@@ -261,8 +264,9 @@ def _catalog_references(
     curie: str,
     functions: KineticSlot | None,
     actions: KineticSlot | None,
+    views: KineticSlot | None,
 ) -> None:
-    for key, slot in (("functions", functions), ("actions", actions)):
+    for key, slot in (("functions", functions), ("actions", actions), ("views", views)):
         if slot is not None:
             found[key].extend(_naming(slot, curie))
 

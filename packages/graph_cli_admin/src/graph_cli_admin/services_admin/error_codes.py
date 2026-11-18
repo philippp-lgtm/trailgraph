@@ -126,6 +126,7 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "admin.actions_affected", _C.WARNING, False, "A release would break published actions."
     ),
+    ErrorSpec("admin.views_affected", _C.WARNING, False, "A release would break published views."),
     ErrorSpec(
         "admin.policy_renamed_term",
         _C.REFUSED,

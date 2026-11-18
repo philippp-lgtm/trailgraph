@@ -378,6 +378,9 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         ),
     },
     {
+        "views": obj(  # only when views are published
+            {"count": INTEGER, "problems": array(ref("view_problem"))}
+        ),
         "migration": ref("migration_preview"),  # --ontology with a migration.yaml
         "republished": ref("republished"),  # --ontology: catalogs a release would publish again
     },
@@ -405,7 +408,10 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
         "actions": nullable(ref("source_actions")),
         "files": STRINGS,
     },
-    {"pulled": RETURNED_FILES},
+    {
+        "views": nullable(ref("source_views")),  # only when views are published
+        "pulled": RETURNED_FILES,
+    },
 )
 PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
     {
@@ -452,9 +458,22 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 "skill": nullable(ref("source_skill")),
                 "functions": nullable(ref("source_functions")),
                 "actions": nullable(ref("source_actions")),
-            }
+            },
+            {"views": nullable(ref("source_views"))},  # only when views are published
         ),
-    }
+    },
+    {  # only when the workspace has a views folder or the graph has published views
+        "views": nullable(
+            obj(
+                {
+                    "from": nullable(ref("views_summary")),
+                    "to": nullable(ref("views_summary")),
+                    "views": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        )
+    },
 )
 PUBLISH_OUTPUT: Final = obj(  # services_admin.skill.publish
     {
@@ -699,6 +718,7 @@ SPECS: Final = (
             "ontology.marking_name_reused",
             "admin.functions_broken",
             "admin.actions_broken",
+            "admin.views_broken",
         ),
         handler=check_command,
         output=CHECK_OUTPUT,
@@ -706,8 +726,9 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. Also checks the published functions against the"
         " model (admin.functions_broken, for example function.stale after an interrupted"
-        " push) and the published actions (admin.actions_broken, for example action.stale; the"
-        " functions are reported first). With --ontology, checks the data under an"
+        " push), the published actions (admin.actions_broken, for example action.stale) and the"
+        " published views (admin.views_broken, for example view.stale; the functions are"
+        " reported first, the views last). With --ontology, checks the data under an"
         " authored version before it is released: for a major version with a migration.yaml (or"
         " renames that rewrite data) the migration is applied to an overlay, the findings are"
         " those of the migrated data, and the migration block of the answer counts what each"
@@ -749,7 +770,7 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="maint.graph_configure",
-        summary="Write graph REF's ontology release, skill, functions and actions into DIR.",
+        summary="Write graph REF's ontology release, skill, functions, actions and views into DIR.",
         params=(
             REF,
             ParamSpec(
@@ -764,8 +785,8 @@ SPECS: Final = (
             ParamSpec(
                 "--force",
                 "flag",
-                "Replace the version, skill, functions and actions directories and base file"
-                " if they exist.",
+                "Replace the version, skill, functions, actions and views directories and base"
+                " file if they exist.",
             ),
             DATA_ROOT,
         ),
@@ -785,13 +806,15 @@ SPECS: Final = (
             "skills.source_invalid",
             "functions.slot_invalid",
             "actions.slot_invalid",
+            "views.slot_invalid",
         ),
         handler=pull,
         output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
         " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any),"
         " DIR/functions/<name>.yaml (the published functions, if any),"
-        " DIR/actions/<name>.yaml (the published actions, if any) and"
+        " DIR/actions/<name>.yaml (the published actions, if any),"
+        " DIR/views/<name>.yaml (the published views, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
         " nothing in the data root.",
         remote="hooked",
@@ -841,19 +864,23 @@ SPECS: Final = (
             "admin.functions_broken",
             "admin.actions_invalid",
             "admin.actions_broken",
+            "admin.views_invalid",
+            "admin.views_broken",
         ),
         handler=push,
         output=PUSH_OUTPUT,
-        description="The graph must still have the ontology release, skill, functions and actions"
-        " DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
+        description="The graph must still have the ontology release, skill, functions, actions and"
+        " views DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
         " highest ontology/<version>/ is released and pinned when it differs"
         " (maint.ontology_release, maint.ontology_pin), the skill directory, the functions"
-        " directory and the actions directory published when they differ (maint.graph_configure;"
-        " a missing functions or actions directory is an empty one); whenever the ontology"
-        " changes, the skill, the functions and the actions are checked against the ontology"
-        " they will have (the published functions and actions too, if the push does not replace"
-        " them: admin.functions_broken, admin.actions_broken; a release with renames publishes"
-        " those that still compile again by itself). A function and an action may not"
+        " directory, the actions directory and the views directory published when they differ,"
+        " in this order (maint.graph_configure; a missing functions, actions or views"
+        " directory is an empty one); whenever the ontology changes, the skill, the functions,"
+        " the actions and the views are checked against the ontology they will have (the"
+        " published ones too, if the push does not replace them: admin.functions_broken,"
+        " admin.actions_broken, admin.views_broken; a release with renames publishes those that"
+        " still compile again by itself). The views are checked against the functions the graph"
+        " will have after the push. A function and an action may not"
         " share a name. A release in it may carry a data migration (migration.yaml in the version"
         " directory; see ontology release). Everything is checked before the first write; the new"
         " base is written into DIR.",

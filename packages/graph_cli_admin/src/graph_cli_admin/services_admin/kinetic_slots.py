@@ -142,9 +142,11 @@ def read_published(ctx: AdminContext, entry: GraphEntry, kind: SlotKind) -> Kine
     return ctx.catalog.read_views(entry.id)
 
 
-def other_kind(kind: SlotKind) -> SlotKind:
+def other_kind(kind: SlotKind) -> SlotKind | None:
     """The kind whose names a publish of ``kind`` must not take: functions and actions share
-    one namespace; views have their own (``None`` of it, see ``published_names``)."""
+    one namespace; views have a namespace of their own (``None``)."""
+    if kind == "views":
+        return None
     return "actions" if kind == "functions" else "functions"
 
 
@@ -230,7 +232,7 @@ def publish(
     check_state(entry)
     files, problems = read_dir(source, kind)
     checked_against = entry.pin
-    names_kind = None if kind == "views" else other_kind(kind)  # views: a namespace of their own
+    names_kind = other_kind(kind)
     others = published_names(ctx, entry, names_kind) if names_kind else frozenset()
     stamp = watched(lambda k: _readable(lambda: read_published(ctx, entry, k), k), kind)
     model = pinned_model(ctx.catalog, entry)

@@ -31,15 +31,14 @@ from pathlib import Path
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
-from graph_cli.kinetic.entries import FunctionEntry, load_entries
+from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.params import Problem
 from graph_cli.kinetic.view_compile import check_views, compile_views, deprecated_function_uses
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli_admin.services_admin import kinetic_slots
-from graph_cli_admin.services_admin.catalog_follow import ProblemHints
+from graph_cli_admin.services_admin.catalog_follow import ProblemHints, function_entries
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
 from graph_cli_admin.services_admin.release import FUNCTIONS_DAMAGED, VIEWS_DAMAGED
@@ -70,17 +69,6 @@ write = kinetic_slots.write
 def read_dir(source: Path) -> tuple[dict[str, bytes], list[Problem]]:
     """The ``<name>.yaml`` files of a folder (see ``kinetic_slots.read_dir``)."""
     return kinetic_slots.read_dir(source, "views")
-
-
-def function_entries(slot: KineticSlot | None) -> tuple[FunctionEntry, ...]:
-    """The functions of a published catalog (none for a missing one); a catalog that does not
-    read counts as none, so the views that need a function are the ones that refuse."""
-    if slot is None:
-        return ()
-    try:
-        return load_entries(slot.compiled)
-    except JsonShapeError:
-        return ()
 
 
 def published_functions(ctx: AdminContext, entry: GraphEntry) -> tuple[FunctionEntry, ...]:

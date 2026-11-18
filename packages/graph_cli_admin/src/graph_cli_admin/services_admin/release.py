@@ -40,9 +40,10 @@ model (``graph_cli.kinetic.check_catalog``, K5): a function that no longer
 resolves refuses the release with ``admin.functions_broken`` (first 20
 problems in the details). The published action catalog gets the same check
 (``check_actions``, ``admin.actions_broken``), against the function names the graph
-will have. The fix is ``graph push`` with the ontology and the fixed or deleted
-files together; ``plan`` then leaves the replaced catalog to the push, which checks
-the new files against the same model.
+will have, and the published view catalog (``check_views``, ``admin.views_broken``)
+against the model and the function entries the graph will have. The fix is ``graph push`` with
+the ontology and the fixed or deleted files together; ``plan`` then leaves the replaced
+catalog to the push, which checks the new files against the same model.
 
 A release with renames or a migration file (plan M8) first compiles such a catalog again from
 its published sources: when they compile cleanly (bare names, CURIEs that still exist), the
@@ -84,6 +85,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot, ManifestData
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import Head, MaintenanceSession
 from graph_cli.kernel.records import OntologyPin, RequestMeta
+from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.params import Problem
 from graph_cli.ontology_layer.data_validator import check_graph
 from graph_cli.ontology_layer.diff import Renames, derive_renames
@@ -101,6 +103,9 @@ from graph_cli_admin.services_admin.catalog_follow import (
     follow,
     names_of,
     rename_hints,
+)
+from graph_cli_admin.services_admin.catalog_follow import (
+    function_entries as entries_of,
 )
 from graph_cli_admin.services_admin.catalog_follow import write as write_catalog
 from graph_cli_admin.services_admin.context import AdminContext
@@ -157,6 +162,7 @@ class Planned:
     clear_marker: bool = False  # a marker no migration needs any more: stale, or finished
     functions: Republish | None = None  # the function catalog compiled again for the release
     actions: Republish | None = None  # the action catalog compiled again for the release
+    views: Republish | None = None  # the view catalog compiled again for the release
 
     @property
     def unchanged(self) -> bool:
@@ -259,16 +265,20 @@ def plan(
     functions_replaced: bool = False,
     actions_replaced: bool = False,
     function_names: frozenset[str] | None = None,
+    views_replaced: bool = False,
+    function_entries: tuple[FunctionEntry, ...] | None = None,
 ) -> Planned:
     """Every check of a release, under the lock; refuses before anything is written.
 
     ``migration`` is the bytes of the version directory's ``migration.yaml`` (``None``:
     there is none). ``dry_run`` plans with a placeholder tx id, so a dry run draws no id.
-    ``functions_replaced`` / ``actions_replaced``: the caller publishes new function or
-    action files after the release and checks them against the new model itself, so the
-    published catalog of that kind is not checked here. ``function_names`` are the
-    functions the graph will have (the pushed ones when ``functions_replaced``); omitted,
-    the published ones."""
+    ``functions_replaced`` / ``actions_replaced`` / ``views_replaced``: the caller publishes
+    new function, action or view files after the release and checks them against the new
+    model itself, so the published catalog of that kind is not checked here.
+    ``function_names`` are the functions the graph will have (the pushed ones when
+    ``functions_replaced``); omitted, the published ones. ``function_entries`` are their
+    compiled entries, which the published views are checked with; omitted, those of the
+    function catalog after its own follow (republished or published)."""
     target = compiled.pin
     manifest = session.manifest()  # W.6: re-read under the lock
     entry = manifest.entry
@@ -399,6 +409,22 @@ def plan(
             )
             if followed_actions.problems:
                 raise actions_broken(hint_problems(followed_actions.problems), bump_details)
+    followed_views = Followed(None, [])
+    if not views_replaced:
+        views = current_catalog(session, "views")
+        if views is not None:
+            if function_entries is None:
+                after = followed_functions.republish
+                function_entries = entries_of(after.slot if after is not None else functions)
+            followed_views = follow(
+                views,
+                compiled.model,
+                target,
+                recompile=recompile,
+                functions=function_entries,
+            )
+            if followed_views.problems:
+                raise views_broken(hint_problems(followed_views.problems), bump_details)
     warnings = module_bump_warnings(old_model, compiled.model, report) + rename_notes
     warnings += marking_notes
     warnings += policies_affected(
@@ -415,7 +441,7 @@ def plan(
     if run is not None and file is not None:
         warnings += migrations.unused_steps(run)
         data["migration"] = migrations.preview(file, run.plan, completing=completing is not None)
-    republished = republished_json(followed_functions, followed_actions)
+    republished = republished_json(followed_functions, followed_actions, followed_views)
     if republished:
         data["republished"] = republished
     changes = merged_alias_prefixes(
@@ -452,16 +478,21 @@ def plan(
         clear,
         followed_functions.republish,
         followed_actions.republish,
+        followed_views.republish,
     )
 
 
-def republished_json(functions: Followed, actions: Followed) -> dict[str, JsonValue]:
+def republished_json(
+    functions: Followed, actions: Followed, views: Followed | None = None
+) -> dict[str, JsonValue]:
     """The ``republished`` block of an answer: the catalogs a release compiles again."""
     block: dict[str, JsonValue] = {}
     if functions.republish is not None:
         block["functions"] = functions.republish.to_json()
     if actions.republish is not None:
         block["actions"] = actions.republish.to_json()
+    if views is not None and views.republish is not None:
+        block["views"] = views.republish.to_json()
     return block
 
 
@@ -584,7 +615,7 @@ def write(
     target = planned.compiled.pin
     run = planned.migration
     writes = run is not None and run.writes
-    republish = [r for r in (planned.functions, planned.actions) if r is not None]
+    republish = [r for r in (planned.functions, planned.actions, planned.views) if r is not None]
     configure = decisions.configure
     if republish and not configure:  # authorized before the first write, like the others
         pairs = [("maint.graph_configure", f"graph:{entry.id}")]
@@ -753,6 +784,16 @@ def actions_broken(
     return catalog_broken("actions", problems, bump, advice=advice)
 
 
+def views_broken(
+    problems: list[Problem],
+    bump: dict[str, JsonValue],
+    *,
+    advice: str = "; fix or delete them in the same push",
+) -> GraphCliError:
+    """``admin.views_broken`` (see ``catalog_broken``)."""
+    return catalog_broken("views", problems, bump, advice=advice)
+
+
 def _would_not_resolve(kind: SlotKind, names: list[str], version: str) -> str:
     shown = ", ".join(names[:5]) + (", ..." if len(names) > 5 else "")
     noun = {"functions": "function", "actions": "action", "views": "view"}[kind]
@@ -786,17 +827,25 @@ def catalog_affected(
 def follow_published(
     functions: KineticSlot | None,
     actions: KineticSlot | None,
+    views: KineticSlot | None,
     model: CompiledModel,
     pin: OntologyPin,
     *,
     recompile: bool,
-) -> tuple[Followed, Followed]:
+) -> tuple[Followed, Followed, Followed]:
     """The published catalogs against the model of a release (the functions first, the actions
-    against their names): what ``plan`` decides, for the previews of ``ontology diff --graph``
-    and ``graph check --ontology``."""
+    against their names, the views against the function entries after the follow): what
+    ``plan`` decides, for the previews of ``ontology diff --graph`` and ``graph check
+    --ontology``."""
     followed = follow(functions, model, pin, recompile=recompile)
     names = names_of(functions)
-    return followed, follow(actions, model, pin, recompile=recompile, function_names=names)
+    again = followed.republish
+    entries = entries_of(again.slot if again is not None else functions)
+    return (
+        followed,
+        follow(actions, model, pin, recompile=recompile, function_names=names),
+        follow(views, model, pin, recompile=recompile, functions=entries),
+    )
 
 
 def policies_affected(
