@@ -275,7 +275,8 @@ the graph is drawn with.
 
 ## Using the view
 
-Clicking a node loads that entity on demand: its attributes
+Clicking a node loads that entity on demand (the panel is the view's own composition;
+`graph view REF` is the card of the `graph` CLI, see [An entity at a glance](cli_graph.md#an-entity-at-a-glance)): its attributes
 (hidden labels left out), edges in both directions with their
 qualifiers, and every revision with the agent, principal and session
 that wrote it, and the roles the principal held when it was a server token

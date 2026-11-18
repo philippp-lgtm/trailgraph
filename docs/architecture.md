@@ -228,6 +228,7 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
 | `kinetic.action_needs` | `action_needs`: what an action's ops need on concrete types against a model, with the attributes and relations they write (declared classes expanded to their non-abstract subtypes, any of which meets a need); pure, no policy |
 | `kinetic.affordances` | which published actions and functions take a given entity as a parameter, judged from the entries the actor may see, for `get --affordances` (`actions_for`, `functions_for`; pure) |
+| `kinetic.card` | the generated entity card of `graph view`: a `ViewSpec` derived from the ontology (`generated_spec`), `render` over a `Snapshot` and the reader's model into a `ViewModel` (`fields`, `relations`, `files` and `affordances` sections, bounded loads, a byte limit with a deterministic trim; pure, nothing stored) |
 | `kinetic.cover` | which published functions cover an ad-hoc query, for the hint and the access log of `query`: structural signatures of query and function, compared (pure, no ranking model) |
 | `kinetic.expand` | over a `Snapshot`: `check_preconditions` evaluates the preconditions on the current state (every failure in one refusal), `expand` turns bound parameters into a `ChangeSet` and replaces `all: true` by one exact unlink per current edge |
 

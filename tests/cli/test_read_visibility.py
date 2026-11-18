@@ -635,6 +635,153 @@ def test_neighbors_of_a_hidden_start_or_relation_are_as_for_a_missing_one(limite
         assert answer["error"]["code"] == "term.unknown"
 
 
+# ---- view --------------------------------------------------------------------------------
+
+
+def card_section(outcome: Outcome, kind: str, variant: str | None = None) -> dict[str, Any]:
+    found = [
+        s for s in outcome.data["sections"] if s["kind"] == kind and s.get("variant") == variant
+    ]
+    assert len(found) <= 1, outcome.data
+    section: dict[str, Any] = found[0] if found else {}
+    return section
+
+
+def cite_files(world: World) -> None:
+    """Pages of the scan cited by two visible notes and a hidden topic, and a note that points
+    to the hidden plain file too (before the limit, so every write is allowed)."""
+    run_cli, ids = world.run_cli, world.ids
+    for source, target, qualifiers in (
+        ("n", "scan", ("page=4",)),
+        ("m", "scan", ("page=9", "last_page=11")),
+        ("t1", "scan", ("page=2",)),
+        ("n", "hidden_file", ("page=1",)),
+    ):
+        extra = [a for q in qualifiers for a in ("--qualifier-json", q)]
+        linked = ok(run_cli, "link", ids[source], "files:from_file", ids[target], *extra)
+        assert linked.code == 0
+
+
+def test_view_of_a_hidden_entity_is_view_of_a_missing_one_in_every_ref_form(
+    limited: World,
+) -> None:
+    run_cli = limited.run_cli
+    for local in each_hidden(limited):
+        entity, alias = limited.ids[local], limited.aliases[local]
+        for options in ((), ("--as-of", "tx:1")):
+            answer = twin(run_cli, lambda ref, options=options: ("view", ref, *options), entity)
+            assert answer["error"]["code"] == "entity.not_found", (local, options)
+        if alias is not None:
+            unknown = alias[:-1] + "9"
+            twin(run_cli, lambda ref: ("view", ref), alias, unknown)
+        twin(run_cli, lambda ref: ("view", ref), suffix_of(entity), "0123456789")
+    visible = limited.ids["n"]
+    for ref in (limited.aliases["n"], suffix_of(visible)):
+        assert ok(run_cli, "view", str(ref)).data["entity"]["id"] == visible
+
+
+def test_view_counts_and_names_only_what_the_reader_sees(world: World) -> None:
+    run_cli, ids = world.run_cli, world.ids
+    raw = ok(run_cli, "view", ids["n"])
+    assert {g["relation"] for g in card_section(raw, "relations")["groups"]} == {
+        "nas:about",
+        "nas:cites",
+    }
+    world.limit()
+    outcome = ok(run_cli, "view", ids["n"])
+    groups = card_section(outcome, "relations")["groups"]
+    assert [(g["relation"], g["direction"], g["count"]) for g in groups] == [
+        ("nas:cites", "out", 1)
+    ]
+    assert [i["ref"] for i in groups[0]["items"]] == [ids["w"]]  # a web page has no alias
+    assert leaks(outcome, world) == []
+    # a group whose neighbours are all hidden is no group, and no relation name is left over
+    only_hidden = ok(run_cli, "view", ids["k"])
+    assert "relations" not in [s["kind"] for s in only_hidden.data["sections"]]
+    assert leaks(only_hidden, world) == []
+    # in-edges from hidden sources are not counted: w is cited by n and m
+    page = ok(run_cli, "view", ids["w"])
+    (group,) = card_section(page, "relations")["groups"]
+    assert (group["relation"], group["direction"], group["count"]) == ("nas:cites", "in", 2)
+    assert [i["label"] for i in group["items"]] == ["First note", "Second note"]
+    assert leaks(page, world) == []
+    # at an earlier point, too
+    earlier = ok(run_cli, "view", ids["n"], "--as-of", "tx:1")
+    assert [g["relation"] for g in card_section(earlier, "relations")["groups"]] == ["nas:cites"]
+    assert leaks(earlier, world) == []
+
+
+def test_view_names_a_hidden_superseder_as_nothing(limited: World) -> None:
+    run_cli, ids = limited.run_cli, limited.ids
+    hidden_superseder = ok(run_cli, "view", ids["p"])  # superseded by a hidden topic
+    assert hidden_superseder.data["entity"]["record_status"] == "superseded"
+    assert "superseded_by" not in hidden_superseder.data["entity"]
+    assert leaks(hidden_superseder, limited) == []
+    visible_superseder = ok(run_cli, "view", ids["q"])
+    assert visible_superseder.data["entity"]["superseded_by"] == [ids["r"]]
+
+
+def test_view_files_follow_the_type_of_the_file_and_of_the_citing_entity(world: World) -> None:
+    run_cli, ids = world.run_cli, world.ids
+    cite_files(world)
+    raw = ok(run_cli, "view", ids["n"])
+    assert [i["ref"] for i in card_section(raw, "files")["items"]] == [
+        str(world.aliases["hidden_file"]),
+        str(world.aliases["scan"]),
+    ]
+    cited_raw = card_section(ok(run_cli, "view", ids["scan"]), "files", "cited_by")
+    assert (cited_raw["count"], cited_raw["page_min"], cited_raw["page_max"]) == (3, 2, 11)
+    world.limit()
+    outcome = ok(run_cli, "view", ids["n"])
+    files = card_section(outcome, "files")
+    assert [(i["ref"], i["page"]) for i in files["items"]] == [(str(world.aliases["scan"]), 4)]
+    assert "more" not in files
+    assert leaks(outcome, world) == []
+    cited = card_section(ok(run_cli, "view", ids["scan"]), "files", "cited_by")
+    assert (cited["count"], cited["page_min"], cited["page_max"]) == (2, 4, 11)
+    assert [i["ref"] for i in cited["items"]] == [world.aliases["n"], world.aliases["m"]]
+    assert leaks(ok(run_cli, "view", ids["scan"]), world) == []
+
+
+def test_view_of_a_hub_counts_the_sources_a_limited_reader_sees(world: World) -> None:
+    run_cli, ids = world.run_cli, world.ids
+    scan = ids["scan"]
+    notes = [
+        {
+            "op": "create",
+            "type": "nas:Note",
+            "local": f"h{i}",
+            "attrs": {"title": f"Hub note {i:03d}", "body": "text", "kind": "summary"},
+            "edges": [
+                {"rel": "nas:about", "target": ids["t1"]},
+                {"rel": "files:from_file", "target": scan, "qualifiers": {"page": i % 50 + 1}},
+            ],
+        }
+        for i in range(120)
+    ]
+    topics = [
+        {
+            "op": "create",
+            "type": "nas:Topic",
+            "local": f"x{i}",
+            "attrs": {"label": f"Extra topic {i}"},
+            "edges": [{"rel": "files:from_file", "target": scan, "qualifiers": {"page": 60}}],
+        }
+        for i in range(30)
+    ]
+    applied = app(run_cli, "apply", "-", env=ENV, input=json.dumps({"ops": [*notes, *topics]}))
+    assert applied.code == 0, applied.envelope
+    raw = card_section(ok(run_cli, "view", scan), "files", "cited_by")
+    assert (raw["count"], raw["sampled"], raw["approx"], raw["page_max"]) == (150, 50, True, 60)
+    world.limit()
+    outcome = ok(run_cli, "view", scan)
+    cited = card_section(outcome, "files", "cited_by")
+    # the hidden topics are not counted and not in the statistics; the sample is the first 50
+    assert (cited["count"], cited["approx"], cited["page_max"]) == (120, True, 50)
+    assert len(cited["items"]) == 5 and cited["more"] == 115
+    assert leaks(outcome, world) == []
+
+
 # ---- query (Cypher) ----------------------------------------------------------------------
 
 
@@ -1209,6 +1356,8 @@ def test_nothing_hidden_appears_in_any_answer_about_the_rest(limited: World) -> 
             ("get", entity, "--as-of", "tx:1", "--full"),
             ("history", entity),
             ("neighbors", entity, "--direction", "both", "--depth", "3", "--full"),
+            ("view", entity),
+            ("view", entity, "--as-of", "tx:1"),
         ]
     for command in commands:
         outcome = read(run_cli, *command)

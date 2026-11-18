@@ -21,6 +21,7 @@ from graph_cli.app_cli.commands.common import (
     next_page,
 )
 from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
+from graph_cli.app_cli.commands.view_text import view_hints, view_text
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, SOURCE, STRINGS
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import (
@@ -156,6 +157,20 @@ def get(
     )
     state.warnings += warnings
     return Result(data=data, graph=view.envelope_graph())
+
+
+def view(state: CommandState, ref: str, graph: str | None, as_of: str | None) -> Result:
+    """The generated entity card (object views stage 1): one bounded answer about one entity."""
+    point = _as_of(as_of)
+    reading = _open(state, graph, "read.get", "view", {"ref": ref}, point)
+    data, warnings = context(state).reader.view(reading, ref)
+    state.warnings += warnings
+    return Result(
+        data=data,
+        graph=reading.envelope_graph(),
+        hints=view_hints(data, reading.entry.name),
+        text=view_text(data),
+    )
 
 
 def history(
@@ -803,6 +818,7 @@ GET_OUTPUT: Final = obj(
     },
     {"affordances": obj(extra=ANY)},  # only with --affordances
 )
+VIEW_OUTPUT: Final = ref("view_model")  # kinetic.card.ViewModel.to_json
 CHANGED: Final = nullable(  # temporal_knowledge.history.changed_names; null for a creation
     obj(
         {
@@ -1045,6 +1061,30 @@ SPECS: Final = (
         errors=(*REF_ERRORS, "entity.revision_not_found"),
         handler=get,
         output=GET_OUTPUT,
+    ),
+    CommandSpec(
+        path=("view",),
+        kind="read",
+        surface="retrieve",
+        action="read.get",
+        summary="Show what is known about one entity in one answer.",
+        description=(
+            "The generated card: key fields (label, lifecycle state, required and unique "
+            "attributes; the other attributes with a value are only named), relations with "
+            "counts, the first three neighbours by name and the count per state, stored files "
+            "with their pages, and what applies next by name. At most 6 KiB; whatever is cut is "
+            "counted (more, more_groups, other) and named in a hint. It is a state, not a record: "
+            "use get for revision numbers and edge ids."
+        ),
+        params=(REF, GRAPH, AS_OF),
+        examples=(
+            Example("graph view <id>", "The card of one entity."),
+            Example("graph view <id> --json", "The card as JSON."),
+            Example("graph view <id> --as-of tx:<seq> --json", "The card as it was after that tx."),
+        ),
+        errors=REF_ERRORS,
+        handler=view,
+        output=VIEW_OUTPUT,
     ),
     CommandSpec(
         path=("history",),

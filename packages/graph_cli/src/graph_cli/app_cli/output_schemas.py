@@ -57,6 +57,31 @@ def _entity() -> Schema:
     )
 
 
+def _view_model() -> Schema:
+    """``kinetic.card.ViewModel.to_json`` (``graph_cli.view_model/1``): a view, the entity's header
+    and sections that each carry a ``kind``; a consumer ignores a kind it does not know, so a
+    section is an open object. ``cut`` only when the byte guard trimmed the card."""
+    return obj(
+        {
+            "view": obj(
+                {"name": STRING, "origin": STRING}
+            ),  # origin: generated; authored views follow
+            "entity": obj(
+                {"id": STRING, "type": STRING, "rev": INTEGER, "record_status": STRING},
+                {
+                    "alias": STRING,
+                    "label": STRING,
+                    "superseded_by": STRINGS,
+                    "retracted_by": STRINGS,
+                },
+            ),
+            "sections": array(obj({"kind": STRING}, extra=ANY)),
+            "bytes": INTEGER,
+        },
+        {"cut": BOOLEAN},
+    )
+
+
 def _write_result() -> dict[str, Schema]:
     """``services.write.WriteResult.to_json`` (B3); ``entities`` is null with ``--summary``."""
     entity = obj(
@@ -235,6 +260,7 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
             {"rel": STRING, "target": STRING},
             {"edge_id": STRING, "qualifiers": obj(extra=ANY), "target_rev": INTEGER},
         ),
+        "view_model": _view_model(),
         "write_result": obj(WRITE_RESULT, WRITE_RESULT_OPTIONAL),
         "facet": _facet(),
         "actor": _actor(),

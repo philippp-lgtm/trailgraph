@@ -521,6 +521,9 @@ def _start(doc: _Model) -> list[str]:
         " next. Never cut an answer short; ask for less: `--fields <attr>,<attr>` on `find`,"
         " `get` and `neighbors`, or `graph query` with `RETURN` of just the columns you need"
         f" ({_patterns_source(doc)}).",
+        "- For what is known about one entity, `graph view <id> --json` answers in one call (key"
+        " fields, relations with counts, files, what applies next): use it before walking edges"
+        " with `get` and `neighbors`.",
         "- Never guess an option, type, field, relation or state: `graph <command> --help`"
         f" lists the options, `graph describe type <type> --graph {name} --json` the fields,"
         " states and relations.",

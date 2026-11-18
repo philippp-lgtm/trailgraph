@@ -409,12 +409,14 @@ class TestStructure:
         # covering-function hint line (224); --full and the empty function value (225);
         # the `writes` object of `graph whoami` (226); the line on unseen fields and
         # `markings` (227); reasons in English (228); the row of `graph changes` in the command
-        # table (229: generated, the prose is unchanged)
-        assert len(files["SKILL.md"].splitlines()) <= 229
+        # table (229: generated, the prose is unchanged); the row of `graph view` (230:
+        # generated); the sentence on `graph view` in the read step (232)
+        assert len(files["SKILL.md"].splitlines()) <= 232
         for name, text in files.items():
             if name.startswith("references/"):
-                # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB
-                assert len(text.encode()) <= 44 * 1024, name
+                # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB;
+                # `graph view` adds about 1.7 KiB to the 43.5 KiB of before (46 KiB limit)
+                assert len(text.encode()) <= 46 * 1024, name
 
     def test_references_are_linked_both_ways(self) -> None:
         files = committed_files()

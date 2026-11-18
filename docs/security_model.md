@@ -186,6 +186,10 @@ are accepted and known:
   the caller a role that sees the range. `policy check` warns about it for a
   grant's own `reads` (`admin.policy_unusable_write`); it cannot see what other
   grants of the same caller add.
+- **`graph view` is a `read.get` read.** A caller who may read an entity may read its
+  card: counts of its relations and the first neighbours with their labels, even where
+  a rule denies `read.traverse` (what `graph neighbors` needs). Types and attributes
+  the caller cannot see stay out of the card like out of every read.
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

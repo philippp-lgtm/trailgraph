@@ -822,6 +822,17 @@ an attribute the caller lacks a marking for.
 changes of the entities the caller sees, nothing of the others ([Changes since a
 position](cli_graph.md#changes-since-a-position)).
 
+## Entity cards
+
+`graph view` (the entity card, [An entity at a
+glance](cli_graph.md#an-entity-at-a-glance)) is a `read.get` command: whoever may
+read an entity may read its card, and a deny rule on `read.traverse` does not
+reach it. The card shows the counts of an entity's relations and its first
+neighbours with their labels, which `graph neighbors` (`read.traverse`) would
+show too, so a rule that denies `read.traverse` but allows `read.get` still
+leaves that much of the neighbourhood readable. Read limits and markings shape
+the card like every read: what the caller may not see is not counted or named.
+
 ## Queries
 
 `graph query` (Cypher) has its own action, `read.query`, in the `read`
