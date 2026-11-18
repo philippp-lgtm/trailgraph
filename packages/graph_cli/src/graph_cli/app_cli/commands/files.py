@@ -60,6 +60,7 @@ def add(
     source_url: str | None,
     retrieved_at: str | None,
     no_origin: bool,
+    no_extract: bool,
     graph: str | None,
     dry_run: bool,
     reason: str | None,
@@ -85,6 +86,7 @@ def add(
         "source_url": source_url,
         "retrieved_at": retrieved_at,
         "no_origin": no_origin,
+        "no_extract": no_extract,
         "dry_run": dry_run,
         "reason": reason,
         "idempotency_key": idempotency_key,
@@ -109,7 +111,49 @@ def add(
         )
     )
     state.warnings += result.warnings
-    return Result(data=result.to_json(), graph=graph_json(result.entry, result.seq))
+    data = result.to_json()
+    seq = result.seq
+    data["metadata"] = []
+    if not (no_extract or dry_run):
+        metadata, last_seq = _extract(state, str(entry.id), str(result.entity["id"]), args)
+        data["metadata"] = metadata
+        seq = last_seq if last_seq is not None else seq
+    return Result(data=data, graph=graph_json(result.entry, seq))
+
+
+def _extract(
+    state: CommandState, graph: str, file_id: str, args: dict[str, JsonValue]
+) -> tuple[list[JsonValue], int | None]:
+    """Extract the metadata of the file just stored (file metadata M12): in this process, after
+    the add committed, as the caller. It never fails the add: what could not be done is one
+    warning (``file.extraction_incomplete``), and ``graph-admin files extract`` finishes it."""
+    from graph_cli.kernel.errors import GraphCliError, WarningRecord
+    from graph_cli.services.file_metadata import ExtractRequest
+
+    ctx = context(state)
+    request = ExtractRequest(
+        actor=ctx.actor,
+        graph=graph,
+        request=RequestMeta.of("file add", args),
+        files=(file_id,),
+        maintenance=False,
+        named_run=False,
+    )
+    try:
+        report = ctx.file_metadata.extract(request)
+    except GraphCliError as error:
+        state.warnings += (
+            WarningRecord(
+                "file.extraction_incomplete",
+                "the file is stored, but its metadata could not be written now "
+                f"({error.code}); graph-admin files extract does it later",
+                {"cause": error.code},
+            ),
+        )
+        return [], None
+    state.warnings += report.warnings()
+    metadata: list[JsonValue] = list(report.metadata)
+    return metadata, report.last_seq
 
 
 def _open(
@@ -182,6 +226,17 @@ ADD_OUTPUT: Final = obj(  # services.files.FileAddResult.to_json
             }
         ),
         "existing": BOOLEAN,
+        "metadata": array(
+            obj(
+                {
+                    "extractor": STRING,
+                    "version": INTEGER,
+                    "status": enum("ok", "failed", "not_applicable"),
+                    "id": STRING,
+                },
+                {"problem": STRING},
+            )
+        ),
     }
 )
 # ``path`` is null in the server's answer (the bytes are at GET /v1/graphs/{graph}/files/
@@ -235,7 +290,10 @@ SPECS: Final = (
         description=(
             "graph_cli stores the bytes and never reads what is in them. Link entities to the "
             "file with files:from_file and the page qualifier. The origin is recorded relative "
-            "to a root of [roots] in config.toml."
+            "to a root of [roots] in config.toml. The metadata the graph's model has records for "
+            "(size and detected type; page count, image size, table shape, database schema) are "
+            "extracted right after the file is stored and answered in `metadata`; a failure "
+            "to extract never fails the add."
         ),
         params=(
             ParamSpec("path", "file", "The file to store.", required=True, positional=True),
@@ -247,6 +305,11 @@ SPECS: Final = (
             ParamSpec("--source-url", "string", "Address the file was downloaded from."),
             ParamSpec("--retrieved-at", "string", "Date of the download, YYYY-MM-DD."),
             ParamSpec("--no-origin", "flag", "Do not record where the file came from."),
+            ParamSpec(
+                "--no-extract",
+                "flag",
+                "Do not extract the metadata of the file (page count, size, ...) now.",
+            ),
             *COMMON,
         ),
         examples=(

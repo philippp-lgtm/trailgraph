@@ -37,7 +37,7 @@ def run(source: RunInput) -> ExtractionResult:
     # imported here, not at the top: the parser costs startup time that only a run of this
     # extractor (in its child process) should pay
     import pypdf
-    from pypdf.errors import DependencyError, PyPdfError
+    from pypdf.errors import DependencyError
 
     logging.getLogger("pypdf").setLevel(logging.CRITICAL)
     with open(source.path, "rb") as handle:
@@ -53,7 +53,9 @@ def run(source: RunInput) -> ExtractionResult:
             # AES needs the optional ``cryptography`` package, which is not installed: the file
             # is encrypted and this install cannot open it, on every machine alike
             return ExtractionResult.failed(PROBLEM_ENCRYPTED)
-        except (PyPdfError, ValueError, KeyError, TypeError, IndexError, RecursionError):
+        except MemoryError:
+            raise  # the child answers limit.memory
+        except Exception:
             return ExtractionResult.failed(PROBLEM_UNREADABLE)
     values: dict[str, JsonValue] = {"page_count": pages, "encrypted": encrypted}
     found = _HEADER.match(header)

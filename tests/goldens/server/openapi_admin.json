@@ -517,6 +517,325 @@
           "error"
         ]
       },
+      "files_extract_data": {
+        "type": "object",
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "type": "integer"
+          },
+          "extractors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "created": {
+                  "type": "integer"
+                },
+                "updated": {
+                  "type": "integer"
+                },
+                "unchanged": {
+                  "type": "integer"
+                },
+                "current": {
+                  "type": "integer"
+                },
+                "not_applicable": {
+                  "type": "integer"
+                },
+                "failed": {
+                  "type": "integer"
+                },
+                "transient": {
+                  "type": "integer"
+                },
+                "newer_version": {
+                  "type": "integer"
+                },
+                "blocked_by_references": {
+                  "type": "integer"
+                },
+                "problems": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "version",
+                "created",
+                "updated",
+                "unchanged",
+                "current",
+                "not_applicable",
+                "failed",
+                "transient",
+                "newer_version",
+                "blocked_by_references",
+                "problems"
+              ]
+            }
+          },
+          "module_outdated": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "module": {
+                  "type": "string"
+                },
+                "have": {
+                  "type": "string"
+                },
+                "need": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "extractor",
+                "module",
+                "have",
+                "need"
+              ]
+            }
+          },
+          "regressions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "problem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "extractor",
+                "file",
+                "from",
+                "to",
+                "problem"
+              ]
+            }
+          },
+          "regression_count": {
+            "type": "integer"
+          },
+          "retracted_records": {
+            "type": "integer"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "extractor",
+                "file",
+                "code",
+                "message"
+              ]
+            }
+          },
+          "problem_count": {
+            "type": "integer"
+          },
+          "transient": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "extractor",
+                "file",
+                "detail"
+              ]
+            }
+          },
+          "transient_count": {
+            "type": "integer"
+          },
+          "newer_versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "stored_version": {
+                  "type": "integer"
+                },
+                "version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "extractor",
+                "file",
+                "stored_version",
+                "version"
+              ]
+            }
+          },
+          "newer_version_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "enabled",
+          "run",
+          "files",
+          "extractors",
+          "module_outdated",
+          "regressions",
+          "regression_count",
+          "retracted_records",
+          "problems",
+          "problem_count",
+          "transient",
+          "transient_count",
+          "newer_versions",
+          "newer_version_count"
+        ]
+      },
+      "files_extractors_data": {
+        "type": "object",
+        "properties": {
+          "extractors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "accepts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "record_class": {
+                  "type": "string"
+                },
+                "part_class": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "module": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "min_version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "min_version"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "version",
+                "accepts",
+                "record_class",
+                "part_class",
+                "module",
+                "summary"
+              ]
+            }
+          }
+        },
+        "required": [
+          "extractors"
+        ]
+      },
       "files_gc_data": {
         "type": "object",
         "properties": {
@@ -894,6 +1213,74 @@
             "items": {
               "$ref": "#/components/schemas/finding"
             }
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "behind": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "extractor": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "records": {
+                      "type": "integer"
+                    },
+                    "behind": {
+                      "type": "integer"
+                    },
+                    "newer": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "extractor",
+                    "version",
+                    "records",
+                    "behind",
+                    "newer"
+                  ]
+                }
+              },
+              "module_outdated": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "extractor": {
+                      "type": "string"
+                    },
+                    "module": {
+                      "type": "string"
+                    },
+                    "have": {
+                      "type": "string"
+                    },
+                    "need": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "extractor",
+                    "module",
+                    "have",
+                    "need"
+                  ]
+                }
+              },
+              "unavailable": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "behind",
+              "module_outdated"
+            ]
           }
         },
         "required": [
@@ -901,7 +1288,8 @@
           "rehash",
           "stored",
           "counts",
-          "findings"
+          "findings",
+          "metadata"
         ]
       },
       "finding": {
@@ -6766,6 +7154,651 @@
           }
         },
         "x-graph-cli-kind": "write",
+        "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/admin/commands/files/extract": {
+      "post": {
+        "operationId": "files_extract",
+        "summary": "Write the metadata records of stored files at the current extractor versions.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/files_extract_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: entity.not_found, graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "entity.not_found",
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: audit.unavailable, backend.lock_timeout, backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "audit.unavailable",
+              "backend.lock_timeout",
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "graph": {
+                        "type": "string",
+                        "description": "Graph name or id."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      },
+                      "file": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Only this file (id, alias or trailing hex of the id); repeatable."
+                      },
+                      "--file": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of file; never both.",
+                        "deprecated": true
+                      },
+                      "extractor": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Only this extractor (see files extractors); repeatable."
+                      },
+                      "--extractor": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The inventory name of extractor; never both.",
+                        "deprecated": true
+                      },
+                      "retry_failed": {
+                        "type": "boolean",
+                        "description": "Run again the extractors whose last result is failed (after a limit was raised)."
+                      },
+                      "--retry-failed": {
+                        "type": "boolean",
+                        "description": "The inventory name of retry_failed; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
+                        "type": "boolean",
+                        "description": "Run the extractors and report what would be written, without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": [],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "graph"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "--graph"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "write",
+        "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/admin/commands/files/extractors": {
+      "post": {
+        "operationId": "files_extractors",
+        "summary": "List the extractors of this program: version, types, record class, module.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/files_extractors_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {},
+                    "required": []
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
         "x-graph-cli-remote": "server"
       }
     },

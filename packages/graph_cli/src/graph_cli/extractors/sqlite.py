@@ -2,9 +2,9 @@
 
 Opens the file read only and immutable (``mode=ro&immutable=1``), never runs a statement
 that reads rows, loads no extension and distrusts the schema (``trusted_schema=OFF``): the
-facts come from ``sqlite_schema`` and ``PRAGMA table_info``. The record holds counts; the first
-``MAX_OBJECTS`` tables and views by name become its parts. A file SQLite cannot open is ``failed``
-with ``sqlite.unreadable``.
+facts come from ``sqlite_master`` (``sqlite_schema`` is only an alias since SQLite 3.33) and
+``PRAGMA table_info``. The record holds counts; the first ``MAX_OBJECTS`` tables and views by
+name become its parts. A file SQLite cannot open is ``failed`` with ``sqlite.unreadable``.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _open(path: Path) -> sqlite3.Connection:
 
 def _read(connection: sqlite3.Connection) -> ExtractionResult:
     objects = connection.execute(
-        "SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' "
+        "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' "
         "ORDER BY name, type"
     ).fetchall()
     counts = {"table": 0, "view": 0, "index": 0, "trigger": 0}

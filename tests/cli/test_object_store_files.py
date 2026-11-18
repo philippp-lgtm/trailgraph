@@ -131,7 +131,7 @@ def test_files_of_a_graph_in_the_object_store(
     home = Path(s3_env["HOME"])
     write_pdf(home / "report.pdf")
     env = {**s3_env, "GRAPH_CLI_GRAPH": "example_graph"}
-    added = app(run_cli, "file", "add", str(home / "report.pdf"), env=env)
+    added = app(run_cli, "file", "add", str(home / "report.pdf"), "--no-extract", env=env)
     assert added.code == 0, added.envelope
     digest = added.data["file"]["hash"]
     assert fake.get(blob_key(graph_id, digest)) == synthetic_pdf()
@@ -182,7 +182,8 @@ def test_verify_gc_and_audit_verify_of_a_graph_in_the_object_store(
     home = Path(s3_env["HOME"])
     write_pdf(home / "report.pdf")
     env = {**s3_env, "GRAPH_CLI_GRAPH": "example_graph"}
-    digest = app(run_cli, "file", "add", str(home / "report.pdf"), env=env).data["file"]["hash"]
+    added = app(run_cli, "file", "add", str(home / "report.pdf"), "--no-extract", env=env)
+    digest = added.data["file"]["hash"]
     copy = root / "graphs" / graph_id / "blobs" / "sha256" / digest[7:9] / digest[7:]
     copy.parent.mkdir(parents=True, exist_ok=True)
     copy.write_bytes(synthetic_pdf())

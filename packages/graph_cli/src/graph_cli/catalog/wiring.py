@@ -89,6 +89,7 @@ if TYPE_CHECKING:
     from graph_cli.catalog.endpoint import Endpoint
     from graph_cli.catalog.remote import RemoteSession
     from graph_cli.services.actions import ActionService
+    from graph_cli.services.file_metadata import FileMetadataService
     from graph_cli.services.files import FileService, OpenedFile, Origins
     from graph_cli.services.write import WriteService
 
@@ -206,6 +207,19 @@ class AppContext:
             activity=self.backend.activity,
             cache=StateFileCache(self.roots.state_root, self.backend.clock) if local else None,
             paths=local,
+        )
+
+    @functools.cached_property
+    def file_metadata(self) -> FileMetadataService:
+        from graph_cli.extractors.runner import ExtractLimits
+        from graph_cli.services.file_metadata import FileMetadataService
+
+        return FileMetadataService(
+            catalog=self.catalog,
+            writer=self.writer,
+            ids=self.backend.ids,
+            policy=self.backend.policy,
+            limits=ExtractLimits(self.config.extract_timeout_s, self.config.extract_max_memory_mib),
         )
 
     def select(self, flag: str | None) -> GraphEntry:

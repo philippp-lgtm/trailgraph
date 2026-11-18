@@ -719,6 +719,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("extension.api_mismatch", _C.WARNING, False, "An extension targets another API."),
     ErrorSpec("file.already_present", _C.WARNING, False, "The graph already stores this file."),
     ErrorSpec("file.no_root", _C.WARNING, False, "No configured file root contains the file."),
+    ErrorSpec(
+        "file.extraction_incomplete",
+        _C.WARNING,
+        False,
+        "The file is stored; some of its metadata could not be written now.",
+    ),
 )
 
 ERROR_CODES: Final[Mapping[str, ErrorSpec]] = MappingProxyType({s.code: s for s in _BASE})

@@ -11,6 +11,7 @@ shows; the header decision is the sniffer's heuristic.
 from __future__ import annotations
 
 import csv
+import os
 import re
 from typing import Final
 
@@ -54,7 +55,8 @@ def accepts(detected: str, recorded: str) -> bool:
 def run(source: RunInput) -> ExtractionResult:
     with open(source.path, "rb") as handle:
         head = handle.read(DETECT_BYTES)
-    detected = detect_content(head)
+        size = os.fstat(handle.fileno()).st_size
+    detected = detect_content(head, complete=size <= len(head))
     codec = _CODECS.get(detected.text_encoding or "")
     if codec is None:
         return ExtractionResult.failed(PROBLEM_NO_DIALECT)

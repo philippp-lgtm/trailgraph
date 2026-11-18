@@ -219,6 +219,7 @@ def load_before(run_cli: CliRunner, root: Path, env: dict[str, str], tmp_path: P
         "file",
         "add",
         str(home / "manuals" / "saw.pdf"),
+        "--no-extract",
         "--type",
         "wk:Manual",
         "--title",

@@ -210,7 +210,7 @@ def world(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> W
     for name, (file_name, kind) in FILES.items():
         path = write_pdf(scans / file_name, name)
         extra = ["--type", kind] if kind else []
-        added = ok(run_cli, "file", "add", str(path), *extra)
+        added = ok(run_cli, "file", "add", str(path), "--no-extract", *extra)
         found[name] = added.data["entity"]["id"]
     everything = ok(run_cli, "find", "--include-inactive", "--limit", "500")
     ids = dict(found)

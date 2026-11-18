@@ -136,7 +136,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1" },
-    { name = "pypdf", specifier = ">=7.1.0" },
+    { name = "pypdf", specifier = "==7.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 

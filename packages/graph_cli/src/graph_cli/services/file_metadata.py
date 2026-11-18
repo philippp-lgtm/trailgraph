@@ -48,11 +48,12 @@ from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.changeset import ChangeSet
-from graph_cli.kernel.errors import GraphCliError
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import IdProvider, TermRef
 from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet, PolicySource
 from graph_cli.kernel.ports.storage import GraphStoreRead, Snapshot
+from graph_cli.kernel.read_view import ReadView
 from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.file_metadata_plan import (
@@ -155,6 +156,36 @@ class ExtractionReport:
     problems: list[dict[str, JsonValue]] = field(default_factory=list)
     transient: list[dict[str, JsonValue]] = field(default_factory=list)
     newer_versions: list[dict[str, JsonValue]] = field(default_factory=list)
+    # an add-time run only: the records of the one file after the run (``file add`` answers them)
+    metadata: list[dict[str, JsonValue]] = field(default_factory=list)
+    last_seq: int | None = None  # the position of the last tx the run wrote
+    files_done: int = 0
+
+    def progress(self) -> dict[str, JsonValue]:
+        """How far a run got (for an error that ends it): files looked at, what was written."""
+        written = sum(t.created + t.updated for t in self.extractors)
+        return {
+            "files_done": self.files_done,
+            "files": self.files,
+            "records_written": written,
+            "last_seq": self.last_seq,
+            "problem_count": len(self.problems),
+        }
+
+    def warnings(self) -> tuple[WarningRecord, ...]:
+        """What an add-time run could not do, as the one warning ``file add`` carries: the file
+        is stored all the same and ``files extract`` finishes the job."""
+        names = sorted({str(item["extractor"]) for item in (*self.transient, *self.problems)})
+        if not names:
+            return ()
+        return (
+            WarningRecord(
+                "file.extraction_incomplete",
+                f"the file is stored, but the metadata of {', '.join(names)} could not be "
+                "written now; graph-admin files extract does it later",
+                {"extractors": list(names)},
+            ),
+        )
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -266,12 +297,54 @@ class FileMetadataService:
         report.files = len(revisions)
         report.run = str(self._ids.new_id()) if request.named_run else None
         tallies = {e.name: ExtractorTally(e.name, e.version) for e in enabled}
-        for revision in revisions:
-            self._file(request, report, tallies, enabled, selected, records, revision, model, read)
-        if request.files is None:  # M13: records follow their file
-            self._retract_stale(request, report, model, raw, seen)
         report.extractors = [tallies[e.name] for e in enabled if e.name in selected | {FORMAT}]
+        try:
+            for revision in revisions:
+                self._file(
+                    request, report, tallies, enabled, selected, records, revision, model, read
+                )
+                report.files_done += 1
+            if request.files is None:  # M13: records follow their file
+                self._retract_stale(request, report, model, raw, seen)
+        except GraphCliError as error:  # the run ends here: say how far it got
+            raise GraphCliError(
+                error.code,
+                error.message,
+                details={**error.details, "progress": report.progress()},
+                warnings=error.warnings,
+            ) from error
+        if not request.maintenance:
+            report.metadata = self._metadata(read, view, model, enabled, revisions)
         return report
+
+    def _metadata(
+        self,
+        read: GraphStoreRead,
+        view: ReadView,
+        model: CompiledModel,
+        enabled: Sequence[Extractor],
+        revisions: Sequence[Revision],
+    ) -> list[dict[str, JsonValue]]:
+        """The records of the files of an add-time run as they are stored now, in registry order."""
+        raw = read.snapshot()
+        seen: Snapshot = VisibleSnapshot(raw, view.types_only()) if view.types_limited else raw
+        found: list[dict[str, JsonValue]] = []
+        wanted = {str(r.id) for r in revisions}
+        for extractor in enabled:
+            for file_id, state in read_records(seen, model, extractor).items():
+                if file_id not in wanted:
+                    continue
+                item: dict[str, JsonValue] = {
+                    "extractor": extractor.name,
+                    "version": state.extractor_version,
+                    "status": state.status,
+                    "id": str(state.entity),
+                }
+                problem = state.attrs.get("problem")
+                if isinstance(problem, str):
+                    item["problem"] = problem
+                found.append(item)
+        return found
 
     def _require_maintain(
         self, request: ExtractRequest, entry: GraphEntry, policy: PolicySet
@@ -478,6 +551,8 @@ class FileMetadataService:
                 }
             )
             return None
+        if result.seq is not None:
+            report.last_seq = result.seq
         counts: Counter[str] = Counter()
         block = result.reconcile
         scopes = block.get("scopes") if isinstance(block, dict) else None

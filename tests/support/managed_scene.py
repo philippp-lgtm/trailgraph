@@ -76,7 +76,15 @@ def record_ops(extractor: str, file: str, **attrs: Any) -> dict[str, Any]:
 
 def build(run_cli: CliRunner, root: Path, work: Path) -> Scene:
     create_graph(run_cli, GRAPH, "notes_and_sources", version="1.3.0")
-    added = app(run_cli, "file", "add", str(write_pdf(work / "report.pdf")), "--no-origin", env=ENV)
+    added = app(
+        run_cli,
+        "file",
+        "add",
+        str(write_pdf(work / "report.pdf")),
+        "--no-origin",
+        "--no-extract",
+        env=ENV,
+    )
     assert added.code == 0, added.envelope
     file = str(added.data["entity"]["id"])
     pdf = extractor_write(

@@ -1632,6 +1632,13 @@
           "summary": "Do not record where the file came from."
         },
         {
+          "name": "--no-extract",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Do not extract the metadata of the file (page count, size, ...) now."
+        },
+        {
           "name": "--graph",
           "type": "graph_ref",
           "required": false,

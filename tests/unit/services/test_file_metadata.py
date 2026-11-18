@@ -809,3 +809,69 @@ def test_an_add_time_reference_to_a_hidden_file_is_not_found(graph: Graph) -> No
         answers.append((caught.value.code, caught.value.message.replace(ref, "<ref>")))
     assert answers[0] == answers[1] and answers[0][0] == "entity.not_found"
     assert graph.records(FORMAT_CLASS) == {}
+
+
+# ---- what an add-time run answers, and how far a run that ended early got -----------------
+
+
+def test_an_add_time_run_reports_the_records_of_its_file_and_the_last_seq(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    graph.add("table.csv")
+    service = graph.service(registry(pdf_stub()))
+    report = service.extract(
+        graph.request(actor=graph.env.actor, files=(pdf,), maintenance=False, named_run=False)
+    )
+    assert [(m["extractor"], m["version"], m["status"]) for m in report.metadata] == [
+        ("format", 1, "ok"),
+        ("pdf", 1, "ok"),
+    ]
+    stored = graph.records(PDF_CLASS)[pdf]
+    assert report.metadata[1]["id"] == str(stored.id)
+    assert report.last_seq == seq(graph) and report.warnings() == ()
+    again = service.extract(
+        graph.request(actor=graph.env.actor, files=(pdf,), maintenance=False, named_run=False)
+    )
+    assert again.metadata == report.metadata and again.last_seq is None  # nothing written
+
+
+def test_a_failed_record_is_answered_with_its_problem(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    service = graph.service(registry(pdf_stub(1, fail=lambda data: "pdf.unreadable")))
+    report = service.extract(
+        graph.request(actor=graph.env.actor, files=(pdf,), maintenance=False, named_run=False)
+    )
+    failed = next(m for m in report.metadata if m["extractor"] == "pdf")
+    assert failed["status"] == "failed" and failed["problem"] == "pdf.unreadable"
+
+
+def test_what_could_not_be_done_is_one_warning(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+
+    def runner(
+        name: str, path: Path, recorded: str, limits: ExtractLimits
+    ) -> ExtractionResult | Transient:
+        if name == "pdf":
+            return Transient("the extractor was killed")
+        return registry(pdf_stub())[name].run(RunInput(path, recorded))
+
+    service = graph.service(registry(pdf_stub()), runner=runner)
+    report = service.extract(
+        graph.request(actor=graph.env.actor, files=(pdf,), maintenance=False, named_run=False)
+    )
+    assert [m["extractor"] for m in report.metadata] == ["format"]  # nothing recorded for pdf
+    (warning,) = report.warnings()
+    assert warning.code == "file.extraction_incomplete"
+    assert warning.details == {"extractors": ["pdf"]}
+
+
+def test_a_run_that_ends_early_says_how_far_it_got(graph: Graph) -> None:
+    for name in ("one_page.pdf", "notes.txt", "table.csv"):
+        graph.add(name)
+    writer = _Writer(graph.env.service, "backend.lock_timeout", 3)
+    service = graph.service(registry(pdf_stub()), writer=writer)  # type: ignore[arg-type]
+    with pytest.raises(GraphCliError) as caught:
+        service.extract(graph.request())
+    progress = caught.value.details["progress"]
+    assert isinstance(progress, dict)
+    assert progress["files"] == 3 and progress["files_done"] == 1
+    assert progress["records_written"] == 2 and progress["last_seq"] == seq(graph)
