@@ -9,6 +9,8 @@ from pathlib import Path
 
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
+from graph_cli.kinetic.view_compile import compile_views
+from graph_cli.kinetic.view_entries import ViewEntry, load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from support import functions
 from support.fixtures import EXAMPLES, FIXTURES, example_model
@@ -54,3 +56,16 @@ def edited(file_name: str, old: str, new: str) -> dict[str, str]:
     assert old in sources[file_name], old
     sources[file_name] = sources[file_name].replace(old, new)
     return sources
+
+
+def compiled_entries(sources: dict[str, str] | None = None) -> dict[str, ViewEntry]:
+    """The compiled view entries of ``sources`` (default: the valid fixtures) by name."""
+    model = company_model()
+    document, problems = compile_views(sources or valid_sources(), model, function_entries(model))
+    assert [p.to_json() for p in problems] == []
+    return {e.name: e for e in load_view_entries(document)}
+
+
+def one_entry(text: str) -> ViewEntry:
+    """The entry of one view written inline (the file must be named ``probe``)."""
+    return compiled_entries({"probe.yaml": text})["probe"]

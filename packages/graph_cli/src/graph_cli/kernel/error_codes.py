@@ -796,6 +796,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "A graph has more views than the limit.",
     ),
     ErrorSpec(
+        "view.section_unavailable",
+        _C.REFUSED,
+        False,
+        "A section of a view cannot be answered here.",
+    ),
+    ErrorSpec(
         "view.parameter_missing",
         _C.USAGE,
         False,
