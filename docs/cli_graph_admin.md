@@ -115,8 +115,8 @@ A function or action published with an old name is refused with its current name
   `republished`. Those that name an old CURIE, or an attribute that was renamed, stay
   `admin.functions_broken` / `admin.actions_broken` / `admin.views_broken` unless the same
   `graph push` brings the fixed files. A view also runs functions: it is checked against the
-  functions the graph will have, so a release that republishes a function republishes the views
-  that run it from the new catalog. A function without a `module:` line on a graph that the release splits into
+  functions as the release leaves them (the republished ones included) and is republished
+  only when it no longer reads the same. A function without a `module:` line on a graph that the release splits into
   several modules needs that line (`function.module_required`), so it is fixed in the push
   too. A release without renames or migration file is unchanged. `ontology diff --graph`
   lists per renamed term the functions, actions, views and policy rules that name the old one

@@ -219,7 +219,9 @@ def test_deleting_every_view_file_unpublishes_the_catalog(
     assert outcome.data["views"]["published"] is True
     assert outcome.data["views"]["views"] == []
     assert admin(run_cli, "graph", "show", "example_graph").data["views"]["count"] == 0
-    assert push(run_cli, target).data["unchanged"] is True
+    again = push(run_cli, target)
+    assert again.data["unchanged"] is True
+    assert again.data["views"]["views"] == []  # the key follows the slot, not the folder
     assert admin(run_cli, "audit", "verify").code == 0
 
 
@@ -457,6 +459,30 @@ def test_a_new_function_and_the_view_that_runs_it_go_in_one_push(
     assert outcome.data["views"]["views"][-1] == "worn"
     assert admin(run_cli, "graph", "check", "example_graph").code == 0
     assert admin(run_cli, "audit", "verify").code == 0
+
+
+def test_a_function_name_clash_is_refused_before_a_view_the_release_breaks(
+    run_cli: CliRunner, root: Path, graph_id: str, tmp_path: Path
+) -> None:
+    """The functions are judged first: a function and an action of one new name in the push are
+    refused with their own problem, not hidden behind the view the release breaks."""
+    target = pulled(run_cli, tmp_path)
+    removing_location_code(target)
+    (target / "actions").mkdir()
+    action = (FIXTURES / "actions" / "inventory" / "valid" / "move_item.yaml").read_text()
+    (target / "actions" / "fresh_name.yaml").write_text(
+        action.replace("name: move_item", "name: fresh_name")
+    )
+    function = (FUNCTIONS / "items_by_condition.yaml").read_text()
+    (target / "functions" / "fresh_name.yaml").write_text(
+        function.replace("name: items_by_condition", "name: fresh_name")
+    )
+    before = tree_hash(root)
+    refused = push(run_cli, target)
+    assert refused.error["code"] == "admin.functions_invalid", refused.envelope
+    codes = {p["code"] for p in refused.error["details"]["problems"]}
+    assert codes == {"function.name_taken"}
+    assert tree_hash(root) == before
 
 
 def test_a_changed_function_parameter_in_a_push_breaks_the_published_view(

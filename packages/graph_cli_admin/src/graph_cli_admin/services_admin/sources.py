@@ -94,7 +94,7 @@ from graph_cli_admin.services_admin import (
     release,
     skill,
 )
-from graph_cli_admin.services_admin.catalog_follow import function_entries, names_of
+from graph_cli_admin.services_admin.catalog_follow import Republish, function_entries, names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     RELEASE_FILE,
@@ -498,13 +498,19 @@ def push(
         function_names = _stems(function_files) if publishing_functions else names_of(published)
         action_names = _stems(action_files) if publishing_actions else names_of(catalog)
         # The published views are checked in the release with the functions the graph will have;
-        # pushed functions that do not compile are refused below, before any write, so the
-        # release leaves the views to that refusal.
+        # pushed functions that do not compile, or take the name of an action, are refused below
+        # (``functions.check_files``), before any write, so the release leaves the views to that
+        # refusal and the user sees the function problems first.
         pushed_entries: tuple[FunctionEntry, ...] | None = None
         leave_views = publishing_views
-        if ontology_changed and publishing_functions and not publishing_views:
+        if (
+            ontology_changed
+            and publishing_functions
+            and not publishing_views
+            and view_catalog is not None
+        ):
             built, found = compile_catalog(function_files, compiled.model)
-            if found or function_problems:
+            if found or function_problems or _stems(function_files) & action_names:
                 leave_views = True
             else:
                 pushed_entries = load_entries(built)
@@ -544,7 +550,9 @@ def push(
                 hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
                 # the published views must hold with the functions: the ones the release
                 # compiled again, the pushed ones replace them
-                views=None if publishing_views else _views_after(planned, view_catalog),
+                views=None
+                if publishing_views
+                else _after(planned.views if planned is not None else None, view_catalog),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -569,14 +577,11 @@ def push(
             model_v = compiled.model if releasing else pinned_model(ctx.catalog, after)
             # the functions the graph will have: the pushed ones, else the published ones as
             # the release leaves them
-            catalog_f = (
+            entries = function_entries(
                 function_slot
                 if function_slot is not None
-                else planned.functions.slot
-                if planned is not None and planned.functions is not None
-                else published
+                else _after(planned.functions if planned is not None else None, published)
             )
-            entries = function_entries(catalog_f)
             checked_v = authored_views.check_files(
                 after,
                 view_files,
@@ -692,7 +697,7 @@ def push(
                 after, after.pin, final, final_functions, final_actions, final_views
             ),
         }
-        if views_dir.is_dir() or view_slot is not None:  # as for a graph without views
+        if final_views is not None:  # as for a graph without views: follows the slot
             data["views"] = {
                 "from": view_catalog.summary() if view_catalog is not None else None,
                 "to": final_views.summary() if final_views is not None else None,
@@ -748,14 +753,10 @@ def _kinetic_files(
     return kinetic_slots.read_dir(directory, kind)
 
 
-def _views_after(
-    planned: release.Planned | None, published: KineticSlot | None
-) -> KineticSlot | None:
-    """The view catalog the graph has after the release: the one the release compiles again,
-    else the published one."""
-    if planned is not None and planned.views is not None:
-        return planned.views.slot
-    return published
+def _after(republish: Republish | None, published: KineticSlot | None) -> KineticSlot | None:
+    """The catalog the graph has after the release: the one the release compiles again, else
+    the published one."""
+    return republish.slot if republish is not None else published
 
 
 def _stems(files: Mapping[str, bytes]) -> frozenset[str]:

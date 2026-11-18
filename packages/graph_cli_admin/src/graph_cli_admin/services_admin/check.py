@@ -30,7 +30,7 @@
   under its target version.
 - The same preview shows what the release does with the policy and the catalogs (plan M8): a
   deny rule that names a renamed term and no new one fails with ``admin.policy_renamed_term``,
-  as the release would; published functions and actions that would be compiled again and
+  as the release would; published functions, actions and views that would be compiled again and
   published with the release are listed in ``republished``; those that cannot be are
   ``admin.functions_broken`` / ``admin.actions_broken`` / ``admin.views_broken`` as before. A
   release that would show marked values under a name declared without the marking fails with
