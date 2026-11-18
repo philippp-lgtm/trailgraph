@@ -500,7 +500,8 @@ project (`graph-admin token create NAME --scope admin --project P`) run
 the graph-level maintenance of that graph: `ontology release` (release
 and pin), `graph skill publish`, `graph functions publish`, `graph actions publish`
 and `graph push` (`graph_configure`),
-`graph check` and `files verify` (`audit_verify`) and `graph reindex`;
+`graph check` and `files verify` (`audit_verify`) and `graph reindex` (`files extract` is
+decided as `maint.reindex` too, but the admin API serves it to maintainers only);
 reads that show the graph's configuration (`graph show`, `graph pull`,
 `graph skill render`, `graph functions show`, `graph actions show`, `ontology
 diff --graph`) need `graph_configure` too. Check and release findings quote the
@@ -961,6 +962,30 @@ expands to.
   with the key attribute and its fields, `link` and `unlink` with its
   relations, `retract` or `transition` for complete scopes) and the `reads` and
   `markings` its fields need.
+
+## Metadata records
+
+The metadata records of stored files ([Files: Metadata](files.md#metadata)) are written as
+the caller who triggers the extraction, so they are decided like any write; what is special
+is who may trigger it and who may write them at all.
+
+- **Nobody writes a record by hand.** Every op on a record or part is refused
+  (`data.semantic.managed_class`) unless it is an extraction run
+  ([Security model](security_model.md#derived-file-metadata)); this holds whatever the
+  policy allows, so `write.*` grants on the record classes matter only for the extraction.
+- **`graph file add`** extracts the file it stored with the caller's own rights. A role that
+  adds files needs `write.create`, `write.update`, `write.link`, `write.unlink` and
+  `write.retract` on the record classes of the kinds the graph imports (`files:FormatMetadata`
+  and for example `files_pdf:PdfMetadata`, with `files:metadata_of`); a role without them stores
+  the file with the warning `file.extraction_incomplete`, which names the missing action and
+  resource, and one audited `denied` event per add. A maintainer's `files extract` writes the
+  records of such files later. A caller who does not see a file type neither extracts nor learns
+  of those files: a reference to one is `entity.not_found`.
+- **`graph-admin files extract`** (a run over the whole graph or over named files) needs the
+  maintain permission on the graph, decided as `maint.reindex` (the maintain-level action
+  nearest to refreshing derived data); the `graph` program has none, and a denial is audited
+  in the installation stream. The records it writes are the maintainer's writes, so a policy
+  that denies the maintainer `write.create` on a record class stops the run at that denial.
 
 ## Authoring and installing policies
 

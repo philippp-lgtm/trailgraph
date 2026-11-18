@@ -3,10 +3,13 @@
 A graph whose ontology imports the standard module `files` (`imports:
 [{module: files, version: "^1.0"}]`) stores files: scans, documents,
 saved web pages, any media type. graph_cli stores, addresses and
-references them; it never reads what is in them. An agent reads a stored
-file itself and writes what it finds through the normal write commands.
-The commands are `graph file add|path|check` (see [`graph`](cli_graph.md))
-and `graph-admin files verify|gc|move|store check` (see
+references them; it never reads what is *in* them (text, meaning). An
+agent reads a stored file itself and writes what it finds through the
+normal write commands. What the bytes declare about themselves (size,
+type, page count, pixel size, table shape, database schema) graph_cli
+extracts deterministically as [metadata](#metadata). The commands are
+`graph file add|path|check` (see [`graph`](cli_graph.md)) and `graph-admin
+files verify|gc|move|extract|extractors|store check` (see
 [`graph-admin`](cli_graph_admin.md)).
 
 ## Model
@@ -16,6 +19,12 @@ and `graph-admin files verify|gc|move|store check` (see
   `media_type`, `file_name`, `origin` (type `local_path`), `source_url` and
   `retrieved_at`. A graph module may subclass it (`is_a: files:File`) to
   give files domain meaning.
+- `media_type` is the type the file was **recorded** with when it was added:
+  the magic bytes of its first 16 bytes, else its extension (`.txt`, `.md`,
+  `.csv`, `.tsv`, `.html`, `.json`, `.xml`, Office and OpenDocument types),
+  else `application/octet-stream`, or what `--media-type` says. It is
+  immutable and may be wrong (a text file named `.pdf`); the type the bytes
+  have is the [`detected_media_type`](#metadata) of the file's format record.
 - `files:from_file` points from any entity to a file, with the qualifiers
   `page` and `last_page` (from 1) and `locator` (a section, region or task
   number).
@@ -25,6 +34,104 @@ and `graph-admin files verify|gc|move|store check` (see
 - Web sources need no stored copy: an `iri` attribute plus a `date` for
   the retrieval. A saved copy is a stored file with `source_url` and
   `retrieved_at`. graph_cli fetches nothing from the network.
+
+## Metadata
+
+What a file's bytes say about themselves is stored as **metadata records**:
+ordinary entities of the standard modules, found, queried and referenced like
+any other, and **read-only**: only the extraction writes them, so none can be
+edited by hand or drift from the bytes ([Security](security_model.md#derived-file-metadata)).
+A record is the current result of one *extractor* for one file: a pure
+function of the file's bytes and the extractor's version. The file's content
+never changes, so a result is valid until a newer version of the extractor
+exists.
+
+| Module | Extractor | Records | Applies to |
+| --- | --- | --- | --- |
+| `files` 1.1 | `format` | `files:FormatMetadata`: `detected_media_type`, `media_type_mismatch`, `size`, `text_encoding` | every file; always on with `files` 1.1 |
+| `files_pdf` | `pdf` | `files_pdf:PdfMetadata`: `page_count`, `pdf_version`, `encrypted` | detected PDF |
+| `files_image` | `image` | `files_image:ImageMetadata`: `width`, `height` in pixels as stored (no rotation, no EXIF) | detected PNG, JPEG, GIF, WebP |
+| `files_table` | `table` | `files_table:TableMetadata`: `delimiter`, `quote_char`, `has_header`, `column_count`, `row_count`, `column_names` (the first 200), `columns_truncated` | text recorded as CSV or TSV whose content confirms a delimiter |
+| `files_sqlite` | `sqlite` | `files_sqlite:SqliteMetadata`: counts of tables, views, indexes and triggers, `user_version`; `files_sqlite:SqliteObject` per table and view (the first 500; `objects_truncated` says more exist) with `kind`, `column_count`, `column_names` | detected SQLite database |
+
+A graph opts in per kind: importing the module (`files_pdf`, ...) enables its
+extractor, and a graph that imports none pays nothing in its model.
+`graph-admin files extractors` lists what the program can extract and the
+lowest module version each needs; a graph that imports a module at a lower
+version keeps its older records and `files extract` reports `module_outdated`
+until the next ontology release takes the current version.
+
+- **The type comes from the bytes, never from the name.** `format` detects
+  the type from the first 64 KiB (signatures, SQLite, zip and OpenDocument,
+  gzip, then a text test), every other extractor dispatches on that result,
+  and `media_type_mismatch` says that the recorded type cannot be true of the
+  detected one. A binary file named `.csv` is recorded as `text/csv`, is
+  detected as `application/octet-stream` and gets no table record. The one
+  exception is delimited text: no signature tells it, so `table` applies to
+  detected text that was *recorded* as CSV or TSV (`.tsv` is mapped at add
+  time) and the content has to confirm a delimiter.
+- **Status** is `ok`, `failed` (the type applies but the bytes cannot be read
+  as it: `problem` holds a stable code such as `pdf.unreadable`,
+  `pdf.encrypted`, `table.no_dialect`, `sqlite.unreadable`, `limit.time`) or
+  `not_applicable` (an earlier version applied and the current one does not
+  accept the file). A failed result is a recorded result, not a missing
+  value. A *transient* failure (the extractor process was killed, the stored
+  copy is unreadable) says nothing about the bytes: it is reported and never
+  recorded, and the next run tries again. Every attribute a version does not
+  produce is unset, so a record never mixes two versions.
+- **Retroactive.** `graph-admin files extract --graph G` brings every file to
+  the current version of every enabled extractor: after upgrading the
+  program, after an ontology release that imports a kind, after a limit was
+  raised (`--retry-failed`). A second run writes nothing. A new version
+  updates the same record (its id and the edges that point at it stay;
+  `history` and `--as-of` show what each version said); a part the new
+  version no longer produces is retracted; a record that said `ok` and now
+  says `failed` or `not_applicable` is a *regression*, listed by
+  `--dry-run` and written. A text file renamed `.pdf` never reaches the PDF
+  extractor; if an older format version detected it as a PDF, its PDF record
+  becomes `not_applicable` and the history keeps what the older version
+  claimed. A record of a **newer** version than this program's is left alone
+  and reported (`newer_version`): an older install never downgrades.
+- **Parts.** A record owns its parts (a table of a database) and its edges to
+  them. The parts of a new version are diffed against the stored ones by key:
+  the same key is updated if changed, a new key is created, a gone key is
+  unlinked and retracted. Their names come from the file and are untrusted:
+  every character that is not printable becomes a blank, the name is trimmed
+  and cut to 200 characters and 400 bytes, and names that collide get ` (2)`,
+  ` (3)`. People point *at* parts with their own edges; a relation of the
+  graph to a part that says `on_target_inactive: refuse` makes the new version
+  of that one record wait (`blocked_by_references`), nothing is written half.
+- **When.** `graph file add` extracts the file it stored in the same command,
+  on the machine that runs it (in the remote mode, on the server, which holds
+  the bytes), as the caller, and answers `metadata`; `--no-extract` skips it,
+  and a failure never fails the add: what could not be written is the warning
+  `file.extraction_incomplete`. A caller who may add files but not write the
+  record classes (see [Access control](access_control.md#metadata-records))
+  stores the file with that warning; a maintainer's `files extract` writes the
+  records later. `graph-admin files extract` is maintenance: it needs the
+  maintain permission on the graph (`maint.reindex`), writes as the
+  maintainer, and takes `--file`, `--extractor`, `--retry-failed` and
+  `--dry-run` (which parses every file and writes nothing). Records of files
+  that are no longer active (superseded, retracted) are retracted by it.
+  `graph-admin files verify` names the records behind their extractor.
+- **Isolation.** Every extractor runs in a child process with an empty
+  environment, one read-only path, a wall-clock timeout and CPU and memory
+  limits (`[extract]`, [Configuration](configuration.md)); a limit hit is
+  `failed` with `limit.time` or `limit.memory`. With an object store the
+  bytes are streamed into a private temporary file for one run, checked
+  against their hash. On a local data root the child reads the stored file
+  directly, so a stored file altered on disk yields a result of the altered
+  bytes until `files verify --rehash` finds it.
+- **Limits of the parsers.** The PDF extractor uses `pypdf`, which opens an
+  encrypted file only with an empty user password; AES-encrypted PDFs,
+  including the common "restricted but opens without a password" kind, get
+  `failed pdf.encrypted` and no page count, because the package needed for
+  AES is deliberately not a dependency. Output depends on the parser library,
+  the interpreter's `csv` module and the SQLite library; a change that alters
+  the golden corpus bumps the extractor's version.
+- **Not extracted** (later): EXIF and location of photos, the text layer of
+  PDFs, row counts of database tables, Office and OpenDocument records, HEIC
+  size, audio and video.
 
 ## Origins and roots
 
@@ -146,7 +253,10 @@ graph by graph.
 ## Privacy
 
 Audit events name stored files by hash and size only: never a file name,
-an origin path or content. Reading a file is not audited (reads never
+an origin path or content. Metadata records are graph data like any other:
+what a graph imports is what it records about its files. A kind that would
+record personal data (the location in a photo, later) is a module of its own,
+imported on purpose, never part of a basic one. Reading a file is not audited (reads never
 are; the opt-in [access log](audit.md#access-log) counts only bytes).
 File bytes, names and origins are instance data like any attribute value:
 names and origins live in the graph's transaction log, the bytes in its

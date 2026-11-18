@@ -68,8 +68,9 @@ from term name to definition), `rules` (a list), `mappings`,
 | `namespace` | IRI namespace for exports; default `urn:graph_cli:onto:<module>#`; set it only for a namespace you control |
 | `imports` | list of `{module, version}`; `version` is a range: exact `1.2.3`, caret `^1.2`, tilde `~1.2` |
 
-`core` is imported by every module. `provenance` and `files` are opt-in
-(see [Built-in modules](#built-in-modules)).
+`core` is imported by every module. `provenance`, `files` and the file kinds
+(`files_pdf`, `files_image`, `files_table`, `files_sqlite`) are opt-in (see
+[Built-in modules](#built-in-modules)).
 
 ## Documentation keys
 

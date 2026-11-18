@@ -348,6 +348,50 @@ and does not prevent:
   ops the run expanded to) but of the request digest, which covers the whole
   document.
 
+## Derived file metadata
+
+Metadata records of stored files ([Files: Metadata](files.md#metadata)) are
+derived from the bytes of untrusted files. What protects them and what does
+not:
+
+- **Parsing runs in a child process, never in the writer.** Each extractor
+  starts as `python -I -m graph_cli.extractors.child` with an empty
+  environment, one read-only path, a wall-clock timeout, a CPU limit (a
+  second above the timeout) and an address-space limit
+  ([`[extract]`](configuration.md)); a limit hit or a crash is a recorded
+  `failed` result, a kill from outside a retried transient one. A parser bug
+  can hurt that process only, and it holds neither the graph nor a token.
+  macOS ignores the address-space limit (`RLIMIT_AS`): there the memory limit
+  is best effort and the timeout and CPU limit still hold. The limits stop
+  runaway parsers, they are not a sandbox: the child runs as the same OS user
+  and can read what that user can read.
+- **SQLite files are opened read only and immutable**, with untrusted schemas
+  off and no extension; only the schema is read, never a row. The PDF parser
+  is the one third-party parser, pinned exactly and imported only by the
+  extractors (an import contract).
+- **Records are written by the extraction only.** Every op on an entity of a
+  record or part class is refused (`data.semantic.managed_class`) unless the
+  request's source has the reserved kind `extractor` **and** the entity's key
+  starts with the source's name. The kind is set by the program in process
+  and no document can name it (`changeset.malformed`, locally and over the
+  server); the check reads the source the audit records, on the stored state
+  and the pinned model, so a caller who does not see every type gets the same
+  answer. A link from an ordinary entity *to* a record is allowed, because
+  people point at records. Not covered: ontology releases with a migration
+  (the maintainer's tool rewrites records when a module is renamed), and the
+  key prefix is the whole ownership test (no registry lookup). An action
+  whose template writes a record class can be published but never runs:
+  `graph do` is refused with the same finding.
+- **Rights are the caller's.** The records are written as the caller, so the
+  write path decides rights and visibility as for any write: a caller without
+  `write.create` on the record classes stores a file and gets a warning
+  instead of metadata. A run over the whole graph or over named files needs
+  the maintain permission (`maint.reindex`) and is not available to the
+  `graph` program; `graph file add` extracts and reports only the file it
+  stored. A stored file altered on disk in a local data root is parsed as it
+  is (`files verify --rehash` finds it); with an object store the bytes are
+  checked against their hash before a parser sees them.
+
 ## Data in backups and audit events
 
 Audit events carry ids, types, hashes and reason text, never attribute

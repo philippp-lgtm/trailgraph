@@ -99,7 +99,9 @@ pull into another folder, carry them over and push from there.
 6. `graph-admin audit verify`.
 7. Tell the user that the agents using the graph need fresh skills (a generated
    graph skill renders the new model on its own): `graph self update` or
-   `graph skills install` where they work.
+   `graph skills install` where they work. A release that imports a file kind
+   (`files_pdf`, ...) is followed by `graph-admin files extract --graph <graph>
+   --dry-run` and the run ([extract_file_metadata.md](references/extract_file_metadata.md)).
 
 A graph with several ontology modules is released the same way. Give `--module
 <main>` to `graph-admin ontology validate`, `ontology diff`, `ontology
@@ -218,7 +220,8 @@ releases that touch its keys: [feed_a_graph_from_a_pipeline.md](references/feed_
   the same model; exit 1 on error findings or a function or action that no
   longer resolves.
 - `graph-admin files verify --graph <graph>`: the stored files of a graph
-  that imports the `files` module. Moving them to an object store and back:
+  that imports the `files` module, and the metadata records behind their extractor.
+  Moving them to an object store and back:
   [move_stored_files.md](references/move_stored_files.md).
 - `graph-admin audit verify`: every chain, log and pin of the installation.
 

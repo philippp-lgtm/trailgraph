@@ -50,8 +50,9 @@ and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
 `query`; the layers above may use it. `sources` imports only `kernel` and
-`ontology_layer`. `extractors` imports only `kernel` (and the standard library, later the one PDF parser); it knows
-nothing of graphs. The storage maintenance port
+`ontology_layer`. `extractors` imports only `kernel` and the standard library; of its modules only the PDF extractor
+imports the one third-party parser (`pypdf`, deferred into the child process), and no other
+package may import it; it knows nothing of graphs. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. The S3 client
 (`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,
@@ -203,7 +204,8 @@ recorded with, and its `version` is part of its result's cache key.
 | `extractors.media_types` | the built-in media type table: the type a file is recorded with at add (magic bytes of the first 16 bytes, else the extension) |
 | `extractors.detect` | the type decided from the bytes alone (signatures, SQLite, zip and OpenDocument, gzip, a text test with the encoding) and `compatible`, which says whether the recorded type can be true of the detected one |
 | `extractors.model` | `Extractor` (name, version, module, record class, `accepts`, `run`), `ExtractionResult` (`ok` with values and parts, or `failed` with a stable problem code), `Transient`, and the problem codes of the limits |
-| `extractors.format` | the `format` extractor: detected media type, size, mismatch with the recorded type |
+| `extractors.format`, `pdf`, `image`, `table`, `sqlite` | the extractors: detected media type, size and mismatch with the recorded type; page count; pixel size; delimiter and shape of CSV and TSV; the schema of a SQLite database (opened read only and immutable, only its schema read) |
+| `extractors.text` | the one rule for a name that comes from a file: one printable line, cut by characters and bytes, with a fallback |
 | `extractors.registry` | the static registry by name (code, not configuration) |
 | `extractors.child` | the child process entry point: one JSON request on standard input, one JSON answer on standard output, CPU and address space limits applied before the file is touched |
 | `extractors.runner` | `run_extractor` starts the child with an empty environment and a wall-clock timeout and maps how it ended (answer, time limit, crash, killed from outside); `materialized` writes streamed bytes to a private temporary file for graphs whose files have no local path |
@@ -312,6 +314,8 @@ only caller of `WriteSession.commit`. The one other tx, a data migration, is bui
 | `services.write` | `WriteService.apply` and `apply_batch`; a request may carry an action plan (a published action and its bound parameters), which `apply` expands and checks on the locked snapshot; authorizes each op on its type and, for types a rule names terms of, on the attributes and relations it writes |
 | `services.reconcile_rights` | the declared needs of the scopes of a reconcile document as needs of write actions (`NeedOptions`), decided by the any-of rule of `services.action_rights` before the lock |
 | `services.actions` | `ActionService.do`: finds the visible action, binds and class-checks the parameters, hands the plan to `WriteService` |
+| `services.managed` | the managed classes: every op whose subject is a metadata record or part is refused (`data.semantic.managed_class`) unless the request's source has the kind `extractor` and the entity's key starts with the source's name; judged on the raw stored state and the pinned model, in the write path and in dry runs, before planning for a reconcile scope |
+| `services.file_metadata`, `file_metadata_plan` | `FileMetadataService.extract`: the run over a graph or named files (which extractors are enabled, which results are current, newer or stale), the child process per file and extractor, one reconcile document per (file, extractor) written through `WriteService` as the caller, the cleanup of records of inactive files; the plan part is pure over a snapshot, the model and the registry |
 | `services.files` | `FileService`: add a file (stream, hash, dedupe, origin, one create), `path` (the backend's file, else a copy in the injected `FileCache`), `open` (the one streaming read of a stored file, for the server's download and, through `open_stored`, the live view), `check`; the type recorded at add comes from `extractors.media_types` |
 
 A write runs in this order: check the graph state and the pinned ontology

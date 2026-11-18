@@ -42,6 +42,10 @@ unset key has the default given here or in the document it links to:
   `/tmp/graph_cli_<uid>`) send larger `graph` JSON answers to a file
   ([Large answers go to a file](cli_graph.md#large-answers-go-to-a-file))
 - `[roots]` and `[files] max_bytes`: [Files](files.md#origins-and-roots)
+- `[extract]`: `timeout_seconds` (default 30, above 0 up to 3600) and `max_memory_mib` (default
+  512, 64 to 65536): the limits of the process that parses one file for its
+  [metadata](files.md#metadata); read by `graph file add`, `graph-admin files extract` and the
+  server
 - `[files] store` and `[files.s3]`: [Object storage](#object-storage)
 - `[server]`: `cors_origins`, the browser origins (`https://host[:port]`)
   allowed to call `graph-server` (default none); `admin_api` (default
