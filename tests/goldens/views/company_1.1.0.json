@@ -4,7 +4,7 @@
     {
       "default": false,
       "examples": [],
-      "hash": "sha256:a8f18c389f6dd8a5f37cf93b7e8fae77ee446138dec3fefa7b0da7367a85c483",
+      "hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
       "max_bytes": null,
       "module": "organization",
       "name": "legacy_unit_overview",
@@ -18,7 +18,7 @@
           ],
           "id": "fields",
           "kind": "fields",
-          "max": 8,
+          "max": 1,
           "title": null,
           "value_chars": 100
         },
@@ -49,7 +49,7 @@
             ],
             "id": "fields",
             "kind": "fields",
-            "max": 8,
+            "max": 1,
             "title": null,
             "value_chars": 100
           },
@@ -92,7 +92,7 @@
     {
       "default": false,
       "examples": [],
-      "hash": "sha256:9861698337a521c58885983404a1c38db8997b74ec800677145644c52aab6e82",
+      "hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
       "max_bytes": null,
       "module": "organization",
       "name": "members_report",
@@ -166,7 +166,12 @@
           "members_of_unit"
         ],
         "relations": [],
-        "types": []
+        "types": [
+          {
+            "curie": "org:Department",
+            "module": "organization"
+          }
+        ]
       },
       "use_when": "Who works in a department including its teams, as a set view with a reference parameter."
     },
@@ -829,7 +834,7 @@
           "question": "Which active positions does the engineering department have?"
         }
       ],
-      "hash": "sha256:110f8c55ef9ee19f4bc5d556ab2a16e5b720d151c187187a56810788da889e2e",
+      "hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
       "max_bytes": 4096,
       "module": "organization",
       "name": "unit_overview",
@@ -854,7 +859,7 @@
           ],
           "id": "fields",
           "kind": "fields",
-          "max": 8,
+          "max": 2,
           "title": null,
           "value_chars": 300
         },
@@ -964,7 +969,7 @@
             ],
             "id": "fields",
             "kind": "fields",
-            "max": 8,
+            "max": 2,
             "title": null,
             "value_chars": 300
           },

@@ -32,6 +32,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
@@ -76,6 +77,11 @@ _SYSTEM_BASES: Final = {
     "created_at": "datetime",
     "recorded_at": "datetime",
 }
+
+
+type Operand = str | int | bool | Decimal | list[Operand]
+"""The typed operand of a ``where`` entry that a bound parameter gives (``Value`` without the
+graph types)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,19 +222,39 @@ class _Planner:
             raise _usage(argument, str(exc), expected=base, actual=text) from None
 
     def where(self, text: str) -> Pred:
+        left, value = split_assignment(text, "--where")
+        return self._where(left, value, typed=False)
+
+    def where_typed(self, left: str, operand: Operand) -> Pred:
+        """The entry ``attr[:op]`` with an already typed ``operand`` (a bound parameter): it is
+        the whole operand, never read as flag text, so a comma in a value does not split a list
+        and a value shaped like ``"x"@de`` is not a language tag."""
+        return self._where(left, operand, typed=True)
+
+    def _where(self, left: str, operand: Operand, *, typed: bool) -> Pred:
         argument = "--where"
-        left, value = split_assignment(text, argument)
         name, _, op_text = left.partition(":")
         op = op_text or "eq"
         if op not in OPS:
             raise _usage(argument, f"unknown operator {op!r}", expected=list(OPS), actual=op)
         base, attribute = self.base_of(name, argument)
-        if op == "exists":
-            if value not in ("true", "false"):
-                raise _usage(argument, "exists takes true or false", actual=value)
-            return Cmp(name, "exists", value == "true")
         numeric, tagged = base == "decimal", base in LANG_BASES
+
+        def text() -> str:
+            return _operand_text(operand) if typed else str(operand)
+
+        def scalar(item: Operand) -> JsonValue:
+            if typed and tagged:
+                return _operand_text(item)  # the text as it is: no tag is read from it
+            return self.coerce(base, _operand_text(item) if typed else str(item), argument)
+
+        if op == "exists":
+            wanted = operand if typed and isinstance(operand, bool) else text()
+            if wanted not in (True, False, "true", "false"):
+                raise _usage(argument, "exists takes true or false", actual=text())
+            return Cmp(name, "exists", wanted in (True, "true"))
         if op == "lang":
+            value = text()
             if not tagged:
                 raise _usage(argument, f"{name!r} is not language-tagged", actual=name)
             if value != "*" and normalize_language_tag(value) is None:
@@ -237,14 +263,16 @@ class _Planner:
         if attribute is not None and attribute.many:
             if op not in ("eq", "ne", "contains"):
                 raise _usage(argument, f"{name!r} has several values; use =, ne, contains or lang")
-            member = Cmp(name, "contains", self.coerce(base, value, argument), tagged=tagged)
+            member = Cmp(name, "contains", scalar(operand), tagged=tagged)
             return Not(member) if op == "ne" else member
         if op == "in":
-            items = [self.coerce(base, item, argument) for item in value.split(",")]
-            return Cmp(name, "in", items, numeric=numeric, tagged=tagged)
+            if typed and not isinstance(operand, list):
+                raise _usage(argument, "in takes a list", actual=text())
+            parts = operand if isinstance(operand, list) else text().split(",")
+            return Cmp(name, "in", [scalar(item) for item in parts], numeric=numeric, tagged=tagged)
         if op in ("contains", "prefix"):
-            return Cmp(name, op, value, tagged=tagged)
-        return Cmp(name, op, self.coerce(base, value, argument), numeric=numeric, tagged=tagged)
+            return Cmp(name, op, text(), tagged=tagged)
+        return Cmp(name, op, scalar(operand), numeric=numeric, tagged=tagged)
 
     def order(self, text: str) -> OrderKey:
         name, _, direction = text.partition(":")
@@ -260,6 +288,38 @@ class _Planner:
 
     def relation(self, name: str) -> TermRef:
         return TermRef(resolve_term("relation", name, self.model.relations))
+
+
+def _operand_text(value: Operand) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, list):
+        raise _usage("--where", "a list is not a single value")
+    return str(value)
+
+
+type Clause = str | tuple[str, Operand]
+"""A ``where`` entry: flag text (``attr[:op]=value``) or ``(attr[:op], typed operand)``."""
+
+
+def plan_clauses(
+    model: CompiledModel,
+    types: Sequence[str],
+    where: Sequence[Clause] = (),
+    sort: Sequence[str] = (),
+) -> tuple[Pred | None, tuple[OrderKey, ...]]:
+    """``where`` entries (AND-ed) and ``sort`` keys planned against ``types`` (any class when
+    empty): the one definition of the ``find`` grammar that views check at publish time (with
+    placeholder operands) and run with bound parameters."""
+    planner = _Planner(model, tuple(types))
+    preds = [
+        planner.where(entry) if isinstance(entry, str) else planner.where_typed(*entry)
+        for entry in where
+    ]
+    found = None if not preds else preds[0] if len(preds) == 1 else And(tuple(preds))
+    return found, tuple(planner.order(text) for text in sort)
 
 
 def plan_find(model: CompiledModel, spec: FindSpec) -> Query:

@@ -116,15 +116,16 @@ def load_entries(document: JsonObject) -> tuple[FunctionEntry, ...]:
                 defn=FunctionDef.from_json(entry, req_str(entry, "source_query")),
                 module=module if isinstance(module, str) else None,
                 query=req_str(entry, "query"),
-                types=_touched(touches, "types"),
-                relations=_touched(touches, "relations"),
+                types=touched(touches, "types"),
+                relations=touched(touches, "relations"),
                 hash=req_str(entry, "hash"),
             )
         )
     return tuple(found)
 
 
-def _touched(touches: JsonObject, key: str) -> tuple[Touched, ...]:
+def touched(touches: JsonObject, key: str) -> tuple[Touched, ...]:
+    """The ``key`` list of a catalog entry's ``touches`` (types or relations)."""
     out: list[Touched] = []
     for value in req_list(touches, key, "touches."):
         item = as_object(value, key)

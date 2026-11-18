@@ -29,6 +29,7 @@ from typing import ClassVar, Final, Literal
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import EMPTY
 from graph_cli.kernel.json_access import (
+    JsonShapeError,
     as_list,
     as_object,
     opt_int,
@@ -64,9 +65,8 @@ from graph_cli.kinetic.params import (
     Parser,
     Problem,
     is_null,
-    text_value,
 )
-from graph_cli.query.cypher.values import Value
+from graph_cli.ontology_layer.vocabulary import LOWER_NAME_RE
 
 VIEW_SCHEMA: Final = "graph_cli.view/1"
 CATALOG_SCHEMA: Final = "graph_cli.view_catalog/1"
@@ -84,7 +84,8 @@ PAGE_BYTES_MAX: Final = 262_144
 MIN_SECTIONS: Final = 1
 MAX_SECTIONS: Final = 32
 MAX_TITLE: Final = 100
-MAX_FIELD_NAMES: Final = 64
+MAX_FIELD_NAMES: Final = 64  # attributes a row lists
+MAX_TYPES: Final = 16  # classes a ``list`` section lists
 MAX_CLAUSES: Final = 8  # where entries and sort keys per section
 MAX_CLAUSE_CHARS: Final = 200
 MAX_ARGS: Final = 32
@@ -105,9 +106,9 @@ ROW_RELATION_MAX_DEFAULT: Final = 50
 ROW_RELATION_MAX_MAX: Final = 500
 
 SECTION_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-ATTRIBUTE_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 TERM_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}(:[A-Za-z][A-Za-z0-9_]{0,63})?$")
 PLACEHOLDER_RE: Final = re.compile(r"^\$" + PARAM_RE.pattern[1:])
+TOKEN_RE: Final = re.compile(r"\$[a-z][a-z0-9_]{0,31}")  # a placeholder anywhere in a text
 
 ENTITY_KINDS: Final = ("fields", "relations", "files", "affordances", "neighbors", "rows")
 SET_KINDS: Final = ("list", "rows")
@@ -494,7 +495,7 @@ def section_from_json(data: JsonObject, path: str) -> SectionDef:
             args=req_obj(data, "args", path),
             max=opt_int(data, "max", path),
         )
-    raise ValueError(f"{path}kind: unknown section kind {kind!r}")
+    raise JsonShapeError(f"{path}kind: unknown section kind {kind!r}")
 
 
 # ---- placeholders -----------------------------------------------------------------------------
@@ -512,21 +513,6 @@ def where_parts(text: str) -> tuple[str, str | None]:
     ``=`` and the name when the whole value is ``$name`` (else ``None``)."""
     left, sep, value = text.partition("=")
     return left, (placeholder_name(value) if sep else None)
-
-
-def param_text(value: Value) -> str:
-    """A bound parameter in the text form of a ``where`` value (a list as a comma list)."""
-    if isinstance(value, list):
-        return ",".join(text_value(v) for v in value)
-    return text_value(value)
-
-
-def substitute_where(text: str, values: Mapping[str, Value]) -> str:
-    """``text`` with a whole-value placeholder replaced by the bound parameter's text form."""
-    left, name = where_parts(text)
-    if name is None or name not in values:
-        return text
-    return f"{left}={param_text(values[name])}"
 
 
 # ---- parser -----------------------------------------------------------------------------------
@@ -605,6 +591,8 @@ class _Parse(Parser):
         entity = "takes" in top
         takes = self.term(top["takes"], "takes") if entity else None
         default = self.default(top, entity)
+        if status == "deprecated" and default:
+            self.invalid("default", "a deprecated view cannot be the default view of its class")
         max_bytes = self.limit(top, "max_bytes", MIN_BYTES, ENTITY_MAX_BYTES, "entity", entity)
         page_bytes = self.limit(top, "page_bytes", MIN_BYTES, PAGE_BYTES_MAX, "set", entity)
         params = self.params(top["params"]) if "params" in top else ()
@@ -706,17 +694,18 @@ class _Parse(Parser):
             found.append(name)
         return tuple(found) if len(found) == len(items) else None
 
-    def field_names(self, node: YamlNode, path: str) -> FieldSel:
+    def field_names(self, node: YamlNode, path: str, limit: int = MAX_FIELD_NAMES) -> FieldSel:
         """``all`` or a list of attribute names."""
         if isinstance(node, YamlScalar) and node.plain and node.text == ALL:
             return ALL
         if isinstance(node, YamlScalar):
             self.invalid(path, "expected all or a list of attribute names", node)
             return None
-        return self.names(node, path, ATTRIBUTE_RE, MAX_FIELD_NAMES)
+        return self.names(node, path, LOWER_NAME_RE, limit)
 
-    def clauses(self, node: YamlNode, path: str) -> tuple[str, ...] | None:
-        """``where`` or ``order`` entries: strings of the ``find`` flag grammar."""
+    def clauses(self, node: YamlNode, path: str, *, where: bool = False) -> tuple[str, ...] | None:
+        """``where`` or ``order`` entries: strings of the ``find`` flag grammar. A ``$name`` in a
+        ``where`` entry is the whole value after the ``=`` or nothing."""
         items = self.sequence(node, path)
         if items is None:
             return None
@@ -727,7 +716,24 @@ class _Parse(Parser):
             self.text(item, f"{path}[{i}]", limit=MAX_CLAUSE_CHARS, one_line=True)
             for i, item in enumerate(items)
         ]
+        if where:
+            for index, entry in enumerate(found):
+                if entry is not None and not self.whole_placeholder(entry, f"{path}[{index}]"):
+                    return None
         return tuple(c for c in found if c is not None) if None not in found else None
+
+    def whole_placeholder(self, entry: str, path: str) -> bool:
+        """Whether ``entry`` (a where entry) holds no ``$name`` except as its whole value."""
+        value = entry.partition("=")[2]
+        if TOKEN_RE.search(value) is None or PLACEHOLDER_RE.match(value):
+            return True
+        self.add(
+            "view.placeholder_position",
+            path,
+            "a $name stands for a whole value: write it alone after the =; a literal cannot "
+            "contain $ followed by a lowercase name",
+        )
+        return False
 
     # Sections
 
@@ -795,11 +801,20 @@ class _Parse(Parser):
     def fields_section(
         self, sid: str, title: str | None, body: dict[str, YamlNode], path: str
     ) -> SectionDef | None:
-        fields = self.field_names(body["fields"], f"{path}.fields") if "fields" in body else None
+        fields = (
+            self.field_names(body["fields"], f"{path}.fields", FIELDS_MAX_MAX)
+            if "fields" in body
+            else None
+        )
         value_chars = self.number(
             body, "value_chars", path, 1, VALUE_CHARS_MAX, VALUE_CHARS_DEFAULT
         )
-        count = self.number(body, "max", path, 1, FIELDS_MAX_MAX, FIELDS_MAX_DEFAULT)
+        # a list shows all its names unless max says less is wanted (then it is refused)
+        default = len(fields) if isinstance(fields, tuple) else FIELDS_MAX_DEFAULT
+        count = self.number(body, "max", path, 1, FIELDS_MAX_MAX, default)
+        if isinstance(fields, tuple) and count is not None and count < len(fields):
+            self.invalid(f"{path}.max", f"is {count}; the section lists {len(fields)} fields")
+            return None
         if ("fields" in body and fields is None) or value_chars is None or count is None:
             return None
         return FieldsSection(sid, title, fields, value_chars, count)
@@ -904,7 +919,7 @@ class _Parse(Parser):
         if "direction" in body:
             direction = self.choice(body["direction"], f"{path}.direction", DIRECTIONS) or ""
         fields = self.field_names(body["fields"], f"{path}.fields") if "fields" in body else None
-        where = self.clauses(body["where"], f"{path}.where") if "where" in body else ()
+        where = self.clauses(body["where"], f"{path}.where", where=True) if "where" in body else ()
         order = self.clauses(body["order"], f"{path}.order") if "order" in body else ()
         count = self.number(body, "max", path, 1, ROW_RELATION_MAX_MAX, ROW_RELATION_MAX_DEFAULT)
         broken = (
@@ -926,7 +941,7 @@ class _Parse(Parser):
     ) -> tuple[FieldSel, tuple[str, ...], tuple[str, ...], tuple[RowRelation, ...]] | None:
         """The keys ``list`` and ``neighbors`` share: fields, where, order, relations."""
         fields = self.field_names(body["fields"], f"{path}.fields") if "fields" in body else None
-        where = self.clauses(body["where"], f"{path}.where") if "where" in body else ()
+        where = self.clauses(body["where"], f"{path}.where", where=True) if "where" in body else ()
         order = self.clauses(body["order"], f"{path}.order") if "order" in body else ()
         relations = (
             self.row_relations(body["relations"], f"{path}.relations")
@@ -971,7 +986,7 @@ class _Parse(Parser):
         if node is None:
             return None
         if isinstance(node, YamlSeq):
-            return self.names(node, path, TERM_RE, MAX_FIELD_NAMES)
+            return self.names(node, path, TERM_RE, MAX_TYPES)
         found = self.term(node, path)
         return None if found is None else (found,)
 
@@ -1002,6 +1017,24 @@ class _Parse(Parser):
             return None
         return RowsSection(sid, function, title, args, count)
 
+    def whole_argument(self, value: JsonValue, path: str) -> bool:
+        """Whether a ``$name`` in an argument is the whole argument (never inside a text or a
+        list)."""
+        texts = value if isinstance(value, list) else [value]
+        for text in texts:
+            if not isinstance(text, str) or TOKEN_RE.search(text) is None:
+                continue
+            if isinstance(value, str) and PLACEHOLDER_RE.match(value):
+                continue
+            self.add(
+                "view.placeholder_position",
+                path,
+                "a $name stands for a whole argument: write it alone, not inside a text or a "
+                "list; a literal cannot contain $ followed by a lowercase name",
+            )
+            return False
+        return True
+
     def args(self, node: YamlNode, path: str) -> dict[str, JsonValue] | None:
         if not isinstance(node, YamlMap):
             if is_null(node):
@@ -1025,7 +1058,7 @@ class _Parse(Parser):
                 ok = False
                 continue
             literal = self.literal(value, here)
-            if literal is None:
+            if literal is None or not self.whole_argument(literal, here):
                 ok = False
                 continue
             found[key] = literal

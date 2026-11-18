@@ -30,6 +30,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from decimal import Decimal
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
@@ -59,14 +60,14 @@ from graph_cli.kinetic.view_format import (
     SectionDef,
     ViewDef,
     load_view,
-    param_text,
     placeholder_name,
     where_parts,
 )
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import LANG_BASES, SYSTEM_FIELDS
 from graph_cli.query.cypher.resolve import SYSTEM_BASES
-from graph_cli.query.plan import FindSpec, plan_find, resolve_term
+from graph_cli.query.cypher.values import Value
+from graph_cli.query.plan import Clause, Operand, plan_clauses, resolve_term
 
 MAX_VIEWS: Final = 1000
 
@@ -99,8 +100,10 @@ def check_views(
     """The problems a published catalog has against ``model`` and ``functions`` (none: it
     still holds).
 
-    Every view is compiled again from its stored source; a view that compiles must read as
-    stored (``view.stale``: the compiled form is not what the source gives now). A document
+    Every view is compiled again from its stored source. A view that compiles is stale
+    (``view.stale``) when its stored normalized form no longer compiles or reads differently
+    than the source does now (its class, parameters or sections); the hash is the identity of
+    the entry, not the invariant: a release that only changes a module id breaks nothing. A document
     of another shape raises ``JsonShapeError``, an unknown schema
     ``format.unsupported_version``.
     """
@@ -114,28 +117,36 @@ def check_views(
     entries = [as_object(e, "views") for e in req_list(document, "views")]
     problems: list[Problem] = []
     defs: list[ViewDef] = []
-    stored: dict[str, JsonObject] = {}
+    stored: dict[str, tuple[JsonObject, ViewDef]] = {}
     for entry in entries:
+        name = req_str(entry, "name")
         try:
-            defs.append(ViewDef.from_json(req_obj(entry, "source", "views.")))
-        except (JsonShapeError, ValueError) as exc:
-            problems.append(
-                _stale(str(entry.get("name")), f"the stored view no longer reads: {exc}")
-            )
+            source = ViewDef.from_json(req_obj(entry, "source", "views."))
+            normalized = ViewDef.from_json(entry)
+        except JsonShapeError as exc:
+            problems.append(_stale(name, f"the stored view no longer reads: {exc}"))
             continue
-        stored[req_str(entry, "name")] = entry
+        if source.name != name or normalized.name != name:
+            problems.append(_stale(name, "the stored view and its source have different names"))
+            continue
+        defs.append(source)
+        stored[name] = (entry, normalized)
     fresh, found = _compile(defs, model, functions)
     problems.extend(found)
+    active = frozenset(d.name for d in defs if d.status == "active")
+    by_name = {f.name: f for f in functions}
     for value in req_list(fresh, "views"):
         compiled = as_object(value, "views")
         name = req_str(compiled, "name")
-        if compiled.get("hash") != stored[name].get("hash"):
-            problems.append(
-                _stale(
-                    name,
-                    "the stored view reads differently than its source does against this model",
-                )
-            )
+        entry, normalized = stored[name]
+        again = _Compile(normalized, model, by_name, active)
+        again.run()
+        if again.problems:
+            reason = f"the stored form no longer compiles: {again.problems[0].message}"
+            problems.append(_stale(name, reason))
+        elif any(compiled.get(key) != entry.get(key) for key in ("takes", "params", "sections")):
+            reason = "the stored form reads differently than its source does against this model"
+            problems.append(_stale(name, reason))
     if len(entries) > MAX_VIEWS:
         problems.append(_too_many(len(entries)))
     return problems
@@ -168,6 +179,14 @@ def deprecated_function_uses(
                 )
             )
     return found
+
+
+def _operand(value: Value) -> Operand:
+    """A placeholder value as the typed operand of a ``where`` entry."""
+    if isinstance(value, list):
+        return [_operand(item) for item in value]
+    assert isinstance(value, str | int | bool | Decimal)
+    return value
 
 
 def _too_many(count: int) -> Problem:
@@ -244,7 +263,25 @@ class _Compile:
     def add(self, code: str, path: str | None, message: str, **details: JsonValue) -> None:
         self.problems.append(Problem(self.defn.name, code, message, path, None, details, "view"))
 
+    def collect_uses(self) -> None:
+        """The parameters the sections use, found before any check can skip a section: a
+        parameter is unused only when no where entry and no argument names it."""
+        for section in self.defn.sections:
+            texts: list[str] = []
+            if isinstance(section, NeighborsSection | ListSection):
+                texts = [*section.where, *(w for r in section.relations for w in r.where)]
+            for text in texts:
+                name = where_parts(text)[1]
+                if name is not None and name != ENTITY:
+                    self.used.add(name)
+            if isinstance(section, RowsSection):
+                for value in section.args.values():
+                    name = placeholder_name(value)
+                    if name is not None and name != ENTITY:
+                        self.used.add(name)
+
     def run(self) -> dict[str, JsonValue] | None:
+        self.collect_uses()
         module = resolve_module(self.model, self.defn.module, "view", self.add)
         self.replacement()
         self.parameters()
@@ -286,6 +323,8 @@ class _Compile:
                     curie=param.of_class,
                 )
                 usable = False
+            elif param.type == "ref" and param.of_class is not None:
+                self.types.add(param.of_class)
             if param.type == "enum" and param.enum not in self.model.enums:
                 self.add(
                     "view.unknown_enum",
@@ -441,21 +480,23 @@ class _Compile:
         order: tuple[str, ...],
         path: str,
     ) -> None:
-        """Plan the entries with the ``find`` planner against ``types`` (``()``: any class)."""
+        """Plan the entries with the ``find`` planner against ``types`` (``()``: any class); a
+        ``$name`` is planned with a placeholder operand of the parameter's type."""
         for index, text in enumerate(where):
             here = f"{path}.where[{index}]"
             left, name = where_parts(text)
             attribute, _, op = left.partition(":")
             self.touch(attribute)
-            param: ParamDef | None = None
+            clause: Clause = text
             if name is not None:
                 param = self.parameter(name, here)
                 if param is None:
                     continue
                 if self.where_fit(param, attribute, op or "eq", classes, here):
                     continue
-                text = f"{left}={param_text(placeholder(param, self.model))}"
-            self.plan(types, here, "view.invalid_where", where=(text,))
+                operand = "*" if op == "lang" else _operand(placeholder(param, self.model))
+                clause = (left, operand)
+            self.plan(types, here, "view.invalid_where", where=(clause,))
         for index, text in enumerate(order):
             self.touch(text.partition(":")[0])
             self.plan(types, f"{path}.order[{index}]", "view.invalid_order", sort=(text,))
@@ -466,12 +507,23 @@ class _Compile:
         path: str,
         code: str,
         *,
-        where: tuple[str, ...] = (),
+        where: tuple[Clause, ...] = (),
         sort: tuple[str, ...] = (),
     ) -> None:
         try:
-            plan_find(self.model, FindSpec(types=types, where=where, sort=sort))
+            plan_clauses(self.model, types, where, sort)
         except GraphCliError as exc:
+            if exc.code == "term.unknown" and exc.details.get("kind") == "field":
+                known = exc.details.get("did_you_mean")
+                self.add(
+                    "view.unknown_attribute",
+                    path,
+                    exc.message,
+                    kind="attribute",
+                    term=exc.details.get("term"),
+                    did_you_mean=known if isinstance(known, list) else [],
+                )
+                return
             details = {k: v for k, v in exc.details.items() if k != "argument"}
             self.add(
                 code,
@@ -491,7 +543,6 @@ class _Compile:
                 "rows section",
             )
             return None
-        self.used.add(name)
         param = self.declared.get(name)
         if param is None:
             self.add(
@@ -648,10 +699,6 @@ class _Compile:
     def rows_section(self, section: RowsSection, path: str) -> RowsSection | None:
         function = self.functions.get(section.function)
         if function is None:
-            for value in section.args.values():
-                name = placeholder_name(value)
-                if name is not None and name != ENTITY:
-                    self.used.add(name)  # not reported again as unused
             names = sorted(self.functions)
             self.add(
                 "view.unknown_function",

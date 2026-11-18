@@ -1,13 +1,15 @@
 """The view file format ``graph_cli.view/1``: shape, flavours, limits, problems."""
 
-from decimal import Decimal
-
 import pytest
 from support.views import BROKEN_VIEWS, VALID, read_dir
 
 from graph_cli.kinetic import card
 from graph_cli.kinetic.view_format import (
     ENTITY_MAX_BYTES,
+    FIELDS_MAX_DEFAULT,
+    GROUPS_MAX_DEFAULT,
+    ITEMS_MAX_DEFAULT,
+    VALUE_CHARS_DEFAULT,
     AffordancesSection,
     FieldsSection,
     FilesSection,
@@ -19,13 +21,10 @@ from graph_cli.kinetic.view_format import (
     RowsSection,
     ViewDef,
     load_view,
-    param_text,
     placeholder_name,
-    substitute_where,
     view_name,
     where_parts,
 )
-from graph_cli.query.cypher.values import Value
 
 ENTITY_HEAD = (
     "schema: graph_cli.view/1\nname: probe\nmodule: organization\nsummary: A probe.\n"
@@ -91,7 +90,7 @@ def test_an_entity_view_is_read_in_full() -> None:
         "affordances",
     ]
     fields, relations, neighbors, rows, files, affordances = defn.sections
-    assert fields == FieldsSection("fields", None, ("name", "alt_labels"), 300, 8)
+    assert fields == FieldsSection("fields", None, ("name", "alt_labels"), 300, 2)
     assert relations == RelationsSection(
         "relations",
         None,
@@ -165,7 +164,7 @@ def test_fields_may_be_all_names_or_left_out() -> None:
         fields="all"
     )
     named = parsed(entity("  - kind: fields\n    fields: [name, title]\n"))
-    assert named.sections[0] == FieldsSection(fields=("name", "title"))
+    assert named.sections[0] == FieldsSection(fields=("name", "title"), max=2)
     assert codes(entity("  - kind: fields\n    fields: everything\n")) == ["view.invalid_value"]
     assert codes(entity("  - kind: fields\n    fields: [name, name]\n")) == ["view.invalid_value"]
     assert codes(entity("  - kind: fields\n    fields: []\n")) == ["view.invalid_value"]
@@ -428,25 +427,67 @@ def test_placeholders_are_whole_values_only() -> None:
     assert where_parts("exists") == ("exists", None)
 
 
-def test_where_entries_are_substituted_with_text_forms() -> None:
-    values: dict[str, Value] = {
-        "state": "open",
-        "day": "2026-01-01",
-        "amount": Decimal("1.50"),
-        "flag": True,
-        "many": ["a", "b"],
-        "count": 3,
-    }
+def test_a_placeholder_must_be_a_whole_value() -> None:
+    sections = "  - kind: list\n    type: ops:Task\n    where: [{entry}]\n"
+    ok = setview(sections.format(entry='"status=$s"'))
+    assert parsed(ok).sections[0].to_json()["where"] == ["status=$s"]
+    for entry in ('"title:prefix=a$s"', '"status:in=$s,x"', '"status:in=$a,$b"', '"title=x $s y"'):
+        assert codes(setview(sections.format(entry=entry))) == ["view.placeholder_position"], entry
+    # a literal that merely looks like one after another character is a literal
+    assert parsed(setview(sections.format(entry='"title=$"'))).name == "probe"
+    assert parsed(setview(sections.format(entry='"title=$S"'))).name == "probe"
 
-    def sub(text: str) -> str:
-        return substitute_where(text, values)
 
-    assert sub("status=$state") == "status=open"
-    assert sub("due_on:lt=$day") == "due_on:lt=2026-01-01"
-    assert sub("price:ge=$amount") == "price:ge=1.50"
-    assert sub("active=$flag") == "active=true"
-    assert sub("title:in=$many") == "title:in=a,b"
-    assert sub("size:gt=$count") == "size:gt=3"
-    assert sub("status=$other") == "status=$other"  # not bound: left as it is
-    assert sub("status=open") == "status=open"
-    assert param_text(["x"]) == "x"
+def test_a_placeholder_in_an_argument_must_be_the_whole_argument() -> None:
+    rows = "  - kind: rows\n    function: f_one\n    args: {{a: {value}}}\n"
+    assert parsed(entity(rows.format(value="$p"))).name == "probe"
+    for value in ('"x $p"', "[$p]", '["a", "$p"]', '"$p-1"'):
+        assert codes(entity(rows.format(value=value))) == ["view.placeholder_position"], value
+    assert parsed(entity(rows.format(value='"$P"'))).name == "probe"  # not a placeholder
+
+
+def test_a_fields_list_shows_all_its_names_unless_max_says_otherwise() -> None:
+    names = "[name, title, status]"
+    section = parsed(entity(f"  - kind: fields\n    fields: {names}\n")).sections[0]
+    assert isinstance(section, FieldsSection) and section.max == 3  # not the default of 8
+    assert (
+        parsed(entity(f"  - kind: fields\n    fields: {names}\n    max: 5\n"))
+        .sections[0]
+        .to_json()["max"]
+        == 5
+    )
+    short = f"  - kind: fields\n    fields: {names}\n    max: 2\n"
+    assert codes(entity(short)) == ["view.invalid_value"]
+    many = ", ".join(f"a{i}" for i in range(33))
+    assert codes(entity(f"  - kind: fields\n    fields: [{many}]\n")) == ["view.invalid_value"]
+    thirty_two = ", ".join(f"a{i}" for i in range(32))
+    listed = parsed(entity(f"  - kind: fields\n    fields: [{thirty_two}]\n")).sections[0]
+    assert isinstance(listed, FieldsSection) and listed.max == 32
+    for other in ("all", ""):  # all and the generated choice keep the default of 8
+        body = "  - kind: fields\n" + (f"    fields: {other}\n" if other else "")
+        assert parsed(entity(body)).sections[0].to_json()["max"] == 8
+
+
+def test_a_deprecated_view_cannot_be_the_default() -> None:
+    body = "  - kind: files\n"
+    assert codes(entity(body, "status: deprecated\ndefault: true\n")) == ["view.invalid_value"]
+    assert parsed(entity(body, "status: deprecated\ndefault: false\n")).default is False
+
+
+def test_a_list_names_at_most_sixteen_classes() -> None:
+    many = ", ".join(f"ops:C{i}" for i in range(17))
+    assert codes(setview(f"  - kind: list\n    type: [{many}]\n")) == ["view.invalid_value"]
+    sixteen = ", ".join(f"ops:C{i}" for i in range(16))
+    assert (
+        len(
+            parsed(setview(f"  - kind: list\n    type: [{sixteen}]\n"))
+            .sections[0]
+            .to_json()["type"]
+        )
+        == 16
+    )  # type: ignore[arg-type]
+
+
+def test_the_defaults_are_the_cards() -> None:
+    assert (FIELDS_MAX_DEFAULT, VALUE_CHARS_DEFAULT) == (card.FIELDS_MAX, card.VALUE_CHARS)
+    assert (GROUPS_MAX_DEFAULT, ITEMS_MAX_DEFAULT) == (card.GROUPS_MAX, card.ITEMS_MAX)

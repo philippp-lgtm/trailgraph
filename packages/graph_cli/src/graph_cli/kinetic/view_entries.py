@@ -15,7 +15,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str, str_list
-from graph_cli.kinetic.entries import Touched, signature
+from graph_cli.kinetic.entries import Touched, signature, touched
 from graph_cli.kinetic.view_format import ViewDef
 
 DEPRECATED: Final = "deprecated"
@@ -125,20 +125,11 @@ def load_view_entries(document: JsonObject) -> tuple[ViewEntry, ...]:
                 defn=ViewDef.from_json(entry),
                 source=ViewDef.from_json(req_obj(entry, "source", "views.")),
                 module=module if isinstance(module, str) else None,
-                types=_touched(touches, "types"),
-                relations=_touched(touches, "relations"),
+                types=touched(touches, "types"),
+                relations=touched(touches, "relations"),
                 attributes=str_list(touches, "attributes", "touches."),
                 functions=str_list(touches, "functions", "touches."),
                 hash=req_str(entry, "hash"),
             )
         )
     return tuple(found)
-
-
-def _touched(touches: JsonObject, key: str) -> tuple[Touched, ...]:
-    out: list[Touched] = []
-    for value in req_list(touches, key, "touches."):
-        item = as_object(value, key)
-        module = item.get("module")
-        out.append(Touched(req_str(item, "curie"), module if isinstance(module, str) else None))
-    return tuple(out)

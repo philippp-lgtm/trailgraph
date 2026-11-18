@@ -349,7 +349,8 @@ def test_a_row_relation_is_checked_against_the_rows_and_its_far_end() -> None:
     assert codes(set_view(base.format(more="fields: [name]"))) == []
     # the holder is a person: no title there
     assert codes(set_view(base.format(more="fields: [title]"))) == ["view.unknown_attribute"]
-    assert codes(set_view(base.format(more='where: ["email=x"]'))) == ["view.invalid_where"]
+    # an attribute the neighbours do not have is the same problem as in a fields list
+    assert codes(set_view(base.format(more='where: ["email=x"]'))) == ["view.unknown_attribute"]
     out = base.replace("direction: in", "direction: out")
     assert codes(set_view(out.format(more="fields: [name]"))) == ["view.relation_mismatch"]
 
@@ -407,9 +408,12 @@ def test_where_and_order_plan_with_the_find_planner() -> None:
 def test_a_planner_error_is_carried_into_the_problem() -> None:
     unknown = set_view('  - kind: list\n    type: ops:Task\n    where: ["staus=open"]\n')
     (problem,) = problems_of(unknown)
-    assert problem.code == "view.invalid_where"
-    assert problem.details["error"] == "term.unknown"
+    # an unknown attribute is one code wherever it stands, so rename hints reach where and order
+    assert problem.code == "view.unknown_attribute" and problem.path == "sections[0].where[0]"
+    assert (problem.details["kind"], problem.details["term"]) == ("attribute", "staus")
     assert problem.details["did_you_mean"] == ["status"]
+    missing = set_view('  - kind: list\n    type: ops:Task\n    order: ["staus"]\n')
+    assert [p.code for p in problems_of(missing)] == ["view.unknown_attribute"]
     order = set_view('  - kind: list\n    type: ops:Task\n    order: ["due_on:sideways"]\n')
     (problem,) = problems_of(order)
     assert problem.code == "view.invalid_order" and problem.path == "sections[0].order[0]"
@@ -419,7 +423,7 @@ def test_a_planner_error_is_carried_into_the_problem() -> None:
 def test_where_is_checked_against_the_classes_of_the_section() -> None:
     # work_email is an attribute of persons: not of tasks
     bad = set_view('  - kind: list\n    type: ops:Task\n    where: ["work_email=x"]\n')
-    assert codes(bad) == ["view.invalid_where"]
+    assert codes(bad) == ["view.unknown_attribute"]
     ok = set_view('  - kind: list\n    type: ppl:Person\n    where: ["work_email=x"]\n')
     assert codes(ok) == []
     # a neighbors section plans against the far end
@@ -434,7 +438,7 @@ def test_where_is_checked_against_the_classes_of_the_section() -> None:
         '    where: ["name=x"]\n',
         takes="org:OrgUnit",
     )
-    assert codes(far) == ["view.invalid_where"]
+    assert codes(far) == ["view.unknown_attribute"]
 
 
 @pytest.mark.parametrize(
@@ -675,7 +679,7 @@ def test_a_removed_attribute_breaks_the_views_that_name_it() -> None:
     problems = check_views(document(), replace(MODEL, classes=classes), FUNCTIONS)
     broken = sorted({p.name for p in problems})
     assert broken == ["org_catalog", "position_overview", "unit_overview"]
-    assert {p.code for p in problems} == {"view.unknown_attribute", "view.invalid_order"}
+    assert {p.code for p in problems} == {"view.unknown_attribute"}  # fields, order and where
 
 
 def test_a_removed_relation_breaks_the_views_that_name_it() -> None:
@@ -712,16 +716,52 @@ def test_a_function_that_changed_a_parameter_breaks_the_view_that_binds_it() -> 
 def test_a_stored_entry_that_reads_differently_than_its_source_is_stale() -> None:
     doc = document()
     tampered = copy.deepcopy(doc)
-    entry = next(e for e in tampered["views"] if e["name"] == "members_report")
-    entry["source"]["summary"] = "Another summary."  # the source changed, the entry did not
+    entry = next(e for e in tampered["views"] if e["name"] == "unit_overview")
+    entry["source"]["sections"][2]["order"] = ["status"]  # the source changed, the entry did not
     problems = check_views(tampered, MODEL, FUNCTIONS)
-    assert [(p.name, p.code) for p in problems] == [("members_report", "view.stale")]
+    assert [(p.name, p.code) for p in problems] == [("unit_overview", "view.stale")]
+    assert "differently" in problems[0].message
+
+
+def test_a_stored_form_that_no_longer_compiles_is_stale() -> None:
+    doc = document()
+    entry = next(e for e in doc["views"] if e["name"] == "unit_overview")
+    entry["sections"][2]["relation"] = "org:nope"  # the stored form names a relation that is gone
+    (problem,) = check_views(doc, MODEL, FUNCTIONS)
+    assert (problem.name, problem.code) == ("unit_overview", "view.stale")
+    assert "no longer compiles" in problem.message
+
+
+def test_a_release_that_only_changes_a_module_id_breaks_no_view() -> None:
+    """The hash covers the module ids; the invariant does not (as for functions and actions)."""
+    modules = tuple(
+        replace(m, id="organisation") if m.id == "organization" else m for m in MODEL.modules
+    )
+    renamed = replace(MODEL, modules=modules)
+    problems = check_views(document(), renamed, FUNCTIONS)
+    # the views of the module name it: that is a real problem; the others still hold
+    assert {p.name for p in problems if p.code == "view.stale"} == set()
+    others = {n: t for n, t in valid_sources().items() if "module: operations" in t}
+    compiled = compile_views(others, MODEL, FUNCTIONS)[0]
+    assert check_views(compiled, renamed, FUNCTIONS) == []
+    entry = compiled["views"][0]
+    assert entry["touches"]["types"][0]["module"] == "operations"
+    again = compile_views(others, renamed, FUNCTIONS)[0]
+    assert again["views"][0]["hash"] == entry["hash"]  # no module changed here
+
+
+def test_the_names_of_an_entry_and_its_source_must_agree() -> None:
+    doc = document()
+    entry = next(e for e in doc["views"] if e["name"] == "members_report")
+    entry["source"]["name"] = "another_name"
+    (problem,) = check_views(doc, MODEL, FUNCTIONS)
+    assert (problem.name, problem.code) == ("members_report", "view.stale")
 
 
 def test_a_stored_entry_that_does_not_read_is_stale() -> None:
     doc = document()
     entry = next(e for e in doc["views"] if e["name"] == "members_report")
-    del entry["source"]["sections"]
+    entry["source"]["sections"][0]["kind"] = "nonsense"
     assert [(p.name, p.code) for p in check_views(doc, MODEL, FUNCTIONS)] == [
         ("members_report", "view.stale")
     ]
@@ -743,3 +783,61 @@ def test_the_published_check_repeats_the_default_rule() -> None:
     assert [(p.name, p.code) for p in check_views(doc, MODEL, FUNCTIONS)] == [
         ("zz_twin", "view.default_taken")
     ]
+
+
+# review of step 1: where operands, unused parameters, touches
+
+
+def test_lang_takes_a_string_parameter() -> None:
+    sections = '  - kind: list\n    type: ops:Task\n    where: ["title:lang=$p"]\n'
+    view = set_view(sections, extra="params:\n" + param("p", "type: string; default: de"))
+    model = _with_language_attribute()
+    assert [p.code for p in problems_of(view, model=model)] == []
+    assert codes(view) == ["view.invalid_where"]  # tasks have no language-tagged attribute
+
+
+def _with_language_attribute() -> Any:
+    from support.cards import with_attribute
+
+    return with_attribute(MODEL, "ops:Task", "title", "title", type="lang_string")
+
+
+def test_a_list_parameter_is_planned_as_a_list_whatever_a_value_looks_like() -> None:
+    from graph_cli.query.plan import plan_clauses
+
+    pred, _ = plan_clauses(MODEL, ("ops:Task",), [("title:in", ["a,b", "c"])])
+    assert pred is not None and list(pred.value) == ["a,b", "c"]  # type: ignore[attr-defined]
+
+
+def test_no_false_unused_parameter_follows_a_skipped_section() -> None:
+    declared = "params:\n" + param("p", "type: string; default: open")
+    where = '    where: ["status=$p"]\n'
+    cases = [
+        (
+            set_view("  - kind: list\n    type: [ops:Task, ops:Nope]\n" + where, extra=declared),
+            ["view.unknown_class"],
+        ),
+        (
+            entity_view("  - kind: neighbors\n    relation: org:nope\n" + where, extra=declared),
+            ["view.unknown_relation"],
+        ),
+        (
+            entity_view("  - kind: neighbors\n    relation: org:holds\n" + where, extra=declared),
+            ["view.relation_mismatch"],
+        ),
+        (
+            entity_view(
+                "  - kind: neighbors\n    relation: org:in_unit\n    direction: in\n" + where,
+                takes="org:Nope",
+                extra=declared,
+            ),
+            ["view.unknown_class"],
+        ),
+    ]
+    for sources, expected in cases:
+        assert codes(sources) == expected
+
+
+def test_the_classes_of_ref_parameters_are_touched() -> None:
+    touches = entries()["members_report"]["touches"]
+    assert [t["curie"] for t in touches["types"]] == ["org:Department"]

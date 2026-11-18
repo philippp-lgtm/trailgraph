@@ -41,6 +41,13 @@ from graph_cli.kernel.langtag import text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.records import EdgeRecord, Revision
 from graph_cli.kernel.text import normalize_label
+from graph_cli.kinetic.view_format import (
+    ENTITY_MAX_BYTES,
+    FIELDS_MAX_DEFAULT,
+    GROUPS_MAX_DEFAULT,
+    ITEMS_MAX_DEFAULT,
+    VALUE_CHARS_DEFAULT,
+)
 from graph_cli.ontology_layer.affordances import ACTIVE
 from graph_cli.ontology_layer.model import AttributeDef, Bound, CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
@@ -52,15 +59,15 @@ GENERATED: Final = "generated"
 FILES_MODULE_RELATION: Final = "files:from_file"
 FILE_CLASS: Final = "files:File"
 
-BYTE_LIMIT: Final = 6144
-FIELDS_MAX: Final = 8
-VALUE_CHARS: Final = 100
+BYTE_LIMIT: Final = ENTITY_MAX_BYTES  # the one definition is the format's: a view may only lower it
+FIELDS_MAX: Final = FIELDS_MAX_DEFAULT
+VALUE_CHARS: Final = VALUE_CHARS_DEFAULT
 GUARD_VALUE_CHARS: Final = 40
 LIST_ITEMS: Final = 5
 OTHER_MAX: Final = 12
 ALT_LABELS_MAX: Final = 3
-GROUPS_MAX: Final = 8
-ITEMS_MAX: Final = 3
+GROUPS_MAX: Final = GROUPS_MAX_DEFAULT
+ITEMS_MAX: Final = ITEMS_MAX_DEFAULT
 LABEL_CHARS: Final = 48
 KEY_CHARS: Final = 60
 FILES_MAX: Final = 5

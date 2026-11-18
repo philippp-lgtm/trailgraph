@@ -6,4 +6,4 @@ use_when: Testing one rule of the checks.
 sections:
   - kind: list
     type: ops:Task
-    order: [nope]
+    order: ["due_on:sideways"]
