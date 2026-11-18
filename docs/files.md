@@ -107,8 +107,9 @@ until the next ontology release takes the current version.
   and a failure never fails the add: what could not be written is the warning
   `file.extraction_incomplete`. A caller who may add files but not write the
   record classes (see [Access control](access_control.md#metadata-records))
-  stores the file with that warning; a maintainer's `files extract` writes the
-  records later. `graph-admin files extract` is maintenance: it needs the
+  stores the file with that warning, which names the missing right (found by a
+  dry run, so nothing is audited per add); a maintainer's `files extract`
+  writes the records later. `graph-admin files extract` is maintenance: it needs the
   maintain permission on the graph (`maint.reindex`), writes as the
   maintainer, and takes `--file`, `--extractor`, `--retry-failed` and
   `--dry-run` (which parses every file and writes nothing). Records of files
@@ -118,8 +119,8 @@ until the next ontology release takes the current version.
   environment, one read-only path, a wall-clock timeout and CPU and memory
   limits (`[extract]`, [Configuration](configuration.md)); a limit hit is
   `failed` with `limit.time` or `limit.memory`. With an object store the
-  bytes are streamed into a private temporary file for one run, checked
-  against their hash. On a local data root the child reads the stored file
+  bytes are streamed into one private temporary file per file and run, shared by
+  its extractors and checked against its hash. On a local data root the child reads the stored file
   directly, so a stored file altered on disk yields a result of the altered
   bytes until `files verify --rehash` finds it.
 - **Limits of the parsers.** The PDF extractor uses `pypdf`, which opens an

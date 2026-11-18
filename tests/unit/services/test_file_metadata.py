@@ -29,6 +29,7 @@ from graph_cli.extractors.runner import ExtractLimits
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, parse_id
+from graph_cli.kernel.ports.audit import INSTALLATION_STREAM
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.bundle import DirectorySource, LayeredSource
@@ -875,3 +876,26 @@ def test_a_run_that_ends_early_says_how_far_it_got(graph: Graph) -> None:
     assert isinstance(progress, dict)
     assert progress["files"] == 3 and progress["files_done"] == 1
     assert progress["records_written"] == 2 and progress["last_seq"] == seq(graph)
+
+
+def test_an_add_time_run_of_a_caller_who_may_not_write_records_is_quiet(graph: Graph) -> None:
+    """The dry run finds the missing right unaudited: the documents are skipped, the report
+    names the right, and no event is appended to any audit stream."""
+    pdf = graph.add("one_page.pdf")
+    writer = graph.env.make_service(_Policy(graph, READ_ONLY))
+    service = graph.service(registry(pdf_stub()), writer=writer)
+    events = list(graph.env.audit.read_lines(INSTALLATION_STREAM))
+    head = seq(graph)
+    report = service.extract(
+        graph.request(actor=graph.env.actor, files=(pdf,), maintenance=False, named_run=False)
+    )
+    assert [(d["extractor"], d["action"]) for d in report.denied] == [
+        ("format", "write.create"),
+        ("pdf", "write.create"),
+    ]
+    assert report.metadata == [] and seq(graph) == head
+    (warning,) = report.warnings()
+    assert warning.code == "file.extraction_incomplete"
+    assert "you may not write its metadata records (write.create on graph:" in warning.message
+    assert warning.details["extractors"] == ["format", "pdf"]
+    assert list(graph.env.audit.read_lines(INSTALLATION_STREAM)) == events  # nothing audited

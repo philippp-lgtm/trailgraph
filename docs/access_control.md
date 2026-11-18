@@ -978,8 +978,9 @@ is who may trigger it and who may write them at all.
   `write.retract` on the record classes of the kinds the graph imports (`files:FormatMetadata`
   and for example `files_pdf:PdfMetadata`, with `files:metadata_of`); a role without them stores
   the file with the warning `file.extraction_incomplete`, which names the missing action and
-  resource, and one audited `denied` event per add. A maintainer's `files extract` writes the
-  records of such files later. A caller who does not see a file type neither extracts nor learns
+  resource. The add finds that out with a dry run of each record's document, which the write
+  service denies unaudited: no `denied` event is written per add. A maintainer's `files extract`
+  writes the records of such files later. A caller who does not see a file type neither extracts nor learns
   of those files: a reference to one is `entity.not_found`.
 - **`graph-admin files extract`** (a run over the whole graph or over named files) needs the
   maintain permission on the graph, decided as `maint.reindex` (the maintain-level action

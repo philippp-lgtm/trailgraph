@@ -355,7 +355,7 @@ derived from the bytes of untrusted files. What protects them and what does
 not:
 
 - **Parsing runs in a child process, never in the writer.** Each extractor
-  starts as `python -I -m graph_cli.extractors.child` with an empty
+  starts as `python -I -X utf8 -m graph_cli.extractors.child` (an isolated interpreter) with an empty
   environment, one read-only path, a wall-clock timeout, a CPU limit (a
   second above the timeout) and an address-space limit
   ([`[extract]`](configuration.md)); a limit hit or a crash is a recorded
@@ -385,7 +385,8 @@ not:
 - **Rights are the caller's.** The records are written as the caller, so the
   write path decides rights and visibility as for any write: a caller without
   `write.create` on the record classes stores a file and gets a warning
-  instead of metadata. A run over the whole graph or over named files needs
+  instead of metadata (a dry run of the record's document finds out first, so nothing is
+  audited per add). A run over the whole graph or over named files needs
   the maintain permission (`maint.reindex`) and is not available to the
   `graph` program; `graph file add` extracts and reports only the file it
   stored. A stored file altered on disk in a local data root is parsed as it

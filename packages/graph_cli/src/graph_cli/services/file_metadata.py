@@ -156,6 +156,8 @@ class ExtractionReport:
     problems: list[dict[str, JsonValue]] = field(default_factory=list)
     transient: list[dict[str, JsonValue]] = field(default_factory=list)
     newer_versions: list[dict[str, JsonValue]] = field(default_factory=list)
+    # an add-time run only: documents the caller may not write (found by a dry run, unaudited)
+    denied: list[dict[str, JsonValue]] = field(default_factory=list)
     # an add-time run only: the records of the one file after the run (``file add`` answers them)
     metadata: list[dict[str, JsonValue]] = field(default_factory=list)
     last_seq: int | None = None  # the position of the last tx the run wrote
@@ -174,16 +176,32 @@ class ExtractionReport:
 
     def warnings(self) -> tuple[WarningRecord, ...]:
         """What an add-time run could not do, as the one warning ``file add`` carries: the file
-        is stored all the same and ``files extract`` finishes the job."""
-        names = sorted({str(item["extractor"]) for item in (*self.transient, *self.problems)})
+        is stored all the same and ``files extract`` finishes the job. A caller who may not write
+        a record class is told which right is missing."""
+        names = sorted(
+            {str(item["extractor"]) for item in (*self.transient, *self.problems, *self.denied)}
+        )
         if not names:
             return ()
+        details: dict[str, JsonValue] = {"extractors": list(names)}
+        if self.denied:
+            details["denied"] = list(self.denied)
+            first = self.denied[0]
+            return (
+                WarningRecord(
+                    "file.extraction_incomplete",
+                    "the file is stored, but you may not write its metadata records "
+                    f"({first['action']} on {first['resource']}); "
+                    "graph-admin files extract writes them",
+                    details,
+                ),
+            )
         return (
             WarningRecord(
                 "file.extraction_incomplete",
                 f"the file is stored, but the metadata of {', '.join(names)} could not be "
                 "written now; graph-admin files extract does it later",
-                {"extractors": list(names)},
+                details,
             ),
         )
 
@@ -496,6 +514,12 @@ class FileMetadataService:
     ) -> None:
         status = STATUS_NOT_APPLICABLE if outcome is None else outcome.status
         changeset = record_changeset(model, extractor, file_id, outcome, run=report.run)
+        if (
+            not request.maintenance
+            and not request.dry_run
+            and self._denied(request, report, extractor, file_id, changeset)
+        ):
+            return
         counts = self._apply(request, report, tally, extractor, file_id, changeset)
         if counts is None:
             return
@@ -516,6 +540,39 @@ class FileMetadataService:
                     "problem": None if outcome is None else outcome.problem,
                 }
             )
+
+    def _denied(
+        self,
+        request: ExtractRequest,
+        report: ExtractionReport,
+        extractor: Extractor,
+        file_id: str,
+        changeset: ChangeSet,
+    ) -> bool:
+        """The quiet pre-check of an add-time write: the document as a dry run, which the write
+        service judges like the real one but denies unaudited. A caller who may not write the
+        record classes (a role that adds files but not metadata) then costs no ``denied`` event
+        per add: the document is skipped and the report names the missing right. Every other
+        outcome of the dry run is left to the real write."""
+        try:
+            self._writer.apply(
+                WriteRequest(request.actor, request.graph, changeset, True, request.request)
+            )
+        except GraphCliError as error:
+            if not error.code.startswith("access."):
+                return False
+            report.denied.append(
+                {
+                    "extractor": extractor.name,
+                    "file": file_id,
+                    "action": str(error.details.get("action", "write.create")),
+                    "resource": str(
+                        error.details.get("resource", f"type:{extractor.record_class}")
+                    ),
+                }
+            )
+            return True
+        return False
 
     def _apply(
         self,

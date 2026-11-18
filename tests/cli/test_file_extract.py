@@ -17,6 +17,9 @@ from support.app import ENV, app, create_graph
 from support.managed_scene import extractor_write, record_ops
 from support.policies import write_policy
 
+from graph_cli.kernel.ports.audit import INSTALLATION_STREAM
+from graph_cli.storage.files.audit_log import FileAuditLog
+
 pytestmark = pytest.mark.slow
 
 CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "files"
@@ -230,19 +233,34 @@ def test_a_caller_without_the_right_to_write_records_stores_the_file_and_is_warn
     run_cli: CliRunner, root: Path, tmp_path: Path
 ) -> None:
     """The records are written as the caller (M12): without ``write.create`` on the record
-    classes the add still stores the file, answers no metadata, and says what is missing; the
-    refusal is audited like any other denial."""
+    classes the add still stores the file, answers no metadata, and says what is missing. A dry
+    run of the document finds that out unaudited, so there is no ``denied`` event per add."""
     path = write_policy(tmp_path / "policies", "graph.yaml", NO_RECORDS)
     applied = admin(run_cli, "policy", "apply", str(path), "--graph", GRAPH, "--reason", "no")
     assert applied.code == 0, applied.envelope
+    before = installation_events(root)
     added = add(run_cli, "one_page.pdf")
     assert added.data["entity"]["id"] and added.data["metadata"] == []
     (warning,) = [
         w for w in added.envelope["warnings"] if w["code"] == "file.extraction_incomplete"
     ]
-    assert warning["details"]["cause"] == "access.denied"
-    assert warning["details"]["action"] == "write.create"
     assert "you may not write its metadata records" in warning["message"]
+    assert "write.create on graph:" in warning["message"]
+    denied = warning["details"]["denied"]
+    assert [d["extractor"] for d in denied] == ["format", "pdf"]
+    assert all(d["action"] == "write.create" for d in denied)
     assert records(run_cli, "files:FormatMetadata") == []
+    assert installation_events(root) == before  # nothing audited for the skipped records
+    again = add(run_cli, "three_pages.pdf")
+    assert again.data["metadata"] == [] and installation_events(root) == before
     verified = admin(run_cli, "audit", "verify")
     assert verified.code == 0 and verified.data["counts"]["error"] == 0
+    # a maintainer's run is loud instead: the denial is audited and ends the run
+    refused = extract(run_cli)
+    assert refused.code == 3 and refused.error["code"] == "access.denied"
+    assert len(installation_events(root)) == len(before) + 1
+
+
+def installation_events(root: Path) -> list[bytes]:
+    lines = FileAuditLog(root).read_lines(INSTALLATION_STREAM)
+    return [line.data for line in lines if b'"denied"' in line.data]
