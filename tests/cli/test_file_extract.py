@@ -15,6 +15,7 @@ from harness import CliRunner
 from support.admin import Outcome, admin, init
 from support.app import ENV, app, create_graph
 from support.managed_scene import extractor_write, record_ops
+from support.policies import write_policy
 
 pytestmark = pytest.mark.slow
 
@@ -215,3 +216,33 @@ def test_a_graph_that_does_not_import_the_files_module_has_nothing_to_extract(
     create_graph(run_cli, GRAPH, "inventory")
     done = extract(run_cli)
     assert done.code == 0 and done.data["enabled"] is False and done.data["files"] == 0
+
+
+NO_RECORDS = """\
+schema: graph_cli.policy/1
+id: graph
+deny:
+  - {id: no_records, action: [write.create], type: [files:FormatMetadata, files_pdf:PdfMetadata]}
+"""
+
+
+def test_a_caller_without_the_right_to_write_records_stores_the_file_and_is_warned(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    """The records are written as the caller (M12): without ``write.create`` on the record
+    classes the add still stores the file, answers no metadata, and says what is missing; the
+    refusal is audited like any other denial."""
+    path = write_policy(tmp_path / "policies", "graph.yaml", NO_RECORDS)
+    applied = admin(run_cli, "policy", "apply", str(path), "--graph", GRAPH, "--reason", "no")
+    assert applied.code == 0, applied.envelope
+    added = add(run_cli, "one_page.pdf")
+    assert added.data["entity"]["id"] and added.data["metadata"] == []
+    (warning,) = [
+        w for w in added.envelope["warnings"] if w["code"] == "file.extraction_incomplete"
+    ]
+    assert warning["details"]["cause"] == "access.denied"
+    assert warning["details"]["action"] == "write.create"
+    assert "you may not write its metadata records" in warning["message"]
+    assert records(run_cli, "files:FormatMetadata") == []
+    verified = admin(run_cli, "audit", "verify")
+    assert verified.code == 0 and verified.data["counts"]["error"] == 0

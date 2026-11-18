@@ -70,3 +70,16 @@ def test_a_field_above_the_parser_limit_is_failed(tmp_path: Path) -> None:
 def test_a_pipe_delimited_file(tmp_path: Path) -> None:
     result = run(tmp_path, b"id|name\n1|a\n2|b\n")
     assert result.values["delimiter"] == "pipe"
+
+
+def test_column_names_follow_the_shared_label_rule(tmp_path: Path) -> None:
+    """Control characters, CR/LF inside a quoted header field, a format character and an overlong
+    multi-byte name: one printable line each, cut by characters and bytes, never inside one."""
+    emoji = "\U0001f600" * 150
+    header = f'"a\r\nb",ctl\x01here,"\u200bzero",{emoji}\n'
+    result = run(tmp_path, (header + "1,2,3,4\n5,6,7,8\n").encode())
+    assert result.status == "ok" and result.values["has_header"] is True
+    names = result.values["column_names"]
+    assert isinstance(names, list)
+    assert names[:3] == ["a b", "ctl here", "zero"]
+    assert names[3] == "\U0001f600" * 100 and len(str(names[3]).encode()) == 400

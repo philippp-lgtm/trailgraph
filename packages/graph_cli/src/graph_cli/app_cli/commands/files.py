@@ -41,6 +41,7 @@ from graph_cli.cli_kit.output_schemas import (
 from graph_cli.cli_kit.runner import CommandState
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.ontology_layer.vocabulary import FILE_TYPE
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
@@ -121,13 +122,35 @@ def add(
     return Result(data=data, graph=graph_json(result.entry, seq))
 
 
+def _incomplete(error: GraphCliError) -> WarningRecord:
+    """The warning of an extraction that ended on ``error``. A caller without the right to write
+    the metadata records (``access.denied``) is told what is missing: such a caller stores the
+    file all the same, and ``graph-admin files extract`` writes the records."""
+    details: dict[str, JsonValue] = {"cause": error.code}
+    if error.code.startswith("access."):
+        for key in ("action", "resource"):
+            if key in error.details:
+                details[key] = error.details[key]
+        return WarningRecord(
+            "file.extraction_incomplete",
+            "the file is stored, but you may not write its metadata records "
+            f"({error.message}); graph-admin files extract writes them",
+            details,
+        )
+    return WarningRecord(
+        "file.extraction_incomplete",
+        "the file is stored, but its metadata could not be written now "
+        f"({error.code}); graph-admin files extract does it later",
+        details,
+    )
+
+
 def _extract(
     state: CommandState, graph: str, file_id: str, args: dict[str, JsonValue]
 ) -> tuple[list[JsonValue], int | None]:
     """Extract the metadata of the file just stored (file metadata M12): in this process, after
     the add committed, as the caller. It never fails the add: what could not be done is one
     warning (``file.extraction_incomplete``), and ``graph-admin files extract`` finishes it."""
-    from graph_cli.kernel.errors import GraphCliError, WarningRecord
     from graph_cli.services.file_metadata import ExtractRequest
 
     ctx = context(state)
@@ -142,12 +165,15 @@ def _extract(
     try:
         report = ctx.file_metadata.extract(request)
     except GraphCliError as error:
+        state.warnings += (_incomplete(error),)
+        return [], None
+    except Exception:
         state.warnings += (
             WarningRecord(
                 "file.extraction_incomplete",
-                "the file is stored, but its metadata could not be written now "
-                f"({error.code}); graph-admin files extract does it later",
-                {"cause": error.code},
+                "the file is stored, but its metadata could not be written now (an unexpected "
+                "error); graph-admin files extract does it later",
+                {"cause": "internal"},
             ),
         )
         return [], None

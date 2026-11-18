@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import csv
 import os
-import re
 from typing import Final
 
 from graph_cli.extractors.detect import (
@@ -25,6 +24,7 @@ from graph_cli.extractors.detect import (
     detect_content,
 )
 from graph_cli.extractors.model import ExtractionResult, Extractor, ModuleRef, RunInput
+from graph_cli.extractors.text import label
 from graph_cli.kernel.canonical import JsonValue
 
 NAME: Final = "table"
@@ -34,7 +34,6 @@ PROBLEM_NO_DIALECT: Final = "table.no_dialect"
 PROBLEM_UNREADABLE: Final = "table.unreadable"
 PROBLEM_ENCODING: Final = "table.encoding"
 MAX_COLUMN_NAMES: Final = 200
-MAX_NAME_LENGTH: Final = 200
 
 _DELIMITERS: Final = ",;\t|"
 _DELIMITER_NAMES: Final = {",": "comma", ";": "semicolon", "\t": "tab", "|": "pipe"}
@@ -45,7 +44,6 @@ _CODECS: Final = {
     UTF_16_LE: "utf-16",
     UTF_16_BE: "utf-16",
 }
-_BLANKS: Final = re.compile(r"\s+")
 
 
 def accepts(detected: str, recorded: str) -> bool:
@@ -108,13 +106,12 @@ def _scan(source: RunInput, codec: str, dialect: type[csv.Dialect]) -> tuple[int
 
 
 def column_names(row: list[str]) -> list[JsonValue]:
-    """The first ``MAX_COLUMN_NAMES`` names, one line each: blanks collapsed, shortened, and a
-    name that is empty becomes ``column_<n>`` (counted from 1)."""
-    names: list[JsonValue] = []
-    for position, name in enumerate(row[:MAX_COLUMN_NAMES], start=1):
-        text = _BLANKS.sub(" ", name).strip()[:MAX_NAME_LENGTH].strip()
-        names.append(text or f"column_{position}")
-    return names
+    """The first ``MAX_COLUMN_NAMES`` names as one printable line each (``extractors.text``: the
+    rule of every name that comes from a file); an empty one is ``column_<n>`` (from 1)."""
+    return [
+        label(name, f"column_{position}")
+        for position, name in enumerate(row[:MAX_COLUMN_NAMES], start=1)
+    ]
 
 
 TABLE: Final = Extractor(

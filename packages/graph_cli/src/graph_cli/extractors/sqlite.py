@@ -9,7 +9,6 @@ name become its parts. A file SQLite cannot open is ``failed`` with ``sqlite.unr
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from pathlib import Path
 from typing import Final
@@ -23,6 +22,8 @@ from graph_cli.extractors.model import (
     RunInput,
     accepts_types,
 )
+from graph_cli.extractors.text import MAX_BYTES, MAX_CHARACTERS
+from graph_cli.extractors.text import label as one_line
 from graph_cli.kernel.canonical import JsonValue
 
 NAME: Final = "sqlite"
@@ -31,10 +32,8 @@ MEDIA_TYPE: Final = "application/vnd.sqlite3"
 PROBLEM_UNREADABLE: Final = "sqlite.unreadable"
 MAX_OBJECTS: Final = 500
 MAX_COLUMN_NAMES: Final = 200
-MAX_NAME_LENGTH: Final = 200
-MAX_NAME_BYTES: Final = 400  # the part key is "<file id>/<name>", at most 512 bytes in UTF-8
-
-_BLANKS: Final = re.compile(r" {2,}")
+MAX_NAME_LENGTH: Final = MAX_CHARACTERS
+MAX_NAME_BYTES: Final = MAX_BYTES
 
 
 def run(source: RunInput) -> ExtractionResult:
@@ -74,13 +73,13 @@ def _read(connection: sqlite3.Connection) -> ExtractionResult:
     parts: list[PartResult] = []
     used: set[str] = set()
     for kind, name in shown:
-        label = _unique(_label(name), used)
+        part_name = _unique(one_line(name), used)
         values: dict[str, JsonValue] = {"kind": kind}
         columns = _columns(connection, name)
         if columns is not None:
             values["column_count"] = len(columns)
-            values["column_names"] = [_label(c) for c in columns[:MAX_COLUMN_NAMES]]
-        parts.append(PartResult(label, values))
+            values["column_names"] = [one_line(c) for c in columns[:MAX_COLUMN_NAMES]]
+        parts.append(PartResult(part_name, values))
     return ExtractionResult(
         status="ok",
         values={
@@ -103,24 +102,6 @@ def _columns(connection: sqlite3.Connection, name: str) -> list[str] | None:
         return [row[1] for row in connection.execute(f"PRAGMA table_info({quoted})")]
     except sqlite3.Error:
         return None
-
-
-def _label(text: str) -> str:
-    """The name of a part or column as one printable line: every character that is not
-    printable (controls, newlines, other blanks, format characters) becomes a blank, runs of
-    blanks collapse, the ends are trimmed, and the result is shortened to ``MAX_NAME_LENGTH``
-    characters and ``MAX_NAME_BYTES`` bytes; ``unnamed`` when nothing is left. Names are
-    untrusted bytes: the label is also the key segment of the part, which the reconcile
-    planner accepts only as printable text of bounded length."""
-    printable = "".join(c if c.isprintable() else " " for c in text)
-    return _cut(_BLANKS.sub(" ", printable).strip()) or "unnamed"
-
-
-def _cut(text: str) -> str:
-    text = text[:MAX_NAME_LENGTH]
-    while len(text.encode("utf-8")) > MAX_NAME_BYTES:
-        text = text[:-1]
-    return text.strip()
 
 
 def _unique(label: str, used: set[str]) -> str:
