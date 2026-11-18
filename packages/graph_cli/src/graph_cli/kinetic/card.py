@@ -205,12 +205,30 @@ class RowsSpec:
     id: str
     function: str
     title: str | None = None
-    max: int = 10
-    cell_chars: int = ROWS_CELL_CHARS
+    max: int | None = 10  # None: a set view, the rows are paged, never cut
+    cell_chars: int | None = ROWS_CELL_CHARS  # None: values are never cut (set views)
+
+
+@dataclass(frozen=True, slots=True)
+class ListSpec:
+    """A type listing as rows (set views): the active entities of ``classes`` that match
+    ``where``, in ``order`` (the ``find`` order: by id, by default), paged by the caller.
+    ``with_type`` is decided by the classes, not by the data: several concrete classes put the
+    class on every row."""
+
+    id: str
+    types: tuple[str, ...]
+    classes: tuple[str, ...]  # the types and their subclasses, as ``find --type`` expands them
+    title: str | None = None
+    where: Pred | None = None
+    order: tuple[OrderKey, ...] = ()
+    fields: FieldSel = None
+    relations: tuple[RowRelationSpec, ...] = ()
+    with_type: bool = False
 
 
 type SectionSpec = (
-    FieldsSpec | RelationsSpec | FilesSpec | AffordancesSpec | NeighborsSpec | RowsSpec
+    FieldsSpec | RelationsSpec | FilesSpec | AffordancesSpec | NeighborsSpec | RowsSpec | ListSpec
 )
 
 
@@ -221,6 +239,7 @@ class ViewSpec:
     sections: tuple[SectionSpec, ...]
     byte_limit: int = BYTE_LIMIT
     hash: str | None = None  # of the published view an authored spec comes from
+    page_bytes: int | None = None  # set views: the page size the file asks for
 
 
 def _plain(attribute: AttributeDef) -> bool:
@@ -402,13 +421,38 @@ def spec_of(
                     section.id,
                     section.function,
                     section.title,
-                    section.max if section.max is not None else fmt.ROWS_MAX_DEFAULT,
+                    section.max if entry.entity else None,
+                    ROWS_CELL_CHARS if entry.entity else None,
+                )
+            )
+        elif isinstance(section, fmt.ListSection):
+            classes = tuple(sorted({c for t in section.types for c in model.subtypes(t)}))
+            where, order = _plan(model, section.types, section.where, section.order, values)
+            concrete = [c for c in classes if not model.classes[c].abstract]
+            sections.append(
+                ListSpec(
+                    section.id,
+                    section.types,
+                    classes,
+                    section.title,
+                    where,
+                    order,
+                    section.fields,
+                    _row_relations(model, section.relations, values),
+                    len(concrete) > 1,
                 )
             )
         else:
-            raise ValueError(f"a {section.kind} section belongs to a set view")
+            raise ValueError(f"a {section.kind} section is not part of this view")
     limit = entry.defn.max_bytes or BYTE_LIMIT
-    return ViewSpec(entry.name, AUTHORED, tuple(sections), min(limit, BYTE_LIMIT), entry.hash)
+    return ViewSpec(
+        entry.name,
+        AUTHORED,
+        tuple(sections),
+        min(limit, BYTE_LIMIT),
+        entry.hash,
+        entry.defn.page_bytes,
+    )
 
 
 # ---- the view model --------------------------------------------------------------------------
@@ -700,10 +744,12 @@ class RowsSection:
     error: tuple[str, str] | None = None  # (code, message)
     title: str | None = None
     cells_cut: int = 0  # cells that were shortened (strings, lists), counted, not dropped silently
+    start: int = 0  # set views: the offset of the first row when a page starts inside the section
+    paged: bool = False  # set views: the cursor says what is left, a section has no ``more``
 
     @property
     def more(self) -> int:
-        return max(0, self.count - len(self.items))
+        return 0 if self.paged else max(0, self.count - len(self.items))
 
     def to_json(self) -> Json:
         found = _head("rows", self.id, self.title)
@@ -722,6 +768,8 @@ class RowsSection:
             found["more"] = self.more
         if self.cells_cut:
             found["cells_cut"] = self.cells_cut
+        if self.start:
+            found["from"] = self.start
         return found
 
 
@@ -739,6 +787,29 @@ class StubSection:
         return found
 
 
+@dataclass(frozen=True, slots=True)
+class ListSection:
+    """The rows of a type listing on one page of a set view: ``count`` is every row of the
+    section, ``start`` the offset of the first row of this page (``from``)."""
+
+    id: str
+    types: tuple[str, ...]
+    items: tuple[Row, ...]
+    count: int
+    start: int = 0
+    title: str | None = None
+
+    def to_json(self) -> Json:
+        found = _head("list", self.id, self.title)
+        found["type"] = self.types[0] if len(self.types) == 1 else list(self.types)
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
+        found["count"] = self.count
+        if self.start:
+            found["from"] = self.start
+        return found
+
+
 type Section = (
     FieldsSection
     | RelationsSection
@@ -748,6 +819,7 @@ type Section = (
     | NeighborsSection
     | RowsSection
     | StubSection
+    | ListSection
 )
 
 
@@ -759,6 +831,8 @@ class ViewModel:
     sections: tuple[Section, ...]
     cut: bool = False
     hash: str | None = None  # of the published view (authored views only)
+    next: str | None = None  # set views: the cursor of the next page; ``None``: this is the last
+    oversize: bool = False  # set views: the one row of this page is larger than the page limit
 
     def to_json(self) -> Json:
         """The compact answer; ``bytes`` is the size of this very document in UTF-8."""
@@ -769,6 +843,11 @@ class ViewModel:
         if self.entity is not None:
             found["entity"] = dict(self.entity)
         found["sections"] = [s.to_json() for s in self.sections]
+        if self.next is not None:
+            found["next"] = self.next
+            found["more"] = True
+        if self.oversize:
+            found["oversize"] = True
         found["bytes"] = 0
         if self.cut:
             found["cut"] = True
@@ -793,7 +872,7 @@ class ViewModel:
                 named = [i.entity for g in section.groups for i in g.items]
             elif isinstance(section, FilesSection | CitedBySection):
                 named = [i.entity for i in section.items]
-            elif isinstance(section, NeighborsSection):
+            elif isinstance(section, NeighborsSection | ListSection):
                 named = [e for row in section.items for e in (row.entity, *row.named())]
             else:
                 continue
@@ -961,6 +1040,8 @@ def render(
             built = _neighbors(section_spec, entity, loader, model, language)
         elif isinstance(section_spec, RowsSpec):
             built = _rows(section_spec, rows)
+        else:
+            raise ValueError("a list section belongs to a set view: render it with render_set")
         if built is not None:
             sections.append(_named(built, section_spec))
     card = ViewModel(spec.name, spec.origin, header, tuple(sections), hash=spec.hash)
@@ -981,7 +1062,7 @@ def _wanted(spec: ViewSpec) -> frozenset[str] | None:
 
 def _named(section: Section, spec: SectionSpec) -> Section:
     """``section`` with the id and title of an authored spec (the generated card has none)."""
-    if isinstance(section, NeighborsSection | RowsSection | StubSection) or (
+    if isinstance(section, NeighborsSection | RowsSection | StubSection | ListSection) or (
         spec.id is None and spec.title is None
     ):
         return section
@@ -1023,9 +1104,11 @@ def _neighbors(
     )
 
 
-def _cell(value: JsonValue, limit: int) -> tuple[JsonValue, bool]:
+def _cell(value: JsonValue, limit: int | None) -> tuple[JsonValue, bool]:
     """A cell of a function's row as an entity view shows it: strings cut, lists to a few
-    elements, and whether anything was cut."""
+    elements, and whether anything was cut (``limit`` None, a set view: nothing is cut)."""
+    if limit is None:
+        return value, False
     if isinstance(value, str):
         text, chars = _cut(value, limit)
         return text, chars is not None
@@ -1038,20 +1121,26 @@ def _cell(value: JsonValue, limit: int) -> tuple[JsonValue, bool]:
     return value, False
 
 
-def _rows(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection:
+def rows_error(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection | None:
+    """The section of a ``rows`` spec whose function did not give rows: it was not run
+    (``view.section_unavailable``) or it failed; ``None`` when there are rows to show."""
     result = (results or {}).get(spec.id)
     if result is None:
         message = "the function of this section was not run"
-        return RowsSection(
-            spec.id,
-            spec.function,
-            error=("view.section_unavailable", message),
-            title=spec.title,
-        )
+        error = ("view.section_unavailable", message)
+        return RowsSection(spec.id, spec.function, error=error, title=spec.title)
     if result.error is not None:
         code, text = result.error
         error = (code, _cut(text, ERROR_CHARS)[0])
         return RowsSection(spec.id, spec.function, result.hash, error=error, title=spec.title)
+    return None
+
+
+def _rows(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection:
+    failed = rows_error(spec, results)
+    if failed is not None:
+        return failed
+    result = (results or {})[spec.id]
     items: list[Mapping[str, JsonValue]] = []
     cells_cut = 0
     for row in result.rows[: spec.max]:

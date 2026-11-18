@@ -802,6 +802,18 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "A section of a view cannot be answered here.",
     ),
     ErrorSpec(
+        "view.cursor_invalid",
+        _C.USAGE,
+        False,
+        "A page cursor is malformed or belongs to another view or other parameters.",
+    ),
+    ErrorSpec(
+        "view.cursor_stale",
+        _C.REFUSED,
+        False,
+        "The graph changed since the page cursor was issued.",
+    ),
+    ErrorSpec(
         "view.parameter_missing",
         _C.USAGE,
         False,

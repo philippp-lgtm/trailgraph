@@ -363,6 +363,8 @@ _BASE: Final[dict[str, Hint | None]] = {
     "view.stale": None,
     "view.too_many_views": None,
     "view.section_unavailable": None,
+    "view.cursor_invalid": None,
+    "view.cursor_stale": None,
     "view.parameter_missing": None,
     "view.parameter_unknown": None,
     "view.parameter_invalid": None,
