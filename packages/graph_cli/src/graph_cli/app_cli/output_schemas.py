@@ -59,13 +59,18 @@ def _entity() -> Schema:
 
 def _view_model() -> Schema:
     """``kinetic.card.ViewModel.to_json`` (``graph_cli.view_model/1``): a view, the entity's header
-    and sections that each carry a ``kind``; a consumer ignores a kind it does not know, so a
-    section is an open object. ``cut`` only when the byte guard trimmed the card."""
+    (an entity view; a set view has none) and sections that each carry a ``kind``; a consumer
+    ignores a kind it does not know, so a section is an open object. ``cut`` only when the byte
+    guard trimmed the answer, ``sections_cut`` when whole sections went; ``next`` and ``more``
+    only on a page of a set view that does not reach the end, ``oversize`` on a page that holds
+    one row larger than its limit; ``view.hash`` only for an authored view."""
     return obj(
         {
-            "view": obj(
-                {"name": STRING, "origin": STRING}
-            ),  # origin: generated; authored views follow
+            "view": obj({"name": STRING, "origin": STRING}, {"hash": STRING}),
+            "sections": array(obj({"kind": STRING}, extra=ANY)),
+            "bytes": INTEGER,
+        },
+        {
             "entity": obj(
                 {"id": STRING, "type": STRING, "rev": INTEGER, "record_status": STRING},
                 {
@@ -75,10 +80,12 @@ def _view_model() -> Schema:
                     "retracted_by": STRINGS,
                 },
             ),
-            "sections": array(obj({"kind": STRING}, extra=ANY)),
-            "bytes": INTEGER,
+            "cut": BOOLEAN,
+            "sections_cut": INTEGER,
+            "next": STRING,
+            "more": BOOLEAN,
+            "oversize": BOOLEAN,
         },
-        {"cut": BOOLEAN},
     )
 
 

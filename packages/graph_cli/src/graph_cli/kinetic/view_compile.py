@@ -36,7 +36,7 @@ from typing import Final
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError, as_object, req_list, req_obj, req_str
-from graph_cli.kinetic.compile import FITS, REF_FIELDS, resolve_module
+from graph_cli.kinetic.compile import FITS, resolve_module
 from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.params import (
     ParamDef,
@@ -585,8 +585,9 @@ class _Compile:
         return True
 
     def type_misfit(self, param: ParamDef, attribute: str, base: str, many: bool) -> str | None:
-        if param.type == "ref" and attribute not in REF_FIELDS:
-            return "a ref can only be compared with id or alias"
+        if param.type == "ref" and attribute != "id":
+            # a ref names one entity: its id says it all; not every entity has an alias
+            return "compare a ref parameter with id"
         if param.type == "decimal" and base == "integer":
             return "a decimal does not fit an integer attribute"  # 1.5 is no integer
         if base in LANG_BASES and param.type == "string":

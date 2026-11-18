@@ -1023,26 +1023,34 @@ Usage: `graph update REF [OPTIONS]`
 
 ## graph view
 
-Show what is known about one entity in one answer.
+Show what is known about one entity, or a published view, in one answer.
 
 Kind: read. Surface: retrieve. Action: `read.get`. Exit codes: 0, 1, 2, 3, 5, 6.
 
-Usage: `graph view REF [OPTIONS]`
+Usage: `graph view [REF] [OPTIONS]`
 
 | Argument | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `ref` | entity_ref | yes | no | Full id, alias or trailing hex of the id. |
+| `ref` | entity_ref | no | no | Full id, alias or trailing hex of the id; leave out for a set view. |
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
+| `--name` | string | no | no | A published view of the graph; card is the generated card, which is also the default. |
+| `--param` | assignment | no | yes | name=value for a parameter of the view, read by its declared type. |
+| `--cursor` | string | no | no | The next of the previous page of a set view; same --name and --param. |
+| `--page-bytes` | integer | no | no | Page size of a set view in bytes (1 to 262144); the view's own size, else 12288. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--as-of` | string | no | no | Read the state after tx:<seq>, or at an RFC 3339 time; needs history access. |
 
 | Example | Summary |
 |---|---|
-| `graph view <id>` | The card of one entity. |
-| `graph view <id> --json` | The card as JSON. |
+| `graph view <id>` | The default view of one entity, else its card. |
+| `graph view <id> --json` | The same as JSON. |
 | `graph view <id> --as-of tx:<seq> --json` | The card as it was after that tx. |
+| `graph view <id> --name card` | The generated card, whatever the graph publishes. |
+| `graph view <id> --name <name> --param <param>=<value>` | A published entity view. |
+| `graph view --name <name> --page-bytes 65536` | One page of a set view. |
+| `graph view --name <name> --cursor <value>` | The next page, from a page's next. |
 
 ## graph whoami
 

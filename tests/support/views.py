@@ -5,8 +5,12 @@ They are written against the tracked example ontology ``examples/company/ontolog
 function fixture with a list and a date parameter.
 """
 
+import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from graph_cli.kernel.canonical import hash_value, pretty_bytes
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.view_compile import compile_views
@@ -69,3 +73,26 @@ def compiled_entries(sources: dict[str, str] | None = None) -> dict[str, ViewEnt
 def one_entry(text: str) -> ViewEntry:
     """The entry of one view written inline (the file must be named ``probe``)."""
     return compiled_entries({"probe.yaml": text})["probe"]
+
+
+def stale_on_disk(
+    root: Path, graph_id: str, name: str, edit: Callable[[dict[str, Any]], None]
+) -> str:
+    """Leave the published view ``name`` as a release that no longer fits it would: ``edit`` the
+    stored (normalized) entry of the compiled catalog and say it was published against another
+    pin, as ``audit verify`` would flag and a read must refuse (``view.stale``). Returns the
+    hash of the entry."""
+    folder = root / "graphs" / graph_id / "views"
+    slot = json.loads((folder / "slot.json").read_text())
+    old = str(slot["compiled_hash"]).removeprefix("sha256:")
+    document = json.loads((folder / "compiled" / f"{old}.json").read_text())
+    entry = next(e for e in document["views"] if e["name"] == name)
+    edit(entry)
+    digest = hash_value(document)
+    (folder / "compiled" / f"{digest.removeprefix('sha256:')}.json").write_bytes(
+        pretty_bytes(document)
+    )
+    slot["compiled_hash"] = digest
+    slot["published_against"] = {**slot["published_against"], "artifact_hash": "sha256:" + "0" * 64}
+    (folder / "slot.json").write_bytes(pretty_bytes(slot))
+    return str(entry["hash"])

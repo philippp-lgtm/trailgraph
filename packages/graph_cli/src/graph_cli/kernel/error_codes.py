@@ -846,6 +846,24 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         "The graph has no such view.",
     ),
     ErrorSpec(
+        "view.takes_entity",
+        _C.USAGE,
+        False,
+        "The view shows one entity; name it.",
+    ),
+    ErrorSpec(
+        "view.takes_no_entity",
+        _C.USAGE,
+        False,
+        "The view takes no entity; leave the reference out.",
+    ),
+    ErrorSpec(
+        "view.class_mismatch",
+        _C.REFUSED,
+        False,
+        "The entity is not of the class the view takes.",
+    ),
+    ErrorSpec(
         "temporal.as_of_unsupported",
         _C.REFUSED,
         False,
@@ -945,6 +963,10 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("function.deprecated", _C.WARNING, False, "The function is deprecated."),
     ErrorSpec("action.deprecated", _C.WARNING, False, "The action is deprecated."),
     ErrorSpec("view.function_deprecated", _C.WARNING, False, "A view uses a deprecated function."),
+    ErrorSpec("view.deprecated", _C.WARNING, False, "The view is deprecated."),
+    ErrorSpec(
+        "view.section_failed", _C.WARNING, False, "A section of a view could not be answered."
+    ),
     ErrorSpec("temporal.as_of_read", _C.WARNING, False, "An earlier state was read."),
     ErrorSpec("output.spilled", _C.WARNING, False, "A large answer was written to a file."),
     ErrorSpec("output.spill_failed", _C.WARNING, False, "A large answer could not go to a file."),

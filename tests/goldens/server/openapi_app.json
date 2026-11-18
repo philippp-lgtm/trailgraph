@@ -5475,12 +5475,33 @@
               },
               "origin": {
                 "type": "string"
+              },
+              "hash": {
+                "type": "string"
               }
             },
             "required": [
               "name",
               "origin"
             ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
           },
           "entity": {
             "type": "object",
@@ -5523,31 +5544,24 @@
               "record_status"
             ]
           },
-          "sections": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
-            }
+          "cut": {
+            "type": "boolean"
           },
-          "bytes": {
+          "sections_cut": {
             "type": "integer"
           },
-          "cut": {
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
             "type": "boolean"
           }
         },
         "required": [
           "view",
-          "entity",
           "sections",
           "bytes"
         ]
@@ -20819,7 +20833,7 @@
     "/v1/commands/view": {
       "post": {
         "operationId": "view",
-        "summary": "Show what is known about one entity in one answer.",
+        "summary": "Show what is known about one entity, or a published view, in one answer.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -20904,7 +20918,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing, view.parameter_unknown, view.takes_entity, view.takes_no_entity.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20924,7 +20938,14 @@
             },
             "x-graph-cli-error-codes": [
               "graph.not_selected",
-              "usage.invalid_argument"
+              "usage.invalid_argument",
+              "usage.missing_argument",
+              "view.cursor_invalid",
+              "view.parameter_invalid",
+              "view.parameter_missing",
+              "view.parameter_unknown",
+              "view.takes_entity",
+              "view.takes_no_entity"
             ]
           },
           "401": {
@@ -20976,7 +20997,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: entity.not_found, graph.not_found.",
+            "description": "Not Found: entity.not_found, graph.not_found, view.not_found.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20996,11 +21017,12 @@
             },
             "x-graph-cli-error-codes": [
               "entity.not_found",
-              "graph.not_found"
+              "graph.not_found",
+              "view.not_found"
             ]
           },
           "422": {
-            "description": "Unprocessable Content: entity.ambiguous_ref, graph.not_in_project, remote.client_outdated, temporal.as_of_unsupported.",
+            "description": "Unprocessable Content: entity.ambiguous_ref, graph.not_in_project, remote.client_outdated, temporal.as_of_unsupported, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -21022,7 +21044,11 @@
               "entity.ambiguous_ref",
               "graph.not_in_project",
               "remote.client_outdated",
-              "temporal.as_of_unsupported"
+              "temporal.as_of_unsupported",
+              "view.class_mismatch",
+              "view.cursor_stale",
+              "view.parameter_type",
+              "view.stale"
             ]
           },
           "500": {
@@ -21107,7 +21133,91 @@
                     "properties": {
                       "ref": {
                         "type": "string",
-                        "description": "Full id, alias or trailing hex of the id."
+                        "description": "Full id, alias or trailing hex of the id; leave out for a set view."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "A published view of the graph; card is the generated card, which is also the default."
+                      },
+                      "--name": {
+                        "type": "string",
+                        "description": "The inventory name of name; never both.",
+                        "deprecated": true
+                      },
+                      "param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "name=value for a parameter of the view, read by its declared type."
+                      },
+                      "--param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of param; never both.",
+                        "deprecated": true
+                      },
+                      "cursor": {
+                        "type": "string",
+                        "description": "The next of the previous page of a set view; same --name and --param."
+                      },
+                      "--cursor": {
+                        "type": "string",
+                        "description": "The inventory name of cursor; never both.",
+                        "deprecated": true
+                      },
+                      "page_bytes": {
+                        "type": "integer",
+                        "description": "Page size of a set view in bytes (1 to 262144); the view's own size, else 12288."
+                      },
+                      "--page-bytes": {
+                        "type": "integer",
+                        "description": "The inventory name of page_bytes; never both.",
+                        "deprecated": true
                       },
                       "graph": {
                         "type": "string",
@@ -21128,9 +21238,7 @@
                         "deprecated": true
                       }
                     },
-                    "required": [
-                      "ref"
-                    ]
+                    "required": []
                   },
                   "actor": {
                     "type": "object"

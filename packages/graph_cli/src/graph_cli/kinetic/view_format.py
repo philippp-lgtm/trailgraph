@@ -598,6 +598,9 @@ class _Parse(Parser):
         params = self.params(top["params"]) if "params" in top else ()
         if params is not None and any(p.name == ENTITY for p in params):
             self.invalid(f"params.{ENTITY}", f"{ENTITY!r} is reserved for the entity of the view")
+        if params is not None and default and any(p.required for p in params):
+            # ``graph view REF`` shows the default view and can give it no parameter
+            self.invalid("default", "a default view cannot have a required parameter")
         sections = self.sections(top["sections"], entity) if "sections" in top else None
         examples = self.examples(top["examples"]) if "examples" in top else ()
         if self.problems:

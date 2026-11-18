@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:c2f65c9df6aca61afeb00275c2bfc1831966be8c4248b3094d2e96501800477c"
+  inventory_hash: "sha256:185e7066010583be802d91e650609733b65d8d739bc907a2f526aea634d4488b"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.27.0"
@@ -205,7 +205,7 @@ Every `--json` call prints one JSON object on stdout.
 | `graph transition` | write | Move an entity's lifecycle to another state. |
 | `graph unlink` | write | Remove an edge by relation and target, or by edge id. |
 | `graph update` | write | Set, unset, add to or remove from attributes of one entity. |
-| `graph view` | read | Show what is known about one entity in one answer. |
+| `graph view` | read | Show what is known about one entity, or a published view, in one answer. |
 | `graph whoami` | meta | Show who is acting: the identity facets and what the policy allows. |
 
 Global options, before or after the command (`graph --graph <graph> find`

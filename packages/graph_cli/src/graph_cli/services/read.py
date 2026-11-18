@@ -86,14 +86,25 @@ from graph_cli.kernel.records import (
 )
 from graph_cli.kernel.timing import Timings
 from graph_cli.kernel.usage import UsageNote
+from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
 from graph_cli.kinetic.affordances import actions_for, functions_for
 from graph_cli.kinetic.bind import bind_cli
-from graph_cli.kinetic.card import file_classes_of, generated_spec, render
+from graph_cli.kinetic.card import (
+    AffordancesSpec,
+    file_classes_of,
+    generated_spec,
+    render,
+    spec_of,
+)
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
-from graph_cli.kinetic.params import Problem
+from graph_cli.kinetic.params import Problem, json_value
+from graph_cli.kinetic.view_entries import ViewEntry, find_view, load_view_entries
+from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
+from graph_cli.kinetic.view_page import decode_cursor, render_set
+from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.ontology_layer.affordances import relations, transitions
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.errors import did_you_mean
@@ -140,13 +151,25 @@ from graph_cli.services.names import (
 )
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
+from graph_cli.services.view_call import (
+    CARD,
+    LazyRows,
+    default_view,
+    page_key,
+    rows_share,
+)
 from graph_cli.services.visibility import (
     SIGNATURE_VIEWS,
     Visibility,
     VisibleSnapshot,
     remember,
 )
-from graph_cli.services.visible_catalog import HiddenCatalog, hidden_actions, hidden_functions
+from graph_cli.services.visible_catalog import (
+    HiddenCatalog,
+    hidden_actions,
+    hidden_functions,
+    hidden_views,
+)
 from graph_cli.temporal_knowledge.as_of import as_of_text, seq_at
 from graph_cli.temporal_knowledge.changes import (
     SCAN_CAP,
@@ -164,12 +187,14 @@ from graph_cli.temporal_knowledge.name_map import NameMap, RenameHint, TermKind
 if TYPE_CHECKING:
     from graph_cli.kinetic.cover import Cover, SignatureCache
     from graph_cli.query.cypher.ast import Query as CypherQuery
+    from graph_cli.query.cypher.execute import Result as QueryResult
     from graph_cli.query.cypher.resolve import ResolvedQuery
 
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
 _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
 _VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
+MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
 ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
 
 
@@ -436,6 +461,10 @@ class ReadService:
         self._models = ModelCache(catalog, self.timings)
         self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
         self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
+        self._views: dict[str, tuple[ViewEntry, ...]] = {}  # compiled hash -> entries
+        # (views compiled hash, functions compiled hash, pin) -> problem of each view that no
+        # longer fits the pin
+        self._view_problems: dict[tuple[str, str | None, OntologyPin], dict[str, Problem]] = {}
         # (compiled hash, pin) -> problem of each action that no longer fits the pin
         self._action_problems: dict[tuple[str, OntologyPin], dict[str, Problem]] = {}
         # (compiled hash, pin) -> the needs of each action on concrete types (W9)
@@ -681,6 +710,128 @@ class ReadService:
         return self._hidden.of(
             "actions", catalog.compiled_hash, entry.pin.artifact_hash, view, compute
         )
+
+    # ---- views (object views stage 2) -----------------------------------
+
+    def _published_views(
+        self, entry: GraphEntry
+    ) -> tuple[tuple[ViewEntry, ...], FunctionsSlot] | None:
+        """The parsed view catalog of the graph with its slot (``None`` when it has none), no
+        authorization; cached by the hash of the compiled document. A document that does not
+        read is ``views.slot_invalid``."""
+        with self.timings.phase("model"):
+            slot = self._catalog.read_views(entry.id)
+            if slot is None:
+                return None
+            found = self._views.get(slot.compiled_hash)
+            if found is None:
+                try:
+                    found = load_view_entries(slot.compiled)
+                except JsonShapeError as exc:
+                    raise GraphCliError(
+                        "views.slot_invalid",
+                        f"the compiled view catalog is unreadable: {exc}",
+                        details={"file": f"graphs/{entry.id}/views/slot.json"},
+                    ) from exc
+                self._views[slot.compiled_hash] = found
+        return found, slot
+
+    def _hidden_views(
+        self,
+        entry: GraphEntry,
+        found: tuple[tuple[ViewEntry, ...], FunctionsSlot],
+        view: ReadView,
+    ) -> frozenset[str]:
+        """The views of the catalog a reader with ``view`` must not see because of the model
+        it sees (the cached half; what depends on the actor's rights is judged per call)."""
+        entries, slot = found
+        functions = self._published_slot(entry)
+        function_entries = functions[0] if functions is not None else ()
+        digest = functions[1].compiled_hash if functions is not None else ""
+
+        def compute() -> frozenset[str]:
+            full, _ = self._models.load_for_read(entry)
+            limited = self._visibility.model(entry, full, view)
+            return hidden_views(entries, slot.compiled, full, limited, function_entries)
+
+        return self._hidden.of(
+            "views", f"{slot.compiled_hash}+{digest}", entry.pin.artifact_hash, view, compute
+        )
+
+    def _may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
+        """Whether the policy lets ``actor`` do ``action`` on the graph: a probe, nothing is
+        decided on the record."""
+        with self.timings.phase("authorize"):
+            policy = self._policy.current(entry.id)
+            decision = authorize(actor, action, f"graph:{entry.id}", _VISIBLE, policy)
+        return decision.effect == "allow"
+
+    def _visible_views(
+        self, actor: ActorContext, entry: GraphEntry, view: ReadView
+    ) -> tuple[ViewEntry, ...] | None:
+        """The views of the graph the actor may see, ``None`` when there are none (or the graph
+        has no catalog). A view is visible exactly when everything it names is: the model the
+        reader sees has its classes, relations, attributes and parameters, the functions a
+        ``rows`` section runs are visible to the reader and it may ``read.function``, and a set
+        view also needs ``read.find`` (it lists entities as ``find`` does); ``read.get`` is the
+        command's own action. A view that is not visible is a missing one everywhere."""
+        found = self._published_views(entry)
+        if found is None:
+            return None
+        entries = found[0]
+        if view.limited:
+            hidden = self._hidden_views(entry, found, view)
+            entries = tuple(e for e in entries if e.name not in hidden)
+        runnable: frozenset[str] = frozenset()
+        if any(e.functions for e in entries) and self._may(actor, entry, "read.function"):
+            visible = self._visible_functions(entry, view)
+            runnable = frozenset(f.name for f in visible or ())
+        may_find = (
+            self._may(actor, entry, "read.find") if any(not e.entity for e in entries) else False
+        )
+        entries = tuple(
+            e for e in entries if runnable.issuperset(e.functions) and (e.entity or may_find)
+        )
+        return entries or None
+
+    def views(self, actor: ActorContext, entry: GraphEntry) -> tuple[ViewEntry, ...] | None:
+        """The graph's published views as the actor may see them: ``None`` when there are none
+        to see, so a listing shows nothing and records nothing."""
+        return self._visible_views(actor, entry, self.read_view(actor, entry))
+
+    def _stale_view(
+        self,
+        entry: GraphEntry,
+        found: tuple[tuple[ViewEntry, ...], FunctionsSlot],
+        name: str,
+    ) -> Problem | None:
+        """Why view ``name`` no longer fits the graph's current ontology (``view.stale``
+        material), or ``None``. Only a catalog published against another pin is checked, against
+        the full model and the published functions (the answer does not depend on the reader);
+        cached by (compiled hashes, pin)."""
+        from graph_cli.kinetic.view_compile import check_views  # compiles function queries too
+
+        _entries, slot = found
+        if slot.published_against == entry.pin:
+            return None
+        functions = self._published_slot(entry)
+        key = (slot.compiled_hash, functions[1].compiled_hash if functions else None, entry.pin)
+        cached = self._view_problems.get(key)
+        if cached is None:
+            full, _ = self._models.load_for_read(entry)
+            try:
+                problems = check_views(slot.compiled, full, functions[0] if functions else ())
+            except (JsonShapeError, GraphCliError) as exc:
+                raise GraphCliError(
+                    "views.slot_invalid",
+                    f"the compiled view catalog is unreadable: {exc}",
+                    details={"file": f"graphs/{entry.id}/views/slot.json"},
+                ) from exc
+            cached = {}
+            for problem in problems:
+                cached.setdefault(problem.name, problem)
+            self._view_problems[key] = cached
+        return cached.get(name)
 
     def action_needs(
         self, entry: GraphEntry, catalog: ActionCatalog
@@ -1035,13 +1186,77 @@ class ReadService:
         return data, warnings
 
     @_query
-    def view(self, view: GraphRead, ref: str) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
-        """The generated entity card (T17): key fields, relations with counts and the first
+    def view(
+        self,
+        view: GraphRead,
+        ref: str | None,
+        *,
+        name: str | None = None,
+        pairs: Sequence[tuple[str, str]] = (),
+        cursor: str | None = None,
+        page_bytes: int | None = None,
+        as_of: bool = False,
+    ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """An object view (T17): the generated card of an entity, an authored entity view, or
+        a set view that lists entities. All three are built from the reader's own snapshot and
+        model.
+
+        ``name`` picks a published view (``card``: the generated card); without it the default
+        view of the entity's class answers, else the card. An entity view takes a REF, a set
+        view none (``view.takes_entity``, ``view.takes_no_entity``); ``pairs`` are the
+        ``--param name=value`` pairs read by the declared types; ``cursor`` and ``page_bytes``
+        are the paging of a set view; ``as_of`` says the snapshot is an earlier state, where
+        the ``rows`` sections cannot run (``view.section_unavailable``). The entity ids the
+        answer names go to the read signal."""
+        if ref is None and name is None:
+            raise GraphCliError("usage.missing_argument", MISSING_REF)
+        chosen: ViewEntry | None = None
+        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
+        if name is not None and name != CARD:
+            chosen = find_view(self._visible_views(view.actor, view.entry, view.read_view), name)
+        elif name is None and ref is not None:
+            visible = self._visible_views(view.actor, view.entry, view.read_view)
+            if visible and any(v.defn.default for v in visible):
+                resolved = _current_entity(view, ref)
+                chosen = default_view(visible, view.model, str(resolved[1].type))
+        if chosen is None:
+            return self._card(view, ref, pairs, cursor, page_bytes, resolved)
+        return self._authored_view(view, chosen, ref, pairs, cursor, page_bytes, as_of, resolved)
+
+    def _card(
+        self,
+        view: GraphRead,
+        ref: str | None,
+        pairs: Sequence[tuple[str, str]],
+        cursor: str | None,
+        page_bytes: int | None,
+        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None,
+    ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """The generated entity card (stage 1): key fields, relations with counts and the first
         neighbours, files with pages, what applies next, in one bounded answer built from the
         reader's own snapshot and model. The status warnings and ``superseded_by`` /
         ``retracted_by`` are those of ``get``; the affordances are ``get --affordances`` summed
-        up by names. The entity ids the card names go to the read signal."""
-        _entity, current, warnings, superseded_by, retracted_by = _current_entity(view, ref)
+        up by names."""
+        for option, given in (
+            ("--param", pairs),
+            ("--cursor", cursor),
+            ("--page-bytes", page_bytes),
+        ):
+            if given:
+                raise GraphCliError(
+                    "usage.invalid_argument",
+                    f"{option}: the generated card takes no parameters and has no pages",
+                    details={"argument": option},
+                )
+        if ref is None:
+            raise GraphCliError(
+                "view.takes_entity",
+                "the generated card shows one entity; give its reference",
+                details={"view": CARD},
+            )
+        _entity, current, warnings, superseded_by, retracted_by = (
+            resolved if resolved is not None else _current_entity(view, ref)
+        )
         card = render(
             generated_spec(view.model, str(current.type)),
             current,
@@ -1055,6 +1270,250 @@ class ReadService:
         )
         self._signal(view, [current.id, *card.shown()])
         return dict(card.to_json()), warnings
+
+    def _authored_view(
+        self,
+        view: GraphRead,
+        chosen: ViewEntry,
+        ref: str | None,
+        pairs: Sequence[tuple[str, str]],
+        cursor: str | None,
+        page_bytes: int | None,
+        as_of: bool,
+        resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None,
+    ) -> tuple[dict[str, JsonValue], list[WarningRecord]]:
+        """A published view: the flavour and the class are checked, the view is checked against
+        the current model when it was published against another, the parameters are bound, and
+        the pure renderers build the answer; the functions of ``rows`` sections run here."""
+        name = chosen.name
+        self.usage.view = {"name": name, "hash": chosen.hash}
+        if chosen.entity and ref is None:
+            raise GraphCliError(
+                "view.takes_entity",
+                f"view {name} shows one entity; give its reference",
+                details={"view": name, "takes": chosen.takes},
+            )
+        if not chosen.entity and ref is not None:
+            raise GraphCliError(
+                "view.takes_no_entity",
+                f"view {name} takes no entity; leave the reference out",
+                details={"view": name},
+            )
+        if chosen.entity:
+            for option, given in (("--cursor", cursor), ("--page-bytes", page_bytes)):
+                if given is not None:
+                    raise GraphCliError(
+                        "usage.invalid_argument",
+                        f"{option}: view {name} shows one entity and has no pages",
+                        details={"argument": option},
+                    )
+        warnings: list[WarningRecord] = []
+        entity: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
+        if chosen.entity:
+            assert ref is not None and chosen.takes is not None
+            entity = resolved if resolved is not None else _current_entity(view, ref)
+            warnings += entity[2]
+            found = str(entity[1].type)
+            if not view.model.is_a(found, chosen.takes):
+                raise GraphCliError(
+                    "view.class_mismatch",
+                    f"view {name} takes {chosen.takes}; {ref} is a {found}",
+                    details={"view": name, "expected": chosen.takes, "found": found},
+                )
+        published = self._published_views(view.entry)
+        assert published is not None
+        problem = self._stale_view(view.entry, published, name)
+        if problem is not None:
+            # the code only: the check ran on the full model, its message may name a term the
+            # reader cannot see
+            raise GraphCliError(
+                "view.stale",
+                f"view {name} no longer fits the graph's ontology ({problem.code}); "
+                "tell the maintainer of this graph",
+                details={"view": name, "hash": chosen.hash, "cause": problem.code},
+            )
+        warnings += self._view_notes(view, chosen)
+        bound = kinetic_params.bind_cli("view", name, chosen.defn.params, pairs, view.model)
+        for param in chosen.defn.params:
+            if param.type == "ref":
+                bound[param.name], found_warnings = entity_params(
+                    view.snapshot, view.model, "view", name, param, bound
+                )
+                warnings += found_warnings
+        spec = spec_of(chosen, view.model, bound)
+        sections = [s for s in chosen.defn.sections if isinstance(s, RowsSection)]
+        failures: list[WarningRecord] = []
+        deprecated: set[str] = set()
+        by_id = {s.id: s for s in sections}
+        share = rows_share(len(sections))
+        entity_id = str(entity[1].id) if entity is not None else None
+
+        def run(section_id: str) -> RowsResult:
+            return self._section_rows(
+                view,
+                chosen,
+                by_id[section_id],
+                bound,
+                entity_id,
+                share,
+                as_of,
+                failures,
+                deprecated,
+            )
+
+        rows = LazyRows(list(by_id), run)
+        if entity is not None:
+            assert chosen.defn.max_bytes is None or chosen.defn.max_bytes > 0
+            wants = any(isinstance(s, AffordancesSpec) for s in spec.sections)
+            card = render(
+                spec,
+                entity[1],
+                view.snapshot,
+                view.model,
+                language=view.entry.language,
+                affordances=self._affordances(view, entity[1], room=False) if wants else None,
+                superseded_by=entity[3],
+                retracted_by=entity[4],
+                file_classes=self._file_classes(view),
+                rows=rows,
+            )
+            shown = [entity[1].id, *card.shown()]
+        else:
+            functions = self._published_slot(view.entry)
+            key = page_key(
+                view_hash=chosen.hash,
+                functions_hash=functions[1].compiled_hash if functions is not None else None,
+                pin_hash=view.entry.pin.artifact_hash,
+                reader=view.read_view.digest,
+                bound=bound,
+                names=[p.name for p in chosen.defn.params],
+            )
+            card = render_set(
+                spec,
+                view.snapshot,
+                view.model,
+                language=view.entry.language,
+                rows=rows,
+                page_bytes=page_bytes,
+                cursor=None if cursor is None else decode_cursor(cursor),
+                key=key,
+            )
+            shown = list(card.shown())
+        self._signal(view, shown)
+        return dict(card.to_json()), [*warnings, *failures]
+
+    def _view_notes(self, view: GraphRead, chosen: ViewEntry) -> list[WarningRecord]:
+        """``view.deprecated`` for a deprecated view; the name it was replaced by is shown only
+        when the reader sees that view too."""
+        if not chosen.deprecated:
+            return []
+        replaced = chosen.defn.replaced_by
+        if replaced is not None:
+            visible = self._visible_views(view.actor, view.entry, view.read_view) or ()
+            if all(v.name != replaced for v in visible):
+                replaced = None
+        return [
+            WarningRecord(
+                "view.deprecated",
+                f"view {chosen.name} is deprecated" + (f"; use {replaced}" if replaced else ""),
+                {"view": chosen.name, "replaced_by": replaced},
+            )
+        ]
+
+    def _section_rows(
+        self,
+        view: GraphRead,
+        chosen: ViewEntry,
+        section: RowsSection,
+        bound: Mapping[str, Value],
+        entity_id: str | None,
+        budget: int,
+        as_of: bool,
+        failures: list[WarningRecord],
+        deprecated: set[str],
+    ) -> RowsResult:
+        """The complete result of the function behind a ``rows`` section (the pure code counts
+        and pages every row), or its error: errors of the function (``function.*``,
+        ``query.*``) and the unavailable section under ``--as-of`` answer in the section and
+        warn ``view.section_failed``; any other error ends the call. The warning comes with
+        every page that runs the section. The function runs on the reader's snapshot and model
+        within ``budget``, the section's share of what one call may spend."""
+        function = find_entry(self._visible_functions(view.entry, view.read_view), section.function)
+        if function.deprecated and function.name not in deprecated:
+            deprecated.add(function.name)
+            replaced = function.defn.replaced_by
+            failures.append(
+                WarningRecord(
+                    "view.function_deprecated",
+                    f"view {chosen.name}: function {function.name} is deprecated"
+                    + (f"; use {replaced}" if replaced is not None else ""),
+                    {"view": chosen.name, "function": function.name, "replaced_by": replaced},
+                )
+            )
+        try:
+            if as_of:
+                raise GraphCliError(
+                    "view.section_unavailable",
+                    "a rows section runs a function over the current state; "
+                    "it cannot answer for an earlier one (--as-of)",
+                    details={"reason": "as_of"},
+                )
+            result = self._function_rows(view, function, section, bound, entity_id, budget)
+        except GraphCliError as exc:
+            if exc.code != "view.section_unavailable" and not exc.code.startswith(
+                ("function.", "query.")
+            ):
+                raise
+            failures.append(
+                WarningRecord(
+                    "view.section_failed",
+                    f"section {section.id} of view {chosen.name} could not be answered: {exc.code}",
+                    {"view": chosen.name, "section": section.id, "code": exc.code},
+                )
+            )
+            return RowsResult(function.name, function.hash, error=(exc.code, exc.message))
+        return result
+
+    def _function_rows(
+        self,
+        view: GraphRead,
+        function: FunctionEntry,
+        section: RowsSection,
+        bound: Mapping[str, Value],
+        entity_id: str | None,
+        budget: int,
+    ) -> RowsResult:
+        """Run a published function for a ``rows`` section: the section's ``args`` (literals,
+        ``$param`` and ``$entity``) bound by the function's declared types, ``ref`` values
+        resolved on the reader's snapshot, and every row of the result as JSON cells."""
+        values: dict[str, JsonValue] = {}
+        for key, raw in section.args.items():
+            holder = placeholder_name(raw)
+            if holder is None:
+                values[key] = raw
+            elif holder == ENTITY:
+                values[key] = entity_id
+            else:
+                values[key] = json_value(bound[holder])
+        with self.timings.phase("query"):
+            call = kinetic_params.bind_json(
+                "function", function.name, function.defn.params, values, view.model
+            )
+            for param in function.defn.params:
+                if param.type == "ref":
+                    call[param.name], _found = entity_params(
+                        view.snapshot, view.model, "function", function.name, param, call
+                    )
+        resolved = self._resolve_function(view, function, call)
+        result = self._execute(view, resolved, False, budget)
+        rows: list[Mapping[str, JsonValue]] = [
+            {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
+            for row in result.rows
+        ]
+        entities = dict.fromkeys([*entities_in(result.rows), *result.touched])
+        edges = dict.fromkeys([*edges_in(result.rows), *result.walked])
+        self._signal(view, list(entities), list(edges), function.name)
+        return RowsResult(function.name, function.hash, tuple(result.columns), tuple(rows))
 
     def _file_classes(self, view: GraphRead) -> frozenset[str]:
         """The stored-file classes the reader sees. The family comes from the stored model: the
@@ -1480,16 +1939,7 @@ class ReadService:
     ) -> tuple[dict[str, JsonValue], Page]:
         """A resolved query run over the snapshot, one page of its rows, and the activity
         signal for what it read."""
-        from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
-
-        with self.timings.phase("execute"):
-            result = execute(
-                resolved,
-                view.model,
-                view.snapshot,
-                include_inactive=include_inactive,
-                budget=DEFAULT_BUDGET if budget is None else budget,
-            )
+        result = self._execute(view, resolved, include_inactive, budget)
         shown = result.rows[offset : offset + limit]
         items: list[JsonValue] = [
             {column: value_json(value) for column, value in zip(result.columns, row, strict=True)}
@@ -1502,6 +1952,44 @@ class ReadService:
         self._signal(view, list(entities), list(edges), function)
         data: dict[str, JsonValue] = {"columns": list(result.columns), "items": items}
         return data, Page(len(result.rows), len(shown), limit, offset)
+
+    def _execute(
+        self,
+        view: GraphRead,
+        resolved: ResolvedQuery,
+        include_inactive: bool,
+        budget: int | None,
+    ) -> QueryResult:
+        """A resolved query run over the reader's snapshot and model, every row of it."""
+        from graph_cli.query.cypher.execute import DEFAULT_BUDGET, execute
+
+        with self.timings.phase("execute"):
+            return execute(
+                resolved,
+                view.model,
+                view.snapshot,
+                include_inactive=include_inactive,
+                budget=DEFAULT_BUDGET if budget is None else budget,
+            )
+
+    def _resolve_function(
+        self, view: GraphRead, function: FunctionEntry, bound: Mapping[str, Value]
+    ) -> ResolvedQuery:
+        """The stored query text of a function parsed and resolved against the reader's model
+        with the bound values: text that no longer does is ``function.stale``."""
+        from graph_cli.query.cypher.resolve import resolve
+
+        try:
+            parsed = self.parse_query(function.query)
+            with self.timings.phase("resolve"):
+                return resolve(parsed, view.model, bound)
+        except GraphCliError as exc:
+            raise GraphCliError(
+                "function.stale",
+                f"function {function.name} no longer fits the graph's ontology ({exc.code}); "
+                "tell the maintainer of this graph",
+                details={"function": function.name, "hash": function.hash, "cause": exc.code},
+            ) from exc
 
     def run(
         self,
@@ -1519,8 +2007,6 @@ class ReadService:
         normalized query text is parsed and resolved against the current pin: text that no
         longer does is ``function.stale``. The rows are paged and signalled like ``query``;
         the activity signal names the function, never a value."""
-        from graph_cli.query.cypher.resolve import resolve
-
         function = find_entry(self._visible_functions(view.entry, view.read_view), name)
         self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []
@@ -1542,17 +2028,7 @@ class ReadService:
                         view.snapshot, view.model, "function", name, param, bound
                     )
                     warnings += found
-        try:
-            parsed = self.parse_query(function.query)
-            with self.timings.phase("resolve"):
-                resolved = resolve(parsed, view.model, bound)
-        except GraphCliError as exc:
-            raise GraphCliError(
-                "function.stale",
-                f"function {name} no longer fits the graph's ontology ({exc.code}); "
-                "tell the maintainer of this graph",
-                details={"function": name, "hash": function.hash, "cause": exc.code},
-            ) from exc
+        resolved = self._resolve_function(view, function, bound)
         data, page = self._rows(view, resolved, False, None, limit, offset, name)
         data = {"function": {"name": name, "hash": function.hash}, **data}
         return data, page, tuple(warnings)

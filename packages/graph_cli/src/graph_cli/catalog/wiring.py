@@ -498,6 +498,7 @@ class AppServices:
             query=self.usage.query,
             opened=self.usage.graph,
             found=self.usage.function,
+            found_view=self.usage.view,
         )
         AccessLogFile(context.roots.state_root).append(record)
 

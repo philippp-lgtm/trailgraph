@@ -459,6 +459,7 @@ def test_where_is_checked_against_the_classes_of_the_section() -> None:
         ("due_on:exists=$p", "type: boolean", ["view.type_mismatch"]),
         ("id=$p", "type: ref; class: ops:Task", []),
         ("title=$p", "type: ref; class: ops:Task", ["view.type_mismatch"]),
+        ("alias=$p", "type: ref; class: ops:Task", ["view.type_mismatch"]),  # compare with id
         ("tx_seq:gt=$p", "type: integer", []),
         ("tx_seq:gt=$p", "type: string", ["view.type_mismatch"]),
     ],
@@ -856,3 +857,38 @@ def test_a_decimal_parameter_does_not_fit_an_integer_attribute() -> None:
 
     assert codes(view("type: integer")) == []  # an integer fits an integer system field
     assert codes(view("type: decimal")) == ["view.type_mismatch"]  # 1.5 would fail at render
+
+
+def test_a_ref_parameter_against_an_alias_says_to_compare_with_id() -> None:
+    view = set_view(
+        '  - kind: list\n    type: ops:Task\n    where: ["alias=$p"]\n',
+        extra="params:\n" + param("p", "type: ref; class: ops:Task"),
+    )
+    [problem] = problems_of(view)
+    assert (
+        problem.code == "view.type_mismatch"
+        and "compare a ref parameter with id" in problem.message
+    )
+
+
+def test_a_default_view_cannot_have_a_required_parameter() -> None:
+    sections = (
+        "  - kind: neighbors\n    relation: org:in_unit\n    direction: in\n"
+        '    where: ["title=$p"]\n'
+    )
+    required = entity_view(
+        sections, takes="org:OrgUnit", extra="default: true\nparams:\n" + param("p", "type: string")
+    )
+    assert codes(required) == ["view.invalid_value"]
+    [problem] = problems_of(required)
+    assert problem.path == "default" and "required parameter" in problem.message
+    optional = entity_view(
+        sections,
+        takes="org:OrgUnit",
+        extra="default: true\nparams:\n" + param("p", "type: string; default: x"),
+    )
+    assert codes(optional) == []
+    plain = entity_view(
+        sections, takes="org:OrgUnit", extra="params:\n" + param("p", "type: string")
+    )
+    assert codes(plain) == []  # not a default view: a required parameter is fine

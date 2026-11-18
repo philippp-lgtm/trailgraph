@@ -134,5 +134,16 @@ Every failure has a `code` and a `category`; the exit code depends on the catego
 | `usage.invalid_argument` | usage | 2 |
 | `usage.invalid_input` | usage | 2 |
 | `usage.missing_argument` | usage | 2 |
+| `view.class_mismatch` | refused | 1 |
+| `view.cursor_invalid` | usage | 2 |
+| `view.cursor_stale` | refused | 1 |
+| `view.not_found` | not_found | 1 |
+| `view.parameter_invalid` | usage | 2 |
+| `view.parameter_missing` | usage | 2 |
+| `view.parameter_type` | refused | 1 |
+| `view.parameter_unknown` | usage | 2 |
+| `view.stale` | invalid | 1 |
+| `view.takes_entity` | usage | 2 |
+| `view.takes_no_entity` | usage | 2 |
 | `write.invalid` | invalid | 1 |
 | `write.migration_incomplete` | unavailable | 5 |

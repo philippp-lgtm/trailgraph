@@ -6,6 +6,7 @@ from pathlib import Path
 
 import graph_cli.kinetic as kinetic
 import graph_cli.services.actions as action_service
+import graph_cli.services.read as read_service
 import graph_cli_admin.services_admin as admin_services
 from graph_cli.cli_kit.hints import known_hint_codes
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, lookup_error_code
@@ -16,6 +17,9 @@ ADMIN_SOURCES = (
     Path(admin_services.__file__).parent / "kinetic_slots.py",
     Path(action_service.__file__),  # ``graph do``: action.stale, action.deprecated
 )
+# ``graph view``, the read service: view.stale, view.takes_entity, ... (its function.* codes are
+# the function tests' business)
+VIEW_SOURCES = (Path(read_service.__file__),)
 LITERAL = re.compile(r'"((?:function|action|view)\.[a-z_]+)"')
 
 # Codes the package builds from the kind (``f"{kind}.parameter_missing"``): each is
@@ -45,6 +49,12 @@ TERM_BUILT = (
 def emitted() -> set[str]:
     paths = [*SOURCES.glob("*.py"), *ADMIN_SOURCES]
     literal = {code for path in paths for code in LITERAL.findall(path.read_text())}
+    literal |= {
+        code
+        for path in VIEW_SOURCES
+        for code in LITERAL.findall(path.read_text())
+        if code.startswith("view.")
+    }
     kinds = ("function", "action", "view")
     built = {f"{kind}.{suffix}" for kind in kinds for suffix in KIND_BUILT}
     return literal | built | set(TERM_BUILT)
