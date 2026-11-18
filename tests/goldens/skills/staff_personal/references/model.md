@@ -92,7 +92,7 @@ Fields:
 | `problem` | datatype `files:Line` | string |  |  | content | single_line `true` | `files:Metadata` | Stable code of why the extraction failed, such as pdf.unreadable or limit.time. |
 | `size` | datatype `files:Count` | integer |  |  | content | min `0` | `files:FormatMetadata` | Size of the file in bytes. |
 | `status` | enum `files:ExtractionStatus` | string | required |  | content | one of `ok`, `failed`, `not_applicable` | `files:Metadata` | Whether the extraction succeeded, failed or no longer applies. |
-| `text_encoding` | enum `files:TextEncoding` | string |  |  | content | one of `utf_8`, `utf_8_sig`, `utf_16_le`, `utf_16_be` | `files:FormatMetadata` | Character encoding, for files detected as text. |
+| `text_encoding` | enum `files:TextEncoding` | string |  |  | content | one of `utf8`, `utf8_bom`, `utf16le`, `utf16be` | `files:FormatMetadata` | Character encoding, for files detected as text. |
 
 Relations out:
 

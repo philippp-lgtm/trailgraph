@@ -27,7 +27,7 @@ def run(source: RunInput) -> ExtractionResult:
     with open(source.path, "rb") as handle:
         head = handle.read(DETECT_BYTES)
         size = os.fstat(handle.fileno()).st_size
-    detected = detect_content(head)
+    detected = detect_content(head, complete=size <= len(head))
     values: dict[str, JsonValue] = {
         "detected_media_type": detected.media_type,
         "media_type_mismatch": not compatible(source.recorded_media_type, detected.media_type),

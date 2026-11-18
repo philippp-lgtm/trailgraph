@@ -68,6 +68,11 @@ def _environ(source: RunInput) -> ExtractionResult:
     return ExtractionResult(status="ok", values={"names": sorted(os.environ)})
 
 
+def _oserror(source: RunInput) -> ExtractionResult:
+    source.path.read_bytes()
+    raise OSError("the bytes did it")
+
+
 def _noise_on_stdout(source: RunInput) -> ExtractionResult:
     sys.stdout.write("not json")
     return ExtractionResult(status="ok")
@@ -84,6 +89,7 @@ for name, run in {
     "echo": _echo,
     "chatty": _noise_on_stdout,
     "environ": _environ,
+    "oserror": _oserror,
 }.items():
     registry.REGISTRY[name] = Extractor(
         name=name,

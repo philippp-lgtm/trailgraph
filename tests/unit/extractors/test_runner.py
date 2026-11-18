@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import signal
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -12,6 +14,7 @@ from pathlib import Path
 import pytest
 from support.extractor_corpus import CORPUS
 
+from graph_cli.extractors import runner
 from graph_cli.extractors.model import ExtractionResult, Transient
 from graph_cli.extractors.runner import ExtractLimits, materialized, run_extractor
 
@@ -44,7 +47,7 @@ def test_the_real_child_runs_the_format_extractor() -> None:
         "detected_media_type": "text/plain",
         "media_type_mismatch": False,
         "size": 47,
-        "text_encoding": "utf_8",
+        "text_encoding": "utf8",
     }
 
 
@@ -68,6 +71,29 @@ def test_a_busy_extractor_hits_the_time_limit(sample: Path) -> None:
     assert time.monotonic() - started < 10
 
 
+def test_the_cpu_limit_fires_before_the_wall_clock(
+    sample: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the parent's timeout out of the way the child's own CPU limit ends a busy
+    extractor: ``SIGXCPU`` (soft limit), read as ``limit.time``, not a kill from outside."""
+    real_run = subprocess.run
+
+    def patient(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        kwargs["timeout"] = 60
+        return real_run(*args, **kwargs)  # type: ignore[call-overload,no-any-return]
+
+    monkeypatch.setattr(runner.subprocess, "run", patient)
+    started = time.monotonic()
+    result = _run("spin", sample, ExtractLimits(timeout_seconds=1, max_memory_mib=256))
+    assert result == ExtractionResult.failed("limit.time")
+    assert time.monotonic() - started < 20
+
+
+def test_a_cpu_limit_signal_is_a_time_limit_and_a_kill_is_not() -> None:
+    assert runner._killed(signal.SIGXCPU) == ExtractionResult.failed("limit.time")
+    assert isinstance(runner._killed(signal.SIGKILL), Transient)
+
+
 def test_a_sleeping_extractor_hits_the_wall_clock(sample: Path) -> None:
     result = _run("sleep", sample, ExtractLimits(timeout_seconds=1, max_memory_mib=256))
     assert result == ExtractionResult.failed("limit.time")
@@ -82,6 +108,11 @@ def test_a_greedy_extractor_hits_the_memory_limit(sample: Path) -> None:
 def test_an_extractor_bug_is_a_failed_result_without_the_message(sample: Path) -> None:
     result = _run("boom", sample)
     assert result == ExtractionResult.failed("extractor.error")
+
+
+def test_an_oserror_from_the_extractor_on_a_readable_file_is_failed(sample: Path) -> None:
+    """``gzip.BadGzipFile`` and friends are OSError subclasses caused by the bytes."""
+    assert _run("oserror", sample) == ExtractionResult.failed("extractor.error")
 
 
 def test_a_crash_is_a_failed_result(sample: Path) -> None:

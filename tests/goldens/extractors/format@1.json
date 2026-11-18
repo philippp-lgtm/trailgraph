@@ -48,7 +48,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 0,
-        "text_encoding": "utf_8"
+        "text_encoding": "utf8"
       }
     }
   },
@@ -75,7 +75,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 47,
-        "text_encoding": "utf_8"
+        "text_encoding": "utf8"
       }
     }
   },
@@ -89,7 +89,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 29,
-        "text_encoding": "utf_8_sig"
+        "text_encoding": "utf8_bom"
       }
     }
   },
@@ -116,7 +116,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 52,
-        "text_encoding": "utf_16_le"
+        "text_encoding": "utf16le"
       }
     }
   },
@@ -169,7 +169,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 47,
-        "text_encoding": "utf_8"
+        "text_encoding": "utf8"
       }
     }
   },
@@ -183,7 +183,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 38,
-        "text_encoding": "utf_8"
+        "text_encoding": "utf8"
       }
     }
   },
@@ -210,7 +210,7 @@
         "detected_media_type": "text/plain",
         "media_type_mismatch": false,
         "size": 45,
-        "text_encoding": "utf_8"
+        "text_encoding": "utf8"
       }
     }
   },

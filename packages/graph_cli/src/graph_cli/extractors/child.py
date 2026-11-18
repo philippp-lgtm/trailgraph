@@ -39,17 +39,22 @@ def apply_limits(timeout_seconds: float, max_memory_mib: int) -> None:
     """Limit this process before it touches the file.
 
     No core files (they would hold file content), CPU time a second above the parent's
-    wall-clock timeout (a backstop when the parent stalls) and the address space. macOS
-    ignores ``RLIMIT_AS``: there the memory limit is best effort and the timeout still holds.
+    wall-clock timeout (a backstop when the parent stalls) and the address space. The CPU
+    hard limit is a second above the soft one: at the soft limit Linux sends ``SIGXCPU``
+    (``limit.time``), at a hard limit equal to it it would send ``SIGKILL``, which the parent
+    must read as a kill from outside. macOS ignores ``RLIMIT_AS``: there the memory limit is
+    best effort and the timeout still holds.
     """
-    _limit(resource.RLIMIT_CORE, 0)
-    _limit(resource.RLIMIT_CPU, math.ceil(timeout_seconds) + 1)
-    _limit(resource.RLIMIT_AS, max_memory_mib * 1024 * 1024)
+    _limit(resource.RLIMIT_CORE, 0, 0)
+    soft = math.ceil(timeout_seconds) + 1
+    _limit(resource.RLIMIT_CPU, soft, soft + 1)
+    memory = max_memory_mib * 1024 * 1024
+    _limit(resource.RLIMIT_AS, memory, memory)
 
 
-def _limit(which: int, value: int) -> None:
+def _limit(which: int, soft: int, hard: int) -> None:
     with contextlib.suppress(ValueError, OSError):
-        resource.setrlimit(which, (value, value))
+        resource.setrlimit(which, (soft, hard))
 
 
 def answer_for(request: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
@@ -63,11 +68,17 @@ def answer_for(request: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     if extractor is None:
         return _answer(ExtractionResult.failed(PROBLEM_UNKNOWN_EXTRACTOR))
     try:
+        # Opened once here: an OSError at this point says nothing about the bytes (no
+        # permission, gone), so it is transient. Once the file is open, an OSError raised by
+        # the extractor is a function of the bytes (``gzip.BadGzipFile`` is one) and is failed.
+        with open(path, "rb"):
+            pass
+    except OSError as error:
+        return {"status": "transient", "detail": f"{type(error).__name__}: {error.strerror}"}
+    try:
         result = extractor.run(RunInput(Path(path), recorded))
     except MemoryError:
         return _answer(ExtractionResult.failed(PROBLEM_MEMORY))
-    except OSError as error:
-        return {"status": "transient", "detail": f"{type(error).__name__}: {error.strerror}"}
     except Exception:
         return _answer(ExtractionResult.failed(PROBLEM_ERROR))
     return _answer(result)

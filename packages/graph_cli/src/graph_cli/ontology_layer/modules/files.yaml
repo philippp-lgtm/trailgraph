@@ -52,13 +52,13 @@ enums:
   TextEncoding:
     summary: Character encoding of a file detected as text.
     values:
-      utf_8:
+      utf8:
         summary: UTF-8 without a byte order mark.
-      utf_8_sig:
+      utf8_bom:
         summary: UTF-8 with a byte order mark.
-      utf_16_le:
+      utf16le:
         summary: UTF-16, little endian, with a byte order mark.
-      utf_16_be:
+      utf16be:
         summary: UTF-16, big endian, with a byte order mark.
 
 classes:

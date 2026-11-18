@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import struct
+from importlib import resources
+
 import pytest
+import yaml
 
 from graph_cli.extractors.detect import (
     DETECT_BYTES,
     GZIP,
+    MEDIA_TYPE_PATTERN,
     SQLITE,
     ZIP,
     Detected,
@@ -28,12 +33,12 @@ from graph_cli.extractors.media_types import OCTET_STREAM
         (b"PK\x03\x04\x14\x00", Detected(ZIP)),
         (b"PK\x05\x06" + b"\x00" * 18, Detected(ZIP)),
         (b"\x1f\x8b\x08\x00", Detected(GZIP)),
-        (b"plain text\n", Detected("text/plain", "utf_8")),
-        ("Umlaut ü\n".encode(), Detected("text/plain", "utf_8")),
-        (b"\xef\xbb\xbfwith bom", Detected("text/plain", "utf_8_sig")),
-        (b"\xff\xfe" + "ab".encode("utf-16-le"), Detected("text/plain", "utf_16_le")),
-        (b"\xfe\xff" + "ab".encode("utf-16-be"), Detected("text/plain", "utf_16_be")),
-        (b"", Detected("text/plain", "utf_8")),
+        (b"plain text\n", Detected("text/plain", "utf8")),
+        ("Umlaut ü\n".encode(), Detected("text/plain", "utf8")),
+        (b"\xef\xbb\xbfwith bom", Detected("text/plain", "utf8_bom")),
+        (b"\xff\xfe" + "ab".encode("utf-16-le"), Detected("text/plain", "utf16le")),
+        (b"\xfe\xff" + "ab".encode("utf-16-be"), Detected("text/plain", "utf16be")),
+        (b"", Detected("text/plain", "utf8")),
         (b"a\x00b", Detected(OCTET_STREAM)),
         (b"\x80\x81\x82 not utf-8", Detected(OCTET_STREAM)),
         (b"\x00\x00\x00\x18ftypisom\x00\x00", Detected(OCTET_STREAM)),
@@ -47,17 +52,84 @@ def test_a_signature_wins_over_the_text_test() -> None:
     assert detect_content(b"%PDF-1.4 this is also valid text").media_type == "application/pdf"
 
 
+def _zip_entry(
+    name: bytes, value: bytes, *, method: int = 0, size: int | None = None, extra: bytes = b""
+) -> bytes:
+    """A local file header and data of one zip entry, as the zip writers produce them."""
+    stored = len(value) if size is None else size
+    header = struct.pack(
+        "<4sHHHHHIIIHH",
+        b"PK\x03\x04",
+        20,
+        0,
+        method,
+        0,
+        0,
+        0,
+        stored,
+        stored,
+        len(name),
+        len(extra),
+    )
+    return header + name + extra + value
+
+
+ODF_TEXT = b"application/vnd.oasis.opendocument.text"
+
+
 def test_opendocument_is_told_from_a_plain_zip() -> None:
-    entry = b"mimetype" + b"application/vnd.oasis.opendocument.text"
-    head = b"PK\x03\x04" + b"\x00" * 26 + entry + b"PK\x03\x04"
+    head = _zip_entry(b"mimetype", ODF_TEXT) + b"PK\x03\x04"
     assert detect_content(head).media_type == "application/vnd.oasis.opendocument.text"
-    assert detect_content(b"PK\x03\x04" + b"\x00" * 26 + b"other.txt").media_type == ZIP
+    assert detect_content(_zip_entry(b"other.txt", b"hello")).media_type == ZIP
+
+
+def test_opendocument_reads_the_length_and_the_extra_field_from_the_header() -> None:
+    head = (
+        _zip_entry(b"mimetype", ODF_TEXT, extra=b"\x00\x00\x04\x00abcd") + b"content.xml<office/>"
+    )
+    assert detect_content(head).media_type == "application/vnd.oasis.opendocument.text"
+    # A longer type follows its own length, not the next "PK".
+    long = b"application/vnd.oasis.opendocument.text-template"
+    assert detect_content(_zip_entry(b"mimetype", long)).media_type == long.decode()
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        # a value with blank, newline and NULs after the prefix
+        _zip_entry(b"mimetype", ODF_TEXT + b" X\n\x00\x00"),
+        # stored text directly followed by other bytes: not a valid media type
+        _zip_entry(b"mimetype", ODF_TEXT + b"content.xml<office/>"),
+        # compressed entry, no usable length, a length beyond the head, a non-ASCII value
+        _zip_entry(b"mimetype", ODF_TEXT, method=8),
+        _zip_entry(b"mimetype", ODF_TEXT, size=0),
+        _zip_entry(b"mimetype", ODF_TEXT, size=4000),
+        _zip_entry(b"mimetype", ODF_TEXT + "\u00e4".encode()),
+        _zip_entry(b"mimetype", ODF_TEXT.upper()),
+        b"PK\x03\x04" + b"\x00" * 10,
+    ],
+)
+def test_a_crafted_opendocument_head_is_just_a_zip(head: bytes) -> None:
+    assert detect_content(head).media_type == ZIP
+
+
+def test_the_media_type_pattern_is_the_one_of_the_files_module() -> None:
+    module = yaml.safe_load(
+        (resources.files("graph_cli.ontology_layer") / "modules" / "files.yaml").read_text()
+    )
+    assert module["datatypes"]["MediaType"]["pattern"] == MEDIA_TYPE_PATTERN
+
+
+def test_a_file_that_ends_in_a_cut_character_is_not_text() -> None:
+    cut = "\u00fc".encode()[:1]
+    assert detect_content(b"abc" + cut).media_type == "text/plain"
+    assert detect_content(b"abc" + cut, complete=True).media_type == OCTET_STREAM
 
 
 def test_a_multibyte_character_cut_at_the_end_is_still_text() -> None:
     text = ("a" * (DETECT_BYTES - 1) + "\u00fc").encode()  # the two bytes straddle the limit
     assert len(text) == DETECT_BYTES + 1
-    assert detect_content(text[:DETECT_BYTES]) == Detected("text/plain", "utf_8")
+    assert detect_content(text[:DETECT_BYTES]) == Detected("text/plain", "utf8")
 
 
 def test_only_the_first_bytes_count() -> None:

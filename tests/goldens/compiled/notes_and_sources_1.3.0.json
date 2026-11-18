@@ -1588,19 +1588,19 @@
       "summary": "Character encoding of a file detected as text.",
       "values": [
         {
-          "name": "utf_8",
+          "name": "utf8",
           "summary": "UTF-8 without a byte order mark."
         },
         {
-          "name": "utf_8_sig",
+          "name": "utf8_bom",
           "summary": "UTF-8 with a byte order mark."
         },
         {
-          "name": "utf_16_le",
+          "name": "utf16le",
           "summary": "UTF-16, little endian, with a byte order mark."
         },
         {
-          "name": "utf_16_be",
+          "name": "utf16be",
           "summary": "UTF-16, big endian, with a byte order mark."
         }
       ]
