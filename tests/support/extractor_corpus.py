@@ -62,14 +62,21 @@ def golden_path(extractor: Extractor) -> Path:
 def assert_version_golden(extractor: Extractor, produced: dict[str, JsonValue]) -> None:
     """Pin the output of ``name@version``.
 
-    The golden of a version is written once (``GRAPH_CLI_UPDATE_GOLDENS=1`` creates a missing
-    one and never rewrites an existing one): output that changes without a version bump fails.
+    The golden of a version is append-only. ``GRAPH_CLI_UPDATE_GOLDENS=1`` creates a missing
+    one and adds the entries of corpus files the golden does not have yet, but never changes
+    an entry that is there: output that changes without a version bump fails.
     """
     path = golden_path(extractor)
     text = json.dumps(produced, indent=2, sort_keys=True) + "\n"
-    if UPDATE_GOLDENS and not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+    if UPDATE_GOLDENS:
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        else:
+            existing = json.loads(path.read_text())
+            unchanged = all(produced.get(name) == entry for name, entry in existing.items())
+            if unchanged and set(produced) - set(existing):
+                path.write_text(text)
     assert path.exists(), (
         f"missing golden {path.name}; a new extractor or version needs one: "
         "run with GRAPH_CLI_UPDATE_GOLDENS=1"

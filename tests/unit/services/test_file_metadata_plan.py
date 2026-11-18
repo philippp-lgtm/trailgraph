@@ -9,6 +9,7 @@ from support.fixtures import compiled_model
 from graph_cli.extractors.format import FORMAT
 from graph_cli.extractors.model import ExtractionResult, PartResult
 from graph_cli.kernel.changeset import ValueRef
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, parse_id
 from graph_cli.services.file_metadata_plan import (
     RecordState,
@@ -35,7 +36,12 @@ def state(version: int = 1, status: str = "ok") -> RecordState:
         ("application/pdf", state(0), False, "run"),
         ("application/pdf", state(1, "failed"), False, "current"),
         ("application/pdf", state(1, "failed"), True, "run"),
-        ("application/pdf", state(1, "not_applicable"), False, "current"),
+        ("application/pdf", state(1, "not_applicable"), False, "run"),
+        ("application/pdf", state(0, "not_applicable"), False, "run"),
+        ("application/pdf", state(2), False, "newer_version"),
+        ("application/pdf", state(2, "failed"), True, "newer_version"),
+        ("application/pdf", state(2, "not_applicable"), False, "newer_version"),
+        ("text/plain", state(2), False, "newer_version"),
         ("text/plain", None, False, "already_not_applicable"),
         ("text/plain", state(1), False, "not_applicable"),
         ("text/plain", state(1, "failed"), False, "not_applicable"),
@@ -177,8 +183,28 @@ def test_an_extractor_without_parts_has_no_part_scope() -> None:
 
 def test_the_inactive_document_empties_both_scopes() -> None:
     changeset = inactive_changeset(MODEL, sqlite_stub(Tables()), FILE)
-    assert changeset.reason == "file not active"
+    assert changeset.reason == "extract sqlite@1: file not active"
     record, parts = changeset.reconcile
     for scope in (record, parts):
         assert scope.items == () and scope.complete and scope.allow_empty
     assert record.under == FILE and parts.under == f"{FILE}/"
+
+
+def test_an_extractor_may_only_produce_attributes_of_its_classes() -> None:
+    result = ExtractionResult(status="ok", values={"page_count": 3, "pages_total": 3})
+    with pytest.raises(GraphCliError) as info:
+        record_changeset(MODEL, pdf_stub(), FILE, result)
+    assert info.value.code == "internal.error"
+    assert info.value.details["names"] == ["pages_total"]
+    parts = ExtractionResult(
+        status="ok", parts=(PartResult("orders", {"kind": "table", "rows": 3}),)
+    )
+    with pytest.raises(GraphCliError) as info:
+        record_changeset(MODEL, sqlite_stub(Tables()), FILE, parts)
+    assert info.value.details["names"] == ["rows"]
+    stray = ExtractionResult(status="ok", parts=(PartResult("orders", {}),))
+    with pytest.raises(GraphCliError):
+        record_changeset(MODEL, pdf_stub(), FILE, stray)  # parts without a part class
+    # a failed or absent result carries no values to check
+    assert record_changeset(MODEL, pdf_stub(), FILE, ExtractionResult.failed("pdf.unreadable"))
+    assert record_changeset(MODEL, pdf_stub(), FILE, None)

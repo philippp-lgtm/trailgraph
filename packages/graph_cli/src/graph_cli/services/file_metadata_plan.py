@@ -27,6 +27,7 @@ from graph_cli.kernel.changeset import (
     ReconcileScope,
     ValueRef,
 )
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef, parse_id
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import Cmp, Query
@@ -41,7 +42,7 @@ KEY: Final = "key"
 FILE_NOT_ACTIVE: Final = "file not active"
 _PAGE: Final = 1000
 
-Decision = Literal["run", "current", "not_applicable", "already_not_applicable"]
+Decision = Literal["run", "current", "not_applicable", "already_not_applicable", "newer_version"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,17 +111,24 @@ def decide(
     """The step of the reconciler for one extractor on one file (plan section 5).
 
     ``detected`` comes from the format record, ``recorded`` is the type the file was added with.
-    An extractor that does not accept the file writes nothing for a file it never applied to and
-    turns an older result into ``not_applicable``; one that accepts runs unless its record is
-    at the current version (a failed one runs again only on ``retry_failed``).
+    A record of a NEWER version than this install's extractor is never touched
+    (``newer_version``): an older install must not downgrade what a newer one wrote, and two
+    installs would flip-flop. Otherwise an extractor that does not accept the file writes
+    nothing for a file it never applied to and turns an older result into ``not_applicable``;
+    one that accepts runs when it has no record, when the record is of an older version, when
+    the record says ``not_applicable`` (an earlier detection ruled the extractor out, the file
+    is accepted now, so the record is stale) or when it is ``failed`` and ``retry_failed`` is
+    set; else the record is ``current``.
     """
+    if record is not None and record.extractor_version > extractor.version:
+        return "newer_version"
     if not extractor.accepts(detected, recorded):
         if record is None or record.status == STATUS_NOT_APPLICABLE:
             return "already_not_applicable"
         return "not_applicable"
-    if record is None:
+    if record is None or record.status == STATUS_NOT_APPLICABLE:
         return "run"
-    if record.extractor_version != extractor.version:
+    if record.extractor_version < extractor.version:
         return "run"
     if retry_failed and record.status == STATUS_FAILED:
         return "run"
@@ -276,6 +284,8 @@ def record_changeset(
     """The document that brings the record of (``file_id``, ``extractor``) to ``result``;
     ``None`` is the result ``not_applicable``. One document is one tx (reason ``extract
     <name>@<version>``) that names the extraction run as its source."""
+    if result is not None:
+        _check_output(model, extractor, result)
     attrs: dict[str, JsonValue] = {
         "extractor": extractor.name,
         "extractor_version": extractor.version,
@@ -302,6 +312,34 @@ def record_changeset(
     )
 
 
+def _check_output(model: CompiledModel, extractor: Extractor, result: ExtractionResult) -> None:
+    """The values of an ``ok`` result are attributes of the record class and the values of each
+    part are attributes of the part class: anything else is a bug of the extractor (or a module
+    older than the one it writes to), refused as ``internal.error`` before a document is made."""
+    if result.status != STATUS_OK:
+        return
+    problems: list[tuple[str, list[str]]] = []
+    record = set(result.values) - set(model.classes[extractor.record_class].attributes)
+    if record:
+        problems.append((extractor.record_class, sorted(record)))
+    if result.parts and extractor.part_class is None:
+        problems.append(("no part class", sorted(part.name for part in result.parts)))
+    elif extractor.part_class is not None:
+        declared = set(model.classes[extractor.part_class].attributes)
+        for part in result.parts:
+            extra = set(part.values) - declared
+            if extra:
+                problems.append((extractor.part_class, sorted(extra)))
+    if problems:
+        names = sorted({n for _, found in problems for n in found})
+        raise GraphCliError(
+            "internal.error",
+            f"extractor {extractor.name}@{extractor.version} produced values "
+            f"that its classes do not declare: {names}",
+            details={"extractor": extractor.name, "version": extractor.version, "names": names},
+        )
+
+
 def inactive_changeset(
     model: CompiledModel,
     extractor: Extractor,
@@ -326,7 +364,7 @@ def inactive_changeset(
         scopes.append(_part_scope(model, extractor, file_id, ()))
     return ChangeSet(
         ops=(),
-        reason=FILE_NOT_ACTIVE,
+        reason=f"extract {extractor.name}@{extractor.version}: {FILE_NOT_ACTIVE}",
         source=_source(extractor, run),
         reconcile=tuple(scopes),
     )

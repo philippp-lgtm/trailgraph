@@ -50,7 +50,8 @@ and storage adapters, `audit` and `access_control` import only `kernel`.
 `query.cypher` imports only `kernel` and `ontology_layer`, not the flag
 planners next to it. `kinetic` imports only `kernel`, `ontology_layer` and
 `query`; the layers above may use it. `sources` imports only `kernel` and
-`ontology_layer`. `extractors` imports only `kernel` (and the standard library, later the one PDF parser); it knows nothing of graphs. The storage maintenance port
+`ontology_layer`. `extractors` imports only `kernel` (and the standard library, later the one PDF parser); it knows
+nothing of graphs. The storage maintenance port
 (`storage.files.maintenance`) is imported only by `graph_cli_admin`, and the
 two storage backends are independent of each other. The S3 client
 (`storage.s3`) imports only `kernel` and the standard library. Authored YAML (ontologies,

@@ -67,6 +67,15 @@ def app_actor(uid: int = 501, user: str = "tester") -> ActorContext:
     return actor
 
 
+def admin_actor(uid: int = 501, user: str = "tester") -> ActorContext:
+    """The maintainer of ``graph-admin``: the entrypoint that holds the maintain permission."""
+    actor, _ = resolve_actor(
+        IdentityInputs(env={}, uid=uid, user_name=user, pid=4242),
+        client=ClientInfo("graph-admin", "0.1.0", Entrypoint.MAINT),
+    )
+    return actor
+
+
 def alias_prefixes(model: CompiledModel) -> dict[TermRef, str]:
     """As graph-admin seeds them: ``display_prefix`` of concrete classes."""
     return {

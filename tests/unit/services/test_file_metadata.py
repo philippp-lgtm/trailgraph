@@ -6,6 +6,7 @@ metadata imported); extractors are the real ``format`` and stubs whose output th
 
 from __future__ import annotations
 
+import json
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,22 +18,24 @@ from support.file_metadata import (
     Tables,
     pdf_stub,
     registry,
-    run_in_process,
     sqlite_stub,
 )
 from support.services import ServiceEnv
 
 from graph_cli.access_control.compiler import compile_policy
-from graph_cli.access_control.policy import policy_set
+from graph_cli.access_control.policy import BuiltinPolicySource, policy_set
 from graph_cli.extractors.model import ExtractionResult, RunInput, Transient
 from graph_cli.extractors.runner import ExtractLimits
+from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.errors import GraphCliError
-from graph_cli.kernel.ids import EntityId
+from graph_cli.kernel.ids import EntityId, parse_id
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import Revision
 from graph_cli.ontology_layer.bundle import DirectorySource, LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.file_metadata import FileMetadataService
+from graph_cli.services.write import WriteRequest, WriteResult, WriteService
 
 FORMAT_CLASS = "files:FormatMetadata"
 PDF_CLASS = "files_pdf:PdfMetadata"
@@ -252,7 +255,7 @@ def test_the_records_of_a_retracted_file_are_retracted(graph: Graph) -> None:
     assert report.retracted == 2  # its format and pdf records
     assert set(graph.records(FORMAT_CLASS)) == {keep}
     assert graph.records(PDF_CLASS) == {}
-    txs = [tx for tx in graph.env.txs() if tx.reason == "file not active"]
+    txs = [tx for tx in graph.env.txs() if str(tx.reason).endswith(": file not active")]
     assert len(txs) == 2
     head = seq(graph)
     assert service.extract(graph.request()).retracted == 0
@@ -428,13 +431,7 @@ def test_a_caller_without_write_rights_ends_the_run_at_the_first_denial(graph: G
     graph.add("one_page.pdf")
     graph.add("notes.txt")
     writer = graph.env.make_service(_Policy(graph, READ_ONLY))
-    service = FileMetadataService(
-        catalog=graph.env.catalog,
-        writer=writer,
-        ids=graph.env.ids,
-        registry=registry(pdf_stub()),
-        runner=run_in_process(registry(pdf_stub())),
-    )
+    service = graph.service(registry(pdf_stub()), writer=writer)
     head = seq(graph)
     with pytest.raises(GraphCliError) as caught:
         service.extract(graph.request())
@@ -467,7 +464,10 @@ def test_the_real_extractor_child_runs_on_every_backend(graph: Graph) -> None:
     binary = graph.add("binary_renamed.csv")
     graph.add("database.sqlite")
     service = FileMetadataService(
-        catalog=graph.env.catalog, writer=graph.env.service, ids=graph.env.ids
+        catalog=graph.env.catalog,
+        writer=graph.env.service,
+        ids=graph.env.ids,
+        policy=BuiltinPolicySource(),
     )
     report = service.extract(graph.request())
     assert report.problems == [] and report.transient == []
@@ -477,3 +477,335 @@ def test_the_real_extractor_child_runs_on_every_backend(graph: Graph) -> None:
     assert record.attrs["size"] == 512
     sqlite = next(r for f, r in graph.records(FORMAT_CLASS).items() if f != binary)
     assert sqlite.attrs["detected_media_type"] == "application/vnd.sqlite3"
+
+
+# ---- versions: no downgrade, stale not_applicable ---------------------------------------
+
+
+def test_an_older_install_never_downgrades_a_newer_record(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    graph.service(registry(pdf_stub(2))).extract(graph.request())
+    before = graph.records(PDF_CLASS)[pdf]
+    assert before.attrs["extractor_version"] == 2
+    head = seq(graph)
+    report = graph.service(registry(pdf_stub(1))).extract(graph.request())
+    assert seq(graph) == head  # nothing written
+    assert graph.records(PDF_CLASS)[pdf].attrs["extractor_version"] == 2
+    tally = next(t for t in report.extractors if t.name == "pdf")
+    assert tally.newer_version == 1 and tally.created == tally.updated == 0
+    assert report.newer_versions == [
+        {"extractor": "pdf", "file": pdf, "stored_version": 2, "version": 1}
+    ]
+    assert report.to_json()["newer_version_count"] == 1
+    again = graph.service(registry(pdf_stub(2))).extract(graph.request())
+    assert again.newer_versions == [] and seq(graph) == head
+
+
+def test_a_newer_record_is_not_turned_into_not_applicable_either(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    graph.service(registry(pdf_stub(2))).extract(graph.request())
+    head = seq(graph)
+    graph.service(registry(pdf_stub(1, accepts=False))).extract(graph.request())
+    assert seq(graph) == head
+    assert graph.records(PDF_CLASS)[pdf].attrs["status"] == "ok"
+
+
+def test_a_stale_not_applicable_record_runs_again_when_the_extractor_applies_again(
+    graph: Graph,
+) -> None:
+    """The format of a file is detected differently by a later version: ``pdf`` ruled it out
+    (``not_applicable``), then accepts it again at the same version; the record is stale."""
+    pdf = graph.add("one_page.pdf")
+    graph.service(registry(pdf_stub(1))).extract(graph.request())
+    graph.service(registry(pdf_stub(1, accepts=False))).extract(graph.request())
+    assert graph.records(PDF_CLASS)[pdf].attrs["status"] == "not_applicable"
+    report = graph.service(registry(pdf_stub(1))).extract(graph.request())
+    record = graph.records(PDF_CLASS)[pdf]
+    assert record.attrs["status"] == "ok" and record.attrs["page_count"] == 1
+    assert next(t for t in report.extractors if t.name == "pdf").updated == 1
+    head = seq(graph)
+    graph.service(registry(pdf_stub(1))).extract(graph.request())
+    assert seq(graph) == head
+
+
+# ---- errors: what ends a run and what does not ------------------------------------------
+
+
+class _Writer:
+    """A write service that raises ``code`` for the document of the ``nth`` call."""
+
+    def __init__(self, inner: WriteService, code: str, nth: int) -> None:
+        self.inner, self.code, self.nth, self.calls = inner, code, nth, 0
+        self.timings = inner.timings
+
+    def apply(self, request: WriteRequest) -> WriteResult:
+        self.calls += 1
+        if self.calls == self.nth:
+            raise GraphCliError(self.code, "scripted")
+        return self.inner.apply(request)
+
+
+def test_a_lock_timeout_ends_the_run_and_what_was_written_stays(graph: Graph) -> None:
+    for name in ("one_page.pdf", "notes.txt", "table.csv"):
+        graph.add(name)
+    writer = _Writer(graph.env.service, "backend.lock_timeout", 2)
+    service = graph.service(registry(pdf_stub()), writer=writer)  # type: ignore[arg-type]
+    with pytest.raises(GraphCliError) as caught:
+        service.extract(graph.request())
+    assert caught.value.code == "backend.lock_timeout"
+    assert writer.calls == 2  # the third document was not tried
+    assert len(graph.records(FORMAT_CLASS)) == 1
+    graph.service(registry(pdf_stub())).extract(graph.request())  # a rerun goes on
+    assert len(graph.records(FORMAT_CLASS)) == 3
+
+
+@pytest.mark.parametrize(
+    "code", ["write.invalid", "reconcile.shape", "changeset.malformed", "conflict.seq_mismatch"]
+)
+def test_a_refused_document_is_listed_and_the_run_goes_on(graph: Graph, code: str) -> None:
+    graph.add("one_page.pdf")
+    graph.add("notes.txt")
+    writer = _Writer(graph.env.service, code, 1)
+    report = graph.service(registry(pdf_stub()), writer=writer).extract(  # type: ignore[arg-type]
+        graph.request()
+    )
+    assert [p["code"] for p in report.problems] == [code]
+    assert len(graph.records(FORMAT_CLASS)) == 1  # the other format record was written
+
+
+@pytest.mark.parametrize("code", ["backend.unavailable", "graph.archived", "internal.error"])
+def test_other_errors_end_the_run(graph: Graph, code: str) -> None:
+    graph.add("notes.txt")
+    writer = _Writer(graph.env.service, code, 1)
+    service = graph.service(registry(), writer=writer)  # type: ignore[arg-type]
+    with pytest.raises(GraphCliError) as caught:
+        service.extract(graph.request())
+    assert caught.value.code == code
+
+
+def test_a_corrupt_stored_copy_is_transient_for_that_file_only(tmp_path: Path) -> None:
+    with FakeS3() as fake:
+        env = ServiceEnv(
+            "s3",
+            "notes_and_sources",
+            tmp_path / "root",
+            version="1.3.0",
+            object_store=fake.settings(),
+        )
+        graph = Graph(env)
+        bad = graph.add("one_page.pdf")
+        good = graph.add("notes.txt")
+        digest = env.snapshot().get(EntityId(parse_id(bad)))
+        assert digest is not None
+        stored = str(digest.attrs["content"]).split(":")[-1]
+        (key,) = [k for k in fake.keys() if stored in k]  # noqa: SIM118
+        original = fake.get(key)
+        assert original is not None
+        fake.corrupt_get(key, bytes(len(original)))  # same length, other bytes
+        report = graph.service(registry(pdf_stub())).extract(graph.request())
+        assert [t["file"] for t in report.transient] == [bad]  # once: the format run only
+        assert report.problems == []
+        assert set(graph.records(FORMAT_CLASS)) == {good}  # the run went on to the other file
+        assert graph.records(PDF_CLASS) == {}
+        assert [p for p in Path(tempfile.gettempdir()).glob("graph_cli_extract_*")] == []
+
+
+# ---- records follow their file: every class, the selection ------------------------------
+
+
+def test_the_records_of_an_extractor_whose_module_is_outdated_follow_their_file(
+    graph: Graph,
+) -> None:
+    pdf = graph.add("one_page.pdf")
+    graph.service(registry(pdf_stub())).extract(graph.request())
+    assert pdf in graph.records(PDF_CLASS)
+    graph.env.apply({"op": "retract", "id": pdf}, reason="not wanted")
+    outdated = registry(pdf_stub(1, module_min="9.0.0"))
+    report = graph.service(outdated).extract(graph.request())
+    assert [m.extractor for m in report.module_outdated] == ["pdf"]
+    assert graph.records(PDF_CLASS) == {}  # retracted although pdf cannot run here
+    assert graph.records(FORMAT_CLASS) == {}
+
+
+def test_the_selection_limits_the_cleanup_of_records_too(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    service = graph.service(registry(pdf_stub()))
+    service.extract(graph.request())
+    graph.env.apply({"op": "retract", "id": pdf}, reason="not wanted")
+    report = service.extract(graph.request(extractors=("format",)))
+    assert report.retracted == 1
+    assert graph.records(FORMAT_CLASS) == {}
+    assert pdf in graph.records(PDF_CLASS)  # not selected: left for a run that selects it
+    assert service.extract(graph.request()).retracted == 1
+    assert graph.records(PDF_CLASS) == {}
+
+
+def test_a_new_record_and_its_new_parts_are_one_write(graph: Graph) -> None:
+    db = graph.add("database.sqlite")
+    tables = Tables({"orders": ("table", ("id",)), "customers": ("table", ("id",))})
+    before = {tx.seq for tx in graph.env.txs()}
+    graph.service(registry(sqlite_stub(tables))).extract(graph.request())
+    sqlite_txs = [
+        tx for tx in graph.env.txs() if tx.seq not in before and tx.reason == "extract sqlite@1"
+    ]
+    assert len(sqlite_txs) == 1
+    assert len(graph.parts(PART_CLASS)) == 2 and db in graph.records(SQLITE_CLASS)
+
+
+def test_a_part_is_retired_while_its_record_stays(graph: Graph) -> None:
+    db = graph.add("database.sqlite")
+    tables = Tables({"orders": ("table", ("id",)), "customers": ("table", ("id",))})
+    graph.service(registry(sqlite_stub(tables, 1))).extract(graph.request())
+    record = graph.records(SQLITE_CLASS)[db]
+    tables.parts = {"orders": ("table", ("id",))}
+    graph.service(registry(sqlite_stub(tables, 2))).extract(graph.request())
+    assert set(graph.parts(PART_CLASS)) == {f"sqlite/{db}/orders"}
+    after = graph.records(SQLITE_CLASS)[db]
+    assert after.id == record.id and after.attrs["extractor_version"] == 2
+
+
+def test_a_failed_and_a_not_applicable_record_still_point_at_their_file(graph: Graph) -> None:
+    pdf = graph.add("one_page.pdf")
+    text = graph.add("notes.txt")
+    service = graph.service(registry(pdf_stub(1, fail=lambda data: "pdf.unreadable")))
+    service.extract(graph.request())
+    failed = graph.records(PDF_CLASS)[pdf]
+    assert failed.attrs["status"] == "failed"
+    assert [str(e.target) for e in failed.edges if e.rel == "files:metadata_of"] == [pdf]
+    graph.service(registry(pdf_stub(2, accepts=False))).extract(graph.request())
+    gone = graph.records(PDF_CLASS)[pdf]
+    assert gone.attrs["status"] == "not_applicable"
+    assert [str(e.target) for e in gone.edges if e.rel == "files:metadata_of"] == [pdf]
+    assert text not in graph.records(PDF_CLASS)
+
+
+# ---- who may run it and what the caller learns -------------------------------------------
+
+
+def test_a_run_over_the_graph_needs_the_maintain_permission(graph: Graph) -> None:
+    graph.add("one_page.pdf")
+    head = seq(graph)
+    service = graph.service(registry(pdf_stub()))
+    for files in (None, ("FILE-0001",)):
+        with pytest.raises(GraphCliError) as caught:
+            service.extract(graph.request(actor=graph.env.actor, files=files))
+        assert caught.value.code.startswith("access.")
+    assert seq(graph) == head
+
+
+def test_an_add_time_run_extracts_the_new_file_and_reports_only_it(graph: Graph) -> None:
+    first = graph.add("one_page.pdf")
+    second = graph.add("table.csv")
+    service = graph.service(registry(pdf_stub()))
+    report = service.extract(
+        graph.request(actor=graph.env.actor, files=(second,), maintenance=False, named_run=False)
+    )
+    assert report.files == 1 and report.run is None
+    assert set(graph.records(FORMAT_CLASS)) == {second}  # nothing about ``first``
+    assert first not in graph.records(PDF_CLASS)
+    assert report.retracted == 0
+
+
+def test_an_add_time_run_without_a_file_is_a_bug(graph: Graph) -> None:
+    with pytest.raises(GraphCliError) as caught:
+        graph.service(registry()).extract(graph.request(maintenance=False))
+    assert caught.value.code == "internal.error"
+
+
+MAINTAINER = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: write}
+no_project: {"*": write}
+"""
+HIDE_SCANS = """\
+schema: graph_cli.policy/1
+id: graph
+types:
+  "nas:Scan": none
+"""
+
+
+def _limited(graph: Graph) -> _Limited:
+    graphs = {graph.env.name: graph.env.entry.id}
+    installation = compile_policy(
+        MAINTAINER.encode(), file="installation.yaml", graphs=graphs, graph=None, roles=frozenset()
+    ).document
+    layer = compile_policy(
+        HIDE_SCANS.encode(),
+        file="graph.yaml",
+        graphs=graphs,
+        graph=graph.env.entry.id,
+        roles=frozenset(),
+    ).document
+    return _Limited(policy_set(installation, layer))
+
+
+class _Limited:
+    def __init__(self, policy: PolicySet) -> None:
+        self.policy = policy
+
+    def current(self, graph: object) -> PolicySet:
+        return self.policy
+
+    def refresh(self) -> None:
+        pass
+
+
+def _caller(graph: Graph) -> ActorContext:
+    return graph.env.actor  # the app: it never maintains, and the layer limits what it sees
+
+
+def test_a_caller_who_does_not_see_a_file_type_cannot_run_over_the_graph(graph: Graph) -> None:
+    """Whole-graph and named-file runs are maintenance: refused before any file is looked up,
+    so a hidden file and one that does not exist are answered alike."""
+    hidden = graph.add("table.csv", type="nas:Scan")
+    policy = _limited(graph)
+    service = graph.service(
+        registry(pdf_stub()), policy=policy, writer=graph.env.make_service(policy)
+    )
+    ghost = str(graph.env.ids.new_id())
+    answers = []
+    for files in (None, (hidden,), (ghost,)):
+        with pytest.raises(GraphCliError) as caught:
+            service.extract(graph.request(actor=_caller(graph), files=files))
+        answers.append((caught.value.code, caught.value.details))
+    assert len({str(a) for a in answers}) == 1 and answers[0][0].startswith("access.")
+    assert graph.records(FORMAT_CLASS) == {}
+
+
+def test_an_add_time_run_reports_only_the_callers_file_and_hides_the_others(
+    graph: Graph,
+) -> None:
+    visible = graph.add("one_page.pdf")
+    hidden = graph.add("table.csv", type="nas:Scan")
+    policy = _limited(graph)
+    service = graph.service(
+        registry(pdf_stub()), policy=policy, writer=graph.env.make_service(policy)
+    )
+    request = graph.request(
+        actor=_caller(graph), files=(visible,), maintenance=False, named_run=False
+    )
+    report = service.extract(request)
+    assert report.files == 1
+    assert set(graph.records(FORMAT_CLASS)) == {visible}
+    shown = json.dumps(report.to_json())
+    assert hidden not in shown and "text/csv" not in shown
+
+
+def test_an_add_time_reference_to_a_hidden_file_is_not_found(graph: Graph) -> None:
+    hidden = graph.add("table.csv", type="nas:Scan")
+    policy = _limited(graph)
+    service = graph.service(
+        registry(pdf_stub()), policy=policy, writer=graph.env.make_service(policy)
+    )
+    ghost = str(graph.env.ids.new_id())
+    answers = []
+    for ref in (hidden, ghost):
+        request = graph.request(actor=_caller(graph), files=(ref,), maintenance=False)
+        with pytest.raises(GraphCliError) as caught:
+            service.extract(request)
+        answers.append((caught.value.code, caught.value.message.replace(ref, "<ref>")))
+    assert answers[0] == answers[1] and answers[0][0] == "entity.not_found"
+    assert graph.records(FORMAT_CLASS) == {}

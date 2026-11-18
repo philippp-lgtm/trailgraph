@@ -11,7 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from graph_cli.access_control.policy import BuiltinPolicySource
 from graph_cli.extractors.format import FORMAT
 from graph_cli.extractors.model import (
     ExtractionResult,
@@ -29,7 +31,8 @@ from graph_cli.kernel.query_ast import Query
 from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.services.file_metadata import ExtractRequest, FileMetadataService
 from graph_cli.services.files import FileAddRequest
-from support.services import ServiceEnv
+from graph_cli.services.write import WriteService
+from support.services import ServiceEnv, admin_actor
 
 CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "files"
 PDF = "application/pdf"
@@ -132,7 +135,7 @@ class Graph:
         self.env = env
         self.files: dict[str, str] = {}  # corpus name -> file id
 
-    def add(self, name: str, *, media_type: str | None = None) -> str:
+    def add(self, name: str, *, media_type: str | None = None, type: str | None = None) -> str:
         added = self.env.make_files().add(
             FileAddRequest(
                 actor=self.env.actor,
@@ -140,6 +143,7 @@ class Graph:
                 path=CORPUS / name,
                 request=RequestMeta("file add", hash_value({"name": name})),
                 media_type=media_type,
+                type=type,
                 no_origin=True,
             )
         )
@@ -153,21 +157,26 @@ class Graph:
         *,
         runner: Callable[[str, Path, str, ExtractLimits], ExtractionResult | Transient]
         | None = None,
+        policy: Any = None,
+        writer: WriteService | None = None,
     ) -> FileMetadataService:
         return FileMetadataService(
             catalog=self.env.catalog,
-            writer=self.env.service,
+            writer=writer or self.env.service,
             ids=self.env.ids,
+            policy=policy or BuiltinPolicySource(),
             registry=extractors,
             runner=runner if runner is not None else run_in_process(extractors),
         )
 
     def request(self, **kw: object) -> ExtractRequest:
+        """A maintenance run of the maintainer (``graph-admin files extract``)."""
+        fields: dict[str, object] = {"actor": admin_actor()}
+        fields.update(kw)
         return ExtractRequest(
-            actor=self.env.actor,
             graph=self.env.name,
             request=RequestMeta("files extract", hash_value({})),
-            **kw,  # type: ignore[arg-type]
+            **fields,  # type: ignore[arg-type]
         )
 
     def records(self, record_class: str) -> dict[str, Revision]:

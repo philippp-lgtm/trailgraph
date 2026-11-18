@@ -2,9 +2,9 @@
 
 Every file is tiny and made of neutral content: no real documents, no metadata of a camera or
 an author, fixed timestamps. The bytes are committed; this script documents how they were made
-and rebuilds them byte for byte. ``manifest.json`` lists the files the golden test runs and,
-where a file was recorded with a type other than ``media_types.detect`` gives (an explicit
-``--media-type``), that type.
+and rebuilds them (``database.sqlite`` can differ between SQLite library versions).
+``manifest.json`` lists the files the golden test runs and, where a file was recorded with a type
+other than ``media_types.detect`` gives (an explicit ``--media-type``), that type.
 """
 
 from __future__ import annotations
