@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+import pytest
 from support.cards import CountingSnapshot, as_snapshot
 from support.snapshots import DictSnapshot, edge, eid, revision
 from support.views import company_model, compiled_entries, one_entry
@@ -481,12 +482,24 @@ def test_two_sections_of_one_kind_are_rendered_and_trimmed_on_their_own() -> Non
     assert data["cut"] is True
     assert all("fields" in r for r in section(data, "positions")["items"])
     assert all("fields" not in r for r in section(data, "others")["items"])
-    # a limit nothing but the headers fits: the rows of both go, the exact counts stay
+    # a limit nothing but the header fits: the rows go first (the counts stay), then the sections
+    # themselves leave a stub with their kind and id
     smallest = replace(spec_of(two, MODEL), byte_limit=1)
     data = render(smallest, unit, DictSnapshot(unit, *others), MODEL).to_json()
-    for sid, count in (("positions", 4), ("others", 2)):
-        found = section(data, sid)
-        assert "items" not in found and found["count"] == count and found["more"] == count
+    for sid in ("positions", "others"):
+        assert section(data, sid) == {"kind": "neighbors", "id": sid, "cut": True}
+    seen = False
+    for limit in range(full.size() - 50, 0, -25):  # on the way down the rows go, counts stay
+        data = render(
+            replace(spec_of(two, MODEL), byte_limit=limit), unit, DictSnapshot(unit, *others), MODEL
+        ).to_json()
+        found = {sid: section(data, sid) for sid in ("positions", "others")}
+        if any(s.get("cut") for s in found.values()):
+            break
+        for sid, count in (("positions", 4), ("others", 2)):
+            assert found[sid]["count"] == count  # exact whatever is trimmed
+            seen = seen or len(found[sid].get("items", [])) < count
+    assert seen
 
 
 def test_the_limit_of_an_authored_view_lowers_the_cards_and_never_raises_it() -> None:
@@ -519,20 +532,122 @@ def test_the_generated_card_still_has_no_ids_titles_or_hash() -> None:
     assert all("id" not in s and "title" not in s for s in data["sections"])  # type: ignore[attr-defined]
 
 
-def test_loads_of_the_authored_sections_are_bounded_by_the_budget() -> None:
-    hub = revision("hub", "org:Team", {"name": "Hub"}, alias="TEAM-9")
-    people = [position(f"q{i}", f"Role {i:04d}", "active", unit="hub") for i in range(800)]
-    one = (
-        "  - kind: neighbors\n    id: {}\n    relation: org:in_unit\n    direction: in\n"
-        "    max: 50\n"
+def hub_world(per: int = 700) -> tuple[Revision, list[Revision]]:
+    hub = revision("hub", "org:Department", {"name": "Hub"}, alias="DEPT-9")
+    others: list[Revision] = []
+    for i in range(per):
+        others.append(position(f"q{i}", f"Role {i:04d}", "active", unit="hub"))
+        others.append(
+            revision(f"c{i}", "org:Team", {"name": f"Team {i:04d}"}, [edge("org:part_of", "hub")])
+        )
+        others.append(
+            revision(
+                f"pol{i}",
+                "ops:Policy",
+                {"title": f"Policy {i:04d}", "status": "in_force"},
+                [edge("ops:applies_to", "hub")],
+            )
+        )
+    return hub, others
+
+
+IN_UNIT = (
+    "  - kind: neighbors\n    id: {id}\n    relation: org:in_unit\n    direction: in\n    max: 50\n"
+)
+PART_OF = (
+    "  - kind: neighbors\n    id: {id}\n    relation: org:part_of\n    direction: in\n    max: 50\n"
+)
+APPLIES = (
+    "  - kind: neighbors\n    id: {id}\n    relation: ops:applies_to\n    direction: in\n"
+    "    max: 50\n"
+)
+
+
+def test_sections_over_the_same_neighbours_read_them_once() -> None:
+    hub, people = hub_world()
+    entry = view("".join(IN_UNIT.format(id=name) for name in "abc"))
+    counting = CountingSnapshot(DictSnapshot(hub, *people))
+    data = render(spec_of(entry, MODEL), hub, as_snapshot(counting), MODEL).to_json()
+    assert len(counting.loaded) == 500  # one read of the neighbours, not three
+    a, b, c = (section(data, s) for s in "abc")  # type: ignore[arg-type]
+    assert a["sampled"] == b["sampled"] == c["sampled"] == 500
+    assert a["count"] == 700 and a["approx"] is True
+
+
+def test_many_relations_sections_cost_no_more_loads_than_one() -> None:
+    hub, people = hub_world(per=150)
+    one = view("  - kind: relations\n    relations: [{relation: org:in_unit, direction: in}]\n")
+    many = view(
+        "".join(
+            f"  - kind: relations\n    id: r{i}\n"
+            "    relations: [{relation: org:in_unit, direction: in}]\n"
+            for i in range(32)
+        )
     )
-    entry = view("".join(one.format(name) for name in "abc"))
+    counts = []
+    for entry in (one, many):
+        counting = CountingSnapshot(DictSnapshot(hub, *people))
+        render(spec_of(entry, MODEL), hub, as_snapshot(counting), MODEL)
+        counts.append(len(counting.loaded))
+    assert counts[0] == counts[1] <= 100  # the group reads at most its own cap, once
+
+
+def test_the_loads_of_an_authored_view_never_exceed_the_budget() -> None:
+    hub, people = hub_world()
+    entry = view(
+        "".join(
+            template.format(id=f"{kind}{i}")
+            for i, (kind, template) in enumerate([("a", IN_UNIT), ("b", PART_OF), ("c", APPLIES)])
+        )
+        + "  - kind: relations\n    id: all\n"
+        + "  - kind: files\n"
+    )
     counting = CountingSnapshot(DictSnapshot(hub, *people))
     data = render(spec_of(entry, MODEL), hub, as_snapshot(counting), MODEL).to_json()
     assert len(counting.loaded) <= ENTITY_LOADS
-    a, b, c = (section(data, s) for s in "abc")  # type: ignore[arg-type]
-    assert a["sampled"] == 500 and b["sampled"] == 500
-    assert a["count"] == 800 and a["approx"] is True
-    # the budget is spent: the third section reads nothing and counts the raw in-edges
-    assert "items" not in c and c["count"] == 800 and c["approx"] is True
-    assert len(counting.loaded) == ENTITY_LOADS
+    first, second, third = (section(data, i) for i in ("a0", "b1", "c2"))
+    assert first["sampled"] == 500 and second["sampled"] == 500
+    # the budget is spent: the third section read nothing and counts the raw in-edges
+    assert "items" not in third and third["approx"] is True and third["count"] == 700
+
+
+def test_a_where_that_could_not_read_every_edge_says_its_count_is_a_lower_bound() -> None:
+    hub, people = hub_world()
+    where = '    where: ["status=active"]\n'
+    entry = view(
+        IN_UNIT.format(id="a")
+        + PART_OF.format(id="b")
+        + APPLIES.format(id="c").replace("    max: 50\n", where + "    max: 50\n")
+    )
+    counting = CountingSnapshot(DictSnapshot(hub, *people))
+    data = render(spec_of(entry, MODEL), hub, as_snapshot(counting), MODEL).to_json()
+    spent = section(data, "c")
+    # nothing of the policies could be read: not "no policy is in force", but unread edges
+    assert spent["count"] == 0 or spent["unread"] > 0
+    assert spent["approx"] is True and spent["unread"] > 0
+    assert spent["unread"] + spent.get("sampled", 0) == 700
+    assert len(counting.loaded) <= ENTITY_LOADS
+
+
+def test_a_parameter_that_is_not_given_takes_its_default_and_a_required_one_is_missing() -> None:
+    entry = compiled_entries()["unit_overview"]
+    given = spec_of(entry, MODEL, {"status": "active"})
+    assert spec_of(entry, MODEL) == given  # status has the default active
+    from graph_cli.kernel.errors import GraphCliError
+
+    required = view(
+        POSITIONS.replace("    order", '    where: ["title=$t"]\n    order'),
+        "params:\n  t:\n    type: string\n    summary: A title.\n",
+    )
+    with pytest.raises(GraphCliError) as exc:
+        spec_of(required, MODEL)
+    assert exc.value.code == "view.parameter_missing"
+
+
+def test_a_where_whose_parameter_is_not_bound_never_matches_the_literal_text() -> None:
+    from graph_cli.kernel.errors import GraphCliError
+    from graph_cli.kinetic.card import _plan  # the planner of the specs
+
+    with pytest.raises(GraphCliError) as exc:
+        _plan(MODEL, ("org:Position",), ("title=$t",), (), {})
+    assert exc.value.code == "internal.error"

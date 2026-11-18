@@ -587,6 +587,8 @@ class _Compile:
     def type_misfit(self, param: ParamDef, attribute: str, base: str, many: bool) -> str | None:
         if param.type == "ref" and attribute not in REF_FIELDS:
             return "a ref can only be compared with id or alias"
+        if param.type == "decimal" and base == "integer":
+            return "a decimal does not fit an integer attribute"  # 1.5 is no integer
         if base in LANG_BASES and param.type == "string":
             return None
         if base not in FITS[param.type]:

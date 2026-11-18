@@ -760,6 +760,14 @@ class _Parse(Parser):
                     id=section.id,
                 )
             seen.setdefault(section.id, index)
+        for kind in ("files", "affordances"):  # a second one would only repeat the first
+            if sum(1 for section in found if section.kind == kind) > 1:
+                self.add(
+                    "view.duplicate_section",
+                    "sections",
+                    f"an entity view has at most one {kind} section",
+                    kind=kind,
+                )
         return tuple(found)
 
     def section(self, node: YamlNode, path: str, entity: bool) -> SectionDef | None:

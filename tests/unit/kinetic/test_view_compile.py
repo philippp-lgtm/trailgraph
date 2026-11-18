@@ -841,3 +841,18 @@ def test_no_false_unused_parameter_follows_a_skipped_section() -> None:
 def test_the_classes_of_ref_parameters_are_touched() -> None:
     touches = entries()["members_report"]["touches"]
     assert [t["curie"] for t in touches["types"]] == ["org:Department"]
+
+
+# review of step 2: a decimal parameter against an integer attribute
+
+
+def test_a_decimal_parameter_does_not_fit_an_integer_attribute() -> None:
+    def view(decl: str) -> dict[str, str]:
+        found = set_view(
+            '  - kind: list\n    type: ops:Task\n    where: ["rev:ge=$p"]\n',
+            extra="params:\n" + param("p", decl),
+        )
+        return found
+
+    assert codes(view("type: integer")) == []  # an integer fits an integer system field
+    assert codes(view("type: decimal")) == ["view.type_mismatch"]  # 1.5 would fail at render

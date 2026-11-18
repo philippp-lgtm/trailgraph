@@ -37,12 +37,14 @@ from decimal import Decimal
 from typing import Any, Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.langtag import text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import OrderKey, Pred
 from graph_cli.kernel.records import EdgeRecord, Revision
 from graph_cli.kinetic import view_format as fmt
+from graph_cli.kinetic.params import bind_json
 from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.kinetic.view_format import (
     ENTITY_MAX_BYTES,
@@ -54,6 +56,7 @@ from graph_cli.kinetic.view_format import (
 )
 from graph_cli.kinetic.view_rows import (
     NO_VALUES,
+    Loader,
     Loads,
     Row,
     RowBuilder,
@@ -111,6 +114,7 @@ FILES_LOAD_MAX: Final = 50
 LOAD_MAX: Final = 100
 NAMES_MAX: Final = 5
 ENTITY_LOADS: Final = 1000  # revisions the authored sections of one entity view may load
+ERROR_CHARS: Final = 300  # the message of a section error is cut here
 ROWS_CELL_CHARS: Final = 200  # a string cell of a ``rows`` section is cut here in an entity view
 
 Direction = Literal["out", "in"]
@@ -306,10 +310,12 @@ def _plan(
     clauses: list[Clause] = []
     for entry in where:
         left, name = fmt.where_parts(entry)
-        if name is not None and name in params:
-            clauses.append((left, _operand(params[name])))
-        else:
+        if name is None:
             clauses.append(entry)
+        elif name in params:
+            clauses.append((left, _operand(params[name])))
+        else:  # a parameter that was never bound must not be matched as the text "$name"
+            raise GraphCliError("internal.error", f"the parameter {name!r} of a view is not bound")
     return plan_clauses(model, types, clauses, order)
 
 
@@ -334,8 +340,12 @@ def spec_of(
 ) -> ViewSpec:
     """The spec of a published entity view: its normalized sections one to one, ``where`` and
     ``order`` planned against ``model`` (the reader's) with the bound ``params`` substituted.
-    Pure; the same entry, model and parameters give the same spec."""
-    values = params or {}
+    A parameter that is not given takes its default (``view.parameter_missing`` for a required
+    one). Pure; the same entry, model and parameters give the same spec."""
+    values = dict(params or {})
+    missing = [p for p in entry.defn.params if p.name not in values]
+    if missing:
+        values.update(bind_json("view", entry.name, missing, {}, model))
     sections: list[SectionSpec] = []
     for section in entry.defn.sections:
         if isinstance(section, fmt.FieldsSection):
@@ -652,6 +662,7 @@ class NeighborsSection:
     sampled: int = 0
     approx: bool = False
     title: str | None = None
+    unread: int = 0  # with a ``where``: edges not read, so ``count`` is a lower bound
 
     @property
     def more(self) -> int:
@@ -670,6 +681,8 @@ class NeighborsSection:
             found["sampled"] = self.sampled
         if self.approx:
             found["approx"] = True
+        if self.unread:
+            found["unread"] = self.unread
         return found
 
 
@@ -686,6 +699,7 @@ class RowsSection:
     count: int = 0
     error: tuple[str, str] | None = None  # (code, message)
     title: str | None = None
+    cells_cut: int = 0  # cells that were shortened (strings, lists), counted, not dropped silently
 
     @property
     def more(self) -> int:
@@ -706,6 +720,22 @@ class RowsSection:
         found["count"] = self.count
         if self.more:
             found["more"] = self.more
+        if self.cells_cut:
+            found["cells_cut"] = self.cells_cut
+        return found
+
+
+@dataclass(frozen=True, slots=True)
+class StubSection:
+    """What is left of a section of an authored view that had to go to keep the answer within
+    its limit: its kind and id, and that it was cut."""
+
+    kind: str
+    id: str | None = None
+
+    def to_json(self) -> Json:
+        found = _head(self.kind, self.id, None)
+        found["cut"] = True
         return found
 
 
@@ -717,6 +747,7 @@ type Section = (
     | AffordancesSection
     | NeighborsSection
     | RowsSection
+    | StubSection
 )
 
 
@@ -911,23 +942,23 @@ def render(
         header["retracted_by"] = list(retracted_by)
     is_file = str(entity.type) in (file_classes_of(model) if file_classes is None else file_classes)
     candidates, citations = _candidates(entity, snapshot, model, is_file, _wanted(spec))
-    loads = Loads(ENTITY_LOADS)  # shared by the authored sections that read neighbours
+    loader = Loader(snapshot, Loads(ENTITY_LOADS))  # one budget and one read of each revision
     sections: list[Section] = []
     for section_spec in spec.sections:
         built: Section | None = None
         if isinstance(section_spec, FieldsSpec):
             built = _fields(section_spec, entity, model, language)
         elif isinstance(section_spec, RelationsSpec):
-            built = _relations(section_spec, candidates, snapshot, model, language)
+            built = _relations(section_spec, candidates, loader, model, language)
         elif isinstance(section_spec, FilesSpec):
-            built = _files(section_spec, entity, is_file, citations, snapshot, model, language)
+            built = _files(section_spec, entity, is_file, citations, loader, model, language)
         elif isinstance(section_spec, AffordancesSpec):
             summary = affordance_summary(affordances or {}, section_spec)
             if summary:
                 summary = {**summary, "detail": f"graph get {ref} --affordances"}
             built = AffordancesSection(summary)
         elif isinstance(section_spec, NeighborsSpec):
-            built = _neighbors(section_spec, entity, snapshot, model, language, loads)
+            built = _neighbors(section_spec, entity, loader, model, language)
         elif isinstance(section_spec, RowsSpec):
             built = _rows(section_spec, rows)
         if built is not None:
@@ -950,7 +981,7 @@ def _wanted(spec: ViewSpec) -> frozenset[str] | None:
 
 def _named(section: Section, spec: SectionSpec) -> Section:
     """``section`` with the id and title of an authored spec (the generated card has none)."""
-    if isinstance(section, NeighborsSection | RowsSection) or (
+    if isinstance(section, NeighborsSection | RowsSection | StubSection) or (
         spec.id is None and spec.title is None
     ):
         return section
@@ -960,23 +991,23 @@ def _named(section: Section, spec: SectionSpec) -> Section:
 def _neighbors(
     spec: NeighborsSpec,
     entity: Revision,
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
-    loads: Loads,
 ) -> NeighborsSection:
     builder = RowBuilder(
-        snapshot,
+        loader.snapshot,
         model,
         language,
-        loads=loads,
+        loads=loader.loads,
+        loader=loader,
         value_chars=spec.value_chars,
         label_chars=spec.label_chars,
     )
     if spec.direction == "out":
         edges = [(e.target, e) for e in entity.edges if str(e.rel) == spec.relation]
     else:
-        edges = list(snapshot.incoming(entity.id, TermRef(spec.relation)))
+        edges = list(loader.snapshot.incoming(entity.id, TermRef(spec.relation)))
     selection = builder.select(edges, spec.direction, spec.where, spec.order)
     items = builder.rows(selection, spec.fields, spec.relations, spec.max)
     return NeighborsSection(
@@ -988,11 +1019,23 @@ def _neighbors(
         selection.sampled,
         selection.approx,
         spec.title,
+        selection.unread,
     )
 
 
-def _cell(value: JsonValue, limit: int) -> JsonValue:
-    return _cut(value, limit)[0] if isinstance(value, str) else value
+def _cell(value: JsonValue, limit: int) -> tuple[JsonValue, bool]:
+    """A cell of a function's row as an entity view shows it: strings cut, lists to a few
+    elements, and whether anything was cut."""
+    if isinstance(value, str):
+        text, chars = _cut(value, limit)
+        return text, chars is not None
+    if isinstance(value, list):
+        cells = [_cell(item, limit) for item in value[:LIST_ITEMS]]
+        return [c for c, _ in cells], len(value) > LIST_ITEMS or any(w for _, w in cells)
+    if isinstance(value, Mapping):
+        found = {k: _cell(v, limit) for k, v in value.items()}
+        return {k: c for k, (c, _) in found.items()}, any(w for _, w in found.values())
+    return value, False
 
 
 def _rows(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection:
@@ -1006,21 +1049,24 @@ def _rows(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSecti
             title=spec.title,
         )
     if result.error is not None:
-        return RowsSection(
-            spec.id, spec.function, result.hash, error=result.error, title=spec.title
-        )
-    items = tuple(
-        {column: _cell(value, spec.cell_chars) for column, value in row.items()}
-        for row in result.rows[: spec.max]
-    )
+        code, text = result.error
+        error = (code, _cut(text, ERROR_CHARS)[0])
+        return RowsSection(spec.id, spec.function, result.hash, error=error, title=spec.title)
+    items: list[Mapping[str, JsonValue]] = []
+    cells_cut = 0
+    for row in result.rows[: spec.max]:
+        cells = {column: _cell(value, spec.cell_chars) for column, value in row.items()}
+        cells_cut += sum(1 for _, was_cut in cells.values() if was_cut)
+        items.append({column: cell for column, (cell, _) in cells.items()})
     return RowsSection(
         spec.id,
         spec.function,
         result.hash,
         result.columns,
-        items,
+        tuple(items),
         len(result.rows),
         title=spec.title,
+        cells_cut=cells_cut,
     )
 
 
@@ -1183,7 +1229,7 @@ def _candidates(
 def _relations(
     spec: RelationsSpec,
     candidates: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> RelationsSection | None:
@@ -1196,7 +1242,7 @@ def _relations(
         if len(groups) >= spec.max_groups:
             unshown.extend(c.relation for c in candidates[position:])
             break
-        group = _group(spec, candidate, snapshot, model, language)
+        group = _group(spec, candidate, loader, model, language)
         if group is not None:
             groups.append(group)
     more: list[str] = []
@@ -1211,21 +1257,22 @@ def _relations(
 def _group(
     spec: RelationsSpec,
     candidate: _Candidate,
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> Group | None:
     edges = candidate.edges
     inbound = candidate.direction == "in"
     sample = edges[: spec.load_max]
-    loaded = snapshot.get_many([neighbour for neighbour, _ in sample])
+    admitted, loaded = loader.read([neighbour for neighbour, _ in sample])
+    sample = sample[:admitted]  # what the budget of the answer allows
     rows: list[tuple[EntityId, EdgeRecord, Revision | None]] = []
     for neighbour, edge in sample:
         revision = loaded.get(neighbour)
         if inbound and (revision is None or revision.record_status != ACTIVE):
             continue  # an in-edge counts only while its source is active
         rows.append((neighbour, edge, revision))
-    sampled = len(edges) > spec.load_max
+    sampled = len(edges) > len(sample)
     count = (len(edges) if sampled else len(rows)) if inbound else len(edges)
     if count == 0:
         return None
@@ -1254,7 +1301,7 @@ def _group(
         count,
         items,
         dict(sorted(states.items())),
-        spec.load_max if sampled else 0,
+        len(sample) if sampled else 0,
         inbound and sampled,
         max(0, bound.min - count),
     )
@@ -1324,17 +1371,18 @@ def _files(
     entity: Revision,
     is_file: bool,
     citations: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> FilesSection | CitedBySection | None:
     if is_file:
-        return _cited_by(spec, citations, snapshot, model, language)
+        return _cited_by(spec, citations, loader, model, language)
     edges = [(e.target, e) for e in entity.edges if str(e.rel) == FILES_MODULE_RELATION]
     if not edges:
         return None
     sample = edges[: spec.load_max]
-    loaded = snapshot.get_many([target for target, _ in sample])
+    admitted, loaded = loader.read([target for target, _ in sample])
+    sample = sample[:admitted]
     rows: list[tuple[tuple[bool, str, str], int, int, str, FileRef]] = []
     for target, edge in sample:
         revision = loaded.get(target)
@@ -1359,7 +1407,7 @@ def _files(
     rows.sort(key=lambda row: row[:4])
     shown = tuple(row[4] for row in rows[: spec.max_items])
     return FilesSection(
-        shown, max(0, len(edges) - len(shown)), spec.load_max if len(edges) > spec.load_max else 0
+        shown, max(0, len(edges) - len(shown)), len(sample) if len(edges) > len(sample) else 0
     )
 
 
@@ -1378,7 +1426,7 @@ def _merged_length(intervals: list[tuple[int, int]]) -> int:
 def _cited_by(
     spec: FilesSpec,
     citations: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> CitedBySection | None:
@@ -1393,15 +1441,15 @@ def _cited_by(
             str(pair[0]),
         )
     )
-    load = spec.load_max
-    sample = edges[:load]
-    loaded = snapshot.get_many([source for source, _ in sample])
+    sample = edges[: spec.load_max]
+    admitted, loaded = loader.read([source for source, _ in sample])
+    sample = sample[:admitted]
     rows = [
         (source, edge, revision)
         for source, edge in sample
         if (revision := loaded.get(source)) is not None and revision.record_status == ACTIVE
     ]
-    sampled = len(edges) > load
+    sampled = len(edges) > len(sample)
     count = len(edges) if sampled else len(rows)
     if count == 0:
         return None
@@ -1436,7 +1484,7 @@ def _cited_by(
         min((low for low, _ in spans), default=None),
         max((high for _, high in spans), default=None),
         _merged_length(spans),
-        load if sampled else 0,
+        len(sample) if sampled else 0,
         sampled,
     )
 
@@ -1475,6 +1523,12 @@ def _guard(card: ViewModel, limit: int) -> ViewModel:
                 card = _with(card, index, trimmed)
                 if card.size() <= limit:
                     return card
+    if card.origin == AUTHORED:  # the generated card keeps its bytes: it has no such stages
+        for final in _FINAL:
+            for trimmed_card in final(card):
+                card = trimmed_card
+                if card.size() <= limit:
+                    return card
     return card
 
 
@@ -1502,9 +1556,8 @@ def _lists_to_one(section: NeighborsSection) -> Iterator[Section]:
 
 def _kept(section: NeighborsSection | RowsSection, keep: int) -> Section:
     """``section`` with its first ``keep`` rows (the counts stay)."""
-    if isinstance(section, NeighborsSection):
-        return replace(section, items=section.items[:keep])
-    return replace(section, items=section.items[:keep])
+    # the two kinds hold other items; ``replace`` does the same for both
+    return replace(section, items=section.items[:keep])  # type: ignore[arg-type]
 
 
 def _rows_to_few(section: NeighborsSection | RowsSection) -> Iterator[Section]:
@@ -1592,6 +1645,53 @@ def _no_rows(section: NeighborsSection | RowsSection) -> Iterator[Section]:
     if section.items:
         yield _kept(section, 0)
 
+
+def _titles_go(card: ViewModel) -> Iterator[ViewModel]:
+    """Last resort of an authored view: the section titles go, last section first."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if not isinstance(section, StubSection) and section.title is not None:
+            card = _with(card, index, replace(section, title=None))
+            yield card
+
+
+def _labels_shortened(card: ViewModel) -> Iterator[ViewModel]:
+    """Then the label and state of an authored ``fields`` section shrink to 40 characters and
+    its alternative labels to one."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if isinstance(section, FieldsSection) and section.id is not None:
+            card = _with(
+                card, index, replace(section, items=tuple(_pared(i) for i in section.items))
+            )
+            yield card
+
+
+def _pared(item: FieldItem) -> FieldItem:
+    if isinstance(item.value, list) and item.role == "alt_label":
+        return replace(item, value=item.value[:1], more=item.more + max(0, len(item.value) - 1))
+    shrinks = item.role in ("label", "state") and isinstance(item.value, str)
+    if shrinks and len(str(item.value)) > GUARD_VALUE_CHARS + 1:
+        text, _ = _cut(str(item.value).removesuffix("…"), GUARD_VALUE_CHARS)
+        return replace(item, value=text, chars=item.chars or len(str(item.value)))
+    return item
+
+
+def _sections_to_stubs(card: ViewModel) -> Iterator[ViewModel]:
+    """Then whole sections go, last first, and leave their kind and id behind."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if not isinstance(section, StubSection):
+            stub = StubSection(str(section.to_json()["kind"]), section.id)
+            card = _with(card, index, stub)
+            yield card
+
+
+_FINAL: Final[tuple[Callable[[ViewModel], Iterator[ViewModel]], ...]] = (
+    _titles_go,
+    _labels_shortened,
+    _sections_to_stubs,
+)
 
 # The generated card has one section per kind, so for it the stages below run in the order it
 # always had (relations, fields, files, citations); the authored kinds come first.

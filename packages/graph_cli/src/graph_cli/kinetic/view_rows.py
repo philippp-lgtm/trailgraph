@@ -60,6 +60,35 @@ class Loads:
         return granted
 
 
+class Loader:
+    """The revisions of one answer: every revision is read once (a second section that needs it
+    gets it from here) and each new one is charged to the budget. ``read`` admits a leading part
+    of the ids it is asked for, so a section that cannot read all its neighbours knows it."""
+
+    def __init__(self, snapshot: Snapshot, loads: Loads) -> None:
+        self.snapshot = snapshot
+        self.loads = loads
+        self._seen: dict[EntityId, Revision | None] = {}
+
+    def read(self, ids: Sequence[EntityId]) -> tuple[int, dict[EntityId, Revision]]:
+        """``(n, revisions)``: the first ``n`` ids may be read (within the budget; ids read
+        before are free) and ``revisions`` holds those that exist."""
+        admitted = 0
+        fresh: list[EntityId] = []
+        for entity in ids:
+            if entity not in self._seen and entity not in fresh:
+                if self.loads.take(1) == 0:
+                    break
+                fresh.append(entity)
+            admitted += 1
+        if fresh:
+            found = self.snapshot.get_many(fresh)
+            for entity in fresh:
+                self._seen[entity] = found.get(entity)
+        wanted = ids[:admitted]
+        return admitted, {e: r for e in wanted if (r := self._seen.get(e)) is not None}
+
+
 @dataclass(frozen=True, slots=True)
 class RowRelationSpec:
     """One per-row neighbour list; ``relation`` is ``None`` for ``all`` (every out-relation, keys
@@ -129,7 +158,8 @@ class RowGroup:
     count: int
     items: tuple[RowItem, ...]
     sampled: int = 0  # the number of edges the items come from, when not all were read
-    approx: bool = False  # ``count`` is the raw number of in-edges, inactive sources included
+    approx: bool = False  # ``count`` is the raw in-edge number, or a lower bound (see ``unread``)
+    unread: int = 0  # edges that were not read when a ``where`` had to look at each
 
     @property
     def more(self) -> int:
@@ -145,6 +175,8 @@ class RowGroup:
             found["sampled"] = self.sampled
         if self.approx:
             found["approx"] = True
+        if self.unread:
+            found["unread"] = self.unread
         return found
 
 
@@ -187,7 +219,8 @@ class Selection:
     rows: tuple[tuple[EntityId, EdgeRecord, Revision | None], ...]
     count: int
     sampled: int  # edges read, when the group has more
-    approx: bool  # in-edges: the count is the raw number
+    approx: bool  # in-edges: the count is the raw number; with a where: a lower bound
+    unread: int = 0  # with a where: the edges that were not read, so the count may be higher
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +245,7 @@ class RowBuilder:
         language: str | None,
         *,
         loads: Loads,
+        loader: Loader | None = None,
         value_chars: int | None = None,
         list_items: int = LIST_ITEMS,
         label_chars: int | None = None,
@@ -220,7 +254,8 @@ class RowBuilder:
         self.snapshot = snapshot
         self.model = model
         self.language = language
-        self.loads = loads
+        self.loader = loader or Loader(snapshot, loads)
+        self.loads = self.loader.loads
         self.value_chars = value_chars  # None: values are never cut (set views)
         self.list_items = list_items
         self.label_chars = label_chars
@@ -276,8 +311,8 @@ class RowBuilder:
         """Read the neighbours of ``edges`` (at most ``load_max``, within the budget), keep the
         in-edges of active sources and the entries that match ``where``, and order them."""
         wanted = edges[: self.load_max]
-        sample = wanted[: self.loads.take(len(wanted))]
-        loaded = self.snapshot.get_many([n for n, _ in sample]) if sample else {}
+        admitted, loaded = self.loader.read([n for n, _ in wanted])
+        sample = wanted[:admitted]
         inbound = direction == "in"
         rows: list[tuple[EntityId, EdgeRecord, Revision | None]] = []
         for neighbour, edge in sample:
@@ -289,7 +324,7 @@ class RowBuilder:
             rows.append((neighbour, edge, revision))
         partial = len(edges) > len(sample)
         if where is not None:
-            count = len(rows)
+            count = len(rows)  # a lower bound when edges were not read (``unread``)
         elif inbound:
             count = len(edges) if partial else len(rows)
         else:
@@ -298,7 +333,8 @@ class RowBuilder:
             tuple(self._ordered(rows, order)),
             count,
             len(sample) if partial else 0,
-            inbound and partial and where is None,
+            partial and (inbound or where is not None),
+            len(edges) - len(sample) if partial and where is not None else 0,
         )
 
     def _ordered(
@@ -406,6 +442,7 @@ class RowBuilder:
             items,
             selection.sampled,
             selection.approx,
+            selection.unread,
         )
 
     def item(

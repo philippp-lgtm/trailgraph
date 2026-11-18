@@ -146,7 +146,7 @@ def test_a_set_view_is_read_in_full() -> None:
 def test_a_section_id_defaults_to_the_kind_and_must_be_unique() -> None:
     defn = parsed(entity("  - kind: fields\n    fields: [name]\n"))
     assert defn.sections[0].id == "fields"
-    assert codes(entity("  - kind: files\n  - kind: files\n")) == ["view.duplicate_section"]
+    assert codes(entity("  - kind: fields\n  - kind: fields\n")) == ["view.duplicate_section"]
     assert codes(entity("  - kind: files\n  - kind: fields\n    id: files\n")) == [
         "view.duplicate_section"
     ]
@@ -286,7 +286,7 @@ def test_a_set_view_page_limit() -> None:
 
 def test_the_section_count_is_limited() -> None:
     def files(count: int) -> str:
-        return "".join(f"  - kind: files\n    id: s{i}\n" for i in range(count))
+        return "".join(f"  - kind: fields\n    id: s{i}\n" for i in range(count))
 
     assert len(parsed(entity(files(32))).sections) == 32
     assert codes(entity(files(33))) == ["view.invalid_value"]
@@ -491,3 +491,11 @@ def test_a_list_names_at_most_sixteen_classes() -> None:
 def test_the_defaults_are_the_cards() -> None:
     assert (FIELDS_MAX_DEFAULT, VALUE_CHARS_DEFAULT) == (card.FIELDS_MAX, card.VALUE_CHARS)
     assert (GROUPS_MAX_DEFAULT, ITEMS_MAX_DEFAULT) == (card.GROUPS_MAX, card.ITEMS_MAX)
+
+
+def test_an_entity_view_has_at_most_one_files_and_one_affordances_section() -> None:
+    for kind in ("files", "affordances"):
+        two = f"  - kind: {kind}\n  - kind: {kind}\n    id: again\n"
+        assert codes(entity(two)) == ["view.duplicate_section"], kind
+    one_each = "  - kind: files\n  - kind: affordances\n"
+    assert [s.kind for s in parsed(entity(one_each)).sections] == ["files", "affordances"]
