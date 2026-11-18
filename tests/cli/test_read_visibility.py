@@ -743,6 +743,45 @@ def test_view_files_follow_the_type_of_the_file_and_of_the_citing_entity(world: 
     assert leaks(ok(run_cli, "view", ids["scan"]), world) == []
 
 
+def test_view_of_a_hub_counts_the_sources_a_limited_reader_sees(world: World) -> None:
+    run_cli, ids = world.run_cli, world.ids
+    scan = ids["scan"]
+    notes = [
+        {
+            "op": "create",
+            "type": "nas:Note",
+            "local": f"h{i}",
+            "attrs": {"title": f"Hub note {i:03d}", "body": "text", "kind": "summary"},
+            "edges": [
+                {"rel": "nas:about", "target": ids["t1"]},
+                {"rel": "files:from_file", "target": scan, "qualifiers": {"page": i % 50 + 1}},
+            ],
+        }
+        for i in range(120)
+    ]
+    topics = [
+        {
+            "op": "create",
+            "type": "nas:Topic",
+            "local": f"x{i}",
+            "attrs": {"label": f"Extra topic {i}"},
+            "edges": [{"rel": "files:from_file", "target": scan, "qualifiers": {"page": 60}}],
+        }
+        for i in range(30)
+    ]
+    applied = app(run_cli, "apply", "-", env=ENV, input=json.dumps({"ops": [*notes, *topics]}))
+    assert applied.code == 0, applied.envelope
+    raw = card_section(ok(run_cli, "view", scan), "files", "cited_by")
+    assert (raw["count"], raw["sampled"], raw["approx"], raw["page_max"]) == (150, 50, True, 60)
+    world.limit()
+    outcome = ok(run_cli, "view", scan)
+    cited = card_section(outcome, "files", "cited_by")
+    # the hidden topics are not counted and not in the statistics; the sample is the first 50
+    assert (cited["count"], cited["approx"], cited["page_max"]) == (120, True, 50)
+    assert len(cited["items"]) == 5 and cited["more"] == 115
+    assert leaks(outcome, world) == []
+
+
 # ---- query (Cypher) ----------------------------------------------------------------------
 
 

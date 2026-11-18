@@ -564,7 +564,10 @@ The JSON `data` (`graph_cli.view_model/1`, `view_model` in `describe commands
 holds `view` (`name: card`, `origin: generated`), `entity` (id, alias, type,
 `rev`, `record_status`, `label`, and `superseded_by` or `retracted_by` as for
 `get`), `sections` and `bytes`. A section has a `kind`; a consumer ignores a
-kind it does not know. No key has an empty value. The sections, in order:
+kind it does not know. No key has an empty value: a part with nothing in it is
+left out (no `fields` section for an entity without values; the `affordances`
+section of an entity that cannot do anything is only its `kind`). The sections,
+in order:
 
 - `fields`: at most eight items, in this order: the main label (`role:
   label`, in the graph's language), the alternative labels (`alt_label`, at
@@ -581,20 +584,26 @@ kind it does not know. No key has an empty value. The sections, in order:
   or was derived from) are groups like any other; `files:from_file` is not
   (see `files`). A group has `count`, `items` (the first three neighbours by
   name, not by importance, each with `ref`, `label`, `type` when the group
-  mixes types, `state`, `record_status` when not active, and the edge's
+  mixes types, `state`, `record_status` when not active, `field`: its first key
+  field, that is its first `required` (else `unique`) attribute with a text value
+  by name, cut at 60 characters, read from what the caller sees; and the edge's
   `qualifiers`), `more`, and `states` (the neighbours per lifecycle state)
   when they share one lifecycle attribute and some are not shown; `missing`
   when the edges are below the relation's minimum. At most eight groups;
-  the other relations are named in `more_groups`. The count of an in-group
-  counts active sources. A group of more than a hundred edges is read from
-  the first hundred in stored order (`sampled`), and an in-group then shows
-  the number of in-edges as `count` with `approx: true`.
+  the other relations are named in `more_groups` (relation names without
+  direction; they are not read, so an in-relation whose sources are all
+  inactive may be named there although it would have no group). The count of
+  an in-group counts active sources. A group of more than a hundred edges is
+  read from the first hundred in stored order (`sampled`), and an in-group then
+  shows the number of in-edges as `count` with `approx: true`.
 - `files`: the stored files an entity was taken from (`files:from_file`),
   five at most ordered by title and page, with `page`, `last_page` and
   `locator`, never a path or a hash; for a stored file itself the variant
   `cited_by`: `count` of citing entities, `page_min`, `page_max`,
   `pages_cited` and the first five citations by page (`ref`, `label`,
-  `page`). It does not say what is on a page.
+  `page`); more than fifty citations are read from the first fifty by page
+  (`sampled`, `approx: true`), and the page statistics then use every edge.
+  It does not say what is on a page.
 - `affordances`: what `get --affordances` lists, by name: per lifecycle
   attribute the states it may move to (`allowed`) and those it may not
   (`blocked`, with the ids of the failing guards), the actions that apply
@@ -606,7 +615,7 @@ kind it does not know. No key has an empty value. The sections, in order:
 
 The whole data stays below 6 KiB: the caps above, then, if a card is still
 larger (long labels, ids instead of aliases), a fixed order of trimming
-(neighbours per group to one, trailing groups to `more_groups`, values to 40
+(the `field` of the neighbours, neighbours per group to one, trailing groups to `more_groups`, values to 40
 characters, trailing fields to `other`, file references), after which `cut`
 is true. Whatever is left out is counted, never dropped silently, and an
 envelope hint names the command that reads it: `neighbors REF --rel

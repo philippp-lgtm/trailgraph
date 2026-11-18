@@ -20,7 +20,12 @@ filtered views limit the card too. Nothing is stored or cached. The work per car
 (``LOAD_MAX`` neighbours per shown group; a larger group is sampled and says so) and so is the
 answer (``BYTE_LIMIT``): fixed caps first, then one deterministic byte guard that trims in a
 fixed order and sets ``cut``. Every cut is counted (``more``, ``more_groups``, ``other``,
-``other_more``), nothing is dropped silently. No key has an empty value.
+``other_more``), nothing is dropped silently. No key has an empty value: a part with nothing
+in it is left out (a card of an entity without values has no ``fields`` section; the
+``affordances`` section of an entity that cannot do anything is only its ``kind``).
+``more_groups`` names the relations (without direction) that have edges and are not shown;
+the relations of the groups past the eighth are not read, so an in-relation whose sources
+are all inactive may be named there although it would have had a count of zero.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from typing import Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ids import EntityId, TermRef
+from graph_cli.kernel.langtag import text_of
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.records import EdgeRecord, Revision
 from graph_cli.kernel.text import normalize_label
@@ -56,6 +62,7 @@ ALT_LABELS_MAX: Final = 3
 GROUPS_MAX: Final = 8
 ITEMS_MAX: Final = 3
 LABEL_CHARS: Final = 48
+KEY_CHARS: Final = 60
 FILES_MAX: Final = 5
 FILES_LOAD_MAX: Final = 50
 LOAD_MAX: Final = 100
@@ -92,6 +99,7 @@ class RelationsSpec:
     max_items: int = ITEMS_MAX
     load_max: int = LOAD_MAX
     label_chars: int = LABEL_CHARS
+    key_chars: int = KEY_CHARS  # the one key field of a neighbour; 0 shows none
     order: Literal["label"] = "label"  # first by name: deterministic, cacheable
 
 
@@ -201,7 +209,9 @@ class FieldsSection:
     other_more: int = 0  # names cut from ``other``
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "fields", "items": [i.to_json() for i in self.items]}
+        found: Json = {"kind": "fields"}
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
         if self.other:
             found["other"] = list(self.other)
         if self.other_more:
@@ -218,6 +228,7 @@ class Neighbour:
     record_status: str | None = None  # only when the neighbour is not active
     qualifiers: Mapping[str, JsonValue] = field(default_factory=dict)
     entity: EntityId | None = None  # for the read signal; not in the JSON
+    key_field: tuple[str, str] | None = None  # (name, value) of its first key field
 
     def to_json(self) -> Json:
         found: Json = {"ref": self.ref}
@@ -229,6 +240,8 @@ class Neighbour:
         ):
             if value is not None:
                 found[key] = value
+        if self.key_field is not None:
+            found["field"] = {"name": self.key_field[0], "value": self.key_field[1]}
         if self.qualifiers:
             found["qualifiers"] = dict(self.qualifiers)
         return found
@@ -253,7 +266,8 @@ class Group:
         found: Json = {"relation": self.relation, "direction": self.direction, "count": self.count}
         if self.states:
             found["states"] = dict(self.states)
-        found["items"] = [i.to_json() for i in self.items]
+        if self.items:  # none when the sample held only inactive sources
+            found["items"] = [i.to_json() for i in self.items]
         if self.more:
             found["more"] = self.more
         if self.sampled:
@@ -271,7 +285,9 @@ class RelationsSection:
     more_groups: tuple[str, ...] = ()  # relation names with edges that are not shown
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "relations", "groups": [g.to_json() for g in self.groups]}
+        found: Json = {"kind": "relations"}
+        if self.groups:
+            found["groups"] = [g.to_json() for g in self.groups]
         if self.more_groups:
             found["more_groups"] = list(self.more_groups)
         return found
@@ -306,7 +322,9 @@ class FilesSection:
     sampled: int = 0
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "files", "items": [i.to_json() for i in self.items]}
+        found: Json = {"kind": "files"}
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
         if self.more:
             found["more"] = self.more
         if self.sampled:
@@ -358,7 +376,8 @@ class CitedBySection:
             found["page_max"] = self.page_max
         if self.pages_cited:
             found["pages_cited"] = self.pages_cited
-        found["items"] = [i.to_json() for i in self.items]
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
         if self.more:
             found["more"] = self.more
         if self.sampled:
@@ -615,7 +634,7 @@ def _field_value(value: JsonValue, spec: FieldsSpec) -> tuple[JsonValue, int | N
 
 def _fields(
     spec: FieldsSpec, entity: Revision, model: CompiledModel, language: str | None
-) -> FieldsSection:
+) -> FieldsSection | None:
     cls = model.classes.get(str(entity.type))
     known = {} if cls is None else cls.attributes
     items: list[FieldItem] = []
@@ -668,6 +687,8 @@ def _fields(
         and attribute.role != "hidden_label"
         and _has_value(entity.attrs.get(name))
     )
+    if not items and not other:
+        return None  # nothing to show: no section
     return FieldsSection(
         tuple(items), tuple(other[: spec.other_max]), max(0, len(other) - spec.other_max)
     )
@@ -843,7 +864,35 @@ def _neighbour(
         None if revision.record_status == ACTIVE else revision.record_status,
         qualifiers,
         revision.id,
+        _key_field(spec, model, revision),
     )
+
+
+def _key_field(
+    spec: RelationsSpec, model: CompiledModel, revision: Revision
+) -> tuple[str, str] | None:
+    """The first key field of a neighbour that tells more than its label and state: its first
+    ``required`` attribute, else its first ``unique`` one (by name), that has a text value.
+    Read from the revision and the model the reader sees, so a hidden attribute is not there;
+    no revision is loaded for it."""
+    cls = model.classes.get(str(revision.type))
+    if cls is None or spec.key_chars <= 0:
+        return None
+    attributes = cls.attributes
+    for flag in ("required", "unique"):
+        for name in sorted(attributes):
+            attribute = attributes[name]
+            if (
+                not getattr(attribute, flag)
+                or attribute.kind == "lifecycle"
+                or not _plain(attribute)
+            ):
+                continue
+            value = revision.attrs.get(name)
+            text = text_of(value)
+            if text:
+                return name, _cut(text, spec.key_chars)[0]
+    return None
 
 
 def _page(value: JsonValue) -> int | None:
@@ -997,7 +1046,13 @@ def _guard(card: ViewModel, limit: int) -> ViewModel:
 
     relations = next((s for s in card.sections if isinstance(s, RelationsSection)), None)
     if relations is not None:
-        groups = list(relations.groups)
+        groups = [  # first the key fields of the neighbours go
+            replace(g, items=tuple(replace(i, key_field=None) for i in g.items))
+            for g in relations.groups
+        ]
+        swap(RelationsSection, replace(relations, groups=tuple(groups)))
+        if fits():
+            return card
         for index in reversed(range(len(groups))):  # items per group to 1, last group first
             if len(groups[index].items) > 1:
                 groups[index] = replace(groups[index], items=groups[index].items[:1])

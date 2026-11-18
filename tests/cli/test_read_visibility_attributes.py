@@ -280,6 +280,15 @@ def test_view_answers_as_over_the_twin(world: World) -> None:
     fields = next(s for s in ada["sections"] if s["kind"] == "fields")
     named = [i["name"] for i in fields["items"]] + fields.get("other", [])
     assert all(hidden not in named for hidden in HIDDEN_NAMES), named
+    crew = world.ok("view", C1).data
+    items = [
+        i
+        for sec in crew["sections"]
+        if sec["kind"] == "relations"
+        for g in sec["groups"]
+        for i in g.get("items", [])
+    ]
+    assert all(i.get("field", {}).get("name") not in HIDDEN_NAMES for i in items), items
     # a label that only a marking shows: the badge has none for a reader without it
     assert "label" not in world.ok("view", B1).data["entity"]
     install(world.run_cli, world.work, HOLDER)

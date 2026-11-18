@@ -63,7 +63,9 @@ def _view_model() -> Schema:
     section is an open object. ``cut`` only when the byte guard trimmed the card."""
     return obj(
         {
-            "view": obj({"name": STRING, "origin": enum("generated")}),
+            "view": obj(
+                {"name": STRING, "origin": STRING}
+            ),  # origin: generated; authored views follow
             "entity": obj(
                 {"id": STRING, "type": STRING, "rev": INTEGER, "record_status": STRING},
                 {

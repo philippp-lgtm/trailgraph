@@ -328,7 +328,12 @@ def test_what_an_entity_replaced_and_who_replaced_it_are_groups() -> None:
         ("core:supersedes", "out", 1)
     ]
     assert replaces[0]["items"] == [
-        {"ref": "NOTE-0001", "label": "Old", "record_status": "superseded"}
+        {
+            "ref": "NOTE-0001",
+            "label": "Old",
+            "record_status": "superseded",
+            "field": {"name": "body", "value": "Text."},
+        }
     ]
     data = card(old, new, superseded_by=[str(new.id)])
     replaced = section(data, "relations")["groups"]
@@ -583,3 +588,112 @@ def test_no_key_has_an_empty_value() -> None:
                 walk(item)
 
     walk(data)
+
+
+def empty_values(value: object) -> list[str]:
+    """The keys whose value is empty, anywhere in the document."""
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if item in (None, "", [], {}):
+                found.append(key)
+            found += empty_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            found += empty_values(item)
+    return found
+
+
+def test_an_entity_without_values_has_no_fields_section_and_no_empty_key() -> None:
+    data = card(revision("t0", "nas:Topic", {}), affordances={"record_status": "active"})
+    assert [s["kind"] for s in data["sections"]] == ["affordances"]
+    assert section(data, "affordances") == {"kind": "affordances"}
+    assert empty_values(data) == []
+
+
+def test_a_sample_of_inactive_sources_leaves_the_items_key_out() -> None:
+    spec = with_sections(generated_spec(MODEL, "nas:Topic"), relations={"load_max": 4})
+    notes = [
+        note(f"n{i}", f"Note {i}", [edge("nas:about", "t1")], status="retracted") for i in range(9)
+    ]
+    data = card(topic("t1", "Physics"), *notes, spec=spec)
+    group = section(data, "relations")["groups"][0]
+    assert group["count"] == 9 and group["approx"] is True and "items" not in group
+    assert empty_values(data) == []
+
+
+def test_a_relation_whose_sources_are_all_inactive_is_no_group_and_is_not_named() -> None:
+    dead = [
+        note(f"n{i}", f"Note {i}", [edge("nas:about", "t1")], status="retracted") for i in range(2)
+    ]
+    data = card(topic("t1", "Physics"), *dead)
+    assert [s["kind"] for s in data["sections"]] == ["fields", "affordances"]
+
+
+def test_more_groups_names_the_relations_past_the_eighth_without_direction() -> None:
+    relations_ = dict(MODEL.relations)
+    edges = []
+    for n in range(9):
+        name = f"nas:r{n:02d}"
+        relations_[name] = MODEL.relations["nas:about"]
+        edges.append(edge(name, "t1"))
+    model = replace(MODEL, relations=relations_)
+    entity = note("n1", "T", edges)
+    topics = topic("t1", "Physics")
+    inbound = note("n2", "Other", [edge("nas:r08", "n1")])  # r08 in both directions
+    data = card(entity, topics, inbound, model=model)
+    rel = section(data, "relations")
+    assert [g["relation"] for g in rel["groups"]] == [f"nas:r{n:02d}" for n in range(8)]
+    assert rel["more_groups"] == ["nas:r08"]  # named once, whichever direction was cut
+
+
+def test_a_neighbour_carries_its_first_required_text_field_cut_to_the_cap() -> None:
+    topic_ = topic("t1", "Physics")
+    long = note("n1", "Long", [edge("nas:about", "t1")], attrs={"body": "w" * 90}, alias="N-1")
+    short = note("n2", "Short", [edge("nas:about", "t1")], alias="N-2")
+    items = section(card(topic_, long, short), "relations")["groups"][0]["items"]
+    assert items[0]["field"] == {"name": "body", "value": "w" * 60 + "…"}
+    assert items[1]["field"] == {"name": "body", "value": "Text."}
+    # the label and the lifecycle state are not repeated as key fields; a topic has none
+    plain = section(card(note("n3", "T", [edge("nas:about", "t1")]), topic_), "relations")
+    assert "field" not in plain["groups"][0]["items"][0]
+
+
+def test_a_key_field_comes_from_the_model_the_reader_sees() -> None:
+    hidden = with_attribute(MODEL, "nas:Note", "body", "body", required=False)
+    entity = topic("t1", "Physics")
+    note_ = note("n1", "T", [edge("nas:about", "t1")], attrs={"kind": "summary"})
+    plain = section(card(entity, note_, model=hidden), "relations")["groups"][0]["items"][0]
+    assert plain["field"]["name"] == "kind"  # body is no longer required: the next one
+    cut = replace(
+        hidden,
+        classes={
+            **hidden.classes,
+            "nas:Note": replace(
+                hidden.classes["nas:Note"],
+                attributes={
+                    n: a
+                    for n, a in hidden.classes["nas:Note"].attributes.items()
+                    if n not in ("body", "kind")
+                },
+            ),
+        },
+    )
+    gone = section(card(entity, note_, model=cut), "relations")["groups"][0]["items"][0]
+    assert "field" not in gone  # an attribute the model does not have is not shown
+
+
+def test_the_guard_drops_the_key_fields_of_neighbours_first() -> None:
+    entity = topic("t1", "Physics")
+    notes = [
+        note(f"n{i}", f"Note {i}", [edge("nas:about", "t1")], attrs={"body": "b" * 55})
+        for i in range(3)
+    ]
+    spec = generated_spec(MODEL, "nas:Topic")
+    full = render(spec, entity, DictSnapshot(entity, *notes), MODEL)
+    assert not full.cut and "field" in str(full.to_json())
+    tight = replace(spec, byte_limit=full.size() - 1)
+    guarded = render(tight, entity, DictSnapshot(entity, *notes), MODEL).to_json()
+    group: Any = next(s for s in guarded["sections"] if s["kind"] == "relations")["groups"][0]  # type: ignore[index, attr-defined]
+    assert guarded["cut"] is True and len(group["items"]) == 3
+    assert all("field" not in i for i in group["items"])

@@ -110,6 +110,9 @@ def _neighbour(item: Mapping[str, JsonValue]) -> str:
         text += f" [{item['state']}]"
     if item.get("record_status"):
         text += f" <{item['record_status']}>"
+    key = _map(item.get("field"))
+    if key:
+        text += f" ({key['name']}: {key['value']})"
     qualifiers = _map(item.get("qualifiers"))
     if qualifiers:
         text += " {" + ", ".join(f"{k}={_value(v)}" for k, v in qualifiers.items()) + "}"

@@ -1048,7 +1048,7 @@ class ReadService:
             view.snapshot,
             view.model,
             language=view.entry.language,
-            affordances=self._affordances(view, current),
+            affordances=self._affordances(view, current, room=False),
             superseded_by=superseded_by,
             retracted_by=retracted_by,
             file_classes=self._file_classes(view),
@@ -1063,12 +1063,17 @@ class ReadService:
         stored = self._models.load_for_read(view.entry)[0] if view.read_view.limited else view.model
         return file_classes_of(stored) & frozenset(view.model.classes)
 
-    def _affordances(self, view: GraphRead, current: Revision) -> dict[str, JsonValue]:
+    def _affordances(
+        self, view: GraphRead, current: Revision, *, room: bool = True
+    ) -> dict[str, JsonValue]:
         """The ``affordances`` object of ``get``: the four groups, composed here because
-        only the service knows which actions and functions the actor may see."""
+        only the service knows which actions and functions the actor may see. Without ``room``
+        the relation group is left out: it reads every in-edge source of the entity, and the
+        card (which shows counts of its own) never uses it."""
         found: dict[str, JsonValue] = {"record_status": current.record_status}
         found.update(transitions(view.model, current, view.snapshot).to_json())
-        found.update(relations(view.model, current, view.snapshot).to_json())
+        if room:
+            found.update(relations(view.model, current, view.snapshot).to_json())
         actions = self.actions(view.actor, view.entry) or ()
         found.update(actions_for(current, actions, view.snapshot, view.model).to_json())
         functions = self.functions(view.actor, view.entry) or ()

@@ -5474,10 +5474,7 @@
                 "type": "string"
               },
               "origin": {
-                "type": "string",
-                "enum": [
-                  "generated"
-                ]
+                "type": "string"
               }
             },
             "required": [
