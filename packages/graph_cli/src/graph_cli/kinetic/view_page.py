@@ -6,8 +6,9 @@ section order, so the size of the answer is bounded however large the set is:
 - rows are added until the next row would push the document over the page limit; a page always
   holds at least one row (a single row larger than the limit goes alone and the page says
   ``oversize``; values are never cut in a set view);
-- at most ``PAGE_LOADS`` revisions are loaded per page (the rows and their neighbours); when the
-  budget is spent the page ends after the current row, at the same row every time;
+- a page loads at most ``PAGE_LOADS`` revisions (the rows and their neighbours) plus those of
+  the one row that crosses the budget: the page ends after that row, at the same row every time
+  (a row is never cut short by the budget, so it reads the same on every page it could be on);
 - a page that does not reach the end has ``next`` (a cursor) and ``more``; a section that
   continues from the previous page says where it starts (``from``). The pages of a view put
   together are exactly the rows of the one big page.
@@ -50,7 +51,7 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import MAX_LIMIT
 
 PAGE_BYTES: Final = 12_288  # below the default spill limit: an agent's answer never spills
-PAGE_LOADS: Final = 20_000  # revisions one page may load
+PAGE_LOADS: Final = 20_000  # revisions a page loads before it ends after the current row
 CURSOR_VERSION: Final = "v1"
 _CURSOR_RE: Final = re.compile(r"^v1\.(\d+)\.(\d+)\.(\d+)\.([0-9a-f]{8})$")
 _ITEMS_KEY: Final = 12  # ``,"items":[]`` and the comma after a section
@@ -239,6 +240,12 @@ class _Paging:
             total, source = self.list_source(section, offset)
         else:
             raise ValueError("an entity section belongs to an entity view")
+        if offset > 0 and offset >= total:  # only a cursor can start inside a section
+            raise GraphCliError(
+                "view.cursor_invalid",
+                "the cursor points past the end of its section; start without --cursor",
+                details={"reason": "offset", "section": section.id, "count": total},
+            )
         block = _Block(index, section, total, offset, [])
         result = self.rows.get(section.id) if isinstance(section, RowsSpec) else None
         skeleton = len(dumps(block.section(result).to_json())) + _ITEMS_KEY

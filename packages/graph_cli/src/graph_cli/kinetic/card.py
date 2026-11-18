@@ -31,6 +31,7 @@ are all inactive may be named there although it would have had a count of zero.
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
@@ -706,7 +707,7 @@ class NeighborsSection:
     sampled: int = 0
     approx: bool = False
     title: str | None = None
-    unread: int = 0  # with a ``where``: edges not read, so ``count`` is a lower bound
+    unread: int = 0  # edges not read: ``count`` may be off by up to this many
 
     @property
     def more(self) -> int:
@@ -832,6 +833,7 @@ class ViewModel:
     cut: bool = False
     hash: str | None = None  # of the published view (authored views only)
     next: str | None = None  # set views: the cursor of the next page; ``None``: this is the last
+    sections_cut: int = 0  # trailing sections that had to go, when even their stubs did not fit
     oversize: bool = False  # set views: the one row of this page is larger than the page limit
 
     def to_json(self) -> Json:
@@ -843,6 +845,8 @@ class ViewModel:
         if self.entity is not None:
             found["entity"] = dict(self.entity)
         found["sections"] = [s.to_json() for s in self.sections]
+        if self.sections_cut:
+            found["sections_cut"] = self.sections_cut
         if self.next is not None:
             found["next"] = self.next
             found["more"] = True
@@ -1021,7 +1025,9 @@ def render(
         header["retracted_by"] = list(retracted_by)
     is_file = str(entity.type) in (file_classes_of(model) if file_classes is None else file_classes)
     candidates, citations = _candidates(entity, snapshot, model, is_file, _wanted(spec))
-    loader = Loader(snapshot, Loads(ENTITY_LOADS))  # one budget and one read of each revision
+    # one read of each revision; the authored sections share a budget, the generated card has
+    # none (its caps per group bound it, and a budget could only change what it shows)
+    loader = Loader(snapshot, Loads(sys.maxsize if spec.origin == GENERATED else ENTITY_LOADS))
     sections: list[Section] = []
     for section_spec in spec.sections:
         built: Section | None = None
@@ -1776,10 +1782,19 @@ def _sections_to_stubs(card: ViewModel) -> Iterator[ViewModel]:
             yield card
 
 
+def _stubs_folded(card: ViewModel) -> Iterator[ViewModel]:
+    """At the very end the trailing stubs fold into one count (``sections_cut``): at the lowest
+    limits even 32 stubs would not fit, and the answer then says how many sections went."""
+    while card.sections and isinstance(card.sections[-1], StubSection):
+        card = replace(card, sections=card.sections[:-1], sections_cut=card.sections_cut + 1)
+        yield card
+
+
 _FINAL: Final[tuple[Callable[[ViewModel], Iterator[ViewModel]], ...]] = (
     _titles_go,
     _labels_shortened,
     _sections_to_stubs,
+    _stubs_folded,
 )
 
 # The generated card has one section per kind, so for it the stages below run in the order it

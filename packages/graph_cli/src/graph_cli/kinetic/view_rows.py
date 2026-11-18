@@ -31,7 +31,6 @@ from graph_cli.kinetic.view_values import (
     field_value,
     has_value,
     label_key,
-    lifecycle_attribute,
     main_label,
     state_of,
 )
@@ -159,7 +158,7 @@ class RowGroup:
     items: tuple[RowItem, ...]
     sampled: int = 0  # the number of edges the items come from, when not all were read
     approx: bool = False  # ``count`` is the raw in-edge number, or a lower bound (see ``unread``)
-    unread: int = 0  # edges that were not read when a ``where`` had to look at each
+    unread: int = 0  # edges that were not read: ``count`` may be off by up to this many
 
     @property
     def more(self) -> int:
@@ -216,11 +215,11 @@ class Row:
 class Selection:
     """The edges of one relation as rows: filtered, ordered, with the exact count."""
 
-    rows: tuple[tuple[EntityId, EdgeRecord, Revision | None], ...]
+    rows: tuple[tuple[EntityId, EdgeRecord, Revision], ...]
     count: int
     sampled: int  # edges read, when the group has more
-    approx: bool  # in-edges: the count is the raw number; with a where: a lower bound
-    unread: int = 0  # with a where: the edges that were not read, so the count may be higher
+    approx: bool  # edges were not all read: the count is a raw number or a bound (see ``unread``)
+    unread: int = 0  # the edges that were not read: the count may be off by up to this many
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,44 +313,42 @@ class RowBuilder:
         admitted, loaded = self.loader.read([n for n, _ in wanted])
         sample = wanted[:admitted]
         inbound = direction == "in"
-        rows: list[tuple[EntityId, EdgeRecord, Revision | None]] = []
+        rows: list[tuple[EntityId, EdgeRecord, Revision]] = []
         for neighbour, edge in sample:
             revision = loaded.get(neighbour)
-            if inbound and (revision is None or revision.record_status != ACTIVE):
+            if revision is None:
+                continue  # not readable for this reader: no row, no count, no id
+            if inbound and revision.record_status != ACTIVE:
                 continue  # an in-edge counts only while its source is active
-            if where is not None and (revision is None or not matches(revision, where)):
+            if where is not None and not matches(revision, where):
                 continue
             rows.append((neighbour, edge, revision))
         partial = len(edges) > len(sample)
+        unread = len(edges) - len(sample)
         if where is not None:
             count = len(rows)  # a lower bound when edges were not read (``unread``)
         elif inbound:
-            count = len(edges) if partial else len(rows)
+            count = len(edges) if partial else len(rows)  # raw when not all were read
         else:
-            count = len(edges)
+            count = len(rows) + unread  # out-edges not read are counted as they stand
         return Selection(
             tuple(self._ordered(rows, order)),
             count,
             len(sample) if partial else 0,
-            partial and (inbound or where is not None),
-            len(edges) - len(sample) if partial and where is not None else 0,
+            partial,
+            unread,
         )
 
     def _ordered(
         self,
-        rows: list[tuple[EntityId, EdgeRecord, Revision | None]],
+        rows: list[tuple[EntityId, EdgeRecord, Revision]],
         order: Sequence[OrderKey],
-    ) -> list[tuple[EntityId, EdgeRecord, Revision | None]]:
+    ) -> list[tuple[EntityId, EdgeRecord, Revision]]:
         if order:
-            ranked = sort_revisions([r for _n, _e, r in rows if r is not None], order)
+            ranked = sort_revisions([r for _n, _e, r in rows], order)
             rank = {r.id: i for i, r in enumerate(ranked)}
-            return sorted(
-                rows,
-                key=lambda row: (row[2] is None, rank.get(row[0], 0), str(row[0])),
-            )
-        labels = {
-            n: None if r is None else main_label(self.model, r, self.language) for n, _e, r in rows
-        }
+            return sorted(rows, key=lambda row: (rank.get(row[0], 0), str(row[0])))
+        labels = {n: main_label(self.model, r, self.language) for n, _e, r in rows}
         return sorted(rows, key=lambda row: label_key(labels[row[0]], row[0]))
 
     # Rows
@@ -364,7 +361,7 @@ class RowBuilder:
         limit: int,
     ) -> tuple[Row, ...]:
         """The first ``limit`` entries of ``selection`` as rows."""
-        types = {str(r.type) for _n, _e, r in selection.rows if r is not None}
+        types = {str(r.type) for _n, _e, r in selection.rows}
         return tuple(
             self.row(revision, neighbour, edge, fields, relations, len(types) > 1)
             for neighbour, edge, revision in selection.rows[:limit]
@@ -372,7 +369,7 @@ class RowBuilder:
 
     def row(
         self,
-        revision: Revision | None,
+        revision: Revision,
         entity: EntityId,
         edge: EdgeRecord | None,
         fields: FieldSel,
@@ -380,8 +377,6 @@ class RowBuilder:
         with_type: bool,
     ) -> Row:
         qualifiers = {} if edge is None else dict(edge.qualifiers)
-        if revision is None:  # not readable: its reference is all there is
-            return Row(str(entity), qualifiers=qualifiers, entity=entity)
         return Row(
             revision.alias or str(revision.id),
             self.label(revision),
@@ -430,7 +425,7 @@ class RowBuilder:
         selection = self.select(edges, spec.direction, spec.where, spec.order)
         if selection.count == 0:
             return None
-        types = {str(r.type) for _n, _e, r in selection.rows if r is not None}
+        types = {str(r.type) for _n, _e, r in selection.rows}
         items = tuple(
             self.item(revision_, neighbour, edge, spec.fields, len(types) > 1, keys_only)
             for neighbour, edge, revision_ in selection.rows[: spec.max]
@@ -447,7 +442,7 @@ class RowBuilder:
 
     def item(
         self,
-        revision: Revision | None,
+        revision: Revision,
         neighbour: EntityId,
         edge: EdgeRecord,
         fields: FieldSel,
@@ -455,8 +450,6 @@ class RowBuilder:
         keys_only: bool,
     ) -> RowItem:
         qualifiers = dict(edge.qualifiers)
-        if revision is None:
-            return RowItem(str(neighbour), qualifiers=qualifiers, entity=neighbour)
         active = revision.record_status == ACTIVE
         return RowItem(
             revision.alias or str(revision.id),
@@ -468,8 +461,3 @@ class RowBuilder:
             self.values(revision, fields),
             revision.id,
         )
-
-
-def lifecycle_of(model: CompiledModel, revision: Revision) -> str | None:
-    """The one lifecycle attribute of the entity's class (``None``: none or several)."""
-    return lifecycle_attribute(model, revision)

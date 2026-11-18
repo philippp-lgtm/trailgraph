@@ -12,7 +12,6 @@ from support.views import company_model, compiled_entries
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import TermRef
-from graph_cli.kernel.query_ast import OrderKey, Query
 from graph_cli.kernel.records import Revision
 from graph_cli.kinetic.card import ViewSpec, dumps, spec_of
 from graph_cli.kinetic.view_page import (
@@ -23,6 +22,8 @@ from graph_cli.kinetic.view_page import (
     render_set,
 )
 from graph_cli.kinetic.view_rows import RowsResult
+from graph_cli.query.plan import FindSpec, plan_find
+from graph_cli.services.read import entity_json
 
 MODEL = company_model()
 ENTRY = compiled_entries()["org_catalog"]
@@ -159,40 +160,36 @@ def test_a_set_view_that_fits_is_one_page_with_every_section() -> None:
 
 
 def test_the_rows_of_a_listing_are_what_find_returns_for_the_type() -> None:
-    """The generic oracle (B6): the rows of a ``list`` section are exactly the active entities of
-    ``find --type``, in its order, with their attribute values and the targets of their
-    out-edges, keyed by alias."""
+    """The generic oracle (B6): the rows of a ``list`` section are exactly the active entities
+    ``find --type`` plans and returns, in its order, with their attributes as ``get`` shows them
+    and the targets of their out-edges, keyed by alias."""
     revisions = world()
     snapshot = DictSnapshot(*revisions)
     data = whole(snapshot)
     sections = {s["id"]: s for s in data["sections"]}
-    for sid, types in (
-        ("units", ["org:Department", "org:Team"]),
-        ("positions", ["org:Position"]),
-        ("people", ["ppl:Employee", "ppl:External"]),
+    for sid, type_, sort in (
+        ("units", "org:OrgUnit", ()),
+        ("positions", "org:Position", ("title",)),
+        ("people", "ppl:Person", ()),
     ):
-        order = (OrderKey("title"),) if sid == "positions" else ()  # as the view's order says
-        found = snapshot.query(
-            Query(types=tuple(TermRef(t) for t in types), order=order, limit=500)
-        ).items
+        asked = plan_find(MODEL, FindSpec(types=(type_,), sort=sort, limit=500))
+        found = snapshot.query(asked).items
         items = sections[sid]["items"]
         assert [i["ref"] for i in items] == [r.alias or str(r.id) for r in found], sid
-        by_id = {r.alias or str(r.id): r for r in found}
+        by_ref = {r.alias or str(r.id): r for r in found}
         for item in items:
-            revision_ = by_id[item["ref"]]
-            assert item["fields"] == {
-                k: v for k, v in revision_.attrs.items() if v not in (None, "", [], {})
-            }
+            shown = entity_json(by_ref[item["ref"]])
+            assert item["fields"] == shown["attrs"], item["ref"]
             targets: dict[str, list[str]] = {}
-            for e in revision_.edges:
-                target = next(r for r in revisions if r.id == e.target)
-                targets.setdefault(str(e.rel), []).append(target.alias or str(target.id))
-            shown = {
+            for e in shown["edges"]:  # type: ignore[attr-defined]
+                other = next(r for r in revisions if str(r.id) == e["target"])
+                targets.setdefault(e["rel"], []).append(other.alias or str(other.id))
+            out = {
                 g["relation"]: sorted(i["ref"] for i in g["items"])
                 for g in item.get("relations", [])
                 if g["direction"] == "out"
             }
-            assert shown == {k: sorted(v) for k, v in targets.items()}, item["ref"]
+            assert out == {k: sorted(v) for k, v in targets.items()}, item["ref"]
 
 
 def test_a_listing_of_several_concrete_classes_names_the_class_of_every_row() -> None:
@@ -514,3 +511,48 @@ def test_shown_names_the_rows_of_the_page() -> None:
     model = page(snapshot, page_bytes=262_144)
     named = set(model.shown())
     assert eid("team0") in named and eid("pos0_0") in named and eid("emp0_0") in named
+
+
+def test_a_cursor_that_points_past_the_end_of_its_section_is_invalid() -> None:
+    snapshot = DictSnapshot(*world())
+    first = decode_cursor(pages(snapshot, 3000)[0]["next"])
+    for offset in (13, 14, 1_000_000):  # units has 13 rows: row 13 does not exist
+        bad = replace(first, section=0, offset=offset)
+        with pytest.raises(GraphCliError) as exc:
+            page(snapshot, cursor=bad)
+        assert exc.value.code == "view.cursor_invalid" and exc.value.details["reason"] == "offset"
+    ok = replace(first, section=0, offset=12)  # the last row is a valid place to start
+    assert page(snapshot, cursor=ok, page_bytes=262_144).to_json()["sections"][0]["from"] == 12
+    start = replace(first, section=1, offset=0)  # offset 0 is always a valid place
+    page(snapshot, cursor=start)
+    rows_cursor = replace(first, section=3, offset=5)  # five function rows: row 5 does not exist
+    with pytest.raises(GraphCliError) as exc:
+        page(snapshot, cursor=rows_cursor)
+    assert exc.value.details["reason"] == "offset"
+
+
+class Barred(DictSnapshot):
+    """A snapshot that cannot hand out some entities by ``get_many`` although edges still lead
+    to them (an entity hidden by its own class: the edges of a revision are not stripped)."""
+
+    def __init__(self, *revisions: Revision, barred: set[str]) -> None:
+        super().__init__(*revisions)
+        self.barred = {eid(n) for n in barred}
+
+    def get_many(self, entities: Sequence[Any]) -> Mapping[Any, Revision]:
+        return {e: r for e, r in super().get_many(entities).items() if e not in self.barred}
+
+
+def test_a_neighbour_that_cannot_be_read_is_absent_not_a_raw_id() -> None:
+    revisions = world(units=2, per=1)
+    snapshot = Barred(*revisions, barred={"dept", "pos0_0"})
+    data = whole(snapshot)
+    text = dumps(data).decode()
+    assert str(eid("dept")) not in text and str(eid("pos0_0")) not in text
+    units = {s["id"]: s for s in data["sections"]}["units"]["items"]
+    team = next(u for u in units if u["ref"] == "TEAM-00")
+    assert "relations" not in team  # its one relation led to the barred department
+    # the same holds for the neighbours of a listed row that are listed too
+    items = {s["id"]: s for s in data["sections"]}["positions"]["items"]
+    holder = next(i for i in items if i["ref"] == "POS-010")
+    assert "relations" in holder  # a position still names the unit it sits in

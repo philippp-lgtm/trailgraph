@@ -375,22 +375,23 @@ def test_all_relations_of_a_row_are_listed_as_keys_only() -> None:
     ]
 
 
-def test_edges_to_unreadable_entities_are_a_reference_only_and_never_match_a_where() -> None:
+def test_an_edge_to_an_entity_the_reader_cannot_read_is_no_neighbour() -> None:
+    """No row, no count, no id: the reader's snapshot holds no revision of it."""
     unit = replace(team(), edges=(*team().edges, edge("org:charged_to", "gone")))
+    cc = revision("cc", "org:CostCenter", {"name": "P", "code": "C"}, alias="CC-1")
     entry = view("  - kind: neighbors\n    id: cost\n    relation: org:charged_to\n")
-    rows = section(
-        shown(entry, unit, [revision("cc", "org:CostCenter", {"name": "P", "code": "C"})]), "cost"
-    )
-    assert rows["count"] == 2
-    assert {"ref": str(eid("gone"))} in rows["items"]
+    rows = section(shown(entry, unit, [cc]), "cost")
+    assert rows["count"] == 1 and [i["ref"] for i in rows["items"]] == ["CC-1"]
+    assert str(eid("gone")) not in str(rows)
     filtered = view(
         '  - kind: neighbors\n    id: cost\n    relation: org:charged_to\n    where: ["code=C"]\n'
     )
-    kept = section(
-        shown(filtered, unit, [revision("cc", "org:CostCenter", {"name": "P", "code": "C"})]),
-        "cost",
-    )
-    assert kept["count"] == 1
+    assert section(shown(filtered, unit, [cc]), "cost")["count"] == 1
+    lists = view(POSITIONS.replace("    order", "    relations: all\n    order"))
+    pos = position("p1", "Engineer", "active")
+    pos = replace(pos, edges=(*pos.edges, edge("org:carries", "gone")))
+    row = section(shown(lists, unit, [pos]), "positions")["items"][0]
+    assert [g["relation"] for g in row["relations"]] == ["org:in_unit"]  # carries led nowhere
 
 
 def test_shown_names_the_rows_and_their_neighbours() -> None:
@@ -482,24 +483,28 @@ def test_two_sections_of_one_kind_are_rendered_and_trimmed_on_their_own() -> Non
     assert data["cut"] is True
     assert all("fields" in r for r in section(data, "positions")["items"])
     assert all("fields" not in r for r in section(data, "others")["items"])
-    # a limit nothing but the header fits: the rows go first (the counts stay), then the sections
-    # themselves leave a stub with their kind and id
-    smallest = replace(spec_of(two, MODEL), byte_limit=1)
-    data = render(smallest, unit, DictSnapshot(unit, *others), MODEL).to_json()
-    for sid in ("positions", "others"):
-        assert section(data, sid) == {"kind": "neighbors", "id": sid, "cut": True}
-    seen = False
-    for limit in range(full.size() - 50, 0, -25):  # on the way down the rows go, counts stay
+    # on the way down the rows go first (the counts stay), then the sections leave a stub with
+    # their kind and id, then the stubs fold into a count of the sections that went
+    seen = {"rows gone": False, "stubs": False}
+    for limit in range(full.size() - 50, 0, -10):
         data = render(
             replace(spec_of(two, MODEL), byte_limit=limit), unit, DictSnapshot(unit, *others), MODEL
         ).to_json()
-        found = {sid: section(data, sid) for sid in ("positions", "others")}
-        if any(s.get("cut") for s in found.values()):
-            break
+        kept = {s["id"]: s for s in data["sections"]}  # type: ignore[attr-defined]
         for sid, count in (("positions", 4), ("others", 2)):
-            assert found[sid]["count"] == count  # exact whatever is trimmed
-            seen = seen or len(found[sid].get("items", [])) < count
-    assert seen
+            found = kept.get(sid)
+            if found is None or found.get("cut"):
+                continue
+            assert found["count"] == count  # exact whatever is trimmed
+            seen["rows gone"] = seen["rows gone"] or len(found.get("items", [])) < count
+        stubs = [s for s in kept.values() if s.get("cut")]
+        if stubs:
+            assert all(set(s) == {"kind", "id", "cut"} for s in stubs)
+            seen["stubs"] = True
+    assert seen == {"rows gone": True, "stubs": True}
+    smallest = replace(spec_of(two, MODEL), byte_limit=1)
+    data = render(smallest, unit, DictSnapshot(unit, *others), MODEL).to_json()
+    assert data["sections"] == [] and data["sections_cut"] == 2  # type: ignore[comparison-overlap]
 
 
 def test_the_limit_of_an_authored_view_lowers_the_cards_and_never_raises_it() -> None:

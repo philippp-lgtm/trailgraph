@@ -225,6 +225,25 @@ def scenarios() -> list[Scenario]:
     ]
     found.append(Scenario("cited_by", NOTES, notebook, citing))
 
+    # in-relations whose sources are all inactive give no group, and the generated card keeps
+    # reading until it has its groups: it has no budget of loads (the authored views do)
+    model = bigger_note_model(0, 15)
+    note = revision(
+        "note", "nas:Note", {"title": "N", "body": "b", "kind": "observation", "status": "draft"}
+    )
+    sources: list[Revision] = []
+    for r in range(15):
+        for i in range(100):
+            source = revision(
+                f"t{r}_{i}",
+                "nas:Topic",
+                {"label": f"T{r}_{i}"},
+                [edge(f"nas:rin_{r:02d}", "note")],
+                status="retracted" if r < 12 else "active",
+            )
+            sources.append(source)
+    found.append(Scenario("inactive_in_relations", model, note, sources))
+
     # one relation that reads both ways: its out group and its in group are trimmed in turn
     about = NOTES.relations["nas:about"]
     twin = replace(about, domain=("nas:Note",), range=("nas:Note",))

@@ -170,6 +170,7 @@ def test_every_stage_of_the_guard_works_in_its_fixed_order() -> None:
         "fields moved",
         "rows gone",
         "sections stubbed",
+        "stubs folded",
     ]
     first: dict[str, int] = {}
     limit = full.size()
@@ -186,10 +187,12 @@ def test_every_stage_of_the_guard_works_in_its_fixed_order() -> None:
 def effects(document: dict[str, Any]) -> set[str]:
     found: set[str] = set()
     sections = {s["id"]: s for s in document["sections"] if "id" in s}
-    positions, members = sections["positions"], sections["members"]
+    positions = sections.get("positions", {})
     if any(s.get("cut") is True for s in sections.values()):
         found.add("sections stubbed")
-    if "count" not in positions:
+    if document.get("sections_cut"):
+        found.add("stubs folded")
+    if "count" not in positions or "relations" not in sections or "fields" not in sections:
         return found
     items = positions.get("items", [])
     if items and not any("fields" in r for r in items):
@@ -212,7 +215,6 @@ def effects(document: dict[str, Any]) -> set[str]:
         found.add("relation items to one")
     if relations.get("more_groups"):
         found.add("groups moved")
-    del members
     fields = sections["fields"]
     if fields.get("other"):
         found.add("fields moved")
@@ -349,3 +351,41 @@ def test_cells_of_a_function_are_cut_and_the_cut_is_counted() -> None:
 def test_a_view_without_the_limit_of_the_file_uses_the_cards_and_never_more() -> None:
     entry = one_entry(HEAD + "  - kind: files\n")
     assert spec_of(entry, MODEL).byte_limit == BYTE_LIMIT
+
+
+def test_the_lowest_limit_holds_even_for_thirty_two_sections_with_long_ids() -> None:
+    """The stubs of 32 sections do not fit 1,024 bytes: they fold into a count."""
+    sections = "".join(
+        f"  - kind: fields\n    id: s{i:02d}_{'x' * 58}\n    fields: [name]\n" for i in range(32)
+    )
+    unit, snapshot = cjk_world()
+    text = HEAD.replace("sections:\n", "max_bytes: 1024\nsections:\n") + sections
+    spec = spec_of(one_entry(text), MODEL)
+    assert spec.byte_limit == 1024
+    data: Any = render(spec, unit, snapshot, MODEL).to_json()
+    assert len(dumps(data)) <= 1024
+    assert data["cut"] is True and data["sections_cut"] > 0
+    assert all(set(s) == {"kind", "id", "cut"} for s in data["sections"])
+    assert len(data["sections"]) + data["sections_cut"] == 32  # nothing lost without a count
+
+
+def test_the_generated_card_has_no_budget_of_loads() -> None:
+    """Many in-relations whose sources are all inactive: the card reads on until it has its
+    groups, exactly as before the shared budget (its golden holds the bytes)."""
+    from support.card_scenarios import scenarios
+    from support.cards import CountingSnapshot, as_snapshot
+
+    from graph_cli.kinetic.card import generated_spec
+
+    scenario = next(s for s in scenarios() if s.name == "inactive_in_relations")
+    counting = CountingSnapshot(scenario.snapshot)
+    data: Any = render(
+        generated_spec(scenario.model, scenario.class_curie),
+        scenario.entity,
+        as_snapshot(counting),
+        scenario.model,
+    ).to_json()
+    assert len(counting.loaded) > ENTITY_LOADS  # more than an authored view may read
+    groups = [g for s in data["sections"] if s["kind"] == "relations" for g in s["groups"]]
+    assert [g["relation"] for g in groups] == ["nas:rin_12", "nas:rin_13", "nas:rin_14"]
+    assert all(g["count"] == 100 and "approx" not in g for g in groups)
