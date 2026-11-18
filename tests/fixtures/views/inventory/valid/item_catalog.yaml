@@ -1,0 +1,21 @@
+schema: graph_cli.view/1
+name: item_catalog
+summary: Every item and location with their attributes and relations, for renderers.
+use_when: Export or render the whole inventory; not for one item.
+page_bytes: 8192
+sections:
+  - kind: list
+    id: locations
+    type: inv:Location
+    fields: all
+    relations: all
+  - kind: list
+    id: items
+    type: inv:Item
+    order: [name]
+    fields: all
+    relations: all
+  - kind: rows
+    id: damaged
+    function: items_by_condition
+    args: {condition: damaged}

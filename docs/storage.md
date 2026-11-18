@@ -39,7 +39,7 @@ POSIX only, local filesystems only.
     .lock                     the writer lock
     ontology/<version>/       installed ontology releases
     policy.json               the graph's installed policy
-    skill/  functions/  actions/   published slots (see below)
+    skill/  functions/  actions/  views/   published slots (see below)
     data/
       txlog/                  transaction log segments (<first seq>.jsonl), the source of truth
       entities/<xx>/<id>/     revision files r<rev>.json, derived
@@ -305,7 +305,11 @@ in the graph directory.
   `actions/files/<hash>/<name>.yaml` and the compiled catalog
   `graph_cli.action_catalog/1` in `actions/compiled/<compiled hash>.json`), a
   separate slot so that a broken action never blocks publishing functions; a
-  damaged one is `actions.slot_invalid`. The slots are verified against the
+  damaged one is `actions.slot_invalid`. The view catalog is the same again in
+  `views/` (`views/slot.json` with `graph_cli.view_slot/1`, the sources
+  `views/files/<hash>/<name>.yaml` and the compiled catalog `graph_cli.view_catalog/1` in
+  `views/compiled/<compiled hash>.json`); a damaged one is `views.slot_invalid`. A graph
+  without views has no `views/` directory. The slots are verified against the
   audit trail ([Slot verification](audit.md#slot-verification)); the format of a
   function file is in the [authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-functions/references/format.md), that of an action file in the [actions authoring skill](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-actions/references/format.md).
 

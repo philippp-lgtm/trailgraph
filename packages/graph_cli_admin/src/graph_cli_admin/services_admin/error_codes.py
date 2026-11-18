@@ -80,10 +80,12 @@ ADMIN_CODES: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("admin.skill_invalid", _C.INVALID, False, "The skill directory is invalid."),
     ErrorSpec("admin.functions_invalid", _C.INVALID, False, "The function files are invalid."),
     ErrorSpec("admin.actions_invalid", _C.INVALID, False, "The action files are invalid."),
+    ErrorSpec("admin.views_invalid", _C.INVALID, False, "The view files are invalid."),
     ErrorSpec(
         "admin.functions_broken", _C.REFUSED, False, "A published function would not resolve."
     ),
     ErrorSpec("admin.actions_broken", _C.REFUSED, False, "A published action would not compile."),
+    ErrorSpec("admin.views_broken", _C.REFUSED, False, "A published view would not hold."),
     ErrorSpec(
         "admin.skill_render_exists", _C.REFUSED, False, "The preview directory exists already."
     ),

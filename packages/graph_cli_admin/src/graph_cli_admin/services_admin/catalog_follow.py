@@ -141,13 +141,19 @@ def write(
     """Switch the slot from ``current`` to ``slot`` in the W.e shape: the intent
     (``change.<kind>{from, to, compiled_hash}``), the slot rename (the commit point), the
     installation event anchoring the intent."""
-    build = events.functions_change if slot.kind == "functions" else events.actions_change
+    build = {
+        "functions": events.functions_change,
+        "actions": events.actions_change,
+        "views": events.views_change,
+    }[slot.kind]
     change = build(current.hash if current is not None else None, slot.hash, slot.compiled_hash)
     receipt = ctx.intent(session, entry, decisions, meta, change, reason=reason)
-    if slot.kind == "functions":
-        session.replace_functions(slot, receipt)
-    else:
-        session.replace_actions(slot, receipt)
+    replace = {
+        "functions": session.replace_functions,
+        "actions": session.replace_actions,
+        "views": session.replace_views,
+    }[slot.kind]
+    replace(slot, receipt)
     ctx.anchor(entry, decisions, meta, receipt, reason=reason)
 
 

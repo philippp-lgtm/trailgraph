@@ -302,6 +302,14 @@ class MaintenanceSession(WriteSession, Protocol):
         """Publish the action catalog atomically, replacing the previous one (A8)."""
         ...
 
+    def read_views(self) -> KineticSlot | None:
+        """The graph's published view catalog as it is now, with its sources (views V9)."""
+        ...
+
+    def replace_views(self, slot: KineticSlot, receipt: AuditReceipt) -> None:
+        """Publish the view catalog atomically, replacing the previous one (views V9)."""
+        ...
+
     def read_policy(self) -> bytes | None:
         """The graph's installed policy file as stored; ``None`` without one (B6.14)."""
         ...

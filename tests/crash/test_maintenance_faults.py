@@ -17,6 +17,7 @@ from graph_cli.storage.common.faults import CrashPoint
 from graph_cli_admin.maintenance_cli.commands.graph import app_inventory
 from graph_cli_admin.services_admin import audit, graphs, sources
 from graph_cli_admin.services_admin.actions import publish as publish_actions
+from graph_cli_admin.services_admin.authored_views import publish as publish_views
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.functions import publish as publish_functions
@@ -27,6 +28,7 @@ INVENTORY = ONTOLOGIES / "inventory"
 SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
+VIEWS = FIXTURES / "views" / "inventory" / "valid"
 IWE = "integrity.audit.intent_without_effect"
 
 
@@ -225,6 +227,67 @@ def test_an_interrupted_actions_publish_leaves_the_functions_slot_alone(
     graph = ctx.catalog.resolve("example_graph")
     assert ctx.catalog.read_functions(graph.id) == before
     assert ctx.catalog.read_actions(graph.id) is None
+
+
+def test_views_before_rename(ctx: AdminContext, faults: FaultSwitch) -> None:
+    """V9: the old slot (here: none) stays; a retry publishes and verifies; what a kill -9 at
+    the rename leaves is an announced intent and nothing else."""
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    run = lambda: publish_views(  # noqa: E731
+        ctx, graph_ref="example_graph", source=VIEWS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.VIEWS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    assert ctx.catalog.read_views(graph.id) is None
+    assert not (ctx.catalog.graphs_dir / str(graph.id) / "views" / "slot.json").exists()
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    slot = ctx.catalog.read_views(graph.id)
+    assert slot is not None and slot.count == 3
+    assert verify_codes(ctx) == [IWE]  # the first intent stays an orphan
+    assert run().data["published"] is False  # unchanged: no third intent
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_views_replaced_before_rename_keep_the_old_catalog(
+    ctx: AdminContext, faults: FaultSwitch, tmp_path: Path
+) -> None:
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    publish_views(ctx, graph_ref="example_graph", source=VIEWS, reason=None, dry_run=False)
+    one = tmp_path / "one"
+    one.mkdir()
+    (one / "location_overview.yaml").write_bytes((VIEWS / "location_overview.yaml").read_bytes())
+    run = lambda: publish_views(  # noqa: E731
+        ctx, graph_ref="example_graph", source=one, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.VIEWS_BEFORE_RENAME, run)
+    graph = ctx.catalog.resolve("example_graph")
+    old = ctx.catalog.read_views(graph.id)
+    assert old is not None and old.count == 3  # old, never mixed
+    assert verify_codes(ctx) == [IWE]
+    assert run().data["published"] is True
+    new = ctx.catalog.read_views(graph.id)
+    assert new is not None and new.count == 1
+    assert verify_codes(ctx) == [IWE]
+
+
+def test_an_interrupted_views_publish_leaves_the_other_slots_alone(
+    ctx: AdminContext, faults: FaultSwitch
+) -> None:
+    create(ctx)
+    publish_functions(ctx, graph_ref="example_graph", source=FUNCTIONS, reason=None, dry_run=False)
+    publish_actions(ctx, graph_ref="example_graph", source=ACTIONS, reason=None, dry_run=False)
+    graph = ctx.catalog.resolve("example_graph")
+    functions, actions = ctx.catalog.read_functions(graph.id), ctx.catalog.read_actions(graph.id)
+    run = lambda: publish_views(  # noqa: E731
+        ctx, graph_ref="example_graph", source=VIEWS, reason=None, dry_run=False
+    )
+    interrupted(faults, CrashPoint.VIEWS_BEFORE_RENAME, run)
+    assert ctx.catalog.read_functions(graph.id) == functions
+    assert ctx.catalog.read_actions(graph.id) == actions
+    assert ctx.catalog.read_views(graph.id) is None
 
 
 def test_a_push_interrupted_between_the_release_and_the_functions_is_stale_and_repeatable(

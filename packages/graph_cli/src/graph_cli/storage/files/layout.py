@@ -72,7 +72,7 @@ class GraphLayout:
         return self.skill / "files" / digest.removeprefix("sha256:")
 
     def kinetic(self, kind: str) -> Path:
-        """The published function (K6) or action (A8) catalog: ``slot.json``,
+        """The published function (K6), action (A8) or view (V9) catalog: ``slot.json``,
         ``files/<hash hex>/`` with the sources and ``compiled/<compiled hash hex>.json``."""
         return self.root / kind
 

@@ -290,6 +290,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec(
         "actions.slot_invalid", _C.INVALID, False, "The published action catalog is invalid."
     ),
+    ErrorSpec("views.slot_invalid", _C.INVALID, False, "The published view catalog is invalid."),
     ErrorSpec(
         "function.name_taken",
         _C.INVALID,
@@ -591,6 +592,7 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
         False,
         "An action file has a format version this build cannot read.",
     ),
+    ErrorSpec("view.invalid_file", _C.INVALID, False, "The views folder holds something else."),
     ErrorSpec(
         "view.invalid_yaml",
         _C.INVALID,

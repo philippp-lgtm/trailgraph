@@ -1,0 +1,7 @@
+schema: graph_cli.view/1
+name: card
+summary: Takes the name of the generated card.
+use_when: Testing the reserved name.
+takes: inv:Location
+sections:
+  - kind: fields

@@ -619,7 +619,7 @@ def _maint_change_problems(actions: Sequence[str], change: JsonValue) -> list[st
             isinstance(reindex, Mapping) and set(reindex) == {"seq"} and _is_size(reindex["seq"])
         ):
             problems.append("a reindex intent needs change.reindex{seq}")
-    for key in ("skill", "functions", "actions"):
+    for key in ("skill", "functions", "actions", "views"):
         if CONFIGURE_ACTION in actions and key in entries:
             slot = entries[key]
             compiled = key != "skill"  # the catalogs also record the compiled hash

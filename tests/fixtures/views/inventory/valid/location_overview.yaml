@@ -1,0 +1,20 @@
+schema: graph_cli.view/1
+name: location_overview
+summary: A location with the items stored there.
+use_when: What is stored in a place, how many units of what, and which function lists it too.
+takes: inv:Location
+default: true
+sections:
+  - kind: fields
+    fields: [name, code]
+  - kind: neighbors
+    id: items
+    relation: inv:located_in
+    direction: in
+    order: [name]
+    fields: [name, quantity, status]
+    max: 20
+  - kind: rows
+    id: contents
+    function: items_in_location
+    args: {location: $entity}

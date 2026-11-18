@@ -1,0 +1,8 @@
+schema: graph_cli.view/1
+name: unknown_attribute
+summary: Names an attribute that no location has.
+use_when: Testing one rule of the checks.
+takes: inv:Location
+sections:
+  - kind: fields
+    fields: [nope]

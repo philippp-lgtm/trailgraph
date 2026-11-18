@@ -1,5 +1,5 @@
-"""T: published skill, function catalog and action catalog against their change events (K6, A8,
-R.6).
+"""T: published skill, function, action and view catalogs against their change events (K6, A8,
+V9, R.6).
 
 ``integrity.audit.slot_mismatch`` lives here because it needs published slots.
 Both are published with the real ``graph-admin`` commands and changed by hand
@@ -23,6 +23,7 @@ from graph_cli.kernel.canonical import canonical_bytes, hash_value
 SKILL = FIXTURES / "skills" / "graph-example-graph"
 FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
+VIEWS = FIXTURES / "views" / "inventory" / "valid"
 
 
 @pytest.fixture
@@ -51,6 +52,11 @@ def publish_functions(run_cli: CliRunner, source: Path = FUNCTIONS) -> None:
 
 def publish_actions(run_cli: CliRunner, source: Path = ACTIONS) -> None:
     outcome = admin(run_cli, "graph", "actions", "publish", "example_graph", str(source))
+    assert outcome.code == 0, outcome.envelope
+
+
+def publish_views(run_cli: CliRunner, source: Path = VIEWS) -> None:
+    outcome = admin(run_cli, "graph", "views", "publish", "example_graph", str(source))
     assert outcome.code == 0, outcome.envelope
 
 
@@ -296,3 +302,115 @@ def test_untouched_compiled_action_catalog_verifies_after_republish(
     publish_actions(run_cli)
     publish_actions(run_cli)
     assert codes(run_cli) == []
+
+
+# ---- the view catalog: the same checks, one implementation per kind -----------------
+
+
+def edit_view_source(directory: Path) -> None:
+    first_file(directory / "views" / "files").write_text("edited by hand\n")
+
+
+def remove_views(directory: Path) -> None:
+    shutil.rmtree(directory / "views")
+
+
+def edit_compiled_views(directory: Path) -> None:
+    path = first_file(directory / "views" / "compiled")
+    path.write_bytes(path.read_bytes().replace(b"item_catalog", b"item_everything"))
+
+
+def place_views_by_hand(directory: Path) -> None:
+    slot = directory / "views" / "slot.json"
+    slot.write_bytes(slot.read_bytes().replace(b'"hash": "sha256:', b'"hash": "sha256:0'))
+
+
+VIEW_TAMPERS: dict[str, Callable[[Path], None]] = {
+    "edited view source": edit_view_source,
+    "removed views": remove_views,
+    "edited compiled views": edit_compiled_views,
+    "rewritten views slot": place_views_by_hand,
+}
+
+
+def test_published_view_slots_verify_clean(run_cli: CliRunner, root: Path, tmp_path: Path) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    one = tmp_path / "one"
+    one.mkdir()
+    shutil.copy(VIEWS / "location_overview.yaml", one)
+    publish_views(run_cli, one)  # a second hash, then the empty catalog
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    publish_views(run_cli, empty)
+    assert codes(run_cli) == []
+
+
+@pytest.mark.parametrize("tamper", sorted(VIEW_TAMPERS))
+def test_a_changed_view_slot_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path, tamper: str
+) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    VIEW_TAMPERS[tamper](graph_dir(run_cli, root))
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_changed_view_slot_names_its_path(run_cli: CliRunner, root: Path) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    edit_view_source(graph_dir(run_cli, root))
+    findings = admin(run_cli, "audit", "verify").error["details"]["findings"]
+    assert [f["target"]["path"].rpartition("/")[2] for f in findings] == ["views"]
+
+
+def test_a_view_slot_placed_without_a_publish_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    other = create_graph(run_cli, "other_graph")
+    shutil.copytree(graph_dir(run_cli, root) / "views", root / "graphs" / other / "views")
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_rollback_to_an_earlier_view_catalog_is_a_slot_mismatch(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    directory = graph_dir(run_cli, root) / "views"
+    saved = tmp_path / "saved"
+    shutil.copytree(directory, saved)
+    one = tmp_path / "one"
+    one.mkdir()
+    shutil.copy(VIEWS / "location_overview.yaml", one)
+    publish_views(run_cli, one)
+    assert codes(run_cli) == []
+    shutil.rmtree(directory)
+    shutil.copytree(saved, directory)
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]
+
+
+def test_a_replaced_compiled_view_catalog_with_an_adjusted_slot_is_detected(
+    run_cli: CliRunner, root: Path
+) -> None:
+    publish_functions(run_cli)
+    publish_views(run_cli)
+    assert codes(run_cli) == []
+    swap_compiled_and_slot(graph_dir(run_cli, root), "views")
+    outcome = admin(run_cli, "audit", "verify")
+    assert outcome.code != 0
+    findings = outcome.error["details"]["findings"]
+    assert [f["code"] for f in findings] == [audit_codes.SLOT_MISMATCH]
+    assert "compiled" in findings[0]["message"] and "views" in findings[0]["message"]
+
+
+def test_a_view_slot_does_not_disturb_the_other_slots(run_cli: CliRunner, root: Path) -> None:
+    publish_skill(run_cli)
+    publish_functions(run_cli)
+    publish_actions(run_cli)
+    publish_views(run_cli)
+    assert codes(run_cli) == []
+    edit_view_source(graph_dir(run_cli, root))
+    assert codes(run_cli) == [audit_codes.SLOT_MISMATCH]  # only the views, once

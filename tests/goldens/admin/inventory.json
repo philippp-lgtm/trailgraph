@@ -1238,6 +1238,7 @@
         "access.denied",
         "admin.functions_invalid",
         "admin.remote_mode",
+        "admin.views_broken",
         "audit.unavailable",
         "backend.lock_timeout",
         "backend.unavailable",
@@ -1870,6 +1871,156 @@
         "backend.unavailable",
         "config.invalid",
         "graph.archived",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
+        "views",
+        "publish"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.graph_configure",
+      "summary": "Publish DIR as the view catalog of graph REF (name or id).",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "dir",
+          "type": "directory",
+          "required": true,
+          "repeatable": false,
+          "summary": "A views folder: one <name>.yaml per view."
+        }
+      ],
+      "options": [
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Why the views change; recorded in the audit event."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Check and show the change without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph views publish <graph> <dir>",
+          "summary": "Publish the views."
+        },
+        {
+          "command": "graph-admin graph views publish <graph> <dir> --dry-run --json",
+          "summary": "Check them and show the change, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "admin.views_invalid",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "graph.archived",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "hooked"
+    },
+    {
+      "path": [
+        "graph",
+        "views",
+        "show"
+      ],
+      "kind": "read",
+      "surface": "meta",
+      "action": "maint.graph_configure",
+      "summary": "Show the published view catalog of graph REF.",
+      "args": [
+        {
+          "name": "ref",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        }
+      ],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin graph views show <graph>",
+          "summary": "List the published views."
+        },
+        {
+          "command": "graph-admin graph views show <graph> --json",
+          "summary": "The same, as JSON."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
         "graph.not_found",
         "internal.error",
         "remote.client_outdated",
@@ -3618,6 +3769,16 @@
       "code": "admin.view_port_unavailable",
       "category": "unavailable",
       "exit": 5
+    },
+    {
+      "code": "admin.views_broken",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "admin.views_invalid",
+      "category": "invalid",
+      "exit": 1
     },
     {
       "code": "admin.workspace_conflict",

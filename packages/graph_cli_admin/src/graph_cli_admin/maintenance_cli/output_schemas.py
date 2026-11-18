@@ -275,6 +275,7 @@ DEFS: Final[dict[str, Schema]] = kit.merge_defs(
         ),
         "functions_summary": obj(CATALOG_SUMMARY),  # kernel.ports.catalog.KineticSlot.summary
         "actions_summary": obj(CATALOG_SUMMARY),  # the same for kind actions
+        "views_summary": obj(CATALOG_SUMMARY),  # the same for kind views
         "source_skill": obj(  # services_admin.sources._skill_json
             {"name": STRING, "kind": SKILL_KIND, "hash": STRING}
         ),

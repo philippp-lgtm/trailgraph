@@ -604,10 +604,17 @@ class FileMaintenanceSession:
     def replace_actions(self, slot: KineticSlot, receipt: AuditReceipt) -> None:
         self._replace_kinetic("actions", slot, receipt)
 
+    def read_views(self) -> KineticSlot | None:
+        self._check_open()
+        return read_slot(self._store.layout, "views", sources=True)
+
+    def replace_views(self, slot: KineticSlot, receipt: AuditReceipt) -> None:
+        self._replace_kinetic("views", slot, receipt)
+
     def _replace_kinetic(self, kind: SlotKind, slot: KineticSlot, receipt: AuditReceipt) -> None:
-        """Publish ``functions/`` (K6) or ``actions/`` (A8): write the sources tree and the
-        compiled catalog once under their hashes, then switch ``slot.json`` with one rename
-        (the commit point); unreferenced trees and compiled files go last."""
+        """Publish ``functions/`` (K6), ``actions/`` (A8) or ``views/`` (V9): write the sources
+        tree and the compiled catalog once under their hashes, then switch ``slot.json`` with
+        one rename (the commit point); unreferenced trees and compiled files go last."""
         store = self._store
         bad = sorted(name for name in slot.files if not _is_source_name(name))
         if (
@@ -1152,6 +1159,7 @@ def replay(store: FileStore) -> tuple[GraphView, ReplayDamage | None, list[TxSpa
 _BEFORE_RENAME: Final = {
     "functions": CrashPoint.FUNCTIONS_BEFORE_RENAME,
     "actions": CrashPoint.ACTIONS_BEFORE_RENAME,
+    "views": CrashPoint.VIEWS_BEFORE_RENAME,
 }
 
 

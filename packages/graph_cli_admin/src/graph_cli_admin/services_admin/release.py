@@ -123,9 +123,11 @@ from graph_cli_admin.services_admin.ontology import (
 MAX_FINDINGS = 20
 FUNCTIONS_DAMAGED = frozenset({"functions.slot_invalid", "format.unsupported_version"})
 ACTIONS_DAMAGED = frozenset({"actions.slot_invalid", "format.unsupported_version"})
+VIEWS_DAMAGED = frozenset({"views.slot_invalid", "format.unsupported_version"})
 DAMAGED: Final[dict[SlotKind, frozenset[str]]] = {
     "functions": FUNCTIONS_DAMAGED,
     "actions": ACTIONS_DAMAGED,
+    "views": VIEWS_DAMAGED,
 }
 
 
@@ -698,7 +700,11 @@ def _migrate(
 def current_catalog(session: MaintenanceSession, kind: SlotKind) -> KineticSlot | None:
     """The published catalog of ``kind``; a damaged slot is replaced like a missing one."""
     try:
-        return session.read_functions() if kind == "functions" else session.read_actions()
+        return {
+            "functions": session.read_functions,
+            "actions": session.read_actions,
+            "views": session.read_views,
+        }[kind]()
     except GraphCliError as exc:
         if exc.code not in DAMAGED[kind]:
             raise
@@ -749,7 +755,7 @@ def actions_broken(
 
 def _would_not_resolve(kind: SlotKind, names: list[str], version: str) -> str:
     shown = ", ".join(names[:5]) + (", ..." if len(names) > 5 else "")
-    noun = "function" if kind == "functions" else "action"
+    noun = {"functions": "function", "actions": "action", "views": "view"}[kind]
     plural = "s" if len(names) != 1 else ""
     return f"{len(names)} published {noun}{plural} would not resolve under {version}: {shown}"
 

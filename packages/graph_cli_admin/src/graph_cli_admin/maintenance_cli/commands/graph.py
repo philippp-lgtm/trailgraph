@@ -1,5 +1,6 @@
 """``graph-admin graph create|list|show|check|reindex|pull|push``, ``graph skill
-publish|render``, ``graph functions publish|show`` and ``graph actions publish|show``."""
+publish|render``, ``graph functions publish|show``, ``graph actions publish|show`` and
+``graph views publish|show``."""
 
 from __future__ import annotations
 
@@ -38,7 +39,14 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
     SKILL_KIND,
     STRINGS,
 )
-from graph_cli_admin.services_admin import actions, functions, graphs, skill, sources
+from graph_cli_admin.services_admin import (
+    actions,
+    authored_views,
+    functions,
+    graphs,
+    skill,
+    sources,
+)
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
 
@@ -56,6 +64,15 @@ FUNCTIONS_DIR: Final = ParamSpec(
     "dir",
     "directory",
     "A functions folder: one <name>.yaml per function.",
+    required=True,
+    positional=True,
+    keyword="source",
+    must_exist=True,
+)
+VIEWS_DIR: Final = ParamSpec(
+    "dir",
+    "directory",
+    "A views folder: one <name>.yaml per view.",
     required=True,
     positional=True,
     keyword="source",
@@ -208,6 +225,31 @@ def show_actions(state: CommandState, ref: str, data_root: str | None) -> Result
     return Result(data=data, graph=graphs.envelope_graph(entry, None))
 
 
+def publish_views(
+    state: CommandState,
+    ref: str,
+    source: str,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    published = authored_views.publish(
+        ctx, graph_ref=ref, source=Path(source).resolve(), reason=reason, dry_run=dry_run
+    )
+    return Result(
+        data=published.data,
+        graph=graphs.envelope_graph(published.entry, published.seq),
+        warnings=published.warnings,
+    )
+
+
+def show_views(state: CommandState, ref: str, data_root: str | None) -> Result:
+    ctx = admin_context(state, data_root)
+    entry, data = authored_views.show(ctx, graph_ref=ref)
+    return Result(data=data, graph=graphs.envelope_graph(entry, None))
+
+
 def render(
     state: CommandState,
     ref: str,
@@ -317,7 +359,8 @@ SHOW_OUTPUT: Final = obj(  # services_admin.graphs.show
         "skill": nullable(ref("skill_summary")),
         "functions": nullable(obj({"count": INTEGER, "hash": STRING})),
         "actions": nullable(obj({"count": INTEGER, "hash": STRING})),
-    }
+    },
+    {"views": nullable(obj({"count": INTEGER, "hash": STRING}))},  # only when views are published
 )
 CHECK_OUTPUT: Final = obj(  # services_admin.check.check
     {
@@ -474,6 +517,35 @@ SHOW_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.show
                     "summary": STRING,
                     "status": enum("active", "deprecated"),
                     "featured": BOOLEAN,
+                    "hash": STRING,
+                }
+            )
+        ),
+    }
+)
+PUBLISH_VIEWS_OUTPUT: Final = obj(  # services_admin.authored_views.publish
+    {
+        "graph_id": STRING,
+        "from": nullable(ref("views_summary")),
+        "to": ref("views_summary"),
+        "views": STRINGS,
+        "published": BOOLEAN,
+        "dry_run": BOOLEAN,
+    }
+)
+SHOW_VIEWS_OUTPUT: Final = obj(  # services_admin.authored_views.show
+    {
+        "graph_id": STRING,
+        "slot": nullable(ref("views_summary")),
+        "views": array(
+            obj(
+                {
+                    "name": STRING,
+                    "module": NULLABLE_STRING,
+                    "summary": STRING,
+                    "status": enum("active", "deprecated"),
+                    "takes": NULLABLE_STRING,
+                    "default": BOOLEAN,
                     "hash": STRING,
                 }
             )
@@ -878,14 +950,21 @@ SPECS: Final = (
                 "Check them and show the change, as JSON.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.functions_invalid"),
+        errors=(
+            *GRAPH_ERRORS,
+            *CHANGE_ERRORS,
+            "graph.archived",
+            "admin.functions_invalid",
+            "admin.views_broken",
+        ),
         handler=publish_functions,
         output=PUBLISH_FUNCTIONS_OUTPUT,
         description="DIR holds one <name>.yaml per function (graph_cli.function/1). Every"
         " function is checked against the graph's current ontology pin; all problems are"
         " reported together (admin.functions_invalid, details.problems). An empty DIR"
-        " unpublishes every function. Publishing the same files again changes nothing."
-        " --dry-run is the check.",
+        " unpublishes every function. A published view that runs a function the new catalog"
+        " lacks, or binds with another parameter, refuses the publish (admin.views_broken)."
+        " Publishing the same files again changes nothing. --dry-run is the check.",
         remote="hooked",
     ),
     CommandSpec(
@@ -952,6 +1031,55 @@ SPECS: Final = (
         output=SHOW_ACTIONS_OUTPUT,
         description="The slot (hash, ontology pin it was published against) and one line per"
         " action; read-only.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "views", "publish"),
+        kind="write",
+        surface="act",
+        action="maint.graph_configure",
+        summary="Publish DIR as the view catalog of graph REF (name or id).",
+        params=(
+            REF,
+            VIEWS_DIR,
+            ParamSpec("--reason", "string", "Why the views change; recorded in the audit event."),
+            ParamSpec("--dry-run", "flag", "Check and show the change without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph views publish <graph> <dir>", "Publish the views."),
+            Example(
+                "graph-admin graph views publish <graph> <dir> --dry-run --json",
+                "Check them and show the change, as JSON.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.views_invalid"),
+        handler=publish_views,
+        output=PUBLISH_VIEWS_OUTPUT,
+        description="DIR holds one <name>.yaml per view (graph_cli.view/1). Every view is"
+        " checked against the graph's current ontology pin and the published functions its rows"
+        " sections run; all problems are reported together (admin.views_invalid,"
+        " details.problems). Views have a namespace of their own: a view may be named like a"
+        " function, never card. An empty DIR unpublishes every view. Publishing the same files"
+        " again changes nothing. --dry-run is the check.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "views", "show"),
+        kind="read",
+        surface="meta",
+        action="maint.graph_configure",
+        summary="Show the published view catalog of graph REF.",
+        params=(REF, DATA_ROOT),
+        examples=(
+            Example("graph-admin graph views show <graph>", "List the published views."),
+            Example("graph-admin graph views show <graph> --json", "The same, as JSON."),
+        ),
+        errors=(*GRAPH_ERRORS, "access.denied"),
+        handler=show_views,
+        output=SHOW_VIEWS_OUTPUT,
+        description="The slot (hash, ontology pin it was published against) and one line per"
+        " view; read-only.",
         remote="hooked",
     ),
 )

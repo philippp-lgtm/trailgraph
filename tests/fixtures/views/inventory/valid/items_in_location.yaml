@@ -1,0 +1,13 @@
+schema: graph_cli.view/1
+name: items_in_location
+summary: The items of one location, from the function of the same name.
+use_when: What is stored in a given location, as a view; a view may be named like a function.
+params:
+  location:
+    type: ref
+    class: inv:Location
+    summary: The location to list.
+sections:
+  - kind: rows
+    function: items_in_location
+    args: {location: $location}

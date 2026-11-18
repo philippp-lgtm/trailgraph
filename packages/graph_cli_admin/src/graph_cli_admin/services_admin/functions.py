@@ -18,9 +18,12 @@ changes nothing; an empty folder publishes an empty catalog (it unpublishes
 every function) and, with nothing published, changes nothing. ``--dry-run``
 stops after the checks.
 
-The flow is shared with ``actions`` (``kinetic_slots``). Functions and actions share one
-namespace per graph: a function named like a published action is refused
-(``function.name_taken`` among the problems).
+The flow is shared with ``actions`` and ``views`` (``kinetic_slots``). Functions and actions
+share one namespace per graph: a function named like a published action is refused
+(``function.name_taken`` among the problems). A published view that runs a function depends on
+the catalog: publishing functions that would break a view (a function or a bound parameter
+gone, a parameter of another type) is refused with ``admin.views_broken``; fix the view first
+or push both together.
 
 ``show`` is read-only for the data root, like ``graph show``: no lock, no
 event, authorized ``maint.graph_configure``.
@@ -31,12 +34,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ports.catalog import GraphEntry, KineticSlot
 from graph_cli.kernel.ports.storage import MaintenanceSession
 from graph_cli.kinetic.compile import compile_catalog
+from graph_cli.kinetic.entries import load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX, Problem
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli_admin.services_admin import kinetic_slots
+from graph_cli_admin.services_admin import authored_views, kinetic_slots
 from graph_cli_admin.services_admin.catalog_follow import ProblemHints
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.kinetic_slots import Checked, Published
@@ -75,9 +80,12 @@ def check_files(
     label: Path | str,
     taken: frozenset[str] = frozenset(),
     hints: ProblemHints | None = None,
+    views: KineticSlot | None = None,
 ) -> Checked:
     """``admin.functions_invalid`` when the files cannot become the graph's catalog.
-    ``taken`` are the names of the published actions: a function may not share one."""
+    ``taken`` are the names of the published actions: a function may not share one.
+    ``views`` is the published view catalog: ``admin.views_broken`` when it would not hold
+    with these functions."""
     clashes = [
         Problem(
             name,
@@ -92,6 +100,7 @@ def check_files(
     ]
     compiled, found = compile_catalog(files, model)
     refuse(label, entry, [*problems, *clashes, *found], hints)
+    authored_views.broken_by_functions(views, model, load_entries(compiled), hints)
     return Checked(files, compiled)
 
 
@@ -113,6 +122,16 @@ def refuse(
     kinetic_slots.refuse("functions", source, entry, problems, hints)
 
 
+def published_views(ctx: AdminContext, entry: GraphEntry) -> KineticSlot | None:
+    """The published view catalog, read without the lock; a damaged one counts as none."""
+    try:
+        return ctx.catalog.read_views(entry.id)
+    except GraphCliError as exc:
+        if exc.code not in authored_views.DAMAGED:
+            raise
+        return None
+
+
 def publish(
     ctx: AdminContext, *, graph_ref: str, source: Path, reason: str | None, dry_run: bool
 ) -> Published:
@@ -120,7 +139,14 @@ def publish(
         ctx,
         "functions",
         lambda entry, files, problems, model, label, others, hints: check_files(
-            entry, files, problems, model, label=label, taken=others, hints=hints
+            entry,
+            files,
+            problems,
+            model,
+            label=label,
+            taken=others,
+            hints=hints,
+            views=published_views(ctx, entry),
         ),
         graph_ref=graph_ref,
         source=source,
