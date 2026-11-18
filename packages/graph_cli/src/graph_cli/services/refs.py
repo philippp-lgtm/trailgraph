@@ -78,18 +78,6 @@ NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
 FineTerm = tuple[Action, TermRef, str, str]  # (action, type, "attr" | "rel", name or CURIE)
 
 
-def subject_refs(op: Op) -> list[EntityRef]:
-    """The references an op changes the entities of (a create has none: its entity is new)."""
-    match op:
-        case CreateOp():
-            return []
-        case SupersedeOp():
-            return [op.by, *op.targets]
-        case RetractOp():
-            return [op.id] if op.by is None else [op.id, op.by]
-    return [op.id]
-
-
 def entity_of(ref: EntityRef, refs: Mapping[str, EntityId]) -> EntityId | None:
     """The existing entity a reference names; ``None`` for a create of this document."""
     match ref:
@@ -293,7 +281,7 @@ def _declared_locals(cs: ChangeSet, bindings: Mapping[str, EntityId]) -> dict[st
     return declared
 
 
-def _subjects(op: Op) -> list[EntityRef]:
+def subjects(op: Op) -> list[EntityRef]:
     """The entities an op touches besides the ones it creates."""
     match op:
         case SupersedeOp():
@@ -349,7 +337,7 @@ def resolve_refs(
         action = op_action(op)
         if isinstance(op, CreateOp):
             pairs.add((action, op.type))
-        for ref in _subjects(op):
+        for ref in subjects(op):
             pairs.add((action, resolver.type_of(ref)))
     fine, bare = _fine_terms(ops, resolver)
     return Resolution(

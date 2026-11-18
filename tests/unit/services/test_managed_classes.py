@@ -13,10 +13,13 @@ from typing import Any
 import pytest
 from support.services import ServiceEnv
 
+from graph_cli.access_control.compiler import compile_policy
+from graph_cli.access_control.policy import policy_set
 from graph_cli.kernel.canonical import hash_value
 from graph_cli.kernel.changeset import parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, parse_id
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.records import RequestMeta, SourceRef
 from graph_cli.services.files import FileAddRequest
 from graph_cli.services.write import WriteRequest, WriteResult
@@ -252,3 +255,123 @@ def test_the_same_document_of_an_extraction_run_is_written(world: World) -> None
     result = world.env.service.apply(_reconcile_request(world, "extractor", False))
     assert result.seq is not None
     assert result.reconcile is not None
+
+
+def test_a_key_given_as_text_or_missing_or_not_a_string_is_not_owned(world: World) -> None:
+    source = SourceRef("pdf", "1", None, "extractor")
+    for change in (
+        lambda op: (op["attrs"].pop("key"), op.update(attrs_text={"key": f"pdf/{world.file}t"})),
+        lambda op: op["attrs"].pop("key"),
+        lambda op: op["attrs"].update(key=5),
+    ):
+        ops = world.create_ops("pdf", "alien")
+        change(ops[0])
+        found = world.findings(world.refused(ops, source))
+        assert [f["code"] for f in found] == [CODE]
+
+
+def test_a_new_record_must_carry_its_extractors_name(world: World) -> None:
+    ops = world.create_ops("pdf", "alien", "-3")
+    ops[0]["attrs"]["extractor"] = "sqlite"
+    error = world.refused(ops, SourceRef("pdf", "1", None, "extractor"))
+    assert [f["code"] for f in world.findings(error)] == [CODE]
+    ops[0]["attrs"]["extractor"] = "pdf"
+    assert world.extract(ops).seq is not None
+
+
+def test_the_source_the_tx_records_decides_not_the_one_of_the_change_set(world: World) -> None:
+    """``request.source`` is what the audit keeps; a change set that claims the kind does not
+    make a request an extraction run."""
+    ops = [{"op": "update", "id": str(world.record_id), "set": {"extractor_version": 2}}]
+    changeset = replace(
+        parse_changeset({"ops": ops, "reason": "test"}),
+        source=SourceRef("pdf", "1", None, "extractor"),
+    )
+    meta = RequestMeta("apply", hash_value(ops), source=SourceRef("pdf", "1"))
+    with pytest.raises(GraphCliError) as info:
+        world.env.service.apply(
+            WriteRequest(world.env.actor, world.env.name, changeset, False, meta)
+        )
+    assert [f["code"] for f in world.findings(info.value)] == [CODE]
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_a_reconcile_scope_over_a_record_type_is_refused_before_planning(
+    world: World, dry_run: bool
+) -> None:
+    """A plain source, a scope whose plan has no op: only the scope's type can refuse it."""
+    document = {
+        "reason": "test",
+        "source": {"name": "format", "version": "1"},
+        "reconcile": [
+            {
+                "type": "files:FormatMetadata",
+                "key": "key",
+                "under": world.file,
+                "fields": ["extractor"],
+                "items": [],
+            }
+        ],
+    }
+    request = WriteRequest(
+        world.env.actor,
+        world.env.name,
+        parse_changeset(document),
+        dry_run,
+        RequestMeta("apply", hash_value(document)),
+    )
+    with pytest.raises(GraphCliError) as info:
+        world.env.service.apply(request)
+    found = world.findings(info.value)
+    assert [(f["code"], f["target"]) for f in found] == [
+        (CODE, {"type": "files:FormatMetadata", "path": "reconcile[0]"})
+    ]
+
+
+LIMITED = """\
+schema: graph_cli.policy/1
+id: installation
+grants:
+  - {entrypoint: app, graphs: [example_graph], level: write}
+no_project: {"*": write}
+"""
+HIDE_SQLITE = """\
+schema: graph_cli.policy/1
+id: graph
+types:
+  "files_sqlite:SqliteMetadata": none
+  "files_sqlite:SqliteObject": none
+"""
+
+
+class Fixed:
+    def __init__(self, policy: PolicySet) -> None:
+        self.policy = policy
+
+    def current(self, graph: object) -> PolicySet:
+        return self.policy
+
+    def refresh(self) -> None:
+        pass
+
+
+def test_a_caller_that_does_not_see_every_type_gets_the_same_refusal(world: World) -> None:
+    graph = {"example_graph": world.env.entry.id}
+    base = compile_policy(LIMITED.encode(), file="installation.yaml", graphs=graph).document
+    layer = compile_policy(
+        HIDE_SQLITE.encode(),
+        file="graph.yaml",
+        graphs=graph,
+        graph=world.env.entry.id,
+        roles=frozenset(),
+    ).document
+    limited = world.env.make_service(Fixed(policy_set(base, layer)))  # type: ignore[arg-type]
+    ops = [{"op": "update", "id": str(world.record_id), "set": {"page_count": 9}}]
+    request = world.request(ops)
+    with pytest.raises(GraphCliError) as info:
+        limited.apply(request)
+    assert [f["code"] for f in world.findings(info.value)] == [CODE]
+    created = world.create_ops("pdf", "alien", "-4")
+    with pytest.raises(GraphCliError) as info:
+        limited.apply(world.request(created))
+    assert [f["code"] for f in world.findings(info.value)] == [CODE]

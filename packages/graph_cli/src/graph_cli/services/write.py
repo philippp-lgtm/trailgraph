@@ -197,7 +197,7 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
 from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
-from graph_cli.services.managed import managed_findings
+from graph_cli.services.managed import managed_findings, managed_scope_findings
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
 from graph_cli.services.reconcile_rights import reconcile_needs
@@ -207,7 +207,7 @@ from graph_cli.services.refs import (
     Resolution,
     entity_of,
     resolve_refs,
-    subject_refs,
+    subjects,
 )
 from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.sources.reconcile import (
@@ -750,7 +750,7 @@ class WriteService:
                 )
             # M9: derived file metadata is written by its extractor only; before the replay,
             # like the attribute view, and on the expanded ops of a reconcile document
-            managed = managed_findings(model, resolution, base, request.changeset.source)
+            managed = managed_findings(model, resolution, base, request.request.source)
             if managed:
                 raise refusal(
                     _invalid(managed), types=pairs, findings=managed, entities=_targets(managed)
@@ -888,7 +888,12 @@ class WriteService:
         outcome: ReconcilePlan | None = None
         if request.changeset.reconcile:  # as under the lock, unaudited and without idempotency
             declared = self._declared_wanted(request, prepared.entry, prepared.model, view)
-            unknown = _declared_unknown(view, limited, declared)
+            unknown = [
+                *_declared_unknown(view, limited, declared),
+                *managed_scope_findings(
+                    prepared.model, request.changeset.reconcile, request.request.source
+                ),
+            ]
             if unknown:
                 raise _invalid(unknown)
             request, outcome = self._plan(request, prepared.entry, prepared.model, limited, seen)
@@ -909,7 +914,7 @@ class WriteService:
         if unknown:  # as under the lock (F6, R6)
             raise _invalid(unknown)
         managed = managed_findings(
-            prepared.model, resolution, snapshot, request.changeset.source, placeholders.issued
+            prepared.model, resolution, snapshot, request.request.source, placeholders.issued
         )
         if managed:  # as under the lock (M9)
             raise _invalid(managed)
@@ -1015,6 +1020,7 @@ class WriteService:
         unknown = [
             *_unknown_attributes(view, limited, frame, seen),
             *_declared_unknown(view, limited, declared),
+            *managed_scope_findings(model, request.changeset.reconcile, request.request.source),
         ]
         if unknown:
             raise refusal(
@@ -1639,7 +1645,7 @@ def _replay(
     for op in cs.ops:
         if isinstance(op, CreateOp):
             note(next(created), op.OP)
-        for ref in subject_refs(op):
+        for ref in subjects(op):
             if isinstance(ref, LocalRef) and ref.name in locals_map:
                 note(locals_map[ref.name], op.OP)
             else:

@@ -9,25 +9,31 @@ extractor, carries the reserved kind ``extractor`` (set in process, never parsed
 R-K10) and the entity's ``key`` starts with that name, the namespace the reconcile planner
 composes (``<source>/<item key>``).
 
+Ownership is the key prefix alone (no registry lookup): the entity's ``key`` is a string that
+starts with ``<source name>/``. A create states its key in ``attrs``; a key given as text, a
+missing one or one that is not a string counts as not owned, and a new record's ``extractor``
+attribute has to equal the source name. The source checked is the one the tx and the audit
+record (``request.request.source``), never the one a change set claims.
+
 Subjects are the entities whose revision an op changes: a link or unlink changes its source, so
 an edge pointing *at* a record, written by someone else's entity, is not a write to the record.
 """
 
 from __future__ import annotations
 
-from collections.abc import Set
+from collections.abc import Sequence, Set
 from typing import NamedTuple
 from uuid import UUID
 
 from graph_cli.kernel.canonical import JsonValue
-from graph_cli.kernel.changeset import CreateOp
+from graph_cli.kernel.changeset import CreateOp, ReconcileScope
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import EntityId, LocalRef
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.records import SOURCE_KINDS, SourceRef
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.ontology_layer.vocabulary import METADATA_PART_TYPE, METADATA_TYPE
-from graph_cli.services.refs import Resolution, entity_of, subject_refs
+from graph_cli.services.refs import Resolution, entity_of, subjects
 
 CODE = "data.semantic.managed_class"
 EXTRACTOR_KIND = "extractor"
@@ -66,23 +72,26 @@ def managed_findings(
     bound = {entity: key[1:] for key, entity in refs.items() if key.startswith("@")}
     found: dict[tuple[object, str], Finding] = {}
     for index, op in enumerate(cs.ops):
-        subjects: list[_Subject] = []
+        found_subjects: list[_Subject] = []
         if isinstance(op, CreateOp):
             identity = ("local", op.local) if op.local is not None else ("op", index)
-            subjects.append(_Subject(identity, op.type, _key_of(op), None, op.local))
-        for ref in subject_refs(op):
+            found_subjects.append(
+                _Subject(identity, op.type, _key_of(op, model, source), None, op.local)
+            )
+        for ref in subjects(op):
             if isinstance(ref, LocalRef) and ref.name in declared:
                 created = declared[ref.name]
                 identity = ("local", ref.name)
-                subjects.append(_Subject(identity, created.type, _key_of(created), None, ref.name))
+                key = _key_of(created, model, source)
+                found_subjects.append(_Subject(identity, created.type, key, None, ref.name))
                 continue
             entity = entity_of(ref, refs)
             revision = None if entity is None else snapshot.get(entity)
             if entity is None or revision is None:
                 continue  # resolution refuses an op on a missing entity
             key = revision.attrs.get("key")
-            subjects.append(_Subject(entity, revision.type, key, entity, bound.get(entity)))
-        for subject in subjects:
+            found_subjects.append(_Subject(entity, revision.type, key, entity, bound.get(entity)))
+        for subject in found_subjects:
             if subject.type not in managed:
                 continue
             if owner is not None and isinstance(subject.key, str) and subject.key.startswith(owner):
@@ -114,5 +123,37 @@ class _Subject(NamedTuple):
     local: str | None
 
 
-def _key_of(op: CreateOp) -> JsonValue | None:
-    return op.attrs.get("key", op.attrs_text.get("key"))
+def _key_of(op: CreateOp, model: CompiledModel, source: SourceRef | None) -> JsonValue | None:
+    """The key a create claims, or ``None`` (not owned): a string in ``attrs``, and for a
+    record also an ``extractor`` attribute equal to the source's name."""
+    key = op.attrs.get("key")
+    if not isinstance(key, str):
+        return None
+    if model.is_a(op.type, METADATA_TYPE) and (
+        source is None or op.attrs.get("extractor") != source.name
+    ):
+        return None
+    return key
+
+
+def managed_scope_findings(
+    model: CompiledModel, scopes: Sequence[ReconcileScope], source: SourceRef | None
+) -> list[Finding]:
+    """One finding per reconcile scope over a managed type from a source that is not an
+    extraction run, decided by the scope's type alone, before anything is planned: whether a
+    document is refused never depends on which ops its plan happens to emit (an empty plan
+    would pass silently)."""
+    managed = managed_types(model)
+    if not managed or (source is not None and source.kind == EXTRACTOR_KIND):
+        return []
+    return [
+        Finding(
+            Severity.ERROR,
+            CODE,
+            {"type": scope.type, "path": f"reconcile[{index}]"},
+            f"{scope.type} entities are written only by graph_cli's extractors; "
+            "a reconcile of them by anyone else is refused",
+        )
+        for index, scope in enumerate(scopes)
+        if scope.type in managed
+    ]
