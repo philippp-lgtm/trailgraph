@@ -2,7 +2,7 @@
 
 import pytest
 
-from graph_cli.services.media_types import OCTET_STREAM, detect
+from graph_cli.extractors.media_types import OCTET_STREAM, detect
 
 
 @pytest.mark.parametrize(
@@ -20,6 +20,7 @@ from graph_cli.services.media_types import OCTET_STREAM, detect
         (b"hello", "notes.TXT", "text/plain"),
         (b"# Title", "README.md", "text/markdown"),
         (b"a,b", "table.csv", "text/csv"),
+        (b"a\tb", "table.tsv", "text/tab-separated-values"),
         (b"<html>", "page.htm", "text/html"),
         (b"{}", "data.json", "application/json"),
         (

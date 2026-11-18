@@ -148,9 +148,6 @@ from graph_cli.kernel.changeset import (
     OP_ACTIONS,
     ChangeSet,
     CreateOp,
-    Op,
-    RetractOp,
-    SupersedeOp,
     TransitionOp,
     UpdateOp,
     changeset_hash,
@@ -163,9 +160,7 @@ from graph_cli.kernel.error_codes import ErrorCategory, lookup_error_code
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.findings import Finding, Severity, sort_findings
 from graph_cli.kernel.ids import (
-    AliasRef,
     EntityId,
-    EntityRef,
     EventId,
     GraphId,
     IdProvider,
@@ -202,10 +197,18 @@ from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
 from graph_cli.services import migration_state
 from graph_cli.services.action_rights import FineTypes, need_decisions
+from graph_cli.services.managed import managed_findings, managed_scope_findings
 from graph_cli.services.models import ModelCache
 from graph_cli.services.read import denial_error
 from graph_cli.services.reconcile_rights import reconcile_needs
-from graph_cli.services.refs import NO_BINDINGS, FineTerm, Resolution, resolve_refs
+from graph_cli.services.refs import (
+    NO_BINDINGS,
+    FineTerm,
+    Resolution,
+    entity_of,
+    resolve_refs,
+    subjects,
+)
 from graph_cli.services.visibility import Visibility, VisibleSnapshot
 from graph_cli.sources.reconcile import (
     MAX_LISTED_KEYS,
@@ -364,28 +367,6 @@ def _check_state(entry: GraphEntry) -> None:
             f"graph {entry.name} is read-only",
             details={"graph_id": str(entry.id)},
         )
-
-
-def _subject_refs(op: Op) -> list[EntityRef]:
-    match op:
-        case CreateOp():
-            return []
-        case SupersedeOp():
-            return [op.by, *op.targets]
-        case RetractOp():
-            return [op.id] if op.by is None else [op.id, op.by]
-    return [op.id]
-
-
-def _entity_of(ref: EntityRef, refs: Mapping[str, EntityId]) -> EntityId | None:
-    """The existing entity a reference names; ``None`` for a create of this document."""
-    match ref:
-        case LocalRef(name):
-            return refs.get(f"@{name}")
-        case AliasRef(alias):
-            return refs[alias]
-    assert isinstance(ref, UUID)
-    return ref
 
 
 class WriteService:
@@ -767,6 +748,13 @@ class WriteService:
                 raise refusal(
                     _invalid(unknown), types=pairs, findings=unknown, entities=_targets(unknown)
                 )
+            # M9: derived file metadata is written by its extractor only; before the replay,
+            # like the attribute view, and on the expanded ops of a reconcile document
+            managed = managed_findings(model, resolution, base, request.request.source)
+            if managed:
+                raise refusal(
+                    _invalid(managed), types=pairs, findings=managed, entities=_targets(managed)
+                )
             cs = resolution.changeset
             digest = changeset_hash(cs)
             if cs.idempotency_key is not None and outcome is None:  # W.7
@@ -900,7 +888,12 @@ class WriteService:
         outcome: ReconcilePlan | None = None
         if request.changeset.reconcile:  # as under the lock, unaudited and without idempotency
             declared = self._declared_wanted(request, prepared.entry, prepared.model, view)
-            unknown = _declared_unknown(view, limited, declared)
+            unknown = [
+                *_declared_unknown(view, limited, declared),
+                *managed_scope_findings(
+                    prepared.model, request.changeset.reconcile, request.request.source
+                ),
+            ]
             if unknown:
                 raise _invalid(unknown)
             request, outcome = self._plan(request, prepared.entry, prepared.model, limited, seen)
@@ -920,6 +913,11 @@ class WriteService:
         unknown = _unknown_attributes(view, limited, resolution, seen, placeholders.issued)
         if unknown:  # as under the lock (F6, R6)
             raise _invalid(unknown)
+        managed = managed_findings(
+            prepared.model, resolution, snapshot, request.request.source, placeholders.issued
+        )
+        if managed:  # as under the lock (M9)
+            raise _invalid(managed)
         if plan is not None:
             self._check_plan(plan, seen, prepared.model, None, pairs)
             if held is not None:
@@ -1022,6 +1020,7 @@ class WriteService:
         unknown = [
             *_unknown_attributes(view, limited, frame, seen),
             *_declared_unknown(view, limited, declared),
+            *managed_scope_findings(model, request.changeset.reconcile, request.request.source),
         ]
         if unknown:
             raise refusal(
@@ -1307,7 +1306,7 @@ def _unknown_attributes(
                     type_curie, local = declared[op.id.name], op.id.name
                     subject = ("local", local)
                 else:
-                    entity = _entity_of(op.id, refs)
+                    entity = entity_of(op.id, refs)
                     revision = None if entity is None else snapshot.get(entity)
                     if entity is None or revision is None:
                         continue  # resolution refuses an op on a missing entity
@@ -1433,7 +1432,7 @@ def _conflict(
         expect = getattr(op, "expect_rev", None)
         if expect is None:
             continue
-        entity = _entity_of(op.id, refs)  # type: ignore[union-attr]
+        entity = entity_of(op.id, refs)  # type: ignore[union-attr]
         current = None if entity is None else snapshot.get(entity)
         actual = None if current is None else current.rev
         if actual != expect:
@@ -1646,11 +1645,11 @@ def _replay(
     for op in cs.ops:
         if isinstance(op, CreateOp):
             note(next(created), op.OP)
-        for ref in _subject_refs(op):
+        for ref in subjects(op):
             if isinstance(ref, LocalRef) and ref.name in locals_map:
                 note(locals_map[ref.name], op.OP)
             else:
-                note(_entity_of(ref, refs_map), op.OP)
+                note(entity_of(ref, refs_map), op.OP)
     local_names = {e: n for n, e in locals_map.items()}
     local_names.update({e: k[1:] for k, e in refs_map.items() if k.startswith("@")})
     entities = tuple(

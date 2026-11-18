@@ -2,7 +2,9 @@
 
 Deterministic on every machine: a built-in table, never the system's
 ``mimetypes`` database, which reads files of the host. Magic bytes win over
-the extension; anything unknown is ``application/octet-stream``.
+the extension; anything unknown is ``application/octet-stream``. This is the type a
+file is *recorded* with when it is added; ``extractors.detect`` decides the type from
+the bytes alone.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ EXTENSIONS: Final[Mapping[str, str]] = {
     ".txt": "text/plain",
     ".md": "text/markdown",
     ".csv": "text/csv",
+    ".tsv": "text/tab-separated-values",
     ".html": "text/html",
     ".htm": "text/html",
     ".json": "application/json",
@@ -40,8 +43,8 @@ EXTENSIONS: Final[Mapping[str, str]] = {
 }
 
 
-def detect(head: bytes, file_name: str) -> str:
-    """The media type of a file starting with ``head`` (at least ``SNIFF_BYTES`` if longer)."""
+def sniff(head: bytes) -> str | None:
+    """The media type the first bytes declare, ``None`` when no known signature matches."""
     for magic, media_type in _MAGIC:
         if head.startswith(magic):
             return media_type
@@ -53,5 +56,13 @@ def detect(head: bytes, file_name: str) -> str:
             return "image/heic"
         if brand in _HEIF_BRANDS:
             return "image/heif"
+    return None
+
+
+def detect(head: bytes, file_name: str) -> str:
+    """The media type of a file starting with ``head`` (at least ``SNIFF_BYTES`` if longer)."""
+    sniffed = sniff(head)
+    if sniffed is not None:
+        return sniffed
     suffix = PurePosixPath(file_name).suffix.lower()
     return EXTENSIONS.get(suffix, OCTET_STREAM)

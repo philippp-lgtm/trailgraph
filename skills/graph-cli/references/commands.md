@@ -443,6 +443,7 @@ Usage: `graph file add PATH [OPTIONS]`
 | `--source-url` | string | no | no | Address the file was downloaded from. |
 | `--retrieved-at` | string | no | no | Date of the download, YYYY-MM-DD. |
 | `--no-origin` | flag | no | no | Do not record where the file came from. |
+| `--no-extract` | flag | no | no | Do not extract the metadata of the file (page count, size, ...) now. |
 | `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
 | `--dry-run` | flag | no | no | Validate and show the result without writing. |
 | `--reason` | string | no | no | Why this change is made (required for supersede, retract). |

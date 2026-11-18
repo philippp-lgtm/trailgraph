@@ -7,7 +7,7 @@ English single words (``about``, ``name``, ``draft``) are excluded to avoid
 false positives. Python sources are scanned as identifiers and non-docstring
 string constants; other source files as text, except the admin skills
 (documentation shipped as package data). Names the standard modules define
-(``core``, ``provenance``, ``files``) are package data and generic; they are
+(``core``, ``provenance``, ``files`` and its kind modules) are package data and generic; they are
 not denied even when a fixture uses them too.
 """
 
@@ -26,7 +26,15 @@ from support.fixtures import (
 from graph_cli.ontology_layer.bundle import LayeredSource
 from graph_cli.ontology_layer.compiler import compile_bundle
 
-BUILTIN_MODULES = ("core", "provenance", "files")
+BUILTIN_MODULES = (
+    "core",
+    "provenance",
+    "files",
+    "files_pdf",
+    "files_image",
+    "files_table",
+    "files_sqlite",
+)
 SRC_ROOTS = [REPO_ROOT / "packages" / name / "src" for name in ("graph_cli", "graph_cli_admin")]
 # The admin skills are documentation shipped as package data: their modeling examples
 # may share words with the fixtures.

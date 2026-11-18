@@ -46,6 +46,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
             "output",
             "roots",
             "files",
+            "extract",
             "activity",
             "server",
             "remote",
@@ -59,6 +60,7 @@ _KEYS: Final[Mapping[str, frozenset[str]]] = {
     "audit": frozenset({"record_data_root", "access_log"}),
     "output": frozenset({"default", "spill_bytes", "spill_dir"}),
     "files": frozenset({"max_bytes", "store", "s3"}),
+    "extract": frozenset({"timeout_seconds", "max_memory_mib"}),
     "activity": frozenset({"signal_reads"}),
     "server": frozenset({"cors_origins", "admin_api", "client_builds", "dist", "public_url"}),
     "remote": frozenset({"token_file", "admin_token_file", "allow_plain_http", "timeout_s"}),
@@ -69,6 +71,11 @@ FileStoreKind = Literal["local", "s3"]
 S3_KEYS: Final = ("bucket", "prefix", "endpoint_url", "region", "addressing", "allow_plain_http")
 DEFAULT_MAX_FILE_BYTES: Final = 100 * 1024 * 1024
 MAX_MAX_FILE_BYTES: Final = 1024 * 1024 * 1024
+DEFAULT_EXTRACT_TIMEOUT_S: Final = 30.0
+MAX_EXTRACT_TIMEOUT_S: Final = 3600
+DEFAULT_EXTRACT_MEMORY_MIB: Final = 512
+MAX_EXTRACT_MEMORY_MIB: Final = 65536
+MIN_EXTRACT_MEMORY_MIB: Final = 64
 DEFAULT_SPILL_BYTES: Final = 16384  # below the output limit of common agent harnesses
 MAX_SPILL_BYTES: Final = 64 * 1024 * 1024
 ORIGIN_RE: Final = re.compile(r"^https?://[^/\s?#]+$")  # a browser Origin: scheme://host[:port]
@@ -108,6 +115,9 @@ class Config:
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     files_store: FileStoreKind = "local"  # [files] store: where new graphs keep their files
     files_s3: S3Table = S3Table()  # [files.s3]
+    # [extract]: limits of the child process that parses one file (file metadata M11)
+    extract_timeout_s: float = DEFAULT_EXTRACT_TIMEOUT_S
+    extract_max_memory_mib: int = DEFAULT_EXTRACT_MEMORY_MIB
     signal_reads: bool = False  # [activity]: send reads to a running graph-admin view
     mode: Literal["local", "remote"] = "local"  # [runtime] mode
     endpoint: str | None = None  # [runtime]: the server's URL in remote mode
@@ -226,6 +236,22 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
     if files_store not in (None, "local", "s3"):
         raise _invalid(path, "files.store", "must be 'local' or 's3'")
     files_s3 = _s3_table(path, tables.get("files", {}).get("s3"))
+    extract_timeout = get("extract.timeout_seconds", (int, float), "a number")
+    if extract_timeout is not None and not 0 < extract_timeout <= MAX_EXTRACT_TIMEOUT_S:
+        raise _invalid(
+            path,
+            "extract.timeout_seconds",
+            f"must be above 0 and at most {MAX_EXTRACT_TIMEOUT_S} seconds",
+        )
+    extract_memory = get("extract.max_memory_mib", int, "an integer")
+    if extract_memory is not None and not (
+        MIN_EXTRACT_MEMORY_MIB <= extract_memory <= MAX_EXTRACT_MEMORY_MIB
+    ):
+        raise _invalid(
+            path,
+            "extract.max_memory_mib",
+            f"must be between {MIN_EXTRACT_MEMORY_MIB} and {MAX_EXTRACT_MEMORY_MIB}",
+        )
     signal_reads = get("activity.signal_reads", bool, "a boolean")
     cors_origins = get("server.cors_origins", list, "an array of origins")
     if cors_origins is not None and not all(
@@ -266,6 +292,12 @@ def parse_config(data: bytes, *, path: Path) -> tuple[Config, tuple[WarningRecor
         max_file_bytes=max_bytes if max_bytes is not None else defaults.max_file_bytes,
         files_store=files_store or defaults.files_store,
         files_s3=files_s3,
+        extract_timeout_s=float(extract_timeout)
+        if extract_timeout is not None
+        else defaults.extract_timeout_s,
+        extract_max_memory_mib=extract_memory
+        if extract_memory is not None
+        else defaults.extract_max_memory_mib,
         signal_reads=signal_reads if signal_reads is not None else defaults.signal_reads,
         cors_origins=tuple(cors_origins or ()),
         admin_api=bool(admin_api),

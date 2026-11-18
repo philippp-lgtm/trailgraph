@@ -9,6 +9,9 @@ Ontology `staff` 1.0.0. The live source is `graph describe types --graph example
 | Type | Alias | Abstract | Extends | Summary |
 |---|---|---|---|---|
 | `files:File` | `FILE-0001` | no |  | A file whose bytes the graph stores. |
+| `files:FormatMetadata` |  | no | `files:Metadata` | Format of a file decided from its bytes, never from its name. |
+| `files:Metadata` |  | yes |  | Derived metadata of one file, the current result of one extractor. |
+| `files:MetadataPart` |  | yes |  | An entity owned by one metadata record, such as a table of a database file. |
 | `stf:Badge` | `BDG-0001` | no |  | An access badge. |
 | `stf:Colleague` |  | yes |  | Someone who works for the organization. |
 | `stf:Contractor` | `CON-0001` | no | `stf:Colleague` | A colleague hired through an agency. |
@@ -25,6 +28,7 @@ Ontology `staff` 1.0.0. The live source is `graph describe types --graph example
 | `core:source` | any | any | out 0..n | inverse `source_of` | The target is where the information in the source came from. |
 | `core:supersedes` | any | any | out 0..n | acyclic, inverse `superseded_by` | The source replaces the target; created only by the supersede operation. |
 | `files:from_file` | any | `files:File` | out 0..n | qualifiers `last_page`, `locator`, `page`, inverse `file_source_of` | Information in the source entity was taken from the file. |
+| `files:metadata_of` | `files:Metadata` | `files:File` | out 1..1 | inverse `has_metadata` | The metadata record describes the file. |
 | `stf:concerns` | `stf:PersonnelFile` | `stf:Colleague` | out 0..n | inverse `concerned_by` | The colleague a personnel file is about. |
 | `stf:holds_badge` | `stf:Employee` | `stf:Badge` | out 0..1 | inverse `held_by` | The badge an employee holds. |
 | `stf:in_crew` | `stf:Colleague` | `stf:Crew` | out 0..1 | inverse `crew_member` | The crew a colleague works in. |
@@ -37,6 +41,7 @@ As patterns for `graph query`:
 ()-[:source]->()
 ()-[:supersedes]->()
 ()-[:from_file]->(:File)
+(:Metadata)-[:metadata_of]->(:File)
 (:PersonnelFile)-[:concerns]->(:Colleague)
 (:Employee)-[:holds_badge]->(:Badge)
 (:Colleague)-[:in_crew]->(:Crew)
@@ -67,6 +72,72 @@ Relations in:
 | Relation | From | Cardinality in | Inverse | Summary |
 |---|---|---|---|---|
 | `files:from_file` | any | 0..n | `file_source_of` | Information in the source entity was taken from the file. |
+| `files:metadata_of` | `files:Metadata` | 0..n | `has_metadata` | The metadata record describes the file. |
+
+## `files:FormatMetadata`
+
+Format of a file decided from its bytes, never from its name.
+
+Is a `files:Metadata`.
+
+Fields:
+
+| Field | Type | Base | Flags | Default | Mutability | Values and limits | Declared in | Summary |
+|---|---|---|---|---|---|---|---|---|
+| `detected_media_type` | datatype `files:MediaType` | string |  |  | content | pattern `^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$` | `files:FormatMetadata` | Media type detected from the bytes. |
+| `extractor` | datatype `files:Line` | string | required |  | immutable | single_line `true` | `files:Metadata` | Name of the extractor that wrote the record. |
+| `extractor_version` | datatype `files:ExtractorVersion` | integer | required |  | content | min `1` | `files:Metadata` | Version of the extractor that wrote the current content. |
+| `key` | datatype `files:Line` | string | required, unique |  | immutable | single_line `true` | `files:Metadata` | The extractor name and the id of the file, `<extractor>/<file id>`. |
+| `media_type_mismatch` | base `boolean` | boolean |  |  | content |  | `files:FormatMetadata` | The media type the file was added with cannot be true of the detected one. |
+| `problem` | datatype `files:Line` | string |  |  | content | single_line `true` | `files:Metadata` | Stable code of why the extraction failed, such as pdf.unreadable or limit.time. |
+| `size` | datatype `files:Count` | integer |  |  | content | min `0` | `files:FormatMetadata` | Size of the file in bytes. |
+| `status` | enum `files:ExtractionStatus` | string | required |  | content | one of `ok`, `failed`, `not_applicable` | `files:Metadata` | Whether the extraction succeeded, failed or no longer applies. |
+| `text_encoding` | enum `files:TextEncoding` | string |  |  | content | one of `utf8`, `utf8_bom`, `utf16le`, `utf16be` | `files:FormatMetadata` | Character encoding, for files detected as text. |
+
+Relations out:
+
+| Relation | To | Cardinality | Inverse | Qualifiers | Summary |
+|---|---|---|---|---|---|
+| `files:metadata_of` | `files:File` | 1..1 | `has_metadata` |  | The metadata record describes the file. |
+
+## `files:Metadata`
+
+Derived metadata of one file, the current result of one extractor.
+
+Read only: written by graph_cli's extractors and refused for anyone else. A new version of an extractor updates the same record, `history` shows what earlier versions said. A failed or no longer applicable run is recorded as such, and then the attributes of a subclass are unset.
+
+Abstract (no entities of its own). Subtypes: `files:FormatMetadata`.
+
+Fields:
+
+| Field | Type | Base | Flags | Default | Mutability | Values and limits | Declared in | Summary |
+|---|---|---|---|---|---|---|---|---|
+| `extractor` | datatype `files:Line` | string | required |  | immutable | single_line `true` | `files:Metadata` | Name of the extractor that wrote the record. |
+| `extractor_version` | datatype `files:ExtractorVersion` | integer | required |  | content | min `1` | `files:Metadata` | Version of the extractor that wrote the current content. |
+| `key` | datatype `files:Line` | string | required, unique |  | immutable | single_line `true` | `files:Metadata` | The extractor name and the id of the file, `<extractor>/<file id>`. |
+| `problem` | datatype `files:Line` | string |  |  | content | single_line `true` | `files:Metadata` | Stable code of why the extraction failed, such as pdf.unreadable or limit.time. |
+| `status` | enum `files:ExtractionStatus` | string | required |  | content | one of `ok`, `failed`, `not_applicable` | `files:Metadata` | Whether the extraction succeeded, failed or no longer applies. |
+
+Relations out:
+
+| Relation | To | Cardinality | Inverse | Qualifiers | Summary |
+|---|---|---|---|---|---|
+| `files:metadata_of` | `files:File` | 1..1 | `has_metadata` |  | The metadata record describes the file. |
+
+## `files:MetadataPart`
+
+An entity owned by one metadata record, such as a table of a database file.
+
+Written only by graph_cli's extractors, together with its record: a new version of an extractor keeps the parts it still produces, adds new ones and retracts the ones it no longer produces.
+
+Abstract (no entities of its own).
+
+Fields:
+
+| Field | Type | Base | Flags | Default | Mutability | Values and limits | Declared in | Summary |
+|---|---|---|---|---|---|---|---|---|
+| `key` | datatype `files:Line` | string | required, unique |  | immutable | single_line `true` | `files:MetadataPart` | The key of the record and the name of the part, `<record key>/<part name>`. |
+| `name` | datatype `files:Line` | string | required, label |  | content | single_line `true` | `files:MetadataPart` | Name of the part inside its record. |
 
 ## `stf:Badge`
 
@@ -242,3 +313,4 @@ Relations in:
 | Relation | From | Cardinality in | Inverse | Summary |
 |---|---|---|---|---|
 | `files:from_file` | any | 0..n | `file_source_of` | Information in the source entity was taken from the file. |
+| `files:metadata_of` | `files:Metadata` | 0..n | `has_metadata` | The metadata record describes the file. |

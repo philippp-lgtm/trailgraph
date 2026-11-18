@@ -1,0 +1,66 @@
+# Opt-in standard module: metadata of SQLite database files (file metadata plan, stage 1).
+# Importing it enables the sqlite extractor for the graph: every stored SQLite file gets
+# one files_sqlite:SqliteMetadata record and one files_sqlite:SqliteObject per table and
+# view (the first 500), read from the schema only, never from the rows.
+format: graph_cli.ir/1
+module:
+  id: files_sqlite
+  prefix: files_sqlite
+  version: 1.0.0
+  summary: Derived metadata of SQLite database files, such as their tables and views.
+  imports:
+    - {module: files, version: "^1.1"}
+
+enums:
+  SqliteObjectKind:
+    summary: What a schema object is.
+    values:
+      table:
+        summary: A table.
+      view:
+        summary: A view.
+
+classes:
+  SqliteMetadata:
+    is_a: files:Metadata
+    summary: The schema of a SQLite database file in counts.
+    attributes:
+      table_count:
+        summary: Number of tables, without internal ones.
+        type: files:Count
+      view_count:
+        summary: Number of views.
+        type: files:Count
+      index_count:
+        summary: Number of indexes, without internal ones.
+        type: files:Count
+      trigger_count:
+        summary: Number of triggers.
+        type: files:Count
+      user_version:
+        summary: The user_version pragma the application stored in the file header.
+        type: files:Count
+      objects_truncated:
+        summary: The database has more tables and views than the 500 listed as objects.
+        type: boolean
+  SqliteObject:
+    is_a: files:MetadataPart
+    summary: A table or view of a SQLite database file.
+    attributes:
+      kind:
+        summary: Table or view.
+        type: SqliteObjectKind
+      column_count:
+        summary: Number of columns.
+        type: files:Count
+      column_names:
+        summary: Names of the first 200 columns.
+        type: files:ColumnName
+        many: true
+
+relations:
+  has_object:
+    summary: A table or view that belongs to the database record.
+    domain: SqliteMetadata
+    range: SqliteObject
+    inverse_label: object_of

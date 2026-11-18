@@ -72,7 +72,7 @@ def installation(
     for name, extra in (("plain", ()), ("scan", ("--type", "nas:Scan"))):
         added = app(
             run_cli,
-            *("file", "add", str(contents[name]), *extra),
+            *("file", "add", str(contents[name]), "--no-extract", *extra),
             env={"GRAPH_CLI_GRAPH": "example_graph"},
         )
         assert added.code == 0, added.envelope

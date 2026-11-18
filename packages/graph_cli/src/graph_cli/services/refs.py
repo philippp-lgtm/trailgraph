@@ -35,6 +35,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Literal
+from uuid import UUID
 
 from graph_cli.access_control.documents import CURIE_RE, NAME_RE
 from graph_cli.kernel.actions import Action
@@ -75,6 +76,17 @@ NO_BINDINGS: Mapping[str, EntityId] = MappingProxyType({})
 
 
 FineTerm = tuple[Action, TermRef, str, str]  # (action, type, "attr" | "rel", name or CURIE)
+
+
+def entity_of(ref: EntityRef, refs: Mapping[str, EntityId]) -> EntityId | None:
+    """The existing entity a reference names; ``None`` for a create of this document."""
+    match ref:
+        case LocalRef(name):
+            return refs.get(f"@{name}")
+        case AliasRef(alias):
+            return refs[alias]
+    assert isinstance(ref, UUID)
+    return ref
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,7 +281,7 @@ def _declared_locals(cs: ChangeSet, bindings: Mapping[str, EntityId]) -> dict[st
     return declared
 
 
-def _subjects(op: Op) -> list[EntityRef]:
+def subjects(op: Op) -> list[EntityRef]:
     """The entities an op touches besides the ones it creates."""
     match op:
         case SupersedeOp():
@@ -325,7 +337,7 @@ def resolve_refs(
         action = op_action(op)
         if isinstance(op, CreateOp):
             pairs.add((action, op.type))
-        for ref in _subjects(op):
+        for ref in subjects(op):
             pairs.add((action, resolver.type_of(ref)))
     fine, bare = _fine_terms(ops, resolver)
     return Resolution(

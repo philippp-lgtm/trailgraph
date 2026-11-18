@@ -48,6 +48,14 @@ POSITIVE_CONTROLS = {
         "graph_cli/sources/__init__.py",
         "import graph_cli.query\n",
     ),
+    "Extractors import only the kernel": (
+        "graph_cli/extractors/__init__.py",
+        "import graph_cli.query\n",
+    ),
+    "Only the extractors import the PDF parser": (
+        "graph_cli/services/__init__.py",
+        "import pypdf\n",
+    ),
     "Audit and access control import only the kernel": (
         "graph_cli/audit/__init__.py",
         "import graph_cli.query\n",

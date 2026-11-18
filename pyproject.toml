@@ -69,7 +69,7 @@ layers = [
     "graph_cli.extensions",
     "graph_cli.services",
     "graph_cli.audit | graph_cli.access_control | graph_cli.temporal_knowledge | graph_cli.storage",
-    "graph_cli.kinetic | graph_cli.sources",
+    "graph_cli.kinetic | graph_cli.sources | graph_cli.extractors",
     "graph_cli.query",
     "graph_cli.ontology_layer",
     "graph_cli.kernel",
@@ -179,6 +179,57 @@ forbidden_modules = [
     "graph_cli.skills",
     "graph_cli.app_cli",
 ]
+
+# Extractors parse untrusted files in a child process and know nothing of graphs: the kernel's
+# types and the standard library only (file metadata plan, M16). The layers contract keeps them
+# beside kinetic and sources; this one keeps every other layer out.
+[[tool.importlinter.contracts]]
+name = "Extractors import only the kernel"
+type = "forbidden"
+source_modules = ["graph_cli.extractors"]
+forbidden_modules = [
+    "graph_cli.ontology_layer",
+    "graph_cli.query",
+    "graph_cli.kinetic",
+    "graph_cli.sources",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.skills",
+    "graph_cli.app_cli",
+]
+
+# The PDF parser is the one third-party parser of stage 1 (file metadata M15): only the extractors
+# import it, so no other code ever parses an untrusted file in the writer's process.
+[[tool.importlinter.contracts]]
+name = "Only the extractors import the PDF parser"
+type = "forbidden"
+source_modules = [
+    "graph_cli.kernel",
+    "graph_cli.ontology_layer",
+    "graph_cli.query",
+    "graph_cli.kinetic",
+    "graph_cli.sources",
+    "graph_cli.storage",
+    "graph_cli.audit",
+    "graph_cli.access_control",
+    "graph_cli.temporal_knowledge",
+    "graph_cli.services",
+    "graph_cli.extensions",
+    "graph_cli.catalog",
+    "graph_cli.cli_kit",
+    "graph_cli.skills",
+    "graph_cli.app_cli",
+    "graph_cli_admin",
+    "graph_cli_server",
+]
+forbidden_modules = ["pypdf"]
+allow_indirect_imports = true
 
 # Skill generators read only the public inventory and model description (B11),
 # never the declarations or services behind them.

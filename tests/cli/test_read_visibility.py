@@ -210,7 +210,7 @@ def world(run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path) -> W
     for name, (file_name, kind) in FILES.items():
         path = write_pdf(scans / file_name, name)
         extra = ["--type", kind] if kind else []
-        added = ok(run_cli, "file", "add", str(path), *extra)
+        added = ok(run_cli, "file", "add", str(path), "--no-extract", *extra)
         found[name] = added.data["entity"]["id"]
     everything = ok(run_cli, "find", "--include-inactive", "--limit", "500")
     ids = dict(found)
@@ -1053,7 +1053,7 @@ def test_describe_shows_no_hidden_type_relation_or_field(world: World) -> None:
     raw_modules = {m["id"]: m for m in raw[("describe", "modules")].data["modules"]}
     assert modules["notes_and_sources"]["types"] < raw_modules["notes_and_sources"]["types"]
     assert modules["notes_and_sources"]["relations"] < raw_modules["notes_and_sources"]["relations"]
-    assert modules["files"]["types"] == 0 and raw_modules["files"]["types"] == 1
+    assert modules["files"]["types"] == 0 and raw_modules["files"]["types"] == 4
     labels = [label["label"] for label in ok(run_cli, "describe", "schema").data["labels"]]
     assert labels == ["Note", "Scan", "Source", "WebPage", "Claim"]
     # the fields of a type that lost its hidden parent are all still there, declared on it

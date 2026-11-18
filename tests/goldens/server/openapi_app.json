@@ -3398,6 +3398,40 @@
           },
           "existing": {
             "type": "boolean"
+          },
+          "metadata": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "extractor": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "failed",
+                    "not_applicable"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "problem": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "extractor",
+                "version",
+                "status",
+                "id"
+              ]
+            }
           }
         },
         "required": [
@@ -3413,7 +3447,8 @@
           "findings",
           "entity",
           "file",
-          "existing"
+          "existing",
+          "metadata"
         ]
       },
       "file_check_data": {
@@ -13317,6 +13352,15 @@
                       "--no-origin": {
                         "type": "boolean",
                         "description": "The inventory name of no_origin; never both.",
+                        "deprecated": true
+                      },
+                      "no_extract": {
+                        "type": "boolean",
+                        "description": "Do not extract the metadata of the file (page count, size, ...) now."
+                      },
+                      "--no-extract": {
+                        "type": "boolean",
+                        "description": "The inventory name of no_extract; never both.",
                         "deprecated": true
                       },
                       "graph": {

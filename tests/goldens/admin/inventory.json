@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph-admin",
-  "program_version": "0.25.0",
+  "program_version": "0.26.0",
   "surface": "maint",
   "global_options": [],
   "commands": [
@@ -368,6 +368,153 @@
         "internal.error",
         "remote.client_outdated",
         "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "files",
+        "extract"
+      ],
+      "kind": "write",
+      "surface": "act",
+      "action": "maint.reindex",
+      "summary": "Write the metadata records of stored files at the current extractor versions.",
+      "args": [],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": true,
+          "repeatable": false,
+          "summary": "Graph name or id."
+        },
+        {
+          "name": "--file",
+          "type": "entity_ref",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this file (id, alias or trailing hex of the id); repeatable."
+        },
+        {
+          "name": "--extractor",
+          "type": "string",
+          "required": false,
+          "repeatable": true,
+          "summary": "Only this extractor (see files extractors); repeatable."
+        },
+        {
+          "name": "--retry-failed",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run again the extractors whose last result is failed (after a limit was raised)."
+        },
+        {
+          "name": "--dry-run",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Run the extractors and report what would be written, without writing."
+        },
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin files extract --graph <graph> --dry-run",
+          "summary": "See the plan."
+        },
+        {
+          "command": "graph-admin files extract --graph <graph> --json",
+          "summary": "Write every missing or outdated record."
+        },
+        {
+          "command": "graph-admin files extract --graph <graph> --file <id> --extractor <name>",
+          "summary": "One file, one extractor."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "admin.remote_mode",
+        "audit.unavailable",
+        "backend.lock_timeout",
+        "backend.unavailable",
+        "config.invalid",
+        "entity.not_found",
+        "graph.not_found",
+        "internal.error",
+        "remote.client_outdated",
+        "remote.outcome_unknown",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "files",
+        "extractors"
+      ],
+      "kind": "read",
+      "surface": "trace",
+      "action": "maint.audit_verify",
+      "summary": "List the extractors of this program: version, types, record class, module.",
+      "args": [],
+      "options": [
+        {
+          "name": "--data-root",
+          "type": "directory",
+          "required": false,
+          "repeatable": false,
+          "summary": "Data root to use instead of GRAPH_CLI_ROOT, config or the XDG default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph-admin files extractors",
+          "summary": "Every extractor, as text."
+        },
+        {
+          "command": "graph-admin files extractors --json",
+          "summary": "Every extractor, as JSON."
+        }
+      ],
+      "errors": [
+        "admin.remote_mode",
+        "backend.unavailable",
+        "config.invalid",
+        "internal.error",
+        "remote.client_outdated",
         "remote.protocol",
         "remote.unauthorized",
         "remote.unreachable",
@@ -3506,6 +3653,11 @@
       "code": "conflict.seq_mismatch",
       "category": "conflict",
       "exit": 4
+    },
+    {
+      "code": "entity.not_found",
+      "category": "not_found",
+      "exit": 1
     },
     {
       "code": "files.store_refused",

@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.25.0",
+  "program_version": "0.26.0",
   "surface": "app",
   "global_options": [
     {
@@ -1630,6 +1630,13 @@
           "required": false,
           "repeatable": false,
           "summary": "Do not record where the file came from."
+        },
+        {
+          "name": "--no-extract",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Do not extract the metadata of the file (page count, size, ...) now."
         },
         {
           "name": "--graph",

@@ -96,10 +96,11 @@ def test_add_then_path_and_check(run_cli: CliRunner, root: Path, home: Path) -> 
 def test_non_ascii_names_and_adding_twice(run_cli: CliRunner, root: Path, home: Path) -> None:
     name = unicodedata.normalize("NFC", "Übersicht März.txt")
     write_text(home / "notes" / name)
-    first = add(run_cli, str(home / "notes" / name))["data"]
+    envelope = add(run_cli, str(home / "notes" / name))
+    first = envelope["data"]
     assert first["file"]["origin"] == {"root": "notes", "path": name}
     assert first["file"]["media_type"] == "text/plain"
-    seq = first["seq"]
+    seq = envelope["graph"]["seq"]  # after the file and the metadata record it got
     copy = write_text(home / "elsewhere" / "copy.txt")
     second = add(run_cli, str(copy))
     assert second["data"]["existing"] is True

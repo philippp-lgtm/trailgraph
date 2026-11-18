@@ -1,8 +1,8 @@
 """Module sources and bundle loading: imports, cycles, ranges and name resolution (B7.1, B7.8).
 
 A bundle is a main module plus everything it imports, transitively. ``core``
-is imported implicitly by every module. Built-in modules (``core``,
-``provenance``) ship as package data and cannot be shadowed.
+is imported implicitly by every module. Built-in modules (``vocabulary.BUILTIN_MODULES``: ``core``,
+``provenance``, ``files`` and its kind modules) ship as package data and cannot be shadowed.
 """
 
 from __future__ import annotations

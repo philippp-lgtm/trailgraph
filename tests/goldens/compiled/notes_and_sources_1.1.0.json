@@ -130,6 +130,306 @@
       "renamed_from": null,
       "summary": "A file whose bytes the graph stores."
     },
+    "files:FormatMetadata": {
+      "abstract": false,
+      "ancestors": [
+        "files:Metadata"
+      ],
+      "annotations": {},
+      "attributes": {
+        "detected_media_type": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Media type detected from the bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "media_type_mismatch": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The media type the file was added with cannot be true of the detected one.",
+          "type": "boolean",
+          "unique": false
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "size": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Size of the file in bytes.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        },
+        "text_encoding": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Character encoding, for files detected as text.",
+          "type": "files:TextEncoding",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "files:Metadata",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Format of a file decided from its bytes, never from its name."
+    },
+    "files:Metadata": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Read only: written by graph_cli's extractors and refused for anyone else. A new version of an extractor updates the same record, `history` shows what earlier versions said. A failed or no longer applicable run is recorded as such, and then the attributes of a subclass are unset.",
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Derived metadata of one file, the current result of one extractor."
+    },
+    "files:MetadataPart": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "key": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The key of the record and the name of the part, `<record key>/<part name>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the part inside its record.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Written only by graph_cli's extractors, together with its record: a new version of an extractor keeps the parts it still produces, adds new ones and retracts the ones it no longer produces.",
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "An entity owned by one metadata record, such as a table of a database file."
+    },
     "nas:Book": {
       "abstract": false,
       "ancestors": [
@@ -680,6 +980,37 @@
     }
   },
   "datatypes": {
+    "files:ColumnName": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "max_length": 200,
+        "single_line": true
+      },
+      "summary": "The name of a column on one line, shortened to 200 characters."
+    },
+    "files:Count": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 0
+      },
+      "summary": "A number of things or bytes, zero or more."
+    },
+    "files:ExtractorVersion": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 1
+      },
+      "summary": "Version number of an extractor, counted from 1."
+    },
     "files:Line": {
       "annotations": {},
       "base": "string",
@@ -722,6 +1053,50 @@
     }
   },
   "enums": {
+    "files:ExtractionStatus": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "What an extractor made of a file.",
+      "values": [
+        {
+          "name": "ok",
+          "summary": "The metadata were extracted; the record holds them."
+        },
+        {
+          "name": "failed",
+          "summary": "The type applies but the bytes cannot be read as it; the problem says why."
+        },
+        {
+          "name": "not_applicable",
+          "summary": "An earlier version of the extractor applied to the file, the current one does not."
+        }
+      ]
+    },
+    "files:TextEncoding": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "Character encoding of a file detected as text.",
+      "values": [
+        {
+          "name": "utf8",
+          "summary": "UTF-8 without a byte order mark."
+        },
+        {
+          "name": "utf8_bom",
+          "summary": "UTF-8 with a byte order mark."
+        },
+        {
+          "name": "utf16le",
+          "summary": "UTF-16, little endian, with a byte order mark."
+        },
+        {
+          "name": "utf16be",
+          "summary": "UTF-16, big endian, with a byte order mark."
+        }
+      ]
+    },
     "nas:NoteKind": {
       "annotations": {},
       "deprecated": false,
@@ -849,8 +1224,8 @@
       "id": "files",
       "namespace": "urn:graph_cli:onto:files#",
       "prefix": "files",
-      "summary": "Stored files with where they came from and places inside them.",
-      "version": "1.0.0"
+      "summary": "Stored files with where they came from, places inside them and derived metadata.",
+      "version": "1.1.0"
     },
     {
       "extensions": {},
@@ -1010,6 +1385,33 @@
       ],
       "renamed_from": null,
       "summary": "Information in the source entity was taken from the file."
+    },
+    "files:metadata_of": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "files:Metadata"
+      ],
+      "inverse_label": "has_metadata",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "files:File"
+      ],
+      "renamed_from": null,
+      "summary": "The metadata record describes the file."
     },
     "nas:about": {
       "annotations": {},

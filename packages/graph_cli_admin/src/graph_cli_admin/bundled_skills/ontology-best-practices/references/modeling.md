@@ -22,6 +22,7 @@ or rule. The keys themselves are in [ir_format.md](ir_format.md).
 | where a fact came from | `core:source`, or `core:derived_from` for a specific revision |
 | a statement with evidence and confidence | `provenance:Claim` with `provenance:supported_by` and `provenance:contradicts` |
 | stored documents, pages inside them | `files:File` (subclass it for a domain meaning) and `files:from_file` with `page`, `last_page`, `locator` |
+| what the bytes of a stored file say about themselves: size and detected type, page count of a PDF, pixel size, columns of a CSV, tables of a SQLite file | import the standard module of the kind (`files` 1.1 for size and type, `files_pdf`, `files_image`, `files_table`, `files_sqlite`) and let `graph file add` and `graph-admin files extract` write the records; never model them by hand or give agents write rights on them: only the extraction writes those classes, and every record is derived from the bytes |
 | when and why an entity changed, who wrote it, how a value was read | nothing: every revision is kept with the `reason` of its write, `graph history` shows them |
 | a date of which only the year or the month is known | the date with a precision attribute (an enum such as day, month, year), as Wikidata does; never a silent stand-in date |
 | names, other names, misspellings | label roles (`label`, `alt_label`, `hidden_label`; SKOS prefLabel, altLabel, hiddenLabel) |

@@ -1,0 +1,10 @@
+{
+  "code": "data.semantic.managed_class",
+  "phase": "write",
+  "schema": "graph_cli.fixture_expected/1",
+  "target": {
+    "local": "record",
+    "path": "ops.0",
+    "type": "files:FormatMetadata"
+  }
+}

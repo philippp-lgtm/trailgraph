@@ -22,11 +22,11 @@
     {
       "id": "files",
       "prefix": "files",
-      "version": "1.0.0",
-      "summary": "Stored files with where they came from and places inside them.",
+      "version": "1.1.0",
+      "summary": "Stored files with where they came from, places inside them and derived metadata.",
       "builtin": true,
-      "types": 1,
-      "relations": 1,
+      "types": 4,
+      "relations": 2,
       "links": []
     },
     {

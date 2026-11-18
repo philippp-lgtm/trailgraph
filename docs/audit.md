@@ -49,7 +49,11 @@ revision it wrote.
 A write that hands over a source run names it: `request.source` is `{name, version?, run?}`
 in the intent, in a refusal event and in the transaction record (`name` is the producer's
 logical name, `version` and `run` are text of up to 128 characters; the program's own writers
-may add `kind`). It is a claim recorded next to the actor, not an authentication. The key is
+may add `kind`: the one kind there is, `extractor`, marks the writes of the metadata extraction
+([Files](files.md#metadata)), whose `name` is the extractor, `version` its version and `run` the
+`graph-admin files extract` invocation, absent for the extraction after `file add`; the reason of
+such a transaction is `extract <name>@<version>`, or `extract <name>@<version>: file not active`
+for the records of a file that is no longer active; no document can name a `kind`). It is a claim recorded next to the actor, not an authentication. The key is
 optional and appears only for such writes, so the bytes of every other write are unchanged.
 Verification checks its shape, and that the intent and the transaction record name the same
 source (`integrity.audit.tx_without_intent` otherwise); `request.action` is only checked for its shape, not against the transaction. For a document that names a source or reconciles scopes, `args_digest` covers the whole document, since the transaction holds the ops the run expanded to. `history` and `changes` show it as

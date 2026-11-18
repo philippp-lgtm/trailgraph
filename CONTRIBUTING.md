@@ -327,6 +327,14 @@ tests (`personnel` with a version series, and `staff`, whose twin in
 `tests/fixtures/markings/` is the module without everything a caller holding no
 marking may not see); they are listed in `MARKED_ONTOLOGIES`
 (`tests/support/fixtures.py`), not in the toy lists.
+`tests/fixtures/files/` is the golden corpus of the file extractors: tiny files of neutral
+content (a PDF, an encrypted and a damaged one, images, CSV and TSV variants, SQLite databases
+including one with hostile object names, a text file renamed `.pdf`, a binary file named `.csv`,
+...), described by `manifest.json` and rebuilt by `generate.py`. `tests/goldens/extractors/
+<name>@<version>.json` pins every extractor's output per version, entry by entry: an existing entry never
+changes (output that changes without a version bump of the extractor fails the suite; a library,
+interpreter or SQLite upgrade that changes it bumps the version), and `GRAPH_CLI_UPDATE_GOLDENS=1`
+only adds the entries of new corpus files or the golden of a new version.
 Core tests never name a fixture type; a leak test keeps fixture vocabulary out
 of the packages. Deterministic test doubles (`FixedClock`, `StepClock`,
 `SeededIdProvider`) live in `tests/support/`. Golden files live in

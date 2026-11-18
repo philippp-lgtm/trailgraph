@@ -21,8 +21,22 @@ DIFF_SCHEMA: Final = "graph_cli.ontology_diff/1"
 
 CORE_MODULE: Final = "core"
 # The modules shipped as package data (``ontology_layer/modules/``); a graph cannot shadow them.
-BUILTIN_MODULES: Final = frozenset({CORE_MODULE, "provenance", "files"})
+BUILTIN_MODULES: Final = frozenset(
+    {
+        CORE_MODULE,
+        "provenance",
+        "files",
+        "files_pdf",
+        "files_image",
+        "files_table",
+        "files_sqlite",
+    }
+)
 FILE_TYPE: Final = "files:File"  # the stored-file class of the standard module files (B7.8)
+# The classes of derived file metadata (file metadata plan M2, M9): entities of their subclasses
+# are written only by graph_cli's extractors.
+METADATA_TYPE: Final = "files:Metadata"
+METADATA_PART_TYPE: Final = "files:MetadataPart"
 DEFAULT_NAMESPACE: Final = "urn:graph_cli:onto:{module}#"
 # The migration file of a version directory (``migration.yaml``, format ``graph_cli.migration/1``)
 # lives next to the module files, so its stem is no module id.

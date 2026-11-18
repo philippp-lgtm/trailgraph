@@ -52,6 +52,23 @@ def example_model(name: str, version: str) -> CompiledModel:
     return outcome.model
 
 
+def assert_same_but_unused_standard_terms(kept: CompiledModel, model: CompiledModel) -> None:
+    """``kept`` is ``model`` with every term equal, except that terms of the standard module
+    ``files`` that nothing in the graph uses are gone (a filtered view drops unused datatypes,
+    enums and abstract classes, such as the vocabulary of ``files:Metadata`` kinds the graph
+    does not import)."""
+    got, want = kept.to_json(), model.to_json()
+    assert isinstance(got, dict) and isinstance(want, dict)
+    assert got.keys() == want.keys()
+    for section, wanted in want.items():
+        found = got[section]
+        if not isinstance(wanted, dict) or not isinstance(found, dict):
+            assert found == wanted, section
+            continue
+        assert {k: v for k, v in found.items()} == {k: wanted[k] for k in found}, section
+        assert all(name.startswith("files:") for name in wanted.keys() - found.keys()), section
+
+
 def assert_golden(path: Path, data: bytes) -> None:
     """Compare with a golden file; ``GRAPH_CLI_UPDATE_GOLDENS=1`` rewrites it."""
     if UPDATE_GOLDENS:

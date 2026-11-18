@@ -71,7 +71,7 @@ def add_file(served: dict[str, Any], content: bytes, name: str) -> str:
         "POST",
         "/v1/commands/file/add",
         token=token,
-        body={"args": {"path": reference, "--graph": "files_graph"}},
+        body={"args": {"path": reference, "--graph": "files_graph", "--no-extract": True}},
     )
     assert added.status == 200, added.json
     entity: str = added.json["data"]["entity"]["id"]

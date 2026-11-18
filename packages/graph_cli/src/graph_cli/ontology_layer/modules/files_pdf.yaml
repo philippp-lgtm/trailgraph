@@ -1,0 +1,29 @@
+# Opt-in standard module: metadata of PDF files (file metadata plan, stage 1).
+# Importing it enables the pdf extractor for the graph: every stored PDF gets one
+# files_pdf:PdfMetadata record, written by graph_cli's extractors only.
+format: graph_cli.ir/1
+module:
+  id: files_pdf
+  prefix: files_pdf
+  version: 1.0.0
+  summary: Derived metadata of PDF files, such as the page count.
+  imports:
+    - {module: files, version: "^1.1"}
+
+classes:
+  PdfMetadata:
+    is_a: files:Metadata
+    summary: What the structure of a PDF file declares about itself.
+    description: >-
+      Written for files detected as PDF from their bytes. An encrypted PDF that
+      cannot be opened without a password has status failed and no page count.
+    attributes:
+      page_count:
+        summary: Number of pages.
+        type: files:Count
+      pdf_version:
+        summary: PDF version of the file header, such as 1.7.
+        type: files:Line
+      encrypted:
+        summary: The file is encrypted.
+        type: boolean

@@ -152,6 +152,11 @@ FINDING_CODES: Final[tuple[FindingCodeSpec, ...]] = (
         _W,
     ),
     _data("semantic", "cycle", "An acyclic relation forms a cycle."),
+    _data(
+        "semantic",
+        "managed_class",
+        "The entity is written only by the extractor that owns it.",
+    ),
     _data("rule", "violated", "A rule does not hold."),
     _data("lifecycle", "invalid_initial_state", "The state is not an initial state."),
     _data("lifecycle", "transition_not_allowed", "The lifecycle has no such transition."),

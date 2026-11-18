@@ -1,0 +1,73 @@
+{
+  "archive.zip": "not_applicable",
+  "binary_renamed.csv": "not_applicable",
+  "corrupt.sqlite": "not_applicable",
+  "damaged.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": "pdf.unreadable",
+      "status": "failed",
+      "values": {}
+    }
+  },
+  "database.sqlite": "not_applicable",
+  "empty.txt": "not_applicable",
+  "encrypted.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": "pdf.encrypted",
+      "status": "failed",
+      "values": {}
+    }
+  },
+  "header.jpg": "not_applicable",
+  "letter.docx": "not_applicable",
+  "lossless.webp": "not_applicable",
+  "lossy.webp": "not_applicable",
+  "names.sqlite": "not_applicable",
+  "notes.txt": "not_applicable",
+  "notes_bom.txt": "not_applicable",
+  "notes_gzip.txt": "not_applicable",
+  "notes_utf16.txt": "not_applicable",
+  "one_page.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "encrypted": false,
+        "page_count": 1,
+        "pdf_version": "1.4"
+      }
+    }
+  },
+  "pixel.png": "not_applicable",
+  "pixel_named.jpg": "not_applicable",
+  "single_column.csv": "not_applicable",
+  "small.gif": "not_applicable",
+  "table.csv": "not_applicable",
+  "table.tsv": "not_applicable",
+  "table_noheader.csv": "not_applicable",
+  "table_quoted.csv": "not_applicable",
+  "table_semicolon.csv": "not_applicable",
+  "table_wide.csv": "not_applicable",
+  "text.odt": "not_applicable",
+  "text_renamed.pdf": "not_applicable",
+  "three_pages.pdf": {
+    "recorded_media_type": "application/pdf",
+    "result": {
+      "parts": [],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "encrypted": false,
+        "page_count": 3,
+        "pdf_version": "1.4"
+      }
+    }
+  },
+  "truncated.png": "not_applicable"
+}

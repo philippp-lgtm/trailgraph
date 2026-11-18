@@ -47,13 +47,14 @@ Built-in modules, shared by every graph: `core`, `files`.
 | `stf:Employee` (`EMP-0001`) | A colleague on the payroll. Is a `stf:Colleague`. | `name` (required, main name); `badge_code` (marked stf:personal); `birth_date` (date, marked stf:personal); `email` (marked stf:personal); `pay_grade` (one of `junior`, `senior`, marked stf:personal); `phone`; `salary` (decimal, marked stf:pay+stf:personal); `shift` (one of `day`, `night`); `weekly_hours` (integer, marked stf:personal) | `stage`: `started` -> `equipped`, `started` -> `scheduled`; initial `started` |
 | `stf:PersonnelFile` (`PF-0001`) | A stored document about a colleague. Is a `files:File`. | `title` (required, main name); `content` (blob, required, unique, write-once); `media_type` (required, write-once); `file_name` (write-once); `origin` (local_path); `remark` (marked stf:personal); `retrieved_at` (date, write-once); `source_url` (iri, write-once) | none |
 
-Other types of the model, described in `references/model.md`: `stf:Colleague`.
+Other types of the model, described in `references/model.md`: `files:FormatMetadata`, `files:Metadata`, `files:MetadataPart`, `stf:Colleague`.
 
 Relations:
 
 Each relation with its pattern for `graph query` (a label matches its subtypes too):
 
 - `files:from_file` `()-[:from_file]->(:File)` (out 0..n, qualifiers `last_page`, `locator`, `page`): Information in the source entity was taken from the file.
+- `files:metadata_of` `(:Metadata)-[:metadata_of]->(:File)` (out 1..1): The metadata record describes the file.
 - `stf:concerns` `(:PersonnelFile)-[:concerns]->(:Colleague)` (out 0..n): The colleague a personnel file is about.
 - `stf:holds_badge` `(:Employee)-[:holds_badge]->(:Badge)` (out 0..1): The badge an employee holds.
 - `stf:in_crew` `(:Colleague)-[:in_crew]->(:Crew)` (out 0..1): The crew a colleague works in.

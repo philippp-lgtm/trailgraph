@@ -17,6 +17,13 @@ documents, saved web pages.
   edit, move or delete anything there.
 - `graph` does not read files; you do. Do not guess what you cannot read:
   leave the field out and tell the user.
+- `graph file add` also records what the bytes say about themselves (size,
+  detected media type; page count of a PDF, size of an image, columns of a
+  table, tables of a database) as metadata records, answered in `metadata`.
+  They are derived and read-only: you cannot create, change or retract them,
+  and a newer version of the extractor refreshes them in maintenance, not
+  you. Find and query them like any entity; `graph describe types` lists
+  their classes.
 - `graph file check --json` compares stored files with where they came
   from. On `changed`, store the new version with `graph file add` and
   replace the old file: `graph supersede <id> <id> --reason <value>`.

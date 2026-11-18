@@ -1,0 +1,2292 @@
+{
+  "bundle": {
+    "id": "notes_and_sources",
+    "version": "1.3.0"
+  },
+  "classes": {
+    "files:File": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "content": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Hash of the stored bytes.",
+          "type": "blob",
+          "unique": true
+        },
+        "file_name": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "File name as it was added, without directories.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "media_type": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Media type of the stored bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "origin": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Where the file was added from, relative to a named root of each machine.",
+          "type": "local_path",
+          "unique": false
+        },
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the file was downloaded from its source address.",
+          "type": "date",
+          "unique": false
+        },
+        "source_url": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Address the file was downloaded from.",
+          "type": "iri",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the file for people; the file name stem unless given.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "The content never changes. A new version of a file is a new file that supersedes the old one. Domain meaning (a scan, a contract, a photo) belongs to a subclass in the graph's own module.",
+      "display_prefix": "FILE",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A file whose bytes the graph stores."
+    },
+    "files:FormatMetadata": {
+      "abstract": false,
+      "ancestors": [
+        "files:Metadata"
+      ],
+      "annotations": {},
+      "attributes": {
+        "detected_media_type": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Media type detected from the bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "media_type_mismatch": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The media type the file was added with cannot be true of the detected one.",
+          "type": "boolean",
+          "unique": false
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "size": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Size of the file in bytes.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        },
+        "text_encoding": {
+          "annotations": {},
+          "declared_in": "files:FormatMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Character encoding, for files detected as text.",
+          "type": "files:TextEncoding",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "files:Metadata",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Format of a file decided from its bytes, never from its name."
+    },
+    "files:Metadata": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Read only: written by graph_cli's extractors and refused for anyone else. A new version of an extractor updates the same record, `history` shows what earlier versions said. A failed or no longer applicable run is recorded as such, and then the attributes of a subclass are unset.",
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Derived metadata of one file, the current result of one extractor."
+    },
+    "files:MetadataPart": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "key": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The key of the record and the name of the part, `<record key>/<part name>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the part inside its record.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Written only by graph_cli's extractors, together with its record: a new version of an extractor keeps the parts it still produces, adds new ones and retracts the ones it no longer produces.",
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "An entity owned by one metadata record, such as a table of a database file."
+    },
+    "files_pdf:PdfMetadata": {
+      "abstract": false,
+      "ancestors": [
+        "files:Metadata"
+      ],
+      "annotations": {},
+      "attributes": {
+        "encrypted": {
+          "annotations": {},
+          "declared_in": "files_pdf:PdfMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The file is encrypted.",
+          "type": "boolean",
+          "unique": false
+        },
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "page_count": {
+          "annotations": {},
+          "declared_in": "files_pdf:PdfMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of pages.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "pdf_version": {
+          "annotations": {},
+          "declared_in": "files_pdf:PdfMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "PDF version of the file header, such as 1.7.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Written for files detected as PDF from their bytes. An encrypted PDF that cannot be opened without a password has status failed and no page count.",
+      "display_prefix": null,
+      "extends": "files:Metadata",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "What the structure of a PDF file declares about itself."
+    },
+    "files_sqlite:SqliteMetadata": {
+      "abstract": false,
+      "ancestors": [
+        "files:Metadata"
+      ],
+      "annotations": {},
+      "attributes": {
+        "extractor": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Name of the extractor that wrote the record.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "extractor_version": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Version of the extractor that wrote the current content.",
+          "type": "files:ExtractorVersion",
+          "unique": false
+        },
+        "index_count": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of indexes, without internal ones.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The extractor name and the id of the file, `<extractor>/<file id>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "objects_truncated": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The database has more tables and views than the 500 listed as objects.",
+          "type": "boolean",
+          "unique": false
+        },
+        "problem": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Stable code of why the extraction failed, such as pdf.unreadable or limit.time.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "files:Metadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Whether the extraction succeeded, failed or no longer applies.",
+          "type": "files:ExtractionStatus",
+          "unique": false
+        },
+        "table_count": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of tables, without internal ones.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "trigger_count": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of triggers.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "user_version": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "The user_version pragma the application stored in the file header.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "view_count": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteMetadata",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of views.",
+          "type": "files:Count",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "files:Metadata",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "The schema of a SQLite database file in counts."
+    },
+    "files_sqlite:SqliteObject": {
+      "abstract": false,
+      "ancestors": [
+        "files:MetadataPart"
+      ],
+      "annotations": {},
+      "attributes": {
+        "column_count": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteObject",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Number of columns.",
+          "type": "files:Count",
+          "unique": false
+        },
+        "column_names": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteObject",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Names of the first 200 columns.",
+          "type": "files:ColumnName",
+          "unique": false
+        },
+        "key": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The key of the record and the name of the part, `<record key>/<part name>`.",
+          "type": "files:Line",
+          "unique": true
+        },
+        "kind": {
+          "annotations": {},
+          "declared_in": "files_sqlite:SqliteObject",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Table or view.",
+          "type": "files_sqlite:SqliteObjectKind",
+          "unique": false
+        },
+        "name": {
+          "annotations": {},
+          "declared_in": "files:MetadataPart",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the part inside its record.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "files:MetadataPart",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A table or view of a SQLite database file."
+    },
+    "nas:Book": {
+      "abstract": false,
+      "ancestors": [
+        "nas:Source"
+      ],
+      "annotations": {},
+      "attributes": {
+        "isbn": {
+          "annotations": {},
+          "declared_in": "nas:Book",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "ISBN of the edition.",
+          "type": "nas:Isbn",
+          "unique": false
+        },
+        "publisher": {
+          "annotations": {},
+          "declared_in": "nas:Book",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Publishing house.",
+          "type": "string",
+          "unique": false
+        },
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the source was last retrieved.",
+          "type": "date",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Title of the source.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "nas:Source",
+      "mappings": {
+        "exact": [
+          "schema:Book"
+        ]
+      },
+      "renamed_from": null,
+      "summary": "A published book."
+    },
+    "nas:GlossaryEntry": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "explanation": {
+          "annotations": {},
+          "declared_in": "nas:GlossaryEntry",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "What the word means.",
+          "type": "lang_text",
+          "unique": false
+        },
+        "heading": {
+          "annotations": {},
+          "declared_in": "nas:GlossaryEntry",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "The main name, at most one per language.",
+          "type": "nas:Heading",
+          "unique": false
+        },
+        "usage_hint": {
+          "annotations": {},
+          "declared_in": "nas:GlossaryEntry",
+          "default": {
+            "lang": "en",
+            "value": "in notes"
+          },
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When to use the word.",
+          "type": "lang_string",
+          "unique": false
+        },
+        "variant_names": {
+          "annotations": {},
+          "declared_in": "nas:GlossaryEntry",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names and abbreviations, in any language.",
+          "type": "lang_string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "GLOSS",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A word of the notes, named and explained in several languages."
+    },
+    "nas:Note": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "body": {
+          "annotations": {},
+          "declared_in": "nas:Note",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Text of the note.",
+          "type": "text",
+          "unique": false
+        },
+        "kind": {
+          "annotations": {},
+          "declared_in": "nas:Note",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "What the note records.",
+          "type": "nas:NoteKind",
+          "unique": false
+        },
+        "status": {
+          "annotations": {},
+          "declared_in": "nas:Note",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "lifecycle",
+          "many": false,
+          "mutability": "lifecycle",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Editorial state.",
+          "type": "nas:NoteLifecycle",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "nas:Note",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Headline of the note.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "NOTE",
+      "extends": null,
+      "mappings": {
+        "close": [
+          "schema:NoteDigitalDocument"
+        ]
+      },
+      "renamed_from": null,
+      "summary": "A short piece of writing about one or more topics."
+    },
+    "nas:Scan": {
+      "abstract": false,
+      "ancestors": [
+        "files:File"
+      ],
+      "annotations": {},
+      "attributes": {
+        "content": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Hash of the stored bytes.",
+          "type": "blob",
+          "unique": true
+        },
+        "file_name": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "File name as it was added, without directories.",
+          "type": "files:Line",
+          "unique": false
+        },
+        "media_type": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Media type of the stored bytes.",
+          "type": "files:MediaType",
+          "unique": false
+        },
+        "origin": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Where the file was added from, relative to a named root of each machine.",
+          "type": "local_path",
+          "unique": false
+        },
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the file was downloaded from its source address.",
+          "type": "date",
+          "unique": false
+        },
+        "scanned_on": {
+          "annotations": {},
+          "declared_in": "nas:Scan",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Day the paper was scanned.",
+          "type": "date",
+          "unique": false
+        },
+        "source_url": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "Address the file was downloaded from.",
+          "type": "iri",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "files:File",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "datatype",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Name of the file for people; the file name stem unless given.",
+          "type": "files:Line",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "SCAN",
+      "extends": "files:File",
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A scanned paper document."
+    },
+    "nas:Source": {
+      "abstract": true,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the source was last retrieved.",
+          "type": "date",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Title of the source.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "Where information comes from."
+    },
+    "nas:Topic": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "description": {
+          "annotations": {},
+          "declared_in": "nas:Topic",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "What the topic covers.",
+          "type": "text",
+          "unique": false
+        },
+        "label": {
+          "annotations": {},
+          "declared_in": "nas:Topic",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Unique name of the topic.",
+          "type": "string",
+          "unique": true
+        },
+        "misspellings": {
+          "annotations": {},
+          "declared_in": "nas:Topic",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "hidden_label",
+          "summary": "Wrong spellings that should still find the topic; never shown.",
+          "type": "string",
+          "unique": false
+        },
+        "synonyms": {
+          "annotations": {},
+          "declared_in": "nas:Topic",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": true,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": "alt_label",
+          "summary": "Other names of the topic, including abbreviations.",
+          "type": "string",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": "TOPIC",
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A subject that notes are about."
+    },
+    "nas:WebPage": {
+      "abstract": false,
+      "ancestors": [
+        "nas:Source"
+      ],
+      "annotations": {},
+      "attributes": {
+        "retrieved_at": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "operational",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "When the source was last retrieved.",
+          "type": "date",
+          "unique": false
+        },
+        "title": {
+          "annotations": {},
+          "declared_in": "nas:Source",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": "label",
+          "summary": "Title of the source.",
+          "type": "string",
+          "unique": false
+        },
+        "url": {
+          "annotations": {},
+          "declared_in": "nas:WebPage",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "immutable",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "Address of the page.",
+          "type": "iri",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": null,
+      "display_prefix": null,
+      "extends": "nas:Source",
+      "mappings": {
+        "exact": [
+          "schema:WebPage"
+        ]
+      },
+      "renamed_from": null,
+      "summary": "A page on the web."
+    },
+    "provenance:Claim": {
+      "abstract": false,
+      "ancestors": [],
+      "annotations": {},
+      "attributes": {
+        "confidence": {
+          "annotations": {},
+          "declared_in": "provenance:Claim",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "enum",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": false,
+          "role": null,
+          "summary": "How strongly the claim is believed.",
+          "type": "provenance:Confidence",
+          "unique": false
+        },
+        "statement": {
+          "annotations": {},
+          "declared_in": "provenance:Claim",
+          "default": null,
+          "deprecated": false,
+          "description": null,
+          "kind": "base",
+          "many": false,
+          "mutability": "content",
+          "renamed_from": null,
+          "required": true,
+          "role": null,
+          "summary": "The asserted statement in plain language.",
+          "type": "text",
+          "unique": false
+        }
+      },
+      "deprecated": false,
+      "description": "Validity in time uses the system fields valid_from and valid_to of the claim's revisions.",
+      "display_prefix": null,
+      "extends": null,
+      "mappings": {},
+      "renamed_from": null,
+      "summary": "A statement asserted to be true, recorded separately from what asserts it."
+    }
+  },
+  "datatypes": {
+    "files:ColumnName": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "max_length": 200,
+        "single_line": true
+      },
+      "summary": "The name of a column on one line, shortened to 200 characters."
+    },
+    "files:Count": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 0
+      },
+      "summary": "A number of things or bytes, zero or more."
+    },
+    "files:ExtractorVersion": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 1
+      },
+      "summary": "Version number of an extractor, counted from 1."
+    },
+    "files:Line": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "single_line": true
+      },
+      "summary": "Text on a single line."
+    },
+    "files:MediaType": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+      },
+      "summary": "IANA media type without parameters, such as application/pdf."
+    },
+    "files:PageNumber": {
+      "annotations": {},
+      "base": "integer",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "min": 1
+      },
+      "summary": "A page number counted from 1."
+    },
+    "nas:Heading": {
+      "annotations": {},
+      "base": "lang_string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "max_length": 80,
+        "single_line": true
+      },
+      "summary": "A short name in one language."
+    },
+    "nas:Isbn": {
+      "annotations": {},
+      "base": "string",
+      "deprecated": false,
+      "description": null,
+      "facets": {
+        "pattern": "^(?:[0-9]{9}[0-9X]|[0-9]{13})$"
+      },
+      "summary": "ISBN-10 or ISBN-13 without separators."
+    }
+  },
+  "enums": {
+    "files:ExtractionStatus": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "What an extractor made of a file.",
+      "values": [
+        {
+          "name": "ok",
+          "summary": "The metadata were extracted; the record holds them."
+        },
+        {
+          "name": "failed",
+          "summary": "The type applies but the bytes cannot be read as it; the problem says why."
+        },
+        {
+          "name": "not_applicable",
+          "summary": "An earlier version of the extractor applied to the file, the current one does not."
+        }
+      ]
+    },
+    "files:TextEncoding": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "Character encoding of a file detected as text.",
+      "values": [
+        {
+          "name": "utf8",
+          "summary": "UTF-8 without a byte order mark."
+        },
+        {
+          "name": "utf8_bom",
+          "summary": "UTF-8 with a byte order mark."
+        },
+        {
+          "name": "utf16le",
+          "summary": "UTF-16, little endian, with a byte order mark."
+        },
+        {
+          "name": "utf16be",
+          "summary": "UTF-16, big endian, with a byte order mark."
+        }
+      ]
+    },
+    "files_sqlite:SqliteObjectKind": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "What a schema object is.",
+      "values": [
+        {
+          "name": "table",
+          "summary": "A table."
+        },
+        {
+          "name": "view",
+          "summary": "A view."
+        }
+      ]
+    },
+    "nas:NoteKind": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "What a note records.",
+      "values": [
+        {
+          "name": "observation",
+          "summary": "Something seen or measured."
+        },
+        {
+          "name": "summary",
+          "summary": "A condensed restatement of sources."
+        },
+        {
+          "name": "question",
+          "summary": "An open question."
+        }
+      ]
+    },
+    "provenance:Confidence": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "summary": "How strongly a claim is believed.",
+      "values": [
+        {
+          "name": "low",
+          "summary": "Plausible but weakly supported."
+        },
+        {
+          "name": "medium",
+          "summary": "Supported by some evidence."
+        },
+        {
+          "name": "high",
+          "summary": "Supported by strong evidence."
+        }
+      ]
+    }
+  },
+  "lifecycles": {
+    "nas:NoteLifecycle": {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "initial": [
+        "draft"
+      ],
+      "states": [
+        {
+          "name": "draft",
+          "summary": "Being written."
+        },
+        {
+          "name": "published",
+          "summary": "Visible and citable."
+        },
+        {
+          "name": "archived",
+          "summary": "Kept for history only."
+        }
+      ],
+      "summary": "Editorial state of a note.",
+      "terminal": [
+        "archived"
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "guards": [
+            {
+              "expr": {
+                "nonempty": {
+                  "attr": "body"
+                }
+              },
+              "id": "nas.body_not_empty",
+              "summary": "A note needs a body before it is published."
+            }
+          ],
+          "summary": "Publish the note.",
+          "to": "published"
+        },
+        {
+          "from": "published",
+          "guards": [],
+          "summary": "Take the note back for editing.",
+          "to": "draft"
+        },
+        {
+          "from": "draft",
+          "guards": [],
+          "summary": "Archive the note.",
+          "to": "archived"
+        },
+        {
+          "from": "published",
+          "guards": [],
+          "summary": "Archive the note.",
+          "to": "archived"
+        }
+      ]
+    }
+  },
+  "modules": [
+    {
+      "extensions": {},
+      "id": "core",
+      "namespace": "urn:graph_cli:onto:core#",
+      "prefix": "core",
+      "summary": "Minimal provenance relations shared by every graph.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "provenance",
+      "namespace": "urn:graph_cli:onto:provenance#",
+      "prefix": "provenance",
+      "summary": "Claims with their own evidence, confidence and validity period.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "files",
+      "namespace": "urn:graph_cli:onto:files#",
+      "prefix": "files",
+      "summary": "Stored files with where they came from, places inside them and derived metadata.",
+      "version": "1.1.0"
+    },
+    {
+      "extensions": {},
+      "id": "files_pdf",
+      "namespace": "urn:graph_cli:onto:files_pdf#",
+      "prefix": "files_pdf",
+      "summary": "Derived metadata of PDF files, such as the page count.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "files_sqlite",
+      "namespace": "urn:graph_cli:onto:files_sqlite#",
+      "prefix": "files_sqlite",
+      "summary": "Derived metadata of SQLite database files, such as their tables and views.",
+      "version": "1.0.0"
+    },
+    {
+      "extensions": {},
+      "id": "notes_and_sources",
+      "namespace": "urn:graph_cli:onto:notes_and_sources#",
+      "prefix": "nas",
+      "summary": "Notes about topics that cite their sources and assert claims.",
+      "version": "1.3.0"
+    }
+  ],
+  "prefixes": {
+    "core": "urn:graph_cli:onto:core#",
+    "files": "urn:graph_cli:onto:files#",
+    "files_pdf": "urn:graph_cli:onto:files_pdf#",
+    "files_sqlite": "urn:graph_cli:onto:files_sqlite#",
+    "nas": "urn:graph_cli:onto:notes_and_sources#",
+    "provenance": "urn:graph_cli:onto:provenance#"
+  },
+  "relations": {
+    "core:derived_from": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "derivation_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source was derived from a specific revision of the target."
+    },
+    "core:retracts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "retracted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source withdraws the target; created only by the retract operation."
+    },
+    "core:source": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "source_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The target is where the information in the source came from."
+    },
+    "core:supersedes": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "superseded_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "The source replaces the target; created only by the supersede operation."
+    },
+    "files:from_file": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [],
+      "inverse_label": "file_source_of",
+      "mappings": {},
+      "qualifiers": {
+        "last_page": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Last page of the information when it spans several pages.",
+          "type": "files:PageNumber"
+        },
+        "locator": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Place inside the file other than a page, such as a section, region or task number.",
+          "type": "files:Line"
+        },
+        "page": {
+          "kind": "datatype",
+          "many": false,
+          "required": false,
+          "summary": "Page where the information is, or where it starts.",
+          "type": "files:PageNumber"
+        }
+      },
+      "range": [
+        "files:File"
+      ],
+      "renamed_from": null,
+      "summary": "Information in the source entity was taken from the file."
+    },
+    "files:metadata_of": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "files:Metadata"
+      ],
+      "inverse_label": "has_metadata",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "files:File"
+      ],
+      "renamed_from": null,
+      "summary": "The metadata record describes the file."
+    },
+    "files_sqlite:has_object": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "files_sqlite:SqliteMetadata"
+      ],
+      "inverse_label": "object_of",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "files_sqlite:SqliteObject"
+      ],
+      "renamed_from": null,
+      "summary": "A table or view that belongs to the database record."
+    },
+    "nas:about": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 1
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "nas:Note"
+      ],
+      "inverse_label": "has_note",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "nas:Topic"
+      ],
+      "renamed_from": null,
+      "summary": "The note is about the topic."
+    },
+    "nas:asserts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "nas:Note"
+      ],
+      "inverse_label": "asserted_in",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "provenance:Claim"
+      ],
+      "renamed_from": null,
+      "summary": "The note asserts the claim."
+    },
+    "nas:broader": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "acyclic",
+        "transitive"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "nas:Topic"
+      ],
+      "inverse_label": "narrower",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "nas:Topic"
+      ],
+      "renamed_from": null,
+      "summary": "The target topic is more general than the source topic."
+    },
+    "nas:cites": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "nas:Note"
+      ],
+      "inverse_label": "cited_by",
+      "mappings": {},
+      "qualifiers": {
+        "locator": {
+          "kind": "base",
+          "many": false,
+          "required": false,
+          "summary": "Page, section or anchor within the source.",
+          "type": "string"
+        }
+      },
+      "range": [
+        "nas:Source"
+      ],
+      "renamed_from": null,
+      "summary": "The note uses information from the source."
+    },
+    "provenance:contradicts": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [
+        "symmetric"
+      ],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "provenance:Claim"
+      ],
+      "inverse_label": "contradicted_by",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [
+        "provenance:Claim"
+      ],
+      "renamed_from": null,
+      "summary": "The claim cannot be true together with the target claim."
+    },
+    "provenance:supported_by": {
+      "annotations": {},
+      "cardinality": {
+        "in": {
+          "max": null,
+          "min": 0
+        },
+        "out": {
+          "max": null,
+          "min": 0
+        }
+      },
+      "characteristics": [],
+      "deprecated": false,
+      "description": null,
+      "domain": [
+        "provenance:Claim"
+      ],
+      "inverse_label": "supports",
+      "mappings": {},
+      "qualifiers": {},
+      "range": [],
+      "renamed_from": null,
+      "summary": "Evidence that supports the claim."
+    }
+  },
+  "rules": [
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "ge": [
+          {
+            "count": {
+              "direction": "in",
+              "rel": "nas:cites"
+            }
+          },
+          {
+            "const": 1
+          }
+        ]
+      },
+      "id": "nas.source_cited",
+      "severity": "warning",
+      "summary": "Every source is cited by at least one note.",
+      "target": "nas:Source",
+      "when": "batch"
+    },
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "implies": [
+          {
+            "and": [
+              {
+                "eq": [
+                  {
+                    "attr": "status"
+                  },
+                  {
+                    "const": "published"
+                  }
+                ]
+              },
+              {
+                "eq": [
+                  {
+                    "attr": "kind"
+                  },
+                  {
+                    "const": "summary"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ge": [
+              {
+                "count": {
+                  "direction": "out",
+                  "rel": "nas:cites"
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          }
+        ]
+      },
+      "id": "nas.summary_cites_source",
+      "severity": "error",
+      "summary": "A published summary note cites at least one source.",
+      "target": "nas:Note",
+      "when": "write"
+    },
+    {
+      "annotations": {},
+      "deprecated": false,
+      "description": null,
+      "expr": {
+        "or": [
+          {
+            "ge": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "nas:about"
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          },
+          {
+            "ge": [
+              {
+                "count": {
+                  "direction": "in",
+                  "rel": "nas:broader"
+                }
+              },
+              {
+                "const": 1
+              }
+            ]
+          }
+        ]
+      },
+      "id": "nas.topic_not_orphan",
+      "severity": "warning",
+      "summary": "A topic has notes or narrower topics.",
+      "target": "nas:Topic",
+      "when": "batch"
+    }
+  ],
+  "schema": "graph_cli.compiled_ontology/1"
+}

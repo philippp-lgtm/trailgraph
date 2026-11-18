@@ -37,6 +37,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.records import RequestMeta
 from graph_cli_admin.services_admin.audit import counts_of
 from graph_cli_admin.services_admin.context import AdminContext
+from graph_cli_admin.services_admin.file_extract import records_behind
 
 STAGING_MAX_AGE: Final = timedelta(hours=1)
 
@@ -92,12 +93,14 @@ def verify(ctx: AdminContext, *, graph_ref: str, rehash: bool) -> FilesOutcome:
         findings: list[Finding] = list(verification.findings)
         stored = verification.stored or ()  # None only beside a blob_store_unavailable error
         seq = ctx.maintenance.store(entry.id).head().seq
+    ctx.read_data(entry, meta)  # the metadata part counts records of the graph's data
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "rehash": rehash,
         "stored": {"files": len(stored), "bytes": sum(b.size for b in stored)},
         "counts": counts_of(findings),
         "findings": [f.to_json() for f in findings],
+        "metadata": records_behind(ctx, entry),
     }
     if has_errors(findings):
         raise GraphCliError(

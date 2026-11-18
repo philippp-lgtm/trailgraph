@@ -1,0 +1,207 @@
+{
+  "archive.zip": "not_applicable",
+  "binary_renamed.csv": "not_applicable",
+  "corrupt.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [],
+      "problem": "sqlite.unreadable",
+      "status": "failed",
+      "values": {}
+    }
+  },
+  "damaged.pdf": "not_applicable",
+  "database.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [
+        {
+          "name": "customers",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "id",
+              "name"
+            ],
+            "kind": "table"
+          }
+        },
+        {
+          "name": "open_orders",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "id",
+              "customer"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "orders",
+          "values": {
+            "column_count": 5,
+            "column_names": [
+              "id",
+              "customer",
+              "total",
+              "note",
+              "paid"
+            ],
+            "kind": "table"
+          }
+        }
+      ],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "index_count": 1,
+        "objects_truncated": false,
+        "table_count": 2,
+        "trigger_count": 0,
+        "user_version": 3,
+        "view_count": 1
+      }
+    }
+  },
+  "empty.txt": "not_applicable",
+  "encrypted.pdf": "not_applicable",
+  "header.jpg": "not_applicable",
+  "letter.docx": "not_applicable",
+  "lossless.webp": "not_applicable",
+  "lossy.webp": "not_applicable",
+  "names.sqlite": {
+    "recorded_media_type": "application/octet-stream",
+    "result": {
+      "parts": [
+        {
+          "name": "unnamed",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "padded",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "tab here",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "two lines",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "two lines (2)",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "v iew",
+          "values": {
+            "column_count": 1,
+            "column_names": [
+              "one"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "zero width",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        },
+        {
+          "name": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+          "values": {
+            "column_count": 2,
+            "column_names": [
+              "a",
+              "b c"
+            ],
+            "kind": "view"
+          }
+        }
+      ],
+      "problem": null,
+      "status": "ok",
+      "values": {
+        "index_count": 0,
+        "objects_truncated": false,
+        "table_count": 0,
+        "trigger_count": 0,
+        "user_version": 0,
+        "view_count": 9
+      }
+    }
+  },
+  "notes.txt": "not_applicable",
+  "notes_bom.txt": "not_applicable",
+  "notes_gzip.txt": "not_applicable",
+  "notes_utf16.txt": "not_applicable",
+  "one_page.pdf": "not_applicable",
+  "pixel.png": "not_applicable",
+  "pixel_named.jpg": "not_applicable",
+  "single_column.csv": "not_applicable",
+  "small.gif": "not_applicable",
+  "table.csv": "not_applicable",
+  "table.tsv": "not_applicable",
+  "table_noheader.csv": "not_applicable",
+  "table_quoted.csv": "not_applicable",
+  "table_semicolon.csv": "not_applicable",
+  "table_wide.csv": "not_applicable",
+  "text.odt": "not_applicable",
+  "text_renamed.pdf": "not_applicable",
+  "three_pages.pdf": "not_applicable",
+  "truncated.png": "not_applicable"
+}

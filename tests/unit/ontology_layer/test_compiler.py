@@ -33,7 +33,10 @@ def test_positive_control_has_zero_findings(name: str, version: str) -> None:
     assert outcome.model is not None
 
 
-@pytest.mark.parametrize("module", ["core", "provenance", "files"])
+@pytest.mark.parametrize(
+    "module",
+    ["core", "provenance", "files", "files_pdf", "files_image", "files_table", "files_sqlite"],
+)
 def test_builtin_modules_compile_cleanly(module: str) -> None:
     outcome = compile_bundle(module, LayeredSource())
     assert outcome.findings == ()
@@ -52,6 +55,7 @@ def test_artifact_hash_is_stable(name: str, version: str) -> None:
     [
         *((name, ontology_versions(name)[0]) for name in TOY_ONTOLOGIES),
         ("notes_and_sources", "1.1.0"),
+        ("notes_and_sources", "1.3.0"),
         *((name, version) for name in MODULAR_ONTOLOGIES for version in ontology_versions(name)),
         *((name, ontology_versions(name)[0]) for name in MARKED_ONTOLOGIES),
     ],

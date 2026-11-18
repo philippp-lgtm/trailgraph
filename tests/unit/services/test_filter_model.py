@@ -9,7 +9,7 @@ that name relations.
 import json
 
 import pytest
-from support.fixtures import compiled_model
+from support.fixtures import assert_same_but_unused_standard_terms, compiled_model
 
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.term_model import concrete_types
@@ -28,7 +28,7 @@ def seeing(model: CompiledModel, *hidden: str) -> CompiledModel:
 
 def test_everything_visible_keeps_the_model_except_unused_terms() -> None:
     same = filter_model(NAS, ALL_NAS)
-    assert same.classes == NAS.classes
+    assert_same_but_unused_standard_terms(same, NAS)
     assert same.relations == NAS.relations
     assert same.rules == NAS.rules
     assert same.modules == NAS.modules

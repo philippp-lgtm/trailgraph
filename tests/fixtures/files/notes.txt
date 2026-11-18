@@ -1,0 +1,2 @@
+Example notes.
+Second line with an umlaut: ü.

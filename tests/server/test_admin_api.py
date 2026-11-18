@@ -805,6 +805,8 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("enroll", "list"),
         ("enroll", "revoke", "0123456789ab"),
         ("files", "verify", "--graph", "example_graph"),
+        ("files", "extract", "--graph", "example_graph", "--dry-run"),  # no files module here
+        ("files", "extractors"),
         ("files", "gc", "--graph", "example_graph", "--dry-run"),
         ("files", "move", "example_graph", "--to", "s3", "--dry-run"),  # no object store
         ("files", "move", "example_graph", "--to", "local"),  # at the target: nothing to do

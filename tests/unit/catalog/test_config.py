@@ -49,6 +49,9 @@ endpoint_url = "https://objects.example.org"
 region = "example-region"
 addressing = "virtual"
 allow_plain_http = true
+[extract]
+timeout_seconds = 12.5
+max_memory_mib = 256
 [activity]
 signal_reads = true
 [server]
@@ -97,6 +100,8 @@ def test_every_key() -> None:
             addressing="virtual",
             allow_plain_http=True,
         ),
+        extract_timeout_s=12.5,
+        extract_max_memory_mib=256,
         signal_reads=True,
         mode="remote",
         endpoint="https://graphs.example.org/api/",
@@ -119,6 +124,11 @@ def test_plain_http_beyond_loopback_needs_the_switch() -> None:
         b"[remote]\nallow_plain_http = true\n"
     )
     assert parse_config(allowed, path=PATH)[0].allow_plain_http is True
+
+
+def test_extract_defaults() -> None:
+    config, _ = parse_config(b"format_version = 1\n", path=PATH)
+    assert (config.extract_timeout_s, config.extract_max_memory_mib) == (30.0, 512)
 
 
 def test_file_defaults() -> None:
@@ -212,6 +222,11 @@ def test_unknown_major() -> None:
         ("format_version = 1\n[files]\nmax_bytes = 0\n", "files.max_bytes"),
         ("format_version = 1\n[files]\nmax_bytes = 1073741825\n", "files.max_bytes"),
         ('format_version = 1\n[files]\nmax_bytes = "1M"\n', "files.max_bytes"),
+        ("format_version = 1\n[extract]\ntimeout_seconds = 0\n", "extract.timeout_seconds"),
+        ("format_version = 1\n[extract]\ntimeout_seconds = 3601\n", "extract.timeout_seconds"),
+        ('format_version = 1\n[extract]\ntimeout_seconds = "30"\n', "extract.timeout_seconds"),
+        ("format_version = 1\n[extract]\nmax_memory_mib = 63\n", "extract.max_memory_mib"),
+        ("format_version = 1\n[extract]\nmax_memory_mib = 1.5\n", "extract.max_memory_mib"),
         ("format_version = 1\n[output]\nspill_bytes = -1\n", "output.spill_bytes"),
         ('format_version = 1\n[output]\nspill_dir = "spill"\n', "output.spill_dir"),
         ("format_version = 1\n[activity]\nsignal_reads = 1\n", "activity.signal_reads"),
