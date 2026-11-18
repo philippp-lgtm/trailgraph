@@ -1,0 +1,3 @@
+schema: graph_cli.view/1
+name: invalid_yaml
+sections: [unclosed

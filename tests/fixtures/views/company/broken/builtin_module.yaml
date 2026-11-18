@@ -1,0 +1,9 @@
+schema: graph_cli.view/1
+name: builtin_module
+module: core
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+takes: org:Team
+sections:
+  - kind: fields
+    fields: [name]

@@ -1,0 +1,41 @@
+schema: graph_cli.view/1
+name: org_catalog
+module: organization
+summary: Every unit, position and person with their keys and relations, for catalog renderers.
+use_when: >-
+  Render or export the organisation as a whole, one listing per kind of thing; not for one entity
+  (use graph view REF).
+page_bytes: 65536
+params:
+  since:
+    type: date
+    default: "2000-01-01"
+    summary: Only trainings completed on or after this date.
+sections:
+  - kind: list
+    id: units
+    type: org:OrgUnit
+    fields: all
+    relations: all
+  - kind: list
+    id: positions
+    type: org:Position
+    order: [title]
+    fields: [title, status]
+    relations:
+      - all
+      - relation: org:holds
+        direction: in
+        fields: [name]
+        where: ["work_email:exists=true"]
+  - kind: list
+    id: people
+    type: [ppl:Employee, ppl:External]
+    fields: all
+    relations: [all]
+  - kind: rows
+    id: completions
+    function: training_completions
+    args:
+      titles: [Safety, Security]
+      since: $since

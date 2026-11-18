@@ -1,0 +1,10 @@
+schema: graph_cli.view/1
+name: unknown_function
+module: organization
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+takes: org:Team
+sections:
+  - kind: rows
+    function: no_such_function
+    args: {unit: $entity}

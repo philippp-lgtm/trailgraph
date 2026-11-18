@@ -1,0 +1,8 @@
+schema: graph_cli.view/1
+name: missing_key
+module: organization
+summary: A broken probe.
+takes: org:Team
+sections:
+  - kind: fields
+    fields: [name]

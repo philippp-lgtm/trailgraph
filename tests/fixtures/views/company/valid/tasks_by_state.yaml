@@ -1,0 +1,27 @@
+schema: graph_cli.view/1
+name: tasks_by_state
+module: operations
+summary: The tasks in one state that are due before a day, oldest first.
+use_when: Which tasks are open, in progress or done, and which are overdue.
+params:
+  status:
+    type: string
+    default: open
+    summary: Lifecycle state of the tasks to list.
+  before:
+    type: date
+    default: "2100-01-01"
+    summary: Only tasks due before this day.
+sections:
+  - kind: list
+    id: tasks
+    type: ops:Task
+    where: ["status=$status", "due_on:lt=$before"]
+    order: [due_on, "title:desc"]
+    fields: [title, due_on, status]
+    relations:
+      - relation: ops:assigned_to
+        fields: [name]
+examples:
+  - question: Which tasks are still open this quarter?
+    params: {status: open, before: "2026-04-01"}

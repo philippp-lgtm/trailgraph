@@ -242,23 +242,28 @@ class _Parse(Parser):
         return tuple(result)
 
     def examples(self, node: YamlNode) -> tuple[ExampleDef, ...] | None:
-        items = self.sequence(node, "examples")
-        if items is None:
-            return None
-        result: list[ExampleDef] = []
-        for index, item in enumerate(items):
-            path = f"examples[{index}]"
-            body = self.mapping(item, path, ("question", "params"))
-            if body is None:
-                continue
-            self.require(body, "question", path, item.line)
-            question = self.text(body.get("question"), f"{path}.question", limit=MAX_DETAIL)
-            values: dict[str, JsonValue] = {}
-            given = body.get("params")
-            if isinstance(given, YamlMap):
-                values = {k: self.literal(v, f"{path}.params.{k}") for k, v in given.items.items()}
-            elif given is not None:
-                self.invalid(f"{path}.params", "expected a mapping", given)
-            if question is not None:
-                result.append(ExampleDef(question, values))
-        return tuple(result)
+        return parse_examples(self, node)
+
+
+def parse_examples(parser: Parser, node: YamlNode) -> tuple[ExampleDef, ...] | None:
+    """The ``examples`` list of a function or view file: a question, optional parameter values."""
+    items = parser.sequence(node, "examples")
+    if items is None:
+        return None
+    result: list[ExampleDef] = []
+    for index, item in enumerate(items):
+        path = f"examples[{index}]"
+        body = parser.mapping(item, path, ("question", "params"))
+        if body is None:
+            continue
+        parser.require(body, "question", path, item.line)
+        question = parser.text(body.get("question"), f"{path}.question", limit=MAX_DETAIL)
+        values: dict[str, JsonValue] = {}
+        given = body.get("params")
+        if isinstance(given, YamlMap):
+            values = {k: parser.literal(v, f"{path}.params.{k}") for k, v in given.items.items()}
+        elif given is not None:
+            parser.invalid(f"{path}.params", "expected a mapping", given)
+        if question is not None:
+            result.append(ExampleDef(question, values))
+    return tuple(result)

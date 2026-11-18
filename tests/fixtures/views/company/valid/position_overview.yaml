@@ -1,0 +1,31 @@
+schema: graph_cli.view/1
+name: position_overview
+module: organization
+summary: A position with its unit, its holder and the positions that report to it.
+use_when: >-
+  Who holds a position, where it sits in the org chart and who reports to it. Local relation
+  names are accepted and stored as CURIEs.
+takes: org:Position
+sections:
+  - kind: fields
+    fields: all
+    value_chars: 300
+    max: 16
+  - kind: neighbors
+    id: unit
+    relation: in_unit
+    fields: [name]
+  - kind: neighbors
+    id: holder
+    relation: holds
+    direction: in
+    fields: [name, work_email]
+    max: 1
+  - kind: neighbors
+    id: reports
+    relation: reports_to
+    direction: in
+    order: [title]
+    fields: [title]
+  - kind: relations
+    relations: [carries]
