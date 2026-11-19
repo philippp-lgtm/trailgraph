@@ -134,6 +134,14 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 `history`; `temporal_knowledge.changes` holds the pure core of `changes`
 (positions, the one read of a raw tx body, edge targets, the paging of a page).
 
+`services.read` is a package; the contract of all reads is its docstring. Its modules:
+
+| Module | Holds |
+| --- | --- |
+| `__init__` | the docstring and the public names; `ReadService` until the split is complete |
+| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json` |
+| `json_shapes` | how reads show entities, edges and query values as JSON |
+
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
 and `graph_cli_admin.services_admin` holds the procedures.

@@ -92,13 +92,7 @@ from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
 from graph_cli.kinetic.affordances import actions_for, functions_for, views_for
 from graph_cli.kinetic.bind import bind_cli
-from graph_cli.kinetic.card import (
-    AffordancesSpec,
-    file_classes_of,
-    generated_spec,
-    render,
-    spec_of,
-)
+from graph_cli.kinetic.card import AffordancesSpec, file_classes_of, generated_spec, render, spec_of
 from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries, seen_replacement
 from graph_cli.kinetic.params import Problem, json_value
 from graph_cli.kinetic.view_entries import ViewEntry, find_view, load_view_entries
@@ -108,7 +102,7 @@ from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.ontology_layer.affordances import relations, transitions
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.errors import did_you_mean
-from graph_cli.query.cypher.values import Node, Rel, Value, plain_json
+from graph_cli.query.cypher.values import Value
 from graph_cli.query.lookup import (
     LookupPlan,
     LookupSpec,
@@ -121,7 +115,6 @@ from graph_cli.query.lookup import (
     rank_key,
 )
 from graph_cli.query.plan import (
-    ALWAYS_SHOWN,
     DEFAULT_LIMIT,
     FindSpec,
     check_fields,
@@ -149,6 +142,14 @@ from graph_cli.services.names import (
     unknown_term_of,
     with_hints,
 )
+from graph_cli.services.read.graph_read import GraphRead, Page, graph_json
+from graph_cli.services.read.json_shapes import (
+    edge_json,
+    edges_in,
+    entities_in,
+    entity_json,
+    value_json,
+)
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
 from graph_cli.services.view_call import (
@@ -160,12 +161,7 @@ from graph_cli.services.view_call import (
     page_key,
     rows_share,
 )
-from graph_cli.services.visibility import (
-    SIGNATURE_VIEWS,
-    Visibility,
-    VisibleSnapshot,
-    remember,
-)
+from graph_cli.services.visibility import SIGNATURE_VIEWS, Visibility, VisibleSnapshot, remember
 from graph_cli.services.visible_catalog import (
     HiddenCatalog,
     hidden_actions,
@@ -192,6 +188,20 @@ if TYPE_CHECKING:
     from graph_cli.query.cypher.execute import Result as QueryResult
     from graph_cli.query.cypher.resolve import ResolvedQuery
 
+__all__ = [
+    "ActionCatalog",
+    "GraphRead",
+    "Page",
+    "QuerySpec",
+    "ReadService",
+    "change_page",
+    "denial_error",
+    "edge_json",
+    "entity_json",
+    "graph_json",
+    "refuse_affordances_with_rev",
+]
+
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
 _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
@@ -210,50 +220,6 @@ def refuse_affordances_with_rev() -> GraphCliError:
 
 
 @dataclass(frozen=True, slots=True)
-class GraphRead:
-    """One graph opened for reading by one actor and command: model and one snapshot."""
-
-    entry: GraphEntry
-    model: CompiledModel
-    snapshot: Snapshot
-    warnings: tuple[WarningRecord, ...]
-    actor: ActorContext
-    command: str
-    # What the actor sees (``kernel.read_view``); when it is ``limited``, ``model`` and
-    # ``snapshot`` are the filtered views, else the raw model and snapshot.
-    read_view: ReadView = UNLIMITED
-    # The mapped layer below the read limits (migration plan M7): old revisions under the
-    # pin's names; ``None`` only for views built without ``ReadService.open``.
-    mapping: MappedSnapshot | None = None
-
-    def envelope_graph(self) -> dict[str, JsonValue]:
-        return graph_json(self.entry, self.snapshot.seq)
-
-    def names_mapped(self, revision: Revision) -> bool:
-        """Whether ``revision`` was handed out under mapped names (``names_mapped``). For a
-        limited reader only when mapping changed something it sees (R4): the stored and the
-        mapped revision differ under the same view (its type, the attributes the mapped type
-        keeps, the edges it sees, matched by id)."""
-        mapping = self.mapping
-        if mapping is None or not mapping.mapped(revision.id, revision.rev):
-            return False
-        snapshot = self.snapshot
-        if not isinstance(snapshot, VisibleSnapshot):
-            return True
-        stored = mapping.raw.get_revision(revision.id, revision.rev)
-        mapped = mapping.get_revision(revision.id, revision.rev)
-        if stored is None or mapped is None:
-            return True
-        keep = snapshot.keeps(mapped)
-        before, after = snapshot.masked(stored, keep), snapshot.masked(mapped, keep)
-        return (
-            before.type != after.type
-            or before.attrs != after.attrs
-            or {e.edge_id: e for e in before.edges} != {e.edge_id: e for e in after.edges}
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class ActionCatalog:
     """The parsed published action catalog of a graph and what it was published against."""
 
@@ -261,102 +227,6 @@ class ActionCatalog:
     compiled_hash: str
     published_against: OntologyPin
     compiled: JsonObject
-
-
-@dataclass(frozen=True, slots=True)
-class Page:
-    total: int
-    shown: int
-    limit: int
-    offset: int
-    more: bool | None = None  # set when limit and offset apply per group (lookup values)
-
-    def to_json(self) -> dict[str, JsonValue]:
-        truncated = self.offset + self.shown < self.total if self.more is None else self.more
-        next_offset = self.offset + (self.shown if self.more is None else self.limit)
-        return {
-            "total": self.total,
-            "shown": self.shown,
-            "limit": self.limit,
-            "offset": self.offset,
-            "truncated": truncated,
-            "next_offset": next_offset if truncated else None,
-        }
-
-
-def graph_json(entry: GraphEntry, seq: int | None) -> dict[str, JsonValue]:
-    """The envelope ``graph`` block (B9.2)."""
-    return {
-        "id": str(entry.id),
-        "name": entry.name,
-        "state": entry.state,
-        "ontology": {"bundle": entry.pin.bundle, "version": entry.pin.version},
-        "seq": seq,
-    }
-
-
-# An entity's validity, shown by default only when set; the other system fields only with
-# ``full`` or by name in ``fields``.
-VALIDITY: Final = ("valid_from", "valid_to")
-
-
-def entity_json(
-    revision: Revision,
-    fields: Sequence[str] = (),
-    *,
-    full: bool = False,
-    names_mapped: bool = False,
-) -> dict[str, JsonValue]:
-    """An entity as reads show it. By default its content: the always shown keys, ``attrs``,
-    ``edges`` without their ids, and ``valid_from``/``valid_to`` when set. With ``full``
-    every revision field and edge id, explicit nulls (C.6 envelope rule), and
-    ``names_mapped: true`` for a past revision shown under the pin's names (migration plan
-    M7; the key is absent otherwise).
-
-    With ``fields`` (checked by ``query.plan.check_fields``) only the always shown
-    keys, ``attrs`` with the named attributes (null when absent) and the named
-    entity parts and system fields.
-    """
-    whole = _entity_json(revision, edge_ids=full)
-    if fields:
-        shown: dict[str, JsonValue] = {key: whole[key] for key in ALWAYS_SHOWN}
-        shown["attrs"] = {n: revision.attrs.get(n) for n in fields if n not in whole}
-        shown.update({n: whole[n] for n in fields if n in whole and n not in ALWAYS_SHOWN})
-        return shown
-    if full:
-        if names_mapped:
-            whole["names_mapped"] = True
-        return whole
-    lean = {key: whole[key] for key in (*ALWAYS_SHOWN, "attrs", "edges")}
-    lean.update({key: whole[key] for key in VALIDITY if whole[key] is not None})
-    return lean
-
-
-def edge_json(edge: EdgeRecord, *, full: bool = False) -> dict[str, JsonValue]:
-    """An edge as reads show it: without its id unless ``full``."""
-    data = edge.to_json()
-    if not full:
-        del data["edge_id"]
-    return data
-
-
-def _entity_json(revision: Revision, *, edge_ids: bool) -> dict[str, JsonValue]:
-    return {
-        "id": str(revision.id),
-        "alias": revision.alias,
-        "type": revision.type,
-        "rev": revision.rev,
-        "record_status": revision.record_status,
-        "attrs": dict(revision.attrs),
-        "edges": [edge_json(edge, full=edge_ids) for edge in revision.edges],
-        "valid_from": revision.valid_from,
-        "valid_to": revision.valid_to,
-        "created_at": format_timestamp(revision.created_at),
-        "recorded_at": format_timestamp(revision.recorded_at),
-        "tx_seq": revision.tx_seq,
-        "ontology_version": revision.ontology_version,
-        "content_hash": revision.content_hash,
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,54 +239,6 @@ class QuerySpec:
     limit: int = DEFAULT_LIMIT
     offset: int = 0
     budget: int | None = None  # None: the engine's default (``execute.DEFAULT_BUDGET``)
-
-
-def value_json(value: Value) -> JsonValue:
-    """A query value as reads show it: an entity as ``get`` does, an edge with its source."""
-    if isinstance(value, Node):
-        return entity_json(value.revision)
-    if isinstance(value, Rel):
-        return {**value.edge.to_json(), "source": str(value.source)}
-    if isinstance(value, list):
-        return [value_json(v) for v in value]
-    if isinstance(value, dict):
-        return {k: value_json(v) for k, v in value.items()}
-    return plain_json(value)
-
-
-def entities_in(rows: Sequence[Sequence[Value]]) -> list[EntityId]:
-    """The entities rows show (nodes, and both ends of relationships), first seen first."""
-    found: dict[EntityId, None] = {}
-    for value in _graph_values(rows):
-        if isinstance(value, Node):
-            found.setdefault(value.id)
-        else:
-            found.setdefault(value.source)
-            found.setdefault(value.target)
-    return list(found)
-
-
-def edges_in(rows: Sequence[Sequence[Value]]) -> list[EdgeId]:
-    """The edges rows show as relationships, first seen first."""
-    return list(dict.fromkeys(v.edge.edge_id for v in _graph_values(rows) if isinstance(v, Rel)))
-
-
-def _graph_values(rows: Sequence[Sequence[Value]]) -> Iterator[Node | Rel]:
-    """Every node and relationship in rows, also inside lists and maps, in order."""
-
-    def walk(value: Value) -> Iterator[Node | Rel]:
-        if isinstance(value, Node | Rel):
-            yield value
-        elif isinstance(value, list):
-            for item in value:
-                yield from walk(item)
-        elif isinstance(value, dict):
-            for item in value.values():
-                yield from walk(item)
-
-    for row in rows:
-        for value in row:
-            yield from walk(value)
 
 
 def _query[**P, R](
