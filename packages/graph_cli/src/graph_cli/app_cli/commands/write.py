@@ -12,8 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Final
 
-from graph_cli.app_cli.commands.common import GRAPH, context
-from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
+from graph_cli.app_cli.commands.common import GRAPH, GRAPH_ERRORS, context
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.output_schemas import ref
 from graph_cli.cli_kit.runner import CommandState

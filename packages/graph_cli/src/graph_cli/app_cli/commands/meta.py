@@ -9,6 +9,7 @@ from graph_cli import __version__
 from graph_cli.app_cli.commands.common import (
     GLOBAL_OPTIONS,
     GRAPH,
+    GRAPH_ERRORS,
     PROGRAM,
     command_line,
     context,
@@ -407,15 +408,6 @@ _SCHEMA: Final = model_document(
         "relationship_fields": STRINGS,
     },
     _MODULE_FILTER,
-)
-GRAPH_ERRORS: Final = (
-    "graph.not_selected",
-    "graph.not_found",
-    "graph.not_in_project",
-    "config.invalid",
-    "config.forbidden_key",
-    "access.denied",
-    "ontology.artifact_missing",
 )
 
 

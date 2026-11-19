@@ -12,8 +12,7 @@ import shlex
 from pathlib import Path
 from typing import Final
 
-from graph_cli.app_cli.commands.common import GRAPH, PROGRAM, context, services
-from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
+from graph_cli.app_cli.commands.common import GRAPH, GRAPH_ERRORS, PROGRAM, context, services
 from graph_cli.app_cli.commands.read import REF_ERRORS
 from graph_cli.app_cli.commands.write import (
     COMMON,

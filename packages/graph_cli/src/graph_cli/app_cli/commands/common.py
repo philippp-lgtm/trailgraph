@@ -24,6 +24,15 @@ AS_OF: Final = ParamSpec(
 JSON_OPTION: Final = ParamSpec("--json", "flag", "Write one JSON envelope to stdout.")
 Hint = dict[str, JsonValue]
 GLOBAL_OPTIONS: Final = (JSON_OPTION, GRAPH)  # also accepted before the subcommand
+GRAPH_ERRORS: Final = (
+    "graph.not_selected",
+    "graph.not_found",
+    "graph.not_in_project",
+    "config.invalid",
+    "config.forbidden_key",
+    "access.denied",
+    "ontology.artifact_missing",
+)
 
 
 def services(state: CommandState) -> AppServices:

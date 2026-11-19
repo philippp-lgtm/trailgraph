@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING, Final
 from graph_cli.app_cli.commands.common import (
     AS_OF,
     GRAPH,
+    GRAPH_ERRORS,
     Hint,
     command_line,
     context,
     next_page,
 )
-from graph_cli.app_cli.commands.meta import GRAPH_ERRORS
 from graph_cli.app_cli.commands.view_text import view_hints, view_text
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, SOURCE, STRINGS
 from graph_cli.cli_kit.envelope import Result
