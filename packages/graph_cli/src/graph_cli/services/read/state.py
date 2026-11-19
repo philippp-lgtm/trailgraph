@@ -30,7 +30,7 @@ from graph_cli.services.visible_catalog import HiddenCatalog
 
 if TYPE_CHECKING:
     from graph_cli.kinetic.cover import SignatureCache
-    from graph_cli.services.read import ActionCatalog  # moves to ``catalogs`` with its class
+    from graph_cli.services.read.catalogs import ActionCatalog
 
 
 def query_phase[S: ReadState, **P, R](
