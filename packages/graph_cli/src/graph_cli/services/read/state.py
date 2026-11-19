@@ -24,13 +24,12 @@ from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.services.action_rights import FineTypes
 from graph_cli.services.models import ModelCache
 from graph_cli.services.names import NameMapCache, NameMaps
-from graph_cli.services.read.graph_read import GraphRead
+from graph_cli.services.read.graph_read import ActionCatalog, GraphRead
 from graph_cli.services.visibility import Visibility
 from graph_cli.services.visible_catalog import HiddenCatalog
 
 if TYPE_CHECKING:
     from graph_cli.kinetic.cover import SignatureCache
-    from graph_cli.services.read.graph_read import ActionCatalog
 
 
 def query_phase[S: ReadState, **P, R](

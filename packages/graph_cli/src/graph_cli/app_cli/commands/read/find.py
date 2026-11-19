@@ -412,7 +412,7 @@ LOOKUP_OUTPUT: Final = obj(
         "texts": array(
             obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
         ),
-        "fit": nullable(  # --for, --for-source: services.read.finding
+        "fit": nullable(  # --for, --for-source: services.read.finding.ReadFinding.lookup
             obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
         ),
     }

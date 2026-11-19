@@ -309,9 +309,9 @@ the admin skills ([Skills](skills.md#admin-skills)).
 
 A caller with [read limits](access_control.md#read-limits) reads through views
 that are opened in one place, `services.read.opening` (`ReadService.open`, and
-`services.read.as_of` for `--as-of`), and handed to every read command in `GraphRead`. A graph without
-read rules gets the raw snapshot and model, so nothing is filtered and nothing
-is paid.
+`services.read.as_of` for `--as-of`), and handed to every read command in
+`GraphRead`. A graph without read rules gets the raw snapshot and model, so
+nothing is filtered and nothing is paid.
 
 | Module | Content |
 | --- | --- |
