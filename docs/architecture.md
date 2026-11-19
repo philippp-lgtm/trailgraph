@@ -29,6 +29,7 @@ Dependencies point down only. Enforced by import-linter
 | --- | --- |
 | CLI | `app_cli` |
 | Skill generators | `skills` |
+| `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
 | CLI infrastructure | `cli_kit` |
 | Registry and wiring | `catalog` |
 | Extensions | `extensions` |
