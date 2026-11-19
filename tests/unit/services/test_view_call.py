@@ -15,6 +15,7 @@ from graph_cli.services.view_call import (
     LazyRows,
     default_view,
     has_default_for,
+    has_view_for,
     page_key,
     rows_share,
 )
@@ -66,6 +67,16 @@ def test_a_class_without_a_default_candidate_needs_no_judgement_of_the_views() -
     assert not has_default_for([], MODEL, "org:Team")
     sets = [v for v in catalog if not v.entity]
     assert not has_default_for(sets, MODEL, "org:OrgUnit")
+
+
+def test_a_class_that_no_active_entity_view_takes_needs_no_judgement_for_the_affordances() -> None:
+    catalog = list(views.compiled_entries().values())
+    assert has_view_for(catalog, MODEL, "org:Team")  # unit_overview takes the class above it
+    assert has_view_for(catalog, MODEL, "org:Position")  # not a default, still a view
+    assert not has_view_for(catalog, MODEL, "ppl:Employee")
+    assert not has_view_for([v for v in catalog if not v.entity], MODEL, "org:Position")
+    legacy = [v for v in catalog if v.name == "legacy_unit_overview"]  # deprecated, takes Team
+    assert not has_view_for(legacy, MODEL, "org:Team")
 
 
 def test_a_deprecated_view_is_never_a_default() -> None:

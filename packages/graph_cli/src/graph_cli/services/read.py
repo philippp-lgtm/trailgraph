@@ -156,6 +156,7 @@ from graph_cli.services.view_call import (
     LazyRows,
     default_view,
     has_default_for,
+    has_view_for,
     page_key,
     rows_share,
 )
@@ -1580,7 +1581,11 @@ class ReadService:
         found.update(actions_for(current, actions, view.snapshot, view.model).to_json())
         functions = self.functions(view.actor, view.entry) or ()
         found.update(functions_for(current, functions, view.model).to_json())
-        views = self._visible_views(view.actor, view.entry, view.read_view)
+        published = self._published_views(view.entry)
+        # judge what the reader sees only when some view takes the entity's class; a graph
+        # without such views is spared the catalog's compile for a limited reader
+        fits = published is not None and has_view_for(published[0], view.model, str(current.type))
+        views = self._visible_views(view.actor, view.entry, view.read_view) if fits else None
         if views:  # absent for a graph without (visible) views, so its answers do not change
             shown = [default_view(views, view.model, str(current.type)), showing]
             others = [v for v in shown if v is not None]

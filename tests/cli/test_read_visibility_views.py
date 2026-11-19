@@ -408,13 +408,14 @@ def test_a_cursor_does_not_survive_a_change_of_what_the_caller_sees(
 # ---- a view that no longer fits ---------------------------------------------------------------
 
 
-def test_a_stale_view_says_only_that_it_is_and_never_what_it_names(
+def test_a_stale_view_is_stale_for_who_sees_everything_and_missing_for_a_limited_reader(
     run_cli: CliRunner, isolated_env: dict[str, str], world: Path
 ) -> None:
     """``colleague_mail`` is visible to a caller without markings (the contractors' e-mail is
     unmarked); its stored form is changed to name the salary, as an interrupted release could
-    leave it. The re-check runs on the full model, so its problems may name terms the caller
-    cannot see: the answer carries the code only."""
+    leave it. A caller who sees everything gets ``view.stale``, the code of the cause only; a
+    limited caller gets what a name that was never published gets: the problems of the check may
+    name terms it cannot see, so the view is hidden, and the default falls back to the card."""
     graph_id = next(Path(isolated_env["XDG_DATA_HOME"], "graph_cli", "graphs").iterdir()).name
     root = Path(isolated_env["XDG_DATA_HOME"]) / "graph_cli"
 
@@ -422,15 +423,19 @@ def test_a_stale_view_says_only_that_it_is_and_never_what_it_names(
         entry["sections"][0]["fields"] = ["name", "salary"]
 
     digest = stale_on_disk(root, graph_id, "colleague_mail", edit)
-    install(run_cli, world, READER)
+    install(run_cli, world, HOLDER)
     stale = app(run_cli, "view", "CON-0001", "--name", "colleague_mail", env=ENV)
     assert (stale.code, stale.error["code"]) == (1, "view.stale"), stale.envelope
     details = stale.error["details"]
     assert set(details) == {"view", "hash", "cause"} and details["view"] == "colleague_mail"
     assert details["hash"] == digest and details["cause"].startswith("view.")
     assert "tell the maintainer" in stale.error["message"]
-    text = json.dumps(stale.envelope)
-    assert "salary" not in text and "pay" not in text.replace("payload", "")
+    install(run_cli, world, READER)
+    twin(run_cli, "colleague_mail", "colleague_mailx", "CON-0001")
+    described = app(run_cli, "describe", "view", "colleague_mail", env=ENV)
+    assert (described.code, described.error["code"]) == (1, "view.not_found")
+    assert "salary" not in json.dumps(described.envelope)
+    assert "colleague_mail" not in listed(run_cli)
     # the other views of the catalog are fine
     assert ok(run_cli, "view", "CON-0001", "--name", "colleague_overview").code == 0
 

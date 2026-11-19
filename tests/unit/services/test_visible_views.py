@@ -1,9 +1,9 @@
 """``hidden_views``: the views a reader of a filtered model must not see (views plan V10).
 
 A view is hidden whole when it names a class, relation or parameter class the limited model lacks,
-or no longer compiles against it although it compiles against the full model (an attribute a
-type limit or a marking removed). A problem both models share is no difference: a view that was
-already stale is not hidden by this. ``fields: all`` names nothing.
+or no longer compiles against it (an attribute a type limit or a marking removed). A view that is
+stale against the full model is hidden from a limited reader too (it cannot be called, and its
+problems may name what the reader must not see). ``fields: all`` names nothing.
 """
 
 from support import views
@@ -86,7 +86,7 @@ def test_a_view_that_names_an_attribute_the_reader_lacks_is_hidden_and_all_field
     assert not {"tasks_by_state", "members_report"} & found
 
 
-def test_a_problem_both_models_share_hides_nothing() -> None:
+def test_a_view_that_is_stale_for_everyone_is_hidden_from_a_limited_reader() -> None:
     document, entries = catalog()
     # the stored form of one view names an attribute that exists in no model: stale everywhere
     broken = {**document}
@@ -104,7 +104,7 @@ def test_a_problem_both_models_share_hides_nothing() -> None:
     ]
     limited = filter_model(MODEL, concrete() - {"ops:Task"}, None)
     found = hidden_views(entries, broken, MODEL, limited, FUNCTIONS)  # type: ignore[arg-type]
-    assert found == {"tasks_by_state"}  # unit_overview is stale for everyone, hidden for no one
+    assert found == {"tasks_by_state", "unit_overview"}  # stale for everyone, so not shown
 
 
 def test_view_hidden_reads_the_touched_terms_of_the_entry() -> None:

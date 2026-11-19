@@ -34,6 +34,16 @@ def rows_share(sections: int) -> int:
     return max(1, ROWS_BUDGET // max(1, sections))
 
 
+def has_view_for(views: Sequence[ViewEntry], model: CompiledModel, entity_type: str) -> bool:
+    """Whether some active entity view takes the class of the entity (itself or an ancestor):
+    the affordances of a class that none takes need no judgement of what the reader sees.
+    ``views`` is the whole catalog, ``model`` the reader's."""
+    return any(
+        v.entity and not v.deprecated and v.takes is not None and model.is_a(entity_type, v.takes)
+        for v in views
+    )
+
+
 def has_default_for(views: Sequence[ViewEntry], model: CompiledModel, entity_type: str) -> bool:
     """Whether some default entity view takes the class of the entity (itself or an ancestor): a
     reader whose class has none is shown the card without judging what it may see of the views.

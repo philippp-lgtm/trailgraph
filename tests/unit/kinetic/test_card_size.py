@@ -120,6 +120,8 @@ def affordances_of_many() -> dict[str, JsonValue]:
         "actions_more": 20,
         "functions": [{"function": f"{long}_{n:03d}", "as": "note"} for n in range(40)],
         "functions_more": 20,
+        "views": [{"view": f"{long}_{long}_{n}"} for n in range(5)],
+        "views_more": 99,
     }
 
 
@@ -157,6 +159,7 @@ def test_a_huge_entity_gives_a_card_below_the_limit_with_exact_counts() -> None:
     assert aff["actions"] == {"apply": aff["actions"]["apply"], "blocked": 20}
     assert len(aff["actions"]["apply"]) == 5 and aff["actions_more"] == 15 + 20
     assert len(aff["functions"]) == 5 and aff["functions_more"] == 35 + 20
+    assert len(aff["views"]) == 5 and aff["views_more"] == 99
     assert len(aff["transitions"]) == 2  # the summary is never trimmed
 
 

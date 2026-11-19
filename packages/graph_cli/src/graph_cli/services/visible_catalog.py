@@ -145,21 +145,19 @@ def hidden_views(
     functions: Sequence[FunctionEntry],
 ) -> frozenset[str]:
     """The names of the views of ``document`` (``entries`` parsed) a reader of the ``limited``
-    model must not see: a view is hidden whole when it names a term the limited model lacks, or
-    no longer compiles against it although it compiles against ``full`` (a ``fields``, ``where``
-    or ``order`` that names an attribute a type limit or a marking removes, a relation whose
-    ends shrank). ``functions`` are the full published function entries, so a missing function
-    is a problem on both sides and no difference; the functions a view runs are judged per call
-    (``ReadService``: visible to the reader, ``read.function``). A view that already fails
-    against the full model is not hidden by this, as for functions."""
+    model must not see: a view is hidden whole when it names a term the limited model lacks or
+    has any problem against it (a ``fields``, ``where`` or ``order`` that names an attribute a
+    type limit or a marking removes, a relation whose ends shrank). Unlike the functions and
+    actions, a view that is already stale against the full model is hidden too: its problems may
+    name what the reader must not see, and it cannot be called anyway (the reader gets
+    ``view.not_found`` where a reader who sees everything gets ``view.stale``). ``functions``
+    are the full published function entries; the functions a view runs are judged per call
+    (``ReadService``: visible to the reader, ``read.function``)."""
     from graph_cli.kinetic.view_compile import check_views  # compiles function queries too
 
     hidden = {e.name for e in entries if view_hidden(e, limited)}
     if len(hidden) < len(entries):
-        broken = _stale(check_views(document, limited, functions)) - _stale(
-            check_views(document, full, functions)
-        )
-        hidden |= broken
+        hidden |= _stale(check_views(document, limited, functions))
     return frozenset(hidden)
 
 
