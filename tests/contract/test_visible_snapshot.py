@@ -382,8 +382,7 @@ def test_every_type_visible_equals_the_raw_snapshot(world: World) -> None:
 TX_BODY = {"changeset", "resolution", "revisions", "alias_allocations", "blobs"}
 TX_READS = {"tx", "changes_since"}  # the calls that hand out a tx record, body included
 TX_READERS = {  # the modules of the app and server distributions that read a tx through a snapshot
-    # history and the change feed: request, reason, actor session, tx id
-    "services/read/__init__.py",
+    "services/read/history.py",  # history: request, reason, actor session, tx id
     "services/read/as_of.py",  # the ontology version of the earlier state
     "services/read/change_feed.py",  # the feed's tx-level keys and tx ids
     "services/visibility.py",  # the wrapper itself
