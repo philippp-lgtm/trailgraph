@@ -27,7 +27,7 @@ as an entity of it. Under the name mapping of a major release a revision before 
 reads as the new class, so it is judged by the class it was stored under too (``own_class`` of
 ``MappedSnapshot``, F1b) when the pinned model still has that class. A revision left out is not
 marked: it answers as one that was never stored, the others keep their numbers (a gap, F2), and
-the first one shown is a creation for the reader (F3, ``read._revision_change``).
+the first one shown is a creation for the reader (F3, ``read.change_feed.revision_change``).
 """
 
 from __future__ import annotations

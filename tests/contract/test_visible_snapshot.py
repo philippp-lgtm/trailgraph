@@ -384,6 +384,7 @@ TX_READS = {"tx", "changes_since"}  # the calls that hand out a tx record, body 
 TX_READERS = {  # the modules of the app and server distributions that read a tx through a snapshot
     # history and the change feed: request, reason, actor session, tx id; as-of: ontology version
     "services/read/__init__.py",
+    "services/read/change_feed.py",  # the feed's tx-level keys and tx ids
     "services/visibility.py",  # the wrapper itself
     "temporal_knowledge/as_of.py",  # the time of a tx
     "temporal_knowledge/changes.py",  # the change feed's raw read: ``touched``, see below
