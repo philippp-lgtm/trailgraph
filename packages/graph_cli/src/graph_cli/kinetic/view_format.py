@@ -101,7 +101,8 @@ NEIGHBORS_MAX_DEFAULT: Final = 10
 NEIGHBORS_MAX_MAX: Final = 50
 ROWS_MAX_DEFAULT: Final = 10
 ROWS_MAX_MAX: Final = 50
-ROW_RELATION_MAX_DEFAULT: Final = 50
+ROW_RELATION_MAX_DEFAULT: Final = 50  # per-row neighbour list of an entity view
+LIST_RELATION_MAX_DEFAULT: Final = 500  # ... of a ``list`` section: no small default cut
 ROW_RELATION_MAX_MAX: Final = 500
 
 SECTION_ID_RE: Final = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
@@ -888,10 +889,13 @@ class _Parse(Parser):
             return None
         return tuple(found)
 
-    def row_relations(self, node: YamlNode, path: str) -> tuple[RowRelation, ...] | None:
-        """``all`` or a list of ``all`` and mappings: the per-row neighbour lists."""
+    def row_relations(
+        self, node: YamlNode, path: str, default_max: int
+    ) -> tuple[RowRelation, ...] | None:
+        """``all`` or a list of ``all`` and mappings: the per-row neighbour lists. A list without
+        ``max`` shows ``default_max`` neighbours."""
         if isinstance(node, YamlScalar) and node.plain and node.text == ALL:
-            return (RowRelation(),)
+            return (RowRelation(max=default_max),)
         items = self.sequence(node, path)
         if items is None:
             return None
@@ -902,9 +906,9 @@ class _Parse(Parser):
         for index, item in enumerate(items):
             here = f"{path}[{index}]"
             if isinstance(item, YamlScalar) and item.plain and item.text == ALL:
-                found.append(RowRelation())
+                found.append(RowRelation(max=default_max))
                 continue
-            one = self.row_relation(item, here)
+            one = self.row_relation(item, here, default_max)
             if one is not None:
                 found.append(one)
         if len(found) != len(items):
@@ -918,7 +922,7 @@ class _Parse(Parser):
             return None
         return tuple(found)
 
-    def row_relation(self, node: YamlNode, path: str) -> RowRelation | None:
+    def row_relation(self, node: YamlNode, path: str, default_max: int) -> RowRelation | None:
         body = self.mapping(node, path, _ROW_RELATION_KEYS)
         if body is None:
             return None
@@ -931,7 +935,7 @@ class _Parse(Parser):
         fields = self.field_names(body["fields"], f"{path}.fields") if "fields" in body else None
         where = self.clauses(body["where"], f"{path}.where", where=True) if "where" in body else ()
         order = self.clauses(body["order"], f"{path}.order") if "order" in body else ()
-        count = self.number(body, "max", path, 1, ROW_RELATION_MAX_MAX, ROW_RELATION_MAX_DEFAULT)
+        count = self.number(body, "max", path, 1, ROW_RELATION_MAX_MAX, default_max)
         broken = (
             relation is None
             or not direction
@@ -947,14 +951,15 @@ class _Parse(Parser):
         return RowRelation(relation, direction, fields, where, order, count)
 
     def row_shape(
-        self, body: dict[str, YamlNode], path: str
+        self, body: dict[str, YamlNode], path: str, default_max: int
     ) -> tuple[FieldSel, tuple[str, ...], tuple[str, ...], tuple[RowRelation, ...]] | None:
-        """The keys ``list`` and ``neighbors`` share: fields, where, order, relations."""
+        """The keys ``list`` and ``neighbors`` share: fields, where, order, relations (whose
+        lists show ``default_max`` neighbours unless they say ``max``)."""
         fields = self.field_names(body["fields"], f"{path}.fields") if "fields" in body else None
         where = self.clauses(body["where"], f"{path}.where", where=True) if "where" in body else ()
         order = self.clauses(body["order"], f"{path}.order") if "order" in body else ()
         relations = (
-            self.row_relations(body["relations"], f"{path}.relations")
+            self.row_relations(body["relations"], f"{path}.relations", default_max)
             if "relations" in body
             else ()
         )
@@ -971,7 +976,7 @@ class _Parse(Parser):
         direction = "out"
         if "direction" in body:
             direction = self.choice(body["direction"], f"{path}.direction", DIRECTIONS) or ""
-        shape = self.row_shape(body, path)
+        shape = self.row_shape(body, path, ROW_RELATION_MAX_DEFAULT)
         count = self.number(body, "max", path, 1, NEIGHBORS_MAX_MAX, NEIGHBORS_MAX_DEFAULT)
         if relation is None or not direction or shape is None or count is None:
             return None
@@ -985,7 +990,7 @@ class _Parse(Parser):
     ) -> SectionDef | None:
         self.require(body, "type", path, line)
         types = self.type_names(body.get("type"), f"{path}.type")
-        shape = self.row_shape(body, path)
+        shape = self.row_shape(body, path, LIST_RELATION_MAX_DEFAULT)
         if types is None or shape is None:
             return None
         fields, where, order, relations = shape

@@ -178,7 +178,7 @@
     {
       "default": false,
       "examples": [],
-      "hash": "sha256:a2f1ac7fa0bd49f95b02e21df876eaeca06eca6221cdf92a27257761286ffd3e",
+      "hash": "sha256:2611392b9d82e233b18dff49c24e5e22753ca2269c81ecc471db29496f4d2443",
       "max_bytes": null,
       "module": "organization",
       "name": "org_catalog",
@@ -205,7 +205,7 @@
             {
               "direction": "out",
               "fields": null,
-              "max": 50,
+              "max": 500,
               "order": [],
               "relation": null,
               "where": []
@@ -231,7 +231,7 @@
             {
               "direction": "out",
               "fields": null,
-              "max": 50,
+              "max": 500,
               "order": [],
               "relation": null,
               "where": []
@@ -241,7 +241,7 @@
               "fields": [
                 "name"
               ],
-              "max": 50,
+              "max": 500,
               "order": [],
               "relation": "org:holds",
               "where": [
@@ -264,7 +264,7 @@
             {
               "direction": "out",
               "fields": null,
-              "max": 50,
+              "max": 500,
               "order": [],
               "relation": null,
               "where": []
@@ -321,7 +321,7 @@
               {
                 "direction": "out",
                 "fields": null,
-                "max": 50,
+                "max": 500,
                 "order": [],
                 "relation": null,
                 "where": []
@@ -347,7 +347,7 @@
               {
                 "direction": "out",
                 "fields": null,
-                "max": 50,
+                "max": 500,
                 "order": [],
                 "relation": null,
                 "where": []
@@ -357,7 +357,7 @@
                 "fields": [
                   "name"
                 ],
-                "max": 50,
+                "max": 500,
                 "order": [],
                 "relation": "org:holds",
                 "where": [
@@ -380,7 +380,7 @@
               {
                 "direction": "out",
                 "fields": null,
-                "max": 50,
+                "max": 500,
                 "order": [],
                 "relation": null,
                 "where": []
@@ -661,7 +661,7 @@
           "question": "Which tasks are still open this quarter?"
         }
       ],
-      "hash": "sha256:b424184cf90a0733d7da2fc4745770737567f30070bab8adcfb17a033d5b3b7b",
+      "hash": "sha256:0963d3b61852e230b6b1d1cd689a781ccd4db2585e283ba62c26a9b462d53cea",
       "max_bytes": null,
       "module": "operations",
       "name": "tasks_by_state",
@@ -706,7 +706,7 @@
               "fields": [
                 "name"
               ],
-              "max": 50,
+              "max": 500,
               "order": [],
               "relation": "ops:assigned_to",
               "where": []
@@ -777,7 +777,7 @@
                 "fields": [
                   "name"
                 ],
-                "max": 50,
+                "max": 500,
                 "order": [],
                 "relation": "ops:assigned_to",
                 "where": []

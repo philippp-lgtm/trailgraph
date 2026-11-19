@@ -33,7 +33,8 @@ attached. Keep it small and make it the `default` only when it is what almost ev
 
 Write a **set view** when a consumer reads a whole type: a catalog renderer, an export, a report that
 would otherwise make one `graph find` call per type and join the results itself. A set view answers in
-one call, from one state of the graph, with stable keys (`ref`) and `find`'s order.
+one call, from one state of the graph, with stable keys (`ref`), `find`'s order and the out-relations
+in `find`'s edge order.
 
 Choose the nearest tool instead when:
 

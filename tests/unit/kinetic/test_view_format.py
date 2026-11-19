@@ -126,12 +126,12 @@ def test_a_set_view_is_read_in_full() -> None:
     assert (defn.takes, defn.entity, defn.default, defn.page_bytes) == (None, False, False, 65536)
     units, positions, people, completions = defn.sections
     assert units == ListSection(
-        "units", ("org:OrgUnit",), None, (), (), "all", (RowRelation(None),)
+        "units", ("org:OrgUnit",), None, (), (), "all", (RowRelation(None, max=500),)
     )
     assert isinstance(positions, ListSection)
     assert positions.relations == (
-        RowRelation(None),
-        RowRelation("org:holds", "in", ("name",), ("work_email:exists=true",), (), 50),
+        RowRelation(None, max=500),
+        RowRelation("org:holds", "in", ("name",), ("work_email:exists=true",), (), 500),
     )
     assert isinstance(people, ListSection) and people.types == ("ppl:Employee", "ppl:External")
     assert completions == RowsSection(
@@ -179,10 +179,10 @@ def test_row_relations_take_all_or_a_list() -> None:
             "      - all\n      - {relation: ops:of_process, fields: all, max: 7}\n"
         )
     )
-    assert one.sections[0].to_json()["relations"] == [RowRelation().to_json()]
+    assert one.sections[0].to_json()["relations"] == [RowRelation(max=500).to_json()]
     assert isinstance(many.sections[0], ListSection)
     assert many.sections[0].relations == (
-        RowRelation(None),
+        RowRelation(None, max=500),
         RowRelation("ops:of_process", "out", "all", (), (), 7),
     )
     twice = setview("  - kind: list\n    type: ops:Task\n    relations: [all, all]\n")
@@ -199,6 +199,26 @@ def test_row_relations_take_all_or_a_list() -> None:
     assert codes(both) == ["view.invalid_value"]
     over = "  - kind: list\n    type: ops:Task\n    relations:\n      - {relation: x:y, max: 501}\n"
     assert codes(setview(over)) == ["view.invalid_value"]
+
+
+def test_row_relations_of_a_list_default_to_the_hard_maximum_and_those_of_neighbors_to_fifty() -> (
+    None
+):
+    body = "    relations:\n      - all\n      - {relation: ops:of_process}\n"
+    listed = parsed(setview("  - kind: list\n    type: ops:Task\n" + body))
+    assert isinstance(listed.sections[0], ListSection)
+    assert [r.max for r in listed.sections[0].relations] == [500, 500]
+    near = parsed(entity("  - kind: neighbors\n    relation: org:part_of\n" + body))
+    assert isinstance(near.sections[0], NeighborsSection)
+    assert [r.max for r in near.sections[0].relations] == [50, 50]
+    kept = parsed(
+        setview(
+            "  - kind: list\n    type: ops:Task\n    relations:\n"
+            "      - {relation: ops:of_process, max: 50}\n"
+        )
+    )
+    assert isinstance(kept.sections[0], ListSection)
+    assert kept.sections[0].relations[0].max == 50
 
 
 def test_type_is_one_class_or_a_list() -> None:

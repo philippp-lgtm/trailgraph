@@ -225,7 +225,7 @@ No keys beyond `id` and `title`; they read as the card does.
 | Key | Meaning |
 | --- | --- |
 | `type` | one class or a list of up to 16 (CURIEs or local names), subclasses included; each row names its concrete `type` when more than one class can occur |
-| `where`, `order`, `fields`, `relations` | as for `neighbors`; the default order is `find`'s (by id) |
+| `where`, `order`, `fields`, `relations` | as for `neighbors`; the default order is `find`'s (by id); the per-row lists differ in two defaults (below) |
 
 A `list` has no `max`: it is paged, never cut.
 
@@ -250,8 +250,13 @@ A deprecated function behind a `rows` section is not refused: it is a warning
 | `relation` | a relation (required in a mapping); at most once per direction |
 | `direction` | `out` (default) or `in` |
 | `fields` | attributes of the neighbours (a list or `all`) |
-| `where`, `order` | as above, on the neighbours |
-| `max` | neighbours listed (default 50, at most 500) |
+| `where`, `order` | as above, on the neighbours; left out `order`: by label, then id, except out-lists of a `list` row, which follow the edges as `find` shows them |
+| `max` | neighbours listed (default 50, at most 500; in a `list` section default 500); the cut is counted in `more` |
+
+A `list` row replaces a `find --type` read, so its lists are not trimmed or reordered by default: the
+out-lists (also those of `all`) keep the edge order of `find` unless `order` says otherwise, and `max`
+defaults to the largest value. In-lists, `neighbors` rows and entity views order by label, then id and
+keep the default of 50 (the byte guard trims entity views).
 
 There is no deeper nesting: a second hop is a join by key across sections, or a function.
 

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from support.cards import CountingSnapshot, as_snapshot
 from support.snapshots import DictSnapshot, edge, eid, revision
-from support.views import company_model, compiled_entries
+from support.views import company_model, compiled_entries, one_entry
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -83,6 +83,23 @@ def world(units: int = 12, per: int = 3) -> list[Revision]:
         )
     )
     return found
+
+
+def many_holds() -> Revision:
+    """A person whose ``holds`` edges are not in label order (the labels are ``Role 07-0``,
+    ``Role 02-1`` and ``Role 05-2``)."""
+    return revision(
+        "multi",
+        "ppl:Employee",
+        {
+            "name": "Person Multi",
+            "status": "active",
+            "employee_number": "E-MULTI",
+            "work_email": "m@example.org",
+        },
+        [edge("org:holds", "pos7_0"), edge("org:holds", "pos2_1"), edge("org:holds", "pos5_2")],
+        alias="EMP-MULTI",
+    )
 
 
 def rows_result(count: int = 5) -> RowsResult:
@@ -162,8 +179,9 @@ def test_a_set_view_that_fits_is_one_page_with_every_section() -> None:
 def test_the_rows_of_a_listing_are_what_find_returns_for_the_type() -> None:
     """The generic oracle (B6): the rows of a ``list`` section are exactly the active entities
     ``find --type`` plans and returns, in its order, with their attributes as ``get`` shows them
-    and the targets of their out-edges, keyed by alias."""
-    revisions = world()
+    and the targets of their out-edges, keyed by alias, in the edge order ``find`` shows (a
+    renderer that replaces its ``find`` reads needs no re-sort)."""
+    revisions = [*world(), many_holds()]
     snapshot = DictSnapshot(*revisions)
     data = whole(snapshot)
     sections = {s["id"]: s for s in data["sections"]}
@@ -185,11 +203,102 @@ def test_the_rows_of_a_listing_are_what_find_returns_for_the_type() -> None:
                 other = next(r for r in revisions if str(r.id) == e["target"])
                 targets.setdefault(e["rel"], []).append(other.alias or str(other.id))
             out = {
-                g["relation"]: sorted(i["ref"] for i in g["items"])
+                g["relation"]: [i["ref"] for i in g["items"]]
                 for g in item.get("relations", [])
                 if g["direction"] == "out"
             }
-            assert out == {k: sorted(v) for k, v in targets.items()}, item["ref"]
+            assert out == targets, item["ref"]
+
+
+PROBE_HEAD = (
+    "schema: graph_cli.view/1\nname: probe\nmodule: organization\nsummary: A probe.\n"
+    "use_when: Testing.\nsections:\n  - kind: list\n    id: people\n    type: ppl:Employee\n"
+)
+
+
+def probe_items(relations: str, extra: list[Revision] | None = None) -> list[Any]:
+    """The rows of a ``people`` listing with ``relations`` (the yaml text after ``relations:``)."""
+    spec = spec_for(one_entry(PROBE_HEAD + "    relations:" + relations))
+    data = whole(DictSnapshot(*world(), many_holds(), *(extra or [])), spec=spec)
+    return next(s for s in data["sections"] if s["id"] == "people")["items"]
+
+
+def group_refs(items: list[Any], ref: str, relation: str, direction: str = "out") -> list[str]:
+    row = next(i for i in items if i["ref"] == ref)
+    group = next(
+        g for g in row["relations"] if (g["relation"], g["direction"]) == (relation, direction)
+    )
+    return [i["ref"] for i in group["items"]]
+
+
+def test_out_relations_of_a_listing_follow_the_edges_unless_ordered() -> None:
+    edges = ["POS-070", "POS-021", "POS-052"]  # the order of the edges of ``many_holds``
+    by_edges = probe_items(" all")
+    assert group_refs(by_edges, "EMP-MULTI", "org:holds") == edges
+    listed = probe_items("\n      - {relation: org:holds, fields: [title]}")
+    assert group_refs(listed, "EMP-MULTI", "org:holds") == edges
+    ordered = probe_items("\n      - {relation: org:holds, order: [title]}")
+    assert group_refs(ordered, "EMP-MULTI", "org:holds") == ["POS-021", "POS-052", "POS-070"]
+    filtered = probe_items(
+        "\n      - {relation: org:holds, where: ['title:in=Role 07-0,Role 05-2']}"
+    )
+    assert group_refs(filtered, "EMP-MULTI", "org:holds") == ["POS-070", "POS-052"]
+
+
+def test_in_relations_of_a_listing_keep_the_label_order() -> None:
+    holders = [
+        revision(
+            f"late{n}",
+            "ppl:Employee",
+            {"name": name, "status": "active", "employee_number": n, "work_email": f"{n}@e.org"},
+            [edge("org:holds", "pos0_0")],
+            alias=f"EMP-{n}",
+        )
+        for n, name in (("L1", "Zed"), ("L2", "Abe"), ("L3", "Mia"))
+    ]
+    spec = spec_for(
+        one_entry(
+            PROBE_HEAD.replace("ppl:Employee", "org:Position")
+            + "    relations:\n      - {relation: org:holds, direction: in, fields: [name]}\n"
+        )
+    )
+    data = whole(DictSnapshot(*world(), *holders), spec=spec)
+    items = next(s for s in data["sections"] if s["id"] == "people")["items"]
+    assert group_refs(items, "POS-000", "org:holds", "in") == [
+        "EMP-L2",  # Abe
+        "EMP-L3",  # Mia
+        "EMP-000",  # Person 00-0
+        "EMP-L1",  # Zed
+    ]
+
+
+def test_the_neighbours_of_a_listing_row_are_cut_at_the_hard_maximum_by_default() -> None:
+    held = [
+        revision(
+            f"many{n}",
+            "org:Position",
+            {"title": f"Many {n:03d}", "status": "active"},
+            alias=f"POS-M{n:03d}",
+        )
+        for n in range(520)
+    ]
+    hoarder = revision(
+        "hoarder",
+        "ppl:Employee",
+        {"name": "Hoarder", "status": "active", "employee_number": "E-H", "work_email": "h@e.org"},
+        [edge("org:holds", f"many{n}") for n in range(520)],
+        alias="EMP-HOARD",
+    )
+    for relations in (" all", "\n      - {relation: org:holds}"):
+        items = probe_items(relations, [*held, hoarder])
+        row = next(i for i in items if i["ref"] == "EMP-HOARD")
+        group = next(g for g in row["relations"] if g["relation"] == "org:holds")
+        assert (group["count"], len(group["items"]), group["more"]) == (520, 500, 20)
+        small = [g for g in row["relations"] if g["relation"] != "org:holds"]
+        assert all("more" not in g for g in small)
+    explicit = probe_items("\n      - {relation: org:holds, max: 5}", [*held, hoarder])
+    row = next(i for i in explicit if i["ref"] == "EMP-HOARD")
+    assert (row["relations"][0]["count"], len(row["relations"][0]["items"])) == (520, 5)
 
 
 def test_a_listing_of_several_concrete_classes_names_the_class_of_every_row() -> None:

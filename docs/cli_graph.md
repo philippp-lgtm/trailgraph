@@ -673,7 +673,7 @@ of a class the view does not take is `view.class_mismatch`; a view that needs a 
 **Set views** take no entity and list rows of a whole set, for scripts and renderers: `view --name
 NAME`, with a REF `view.takes_no_entity`. Their `list` sections give every active entity of a class
 (or of several, with the concrete `type` per row) with attributes as `get` shows them, never cut, and
-the relations as neighbour keys (`ref`: the alias, else the id), in the order of `find`. The answer
+the relations as neighbour keys (`ref`: the alias, else the id), in the order of `find` (the targets of an out-relation in edge order, up to 500 per list unless the view says less). The answer
 is a **page** of whole rows, at most `--page-bytes` bytes (the view's own size, else 12 KiB; up to
 256 KiB; a row larger than the page goes alone with `oversize: true`). A page that does not reach the
 end has `next` and `more: true`; `--cursor` with the same `--name` and `--param` gives the next page,

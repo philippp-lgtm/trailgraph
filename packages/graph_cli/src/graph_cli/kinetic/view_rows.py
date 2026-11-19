@@ -10,7 +10,8 @@ masked value is absent.
 edges and every revision it loads is charged to a shared ``Loads`` budget; a group that could not
 read all its edges says so (``sampled``), and what is cut by ``max`` is counted (``more``).
 Order follows the spec (the ``find`` sort grammar, planned by the caller) or, by default, the
-card's order: normalized label, then id.
+card's order: normalized label, then id. The out-relations of a ``list`` row (``edge_order``) are
+the exception: they default to the edge order ``find`` gives, so a set view replaces its reads.
 """
 
 from __future__ import annotations
@@ -99,6 +100,7 @@ class RowRelationSpec:
     where: Pred | None = None
     order: tuple[OrderKey, ...] = ()
     max: int = ROW_RELATION_MAX_DEFAULT
+    edge_order: bool = False  # out-relation without ``order``: the edges as ``find`` shows them
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,9 +308,12 @@ class RowBuilder:
         direction: Direction,
         where: Pred | None,
         order: Sequence[OrderKey],
+        *,
+        edge_order: bool = False,
     ) -> Selection:
         """Read the neighbours of ``edges`` (at most ``load_max``, within the budget), keep the
-        in-edges of active sources and the entries that match ``where``, and order them."""
+        in-edges of active sources and the entries that match ``where``, and order them
+        (``edge_order``: as the edges come, when ``order`` is empty)."""
         wanted = edges[: self.load_max]
         admitted, loaded = self.loader.read([n for n, _ in wanted])
         sample = wanted[:admitted]
@@ -332,7 +337,7 @@ class RowBuilder:
         else:
             count = len(rows) + unread  # out-edges not read are counted as they stand
         return Selection(
-            tuple(self._ordered(rows, order)),
+            tuple(rows if edge_order and not order else self._ordered(rows, order)),
             count,
             len(sample) if partial else 0,
             partial,
@@ -403,7 +408,7 @@ class RowBuilder:
                     if (
                         g := self.group(
                             revision,
-                            RowRelationSpec(name, "out", None, None, (), spec.max),
+                            RowRelationSpec(name, "out", None, None, (), spec.max, spec.edge_order),
                             keys_only=True,
                         )
                     )
@@ -422,7 +427,13 @@ class RowBuilder:
             edges = self.snapshot.incoming(revision.id, TermRef(spec.relation))
         if not edges:
             return None
-        selection = self.select(edges, spec.direction, spec.where, spec.order)
+        selection = self.select(
+            edges,
+            spec.direction,
+            spec.where,
+            spec.order,
+            edge_order=spec.edge_order and spec.direction == "out",
+        )
         if selection.count == 0:
             return None
         types = {str(r.type) for _n, _e, r in selection.rows}

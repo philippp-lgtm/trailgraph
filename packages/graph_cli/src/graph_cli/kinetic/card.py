@@ -340,18 +340,26 @@ def _plan(
 
 
 def _row_relations(
-    model: CompiledModel, relations: tuple[fmt.RowRelation, ...], params: Mapping[str, Value]
+    model: CompiledModel,
+    relations: tuple[fmt.RowRelation, ...],
+    params: Mapping[str, Value],
+    *,
+    edge_order: bool = False,
 ) -> tuple[RowRelationSpec, ...]:
+    """The per-row lists of a section. ``edge_order`` (``list`` sections): out-relations without
+    ``order`` keep the edge order ``find`` gives; everywhere else they follow the label."""
     found: list[RowRelationSpec] = []
     for rel in relations:
         if rel.relation is None:
-            found.append(RowRelationSpec(None, "out", None, None, (), rel.max))
+            found.append(RowRelationSpec(None, "out", None, None, (), rel.max, edge_order))
             continue
         direction = _direction(rel.direction)
         where, order = _plan(
             model, _far_end(model, rel.relation, direction), rel.where, rel.order, params
         )
-        found.append(RowRelationSpec(rel.relation, direction, rel.fields, where, order, rel.max))
+        found.append(
+            RowRelationSpec(rel.relation, direction, rel.fields, where, order, rel.max, edge_order)
+        )
     return tuple(found)
 
 
@@ -439,7 +447,7 @@ def spec_of(
                     where,
                     order,
                     section.fields,
-                    _row_relations(model, section.relations, values),
+                    _row_relations(model, section.relations, values, edge_order=True),
                     len(concrete) > 1,
                 )
             )

@@ -480,13 +480,15 @@ def test_the_views_publish_and_answer_what_the_reads_they_replace_answer(
             row = rows[entity["alias"]]
             if section_id != "positions":  # `fields: all` (the positions list two fields)
                 assert row.get("fields", {}) == entity["attrs"], entity["alias"]
-            out = {
-                (g["relation"], i["ref"])
+            out: dict[str, list[str]] = {
+                g["relation"]: [i["ref"] for i in g["items"]]
                 for g in row.get("relations", [])
                 if g["direction"] == "out"
-                for i in g["items"]
             }
-            assert out == {(e["rel"], alias[e["target"]]) for e in entity["edges"]}, entity["alias"]
+            targets: dict[str, list[str]] = {}
+            for e in entity["edges"]:  # the order of the edges, as `find` shows them
+                targets.setdefault(e["rel"], []).append(alias[e["target"]])
+            assert out == targets, entity["alias"]
 
     # paged: the pages put together are the one-page answer
     seen: dict[str, list[str]] = {}
