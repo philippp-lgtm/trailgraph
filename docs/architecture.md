@@ -148,6 +148,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
 | `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
 | `queries` | `ReadQueries`: parsing a Cypher query before the graph is opened, running it over a snapshot, and running a named function; `QuerySpec`; the Cypher parser, resolver and executor are imported inside its methods |
+| `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
