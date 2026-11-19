@@ -53,16 +53,15 @@ from graph_cli.access_control.effective import (
     write_obligations,
 )
 from graph_cli.access_control.terms import TermModel
-from graph_cli.audit import events
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.authz import AuthzContext, Decision
+from graph_cli.kernel.authz import AuthzContext
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import EntityId, EventId, TermRef
+from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, req_list
-from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, SkillSlot, graph_not_found
+from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, SkillSlot
 from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
@@ -121,6 +120,7 @@ from graph_cli.services.names import (
     unknown_term_of,
     with_hints,
 )
+from graph_cli.services.read.access import VISIBLE, ReadAccess, denial_error
 from graph_cli.services.read.as_of import snapshot_as_of
 from graph_cli.services.read.change_feed import change_page, revision_change, tx_fields
 from graph_cli.services.read.graph_read import GraphRead, Page, graph_json
@@ -132,7 +132,7 @@ from graph_cli.services.read.json_shapes import (
     value_json,
 )
 from graph_cli.services.read.migration_effects import migration_item
-from graph_cli.services.read.state import ReadState, query_phase
+from graph_cli.services.read.state import query_phase
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
 from graph_cli.services.view_call import (
@@ -171,9 +171,7 @@ __all__ = [
 SUPERSEDES = "core:supersedes"
 RETRACTS = "core:retracts"
 _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no policy names
-_VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
 MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
-ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
 
 
 def refuse_affordances_with_rev() -> GraphCliError:
@@ -207,39 +205,7 @@ class QuerySpec:
     budget: int | None = None  # None: the engine's default (``execute.DEFAULT_BUDGET``)
 
 
-class ReadService(ReadState):
-    # ---- authorization -------------------------------------------------
-
-    def authorize(
-        self,
-        actor: ActorContext,
-        action: str,
-        resource: str,
-        request: RequestMeta,
-        graph: GraphEntry | None = None,
-    ) -> Decision:
-        """B6.3: one decision before storage is touched; a denial is audited and raised."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(None if graph is None else graph.id)
-            ctx = AuthzContext(op_count=0, has_reason=False, dry_run=False)
-            decision = authorize(actor, action, resource, ctx, policy)
-        if decision.effect == "allow":
-            return decision
-        hidden = graph is not None and not self.visible(actor, graph)
-        error = (
-            graph_not_found(str(graph.id))
-            if graph is not None and hidden
-            else denial_error(decision)
-        )
-        raise self._record_denial(actor, decision, request, graph, error)
-
-    def visible(self, actor: ActorContext, entry: GraphEntry) -> bool:
-        """B6.15: the actor may see the graph (``read.list`` on ``graph:<id>``)."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(entry.id)
-            decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
-        return decision.effect == "allow"
-
+class ReadService(ReadAccess):
     def functions(self, actor: ActorContext, entry: GraphEntry) -> tuple[FunctionEntry, ...] | None:
         """The graph's published functions as the actor may see them (K10): ``None`` when the
         graph has none or the actor may not ``read.function`` on it, so a listing shows
@@ -248,52 +214,10 @@ class ReadService(ReadState):
         parsed catalog is cached by the hash of the compiled document."""
         with self.timings.phase("authorize"):
             policy = self._policy.current(entry.id)
-            decision = authorize(actor, "read.function", f"graph:{entry.id}", _VISIBLE, policy)
+            decision = authorize(actor, "read.function", f"graph:{entry.id}", VISIBLE, policy)
         if decision.effect != "allow":
             return None
         return self._visible_functions(entry, self.read_view(actor, entry))
-
-    def read_view(self, actor: ActorContext, entry: GraphEntry) -> ReadView:
-        """What ``actor`` sees in the graph (what ``open`` puts into ``GraphRead.read_view``).
-        The model is read once per pin, and again only when the graph is read limited or its
-        pin uses markings and the answer is not cached."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(entry.id)
-            return self._visibility.lazy(
-                actor,
-                entry,
-                policy,
-                lambda: self._models.load_for_read(entry)[0],
-                lambda: self._models.used_markings(entry),
-            )
-
-    def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
-        """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
-        half of ``read_view``; the model is read only when the graph is type limited)."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(entry.id)
-            return self._visibility.types(
-                actor,
-                entry,
-                policy,
-                lambda: self._models.load_for_read(entry)[0],
-                lambda: self._models.used_markings(entry),
-            )
-
-    def limited_view(
-        self, actor: ActorContext, entry: GraphEntry, snapshot: Snapshot, model: CompiledModel
-    ) -> tuple[Snapshot, CompiledModel, ReadView]:
-        """``snapshot`` and ``model`` as ``actor`` reaches them, and its read view (both
-        returned as given when nothing is limited). For the services that look things up for
-        a write (action parameters, file content)."""
-        view = self.read_view(actor, entry)
-        if not view.limited:
-            return snapshot, model, view
-        return (
-            VisibleSnapshot(snapshot, view),
-            self._visibility.model(entry, model, view),
-            view,
-        )
 
     def _published_slot(
         self, entry: GraphEntry
@@ -485,14 +409,6 @@ class ReadService(ReadState):
             "views", f"{slot.compiled_hash}+{digest}", entry.pin.artifact_hash, view, compute
         )
 
-    def _may(self, actor: ActorContext, entry: GraphEntry, action: str) -> bool:
-        """Whether the policy lets ``actor`` do ``action`` on the graph: a probe, nothing is
-        decided on the record."""
-        with self.timings.phase("authorize"):
-            policy = self._policy.current(entry.id)
-            decision = authorize(actor, action, f"graph:{entry.id}", _VISIBLE, policy)
-        return decision.effect == "allow"
-
     def _visible_views(
         self, actor: ActorContext, entry: GraphEntry, view: ReadView
     ) -> tuple[ViewEntry, ...] | None:
@@ -599,47 +515,6 @@ class ReadService(ReadState):
                 found.setdefault(problem.name, problem)
             self._action_problems[key] = found
         return found.get(name)
-
-    def refuse_hidden(
-        self, actor: ActorContext, entry: GraphEntry, ref: str, request: RequestMeta
-    ) -> GraphCliError:
-        """A selected graph the actor cannot see: the ``read.list`` denial is audited, the
-        caller gets ``graph.not_found`` for ``ref`` (Q4: no existence leak)."""
-        policy = self._policy.current(entry.id)
-        decision = authorize(actor, "read.list", f"graph:{entry.id}", _VISIBLE, policy)
-        return self._record_denial(actor, decision, request, entry, graph_not_found(ref))
-
-    def _record_denial(
-        self,
-        actor: ActorContext,
-        decision: Decision,
-        request: RequestMeta,
-        graph: GraphEntry | None,
-        error: GraphCliError,
-    ) -> GraphCliError:
-        assert decision.code is not None
-        event = events.refusal(
-            status="denied",
-            code=decision.code,
-            actor=actor,
-            decisions=[decision],
-            request=request,
-            ts=self._clock.now(),
-            event_id=EventId(self._ids.new_id()),
-            env=self._env,
-            graph=graph,
-        )
-        try:
-            with self.timings.phase("audit"):
-                self._audit.append_installation(event)
-        except GraphCliError as exc:
-            warning = WarningRecord(
-                "audit.refusal_not_recorded", "the denial could not be audited", {"cause": exc.code}
-            )
-            return GraphCliError(
-                error.code, error.message, details=error.details, warnings=(warning,)
-            )
-        return error
 
     # ---- reads ---------------------------------------------------------
 
@@ -1969,20 +1844,3 @@ def _current_entity(
 
 def _sources(snapshot: Snapshot, entity: EntityId, rel: str) -> list[str]:
     return [str(source) for source, _ in snapshot.incoming(entity, TermRef(rel))]
-
-
-def denial_error(decision: Decision) -> GraphCliError:
-    """The error for a denial on a visible graph or the installation (B6.15)."""
-    assert decision.code is not None
-    message = f"{decision.action} on {decision.resource} is not permitted"
-    if decision.code == "access.denied":
-        message += f"; {ACCESS_DENIED_HINT}"
-    return GraphCliError(
-        decision.code,
-        message,
-        details={
-            "action": decision.action,
-            "resource": decision.resource,
-            "rule": decision.rule_id,
-        },
-    )
