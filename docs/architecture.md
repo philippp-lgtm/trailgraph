@@ -129,7 +129,7 @@ parameters, scopes) and `render` writes a tree back as Cypher text.
 `execute` matches the patterns over the `Snapshot` port and runs the
 clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 `values` hold the expressions and openCypher's comparisons and null logic;
-`services.read` parses before opening the graph, then resolves and runs.
+`services.read.queries` parses before opening the graph, then resolves and runs.
 `temporal_knowledge.history` names what changed between two revisions for
 `history`; `temporal_knowledge.changes` holds the pure core of `changes`
 (positions, the one read of a raw tx body, edge targets, the paging of a page).
@@ -147,6 +147,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
 | `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
 | `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
+| `queries` | `ReadQueries`: parsing a Cypher query before the graph is opened, running it over a snapshot, and running a named function; `QuerySpec`; the Cypher parser, resolver and executor are imported inside its methods |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
@@ -159,7 +160,7 @@ measure their own phases (monotonic durations only, never wall time).
 
 Every `graph` command is a new process, and its imports are most of a
 read's time, so a command imports only what it runs. The composition root
-builds the write and file services on first use, `services.read` imports
+builds the write and file services on first use, `services.read.queries` imports
 the Cypher engine in `parse_query` and `query` only, and the command
 modules import the write, file and skill modules inside the handlers that
 use them. `tests/cli/test_app_startup.py` checks which modules the reads
