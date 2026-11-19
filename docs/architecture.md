@@ -104,7 +104,9 @@ the mode selects, so it needs no route of its own.
 Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
 those of `graph-admin` in `graph_cli_admin.maintenance_cli.commands`
 (`cli_kit.spec.CommandSpec`); for each program the click tree and the
-inventory are built from the same declarations. A declaration also names the
+inventory are built from the same declarations. The `describe` commands live
+in the package `app_cli.commands.describe` (`model`: the ontology, `kinetic`:
+functions, actions and views, `shared`: what both use). A declaration also names the
 JSON Schema of its answer's `data` (`output`); shapes several commands share
 are definitions with one home each, next to what produces them:
 `cli_kit.output_schemas` (the envelope's parts, the inventory and the
