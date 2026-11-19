@@ -151,6 +151,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
 | `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |
 | `history` | `ReadHistory`: `history` (one entity's revisions) and `changes` (the change feed of a graph) |
+| `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
@@ -299,8 +300,8 @@ the admin skills ([Skills](skills.md#admin-skills)).
 ## Read views of limited callers
 
 A caller with [read limits](access_control.md#read-limits) reads through views
-that are opened in one place, `ReadService.open` (and `_snapshot_as_of` for
-`--as-of`), and handed to every read command in `GraphRead`. A graph without
+that are opened in one place, `services.read.opening` (`ReadService.open`, and
+`services.read.as_of` for `--as-of`), and handed to every read command in `GraphRead`. A graph without
 read rules gets the raw snapshot and model, so nothing is filtered and nothing
 is paid.
 
