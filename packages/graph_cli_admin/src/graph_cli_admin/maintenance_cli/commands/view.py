@@ -8,7 +8,6 @@ import signal
 import threading
 import webbrowser
 from collections.abc import Iterator
-from importlib.resources import files
 from pathlib import Path
 from types import FrameType
 from typing import Final
@@ -29,6 +28,7 @@ from graph_cli_admin.maintenance_cli.commands.common import (
     GRAPH_ERRORS,
     admin_context,
 )
+from graph_cli_admin.maintenance_cli.view_page import build_page
 from graph_cli_admin.maintenance_cli.view_server import ViewServer
 from graph_cli_admin.services_admin.view import ViewGraphs
 
@@ -36,7 +36,7 @@ MIN_TOKEN: Final = 32  # characters; a random token of 24 bytes has 32
 
 
 def page() -> bytes:
-    return files("graph_cli_admin.maintenance_cli").joinpath("static", "view.html").read_bytes()
+    return build_page()
 
 
 def read_token_file(path: str) -> str:

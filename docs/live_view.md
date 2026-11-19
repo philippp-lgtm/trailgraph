@@ -282,8 +282,9 @@ qualifiers, and every revision with the agent, principal and session
 that wrote it, and the roles the principal held when it was a server token
 with some. Clicking an edge shows its relation, ends and qualifiers
 and the history of its source entity. For a stored file (`files:File`)
-the panel offers a preview of PDFs and images in the page and the
-original as a download; reading the bytes needs `read.get` on the file's
+the panel offers a preview of images in the page and the
+original as a download (other files, PDFs included, are only offered as a download: the view
+is no document reader); reading the bytes needs `read.get` on the file's
 type, as for `file path`, and they are read like the server's download
 (checked against their hash while they stream when the graph's files are
 in an object store). When the object store cannot be reached, the panel
@@ -297,6 +298,11 @@ alias or type does not contain the text (Enter opens the first match);
 checkbox per type hides whole types. Attribute values are not searched.
 "scale nodes by number of connections" enlarges nodes in proportion to
 their edge count, relative to the most connected visible node.
+
+In a large graph the dots shrink as you zoom out: once the dots on screen
+would cover each other, their radius follows the mean gap between them
+(down to a point of about a pixel), so the edges between them stay visible
+instead of disappearing under one clump. Zooming in brings the full size back.
 
 On a narrow screen (720 pixels or less, such as a phone) the list of
 graphs starts folded while a graph is shown and opens over the graph; picking a graph opens its
