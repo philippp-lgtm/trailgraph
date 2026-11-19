@@ -1,5 +1,5 @@
-"""``graph get``, ``graph history``, ``graph changes``, ``graph find``, ``graph lookup``,
-``graph neighbors``, ``graph query`` and ``graph run``.
+"""``graph get``, ``graph view``, ``graph history``, ``graph changes``, ``graph find``,
+``graph lookup``, ``graph search``, ``graph neighbors``, ``graph query`` and ``graph run``.
 
 Contracts §4.3, B8.8, B8.12, B8.15, B9.7, B13 (Cypher); ``run``: named functions.
 
