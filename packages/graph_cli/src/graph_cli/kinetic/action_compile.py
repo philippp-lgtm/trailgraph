@@ -41,6 +41,7 @@ from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
 from graph_cli.kernel.changeset import OP_ACTIONS, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
+from graph_cli.kinetic.action_context import CheckContext
 from graph_cli.kinetic.action_format import (
     ABSENT,
     CATALOG_SCHEMA,
@@ -255,19 +256,17 @@ class _Compile:
         self.active = active
         self.function_names = function_names
         self.stored_form = stored_form  # compiling the normalized form: the checks of 3 to 5
-        self.problems: list[Problem] = []
-        self.declared = {p.name: p for p in defn.params}
+        self.ctx = CheckContext(defn, model)
         self.used: set[str] = set()
         self.reported: set[str] = set()  # undeclared parameters already reported
         self.locals: dict[str, str] = {}  # local name -> create type (CURIE)
         self.types: set[str] = set()
         self.relations: set[str] = set()
         self.needs: set[tuple[str, str]] = set()
-        self.uses: dict[tuple[str | int, ...], Use] = {}
-        self.misplaced: set[tuple[str | int, ...]] = set()
 
-    def add(self, code: str, path: str | None, message: str, **details: JsonValue) -> None:
-        self.problems.append(Problem(self.defn.name, code, message, path, None, details, "action"))
+    @property
+    def problems(self) -> list[Problem]:
+        return self.ctx.problems
 
     def run(self) -> dict[str, JsonValue] | None:
         module = None
@@ -290,11 +289,11 @@ class _Compile:
     # Declaration
 
     def module(self) -> str | None:
-        return resolve_module(self.model, self.defn.module, "action", self.add)
+        return resolve_module(self.model, self.defn.module, "action", self.ctx.add)
 
     def name(self) -> None:
         if self.defn.name in self.function_names:
-            self.add(
+            self.ctx.add(
                 "action.name_taken",
                 "name",
                 f"{self.defn.name!r} is the name of a function of the graph; functions and "
@@ -305,7 +304,7 @@ class _Compile:
     def replacement(self) -> None:
         target = self.defn.replaced_by
         if target is not None and target not in self.active:
-            self.add(
+            self.ctx.add(
                 "action.replaced_by_invalid",
                 "replaced_by",
                 f"{target!r} is not an active action of the graph",
@@ -314,7 +313,7 @@ class _Compile:
 
     def limits(self) -> None:
         if len(self.defn.ops) > MAX_OPS:
-            self.add(
+            self.ctx.add(
                 "action.too_many_ops",
                 "ops",
                 f"{len(self.defn.ops)} ops; at most {MAX_OPS} per action",
@@ -322,7 +321,7 @@ class _Compile:
                 limit=MAX_OPS,
             )
         if len(self.defn.preconditions) > MAX_PRECONDITIONS:
-            self.add(
+            self.ctx.add(
                 "action.too_many_preconditions",
                 "preconditions",
                 f"{len(self.defn.preconditions)} preconditions; at most {MAX_PRECONDITIONS}",
@@ -337,7 +336,7 @@ class _Compile:
             path = f"params.{param.name}"
             usable = True
             if param.type == "ref" and param.of_class not in self.model.classes:
-                self.add(
+                self.ctx.add(
                     "action.unknown_class",
                     f"{path}.class",
                     f"the model has no class {param.of_class!r}",
@@ -345,7 +344,7 @@ class _Compile:
                 )
                 usable = False
             if param.type == "enum" and param.enum not in self.model.enums:
-                self.add(
+                self.ctx.add(
                     "action.unknown_enum",
                     f"{path}.enum",
                     f"the model has no enum {param.enum!r}",
@@ -355,7 +354,7 @@ class _Compile:
             if param.default is None or not usable:
                 continue
             if param.type == "ref":
-                self.add(
+                self.ctx.add(
                     "action.invalid_default",
                     f"{path}.default",
                     "a ref has no default; entity ids go stale",
@@ -366,14 +365,14 @@ class _Compile:
                     "action", self.defn.name, [param], {param.name: param.default}, self.model
                 )
             except GraphCliError as exc:
-                self.add(
+                self.ctx.add(
                     "action.invalid_default", f"{path}.default", exc.message, **dict(exc.details)
                 )
 
     def unused(self) -> None:
-        for name in self.declared:
+        for name in self.ctx.declared:
             if name not in self.used:
-                self.add(
+                self.ctx.add(
                     "action.parameter_unused",
                     f"params.{name}",
                     f"parameter {name!r} is declared but no op or precondition uses it",
@@ -384,7 +383,7 @@ class _Compile:
         """Count the use; the first use of an undeclared parameter is reported. Any string
         that starts with ``$`` is a placeholder, so a text such as ``$5`` ends here too."""
         self.used.add(use.name)
-        if use.name not in self.declared and use.name not in self.reported:
+        if use.name not in self.ctx.declared and use.name not in self.reported:
             self.reported.add(use.name)
             grammar = (
                 ""
@@ -392,56 +391,12 @@ class _Compile:
                 else f" (a placeholder is $ and a name like {PARAM_RE.pattern}; there is no "
                 "escape for a literal $ text)"
             )
-            self.add(
+            self.ctx.add(
                 "action.parameter_undeclared",
                 path_text(use.path),
                 f"parameter ${use.name} is not declared under params{grammar}",
                 parameter=use.name,
             )
-
-    def declared_param(self, use: Use) -> ParamDef | None:
-        """The parameter a placeholder names, unless it is undeclared or optional where its
-        entry cannot be dropped (reported once per position)."""
-        param = self.declared.get(use.name)
-        if param is None:
-            return None
-        if param.optional and not use.droppable:
-            if use.path not in self.misplaced:
-                self.misplaced.add(use.path)
-                self.add(
-                    "action.optional_position",
-                    path_text(use.path),
-                    f"parameter {param.name!r} is optional but this position cannot be left "
-                    "out; an optional parameter may only stand for an attribute, qualifier, "
-                    "validity or list value, whose entry is dropped when it is not given",
-                    parameter=param.name,
-                )
-            return None
-        return param
-
-    # Terms
-
-    def term(self, kind: str, name: str, known: Mapping[str, object], path: str) -> str | None:
-        try:
-            return resolve_term(kind, name, known)
-        except GraphCliError as exc:
-            code = (
-                f"action.unknown_{kind}" if exc.code == "term.unknown" else "action.ambiguous_term"
-            )
-            self.add(code, path, exc.message, **dict(exc.details))
-            return None
-
-    def unknown(self, code: str, path: str, what: str, name: str, known: Sequence[str]) -> None:
-        import difflib
-
-        self.add(
-            code,
-            path,
-            f"{what} has no {code.removeprefix('action.unknown_')} {name!r}",
-            name=name,
-            expected=sorted(known),
-            did_you_mean=difflib.get_close_matches(name, sorted(known), n=5),
-        )
 
     # Locals
 
@@ -453,7 +408,7 @@ class _Compile:
             if op.get("op") != "create" or not isinstance(local, str):
                 continue
             if local in seen:
-                self.add(
+                self.ctx.add(
                     "action.local_duplicate",
                     f"ops[{index}].local",
                     f"@{local} is bound twice",
@@ -472,7 +427,7 @@ class _Compile:
         out = dict(op)
         scan = scan_op(op, index)
         for use in scan.uses:
-            self.uses[use.path] = use
+            self.ctx.uses[use.path] = use
             self.note_use(use)
         self.check_locals(scan, index)
         kind = op["op"]
@@ -497,7 +452,7 @@ class _Compile:
     def check_locals(self, scan: OpScan, index: int) -> None:
         for path, name in scan.locals_used:
             if name not in self.locals:
-                self.add(
+                self.ctx.add(
                     "action.local_unresolved",
                     path_text(path),
                     f"@{name} is not created by an op of this action",
@@ -522,15 +477,15 @@ class _Compile:
         if text.startswith("@"):
             found = self.locals.get(text[1:])
             return None if found is None else _End(frozenset({found}), found, f"@{text[1:]}")
-        use = self.uses.get(path)
+        use = self.ctx.uses.get(path)
         if use is None:
             return None
-        param = self.declared_param(use)
+        param = self.ctx.declared_param(use)
         if param is None:
             return None
         if param.type != "ref" or param.many != (role == "entities"):
             wanted = "a list of references" if role == "entities" else "one reference"
-            self.add(
+            self.ctx.add(
                 "action.type_mismatch",
                 path_text(path),
                 f"parameter {param.name!r} is {param.type_text}; this position takes {wanted}",
@@ -606,10 +561,10 @@ class _Compile:
         where = (*path, name)
         found = slots.get(name)
         if found is None:
-            self.unknown(unknown_code, path_text(where), owner, name, list(slots))
+            self.ctx.unknown(unknown_code, path_text(where), owner, name, list(slots))
             return None
         if direct and found.lifecycle:
-            self.add(
+            self.ctx.add(
                 "action.lifecycle_direct_write",
                 path_text(where),
                 f"{found.label} changes only through a transition op (the write validator "
@@ -617,9 +572,9 @@ class _Compile:
                 name=name,
             )
             return None
-        use = self.uses.get(where)
+        use = self.ctx.uses.get(where)
         if use is not None and fit:
-            param = self.declared_param(use)
+            param = self.ctx.declared_param(use)
             if param is not None:
                 self.fit(use, param, found)
         return found
@@ -643,7 +598,7 @@ class _Compile:
                 if found is None:
                     continue
                 if not found.many:
-                    self.add(
+                    self.ctx.add(
                         "action.type_mismatch",
                         path_text((*path, name)),
                         f"{found.label} holds one value; add and remove need a list attribute "
@@ -654,8 +609,8 @@ class _Compile:
                 for where in [(*path, name)] + [
                     (*path, name, i) for i in range(len(items) if isinstance(items, list) else 0)
                 ]:
-                    use = self.uses.get(where)
-                    param = None if use is None else self.declared_param(use)
+                    use = self.ctx.uses.get(where)
+                    param = None if use is None else self.ctx.declared_param(use)
                     if use is not None and param is not None:
                         self.fit(use, param, found)
 
@@ -665,7 +620,7 @@ class _Compile:
             return  # reported at the parameter
         reason = self.misfit(use, param, slot)
         if reason is not None:
-            self.add(
+            self.ctx.add(
                 "action.type_mismatch",
                 path_text(use.path),
                 f"parameter {param.name!r} ({param.type_text}) cannot stand for {slot.label}: "
@@ -706,14 +661,14 @@ class _Compile:
 
     def time(self, index: int, op: Mapping[str, JsonValue]) -> None:
         for key in ("valid_from", "valid_to"):
-            use = self.uses.get(("ops", index, key))
-            param = None if use is None else self.declared_param(use)
+            use = self.ctx.uses.get(("ops", index, key))
+            param = None if use is None else self.ctx.declared_param(use)
             if (
                 use is not None
                 and param is not None
                 and (param.type not in ("date", "datetime") or param.many)
             ):
-                self.add(
+                self.ctx.add(
                     "action.type_mismatch",
                     path_text(use.path),
                     f"parameter {param.name!r} ({param.type_text}) cannot stand for {key}; "
@@ -727,7 +682,7 @@ class _Compile:
         """The CURIE of the relation an op names (recorded in ``touches``)."""
         if not isinstance(name, str):
             return None
-        curie = self.term("relation", name, self.model.relations, path)
+        curie = self.ctx.term("relation", name, self.model.relations, path)
         if curie is not None:
             self.relations.add(curie)
         return curie
@@ -760,7 +715,7 @@ class _Compile:
                 _general(self.model, target.classes),
             )
         which = "domain" if not ok_source else "range"
-        self.add(
+        self.ctx.add(
             "action.op_impossible",
             path,
             f"{rel} cannot connect {' to '.join(names)} (its {which} does not accept it); "
@@ -778,14 +733,14 @@ class _Compile:
 
     def create(self, index: int, op: JsonObject, out: dict[str, JsonValue]) -> None:
         where = f"ops[{index}]"
-        curie = self.term("type", str(op["type"]), self.model.classes, f"{where}.type")
+        curie = self.ctx.term("type", str(op["type"]), self.model.classes, f"{where}.type")
         if curie is None:
             return
         out["type"] = curie
         self.types.add(curie)
         self.needs.add((OP_ACTIONS["create"], curie))
         if self.model.classes[curie].abstract:
-            self.add(
+            self.ctx.add(
                 "action.abstract_type",
                 f"{where}.type",
                 f"{curie} is abstract; a create names a concrete class",
@@ -851,9 +806,9 @@ class _Compile:
         path = path_text(("ops", index, "unset", position))
         found = slots.get(name)
         if found is None:
-            self.unknown("action.unknown_attribute", path, owner, name, list(slots))
+            self.ctx.unknown("action.unknown_attribute", path, owner, name, list(slots))
         elif found.lifecycle:
-            self.add(
+            self.ctx.add(
                 "action.lifecycle_direct_write",
                 path,
                 f"{found.label} changes only through a transition op",
@@ -886,7 +841,7 @@ class _Compile:
             out["direction"] = direction
             subject = op.get("id")
             if isinstance(subject, str) and subject.startswith("@"):
-                self.add(
+                self.ctx.add(
                     "action.invalid_op",
                     f"{where}.id",
                     "all: true reads the edges of an existing entity; it takes a reference "
@@ -899,7 +854,7 @@ class _Compile:
             accepted = definition.domain if direction == "in" else definition.range
             end_side = definition.range if direction == "in" else definition.domain
             if not _accepts(self.model, end_side, source.classes):
-                self.add(
+                self.ctx.add(
                     "action.op_impossible",
                     where,
                     f"{found} never has {source.label} as its "
@@ -938,7 +893,7 @@ class _Compile:
                 code = (
                     "action.lifecycle_missing" if attr in attributes else "action.unknown_attribute"
                 )
-                self.add(
+                self.ctx.add(
                     code,
                     f"{where}.attr",
                     f"{attr!r} is not a lifecycle attribute of {end.subject}",
@@ -949,7 +904,7 @@ class _Compile:
         elif len(lifecycles) == 1:
             chosen = next(iter(lifecycles.values()))
         else:
-            self.add(
+            self.ctx.add(
                 "action.lifecycle_missing",
                 where,
                 f"{end.subject} has no lifecycle attribute"
@@ -960,7 +915,7 @@ class _Compile:
             return
         states = self.model.lifecycles[chosen.type].state_names()
         if op.get("to") not in states:
-            self.add(
+            self.ctx.add(
                 "action.unknown_state",
                 f"{where}.to",
                 f"{op.get('to')!r} is not a state of {chosen.type}",
@@ -987,10 +942,10 @@ class _Compile:
         end = self.end(index, op, "id")
         if end is not None:
             self.need("set_alias", end.subject)
-        use = self.uses.get(("ops", index, "alias"))
-        param = None if use is None else self.declared_param(use)
+        use = self.ctx.uses.get(("ops", index, "alias"))
+        param = None if use is None else self.ctx.declared_param(use)
         if use is not None and param is not None and (param.type != "string" or param.many):
-            self.add(
+            self.ctx.add(
                 "action.type_mismatch",
                 path_text(use.path),
                 f"parameter {param.name!r} ({param.type_text}) cannot stand for an alias; "
@@ -1009,7 +964,7 @@ class _Compile:
 
     def assembled(self, ops: Sequence[Mapping[str, JsonValue]], *, absent: bool) -> None:
         def value_of(use: Use) -> JsonValue | Absent:
-            param = self.declared[use.name]
+            param = self.ctx.declared[use.name]
             if absent and param.optional:
                 return ABSENT
             return self.sample(param, use)
@@ -1026,7 +981,7 @@ class _Compile:
         except GraphCliError as exc:
             path = exc.details.get("path")
             prefix = "with every optional parameter absent: " if absent else ""
-            self.add(
+            self.ctx.add(
                 "action.template_invalid",
                 path if isinstance(path, str) else None,
                 f"{prefix}{exc.message}",
@@ -1054,10 +1009,10 @@ class _Compile:
 
     def precondition(self, index: int, pre: PreconditionDef) -> JsonValue | None:
         path = f"preconditions[{index}]"
-        param = self.declared.get(pre.on)
+        param = self.ctx.declared.get(pre.on)
         self.used.add(pre.on)
         if param is None:
-            self.add(
+            self.ctx.add(
                 "action.precondition_on_invalid",
                 f"{path}.on",
                 f"{pre.on!r} is not a declared parameter",
@@ -1066,7 +1021,7 @@ class _Compile:
             )
             return None
         if param.type != "ref" or param.many or param.optional:
-            self.add(
+            self.ctx.add(
                 "action.precondition_on_invalid",
                 f"{path}.on",
                 f"{pre.on!r} is {'an optional ' if param.optional else ''}{param.type_text}; a "
@@ -1148,7 +1103,7 @@ class _ConditionCheck:
     def scope_attribute(self, path: str, name: str, numeric: bool) -> None:
         found = self.model.classes[self.scope].attributes.get(name)
         if found is None:
-            self.parent.unknown(
+            self.parent.ctx.unknown(
                 "action.unknown_attribute",
                 path,
                 self.scope,
@@ -1156,7 +1111,7 @@ class _ConditionCheck:
                 list(self.model.classes[self.scope].attributes),
             )
         elif numeric and not _numeric(self.model, found):
-            self.parent.add(
+            self.parent.ctx.add(
                 "action.not_numeric",
                 path,
                 f"{name!r} of {self.scope} is not a single integer or decimal value",
@@ -1165,7 +1120,7 @@ class _ConditionCheck:
 
     def aggregate(self, cond: CountCond | SumCond) -> None:
         kind = "count" if isinstance(cond, CountCond) else "sum"
-        rel = self.parent.term(
+        rel = self.parent.ctx.term(
             "relation", cond.rel, self.model.relations, f"{cond.path}.{kind}.rel"
         )
         if rel is not None:
@@ -1173,7 +1128,7 @@ class _ConditionCheck:
         types: set[str] = set()
         complete = True
         for ref in cond.types:
-            curie = self.parent.term(
+            curie = self.parent.ctx.term(
                 "type", ref, self.model.classes, f"{cond.path}.{kind}.where.type"
             )
             if curie is None:
@@ -1203,7 +1158,7 @@ class _ConditionCheck:
             elif not _numeric(self.model, attribute):
                 other.append(curie)
         if missing:
-            self.parent.add(
+            self.parent.ctx.add(
                 "action.unknown_attribute",
                 path,
                 f"{', '.join(missing)} at the other end of {rel} "
@@ -1212,7 +1167,7 @@ class _ConditionCheck:
                 name=cond.attr,
             )
         if other:
-            self.parent.add(
+            self.parent.ctx.add(
                 "action.not_numeric",
                 path,
                 f"{cond.attr!r} of {other[0]} is not a single integer or decimal value",
