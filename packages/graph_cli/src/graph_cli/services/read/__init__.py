@@ -34,11 +34,10 @@ other command starts without it.
 from __future__ import annotations
 
 import difflib
-import functools
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Concatenate, Final
+from typing import TYPE_CHECKING, Final
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.access_control.effective import (
@@ -59,26 +58,16 @@ from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIO
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext, Decision
 from graph_cli.kernel.canonical import JsonObject, JsonValue
-from graph_cli.kernel.clock import Clock, format_timestamp
+from graph_cli.kernel.clock import format_timestamp
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
-from graph_cli.kernel.ids import EdgeId, EntityId, EventId, GraphId, IdProvider, TermRef
+from graph_cli.kernel.ids import EntityId, EventId, TermRef
 from graph_cli.kernel.json_access import JsonShapeError, req_list
-from graph_cli.kernel.ports.activity import NULL_ACTIVITY, ActivitySink, ReadSignal
-from graph_cli.kernel.ports.audit import AuditSink
-from graph_cli.kernel.ports.catalog import (
-    Catalog,
-    FunctionsSlot,
-    GraphEntry,
-    SkillSlot,
-    graph_not_found,
-)
-from graph_cli.kernel.ports.policy import PolicySet, PolicySource
+from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry, SkillSlot, graph_not_found
+from graph_cli.kernel.ports.policy import PolicySet
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.query_ast import AsOf, Query
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
-from graph_cli.kernel.records import EdgeRecord, EnvInfo, OntologyPin, RequestMeta, Revision
-from graph_cli.kernel.timing import Timings
-from graph_cli.kernel.usage import UsageNote
+from graph_cli.kernel.records import EdgeRecord, OntologyPin, RequestMeta, Revision
 from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
@@ -121,14 +110,11 @@ from graph_cli.query.search import main_label as search_label
 from graph_cli.query.search import match_revision as search_match
 from graph_cli.query.search import rank_key as search_rank
 from graph_cli.services import migration_state
-from graph_cli.services.action_rights import FineTypes, need_decisions
+from graph_cli.services.action_rights import need_decisions
 from graph_cli.services.describe import describe_model
-from graph_cli.services.models import ModelCache
 from graph_cli.services.names import (
     GraphNames,
     MappedSnapshot,
-    NameMapCache,
-    NameMaps,
     hinted_findings,
     known_in,
     term_hints,
@@ -146,6 +132,7 @@ from graph_cli.services.read.json_shapes import (
     value_json,
 )
 from graph_cli.services.read.migration_effects import migration_item
+from graph_cli.services.read.state import ReadState, query_phase
 from graph_cli.services.refs import entity_params, resolve_ref
 from graph_cli.services.term_model import term_model
 from graph_cli.services.view_call import (
@@ -157,17 +144,12 @@ from graph_cli.services.view_call import (
     page_key,
     rows_share,
 )
-from graph_cli.services.visibility import SIGNATURE_VIEWS, Visibility, VisibleSnapshot, remember
-from graph_cli.services.visible_catalog import (
-    HiddenCatalog,
-    hidden_actions,
-    hidden_functions,
-    hidden_views,
-)
+from graph_cli.services.visibility import SIGNATURE_VIEWS, VisibleSnapshot, remember
+from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
 from graph_cli.temporal_knowledge.changes import FeedPosition, resolve_since
 
 if TYPE_CHECKING:
-    from graph_cli.kinetic.cover import Cover, SignatureCache
+    from graph_cli.kinetic.cover import Cover
     from graph_cli.query.cypher.ast import Query as CypherQuery
     from graph_cli.query.cypher.execute import Result as QueryResult
     from graph_cli.query.cypher.resolve import ResolvedQuery
@@ -225,64 +207,7 @@ class QuerySpec:
     budget: int | None = None  # None: the engine's default (``execute.DEFAULT_BUDGET``)
 
 
-def _query[**P, R](
-    method: Callable[Concatenate[ReadService, P], R],
-) -> Callable[Concatenate[ReadService, P], R]:
-    """A read answered from an open snapshot: the ``query`` phase."""
-
-    @functools.wraps(method)
-    def timed(self: ReadService, /, *args: P.args, **kwargs: P.kwargs) -> R:
-        with self.timings.phase("query"):
-            return method(self, *args, **kwargs)
-
-    return timed
-
-
-class ReadService:
-    def __init__(
-        self,
-        *,
-        catalog: Catalog,
-        audit: AuditSink,
-        policy: PolicySource,
-        clock: Clock,
-        ids: IdProvider,
-        env: EnvInfo,
-        activity: ActivitySink = NULL_ACTIVITY,
-        timings: Timings | None = None,
-        usage: UsageNote | None = None,
-        name_maps: NameMapCache | None = None,
-    ) -> None:
-        self._catalog = catalog
-        self._audit = audit
-        self.activity = activity
-        self._policy = policy
-        self._clock = clock
-        self._ids = ids
-        self._env = env
-        self.timings = timings if timings is not None else Timings()
-        self.usage = usage if usage is not None else UsageNote()
-        # Function signatures depend on the model they were derived from, so a limited reader
-        # (a filtered model) never shares them with another; ``UNLIMITED``: the raw model.
-        # Bounded like the other view caches (the oldest view goes first).
-        self._signatures: dict[ReadView, SignatureCache] = {}
-        self._models = ModelCache(catalog, self.timings)
-        self._functions: dict[str, tuple[FunctionEntry, ...]] = {}  # compiled hash -> entries
-        self._actions: dict[str, ActionCatalog] = {}  # compiled hash -> catalog
-        self._views: dict[str, tuple[ViewEntry, ...]] = {}  # compiled hash -> entries
-        # (views compiled hash, functions compiled hash, pin) -> problem of each view that no
-        # longer fits the pin
-        self._view_problems: dict[tuple[str, str | None, OntologyPin], dict[str, Problem]] = {}
-        # (compiled hash, pin) -> problem of each action that no longer fits the pin
-        self._action_problems: dict[tuple[str, OntologyPin], dict[str, Problem]] = {}
-        # (compiled hash, pin) -> the needs of each action on concrete types (W9)
-        self._action_needs: dict[tuple[str, OntologyPin], dict[str, tuple[NeedOptions, ...]]] = {}
-        self._fine = FineTypes()
-        self._visibility = Visibility()
-        self._hidden = HiddenCatalog()
-        self._terms: dict[tuple[GraphId, OntologyPin], TermModel] = {}  # per graph and pin
-        self._names = NameMaps(catalog, audit, self._models, name_maps)  # read-time mapping, M7
-
+class ReadService(ReadState):
     # ---- authorization -------------------------------------------------
 
     def authorize(
@@ -341,12 +266,6 @@ class ReadService:
                 lambda: self._models.load_for_read(entry)[0],
                 lambda: self._models.used_markings(entry),
             )
-
-    @property
-    def models(self) -> ModelCache:
-        """The pinned models this service loads, cached by their bytes; a write service of
-        the same command may share them (``WriteService(models=...)``)."""
-        return self._models
 
     def visible_types(self, actor: ActorContext, entry: GraphEntry) -> frozenset[str] | None:
         """The concrete types ``actor`` sees in the graph, ``None`` for no limit (the type
@@ -722,18 +641,6 @@ class ReadService:
             )
         return error
 
-    def _signal(
-        self,
-        view: GraphRead,
-        entities: Sequence[EntityId],
-        edges: Sequence[EdgeId] = (),
-        function: str | None = None,
-    ) -> None:
-        """Tell running views what this read returned (``[activity] signal_reads``)."""
-        self.activity.reads(
-            ReadSignal(view.entry.id, view.command, view.actor, entities, edges, function)
-        )
-
     # ---- reads ---------------------------------------------------------
 
     def open(
@@ -972,7 +879,7 @@ class ReadService:
             items.append(item)
         return items, len(visible) - len(shown), self._catalog.warnings
 
-    @_query
+    @query_phase
     def get(
         self,
         view: GraphRead,
@@ -1011,7 +918,7 @@ class ReadService:
         self._signal(view, [entity])
         return data, warnings
 
-    @_query
+    @query_phase
     def view(
         self,
         view: GraphRead,
@@ -1404,7 +1311,7 @@ class ReadService:
             found.update(views_for(current, views, view.model, others).to_json())
         return found
 
-    @_query
+    @query_phase
     def history(
         self, view: GraphRead, actor: ActorContext, ref: str, *, limit: int, offset: int
     ) -> tuple[dict[str, JsonValue], Page, list[WarningRecord]]:
@@ -1448,7 +1355,7 @@ class ReadService:
         self._signal(view, [entity])
         return data, Page(len(metas), len(shown), limit, offset), list(warnings)
 
-    @_query
+    @query_phase
     def changes(
         self, view: GraphRead, since: FeedPosition | datetime, *, limit: int
     ) -> dict[str, JsonValue]:
@@ -1470,7 +1377,7 @@ class ReadService:
             digest=view.read_view.digest,
         )
 
-    @_query
+    @query_phase
     def find(
         self,
         view: GraphRead,
@@ -1583,7 +1490,7 @@ class ReadService:
             )
         return view.model.subtypes(found.of_class)
 
-    @_query
+    @query_phase
     def lookup(
         self,
         view: GraphRead,
@@ -1681,7 +1588,7 @@ class ReadService:
         )
         return data, page
 
-    @_query
+    @query_phase
     def search(self, view: GraphRead, spec: SearchSpec) -> tuple[dict[str, JsonValue], Page]:
         """Entities whose text fields match, best first; one item per entity."""
         plan = plan_search(view.model, spec, view.entry.language)
@@ -1707,7 +1614,7 @@ class ReadService:
         self._signal(view, [revision.id for _, revision, _ in shown])
         return {"items": items}, Page(len(found), len(shown), plan.limit, plan.offset)
 
-    @_query
+    @query_phase
     def neighbors(
         self,
         view: GraphRead,

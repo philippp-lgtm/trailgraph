@@ -138,7 +138,8 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 
 | Module | Holds |
 | --- | --- |
-| `__init__` | the docstring and the public names; `ReadService` until the split is complete |
+| `__init__` | the docstring, the public names and the concerns of `ReadService` that are not yet in a module of their own |
+| `state` | `ReadState`: the collaborators and caches every concern shares (the only `__init__`), and `query_phase`, the wrapper of reads answered from a snapshot |
 | `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json` |
 | `json_shapes` | how reads show entities, edges and query values as JSON |
 | `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
