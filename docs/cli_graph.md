@@ -646,6 +646,63 @@ detail: graph get PRJ-0007 --affordances
 `graph view` is not `graph-admin view`: that one starts the live view, which
 composes its entity panel by itself ([Live view](live_view.md#using-the-view)).
 
+## Authored views and set views
+
+A maintainer can publish **views** next to a graph's functions and actions: named compositions of
+reads with the answer shape of the card (`graph_cli.view_model/1`). The files are in
+`graph_cli.view/1`, written with the `authoring-graph-views` admin skill
+([format reference](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-views/references/format.md),
+the one home of the keys, limits, checks and bounds); this section is what a caller sees.
+
+Finding them: `describe views` lists the views you can call (name, module, summary, the class an
+entity view `takes`, `default`, signature), `describe view NAME` shows one completely and ends with
+the command that calls it, `describe search TEXT --kind view` finds one by what it is for, and
+`get REF --affordances` and the card name the other entity views of the entity's class (`views`). A
+graph whose skill is generated says in its `start` block that the graph has views.
+
+**Entity views** take a class (`takes`, subclasses included) and are called with a REF:
+`view REF --name NAME`. Without `--name`, `view REF` shows the *default* view of the entity's class
+if the graph published one (the nearest class on the entity's class chain that you can see wins),
+else the generated card; `--name card` is always the generated card. An entity view has the card's
+limit of 6 KiB, trimmed in a fixed order, and its sections are chosen by the maintainer: fields,
+relations, `neighbors` (the neighbours over one relation as rows with chosen fields, filtered and
+ordered), files, affordances and `rows` (the result of a published function for this entity). A REF
+of a class the view does not take is `view.class_mismatch`; a view that needs a REF without one is
+`view.takes_entity`.
+
+**Set views** take no entity and list rows of a whole set, for scripts and renderers: `view --name
+NAME`, with a REF `view.takes_no_entity`. Their `list` sections give every active entity of a class
+(or of several, with the concrete `type` per row) with attributes as `get` shows them, never cut, and
+the relations as neighbour keys (`ref`: the alias, else the id), in the order of `find`. The answer
+is a **page** of whole rows, at most `--page-bytes` bytes (the view's own size, else 12 KiB; up to
+256 KiB; a row larger than the page goes alone with `oversize: true`). A page that does not reach the
+end has `next` and `more: true`; `--cursor` with the same `--name` and `--param` gives the next page,
+and the pages put together are the one-page answer. After a write the cursor is `view.cursor_stale`
+(start again, or `--as-of tx:<seq>` pages the state you started with); after another view, other
+parameters, a functions publish, an ontology release or a change of what you may see it is
+`view.cursor_invalid`. `--cursor` and `--page-bytes` with an entity view or the card are
+`usage.invalid_argument`.
+
+`--param name=value` (repeatable) gives a view parameter, read by its declared type as for `run`; a
+missing or unknown one is `view.parameter_missing` or `view.parameter_unknown`. `--as-of` reads the
+sections at that state (it needs `read.history`); a `rows` section cannot run then and answers alone
+with `view.section_unavailable`.
+
+A section that fails, for example a `rows` section whose function no longer holds, answers alone as
+`{kind, id, function, error}` with the warning `view.section_failed`; the rest of the view still
+comes. A count that could not read every edge says `approx: true` and how many were `unread`. A view
+published against an earlier ontology release that no longer reads the same refuses a call that
+names it with `view.stale`; plain `view REF` then answers with the generated card and the warning
+`view.default_stale`. A deprecated view answers with `view.deprecated`.
+
+Every call reads your own snapshot and model: what you may not see is not a row, a neighbour, a
+count or a name, and a view that names anything you may not see is not found at all
+([Views](access_control.md#views)). Nothing is stored or cached by the tool; the answer is a function
+of the view (`view.hash`), the parameters, the page size, the cursor, the graph's `seq` and what you
+may see, which is the key a consumer that caches pages can use, and `changes` says when to drop them.
+The call is logged with the view's name and hash, never a parameter value or an id.
+
+
 ## Names and lookup
 
 Names come from label roles in the ontology: an attribute of type `string`

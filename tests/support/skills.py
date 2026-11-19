@@ -78,8 +78,10 @@ def render_inputs(
     prefixes: bool = True,
     functions: dict[str, Any] | None = None,
     actions: dict[str, Any] | None = None,
+    views: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(model documents, graph block)`` of ``render_graph_skill`` for a fixture model;
-    ``functions`` and ``actions`` are the compiled catalog documents, if the graph has them."""
+    ``functions``, ``actions`` and ``views`` are the compiled catalog documents, if the graph
+    has them."""
     entry = graph_entry(model, prefixes=prefixes)
-    return describe_model(entry, model, functions, actions), graph_block(entry)
+    return describe_model(entry, model, functions, actions, views), graph_block(entry)

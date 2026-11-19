@@ -26,6 +26,7 @@ SEEDS = EXAMPLE / "seeds"
 SKILL = EXAMPLE / "skill" / "graph-company"
 FUNCTIONS = EXAMPLE / "functions"
 ACTIONS = EXAMPLE / "actions"
+VIEWS = EXAMPLE / "views"
 ENV = {"GRAPH_CLI_GRAPH": "company"}
 V100_MODULES = ["company", "operations", "organization", "people"]
 V110_MODULES = ["company", "legal", "operations", "organization", "people"]
@@ -416,6 +417,96 @@ def test_the_actions_publish_run_and_appear_in_the_skill(
     assert rendered.data["problems"] == []
     text = (out / "graph-company" / "SKILL.md").read_text()
     assert "3 named actions" in text and "`offboard_employee(employee: ref ppl:Employee)`" in text
+
+
+def test_the_views_publish_and_answer_what_the_reads_they_replace_answer(
+    run_cli: CliRunner, company: None
+) -> None:
+    names = sorted(p.stem for p in VIEWS.glob("*.yaml"))
+    assert names == ["org_catalog", "position_overview"]
+    for directory in (FUNCTIONS, VIEWS):  # the views run a function: it is published first
+        assert (
+            admin(run_cli, "graph", directory.name, "publish", "company", str(directory)).code == 0
+        )
+    listed = app(run_cli, "describe", "views", env=ENV).data["views"]
+    assert {v["name"]: v.get("takes") for v in listed} == {
+        "org_catalog": None,
+        "position_overview": "org:Position",
+    }
+
+    # an entity view, the default of its class
+    card = app(run_cli, "view", "POS-0013", env=ENV)
+    assert card.code == 0, card.envelope
+    assert (card.data["view"]["name"], card.data["view"]["origin"]) == (
+        "position_overview",
+        "authored",
+    )
+    assert card.data["bytes"] <= 6144
+    chain = next(s for s in card.data["sections"] if s["id"] == "chain")
+    assert [r["position"] for r in chain["items"]] == [
+        "Head of Infrastructure",
+        "Chief Technology Officer",
+        "Chief Executive Officer",
+    ]
+    generated = app(run_cli, "view", "POS-0013", "--name", "card", env=ENV)
+    assert generated.data["view"] == {"name": "card", "origin": "generated"}
+    assert card.data["entity"] == generated.data["entity"]
+    other = app(run_cli, "view", "DEPT-0003", env=ENV)  # no default view for departments
+    assert other.data["view"]["name"] == "card"
+
+    # a set view: the rows of each listing are what `find --type` reads, nothing less (B6)
+    catalog = app(run_cli, "view", "--name", "org_catalog", "--page-bytes", "262144", env=ENV)
+    assert catalog.code == 0, catalog.envelope
+    assert "next" not in catalog.data and catalog.data["view"]["name"] == "org_catalog"
+    everything = app(run_cli, "find", "--limit", "500", env=ENV).data["items"]
+    alias = {e["id"]: e["alias"] for e in everything}
+    for section_id, kind in (
+        ("units", "org:OrgUnit"),
+        ("positions", "org:Position"),
+        ("people", "ppl:Person"),
+    ):
+        found = app(run_cli, "find", "--type", kind, "--limit", "500", env=ENV)
+        assert found.data["items"] and found.envelope["page"]["truncated"] is False
+        section = next(s for s in catalog.data["sections"] if s["id"] == section_id)
+        assert section["count"] == len(found.data["items"]) == len(section["items"])
+        refs = [r["ref"] for r in section["items"]]
+        found_refs = [e["alias"] for e in found.data["items"]]
+        # the order of `find` (by id) unless the section orders by title
+        assert (
+            refs == found_refs if section_id != "positions" else sorted(refs) == sorted(found_refs)
+        )
+        rows = {r["ref"]: r for r in section["items"]}
+        for entity in found.data["items"]:
+            row = rows[entity["alias"]]
+            if section_id != "positions":  # `fields: all` (the positions list two fields)
+                assert row.get("fields", {}) == entity["attrs"], entity["alias"]
+            out = {
+                (g["relation"], i["ref"])
+                for g in row.get("relations", [])
+                if g["direction"] == "out"
+                for i in g["items"]
+            }
+            assert out == {(e["rel"], alias[e["target"]]) for e in entity["edges"]}, entity["alias"]
+
+    # paged: the pages put together are the one-page answer
+    seen: dict[str, list[str]] = {}
+    cursor = None
+    pages = 0
+    while True:
+        extra = ["--cursor", cursor] if cursor else []
+        page = app(
+            run_cli, "view", "--name", "org_catalog", "--page-bytes", "3000", *extra, env=ENV
+        )
+        assert page.code == 0, page.envelope
+        pages += 1
+        for section in page.data["sections"]:
+            seen.setdefault(section["id"], []).extend(r["ref"] for r in section["items"])
+        cursor = page.data.get("next")
+        if cursor is None:
+            break
+    assert pages > 3
+    for section in catalog.data["sections"]:
+        assert seen[section["id"]] == [r["ref"] for r in section["items"]]
 
 
 def run_script(

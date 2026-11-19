@@ -412,8 +412,9 @@ class TestStructure:
         # `markings` (227); reasons in English (228); the row of `graph changes` in the command
         # table (229: generated, the prose is unchanged); the row of `graph view` (230:
         # generated); the sentence on `graph view` in the read step (232); the rows of
-        # `graph describe view` and `graph describe views` (234: generated)
-        assert len(files["SKILL.md"].splitlines()) <= 234
+        # `graph describe view` and `graph describe views` (234: generated); the clause on
+        # published views in the read step (235)
+        assert len(files["SKILL.md"].splitlines()) <= 235
         for name, text in files.items():
             if name.startswith("references/"):
                 # commands.md was at 40 KiB; the two describe action commands add about 1.6 KiB;

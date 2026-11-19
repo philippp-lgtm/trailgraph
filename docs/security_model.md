@@ -190,6 +190,9 @@ are accepted and known:
   card: counts of its relations and the first neighbours with their labels, even where
   a rule denies `read.traverse` (what `graph neighbors` needs). Types and attributes
   the caller cannot see stay out of the card like out of every read.
+  Published views follow the same rule with two additions: a set view also needs `read.find`, and a
+  view that names anything the caller cannot see is not found at all, so a view definition never
+  shows a hidden term ([Views](access_control.md#views)).
 - **Activity shows, data does not.** The envelope's `seq` counts every
   transaction of the graph, hidden ones included. A revision whose only change
   was an edge to a hidden entity appears in `history` with an empty `changed`.

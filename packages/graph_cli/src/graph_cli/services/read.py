@@ -1119,7 +1119,25 @@ class ReadService:
                 ]
                 catalog = {**document, "functions": kept} if kept else None
         actions = self._visible_catalog(actor, entry, limits=limits)
-        return describe_model(entry, model, catalog, actions)
+        return describe_model(
+            entry, model, catalog, actions, self._views_catalog(actor, entry, view)
+        )
+
+    def _views_catalog(
+        self, actor: ActorContext, entry: GraphEntry, view: ReadView
+    ) -> JsonObject | None:
+        """The compiled view catalog narrowed to the views ``actor`` may see, as the published
+        document; ``None`` when there are none (a graph skill then has no views clause)."""
+        visible = self._visible_views(actor, entry, view)
+        found = self._published_views(entry)
+        if not visible or found is None:
+            return None
+        names = {v.name for v in visible}
+        document = found[1].compiled
+        kept = [
+            e for e in req_list(document, "views") if isinstance(e, dict) and e.get("name") in names
+        ]
+        return {**document, "views": kept}
 
     def _visible_catalog(
         self, actor: ActorContext, entry: GraphEntry, *, limits: bool = True

@@ -224,3 +224,34 @@ def test_a_graph_without_views_answers_as_it_did(run_cli: CliRunner, root: Path)
     card = ok(run_cli, "view", shelf, env=PLAIN).data
     dump = json.dumps(card)
     assert '"views' not in dump
+
+
+# ---- the graph skill --------------------------------------------------------------------------
+
+
+def test_the_graph_skill_of_a_graph_with_views_says_where_to_list_them(
+    run_cli: CliRunner, root: Path, tmp_path: Path
+) -> None:
+    clause = "The graph also has published views: `graph describe views --graph example_graph`."
+    published = admin(
+        run_cli,
+        *("graph", "skill", "publish", "example_graph"),
+        str(FIXTURES / "skills" / "template" / "graph-example-graph"),
+    )
+    assert published.code == 0, published.envelope
+
+    def emitted(label: str) -> str:
+        out = tmp_path / label
+        out.mkdir()
+        done = app(run_cli, "skills", "emit", "--out", str(out), "--graph", "example_graph")
+        assert done.code == 0, done.envelope
+        return (out / "graph-example-graph" / "SKILL.md").read_text()
+
+    with_views = emitted("with")
+    assert with_views.count(clause) == 1
+    empty = tmp_path / "no_views"
+    empty.mkdir()
+    assert admin(run_cli, "graph", "views", "publish", "example_graph", str(empty)).code == 0
+    without = emitted("without")
+    assert "describe views" not in without
+    assert with_views.replace(f" {clause}", "") == without

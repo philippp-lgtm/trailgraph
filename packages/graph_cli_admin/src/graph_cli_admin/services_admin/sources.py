@@ -614,6 +614,7 @@ def push(
                     # the text are checked
                     functions=function_slot.compiled if function_slot is not None else None,
                     actions=action_slot.compiled if action_slot is not None else None,
+                    views=view_slot.compiled if view_slot is not None else None,
                 )
                 skill.refuse(label, after, name, checked.problems)
         slot = None

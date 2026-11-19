@@ -146,6 +146,9 @@ the graph is pinned to. So:
   warning that names the replacement, and is left out of listings. To
   retire it, delete its file (history is the audit trail and the
   workspace's git).
+- A function that a published view runs in a `rows` section cannot be removed, or changed so that
+  the view's `args` no longer fit, on its own: `graph-admin graph functions publish` refuses with
+  `admin.views_broken`. Push the function and the view change together (`authoring-graph-views`).
 
 ## Common refusals
 

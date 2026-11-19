@@ -22,7 +22,8 @@ Blocks (each one optional):
   first call (plain calls, the envelope, asking for less, never guessing, functions and
   actions first, dry runs, ``--reason`` and ``--expect``, findings), so that a graph skill
   loaded without skill 1 still leads to safe calls (F42, F74); for a model with
-  ``files:File``, one line on the file workflow.
+  ``files:File``, one line on the file workflow; for a graph with published views a clause
+  on the ``graph view`` rule that names ``graph describe views``.
 - ``modules``: the subject areas (ontology modules) of the graph as a table (module, prefix,
   summary, number of types, links to other modules; built-in modules in one line) and the
   commands to read one module (``describe module``), find a term (``describe search``) and
@@ -68,6 +69,12 @@ the same way: an ``Actions`` column, an ``Actions`` section on every module page
 ``references/actions.md`` for a single-module graph. A graph without active actions renders
 exactly as before.
 
+The compiled view catalog (``graph_cli.view_catalog/1``, the key ``views``) is one more input
+document, present only when the graph has views the reader may see. Only its presence shows: one
+clause in the ``start`` block says the graph has views and where to list them (no list in
+level 0: discovery is ``graph describe views`` and ``describe search``). A graph without active
+views renders exactly as before.
+
 ``measure`` sizes the rendered ``SKILL.md`` against the level 0 budget of every graph
 (``L0_BUDGET`` parts, single-module graphs included) and its curated text against
 ``CURATED_BUDGET``; ``graph-admin`` warns when either is exceeded and refuses nothing.
@@ -106,6 +113,7 @@ FUNCTIONS_SCHEMA: Final = "graph_cli.functions/1"  # the compiled catalog, ``gra
 FEATURED_LIMIT: Final = 12  # functions listed in ``SKILL.md``, however many a graph has
 ACTIONS_SCHEMA: Final = "graph_cli.action_catalog/1"  # the compiled action catalog
 ACTIONS_FEATURED_LIMIT: Final = 8  # actions listed in ``SKILL.md``, however many a graph has
+VIEWS_SCHEMA: Final = "graph_cli.view_catalog/1"  # the compiled view catalog
 GENERATOR: Final = "graph_cli.skills"
 ROLE_NAMES: Final[Mapping[str, str]] = {
     "label": "main name",
@@ -304,6 +312,7 @@ class _Model:
     pages: Mapping[str, JsonObject]  # module id -> ``module`` body of ``describe module``
     functions: Sequence[JsonObject]  # active catalog entries, by module then name
     actions: Sequence[JsonObject]  # active action catalog entries, by module then name
+    views: Sequence[JsonObject]  # active view catalog entries, by module then name
 
     @staticmethod
     def of(
@@ -363,6 +372,7 @@ class _Model:
             pages=pages,
             functions=_active_functions(bundle),
             actions=_active_actions(bundle),
+            views=_active_views(bundle),
         )
 
     @property
@@ -408,6 +418,18 @@ def _active_actions(bundle: JsonObject) -> list[JsonObject]:
     if document.get("schema") != ACTIONS_SCHEMA:
         raise ValueError(f"actions: expected {ACTIONS_SCHEMA}, got {document.get('schema')!r}")
     entries = [e for e in _objects(document, "actions") if e.get("status") != "deprecated"]
+    return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
+
+
+def _active_views(bundle: JsonObject) -> list[JsonObject]:
+    """The active entries of the compiled view catalog document, if the bundle has one."""
+    catalog = bundle.get("views")
+    if catalog is None:
+        return []
+    document = as_object(catalog, "views")
+    if document.get("schema") != VIEWS_SCHEMA:
+        raise ValueError(f"views: expected {VIEWS_SCHEMA}, got {document.get('schema')!r}")
+    entries = [e for e in _objects(document, "views") if e.get("status") != "deprecated"]
     return sorted(entries, key=lambda e: (opt_str(e, "module") or "", req_str(e, "name")))
 
 
@@ -523,7 +545,12 @@ def _start(doc: _Model) -> list[str]:
         f" ({_patterns_source(doc)}).",
         "- For what is known about one entity, `graph view <id> --json` answers in one call (key"
         " fields, relations with counts, files, what applies next): use it before walking edges"
-        " with `get` and `neighbors`.",
+        " with `get` and `neighbors`."
+        + (
+            f" The graph also has published views: `graph describe views --graph {name}`."
+            if doc.views
+            else ""
+        ),
         "- Never guess an option, type, field, relation or state: `graph <command> --help`"
         f" lists the options, `graph describe type <type> --graph {name} --json` the fields,"
         " states and relations.",

@@ -694,11 +694,28 @@ def skill_actions(catalog: JsonObject) -> JsonObject:
     return {"schema": catalog.get("schema"), "actions": kept}
 
 
+# The keys of a view entry a graph skill reads: that the graph has views, their names and what they
+# take, not the sections, parameters, touches or hash.
+SKILL_VIEW_KEYS: Final = ("name", "module", "summary", "status", "takes", "default")
+
+
+def skill_views(catalog: JsonObject) -> JsonObject:
+    """The compiled view catalog reduced to the keys of ``SKILL_VIEW_KEYS`` per entry."""
+    entries = catalog.get("views")
+    kept: list[JsonValue] = []
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict):
+                kept.append({k: entry[k] for k in SKILL_VIEW_KEYS if k in entry})
+    return {"schema": catalog.get("schema"), "views": kept}
+
+
 def describe_model(
     entry: GraphEntry,
     model: CompiledModel,
     functions: JsonObject | None = None,
     actions: JsonObject | None = None,
+    views: JsonObject | None = None,
 ) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
     ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
@@ -710,7 +727,9 @@ def describe_model(
     ``read.describe`` alone, so they carry no query text (K10). ``actions`` is the compiled
     action catalog (``graph_cli.action_catalog/1``), likewise reduced (``skill_actions``);
     the key ``actions`` exists only when it is given, so a graph without actions yields the
-    documents it always did."""
+    documents it always did. ``views`` is the compiled view catalog
+    (``graph_cli.view_catalog/1``), likewise reduced (``skill_views``) and present only when
+    given."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
     documents: dict[str, JsonValue] = {
@@ -729,4 +748,6 @@ def describe_model(
         documents["functions"] = skill_functions(functions)
     if actions is not None:
         documents["actions"] = skill_actions(actions)
+    if views is not None:
+        documents["views"] = skill_views(views)
     return documents

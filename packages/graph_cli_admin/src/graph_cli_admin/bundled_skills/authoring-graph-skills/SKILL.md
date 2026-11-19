@@ -27,7 +27,7 @@ generated from the graph's model:
 
 | Block | Renders |
 | --- | --- |
-| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone. Do not repeat them in the curated text |
+| `start` | to load the `graph-cli` skill first; how to tell the graph is available here and which name to pass as `--graph`; the graph language; the rules of working with `graph` that hold from the first call, so the skill works even when an agent loads it alone; one clause that the graph has views (`graph describe views`) when it has some the reader can call. Do not repeat them in the curated text |
 | `modules` | for a graph with several modules: one row per subject area (module, prefix, summary, size, links to other modules) and the commands to read one module; replaces `types` and `relations` |
 | `types` | one row per entity type: name, alias example, summary, supertypes, fields (enum values inline, `required`, `many`, `unique`, write-once, defaults, their name roles), states and transitions |
 | `relations` | relations from or to those types, each with its `graph query` pattern, cardinality, characteristics and qualifiers (inverse labels, which no command takes, only in `references/model.md`) |
