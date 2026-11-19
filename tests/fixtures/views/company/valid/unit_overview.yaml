@@ -1,0 +1,49 @@
+schema: graph_cli.view/1
+name: unit_overview
+module: organization
+summary: A unit with its cost center, its positions in a state and who holds them.
+use_when: >-
+  What a department or team is about: where it sits, what it costs, which positions it has in a
+  given state and who holds them, which policies bind it.
+takes: org:OrgUnit
+default: true
+params:
+  status:
+    type: string
+    default: active
+    summary: Lifecycle state of the positions to list.
+max_bytes: 4096
+sections:
+  - kind: fields
+    fields: [name, alt_labels]
+    value_chars: 300
+  - kind: relations
+    relations:
+      - org:charged_to
+      - {relation: org:part_of, direction: in}
+      - {relation: ops:applies_to, direction: in}
+    max_groups: 4
+  - kind: neighbors
+    id: positions
+    title: Positions
+    relation: org:in_unit
+    direction: in
+    where: ["status=$status"]
+    order: [title]
+    fields: [title, status]
+    relations:
+      - relation: org:holds
+        direction: in
+        fields: [work_email]
+        max: 5
+    max: 20
+  - kind: rows
+    id: members
+    function: members_of_unit
+    args: {unit: $entity}
+    max: 10
+  - kind: files
+  - kind: affordances
+examples:
+  - question: Which active positions does the engineering department have?
+    params: {status: active}

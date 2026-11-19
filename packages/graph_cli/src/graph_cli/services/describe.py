@@ -4,7 +4,8 @@ Projections for agents: the modules (subject areas) and one module, types, one t
 its fields, lifecycles and relations in both directions, relations, fields, lifecycles, and
 the schema as ``graph query`` (Cypher) sees it, and the named functions of the graph
 (``describe_functions``, ``describe_function``) and its actions (``describe_actions``,
-``describe_action``); ``modules`` and ``module`` list them when the caller passes the visible
+``describe_action``) and its published views (``describe_views``, ``describe_view``);
+``modules`` and ``module`` list functions and actions when the caller passes the visible
 ones; the list projections take a ``module``
 filter. Every term with a summary also carries its ``deprecated`` flag. Deterministic
 (sorted), no timestamps. A type or lifecycle is its CURIE or its unique
@@ -25,7 +26,8 @@ from typing import Final, Protocol
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
-from graph_cli.kinetic.entries import FunctionEntry, find_entry
+from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
+from graph_cli.kinetic.view_entries import ViewEntry, find_view
 from graph_cli.ontology_layer.model import (
     AttributeDef,
     Bound,
@@ -413,9 +415,12 @@ def describe_function(
     name: str,
 ) -> dict[str, JsonValue]:
     """One function with everything its definition says, the normalized query text and its
-    hash; ``function.not_found`` with ``did_you_mean`` for an unknown name."""
+    hash; ``function.not_found`` with ``did_you_mean`` for an unknown name. ``replaced_by`` names
+    a function only when it is among the given ones (a hidden replacement is ``null``)."""
     found = find_entry(functions, name)
-    return model_envelope(entry, model, function=found.detail_json())
+    detail = found.detail_json()
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
+    return model_envelope(entry, model, function=detail)
 
 
 def describe_actions(
@@ -445,9 +450,46 @@ def describe_action(
 ) -> dict[str, JsonValue]:
     """One action with everything its definition says, the compiled ops, the terms it touches,
     the write rights it needs and its hash; ``action.not_found`` with ``did_you_mean`` (over
-    the given actions only) for an unknown name."""
+    the given actions only) for an unknown name. ``replaced_by`` names an action only when it is
+    among the given ones (a replacement the reader may not run is ``null``)."""
     found = find_action(actions, name)
-    return model_envelope(entry, model, action=found.detail_json())
+    detail = found.detail_json()
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, actions)
+    return model_envelope(entry, model, action=detail)
+
+
+def describe_views(
+    entry: GraphEntry,
+    model: CompiledModel,
+    views: Sequence[ViewEntry] | None,
+    *,
+    module: str | None = None,
+    include_deprecated: bool = False,
+) -> dict[str, JsonValue]:
+    """The published views of the graph (by name); with ``module`` (id or prefix) those the
+    module owns. Deprecated ones only with ``include_deprecated``. ``None``: none visible."""
+    wanted = ModuleIndex(model).filter(module)
+    items: list[JsonValue] = [
+        v.summary_json()
+        for v in views or ()
+        if (include_deprecated or not v.deprecated) and (wanted is None or v.module == wanted)
+    ]
+    return _filtered(entry, model, wanted, views=items)
+
+
+def describe_view(
+    entry: GraphEntry,
+    model: CompiledModel,
+    views: Sequence[ViewEntry] | None,
+    name: str,
+) -> dict[str, JsonValue]:
+    """One view with everything its definition says (normalized), the terms and functions it
+    touches and its hash; ``view.not_found`` with ``did_you_mean`` (over the given views only)
+    for an unknown name. ``replaced_by`` names a view only when it is among the given ones."""
+    found = find_view(views, name)
+    detail = found.detail_json()
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, views)
+    return model_envelope(entry, model, view=detail)
 
 
 def describe_type(entry: GraphEntry, model: CompiledModel, name: str) -> dict[str, JsonValue]:
@@ -653,11 +695,28 @@ def skill_actions(catalog: JsonObject) -> JsonObject:
     return {"schema": catalog.get("schema"), "actions": kept}
 
 
+# The keys of a view entry a graph skill reads: that the graph has views, their names and what they
+# take, not the sections, parameters, touches or hash.
+SKILL_VIEW_KEYS: Final = ("name", "module", "summary", "status", "takes", "default")
+
+
+def skill_views(catalog: JsonObject) -> JsonObject:
+    """The compiled view catalog reduced to the keys of ``SKILL_VIEW_KEYS`` per entry."""
+    entries = catalog.get("views")
+    kept: list[JsonValue] = []
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict):
+                kept.append({k: entry[k] for k in SKILL_VIEW_KEYS if k in entry})
+    return {"schema": catalog.get("schema"), "views": kept}
+
+
 def describe_model(
     entry: GraphEntry,
     model: CompiledModel,
     functions: JsonObject | None = None,
     actions: JsonObject | None = None,
+    views: JsonObject | None = None,
 ) -> dict[str, JsonValue]:
     """The model documents a graph skill is rendered from (``graph_cli.skills``): what
     ``describe types``, ``describe type <T>`` for every class, ``describe relations``,
@@ -669,7 +728,9 @@ def describe_model(
     ``read.describe`` alone, so they carry no query text (K10). ``actions`` is the compiled
     action catalog (``graph_cli.action_catalog/1``), likewise reduced (``skill_actions``);
     the key ``actions`` exists only when it is given, so a graph without actions yields the
-    documents it always did."""
+    documents it always did. ``views`` is the compiled view catalog
+    (``graph_cli.view_catalog/1``), likewise reduced (``skill_views``) and present only when
+    given."""
     index = ModuleIndex(model)
     modules = describe_modules(entry, model)["modules"]
     documents: dict[str, JsonValue] = {
@@ -688,4 +749,6 @@ def describe_model(
         documents["functions"] = skill_functions(functions)
     if actions is not None:
         documents["actions"] = skill_actions(actions)
+    if views is not None:
+        documents["views"] = skill_views(views)
     return documents

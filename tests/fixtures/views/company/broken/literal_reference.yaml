@@ -1,0 +1,10 @@
+schema: graph_cli.view/1
+name: literal_reference
+module: organization
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+takes: org:Team
+sections:
+  - kind: rows
+    function: members_of_unit
+    args: {unit: TEAM-0001}

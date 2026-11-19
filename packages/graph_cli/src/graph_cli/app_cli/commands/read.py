@@ -36,7 +36,7 @@ from graph_cli.cli_kit.output_schemas import (
     one_of,
     ref,
 )
-from graph_cli.cli_kit.runner import CommandState
+from graph_cli.cli_kit.runner import CommandState, missing_argument
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -54,7 +54,11 @@ from graph_cli.query.plan import (
     split_assignment,
 )
 from graph_cli.query.search import SearchSpec
-from graph_cli.services.read import GraphRead, QuerySpec, refuse_affordances_with_rev
+from graph_cli.services.read import (
+    GraphRead,
+    QuerySpec,
+    refuse_affordances_with_rev,
+)
 from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
 from graph_cli.temporal_knowledge.changes import FEED_LIMIT, parse_since
 
@@ -159,16 +163,53 @@ def get(
     return Result(data=data, graph=view.envelope_graph())
 
 
-def view(state: CommandState, ref: str, graph: str | None, as_of: str | None) -> Result:
-    """The generated entity card (object views stage 1): one bounded answer about one entity."""
+def view(
+    state: CommandState,
+    ref: str | None,
+    name: str | None,
+    param: tuple[str, ...],
+    cursor: str | None,
+    page_bytes: int | None,
+    graph: str | None,
+    as_of: str | None,
+) -> Result:
+    """An object view: the generated card of one entity (stage 1), a published entity view, or a
+    published set view paged by bytes (stage 2). The request names the view and the parameter
+    names, never their values."""
     point = _as_of(as_of)
-    reading = _open(state, graph, "read.get", "view", {"ref": ref}, point)
-    data, warnings = context(state).reader.view(reading, ref)
+    if ref is None and name is None:  # REF was required: the answer is what it was
+        context(state).select(graph)  # a graph that is not there is reported first, as before
+        raise missing_argument("ref")
+    pairs = [split_assignment(text, "--param") for text in param]
+    args: dict[str, JsonValue] = {}
+    if ref is not None:  # only what was given: the request of ``graph view REF`` is as it was
+        args["ref"] = ref
+    if name is not None:
+        args["name"] = name
+    if pairs:
+        args["param"] = sorted({key for key, _ in pairs})
+    reading = _open(state, graph, "read.get", "view", args, point)
+    data, warnings = context(state).reader.view(
+        reading,
+        ref,
+        name=name,
+        pairs=pairs,
+        cursor=cursor,
+        page_bytes=page_bytes,
+        as_of=point is not None,
+    )
     state.warnings += warnings
     return Result(
         data=data,
         graph=reading.envelope_graph(),
-        hints=view_hints(data, reading.entry.name),
+        hints=view_hints(
+            data,
+            reading.entry.name,
+            name=name,
+            params=param,
+            page_bytes=page_bytes,
+            pinned=_pinned(reading, point),
+        ),
         text=view_text(data),
     )
 
@@ -792,6 +833,33 @@ def run(
 REF: Final = ParamSpec(
     "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True
 )
+# ``graph view``: the entity is optional (a set view has none), the rest picks a published view.
+VIEW_REF: Final = ParamSpec(
+    "ref",
+    "entity_ref",
+    "Full id, alias or trailing hex of the id; leave out for a set view.",
+    positional=True,
+)
+VIEW_NAME: Final = ParamSpec(
+    "--name",
+    "string",
+    "A published view of the graph; card is the generated card, which is also the default.",
+)
+VIEW_PARAM: Final = ParamSpec(
+    "--param",
+    "assignment",
+    "name=value for a parameter of the view, read by its declared type.",
+    repeatable=True,
+    pairs="multimap",
+)
+VIEW_CURSOR: Final = ParamSpec(
+    "--cursor", "string", "The next of the previous page of a set view; same --name and --param."
+)
+VIEW_PAGE_BYTES: Final = ParamSpec(
+    "--page-bytes",
+    "integer",
+    "Page size of a set view in bytes (1 to 262144); the view's own size, else 12288.",
+)
 
 _FOUND: Final = {  # what lookup and search show of an entity
     "id": STRING,
@@ -1067,22 +1135,58 @@ SPECS: Final = (
         kind="read",
         surface="retrieve",
         action="read.get",
-        summary="Show what is known about one entity in one answer.",
+        summary="Show what is known about one entity, or a published view, in one answer.",
         description=(
-            "The generated card: key fields (label, lifecycle state, required and unique "
-            "attributes; the other attributes with a value are only named), relations with "
-            "counts, the first three neighbours by name and the count per state, stored files "
-            "with their pages, and what applies next by name. At most 6 KiB; whatever is cut is "
-            "counted (more, more_groups, other) and named in a hint. It is a state, not a record: "
-            "use get for revision numbers and edge ids."
+            "Without --name, the default view of the entity's class if the graph published "
+            "one, else the generated card: key fields (label, lifecycle state, required and "
+            "unique attributes; the other attributes with a value are only named), relations "
+            "with counts, the first three neighbours by name and the count per state, stored "
+            "files with their pages, and what applies next by name. At most 6 KiB; whatever is "
+            "cut is counted (more, more_groups, other) and named in a hint. It is a state, not "
+            "a record: use get for revision numbers and edge ids. --name card is always the "
+            "generated card. --name NAME picks a published view: an entity view takes the REF "
+            "of an entity of its class, a set view takes none and lists entities (and the "
+            "rows of published functions) in pages of --page-bytes bytes (at most 262144); "
+            "a page that does not reach the end has next and more, and --cursor with the "
+            "same --name, --param and a graph that has not changed gives the next one "
+            "(view.cursor_stale otherwise; --as-of tx:<seq> pages a state you started with). "
+            "--param name=value gives a view parameter, read by its declared type. A set view "
+            "needs read.find as well as read.get, a view that runs functions read.function; "
+            "a view that names what the reader may not see is not found. Under --as-of the "
+            "rows of functions are unavailable (the section answers view.section_unavailable)."
         ),
-        params=(REF, GRAPH, AS_OF),
+        params=(VIEW_REF, VIEW_NAME, VIEW_PARAM, VIEW_CURSOR, VIEW_PAGE_BYTES, GRAPH, AS_OF),
         examples=(
-            Example("graph view <id>", "The card of one entity."),
-            Example("graph view <id> --json", "The card as JSON."),
+            Example("graph view <id>", "The default view of one entity, else its card."),
+            Example("graph view <id> --json", "The same as JSON."),
             Example("graph view <id> --as-of tx:<seq> --json", "The card as it was after that tx."),
+            Example(
+                "graph view <id> --name card", "The generated card, whatever the graph publishes."
+            ),
+            Example(
+                "graph view <id> --name <name> --param <param>=<value>", "A published entity view."
+            ),
+            Example("graph view --name <name> --page-bytes 65536", "One page of a set view."),
+            Example(
+                "graph view --name <name> --cursor <value>", "The next page, from a page's next."
+            ),
         ),
-        errors=REF_ERRORS,
+        errors=(
+            *REF_ERRORS,
+            "usage.missing_argument",
+            "usage.invalid_argument",
+            "view.not_found",
+            "view.takes_entity",
+            "view.takes_no_entity",
+            "view.class_mismatch",
+            "view.stale",
+            "view.parameter_missing",
+            "view.parameter_unknown",
+            "view.parameter_invalid",
+            "view.parameter_type",
+            "view.cursor_invalid",
+            "view.cursor_stale",
+        ),
         handler=view,
         output=VIEW_OUTPUT,
     ),

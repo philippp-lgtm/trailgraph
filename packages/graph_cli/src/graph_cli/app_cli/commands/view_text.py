@@ -1,7 +1,9 @@
 """The text of ``graph view``: one line per part of the card, read from the card's ``data`` only.
 
 The JSON document is the contract (``kinetic.card``); this is one renderer of it, shorter than the
-JSON, for people and hand checks. The hints name how to read what the card cut.
+JSON, for people and hand checks. The hints name how to read what the card cut. An authored view
+adds the ``neighbors``, ``list`` and ``rows`` sections (a heading and one line per row) and the
+sections that were cut; a set view has no entity line and a hint that names its next page.
 """
 
 from __future__ import annotations
@@ -44,16 +46,22 @@ def view_text(data: JsonValue) -> str:
     """The card as lines of text."""
     card = _map(data)
     entity = _map(card.get("entity"))
-    label = entity.get("label")
-    head = f"{ref_of(entity)}  " + (f"{label}  " if label else "")
-    lines = [f"{head}({entity['type']}, rev {entity['rev']}, {entity['record_status']})"]
-    for key in ("superseded_by", "retracted_by"):
-        if entity.get(key):
-            lines.append(f"  {key.replace('_', ' ')}: {', '.join(_strs(entity[key]))}")
+    lines: list[str] = []
+    if entity:
+        label = entity.get("label")
+        head = f"{ref_of(entity)}  " + (f"{label}  " if label else "")
+        lines.append(f"{head}({entity['type']}, rev {entity['rev']}, {entity['record_status']})")
+        for key in ("superseded_by", "retracted_by"):
+            if entity.get(key):
+                lines.append(f"  {key.replace('_', ' ')}: {', '.join(_strs(entity[key]))}")
+    else:
+        lines.append(f"view {_map(card.get('view')).get('name')}")
     for raw in _seq(card.get("sections")):
         section = _map(raw)
         kind = section.get("kind")
-        if kind == "fields":
+        if section.get("cut"):  # what is left of a section that had to go (an authored view)
+            lines.append(f"{section.get('id', kind)}: cut to fit the size limit")
+        elif kind == "fields":
             lines += _fields(section)
         elif kind == "relations":
             lines += _relations(section)
@@ -61,6 +69,16 @@ def view_text(data: JsonValue) -> str:
             lines += _cited_by(section) if section.get("variant") == "cited_by" else _files(section)
         elif kind == "affordances":
             lines += _affordances(section)
+        elif kind in ("neighbors", "list"):
+            lines += _listing(section)
+        elif kind == "rows":
+            lines += _function_rows(section)
+    if card.get("sections_cut"):
+        lines.append(f"{card['sections_cut']} more sections cut to fit the size limit")
+    if card.get("oversize"):
+        lines.append("oversize: one row is larger than the page limit")
+    if card.get("more"):
+        lines.append(f"more rows follow; next page: --cursor {card['next']}")
     if card.get("cut"):
         lines.append("cut: trimmed to fit the size limit")
     return "".join(f"{line}\n" for line in lines)
@@ -205,6 +223,9 @@ def _affordances(section: Mapping[str, JsonValue]) -> list[str]:
     if section.get("functions"):
         more = f" (+{section['functions_more']})" if section.get("functions_more") else ""
         can.append(f"run {', '.join(_strs(section['functions']))}{more}")
+    if section.get("views"):
+        more = f" (+{section['views_more']})" if section.get("views_more") else ""
+        can.append(f"view --name {', '.join(_strs(section['views']))}{more}")
     parts = []
     if can:
         parts.append("can: " + "; ".join(can))
@@ -216,10 +237,100 @@ def _affordances(section: Mapping[str, JsonValue]) -> list[str]:
     return lines
 
 
-def view_hints(data: JsonValue, graph: str) -> tuple[Hint, ...]:
+def _listing(section: Mapping[str, JsonValue]) -> list[str]:
+    """A ``neighbors`` or ``list`` section: a heading, then one line per row."""
+    what = section.get("type") or f"{section.get('relation')} {section.get('direction')}"
+    if isinstance(what, Sequence) and not isinstance(what, str):
+        what = ", ".join(str(w) for w in what)
+    count = f"~{section['count']}" if section.get("approx") else str(section["count"])
+    notes = [_more(_int(section.get("more")))]
+    if section.get("from"):
+        notes.append(f"from row {section['from']}")
+    if section.get("unread"):
+        notes.append(f"{section['unread']} edges not read")
+    suffix = "".join(f", {n}" for n in notes if n)
+    lines = [f"{_title(section)}: {section['kind']} {what} ({count}{suffix})"]
+    lines += [f"  {_row(_map(raw))}" for raw in _seq(section.get("items"))]
+    return lines
+
+
+def _title(section: Mapping[str, JsonValue]) -> str:
+    text = str(section.get("id", section["kind"]))
+    return f'{text} "{section["title"]}"' if section.get("title") else text
+
+
+def _row(row: Mapping[str, JsonValue]) -> str:
+    text = str(row["ref"])
+    if row.get("label"):
+        text += f" {row['label']}"
+    if row.get("type"):
+        text += f" ({row['type']})"
+    if row.get("record_status"):
+        text += f" <{row['record_status']}>"
+    qualifiers = _map(row.get("qualifiers"))
+    if qualifiers:
+        text += " {" + ", ".join(f"{k}={_value(v)}" for k, v in qualifiers.items()) + "}"
+    fields = _map(row.get("fields"))
+    if fields:
+        text += "  " + " ".join(f"{k}={_value(v)}" for k, v in fields.items())
+    groups = []
+    for raw in _seq(row.get("relations")):
+        group = _map(raw)
+        arrow = "->" if group.get("direction") == "out" else "<-"
+        items = ", ".join(_neighbour(_map(i)) for i in _seq(group.get("items")))
+        more = f" (+{group['more']})" if group.get("more") else ""
+        groups.append(f"{group['relation']} {arrow} {items}{more}")
+    if groups:
+        text += "; " + "; ".join(groups)
+    return text
+
+
+def _function_rows(section: Mapping[str, JsonValue]) -> list[str]:
+    """A ``rows`` section: a heading, then the rows of the function as ``column=value``."""
+    function = _map(section.get("function"))
+    error = _map(section.get("error"))
+    if error:
+        return [
+            f"{_title(section)}: rows {function.get('name')} failed",
+            f"  {error['code']}: {error['message']}",
+        ]
+    notes = [_more(_int(section.get("more")))]
+    if section.get("from"):
+        notes.append(f"from row {section['from']}")
+    if section.get("cells_cut"):
+        notes.append(f"{section['cells_cut']} cells cut")
+    suffix = "".join(f", {n}" for n in notes if n)
+    lines = [f"{_title(section)}: rows {function.get('name')} ({section['count']}{suffix})"]
+    for raw in _seq(section.get("items")):
+        lines.append("  " + " ".join(f"{k}={_value(v)}" for k, v in _map(raw).items()))
+    return lines
+
+
+def view_hints(
+    data: JsonValue,
+    graph: str,
+    *,
+    name: str | None = None,
+    params: tuple[str, ...] = (),
+    page_bytes: int | None = None,
+    pinned: tuple[tuple[str, tuple[str, ...]], ...] = (),
+) -> tuple[Hint, ...]:
     """What to run to read what the card cut: the neighbours of the relations it cut, and the
-    attributes it only named."""
+    attributes it only named; for a set view, the next page (``name``, the ``--param`` texts
+    and the page size of the call are repeated, the cursor is tied to them)."""
     card = _map(data)
+    if "entity" not in card:
+        cursor = card.get("next")
+        if not isinstance(cursor, str) or name is None:
+            return ()
+        options: list[tuple[str, tuple[str, ...]]] = [("--name", (name,)), ("--cursor", (cursor,))]
+        if params:
+            options.append(("--param", params))
+        if page_bytes is not None:
+            options.append(("--page-bytes", (str(page_bytes),)))
+        options += pinned
+        line = command_line("view", (), graph, tuple(options), (), 0, default_limit=0)
+        return ({"text": "More rows available", "command": line},)
     ref = ref_of(_map(card.get("entity")))
     relations: list[str] = []
     other: list[str] = []

@@ -1,7 +1,7 @@
 {
   "schema": "graph_cli.inventory/1",
   "program": "graph",
-  "program_version": "0.27.0",
+  "program_version": "0.28.0",
   "surface": "app",
   "global_options": [
     {
@@ -1185,7 +1185,7 @@
       "kind": "read",
       "surface": "model",
       "action": "read.describe",
-      "summary": "Search the ontology by text: types, relations, fields, enum values, states, functions, actions.",
+      "summary": "Search the model by text: types, relations, fields, enum values, states, functions, actions, views.",
       "args": [
         {
           "name": "text",
@@ -1209,7 +1209,8 @@
             "enum_value",
             "state",
             "function",
-            "action"
+            "action",
+            "view"
           ]
         },
         {
@@ -1259,6 +1260,10 @@
         {
           "command": "graph describe search <value> --kind action",
           "summary": "Only the actions that fit the words."
+        },
+        {
+          "command": "graph describe search <value> --kind view",
+          "summary": "Only the published views that fit the words."
         }
       ],
       "errors": [
@@ -1397,6 +1402,144 @@
         {
           "command": "graph describe types --module <module>",
           "summary": "Only the types of one module."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "view"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Describe one view: what it takes, its parameters and sections and how to call it.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The view name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe view <view>",
+          "summary": "Everything about one view."
+        },
+        {
+          "command": "graph describe view <view> --json",
+          "summary": "The view as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument",
+        "view.not_found"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "views"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the published views of the graph with their parameters.",
+      "args": [],
+      "options": [
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--include-deprecated",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list deprecated views."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe views",
+          "summary": "The views: name, parameters, what they take, summary."
+        },
+        {
+          "command": "graph describe views --module <module> --include-deprecated",
+          "summary": "One module's views, deprecated ones too."
         }
       ],
       "errors": [
@@ -4060,17 +4203,47 @@
       "kind": "read",
       "surface": "retrieve",
       "action": "read.get",
-      "summary": "Show what is known about one entity in one answer.",
+      "summary": "Show what is known about one entity, or a published view, in one answer.",
       "args": [
         {
           "name": "ref",
           "type": "entity_ref",
-          "required": true,
+          "required": false,
           "repeatable": false,
-          "summary": "Full id, alias or trailing hex of the id."
+          "summary": "Full id, alias or trailing hex of the id; leave out for a set view."
         }
       ],
       "options": [
+        {
+          "name": "--name",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "A published view of the graph; card is the generated card, which is also the default."
+        },
+        {
+          "name": "--param",
+          "type": "assignment",
+          "required": false,
+          "repeatable": true,
+          "summary": "name=value for a parameter of the view, read by its declared type.",
+          "pairs": "multimap",
+          "pair_values": "text"
+        },
+        {
+          "name": "--cursor",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "The next of the previous page of a set view; same --name and --param."
+        },
+        {
+          "name": "--page-bytes",
+          "type": "integer",
+          "required": false,
+          "repeatable": false,
+          "summary": "Page size of a set view in bytes (1 to 262144); the view's own size, else 12288."
+        },
         {
           "name": "--graph",
           "type": "graph_ref",
@@ -4089,15 +4262,31 @@
       "examples": [
         {
           "command": "graph view <id>",
-          "summary": "The card of one entity."
+          "summary": "The default view of one entity, else its card."
         },
         {
           "command": "graph view <id> --json",
-          "summary": "The card as JSON."
+          "summary": "The same as JSON."
         },
         {
           "command": "graph view <id> --as-of tx:<seq> --json",
           "summary": "The card as it was after that tx."
+        },
+        {
+          "command": "graph view <id> --name card",
+          "summary": "The generated card, whatever the graph publishes."
+        },
+        {
+          "command": "graph view <id> --name <name> --param <param>=<value>",
+          "summary": "A published entity view."
+        },
+        {
+          "command": "graph view --name <name> --page-bytes 65536",
+          "summary": "One page of a set view."
+        },
+        {
+          "command": "graph view --name <name> --cursor <value>",
+          "summary": "The next page, from a page's next."
         }
       ],
       "errors": [
@@ -4118,7 +4307,19 @@
         "remote.unauthorized",
         "remote.unreachable",
         "temporal.as_of_unsupported",
-        "usage.invalid_argument"
+        "usage.invalid_argument",
+        "usage.missing_argument",
+        "view.class_mismatch",
+        "view.cursor_invalid",
+        "view.cursor_stale",
+        "view.not_found",
+        "view.parameter_invalid",
+        "view.parameter_missing",
+        "view.parameter_type",
+        "view.parameter_unknown",
+        "view.stale",
+        "view.takes_entity",
+        "view.takes_no_entity"
       ],
       "exit_codes": [
         0,
@@ -4644,6 +4845,61 @@
     },
     {
       "code": "usage.missing_argument",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.class_mismatch",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "view.cursor_invalid",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.cursor_stale",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "view.not_found",
+      "category": "not_found",
+      "exit": 1
+    },
+    {
+      "code": "view.parameter_invalid",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.parameter_missing",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.parameter_type",
+      "category": "refused",
+      "exit": 1
+    },
+    {
+      "code": "view.parameter_unknown",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.stale",
+      "category": "invalid",
+      "exit": 1
+    },
+    {
+      "code": "view.takes_entity",
+      "category": "usage",
+      "exit": 2
+    },
+    {
+      "code": "view.takes_no_entity",
       "category": "usage",
       "exit": 2
     },

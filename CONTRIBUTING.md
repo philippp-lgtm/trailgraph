@@ -97,7 +97,7 @@ reader looks for it:
 | `docs/README.md` | everyone | the index of `docs/`, one line per document |
 | `docs/cli_graph.md`, `configuration.md`, `files.md`, `skills.md` | users of `graph` | behavior, options, concepts across commands |
 | `docs/cli_graph_admin.md`, `access_control.md`, `security_model.md`, `live_view.md`, `server.md` | maintainers | operating graphs, policies, what is protected and what is not, running the server and its API |
-| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates: the block catalog, size budgets, what publishing checks; `docs/skills.md` keeps the concept), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance), `authoring-graph-actions` (named write actions: the `graph_cli.action/1` format reference, what publishing checks, writing guidance) |
+| `packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/` | maintainers (agents and people) | the admin skills: `ontology-best-practices` (the `graph_cli.ir/1` format reference, modeling guidance, change levels, release workflow), `maintaining-graphs` (the `graph-admin` workflow), `authoring-graph-skills` (graph skill templates: the block catalog, size budgets, what publishing checks; `docs/skills.md` keeps the concept), `authoring-graph-functions` (named read functions: the `graph_cli.function/1` format reference, what publishing checks, writing guidance), `authoring-graph-actions` (named write actions: the `graph_cli.action/1` format reference, what publishing checks, writing guidance), `authoring-graph-views` (views and set views: the `graph_cli.view/1` format reference, what a call answers and its bounds, what publishing checks, writing guidance) |
 | `examples/<name>/README.md` | newcomers and maintainers | what one example graph shows, how to build it in a throwaway installation, how to load it into an existing one, sample queries; the example's files are its source |
 | `docs/architecture.md`, `storage.md`, `audit.md` | contributors | layers, modules, on-disk formats, verification |
 
@@ -128,6 +128,7 @@ Update the documentation in the same change as the code:
 | a key, base type, facet or check of `graph_cli.ir/1`, a change level of `ontology diff`, or when a check runs | `bundled_skills/ontology-best-practices/references/` of `graph_cli_admin` (`ir_format.md` is checked against the parser; the change levels and check timing are not) |
 | a key, type, limit or check of `graph_cli.function/1`, or a rule publishing applies to functions | `bundled_skills/authoring-graph-functions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
 | a key, type, limit or check of `graph_cli.action/1`, or a rule publishing applies to actions | `bundled_skills/authoring-graph-actions/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` and `docs/cli_graph_admin.md` describe behavior and link to it) |
+| a key, section kind, limit, bound or check of `graph_cli.view/1`, or a rule publishing applies to views | `bundled_skills/authoring-graph-views/references/format.md` of `graph_cli_admin` (the format has one home there; `docs/cli_graph.md` describes the commands and the behavior of a call and links to it) |
 | a block, size budget or publish check of graph skills | `bundled_skills/authoring-graph-skills/SKILL.md` of `graph_cli_admin` (the rules have one home there; `docs/skills.md` describes the concept and links to it; `tests/skills/test_graph_skills_skill.py` pins blocks, reserved files and budgets) |
 | a layer, package or module | `docs/architecture.md` (or `storage.md`, `audit.md`) and the import contracts |
 | an on-disk format or a verification check | `docs/storage.md` or `docs/audit.md` |
@@ -202,8 +203,9 @@ headers and envelope keys per level and fails until the change is judged.
 The admin skill tests are `tests/skills/test_ontology_skill.py` (YAML examples
 of `ontology-best-practices` compile; its format reference names every key the
 parser accepts), `tests/skills/test_functions_skill.py` and
-`tests/skills/test_actions_skill.py` (the same for the function and action
-files of `authoring-graph-functions` and `authoring-graph-actions`),
+`tests/skills/test_actions_skill.py` and `tests/skills/test_views_skill.py` (the same for
+the function, action and view files of `authoring-graph-functions`,
+`authoring-graph-actions` and `authoring-graph-views`),
 `tests/skills/test_graph_skills_skill.py` (the blocks, reserved generated
 files, size budgets and listing limits that `authoring-graph-skills` states
 match the renderer and the publish check) and

@@ -180,6 +180,9 @@ class FileCatalog:
     def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         return read_slot(self._layout(graph), "actions", sources=sources)
 
+    def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        return read_slot(self._layout(graph), "views", sources=sources)
+
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:
         store = self.file_store(graph)
         return store, store

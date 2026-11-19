@@ -1,11 +1,12 @@
-"""Every ``function.*`` and ``action.*`` code the kinetic package emits is in the error
-registry (B9) and has a hint entry."""
+"""Every ``function.*``, ``action.*`` and ``view.*`` code the kinetic package emits is in the
+error registry (B9) and has a hint entry."""
 
 import re
 from pathlib import Path
 
 import graph_cli.kinetic as kinetic
 import graph_cli.services.actions as action_service
+import graph_cli.services.read as read_service
 import graph_cli_admin.services_admin as admin_services
 from graph_cli.cli_kit.hints import known_hint_codes
 from graph_cli.kernel.error_codes import ERROR_CODES, ErrorCategory, lookup_error_code
@@ -16,10 +17,13 @@ ADMIN_SOURCES = (
     Path(admin_services.__file__).parent / "kinetic_slots.py",
     Path(action_service.__file__),  # ``graph do``: action.stale, action.deprecated
 )
-LITERAL = re.compile(r'"((?:function|action)\.[a-z_]+)"')
+# ``graph view``, the read service: view.stale, view.takes_entity, ... (its function.* codes are
+# the function tests' business)
+VIEW_SOURCES = (Path(read_service.__file__),)
+LITERAL = re.compile(r'"((?:function|action|view)\.[a-z_]+)"')
 
 # Codes the package builds from the kind (``f"{kind}.parameter_missing"``): each is
-# checked for both families.
+# checked for the three families.
 KIND_BUILT = (
     "parameter_missing",
     "parameter_unknown",
@@ -32,14 +36,27 @@ KIND_BUILT = (
     "builtin_module",
     "unknown_module",
 )
-# Codes built from a term kind (``f"action.unknown_{kind}"``): actions only.
-TERM_BUILT = ("action.unknown_type", "action.unknown_relation")
+# Codes built from a term kind (``f"action.unknown_{kind}"``): actions only; views build
+# ``view.unknown_class`` and ``view.unknown_relation`` the same way.
+TERM_BUILT = (
+    "action.unknown_type",
+    "action.unknown_relation",
+    "view.unknown_class",
+    "view.unknown_relation",
+)
 
 
 def emitted() -> set[str]:
     paths = [*SOURCES.glob("*.py"), *ADMIN_SOURCES]
     literal = {code for path in paths for code in LITERAL.findall(path.read_text())}
-    built = {f"{kind}.{suffix}" for kind in ("function", "action") for suffix in KIND_BUILT}
+    literal |= {
+        code
+        for path in VIEW_SOURCES
+        for code in LITERAL.findall(path.read_text())
+        if code.startswith("view.")
+    }
+    kinds = ("function", "action", "view")
+    built = {f"{kind}.{suffix}" for kind in kinds for suffix in KIND_BUILT}
     return literal | built | set(TERM_BUILT)
 
 
@@ -58,14 +75,26 @@ def test_every_registered_action_code_is_emitted_somewhere() -> None:
     assert registered - emitted() == set()
 
 
+def test_every_registered_view_code_is_emitted_somewhere() -> None:
+    registered = {c for c in ERROR_CODES if c.startswith("view.")}
+    assert registered - emitted() == set()
+
+
 def test_compile_problems_are_invalid_not_usage() -> None:
-    for code in ("function.pattern_impossible", "action.op_impossible", "action.template_invalid"):
+    for code in (
+        "function.pattern_impossible",
+        "action.op_impossible",
+        "action.template_invalid",
+        "view.invalid_where",
+        "view.unknown_function",
+        "view.stale",
+    ):
         spec = lookup_error_code(code)
         assert spec is not None and spec.category is ErrorCategory.INVALID
 
 
 def test_binding_errors_are_usage_for_both_kinds() -> None:
-    for kind in ("function", "action"):
+    for kind in ("function", "action", "view"):
         for suffix in ("parameter_missing", "parameter_unknown", "parameter_invalid"):
             spec = lookup_error_code(f"{kind}.{suffix}")
             assert spec is not None and spec.category is ErrorCategory.USAGE

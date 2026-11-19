@@ -11,6 +11,8 @@ from graph_cli.kernel.ports.catalog import KineticSlot, sources_hash
 from graph_cli.kernel.records import OntologyPin
 from graph_cli.kinetic.action_compile import compile_actions
 from graph_cli.kinetic.compile import compile_catalog
+from graph_cli.kinetic.entries import FunctionEntry, load_entries
+from graph_cli.kinetic.view_compile import compile_views
 from graph_cli_admin.services_admin.catalog_follow import follow
 
 MODEL = compiled_model("inventory", "1.1.0")
@@ -86,3 +88,63 @@ def test_sources_that_do_not_compile_block() -> None:
     found = follow(slot, MODEL, PIN, recompile=True)
     assert found.republish is None
     assert "term.unknown" in {p.code for p in found.problems}
+
+
+def view_slot(*, stale: bool) -> tuple[KineticSlot, tuple[FunctionEntry, ...]]:
+    """A published view catalog with the function entries it runs; ``stale`` leaves a stored
+    relation that is gone although the sources compile."""
+    files = sources("views")
+    functions = load_entries(compile_catalog(sources("functions"), MODEL)[0])
+    compiled, found = compile_views(files, MODEL, functions)
+    assert not found
+    document = json.loads(json.dumps(compiled))
+    if stale:
+        entry = next(e for e in document["views"] if "inv:located_in" in json.dumps(e["sections"]))
+        entry["sections"] = json.loads(
+            json.dumps(entry["sections"]).replace("inv:located_in", "inv:gone_x")
+        )
+    slot = KineticSlot(
+        sources_hash(files),
+        hash_value(document),
+        OLD_PIN,
+        document,
+        files,
+        "views",
+    )  # type: ignore[arg-type]
+    return slot, functions
+
+
+def test_a_view_catalog_that_holds_is_left_alone() -> None:
+    slot, functions = view_slot(stale=False)
+    found = follow(slot, MODEL, PIN, recompile=True, functions=functions)
+    assert found.republish is None and found.problems == []
+
+
+def test_a_stale_view_catalog_is_compiled_again_with_the_functions() -> None:
+    slot, functions = view_slot(stale=True)
+    found = follow(slot, MODEL, PIN, recompile=True, functions=functions)
+    assert found.problems == [] and found.republish is not None
+    again = found.republish.slot
+    assert again.kind == "views" and again.hash == slot.hash and again.files == slot.files
+    assert again.compiled_hash != slot.compiled_hash and again.published_against == PIN
+    assert again.compiled == compile_views(slot.files, MODEL, functions)[0]
+    assert found.republish.names == ("location_overview",)
+    assert follow(again, MODEL, PIN, recompile=True, functions=functions).republish is None
+
+
+def test_a_view_needs_the_functions_the_graph_will_have() -> None:
+    slot, functions = view_slot(stale=False)
+    gone = follow(slot, MODEL, PIN, recompile=True, functions=functions[:1])
+    assert gone.republish is None
+    assert {p.code for p in gone.problems} == {"view.unknown_function"}
+    stale, _ = view_slot(stale=True)
+    blocked = follow(stale, MODEL, PIN, recompile=True, functions=())  # sources do not compile
+    assert blocked.republish is None and "view.unknown_function" in {
+        p.code for p in blocked.problems
+    }
+
+
+def test_without_a_rename_the_problems_of_a_stale_view_catalog_stand() -> None:
+    slot, functions = view_slot(stale=True)
+    found = follow(slot, MODEL, PIN, recompile=False, functions=functions)
+    assert found.republish is None and found.problems

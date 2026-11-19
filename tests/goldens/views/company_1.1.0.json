@@ -1,0 +1,1099 @@
+{
+  "schema": "graph_cli.view_catalog/1",
+  "views": [
+    {
+      "default": false,
+      "examples": [],
+      "hash": "sha256:1f35aed569583a5cda9b2b935eba147ccc03de5787ba9263491f49c3475fd0a7",
+      "max_bytes": null,
+      "module": "organization",
+      "name": "legacy_unit_overview",
+      "page_bytes": null,
+      "params": [],
+      "replaced_by": "unit_overview",
+      "sections": [
+        {
+          "fields": [
+            "name"
+          ],
+          "id": "fields",
+          "kind": "fields",
+          "max": 1,
+          "title": null,
+          "value_chars": 100
+        },
+        {
+          "args": {
+            "unit": "$entity"
+          },
+          "function": "members_of_unit",
+          "id": "rows",
+          "kind": "rows",
+          "max": 10,
+          "title": null
+        }
+      ],
+      "source": {
+        "default": false,
+        "examples": [],
+        "max_bytes": null,
+        "module": "organization",
+        "name": "legacy_unit_overview",
+        "page_bytes": null,
+        "params": [],
+        "replaced_by": "unit_overview",
+        "sections": [
+          {
+            "fields": [
+              "name"
+            ],
+            "id": "fields",
+            "kind": "fields",
+            "max": 1,
+            "title": null,
+            "value_chars": 100
+          },
+          {
+            "args": {
+              "unit": "$entity"
+            },
+            "function": "members_of_unit",
+            "id": "rows",
+            "kind": "rows",
+            "max": 10,
+            "title": null
+          }
+        ],
+        "status": "deprecated",
+        "summary": "The old team overview; use unit_overview.",
+        "takes": "org:Team",
+        "use_when": "Replaced by unit_overview; kept until the last reader has moved."
+      },
+      "status": "deprecated",
+      "summary": "The old team overview; use unit_overview.",
+      "takes": "org:Team",
+      "touches": {
+        "attributes": [
+          "name"
+        ],
+        "functions": [
+          "members_of_unit"
+        ],
+        "relations": [],
+        "types": [
+          {
+            "curie": "org:Team",
+            "module": "organization"
+          }
+        ]
+      },
+      "use_when": "Replaced by unit_overview; kept until the last reader has moved."
+    },
+    {
+      "default": false,
+      "examples": [],
+      "hash": "sha256:5ece4734ba575d69e485ba18d056493ff32c518ceeeff081fdc7c4347a67a66d",
+      "max_bytes": null,
+      "module": "organization",
+      "name": "members_report",
+      "page_bytes": null,
+      "params": [
+        {
+          "class": "org:Department",
+          "default": null,
+          "enum": null,
+          "many": false,
+          "name": "unit",
+          "summary": "The department to report on.",
+          "type": "ref"
+        }
+      ],
+      "replaced_by": null,
+      "sections": [
+        {
+          "args": {
+            "unit": "$unit"
+          },
+          "function": "members_of_unit",
+          "id": "rows",
+          "kind": "rows",
+          "max": null,
+          "title": null
+        }
+      ],
+      "source": {
+        "default": false,
+        "examples": [],
+        "max_bytes": null,
+        "module": "organization",
+        "name": "members_report",
+        "page_bytes": null,
+        "params": [
+          {
+            "class": "org:Department",
+            "default": null,
+            "enum": null,
+            "many": false,
+            "name": "unit",
+            "summary": "The department to report on.",
+            "type": "ref"
+          }
+        ],
+        "replaced_by": null,
+        "sections": [
+          {
+            "args": {
+              "unit": "$unit"
+            },
+            "function": "members_of_unit",
+            "id": "rows",
+            "kind": "rows",
+            "max": null,
+            "title": null
+          }
+        ],
+        "status": "active",
+        "summary": "The people of one department, from the published function.",
+        "takes": null,
+        "use_when": "Who works in a department including its teams, as a set view with a reference parameter."
+      },
+      "status": "active",
+      "summary": "The people of one department, from the published function.",
+      "takes": null,
+      "touches": {
+        "attributes": [],
+        "functions": [
+          "members_of_unit"
+        ],
+        "relations": [],
+        "types": [
+          {
+            "curie": "org:Department",
+            "module": "organization"
+          }
+        ]
+      },
+      "use_when": "Who works in a department including its teams, as a set view with a reference parameter."
+    },
+    {
+      "default": false,
+      "examples": [],
+      "hash": "sha256:2611392b9d82e233b18dff49c24e5e22753ca2269c81ecc471db29496f4d2443",
+      "max_bytes": null,
+      "module": "organization",
+      "name": "org_catalog",
+      "page_bytes": 65536,
+      "params": [
+        {
+          "class": null,
+          "default": "2000-01-01",
+          "enum": null,
+          "many": false,
+          "name": "since",
+          "summary": "Only trainings completed on or after this date.",
+          "type": "date"
+        }
+      ],
+      "replaced_by": null,
+      "sections": [
+        {
+          "fields": "all",
+          "id": "units",
+          "kind": "list",
+          "order": [],
+          "relations": [
+            {
+              "direction": "out",
+              "fields": null,
+              "max": 500,
+              "order": [],
+              "relation": null,
+              "where": []
+            }
+          ],
+          "title": null,
+          "type": [
+            "org:OrgUnit"
+          ],
+          "where": []
+        },
+        {
+          "fields": [
+            "title",
+            "status"
+          ],
+          "id": "positions",
+          "kind": "list",
+          "order": [
+            "title"
+          ],
+          "relations": [
+            {
+              "direction": "out",
+              "fields": null,
+              "max": 500,
+              "order": [],
+              "relation": null,
+              "where": []
+            },
+            {
+              "direction": "in",
+              "fields": [
+                "name"
+              ],
+              "max": 500,
+              "order": [],
+              "relation": "org:holds",
+              "where": [
+                "work_email:exists=true"
+              ]
+            }
+          ],
+          "title": null,
+          "type": [
+            "org:Position"
+          ],
+          "where": []
+        },
+        {
+          "fields": "all",
+          "id": "people",
+          "kind": "list",
+          "order": [],
+          "relations": [
+            {
+              "direction": "out",
+              "fields": null,
+              "max": 500,
+              "order": [],
+              "relation": null,
+              "where": []
+            }
+          ],
+          "title": null,
+          "type": [
+            "ppl:Employee",
+            "ppl:External"
+          ],
+          "where": []
+        },
+        {
+          "args": {
+            "since": "$since",
+            "titles": [
+              "Safety",
+              "Security"
+            ]
+          },
+          "function": "training_completions",
+          "id": "completions",
+          "kind": "rows",
+          "max": null,
+          "title": null
+        }
+      ],
+      "source": {
+        "default": false,
+        "examples": [],
+        "max_bytes": null,
+        "module": "organization",
+        "name": "org_catalog",
+        "page_bytes": 65536,
+        "params": [
+          {
+            "class": null,
+            "default": "2000-01-01",
+            "enum": null,
+            "many": false,
+            "name": "since",
+            "summary": "Only trainings completed on or after this date.",
+            "type": "date"
+          }
+        ],
+        "replaced_by": null,
+        "sections": [
+          {
+            "fields": "all",
+            "id": "units",
+            "kind": "list",
+            "order": [],
+            "relations": [
+              {
+                "direction": "out",
+                "fields": null,
+                "max": 500,
+                "order": [],
+                "relation": null,
+                "where": []
+              }
+            ],
+            "title": null,
+            "type": [
+              "org:OrgUnit"
+            ],
+            "where": []
+          },
+          {
+            "fields": [
+              "title",
+              "status"
+            ],
+            "id": "positions",
+            "kind": "list",
+            "order": [
+              "title"
+            ],
+            "relations": [
+              {
+                "direction": "out",
+                "fields": null,
+                "max": 500,
+                "order": [],
+                "relation": null,
+                "where": []
+              },
+              {
+                "direction": "in",
+                "fields": [
+                  "name"
+                ],
+                "max": 500,
+                "order": [],
+                "relation": "org:holds",
+                "where": [
+                  "work_email:exists=true"
+                ]
+              }
+            ],
+            "title": null,
+            "type": [
+              "org:Position"
+            ],
+            "where": []
+          },
+          {
+            "fields": "all",
+            "id": "people",
+            "kind": "list",
+            "order": [],
+            "relations": [
+              {
+                "direction": "out",
+                "fields": null,
+                "max": 500,
+                "order": [],
+                "relation": null,
+                "where": []
+              }
+            ],
+            "title": null,
+            "type": [
+              "ppl:Employee",
+              "ppl:External"
+            ],
+            "where": []
+          },
+          {
+            "args": {
+              "since": "$since",
+              "titles": [
+                "Safety",
+                "Security"
+              ]
+            },
+            "function": "training_completions",
+            "id": "completions",
+            "kind": "rows",
+            "max": null,
+            "title": null
+          }
+        ],
+        "status": "active",
+        "summary": "Every unit, position and person with their keys and relations, for catalog renderers.",
+        "takes": null,
+        "use_when": "Render or export the organisation as a whole, one listing per kind of thing; not for one entity (use graph view REF)."
+      },
+      "status": "active",
+      "summary": "Every unit, position and person with their keys and relations, for catalog renderers.",
+      "takes": null,
+      "touches": {
+        "attributes": [
+          "name",
+          "status",
+          "title",
+          "work_email"
+        ],
+        "functions": [
+          "training_completions"
+        ],
+        "relations": [
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          },
+          {
+            "curie": "ppl:Employee",
+            "module": "people"
+          },
+          {
+            "curie": "ppl:External",
+            "module": "people"
+          }
+        ]
+      },
+      "use_when": "Render or export the organisation as a whole, one listing per kind of thing; not for one entity (use graph view REF)."
+    },
+    {
+      "default": false,
+      "examples": [],
+      "hash": "sha256:2ea811f8ee12daf4780aa50d56776213c95caa194f994a3ed6dd42565ff59f61",
+      "max_bytes": null,
+      "module": "organization",
+      "name": "position_overview",
+      "page_bytes": null,
+      "params": [],
+      "replaced_by": null,
+      "sections": [
+        {
+          "fields": "all",
+          "id": "fields",
+          "kind": "fields",
+          "max": 16,
+          "title": null,
+          "value_chars": 300
+        },
+        {
+          "direction": "out",
+          "fields": [
+            "name"
+          ],
+          "id": "unit",
+          "kind": "neighbors",
+          "max": 10,
+          "order": [],
+          "relation": "org:in_unit",
+          "relations": [],
+          "title": null,
+          "where": []
+        },
+        {
+          "direction": "in",
+          "fields": [
+            "name",
+            "work_email"
+          ],
+          "id": "holder",
+          "kind": "neighbors",
+          "max": 1,
+          "order": [],
+          "relation": "org:holds",
+          "relations": [],
+          "title": null,
+          "where": []
+        },
+        {
+          "direction": "in",
+          "fields": [
+            "title"
+          ],
+          "id": "reports",
+          "kind": "neighbors",
+          "max": 10,
+          "order": [
+            "title"
+          ],
+          "relation": "org:reports_to",
+          "relations": [],
+          "title": null,
+          "where": []
+        },
+        {
+          "id": "relations",
+          "kind": "relations",
+          "max_groups": 8,
+          "max_items": 3,
+          "relations": [
+            {
+              "direction": "out",
+              "relation": "org:carries"
+            }
+          ],
+          "title": null
+        }
+      ],
+      "source": {
+        "default": false,
+        "examples": [],
+        "max_bytes": null,
+        "module": "organization",
+        "name": "position_overview",
+        "page_bytes": null,
+        "params": [],
+        "replaced_by": null,
+        "sections": [
+          {
+            "fields": "all",
+            "id": "fields",
+            "kind": "fields",
+            "max": 16,
+            "title": null,
+            "value_chars": 300
+          },
+          {
+            "direction": "out",
+            "fields": [
+              "name"
+            ],
+            "id": "unit",
+            "kind": "neighbors",
+            "max": 10,
+            "order": [],
+            "relation": "in_unit",
+            "relations": [],
+            "title": null,
+            "where": []
+          },
+          {
+            "direction": "in",
+            "fields": [
+              "name",
+              "work_email"
+            ],
+            "id": "holder",
+            "kind": "neighbors",
+            "max": 1,
+            "order": [],
+            "relation": "holds",
+            "relations": [],
+            "title": null,
+            "where": []
+          },
+          {
+            "direction": "in",
+            "fields": [
+              "title"
+            ],
+            "id": "reports",
+            "kind": "neighbors",
+            "max": 10,
+            "order": [
+              "title"
+            ],
+            "relation": "reports_to",
+            "relations": [],
+            "title": null,
+            "where": []
+          },
+          {
+            "id": "relations",
+            "kind": "relations",
+            "max_groups": 8,
+            "max_items": 3,
+            "relations": [
+              {
+                "direction": "out",
+                "relation": "carries"
+              }
+            ],
+            "title": null
+          }
+        ],
+        "status": "active",
+        "summary": "A position with its unit, its holder and the positions that report to it.",
+        "takes": "org:Position",
+        "use_when": "Who holds a position, where it sits in the org chart and who reports to it. Local relation names are accepted and stored as CURIEs."
+      },
+      "status": "active",
+      "summary": "A position with its unit, its holder and the positions that report to it.",
+      "takes": "org:Position",
+      "touches": {
+        "attributes": [
+          "name",
+          "title",
+          "work_email"
+        ],
+        "functions": [],
+        "relations": [
+          {
+            "curie": "org:carries",
+            "module": "organization"
+          },
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:reports_to",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:Position",
+            "module": "organization"
+          }
+        ]
+      },
+      "use_when": "Who holds a position, where it sits in the org chart and who reports to it. Local relation names are accepted and stored as CURIEs."
+    },
+    {
+      "default": false,
+      "examples": [
+        {
+          "params": {
+            "before": "2026-04-01",
+            "status": "open"
+          },
+          "question": "Which tasks are still open this quarter?"
+        }
+      ],
+      "hash": "sha256:0963d3b61852e230b6b1d1cd689a781ccd4db2585e283ba62c26a9b462d53cea",
+      "max_bytes": null,
+      "module": "operations",
+      "name": "tasks_by_state",
+      "page_bytes": null,
+      "params": [
+        {
+          "class": null,
+          "default": "open",
+          "enum": null,
+          "many": false,
+          "name": "status",
+          "summary": "Lifecycle state of the tasks to list.",
+          "type": "string"
+        },
+        {
+          "class": null,
+          "default": "2100-01-01",
+          "enum": null,
+          "many": false,
+          "name": "before",
+          "summary": "Only tasks due before this day.",
+          "type": "date"
+        }
+      ],
+      "replaced_by": null,
+      "sections": [
+        {
+          "fields": [
+            "title",
+            "due_on",
+            "status"
+          ],
+          "id": "tasks",
+          "kind": "list",
+          "order": [
+            "due_on",
+            "title:desc"
+          ],
+          "relations": [
+            {
+              "direction": "out",
+              "fields": [
+                "name"
+              ],
+              "max": 500,
+              "order": [],
+              "relation": "ops:assigned_to",
+              "where": []
+            }
+          ],
+          "title": null,
+          "type": [
+            "ops:Task"
+          ],
+          "where": [
+            "status=$status",
+            "due_on:lt=$before"
+          ]
+        }
+      ],
+      "source": {
+        "default": false,
+        "examples": [
+          {
+            "params": {
+              "before": "2026-04-01",
+              "status": "open"
+            },
+            "question": "Which tasks are still open this quarter?"
+          }
+        ],
+        "max_bytes": null,
+        "module": "operations",
+        "name": "tasks_by_state",
+        "page_bytes": null,
+        "params": [
+          {
+            "class": null,
+            "default": "open",
+            "enum": null,
+            "many": false,
+            "name": "status",
+            "summary": "Lifecycle state of the tasks to list.",
+            "type": "string"
+          },
+          {
+            "class": null,
+            "default": "2100-01-01",
+            "enum": null,
+            "many": false,
+            "name": "before",
+            "summary": "Only tasks due before this day.",
+            "type": "date"
+          }
+        ],
+        "replaced_by": null,
+        "sections": [
+          {
+            "fields": [
+              "title",
+              "due_on",
+              "status"
+            ],
+            "id": "tasks",
+            "kind": "list",
+            "order": [
+              "due_on",
+              "title:desc"
+            ],
+            "relations": [
+              {
+                "direction": "out",
+                "fields": [
+                  "name"
+                ],
+                "max": 500,
+                "order": [],
+                "relation": "ops:assigned_to",
+                "where": []
+              }
+            ],
+            "title": null,
+            "type": [
+              "ops:Task"
+            ],
+            "where": [
+              "status=$status",
+              "due_on:lt=$before"
+            ]
+          }
+        ],
+        "status": "active",
+        "summary": "The tasks in one state that are due before a day, oldest first.",
+        "takes": null,
+        "use_when": "Which tasks are open, in progress or done, and which are overdue."
+      },
+      "status": "active",
+      "summary": "The tasks in one state that are due before a day, oldest first.",
+      "takes": null,
+      "touches": {
+        "attributes": [
+          "due_on",
+          "name",
+          "status",
+          "title"
+        ],
+        "functions": [],
+        "relations": [
+          {
+            "curie": "ops:assigned_to",
+            "module": "operations"
+          }
+        ],
+        "types": [
+          {
+            "curie": "ops:Task",
+            "module": "operations"
+          }
+        ]
+      },
+      "use_when": "Which tasks are open, in progress or done, and which are overdue."
+    },
+    {
+      "default": true,
+      "examples": [
+        {
+          "params": {
+            "status": "active"
+          },
+          "question": "Which active positions does the engineering department have?"
+        }
+      ],
+      "hash": "sha256:93899e2a71372c70e4e98fe5dc9312adb4fe8f1773580739c404c77823b162d7",
+      "max_bytes": 4096,
+      "module": "organization",
+      "name": "unit_overview",
+      "page_bytes": null,
+      "params": [
+        {
+          "class": null,
+          "default": "active",
+          "enum": null,
+          "many": false,
+          "name": "status",
+          "summary": "Lifecycle state of the positions to list.",
+          "type": "string"
+        }
+      ],
+      "replaced_by": null,
+      "sections": [
+        {
+          "fields": [
+            "name",
+            "alt_labels"
+          ],
+          "id": "fields",
+          "kind": "fields",
+          "max": 2,
+          "title": null,
+          "value_chars": 300
+        },
+        {
+          "id": "relations",
+          "kind": "relations",
+          "max_groups": 4,
+          "max_items": 3,
+          "relations": [
+            {
+              "direction": "out",
+              "relation": "org:charged_to"
+            },
+            {
+              "direction": "in",
+              "relation": "org:part_of"
+            },
+            {
+              "direction": "in",
+              "relation": "ops:applies_to"
+            }
+          ],
+          "title": null
+        },
+        {
+          "direction": "in",
+          "fields": [
+            "title",
+            "status"
+          ],
+          "id": "positions",
+          "kind": "neighbors",
+          "max": 20,
+          "order": [
+            "title"
+          ],
+          "relation": "org:in_unit",
+          "relations": [
+            {
+              "direction": "in",
+              "fields": [
+                "work_email"
+              ],
+              "max": 5,
+              "order": [],
+              "relation": "org:holds",
+              "where": []
+            }
+          ],
+          "title": "Positions",
+          "where": [
+            "status=$status"
+          ]
+        },
+        {
+          "args": {
+            "unit": "$entity"
+          },
+          "function": "members_of_unit",
+          "id": "members",
+          "kind": "rows",
+          "max": 10,
+          "title": null
+        },
+        {
+          "id": "files",
+          "kind": "files",
+          "title": null
+        },
+        {
+          "id": "affordances",
+          "kind": "affordances",
+          "title": null
+        }
+      ],
+      "source": {
+        "default": true,
+        "examples": [
+          {
+            "params": {
+              "status": "active"
+            },
+            "question": "Which active positions does the engineering department have?"
+          }
+        ],
+        "max_bytes": 4096,
+        "module": "organization",
+        "name": "unit_overview",
+        "page_bytes": null,
+        "params": [
+          {
+            "class": null,
+            "default": "active",
+            "enum": null,
+            "many": false,
+            "name": "status",
+            "summary": "Lifecycle state of the positions to list.",
+            "type": "string"
+          }
+        ],
+        "replaced_by": null,
+        "sections": [
+          {
+            "fields": [
+              "name",
+              "alt_labels"
+            ],
+            "id": "fields",
+            "kind": "fields",
+            "max": 2,
+            "title": null,
+            "value_chars": 300
+          },
+          {
+            "id": "relations",
+            "kind": "relations",
+            "max_groups": 4,
+            "max_items": 3,
+            "relations": [
+              {
+                "direction": "out",
+                "relation": "org:charged_to"
+              },
+              {
+                "direction": "in",
+                "relation": "org:part_of"
+              },
+              {
+                "direction": "in",
+                "relation": "ops:applies_to"
+              }
+            ],
+            "title": null
+          },
+          {
+            "direction": "in",
+            "fields": [
+              "title",
+              "status"
+            ],
+            "id": "positions",
+            "kind": "neighbors",
+            "max": 20,
+            "order": [
+              "title"
+            ],
+            "relation": "org:in_unit",
+            "relations": [
+              {
+                "direction": "in",
+                "fields": [
+                  "work_email"
+                ],
+                "max": 5,
+                "order": [],
+                "relation": "org:holds",
+                "where": []
+              }
+            ],
+            "title": "Positions",
+            "where": [
+              "status=$status"
+            ]
+          },
+          {
+            "args": {
+              "unit": "$entity"
+            },
+            "function": "members_of_unit",
+            "id": "members",
+            "kind": "rows",
+            "max": 10,
+            "title": null
+          },
+          {
+            "id": "files",
+            "kind": "files",
+            "title": null
+          },
+          {
+            "id": "affordances",
+            "kind": "affordances",
+            "title": null
+          }
+        ],
+        "status": "active",
+        "summary": "A unit with its cost center, its positions in a state and who holds them.",
+        "takes": "org:OrgUnit",
+        "use_when": "What a department or team is about: where it sits, what it costs, which positions it has in a given state and who holds them, which policies bind it."
+      },
+      "status": "active",
+      "summary": "A unit with its cost center, its positions in a state and who holds them.",
+      "takes": "org:OrgUnit",
+      "touches": {
+        "attributes": [
+          "alt_labels",
+          "name",
+          "status",
+          "title",
+          "work_email"
+        ],
+        "functions": [
+          "members_of_unit"
+        ],
+        "relations": [
+          {
+            "curie": "ops:applies_to",
+            "module": "operations"
+          },
+          {
+            "curie": "org:charged_to",
+            "module": "organization"
+          },
+          {
+            "curie": "org:holds",
+            "module": "organization"
+          },
+          {
+            "curie": "org:in_unit",
+            "module": "organization"
+          },
+          {
+            "curie": "org:part_of",
+            "module": "organization"
+          }
+        ],
+        "types": [
+          {
+            "curie": "org:OrgUnit",
+            "module": "organization"
+          }
+        ]
+      },
+      "use_when": "What a department or team is about: where it sits, what it costs, which positions it has in a given state and who holds them, which policies bind it."
+    }
+  ]
+}

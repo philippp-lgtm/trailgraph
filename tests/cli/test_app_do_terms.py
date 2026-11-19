@@ -163,6 +163,52 @@ def refused(outcome: Outcome, action: str, resource: str, rule: str = "default.d
 # ---- listing -----------------------------------------------------------------------------
 
 
+def test_a_deprecated_action_never_names_a_replacement_the_caller_may_not_run(
+    run_cli: CliRunner, world: World, tmp_path: Path
+) -> None:
+    """``old_task`` (a copy of ``create_task``) is replaced by ``offboard_employee``, which the
+    allow list hides: neither ``describe action`` nor the warning of ``graph do`` names it."""
+    folder = tmp_path / "actions_more"
+    folder.mkdir()
+    for source in VALID.glob("*.yaml"):
+        (folder / source.name).write_text(source.read_text())
+    old = (VALID / "create_task.yaml").read_text().replace("name: create_task", "name: old_task")
+    (folder / "old_task.yaml").write_text(
+        old + "status: deprecated\nreplaced_by: offboard_employee\n"
+    )
+    published = admin(run_cli, "graph", "actions", "publish", "example_graph", str(folder))
+    assert published.code == 0, published.envelope
+
+    def seen() -> tuple[Any, Any]:
+        described = app(run_cli, "describe", "action", "old_task", env=ENV)
+        ran = app(
+            run_cli,
+            *(
+                "do",
+                "old_task",
+                "--param",
+                "title=T",
+                "--param",
+                f"assignee={world.ids['employee']}",
+            ),
+            "--dry-run",
+            env=ENV,
+        )
+        assert described.code == 0 and ran.code == 0, (described.envelope, ran.envelope)
+        [note] = [w for w in ran.envelope["warnings"] if w["code"] == "action.deprecated"]
+        return described.data["action"]["replaced_by"], note
+
+    assert "offboard_employee" not in listed(run_cli)
+    replaced, note = seen()
+    assert replaced is None
+    assert note["details"] == {"name": "old_task", "replaced_by": None}
+    assert "offboard_employee" not in json.dumps(note) and "use " not in note["message"]
+    install(run_cli, world, EVERYTHING)
+    replaced, note = seen()
+    assert replaced == "offboard_employee"
+    assert note["details"]["replaced_by"] == "offboard_employee"
+
+
 def test_an_action_is_listed_when_every_need_has_a_type_that_passes(
     run_cli: CliRunner, world: World
 ) -> None:

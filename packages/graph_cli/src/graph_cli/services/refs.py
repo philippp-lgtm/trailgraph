@@ -220,14 +220,14 @@ def resolve_ref(text: str, snapshot: Snapshot) -> tuple[EntityId, tuple[WarningR
 def entity_params(
     snapshot: Snapshot,
     model: CompiledModel,
-    kind: Literal["function", "action"],
+    kind: Literal["function", "action", "view"],
     name: str,
     param: ParamDef,
     bound: Mapping[str, Value],
 ) -> tuple[Value, list[WarningRecord]]:
-    """The canonical ids for the reference texts of a ``ref`` parameter of a function or an
-    action, each checked to exist and to be of the declared class or a subclass (no name
-    resolution). Errors name the function or action under ``details[kind]``;
+    """The canonical ids for the reference texts of a ``ref`` parameter of a function, an
+    action or a view, each checked to exist and to be of the declared class or a subclass (no name
+    resolution). Errors name the function, action or view under ``details[kind]``;
     ``<kind>.parameter_type`` is the wrong class."""
     assert param.of_class is not None
     given = bound[param.name]

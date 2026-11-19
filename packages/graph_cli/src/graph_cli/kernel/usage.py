@@ -24,3 +24,6 @@ class UsageNote:
         # The function a ``run`` found (``{name, hash}``), for a run that fails afterwards
         # with an error that does not name it (a ``ref`` parameter that finds nothing).
         self.function: dict[str, JsonValue] | None = None
+        # The authored view a ``view`` call found (``{name, hash}``), for a call that fails
+        # afterwards with an error that does not name it. Never a parameter value or an id.
+        self.view: dict[str, JsonValue] | None = None

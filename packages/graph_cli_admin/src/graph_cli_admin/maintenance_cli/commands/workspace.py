@@ -45,8 +45,8 @@ This folder maintains the graphs of a graph_cli installation with `graph-admin`.
 Load the `maintaining-graphs` skill before the first `graph-admin` command here.
 
 - One folder per graph, `<graph>_<id suffix>/`, as `graph-admin graph pull` writes it:
-  `ontology/<version>/`, `skill/graph-<graph>/`, `functions/<name>.yaml` and
-  `actions/<name>.yaml` (the last three only when the graph has them) and
+  `ontology/<version>/`, `skill/graph-<graph>/`, `functions/<name>.yaml`,
+  `actions/<name>.yaml` and `views/<name>.yaml` (the last four only when the graph has them) and
   `.graph_cli_source.json` (never edit that file). Notes about a graph go into a `README.md`
   in its folder.
 - `graph-admin workspace sync .` refreshes the skills in `.claude/skills/` and adds a

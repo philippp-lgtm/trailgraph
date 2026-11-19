@@ -1,0 +1,9 @@
+schema: graph_cli.view/1
+name: invalid_order
+module: operations
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+sections:
+  - kind: list
+    type: ops:Task
+    order: ["due_on:sideways"]

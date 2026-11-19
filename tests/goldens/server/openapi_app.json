@@ -2036,7 +2036,8 @@
                     "enum_value",
                     "state",
                     "function",
-                    "action"
+                    "action",
+                    "view"
                   ]
                 },
                 "curie": {
@@ -2467,6 +2468,405 @@
           "graph",
           "ontology",
           "types"
+        ]
+      },
+      "describe_view_data": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "const": "graph_cli.model/1"
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "language"
+            ]
+          },
+          "ontology": {
+            "$ref": "#/components/schemas/ontology_ref"
+          },
+          "view": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "module": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "signature": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "deprecated"
+                ]
+              },
+              "use_when": {
+                "type": "string"
+              },
+              "replaced_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "takes": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "default": {
+                "type": "boolean"
+              },
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "class": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "enum": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "many": {
+                      "type": "boolean"
+                    },
+                    "default": {},
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "class",
+                    "enum",
+                    "many",
+                    "default",
+                    "summary"
+                  ]
+                }
+              },
+              "max_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "page_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sections": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": {}
+                }
+              },
+              "examples": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string"
+                    },
+                    "params": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "question",
+                    "params"
+                  ]
+                }
+              },
+              "touches": {
+                "type": "object",
+                "properties": {
+                  "types": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "curie": {
+                          "type": "string"
+                        },
+                        "module": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "curie",
+                        "module"
+                      ]
+                    }
+                  },
+                  "relations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "curie": {
+                          "type": "string"
+                        },
+                        "module": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "curie",
+                        "module"
+                      ]
+                    }
+                  },
+                  "attributes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "functions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "types",
+                  "relations",
+                  "attributes",
+                  "functions"
+                ]
+              },
+              "call": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "module",
+              "summary",
+              "signature",
+              "status",
+              "use_when",
+              "replaced_by",
+              "takes",
+              "default",
+              "params",
+              "max_bytes",
+              "page_bytes",
+              "sections",
+              "examples",
+              "touches",
+              "call",
+              "hash"
+            ]
+          }
+        },
+        "required": [
+          "schema",
+          "graph",
+          "ontology",
+          "view"
+        ]
+      },
+      "describe_views_data": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "const": "graph_cli.model/1"
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "language"
+            ]
+          },
+          "ontology": {
+            "$ref": "#/components/schemas/ontology_ref"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "module": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "signature": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "deprecated"
+                  ]
+                },
+                "takes": {
+                  "type": "string"
+                },
+                "default": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "module",
+                "summary",
+                "signature",
+                "status"
+              ]
+            }
+          },
+          "module": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "graph",
+          "ontology",
+          "views"
         ]
       },
       "do_data": {
@@ -5475,12 +5875,33 @@
               },
               "origin": {
                 "type": "string"
+              },
+              "hash": {
+                "type": "string"
               }
             },
             "required": [
               "name",
               "origin"
             ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "bytes": {
+            "type": "integer"
           },
           "entity": {
             "type": "object",
@@ -5523,31 +5944,24 @@
               "record_status"
             ]
           },
-          "sections": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": {}
-            }
+          "cut": {
+            "type": "boolean"
           },
-          "bytes": {
+          "sections_cut": {
             "type": "integer"
           },
-          "cut": {
+          "next": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "oversize": {
             "type": "boolean"
           }
         },
         "required": [
           "view",
-          "entity",
           "sections",
           "bytes"
         ]
@@ -11447,7 +11861,7 @@
     "/v1/commands/describe/search": {
       "post": {
         "operationId": "describe_search",
-        "summary": "Search the ontology by text: types, relations, fields, enum values, states, functions, actions.",
+        "summary": "Search the model by text: types, relations, fields, enum values, states, functions, actions, views.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -11746,7 +12160,8 @@
                             "enum_value",
                             "state",
                             "function",
-                            "action"
+                            "action",
+                            "view"
                           ]
                         },
                         "description": "Only this kind of term."
@@ -11762,7 +12177,8 @@
                             "enum_value",
                             "state",
                             "function",
-                            "action"
+                            "action",
+                            "view"
                           ]
                         },
                         "description": "The inventory name of kind; never both.",
@@ -12451,6 +12867,670 @@
                       "--module": {
                         "type": "string",
                         "description": "The inventory name of module; never both.",
+                        "deprecated": true
+                      },
+                      "graph": {
+                        "type": "string",
+                        "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": []
+                  },
+                  "actor": {
+                    "type": "object"
+                  },
+                  "pointer": {
+                    "type": "object"
+                  },
+                  "graph_env": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
+        "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/commands/describe/view": {
+      "post": {
+        "operationId": "describe_view",
+        "summary": "Describe one view: what it takes, its parameters and sections and how to call it.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/describe_view_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_selected",
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, access.project_mismatch, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "access.project_mismatch",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found, view.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found",
+              "view.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: graph.not_in_project, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_in_project",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.forbidden_key",
+              "config.invalid",
+              "ontology.artifact_missing"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "The view name."
+                      },
+                      "graph": {
+                        "type": "string",
+                        "description": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+                      },
+                      "--graph": {
+                        "type": "string",
+                        "description": "The inventory name of graph; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  "actor": {
+                    "type": "object"
+                  },
+                  "pointer": {
+                    "type": "object"
+                  },
+                  "graph_env": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
+        "x-graph-cli-remote": "server"
+      }
+    },
+    "/v1/commands/describe/views": {
+      "post": {
+        "operationId": "describe_views",
+        "summary": "List the published views of the graph with their parameters.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/describe_views_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_selected",
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, access.project_mismatch, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "access.project_mismatch",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found, term.unknown.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found",
+              "term.unknown"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: graph.not_in_project, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_in_project",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.forbidden_key, config.invalid, ontology.artifact_missing.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.forbidden_key",
+              "config.invalid",
+              "ontology.artifact_missing"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "module": {
+                        "type": "string",
+                        "description": "Only the terms of this module (id or prefix); see describe modules."
+                      },
+                      "--module": {
+                        "type": "string",
+                        "description": "The inventory name of module; never both.",
+                        "deprecated": true
+                      },
+                      "include_deprecated": {
+                        "type": "boolean",
+                        "description": "Also list deprecated views."
+                      },
+                      "--include-deprecated": {
+                        "type": "boolean",
+                        "description": "The inventory name of include_deprecated; never both.",
                         "deprecated": true
                       },
                       "graph": {
@@ -20819,7 +21899,7 @@
     "/v1/commands/view": {
       "post": {
         "operationId": "view",
-        "summary": "Show what is known about one entity in one answer.",
+        "summary": "Show what is known about one entity, or a published view, in one answer.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -20904,7 +21984,7 @@
             }
           },
           "400": {
-            "description": "Bad Request: graph.not_selected, usage.invalid_argument.",
+            "description": "Bad Request: graph.not_selected, usage.invalid_argument, usage.missing_argument, view.cursor_invalid, view.parameter_invalid, view.parameter_missing, view.parameter_unknown, view.takes_entity, view.takes_no_entity.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20924,7 +22004,14 @@
             },
             "x-graph-cli-error-codes": [
               "graph.not_selected",
-              "usage.invalid_argument"
+              "usage.invalid_argument",
+              "usage.missing_argument",
+              "view.cursor_invalid",
+              "view.parameter_invalid",
+              "view.parameter_missing",
+              "view.parameter_unknown",
+              "view.takes_entity",
+              "view.takes_no_entity"
             ]
           },
           "401": {
@@ -20976,7 +22063,7 @@
             ]
           },
           "404": {
-            "description": "Not Found: entity.not_found, graph.not_found.",
+            "description": "Not Found: entity.not_found, graph.not_found, view.not_found.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -20996,11 +22083,12 @@
             },
             "x-graph-cli-error-codes": [
               "entity.not_found",
-              "graph.not_found"
+              "graph.not_found",
+              "view.not_found"
             ]
           },
           "422": {
-            "description": "Unprocessable Content: entity.ambiguous_ref, graph.not_in_project, remote.client_outdated, temporal.as_of_unsupported.",
+            "description": "Unprocessable Content: entity.ambiguous_ref, graph.not_in_project, remote.client_outdated, temporal.as_of_unsupported, view.class_mismatch, view.cursor_stale, view.parameter_type, view.stale.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -21022,7 +22110,11 @@
               "entity.ambiguous_ref",
               "graph.not_in_project",
               "remote.client_outdated",
-              "temporal.as_of_unsupported"
+              "temporal.as_of_unsupported",
+              "view.class_mismatch",
+              "view.cursor_stale",
+              "view.parameter_type",
+              "view.stale"
             ]
           },
           "500": {
@@ -21107,7 +22199,91 @@
                     "properties": {
                       "ref": {
                         "type": "string",
-                        "description": "Full id, alias or trailing hex of the id."
+                        "description": "Full id, alias or trailing hex of the id; leave out for a set view."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "A published view of the graph; card is the generated card, which is also the default."
+                      },
+                      "--name": {
+                        "type": "string",
+                        "description": "The inventory name of name; never both.",
+                        "deprecated": true
+                      },
+                      "param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "name=value for a parameter of the view, read by its declared type."
+                      },
+                      "--param": {
+                        "oneOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "pattern": "^[^=]+$"
+                            },
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            }
+                          }
+                        ],
+                        "description": "The inventory name of param; never both.",
+                        "deprecated": true
+                      },
+                      "cursor": {
+                        "type": "string",
+                        "description": "The next of the previous page of a set view; same --name and --param."
+                      },
+                      "--cursor": {
+                        "type": "string",
+                        "description": "The inventory name of cursor; never both.",
+                        "deprecated": true
+                      },
+                      "page_bytes": {
+                        "type": "integer",
+                        "description": "Page size of a set view in bytes (1 to 262144); the view's own size, else 12288."
+                      },
+                      "--page-bytes": {
+                        "type": "integer",
+                        "description": "The inventory name of page_bytes; never both.",
+                        "deprecated": true
                       },
                       "graph": {
                         "type": "string",
@@ -21128,9 +22304,7 @@
                         "deprecated": true
                       }
                     },
-                    "required": [
-                      "ref"
-                    ]
+                    "required": []
                   },
                   "actor": {
                     "type": "object"

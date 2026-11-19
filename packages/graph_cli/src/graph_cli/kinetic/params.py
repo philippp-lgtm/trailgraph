@@ -1,6 +1,6 @@
-"""Parameters shared by functions and actions: declaration, parsing and binding.
+"""Parameters shared by functions, actions and views: declaration, parsing and binding.
 
-A function or an action declares named, typed parameters (``string integer
+A function, an action or a view declares named, typed parameters (``string integer
 decimal boolean date datetime enum ref``, ``many``, ``default``). This module
 holds what both kinds share:
 
@@ -11,7 +11,7 @@ holds what both kinds share:
   values, and ``placeholder``, a value of a parameter's type for checking
   without real values.
 
-Everything is parametrized by the *kind* (``"function"`` or ``"action"``): the
+Everything is parametrized by the *kind* (``"function"``, ``"action"`` or ``"view"``): the
 codes are ``<kind>.parameter_missing|unknown|invalid`` and
 ``<kind>.invalid_value|missing_key|unknown_key``, and ``details`` carries
 ``{<kind>: name, ...}``.

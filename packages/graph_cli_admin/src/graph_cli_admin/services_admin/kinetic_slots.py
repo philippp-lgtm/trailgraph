@@ -1,10 +1,13 @@
-"""Publishing and showing the function and action catalogs of a graph: one implementation
-parametrized by kind (K6, K7; actions plan A8).
+"""Publishing and showing the function, action and view catalogs of a graph: one implementation
+parametrized by kind (K6, K7; actions plan A8; views plan V9).
 
-``functions.py`` and ``actions.py`` hold what differs (the checks); the folder reading, the
-slot switch in the W.e shape, the refusal summary and the publish and show flows are here.
-The two kinds share one namespace per graph (actions plan A1): the names of the other
-kind's published catalog go into the checks of a publish, which refuse a clash.
+``functions.py``, ``actions.py`` and ``authored_views.py`` hold what differs (the checks); the
+folder reading, the slot switch in the W.e shape, the refusal summary and the publish and show
+flows are here. Functions and actions share one namespace per graph (actions plan A1): the
+names of the other kind's published catalog go into the checks of a publish, which refuse a
+clash. Views have a namespace of their own, but depend on the functions their ``rows``
+sections run and a function catalog depends on the views that use it: a publish of either
+re-checks under the lock when the other's slot changed in between (``watched``).
 """
 
 from __future__ import annotations
@@ -31,10 +34,15 @@ from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.release import DAMAGED, check_state, current_catalog
 
-SINGULAR: Final[dict[SlotKind, str]] = {"functions": "function", "actions": "action"}
+SINGULAR: Final[dict[SlotKind, str]] = {
+    "functions": "function",
+    "actions": "action",
+    "views": "view",
+}
 INVALID_FILE: Final[dict[SlotKind, str]] = {
     "functions": "function.invalid_file",
     "actions": "action.invalid_file",
+    "views": "view.invalid_file",
 }
 
 
@@ -117,11 +125,7 @@ def published_names(ctx: AdminContext, entry: GraphEntry, kind: SlotKind) -> fro
     """The names of the published ``kind`` catalog, read without the lock; a damaged slot has
     none."""
     try:
-        slot = (
-            ctx.catalog.read_functions(entry.id)
-            if kind == "functions"
-            else ctx.catalog.read_actions(entry.id)
-        )
+        slot = read_published(ctx, entry, kind)
     except GraphCliError as exc:
         if exc.code not in DAMAGED:
             raise
@@ -129,8 +133,45 @@ def published_names(ctx: AdminContext, entry: GraphEntry, kind: SlotKind) -> fro
     return names_of(slot)
 
 
-def other_kind(kind: SlotKind) -> SlotKind:
+def read_published(ctx: AdminContext, entry: GraphEntry, kind: SlotKind) -> KineticSlot | None:
+    """The published catalog of ``kind`` as the catalog port gives it, without the lock."""
+    if kind == "functions":
+        return ctx.catalog.read_functions(entry.id)
+    if kind == "actions":
+        return ctx.catalog.read_actions(entry.id)
+    return ctx.catalog.read_views(entry.id)
+
+
+def other_kind(kind: SlotKind) -> SlotKind | None:
+    """The kind whose names a publish of ``kind`` must not take: functions and actions share
+    one namespace; views have a namespace of their own (``None``)."""
+    if kind == "views":
+        return None
     return "actions" if kind == "functions" else "functions"
+
+
+def watched(
+    read: Callable[[SlotKind], KineticSlot | None], kind: SlotKind
+) -> tuple[str | None, ...]:
+    """What a publish of ``kind`` depends on besides names: a view catalog is checked against
+    the function catalog (its compiled hash), a function catalog against the published views
+    (their sources hash). A change in between sends the publish back to its checks."""
+    if kind == "views":
+        slot = read("functions")
+        return (None if slot is None else slot.compiled_hash,)
+    if kind == "functions":
+        slot = read("views")
+        return (None if slot is None else slot.hash,)
+    return ()
+
+
+def _readable(read: Callable[[], KineticSlot | None], kind: SlotKind) -> KineticSlot | None:
+    try:
+        return read()
+    except GraphCliError as exc:
+        if exc.code not in DAMAGED[kind]:
+            raise
+        return None
 
 
 write = catalog_follow.write  # one definition: a release that republishes writes the same way
@@ -191,7 +232,9 @@ def publish(
     check_state(entry)
     files, problems = read_dir(source, kind)
     checked_against = entry.pin
-    others = published_names(ctx, entry, other_kind(kind))
+    names_kind = other_kind(kind)
+    others = published_names(ctx, entry, names_kind) if names_kind else frozenset()
+    stamp = watched(lambda k: _readable(lambda: read_published(ctx, entry, k), k), kind)
     model = pinned_model(ctx.catalog, entry)
     hints = rename_hints(ctx, entry, model)
     checked = check(entry, files, problems, model, source, others, hints)
@@ -206,8 +249,9 @@ def publish(
     with ctx.maintenance.maintenance_session(entry.id, timeout_s=ctx.lock_timeout_s) as session:
         entry = session.manifest().entry  # W.6: re-read under the lock
         check_state(entry)
-        locked_others = names_of(current_slot(session, other_kind(kind)))
-        if entry.pin != checked_against or locked_others != others:
+        locked_others = names_of(current_slot(session, names_kind)) if names_kind else frozenset()
+        locked_stamp = watched(lambda k: current_slot(session, k), kind)
+        if entry.pin != checked_against or locked_others != others or locked_stamp != stamp:
             # A release or a publish of the other kind came in between: check again.
             model = pinned_model(ctx.catalog, entry)
             hints = rename_hints(ctx, entry, model)
@@ -243,11 +287,7 @@ def show(
         request=RequestMeta.of(command, {"graph": graph_ref}),
         graph=entry.id,
     )
-    slot = (
-        ctx.catalog.read_functions(entry.id)
-        if kind == "functions"
-        else ctx.catalog.read_actions(entry.id)
-    )
+    slot = read_published(ctx, entry, kind)
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
         "slot": slot.summary() if slot is not None else None,
@@ -267,14 +307,18 @@ def listed(slot: KineticSlot) -> list[JsonValue]:
     for item in req_list(slot.compiled, key):
         entry = as_object(item, key)
         module = entry.get("module")
-        rows.append(
-            {
-                "name": req_str(entry, "name"),
-                "module": module if isinstance(module, str) else None,
-                "summary": req_str(entry, "summary"),
-                "status": req_str(entry, "status"),
-                "featured": req_bool(entry, "featured"),
-                "hash": req_str(entry, "hash"),
-            }
-        )
+        row: dict[str, JsonValue] = {
+            "name": req_str(entry, "name"),
+            "module": module if isinstance(module, str) else None,
+            "summary": req_str(entry, "summary"),
+            "status": req_str(entry, "status"),
+        }
+        if slot.kind == "views":  # a view takes a class or none; it is not featured
+            takes = entry.get("takes")
+            row["takes"] = takes if isinstance(takes, str) else None
+            row["default"] = req_bool(entry, "default")
+        else:
+            row["featured"] = req_bool(entry, "featured")
+        row["hash"] = req_str(entry, "hash")
+        rows.append(row)
     return rows

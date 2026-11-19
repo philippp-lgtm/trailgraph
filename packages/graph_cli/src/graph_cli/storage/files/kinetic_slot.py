@@ -33,7 +33,7 @@ from graph_cli.storage.files.layout import GraphLayout
 
 def read_slot(layout: GraphLayout, kind: SlotKind, *, sources: bool) -> KineticSlot | None:
     """The published catalog of ``kind``, ``None`` when there is none; a damaged slot is
-    ``functions.slot_invalid`` or ``actions.slot_invalid``."""
+    ``functions.slot_invalid``, ``actions.slot_invalid`` or ``views.slot_invalid``."""
     spec = KINDS[kind]
     slot = f"graphs/{layout.root.name}/{kind}/slot.json"
     try:

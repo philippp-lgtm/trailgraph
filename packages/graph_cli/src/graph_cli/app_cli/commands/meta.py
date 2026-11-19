@@ -25,6 +25,7 @@ from graph_cli.cli_kit.output_schemas import (
     Schema,
     array,
     enum,
+    nullable,
     obj,
     ref,
 )
@@ -35,6 +36,7 @@ from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry
+from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services import describe
 from graph_cli.services.read import GraphRead, Page
@@ -261,6 +263,54 @@ _ACTION: Final = model_document(
                 "ops": array(obj(extra=ANY)),
                 "touches": obj({"types": _TOUCHED, "relations": _TOUCHED}),
                 "needs": array(obj({"action": STRING, "type": STRING})),
+                "hash": STRING,
+            }
+        )
+    }
+)
+_VIEW_ITEM: Final = {
+    "name": STRING,
+    "module": NULLABLE_STRING,
+    "summary": STRING,
+    "signature": STRING,
+    "status": enum("active", "deprecated"),
+}
+_VIEW_ITEM_OPTIONAL: Final = {"takes": STRING, "default": BOOLEAN}  # entity views / defaults only
+_VIEW: Final = model_document(
+    {
+        "view": obj(
+            {
+                **_VIEW_ITEM,
+                "use_when": STRING,
+                "replaced_by": NULLABLE_STRING,
+                "takes": NULLABLE_STRING,  # null: a set view
+                "default": BOOLEAN,
+                "params": array(
+                    obj(
+                        {
+                            "name": STRING,
+                            "type": STRING,
+                            "class": NULLABLE_STRING,
+                            "enum": NULLABLE_STRING,
+                            "many": BOOLEAN,
+                            "default": ANY,
+                            "summary": STRING,
+                        }
+                    )
+                ),
+                "max_bytes": nullable(INTEGER),
+                "page_bytes": nullable(INTEGER),
+                "sections": array(obj({"kind": STRING, "id": STRING}, extra=ANY)),
+                "examples": array(obj({"question": STRING, "params": obj(extra=ANY)})),
+                "touches": obj(
+                    {
+                        "types": _TOUCHED,
+                        "relations": _TOUCHED,
+                        "attributes": STRINGS,
+                        "functions": STRINGS,
+                    }
+                ),
+                "call": STRING,
                 "hash": STRING,
             }
         )
@@ -532,6 +582,12 @@ def _actions(state: CommandState, view: GraphRead) -> tuple[ActionEntry, ...] | 
     return context(state).reader.actions(view.actor, view.entry)
 
 
+def _views(state: CommandState, view: GraphRead) -> tuple[ViewEntry, ...] | None:
+    """The graph's views the caller may see (what they name is visible, ``read.function`` for
+    the functions they run, ``read.find`` for set views), else ``None``."""
+    return context(state).reader.views(view.actor, view.entry)
+
+
 def describe_modules(state: CommandState, graph: str | None) -> Result:
     view = _view(state, graph, "describe modules")
     data = describe.describe_modules(
@@ -685,6 +741,141 @@ def describe_action(state: CommandState, name: str, graph: str | None) -> Result
     return Result(data=data, graph=view.envelope_graph(), text=_action_text(data))
 
 
+def _views_text(data: JsonObject) -> str:
+    """One line per view: how it is called, module, what it takes, summary."""
+    lines = []
+    for value in req_list(data, "views"):
+        item = as_object(value, "view")
+        deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
+        module = f"  [{item['module']}]" if item["module"] else ""
+        takes = f" takes {item['takes']}" if "takes" in item else " set view"
+        default = ", default" if item.get("default") else ""
+        lines.append(
+            f"{_function_call(item)}{module}{deprecated}  ({takes.strip()}{default})"
+            f"  {req_str(item, 'summary')}"
+        )
+    return "\n".join(lines or ["-"]) + "\n"
+
+
+def describe_views(
+    state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
+) -> Result:
+    view = _view(state, graph, "describe views")
+    data = describe.describe_views(
+        view.entry,
+        view.model,
+        _views(state, view),
+        module=module,
+        include_deprecated=include_deprecated,
+    )
+    return Result(data=data, graph=view.envelope_graph(), text=_views_text(data))
+
+
+def _view_call(item: JsonObject, graph: str) -> str:
+    """How to call a view: the required parameters are given, the optional ones in brackets;
+    ``REF`` and ``VALUE`` stand for what the caller supplies."""
+    parts = [PROGRAM, "view"]
+    if item["takes"] is not None:
+        parts.append("REF")
+    parts += ["--graph", graph, "--name", req_str(item, "name")]
+    optional: list[str] = []
+    for value in req_list(item, "params"):
+        p = as_object(value, "param")
+        option = f"--param {req_str(p, 'name')}=VALUE"
+        if p["default"] is None:
+            parts.append(option)
+        else:
+            optional.append(f"[{option}]")
+    return " ".join([*parts, *optional])
+
+
+def _section_line(section: JsonObject) -> str:
+    """``id  kind  what it reads``."""
+    kind = req_str(section, "kind")
+    if kind == "list":
+        what = ", ".join(str(t) for t in req_list(section, "type"))
+    elif kind == "neighbors":
+        what = f"{req_str(section, 'relation')} ({req_str(section, 'direction')})"
+    elif kind == "rows":
+        what = req_str(section, "function")
+    else:
+        what = ""
+    title = f'  "{section["title"]}"' if section.get("title") else ""
+    return f"  {req_str(section, 'id')}  {kind}{'  ' + what if what else ''}{title}"
+
+
+def _names(value: JsonValue) -> str:
+    """A field selection as the JSON has it: ``all`` or the attribute names."""
+    return value if isinstance(value, str) else ", ".join(str(n) for n in as_list(value, "fields"))
+
+
+def _relation_entry(value: JsonValue) -> str:
+    """One relation of a section as the JSON has it: ``all``, or the relation with its direction
+    and, when it lists attributes of the neighbours, them."""
+    item = as_object(value, "relation")
+    if item["relation"] is None:
+        return "all"
+    text = f"{req_str(item, 'relation')} ({req_str(item, 'direction')})"
+    fields = item.get("fields")
+    return text if fields is None else f"{text} with {_names(fields)}"
+
+
+def _section_detail(section: JsonObject) -> list[str]:
+    """The fields and relations a section lists, one line each, when it names any."""
+    lines = []
+    if section.get("fields") is not None:
+        lines.append(f"    fields: {_names(section['fields'])}")
+    relations = section.get("relations")
+    if relations:
+        entries = [_relation_entry(r) for r in as_list(relations, "relations")]
+        lines.append(f"    relations: {'; '.join(entries)}")
+    return lines
+
+
+def _view_text(data: JsonObject) -> str:
+    """The definition in reading order: head, parameters, sections, examples, touched terms,
+    how to call it."""
+    v = as_object(data["view"], "view")
+    head = f"{_function_call(v)}  [{v['module']}]" if v["module"] else _function_call(v)
+    flavour = f"takes {v['takes']}" if v["takes"] is not None else "set view"
+    if v["default"]:
+        flavour += ", default"
+    lines = [head, f"  {req_str(v, 'summary')}", f"  Use when: {req_str(v, 'use_when')}"]
+    lines.append(f"  {flavour}")
+    if v["status"] == "deprecated":
+        replaced = f"; use {v['replaced_by']}" if v["replaced_by"] else ""
+        lines.append(f"  Deprecated{replaced}")
+    lines.append("Parameters:")
+    lines.extend(_param_lines(v))
+    lines.append("Sections:")
+    for value in req_list(v, "sections"):
+        section = as_object(value, "section")
+        lines.append(_section_line(section))
+        lines.extend(_section_detail(section))
+    lines.append("Examples:")
+    for value in req_list(v, "examples"):
+        lines.append(f"  {req_str(as_object(value, 'example'), 'question')}")
+    if not req_list(v, "examples"):
+        lines.append("  -")
+    touches = as_object(v["touches"], "touches")
+    for key, title in (("types", "Types"), ("relations", "Relations")):
+        curies = [req_str(as_object(t, "term"), "curie") for t in req_list(touches, key)]
+        lines.append(f"{title} touched: {', '.join(curies) or '-'}")
+    functions = [str(f) for f in req_list(touches, "functions")]
+    lines.append(f"Functions run: {', '.join(functions) or '-'}")
+    lines.append(f"Call: {req_str(v, 'call')}")
+    lines.append(f"Hash: {req_str(v, 'hash')}")
+    return "\n".join(lines) + "\n"
+
+
+def describe_view(state: CommandState, name: str, graph: str | None) -> Result:
+    view = _view(state, graph, "describe view")
+    data = describe.describe_view(view.entry, view.model, _views(state, view), name)
+    item = as_object(data["view"], "view")
+    data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
+    return Result(data=data, graph=view.envelope_graph(), text=_view_text(data))
+
+
 def _search_text(data: JsonObject) -> str:
     """One line per hit: kind, CURIE, module, summary and how it matched."""
     lines = []
@@ -720,6 +911,7 @@ def describe_search(
         offset=offset,
         functions=_functions(state, view),
         actions=_actions(state, view),
+        views=_views(state, view),
     )
     page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
     options = (("--kind", kind), ("--module", (module,) if module else ()))
@@ -941,13 +1133,13 @@ SPECS: Final = (
         surface="model",
         action="read.describe",
         summary=(
-            "Search the ontology by text: types, relations, fields, enum values, states, "
-            "functions, actions."
+            "Search the model by text: types, relations, fields, enum values, states, "
+            "functions, actions, views."
         ),
         description=(
             "Looks at names, CURIEs, summaries and descriptions of the model, and at the "
-            "names, summaries and purpose of the graph's functions and actions, never at "
-            "graph data (that is graph search). Ignores case, accents and punctuation; "
+            "names, summaries and purpose of the graph's functions, actions and views, never "
+            "at graph data (that is graph search). Ignores case, accents and punctuation; "
             "best matches first."
         ),
         params=(
@@ -979,6 +1171,10 @@ SPECS: Final = (
             Example(
                 "graph describe search <value> --kind action",
                 "Only the actions that fit the words.",
+            ),
+            Example(
+                "graph describe search <value> --kind view",
+                "Only the published views that fit the words.",
             ),
         ),
         errors=(*GRAPH_ERRORS, "term.unknown"),
@@ -1069,6 +1265,52 @@ SPECS: Final = (
         errors=(*GRAPH_ERRORS, "action.not_found"),
         handler=describe_action,
         output=_ACTION,
+    ),
+    _describe(
+        "views",
+        "List the published views of the graph with their parameters.",
+        describe_views,
+        with_type=False,
+        output=model_document(
+            {"views": array(obj(_VIEW_ITEM, _VIEW_ITEM_OPTIONAL))}, _MODULE_FILTER
+        ),
+        examples=(
+            Example(
+                "graph describe views", "The views: name, parameters, what they take, summary."
+            ),
+            Example(
+                "graph describe views --module <module> --include-deprecated",
+                "One module's views, deprecated ones too.",
+            ),
+        ),
+        options=(
+            MODULE_OPTION,
+            ParamSpec("--include-deprecated", "flag", "Also list deprecated views."),
+        ),
+    ),
+    CommandSpec(
+        path=("describe", "view"),
+        kind="read",
+        surface="model",
+        action="read.describe",
+        summary="Describe one view: what it takes, its parameters and sections and how to call it.",
+        description=(
+            "Shows what a published view takes (an entity of a class, or nothing: a set view), "
+            "its parameters, each section and what it reads, the types, relations and "
+            "functions it touches and the command that calls it (graph view). Only callers "
+            "who may see everything a view names see it."
+        ),
+        params=(
+            ParamSpec("name", "string", "The view name.", required=True, positional=True),
+            GRAPH,
+        ),
+        examples=(
+            Example("graph describe view <view>", "Everything about one view."),
+            Example("graph describe view <view> --json", "The view as graph_cli.model/1."),
+        ),
+        errors=(*GRAPH_ERRORS, "view.not_found"),
+        handler=describe_view,
+        output=_VIEW,
     ),
     _describe(
         "type",

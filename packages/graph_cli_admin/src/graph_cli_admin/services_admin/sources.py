@@ -11,38 +11,44 @@ in the layout of the maintainer workspace:
   (``graph_cli.function/1``), byte-identical to the slot;
 - ``actions/<name>.yaml``: the published action sources
   (``graph_cli.action/1``), byte-identical to the slot;
+- ``views/<name>.yaml``: the published view sources (``graph_cli.view/1``),
+  byte-identical to the slot;
 - ``.graph_cli_source.json`` (``graph_cli.graph_source/1``): the base, what
   the data root held when the directory was pulled or last pushed (graph,
-  ontology pin, skill, functions and actions hash).
+  ontology pin, skill, functions, actions and views hash; ``views`` only for a graph
+  that has published views, so the base of a graph without views is what it always was).
 
 ``pull`` writes the pinned release (or another installed one), the skill, the
-functions and the actions. It reads the data root without a lock (a release never
+functions, the actions and the views. It reads the data root without a lock (a release never
 changes, the slots switch by one rename) and is authorized
 ``maint.graph_configure``: whoever may change the configuration may read it.
-It owns five entries of the directory: the version directory, the skill
-directory, the ``functions`` and ``actions`` directories and the base file. Any of them existing
-is ``admin.source_exists`` unless ``force`` replaces them; everything else (a README,
-other version directories, ``.git``) stays. The base file is written last.
+It owns six entries of the directory: the version directory, the skill
+directory, the ``functions``, ``actions`` and ``views`` directories and the base file. Any of
+them existing is ``admin.source_exists`` unless ``force`` replaces them; everything else (a
+README, other version directories, ``.git``) stays. The base file is written last.
 
 ``push`` is one maintenance operation under the graph lock, like a
 fast-forward push: the data root must still hold the base, or already what
 is pushed (a repeated push), else ``admin.source_conflict``. The highest
 version directory is the ontology: when it differs from the base it is
 released and pinned (``release.plan|write``); a skill tree that differs
-from the base is published (``skill.write``), and so are a ``functions`` and an ``actions``
-folder that differ from the base (after the release, the skill and in this
+from the base is published (``skill.write``), and so are a ``functions``, an ``actions``
+and a ``views`` folder that differ from the base (after the release and the skill, in this
 order; a missing folder is an empty one, so deleting every file unpublishes the
 catalog). Whenever the ontology or the skill changes, the skill the graph
 will have is checked against the ontology it will have; whenever the
 ontology or the functions change, so are the functions: the new files
 against the model the graph will have, or, when the push does not touch
 them, the published catalog (``admin.functions_broken`` in the release); the
-actions likewise (``admin.actions_broken``); a release with renames or a migration file
+actions likewise (``admin.actions_broken``); so are the views, against the model and the
+functions the graph will have after the push (the pushed ones, else the published ones
+after their own follow): the pushed files (``admin.views_invalid``) or the published
+catalog (``admin.views_broken``). A release with renames or a migration file
 publishes a catalog it does not replace again when its sources still compile against the new
 model (``release.plan``, ``data.ontology.republished``). Functions and actions share one
 namespace: each kind is checked against the names of the other kind the graph
-will have. Every check runs before the first write; the new base is written into the
-directory afterwards (``dry_run``: answered, not written).
+will have; views have a namespace of their own. Every check runs before the first write; the
+new base is written into the directory afterwards (``dry_run``: answered, not written).
 """
 
 from __future__ import annotations
@@ -66,6 +72,8 @@ from graph_cli.kernel.ports.catalog import (
 )
 from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kernel.skill_marker import graph_skill_name
+from graph_cli.kinetic.compile import compile_catalog
+from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX
 from graph_cli.kinetic.format import NAME_RE as KINETIC_NAME_RE
 from graph_cli.kinetic.params import Problem as KineticProblem
@@ -78,6 +86,7 @@ from graph_cli.storage.files.releases import release_hashes
 from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import (
     actions,
+    authored_views,
     catalog_follow,
     functions,
     kinetic_slots,
@@ -85,7 +94,7 @@ from graph_cli_admin.services_admin import (
     release,
     skill,
 )
-from graph_cli_admin.services_admin.catalog_follow import names_of
+from graph_cli_admin.services_admin.catalog_follow import Republish, function_entries, names_of
 from graph_cli_admin.services_admin.context import AdminContext
 from graph_cli_admin.services_admin.ontology import (
     RELEASE_FILE,
@@ -101,8 +110,9 @@ ONTOLOGY: Final = "ontology"
 SKILL: Final = "skill"
 FUNCTIONS: Final = "functions"
 ACTIONS: Final = "actions"
+VIEWS: Final = "views"
 PARTS: Final = frozenset(
-    {SOURCE_FILE, ONTOLOGY, SKILL, FUNCTIONS, ACTIONS}
+    {SOURCE_FILE, ONTOLOGY, SKILL, FUNCTIONS, ACTIONS, VIEWS}
 )  # what push reads of a workspace
 _RELEASE_SOURCES: Final = "source/"
 _TEMP: Final = ".graph_cli_source.tmp"
@@ -119,6 +129,7 @@ class Base:
     skill: str | None  # the skill tree's hash; None: the graph had no skill
     functions: str | None = None  # the function sources' hash; None: no catalog published
     actions: str | None = None  # the action sources' hash; None: no catalog published
+    views: str | None = None  # the view sources' hash; None: no catalog published
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +167,7 @@ def pull(
     slot = ctx.catalog.read_skill(entry.id)
     published = ctx.catalog.read_functions(entry.id, sources=True)
     catalog = ctx.catalog.read_actions(entry.id, sources=True)
+    views = ctx.catalog.read_views(entry.id, sources=True)
     name = graph_skill_name(entry.name)
     files = {f"{ONTOLOGY}/{version}/{module}.yaml": data for module, data in modules.items()}
     if slot is not None:
@@ -164,7 +176,9 @@ def pull(
         files |= {f"{FUNCTIONS}/{file}": data for file, data in published.files.items()}
     if catalog is not None:
         files |= {f"{ACTIONS}/{file}": data for file, data in catalog.files.items()}
-    files[SOURCE_FILE] = pretty_bytes(base_document(entry, pin, slot, published, catalog))
+    if views is not None:
+        files |= {f"{VIEWS}/{file}": data for file, data in views.files.items()}
+    files[SOURCE_FILE] = pretty_bytes(base_document(entry, pin, slot, published, catalog, views))
     write_workspace(target, files, graph_ref=graph_ref, force=force)
     data: dict[str, JsonValue] = {
         "graph_id": str(entry.id),
@@ -175,6 +189,8 @@ def pull(
         "actions": _catalog_json(catalog),
         "files": sorted(files),
     }
+    if views is not None:  # a graph without views answers as it did
+        data["views"] = _catalog_json(views)
     return Pulled(entry, data)
 
 
@@ -215,8 +231,9 @@ def base_document(
     slot: SkillSlot | None,
     published: KineticSlot | None = None,
     actions: KineticSlot | None = None,
+    views: KineticSlot | None = None,
 ) -> dict[str, JsonValue]:
-    return {
+    document: dict[str, JsonValue] = {
         "schema": SOURCE_SCHEMA,
         "graph": {"id": str(entry.id), "name": entry.name},
         "ontology": pin.to_json(),
@@ -224,6 +241,9 @@ def base_document(
         "functions": _catalog_json(published),
         "actions": _catalog_json(actions),
     }
+    if views is not None:  # the base of a graph without views is what it always was
+        document["views"] = _catalog_json(views)
+    return document
 
 
 def _skill_json(name: str, slot: SkillSlot | None) -> JsonValue:
@@ -236,8 +256,8 @@ def _catalog_json(slot: KineticSlot | None) -> JsonValue:
 
 def workspace_entry(name: str) -> str | None:
     """The entry of a workspace that pull owns and ``name`` lies in: the base file, a
-    version directory, the skill directory, the functions or the actions directory; ``None`` for any
-    other path (an answer over the API never writes elsewhere)."""
+    version directory, the skill directory, the functions, actions or views directory; ``None``
+    for any other path (an answer over the API never writes elsewhere)."""
     if name == SOURCE_FILE:
         return name
     parts = name.split("/")
@@ -246,7 +266,7 @@ def workspace_entry(name: str) -> str | None:
     if len(parts) == 3 and parts[0] == ONTOLOGY and is_version(parts[1]):
         module = parts[2].removesuffix(".yaml")
         return "/".join(parts[:2]) if parts[2].endswith(".yaml") and _module(module) else None
-    if len(parts) == 2 and parts[0] in (FUNCTIONS, ACTIONS):
+    if len(parts) == 2 and parts[0] in (FUNCTIONS, ACTIONS, VIEWS):
         stem = parts[1].removesuffix(FILE_SUFFIX)
         ok = parts[1].endswith(FILE_SUFFIX) and KINETIC_NAME_RE.match(stem) is not None
         return parts[0] if ok else None
@@ -359,10 +379,11 @@ def read_base(source: Path) -> Base:
         digest = _hash_of(found, "skill")
         catalog = _hash_of(document.get("functions"), "functions")  # absent in older bases
         published = _hash_of(document.get("actions"), "actions")  # absent in older bases
+        authored = _hash_of(document.get("views"), "views")  # absent without published views
     except (KeyError, ValueError, GraphCliError) as exc:
         message = exc.message if isinstance(exc, GraphCliError) else str(exc)
         raise _usage(f"{file} is not a base file of graph-admin graph pull: {message}") from exc
-    return Base(graph_id, name, pin, digest, catalog, published)
+    return Base(graph_id, name, pin, digest, catalog, published, authored)
 
 
 def _hash_of(found: JsonValue | None, key: str) -> str | None:
@@ -414,18 +435,22 @@ def push(
     action_files, action_problems = _kinetic_files(actions_dir, "actions")
     pushed_actions = sources_hash(action_files)
     actions_changed = pushed_actions != (base.actions or _EMPTY)
+    views_dir = source / VIEWS
+    view_files, view_problems = _kinetic_files(views_dir, "views")
+    pushed_views = sources_hash(view_files)
+    views_changed = pushed_views != (base.views or _EMPTY)
     ontology_changed = _ontology_changed(ctx, entry, base, compiled, source / ONTOLOGY)
-    meta = RequestMeta.of(
-        "graph push",
-        {
-            "graph": str(entry.id),
-            "ontology": compiled.pin.to_json(),
-            "skill": pushed,
-            "functions": pushed_functions,
-            "actions": pushed_actions,
-            "dry_run": dry_run,
-        },
-    )
+    arguments: dict[str, JsonValue] = {
+        "graph": str(entry.id),
+        "ontology": compiled.pin.to_json(),
+        "skill": pushed,
+        "functions": pushed_functions,
+        "actions": pushed_actions,
+        "dry_run": dry_run,
+    }
+    if pushed_views != _EMPTY or base.views is not None:  # a graph without views: as it was
+        arguments["views"] = pushed_views
+    meta = RequestMeta.of("graph push", arguments)
     resource = f"graph:{entry.id}"
     configure = ctx.authorize(
         [("maint.graph_configure", resource)], request=meta, graph=entry.id, reason=reason
@@ -454,19 +479,41 @@ def push(
         catalog = actions.current_slot(session)
         current_actions = catalog.hash if catalog is not None else _EMPTY
         target_actions = pushed_actions if actions_changed else base.actions
+        view_catalog = authored_views.current_slot(session)
+        current_views = view_catalog.hash if view_catalog is not None else _EMPTY
+        target_views = pushed_views if views_changed else base.views
         if (
             entry.pin not in (base.pin, target_pin)
             or current_skill not in (base.skill, target_skill)
             or current_functions not in (base.functions or _EMPTY, target_functions)
             or current_actions not in (base.actions or _EMPTY, target_actions)
+            or current_views not in (base.views or _EMPTY, target_views)
         ):
-            raise _conflict(source, entry, base, current, published, catalog)
+            raise _conflict(source, entry, base, current, published, catalog, view_catalog)
         publishing_functions = functions_changed and current_functions != pushed_functions
         publishing_actions = actions_changed and current_actions != pushed_actions
+        publishing_views = views_changed and current_views != pushed_views
         # One namespace per graph: each kind is checked against the names of the other kind
         # the graph will have (the pushed files if the push publishes them, else the published).
         function_names = _stems(function_files) if publishing_functions else names_of(published)
         action_names = _stems(action_files) if publishing_actions else names_of(catalog)
+        # The published views are checked in the release with the functions the graph will have;
+        # pushed functions that do not compile, or take the name of an action, are refused below
+        # (``functions.check_files``), before any write, so the release leaves the views to that
+        # refusal and the user sees the function problems first.
+        pushed_entries: tuple[FunctionEntry, ...] | None = None
+        leave_views = publishing_views
+        if (
+            ontology_changed
+            and publishing_functions
+            and not publishing_views
+            and view_catalog is not None
+        ):
+            built, found = compile_catalog(function_files, compiled.model)
+            if found or function_problems or _stems(function_files) & action_names:
+                leave_views = True
+            else:
+                pushed_entries = load_entries(built)
         planned = (
             release.plan(
                 ctx,
@@ -477,6 +524,8 @@ def push(
                 functions_replaced=publishing_functions,
                 actions_replaced=publishing_actions,
                 function_names=function_names,
+                views_replaced=leave_views,
+                function_entries=pushed_entries,
             )
             if ontology_changed
             else None
@@ -499,6 +548,11 @@ def push(
                 # one namespace per graph: no function named like a published action
                 taken=action_names,
                 hints=catalog_follow.rename_hints(ctx, entry, model_f, pending),
+                # the published views must hold with the functions: the ones the release
+                # compiled again, the pushed ones replace them
+                views=None
+                if publishing_views
+                else _after(planned.views if planned is not None else None, view_catalog),
             )
             function_slot = functions.slot_of(checked_f, after)
         else:
@@ -518,6 +572,28 @@ def push(
             action_slot = actions.slot_of(checked_a, after)
         else:
             actions.refuse(actions_dir, after, action_problems)
+        view_slot = None
+        if publishing_views:
+            model_v = compiled.model if releasing else pinned_model(ctx.catalog, after)
+            # the functions the graph will have: the pushed ones, else the published ones as
+            # the release leaves them
+            entries = function_entries(
+                function_slot
+                if function_slot is not None
+                else _after(planned.functions if planned is not None else None, published)
+            )
+            checked_v = authored_views.check_files(
+                after,
+                view_files,
+                view_problems,
+                model_v,
+                label=views_dir,
+                functions=entries,
+                hints=catalog_follow.rename_hints(ctx, entry, model_v, pending),
+            )
+            view_slot = authored_views.slot_of(checked_v, after)
+        else:
+            authored_views.refuse(views_dir, after, view_problems)
         checked: skill.Checked | None = None
         if releasing or publishing:
             # The skill the graph will have must fit the ontology it will have.
@@ -538,6 +614,7 @@ def push(
                     # the text are checked
                     functions=function_slot.compiled if function_slot is not None else None,
                     actions=action_slot.compiled if action_slot is not None else None,
+                    views=view_slot.compiled if view_slot is not None else None,
                 )
                 skill.refuse(label, after, name, checked.problems)
         slot = None
@@ -559,6 +636,10 @@ def push(
                 actions.write(
                     ctx, session, after, configure, meta, catalog, action_slot, reason=reason
                 )
+            if view_slot is not None:
+                authored_views.write(
+                    ctx, session, after, configure, meta, view_catalog, view_slot, reason=reason
+                )
         ontology: dict[str, JsonValue] = (
             planned.data
             if planned is not None
@@ -573,8 +654,10 @@ def push(
         # a catalog the release compiles again (plan M8) is the same sources, compiled anew
         again_functions = planned.functions if planned is not None else None
         again_actions = planned.actions if planned is not None else None
+        again_views = planned.views if planned is not None else None
         final_functions = function_slot or (again_functions.slot if again_functions else published)
         final_actions = action_slot or (again_actions.slot if again_actions else catalog)
+        final_views = view_slot or (again_views.slot if again_views else view_catalog)
         data: dict[str, JsonValue] = {
             "graph_id": str(entry.id),
             "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
@@ -604,16 +687,34 @@ def push(
                 "published": action_slot is not None and not dry_run,
             },
             "unchanged": not (
-                releasing or publishing or function_slot is not None or action_slot is not None
+                releasing
+                or publishing
+                or function_slot is not None
+                or action_slot is not None
+                or view_slot is not None
             ),
             "dry_run": dry_run,
-            "source": base_document(after, after.pin, final, final_functions, final_actions),
+            "source": base_document(
+                after, after.pin, final, final_functions, final_actions, final_views
+            ),
         }
+        if final_views is not None:  # as for a graph without views: follows the slot
+            data["views"] = {
+                "from": view_catalog.summary() if view_catalog is not None else None,
+                "to": final_views.summary() if final_views is not None else None,
+                "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(view_files)],
+                "published": view_slot is not None and not dry_run,
+            }
     if not dry_run:
-        write_base(source, base_document(after, after.pin, final, final_functions, final_actions))
+        write_base(
+            source,
+            base_document(after, after.pin, final, final_functions, final_actions, final_views),
+        )
     warnings = planned.warnings if planned is not None else ()
     if action_slot is not None:  # the published catalog was not looked at: judge the pushed one
         warnings += marking_warnings.precondition_warnings(model_a, action_slot, entry)
+    if view_slot is not None:
+        warnings += authored_views.deprecated_warnings(view_slot, entries)
     if checked is not None:
         warnings += checked.warnings(after, name)
     return Pushed(after, data, seq, warnings)
@@ -651,6 +752,12 @@ def _kinetic_files(
     if not directory.is_dir():
         return {}, []
     return kinetic_slots.read_dir(directory, kind)
+
+
+def _after(republish: Republish | None, published: KineticSlot | None) -> KineticSlot | None:
+    """The catalog the graph has after the release: the one the release compiles again, else
+    the published one."""
+    return republish.slot if republish is not None else published
 
 
 def _stems(files: Mapping[str, bytes]) -> frozenset[str]:
@@ -708,7 +815,23 @@ def _conflict(
     current: SkillSlot | None,
     published: KineticSlot | None,
     catalog: KineticSlot | None,
+    views: KineticSlot | None,
 ) -> GraphCliError:
+    base_details: dict[str, JsonValue] = {
+        "ontology": base.pin.to_json(),
+        "skill": base.skill,
+        "functions": base.functions,
+        "actions": base.actions,
+    }
+    current_details: dict[str, JsonValue] = {
+        "ontology": entry.pin.to_json(),
+        "skill": current.hash if current is not None else None,
+        "functions": published.hash if published is not None else None,
+        "actions": catalog.hash if catalog is not None else None,
+    }
+    if base.views is not None or views is not None:  # a graph without views: as it was
+        base_details["views"] = base.views
+        current_details["views"] = views.hash if views is not None else None
     return GraphCliError(
         "admin.source_conflict",
         f"graph {entry.name} changed since {source} was pulled or last pushed; pull it into"
@@ -716,18 +839,8 @@ def _conflict(
         details={
             "graph": entry.name,
             "dir": str(source),
-            "base": {
-                "ontology": base.pin.to_json(),
-                "skill": base.skill,
-                "functions": base.functions,
-                "actions": base.actions,
-            },
-            "current": {
-                "ontology": entry.pin.to_json(),
-                "skill": current.hash if current is not None else None,
-                "functions": published.hash if published is not None else None,
-                "actions": catalog.hash if catalog is not None else None,
-            },
+            "base": base_details,
+            "current": current_details,
         },
     )
 

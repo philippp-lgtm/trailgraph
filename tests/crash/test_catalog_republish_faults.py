@@ -13,12 +13,18 @@ import pytest
 from harness import CliRunner
 from support.admin import init, write_documents
 from support.admin_context import admin_context
-from support.moved_supplier import BARE_FUNCTION, INVENTORY, moved_source, write_folder
+from support.moved_supplier import (
+    BARE_FUNCTION,
+    BARE_VIEW,
+    INVENTORY,
+    moved_source,
+    write_folder,
+)
 from support.stores import FaultSwitch
 
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.storage.common.faults import CrashPoint
-from graph_cli_admin.services_admin import audit, functions, graphs
+from graph_cli_admin.services_admin import audit, authored_views, functions, graphs
 from graph_cli_admin.services_admin.release import release
 
 pytestmark = pytest.mark.slow
@@ -48,8 +54,13 @@ class Scene:
         functions.publish(
             self.ctx, graph_ref="example_graph", source=folder, reason=None, dry_run=False
         )
+        views = write_folder(tmp_path, "views", {"supplier_catalog": BARE_VIEW})
+        authored_views.publish(
+            self.ctx, graph_ref="example_graph", source=views, reason=None, dry_run=False
+        )
         self.source = moved_source(tmp_path, migration=data)
         self.before = self.slot()
+        self.before_views = self.ctx.catalog.read_views(self.graph_id)
 
     def use(self, faults: FaultSwitch) -> None:
         self.faults = faults
@@ -73,9 +84,9 @@ class Scene:
             reason="example reason",
         )
 
-    def interrupt(self) -> None:
+    def interrupt(self, point: CrashPoint = CrashPoint.FUNCTIONS_BEFORE_RENAME) -> None:
         faults = FaultSwitch()
-        faults.armed.add(CrashPoint.FUNCTIONS_BEFORE_RENAME)
+        faults.armed.add(point)
         self.use(faults)
         with pytest.raises(GraphCliError) as caught:
             self.run()
@@ -131,3 +142,32 @@ def test_a_fault_after_the_republish_leaves_nothing_to_republish(
     assert outcome.data["pinned"] is True and "republished" not in outcome.data
     assert scene.pin() == "2.0.0" and scene.marker() is None
     scene.errors()
+
+
+@pytest.mark.parametrize("data", [True, False], ids=["with_data", "without_data"])
+def test_a_fault_in_the_republish_of_the_views_is_finished_by_running_the_release_again(
+    run_cli: CliRunner, isolated_env: dict[str, str], tmp_path: Path, data: bool
+) -> None:
+    """The views are published again after the functions they run: a fault at their rename
+    leaves the new functions, the old views and the old pin; the rerun finishes them."""
+    scene = Scene(run_cli, isolated_env, tmp_path, data=data)
+    scene.interrupt(CrashPoint.VIEWS_BEFORE_RENAME)
+    assert scene.pin() == "1.1.0"
+    assert scene.slot().published_against.version == "2.0.0"  # the functions went first
+    views = scene.ctx.catalog.read_views(scene.graph_id)
+    assert views is not None and views.compiled_hash == scene.before_views.compiled_hash
+    assert (scene.marker() is not None) is data
+    scene.errors()
+    outcome = scene.run()
+    assert outcome.data["pinned"] is True
+    assert outcome.data["republished"].keys() == {"views"}  # the functions are done
+    assert outcome.data["republished"]["views"]["names"] == ["supplier_catalog"]
+    assert scene.pin() == "2.0.0" and scene.marker() is None
+    after = scene.ctx.catalog.read_views(scene.graph_id)
+    assert after is not None and after.hash == scene.before_views.hash
+    assert after.compiled_hash != scene.before_views.compiled_hash
+    assert after.published_against.version == "2.0.0"
+    scene.errors()
+    again = scene.run()
+    assert (again.data["released"], again.data["pinned"]) == (False, False)
+    assert "republished" not in again.data

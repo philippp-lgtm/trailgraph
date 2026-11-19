@@ -11,12 +11,19 @@ An action's ``applies`` is judged from the preconditions that are on the matchin
 preconditions on other parameters need values that are not known; they are named in
 ``unchecked``. ``applies: true`` therefore means no known obstacle, not a promise. Functions
 carry no state judgment. An entity that is not active has no affordances.
+
+``views_for`` names the published entity views that take the entity's class, apart from the
+ones ``graph view REF`` already shows (the default view of the entity's class, or none: the
+generated card) or is showing. It is a pointer to ``describe views``, not a listing: at most
+``VIEWS_MAX`` names, the rest counted in ``views_more``; a graph without such views has no
+``views`` key.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Final
 
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.ports.storage import Snapshot
@@ -25,8 +32,11 @@ from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry
 from graph_cli.kinetic.expand import judge_precondition
 from graph_cli.kinetic.params import ParamDef
+from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.affordances import ACTIVE, capped, with_more
 from graph_cli.ontology_layer.model import CompiledModel
+
+VIEWS_MAX: Final = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +93,19 @@ class FunctionAffordances:
         return with_more("functions", [e.to_json() for e in self.entries], self.more)
 
 
+@dataclass(frozen=True, slots=True)
+class ViewAffordances:
+    names: tuple[str, ...]
+    more: int = 0
+
+    def to_json(self) -> dict[str, JsonValue]:
+        """``{}`` without views: the key is left out, so a graph without views answers as
+        before."""
+        if not self.names:
+            return {}
+        return with_more("views", [{"view": n} for n in self.names], self.more)
+
+
 def actions_for(
     entity: Revision, entries: Sequence[ActionEntry], snapshot: Snapshot, model: CompiledModel
 ) -> ActionAffordances:
@@ -130,3 +153,26 @@ def _matching(entity: Revision, params: Sequence[ParamDef], model: CompiledModel
         for p in params
         if p.type == "ref" and p.of_class is not None and entity.type in model.subtypes(p.of_class)
     ]
+
+
+def views_for(
+    entity: Revision,
+    entries: Sequence[ViewEntry],
+    model: CompiledModel,
+    shown: Sequence[ViewEntry] = (),
+) -> ViewAffordances:
+    """The active entity views that take ``entity``'s class (``takes`` or an ancestor), in
+    catalog order, without ``shown`` (the view ``graph view REF`` answers with, and the one
+    being shown now)."""
+    if entity.record_status != ACTIVE:
+        return ViewAffordances(())
+    names = [
+        v.name
+        for v in entries
+        if v.entity
+        and not v.deprecated
+        and v.takes is not None
+        and model.is_a(str(entity.type), v.takes)
+        and v not in shown
+    ]
+    return ViewAffordances(tuple(names[:VIEWS_MAX]), max(0, len(names) - VIEWS_MAX))

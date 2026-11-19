@@ -822,16 +822,35 @@ an attribute the caller lacks a marking for.
 changes of the entities the caller sees, nothing of the others ([Changes since a
 position](cli_graph.md#changes-since-a-position)).
 
-## Entity cards
+## Views
 
-`graph view` (the entity card, [An entity at a
-glance](cli_graph.md#an-entity-at-a-glance)) is a `read.get` command: whoever may
-read an entity may read its card, and a deny rule on `read.traverse` does not
-reach it. The card shows the counts of an entity's relations and its first
-neighbours with their labels, which `graph neighbors` (`read.traverse`) would
-show too, so a rule that denies `read.traverse` but allows `read.get` still
-leaves that much of the neighbourhood readable. Read limits and markings shape
-the card like every read: what the caller may not see is not counted or named.
+`graph view` ([An entity at a glance](cli_graph.md#an-entity-at-a-glance), [Authored views and set
+views](cli_graph.md#authored-views-and-set-views)) is a `read.get` command: whoever may read an
+entity may read its card or an entity view of it, and a deny rule on `read.traverse` does not reach
+it. The card shows the counts of an entity's relations and its first neighbours with their labels,
+which `graph neighbors` (`read.traverse`) would show too, so a rule that denies `read.traverse` but
+allows `read.get` still leaves that much of the neighbourhood readable. Read limits and markings
+shape every view like every read: what the caller may not see is not counted or named.
+
+Published views add three rules.
+
+- **A set view needs `read.find` as well as `read.get`**, because it lists entities as `find` does;
+  a view with a `rows` section needs `read.function`, and the function must be one the caller sees.
+- **A view is visible exactly when everything it names is**: its classes, attributes, relations and
+  enums, and the functions it runs. Otherwise it does not exist for the caller: `view.not_found`
+  (never `access.denied`), absent from `describe views`, `describe search` and the affordances, and
+  the default view of a class falls back to the next one up the class chain or to the card. The whole
+  view is hidden, not a section, because its summary, purpose and section titles are authored text
+  that may name what the caller may not see. A refusal for a missing `read.find` or `read.function`
+  is the same not-found and is not recorded as a denial (`graph find` without `read.find` is
+  `access.denied` and recorded; a listing never records a denial, as for functions).
+- **Rows, neighbours and counts come from the caller's own snapshot and model.** An entity the caller
+  does not see is not a row, an edge to it is not a neighbour, a hidden source is not counted, and an
+  attribute the caller may not see is absent from `fields: all`. A cursor is tied to what the caller
+  sees: after a policy change it is `view.cursor_invalid`. A view that no longer fits the ontology
+  (an interrupted release) is `view.stale` for a caller who sees everything and not found for a
+  caller with read limits, because the check's problems may name terms the caller must not see. A
+  deprecation warning never names a replacement the caller cannot see.
 
 ## Queries
 

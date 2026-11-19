@@ -25,6 +25,7 @@ from graph_cli.kernel.query_eval import (
     field_value,
     run_neighbors,
     run_query,
+    sort_revisions,
     strict_equal,
 )
 from graph_cli.kernel.records import (
@@ -292,6 +293,27 @@ def test_order_uses_several_keys_then_id() -> None:
     query = Query(order=(OrderKey("a"), OrderKey("b", descending=True)))
     assert ids(universe, query) == [2, 3, 4, 1]
     assert ids(universe, Query()) == [1, 2, 3, 4]
+
+
+def test_sort_revisions_orders_like_a_query_does() -> None:
+    revisions = [
+        revision(1, {"n": 3, "p": "10.5"}),
+        revision(2),
+        revision(3, {"n": 1, "p": "9.25"}),
+        revision(4, {"n": 3, "p": "oops"}),
+        revision(5, {"n": "b"}),
+    ]
+    universe = Universe(revisions)
+    for order in (
+        (OrderKey("n"),),
+        (OrderKey("n", descending=True), OrderKey("p", numeric=True)),
+        (OrderKey("p", numeric=True, descending=True),),
+        (),
+    ):
+        expected = ids(universe, Query(order=order))
+        assert [r.id for r in sort_revisions(list(reversed(revisions)), order)] == [
+            eid(n) for n in expected
+        ]
 
 
 def test_paging_is_stable_and_total_exact() -> None:

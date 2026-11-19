@@ -67,6 +67,19 @@ def _action_search(details: Mapping[str, JsonValue], program: str) -> str | None
     return f"{program} describe search <words> --kind action"
 
 
+def _view_search(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Find a view by what it shows."""
+    return f"{program} describe search <words> --kind view"
+
+
+def _view_same_state(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A stale page cursor: the next page of the state it was issued for."""
+    seq = details.get("cursor_seq")
+    if not isinstance(seq, int):
+        return None
+    return f"{program} view --name <name> --cursor <cursor> --as-of tx:{seq}"
+
+
 def _precondition(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A refused action: read its preconditions, then look at the dry run."""
     action = details.get("action")
@@ -276,6 +289,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "function.unsupported_schema": None,
     "functions.slot_invalid": None,
     "actions.slot_invalid": None,
+    "views.slot_invalid": None,
     "function.name_taken": None,
     "action.not_found": _action_search,
     "action.parameter_missing": None,
@@ -328,6 +342,56 @@ _BASE: Final[dict[str, Hint | None]] = {
     "action.unknown_state": None,
     "action.unknown_type": None,
     "action.unsupported_schema": None,
+    "view.invalid_file": None,
+    "view.invalid_yaml": None,
+    "view.missing_key": None,
+    "view.unknown_key": None,
+    "view.invalid_value": None,
+    "view.unsupported_schema": None,
+    "view.name_mismatch": None,
+    "view.reserved_name": None,
+    "view.flavour_mismatch": None,
+    "view.duplicate_section": None,
+    "view.module_required": None,
+    "view.builtin_module": None,
+    "view.unknown_module": None,
+    "view.replaced_by_invalid": None,
+    "view.unknown_class": None,
+    "view.unknown_enum": None,
+    "view.invalid_default": None,
+    "view.invalid_example": None,
+    "view.parameter_undeclared": None,
+    "view.parameter_unused": None,
+    "view.unknown_attribute": None,
+    "view.unknown_relation": None,
+    "view.ambiguous_term": None,
+    "view.relation_mismatch": None,
+    "view.invalid_where": None,
+    "view.invalid_order": None,
+    "view.type_mismatch": None,
+    "view.placeholder_position": None,
+    "view.unknown_function": None,
+    "view.unknown_argument": None,
+    "view.argument_missing": None,
+    "view.literal_reference": None,
+    "view.default_taken": None,
+    "view.stale": None,
+    "view.too_many_views": None,
+    "view.section_unavailable": None,
+    "view.cursor_invalid": None,
+    "view.cursor_stale": _view_same_state,
+    "view.parameter_missing": None,
+    "view.parameter_unknown": None,
+    "view.parameter_invalid": None,
+    "view.parameter_type": _lookup_class,
+    "view.not_found": _view_search,
+    "view.takes_entity": None,
+    "view.takes_no_entity": None,
+    "view.class_mismatch": _lookup_class,
+    "view.function_deprecated": None,
+    "view.deprecated": None,
+    "view.default_stale": None,
+    "view.section_failed": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,
     "conflict.seq_mismatch": None,

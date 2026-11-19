@@ -26,6 +26,7 @@ from graph_cli.kernel.ports.catalog import Catalog, GraphEntry
 from graph_cli.kernel.records import ActionRef, RequestMeta
 from graph_cli.kernel.timing import Timings
 from graph_cli.kinetic.action_entries import find_action
+from graph_cli.kinetic.entries import seen_replacement
 from graph_cli.kinetic.expand import check_reason
 from graph_cli.kinetic.params import bind_cli, json_value
 from graph_cli.services.models import ModelCache
@@ -91,7 +92,7 @@ class ActionService:
             )
         warnings: list[WarningRecord] = []
         if action.deprecated:
-            replaced = action.defn.replaced_by
+            replaced = seen_replacement(action.defn.replaced_by, visible)
             warnings.append(
                 WarningRecord(
                     "action.deprecated",

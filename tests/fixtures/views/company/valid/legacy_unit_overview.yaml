@@ -1,0 +1,14 @@
+schema: graph_cli.view/1
+name: legacy_unit_overview
+module: organization
+summary: The old team overview; use unit_overview.
+use_when: Replaced by unit_overview; kept until the last reader has moved.
+status: deprecated
+replaced_by: unit_overview
+takes: org:Team
+sections:
+  - kind: fields
+    fields: [name]
+  - kind: rows
+    function: members_of_unit
+    args: {unit: $entity}

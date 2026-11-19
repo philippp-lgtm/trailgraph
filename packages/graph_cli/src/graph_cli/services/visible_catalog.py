@@ -1,4 +1,4 @@
-"""Functions and actions of a type-limited reader (type read limits plan V7).
+"""Functions, actions and views of a type-limited reader (type read limits plan V7, views plan V10).
 
 A reader who sees only some types gets the published functions and actions that fit the
 filtered model (``services.visibility.filter_model``) and none that names something it lacks,
@@ -29,6 +29,7 @@ from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Touched
 from graph_cli.kinetic.params import ParamDef, Problem
+from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 
 _CACHE_LIMIT: Final = 64
@@ -86,6 +87,19 @@ def action_hidden(entry: ActionEntry, model: CompiledModel) -> bool:
     )
 
 
+def view_hidden(entry: ViewEntry, model: CompiledModel) -> bool:
+    """Whether ``entry`` names a term that ``model`` (a filtered model) does not have: the
+    classes and relations it touches (its ``takes``, listed types and the classes of its
+    ``ref`` parameters included), its parameters and its module."""
+    return names_missing(
+        model,
+        module=entry.module,
+        types=_curies(entry.types),
+        relations=_curies(entry.relations),
+        params=entry.defn.params,
+    )
+
+
 def _stale(problems: Iterable[Problem]) -> frozenset[str]:
     return frozenset(p.name for p in problems)
 
@@ -120,6 +134,29 @@ def hidden_actions(
     if len(hidden) < len(entries):
         broken = _stale(check_actions(document, limited)) - _stale(check_actions(document, full))
         hidden |= broken
+    return frozenset(hidden)
+
+
+def hidden_views(
+    entries: Sequence[ViewEntry],
+    document: JsonObject,
+    limited: CompiledModel,
+    functions: Sequence[FunctionEntry],
+) -> frozenset[str]:
+    """The names of the views of ``document`` (``entries`` parsed) a reader of the ``limited``
+    model must not see: a view is hidden whole when it names a term the limited model lacks or
+    has any problem against it (a ``fields``, ``where`` or ``order`` that names an attribute a
+    type limit or a marking removes, a relation whose ends shrank). Unlike the functions and
+    actions, a view that is already stale against the full model is hidden too: its problems may
+    name what the reader must not see, and it cannot be called anyway (the reader gets
+    ``view.not_found`` where a reader who sees everything gets ``view.stale``). ``functions``
+    are the full published function entries; the functions a view runs are judged per call
+    (``ReadService``: visible to the reader, ``read.function``)."""
+    from graph_cli.kinetic.view_compile import check_views  # compiles function queries too
+
+    hidden = {e.name for e in entries if view_hidden(e, limited)}
+    if len(hidden) < len(entries):
+        hidden |= _stale(check_views(document, limited, functions))
     return frozenset(hidden)
 
 

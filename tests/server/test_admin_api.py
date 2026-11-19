@@ -46,6 +46,8 @@ FUNCTIONS = FIXTURES / "functions" / "inventory" / "valid"
 BROKEN_FUNCTIONS = FIXTURES / "functions" / "inventory" / "broken"
 ACTIONS = FIXTURES / "actions" / "inventory" / "valid"
 BROKEN_ACTIONS = FIXTURES / "actions" / "inventory" / "broken"
+VIEWS = FIXTURES / "views" / "inventory" / "valid"
+BROKEN_VIEWS = FIXTURES / "views" / "inventory" / "broken"
 SECRET = re.compile(r"gct_[A-Za-z0-9_-]{20,}")
 HASH_PREFIX = re.compile(r"sha256:[0-9a-f]{16}(?![0-9a-f])")
 FOLDER = re.compile(r"\b(example_graph|second)_[0-9a-f]{6}\b")  # workspace sync: id ends
@@ -299,6 +301,7 @@ def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: 
     skill = upload_tree(app, token, GRAPH_SKILL)
     functions = upload_tree(app, token, FUNCTIONS)
     actions = upload_tree(app, token, ACTIONS)
+    views = upload_tree(app, token, VIEWS)
     empty = {"files": {}, "name": "out"}
     return {
         ("files", "verify"): {"--graph": graph},
@@ -313,6 +316,8 @@ def project_args(app: ServerApp, token: str, spec_path: tuple[str, ...], graph: 
         ("graph", "reindex"): {"ref": graph, "--reason": "test"},
         ("graph", "show"): {"ref": graph},
         ("graph", "skill", "publish"): {"ref": graph, "dir": skill, "--reason": "test"},
+        ("graph", "views", "publish"): {"ref": graph, "dir": views, "--reason": "test"},
+        ("graph", "views", "show"): {"ref": graph},
         ("graph", "skill", "render"): {"ref": graph, "dir": skill, "--out": empty},
         ("ontology", "diff"): {"source": ontology, "--graph": graph},
         ("ontology", "release"): {"graph": graph, "source": ontology},
@@ -739,6 +744,21 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
         ("graph", "functions", "publish", "example_graph", str(FUNCTIONS)),
         ("graph", "functions", "show", "example_graph"),
         ("graph", "show", "example_graph"),
+        ("graph", "views", "publish", "example_graph", str(BROKEN_VIEWS)),
+        ("graph", "views", "publish", "example_graph", str(VIEWS), "--dry-run"),
+        ("graph", "views", "publish", "example_graph", str(VIEWS)),
+        ("graph", "views", "publish", "example_graph", str(VIEWS)),
+        ("graph", "views", "show", "example_graph"),
+        ("graph", "show", "example_graph"),
+        (
+            "graph",
+            "functions",
+            "publish",
+            "example_graph",
+            "no_functions",
+        ),  # refused: views run them
+        ("graph", "views", "publish", "example_graph", "no_functions"),
+        ("graph", "views", "show", "example_graph"),
         ("graph", "functions", "publish", "example_graph", "no_functions"),
         ("graph", "functions", "show", "example_graph"),
         ("graph", "actions", "publish", "example_graph", str(BROKEN_ACTIONS)),
@@ -824,6 +844,7 @@ def scenario(env: dict[str, str], cwd: Path) -> list[Any]:
     shutil.copytree(V110, workspace / "ontology" / "1.1.0")
     shutil.copytree(FUNCTIONS, workspace / "functions")  # published by the push below
     shutil.copytree(ACTIONS, workspace / "actions")  # published by the push below
+    shutil.copytree(VIEWS, workspace / "views")  # runs the functions pushed with it
     run("graph", "push", "example_graph", "workspace", "--reason", "equivalence")
     run("graph", "push", "example_graph", "workspace")
     run("graph", "push", "second", "workspace")

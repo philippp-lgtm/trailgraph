@@ -97,6 +97,7 @@ class MemoryCatalog:
         self.skills: dict[GraphId, SkillSlot] = {}
         self.functions: dict[GraphId, FunctionsSlot] = {}
         self.actions: dict[GraphId, KineticSlot] = {}
+        self.views: dict[GraphId, KineticSlot] = {}
 
     def add(self, entry: GraphEntry, model: CompiledModel, event_id: EventId) -> None:
         self.entries[entry.id] = entry
@@ -145,6 +146,10 @@ class MemoryCatalog:
 
     def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         slot = self.actions.get(graph)
+        return replace(slot, files={}) if slot is not None and not sources else slot
+
+    def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        slot = self.views.get(graph)
         return replace(slot, files={}) if slot is not None and not sources else slot
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]:

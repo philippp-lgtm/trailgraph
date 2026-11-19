@@ -3,8 +3,8 @@ the model only, never graph data.
 
 Searched: types, relations, attributes (once, under the class that declares them), enum values
 and lifecycle states, by local name, CURIE, summary and description, and the named functions
-and the actions of the graph (``functions``, ``actions``, when the caller may see them), by
-name, summary and, in tier 5, what they are for. Matching works on
+the actions and the views of the graph (``functions``, ``actions``, ``views``, when the caller
+may see them), by name, summary and, in tier 5, what they are for. Matching works on
 ``kernel.text.search_key`` like ``graph search``: case, accents and punctuation do not
 matter; a name is also read as words (``CostCenter`` and ``reports_to`` have two).
 
@@ -15,13 +15,14 @@ Order, best first (``rank``): by how the text matches
   2. every word of the text starts a word of the name,
   3. the name contains the text,
   4. the summary contains the text (as a phrase or every word of it),
-  5. the description does (a function or action: its ``use_when`` text, example questions or
-     requests, or parameter names, field ``use_when``; or the local name, inverse label or
-     summary of a type or relation it touches, field ``touches``),
+  5. the description does (a function, action or view: its ``use_when`` text, example
+     questions or requests, parameter names or, for a view, section titles, field ``use_when``;
+     or the local name, inverse label or summary of a type or relation it touches, field
+     ``touches``),
 then shorter names (CURIEs for a CURIE match), then the kind (type, relation, attribute,
-enum value, state, function, action) and the CURIE.
-A hit names the field and the way it matched. The ``curie`` of a function or action hit is
-its name.
+enum value, state, function, action, view) and the CURIE.
+A hit names the field and the way it matched. The ``curie`` of a function, action or view
+hit is its name.
 The CURIE of an attribute, enum value or state is
 its owner's CURIE, a dot and its name (``ppl:Person.email``); ``of`` names the owner.
 """
@@ -39,6 +40,7 @@ from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.text import search_key
 from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.kinetic.entries import FunctionEntry, Touched
+from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.plan import DEFAULT_LIMIT, check_paging
 from graph_cli.query.search import MIN_KEY_CHARS
@@ -52,6 +54,7 @@ SEARCH_TERM_KINDS: Final = (
     "state",
     "function",
     "action",
+    "view",
 )
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
@@ -211,6 +214,32 @@ def _action_terms(
     return found
 
 
+def _view_terms(views: Sequence[ViewEntry], model: CompiledModel) -> list[_Term]:
+    """A view reads like a function: name and summary, then what it is for (``use_when``,
+    example questions, parameter names, section titles) and the terms it touches in tier 5."""
+    found: list[_Term] = []
+    for v in views:
+        deeper = [("use_when", v.defn.use_when)]
+        deeper += [("use_when", e.question) for e in v.defn.examples]
+        deeper += [("use_when", p.name) for p in v.defn.params]
+        deeper += [("use_when", s.title) for s in v.defn.sections if s.title]
+        deeper += _touches(v.types, v.relations, model)
+        found.append(
+            _Term(
+                "view",
+                v.name,
+                v.name,
+                None,
+                v.module or "",
+                v.defn.summary,
+                None,
+                v.deprecated,
+                tuple(deeper),
+            )
+        )
+    return found
+
+
 def _name_key(name: str) -> str:
     return search_key(_CAMEL.sub(" ", name))
 
@@ -271,10 +300,11 @@ def search_model(
     offset: int = 0,
     functions: Sequence[FunctionEntry] | None = None,
     actions: Sequence[ActionEntry] | None = None,
+    views: Sequence[ViewEntry] | None = None,
 ) -> tuple[dict[str, JsonValue], int]:
     """One page of the hits and the total number of hits. ``kinds`` (any of
     ``SEARCH_TERM_KINDS``; none means all) and ``module`` (id or prefix) narrow the search.
-    ``functions`` and ``actions`` are the ones the caller may see (``None``: none)."""
+    ``functions``, ``actions`` and ``views`` are the ones the caller may see (``None``: none)."""
     check_paging(limit, offset)
     key = search_key(text)
     if len(key.replace(" ", "")) < MIN_KEY_CHARS:
@@ -298,6 +328,7 @@ def search_model(
         *_terms(model, index),
         *_function_terms(functions or (), model, index),
         *_action_terms(actions or (), model, index),
+        *_view_terms(views or (), model),
     ]
     for term in terms:
         if (kinds and term.kind not in kinds) or (wanted and term.module != wanted):

@@ -9,9 +9,9 @@
 from __future__ import annotations
 
 import difflib
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Protocol
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -19,6 +19,22 @@ from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
 from graph_cli.kinetic.format import FunctionDef, ParamDef
 
 DEPRECATED: Final = "deprecated"
+
+
+class Named(Protocol):
+    """A catalog entry: a function, an action or a view."""
+
+    @property
+    def name(self) -> str: ...
+
+
+def seen_replacement(replaced_by: str | None, visible: Iterable[Named] | None) -> str | None:
+    """The entry a deprecated one was replaced by, only when the reader sees that one too
+    (``visible``: the entries it may see, ``None`` for none): a name the reader cannot see is
+    not told in a listing, a description or a warning."""
+    if replaced_by is None or all(entry.name != replaced_by for entry in visible or ()):
+        return None
+    return replaced_by
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,15 +132,16 @@ def load_entries(document: JsonObject) -> tuple[FunctionEntry, ...]:
                 defn=FunctionDef.from_json(entry, req_str(entry, "source_query")),
                 module=module if isinstance(module, str) else None,
                 query=req_str(entry, "query"),
-                types=_touched(touches, "types"),
-                relations=_touched(touches, "relations"),
+                types=touched(touches, "types"),
+                relations=touched(touches, "relations"),
                 hash=req_str(entry, "hash"),
             )
         )
     return tuple(found)
 
 
-def _touched(touches: JsonObject, key: str) -> tuple[Touched, ...]:
+def touched(touches: JsonObject, key: str) -> tuple[Touched, ...]:
+    """The ``key`` list of a catalog entry's ``touches`` (types or relations)."""
     out: list[Touched] = []
     for value in req_list(touches, key, "touches."):
         item = as_object(value, key)

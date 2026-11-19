@@ -77,14 +77,16 @@ directory. Text output never spills. `GRAPH_CLI_SPILL_BYTES=0` (or
 | `describe types`, `describe type T`, `describe fields T`, `describe relations`, `describe lifecycle T` | the selected graph's ontology (`graph_cli.model/1`); the `graph` block names the graph's default language; every term with a summary carries `deprecated`; `describe types` and `describe relations` take `--module M` (id or prefix) and then list only the terms of that module: its types, the relations it declares or has a class at one end of; the answer names the module in `module` |
 | `describe modules` | the subject areas of the ontology, one item per module: id, prefix, version, summary, `builtin`, the number of types and relations, and `links` (the modules it connects to, with the number of relations in each direction); the first call on a graph with several modules. When the graph has functions you may read, each module also has a `functions` count of its active functions; likewise an `actions` count when you may run actions |
 | `describe module M` | one module (id or prefix): its types, the relations that stay inside it, `links_out` and `links_in` (relations to and from other modules, as `from -rel-> to`, with the module that declares the relation in `module` and the modules at its other ends in `other_modules`) and the rules on its types; an unknown module is `term.unknown` with `did_you_mean`; `describe type` names the owning module in `module`. The text form is made for agents to read: it leaves out cardinalities and the summaries of links, which `describe type` gives; the skills point agents to it. When the graph has functions you may read, a `functions` section lists the module's active functions (`name`, `summary`, `signature`; text: `Functions:`), likewise an `actions` section (text: `Actions:`) when you may run actions |
-| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description; reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`; a function's or action's `curie` is its name, see [Functions](#functions) and [Actions](#actions)), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
+| `describe search TEXT` | find terms of the ontology when you only know a word: types, relations, fields (under the class that declares them), enum values and lifecycle states, by name, CURIE, summary and description, and the graph's functions, actions and views you may see (by name, summary and, last, what they are for); reads the model, never graph data (that is `search`). Ignores case, accents and punctuation; best first: whole name, name prefix, word of the name, name contains, summary, description. Each hit has `kind` (`type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`, `view`; a function's, action's or view's `curie` is its name, see [Functions](#functions) and [Actions](#actions); views are the ones you can call, see `describe views`), `curie` (a field, value or state is its owner's CURIE, a dot and its name), `of` (the owner), `module`, `summary`, `deprecated` and `match` (`field`, `how`). `--kind` (repeatable) and `--module M` narrow it; paged like `search` (`--limit`, `--offset`, next-page hint) |
 | `describe functions [--module M] [--include-deprecated]` | the named functions of the graph (`graph_cli.model/1`), one item per function: `name`, `module`, `summary`, `signature` (`unit: ref org:OrgUnit, include_vacant?: boolean`; `?` marks an optional parameter) and `status`; deprecated functions only with `--include-deprecated`. See [Functions](#functions) |
 | `describe actions [--module M] [--include-deprecated]` | the actions of the graph that you may run (`graph_cli.model/1`), one item per action: `name`, `module`, `summary`, `signature` and `status`; deprecated actions only with `--include-deprecated`; an action whose write rights you lack does not exist for you. See [Actions](#actions) |
 | `describe action NAME` | one action completely: summary, `use_when`, `reason`, parameters, preconditions, the compiled operations, the types and relations it touches, the write rights it needs (`needs`), examples and its hash; an unknown or hidden name is `action.not_found` with `did_you_mean`. See [Actions](#actions) |
 | `describe function NAME` | one function completely: summary, `use_when`, parameters, the result columns, examples, the types and relations its query touches, the normalized query text (copy it as the start of an ad-hoc query) and its hash; an unknown name is `function.not_found` with `did_you_mean` |
+| `describe views [--module M] [--include-deprecated]` | the published views of the graph you can call (`graph_cli.model/1`), one item per view: `name`, `module`, `summary`, `takes` (the class an entity view shows; left out for a set view), `default` (only when true), `signature` and `status`; deprecated views only with `--include-deprecated`. A view you cannot see in full (it names a type, attribute, relation or function that is hidden from you, or it needs `read.find` or `read.function` that you lack) does not exist for you |
+| `describe view NAME` | one view completely: summary, `use_when`, `takes`, `default`, parameters, every section with the types, relations, fields and function it reads, examples, `touches` (types, relations, attributes, functions), `hash` and `call`, the command that calls it; `replaced_by` names a view only when you see it; an unknown or hidden name is `view.not_found` with `did_you_mean` over the visible names and a hint to search the views by words |
 | `describe schema` | the ontology as `graph query` sees it: labels with their properties, one relationship pattern per relation (`(:A)-[:rel]->(:B)`), names written as a query needs them (see [Cypher queries](#cypher-queries)); `--compact` leaves out the properties; `--module M` limits it to the module's relations and labels plus the labels at the other end of its links |
 | `get REF` | one entity; superseded and retracted entities are shown as recorded, with a warning and the ids that replaced or withdrew them; `--rev N` shows an earlier revision; `--fields` keeps only named parts and `--full` adds the system fields (see [Fewer fields](#fewer-fields)); `--affordances` adds what applies next (see [What an entity can do next](#what-an-entity-can-do-next)) |
-| `view REF` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)); not `graph-admin view`, the live view |
+| `view [REF]` | what is known about one entity in one answer, at most 6 KiB: key fields, relations with counts and the first neighbours, files with pages, what applies next; what is cut is counted and named in a hint; `--as-of` reads an earlier state (see [An entity at a glance](#an-entity-at-a-glance)). A graph can publish views: `--name NAME` picks one (`--name card` is always the generated card), an entity view takes the REF of an entity of its class, and without `--name` the default view of the entity's class answers instead of the card; a set view takes no REF and lists entities and function rows in pages of `--page-bytes` bytes, `--cursor` continues a page (`view.cursor_stale` once the graph changed; `--as-of tx:<seq>` pages the state you started with); `--param name=value` gives a view parameter. A set view needs `read.find` as well as `read.get`, one that runs functions `read.function`; a view that names what the caller may not see is `view.not_found`. Not `graph-admin view`, the live view |
 | `history REF` | one entity's revisions, newest first: time, command (and, for a write by `do`, the `action` with its `name` and `hash`), reason, whether your own session wrote it, and the names (not values) of the fields and relations that changed; paged |
 | `changes --since POSITION` | what changed in the whole graph after a position (`tx:<seq>`, `tx:<seq>/<entity id>` or an RFC 3339 time with offset), oldest first: per tx its time, command, reason and the entities it changed as ids, types, revisions and the names (not values) that changed; continue with the `next` of the answer while `more`; paged by entity items (`--limit`) |
 | `find` | entities by `--type`, `--where`, `--rel`/`--in-rel` (`rel=<id>,<id>` matches an edge to any listed entity); sorted, paged (`--limit`, `--offset`) with a next-page hint; `--fields` and `--full` as for `get` |
@@ -538,6 +540,11 @@ stored. It holds `record_status` and four groups, each cut at 40 entries
   means no known obstacle, not a promise: `graph do --dry-run` is the check.
 - `functions`: the readable functions with such a parameter (`as`), without
   a state judgment.
+- `views`: only when the graph has views you can call: the entity views that
+  take the entity's class (subclasses included), by name, except the one
+  `view REF` already shows (the default view of the class) and deprecated ones;
+  at most five, the rest counted in `views_more`. A graph without such views
+  has no `views` key, so its answers are unchanged.
 
 A superseded or retracted entity has `record_status` and empty groups.
 Actions and functions are listed as `describe actions` and `describe
@@ -607,9 +614,10 @@ in order:
 - `affordances`: what `get --affordances` lists, by name: per lifecycle
   attribute the states it may move to (`allowed`) and those it may not
   (`blocked`, with the ids of the failing guards), the actions that apply
-  and how many are blocked, the functions, at most five names per list and
-  the rest counted (`actions_more`, `functions_more`), and `detail`, the
-  command that shows everything. Judged as `get --affordances` judges
+  and how many are blocked, the functions and the other entity views of the
+  entity's class (`views`; absent when there are none), at most five names per
+  list and the rest counted (`actions_more`, `functions_more`, `views_more`),
+  and `detail`, the command that shows everything. Judged as `get --affordances` judges
   (`applies` means no known obstacle). A superseded or retracted entity has
   none.
 
@@ -637,6 +645,63 @@ detail: graph get PRJ-0007 --affordances
 
 `graph view` is not `graph-admin view`: that one starts the live view, which
 composes its entity panel by itself ([Live view](live_view.md#using-the-view)).
+
+## Authored views and set views
+
+A maintainer can publish **views** next to a graph's functions and actions: named compositions of
+reads with the answer shape of the card (`graph_cli.view_model/1`). The files are in
+`graph_cli.view/1`, written with the `authoring-graph-views` admin skill
+([format reference](../packages/graph_cli_admin/src/graph_cli_admin/bundled_skills/authoring-graph-views/references/format.md),
+the one home of the keys, limits, checks and bounds); this section is what a caller sees.
+
+Finding them: `describe views` lists the views you can call (name, module, summary, the class an
+entity view `takes`, `default`, signature), `describe view NAME` shows one completely and ends with
+the command that calls it, `describe search TEXT --kind view` finds one by what it is for, and
+`get REF --affordances` and the card name the other entity views of the entity's class (`views`). A
+graph whose skill is generated says in its `start` block that the graph has views.
+
+**Entity views** take a class (`takes`, subclasses included) and are called with a REF:
+`view REF --name NAME`. Without `--name`, `view REF` shows the *default* view of the entity's class
+if the graph published one (the nearest class on the entity's class chain that you can see wins),
+else the generated card; `--name card` is always the generated card. An entity view has the card's
+limit of 6 KiB, trimmed in a fixed order, and its sections are chosen by the maintainer: fields,
+relations, `neighbors` (the neighbours over one relation as rows with chosen fields, filtered and
+ordered), files, affordances and `rows` (the result of a published function for this entity). A REF
+of a class the view does not take is `view.class_mismatch`; a view that needs a REF without one is
+`view.takes_entity`.
+
+**Set views** take no entity and list rows of a whole set, for scripts and renderers: `view --name
+NAME`, with a REF `view.takes_no_entity`. Their `list` sections give every active entity of a class
+(or of several, with the concrete `type` per row) with attributes as `get` shows them, never cut, and
+the relations as neighbour keys (`ref`: the alias, else the id), in the order of `find` (the targets of an out-relation in edge order, up to 500 per list unless the view says less). The answer
+is a **page** of whole rows, at most `--page-bytes` bytes (the view's own size, else 12 KiB; up to
+256 KiB; a row larger than the page goes alone with `oversize: true`). A page that does not reach the
+end has `next` and `more: true`; `--cursor` with the same `--name` and `--param` gives the next page,
+and the pages put together are the one-page answer. After a write the cursor is `view.cursor_stale`
+(start again, or `--as-of tx:<seq>` pages the state you started with); after another view, other
+parameters, a functions publish, an ontology release or a change of what you may see it is
+`view.cursor_invalid`. `--cursor` and `--page-bytes` with an entity view or the card are
+`usage.invalid_argument`.
+
+`--param name=value` (repeatable) gives a view parameter, read by its declared type as for `run`; a
+missing or unknown one is `view.parameter_missing` or `view.parameter_unknown`. `--as-of` reads the
+sections at that state (it needs `read.history`); a `rows` section cannot run then and answers alone
+with `view.section_unavailable`.
+
+A section that fails, for example a `rows` section whose function no longer holds, answers alone as
+`{kind, id, function, error}` with the warning `view.section_failed`; the rest of the view still
+comes. A count that could not read every edge says `approx: true` and how many were `unread`. A view
+published against an earlier ontology release that no longer reads the same refuses a call that
+names it with `view.stale`; plain `view REF` then answers with the generated card and the warning
+`view.default_stale`. A deprecated view answers with `view.deprecated`.
+
+Every call reads your own snapshot and model: what you may not see is not a row, a neighbour, a
+count or a name, and a view that names anything you may not see is not found at all
+([Views](access_control.md#views)). Nothing is stored or cached by the tool; the answer is a function
+of the view (`view.hash`), the parameters, the page size, the cursor, the graph's `seq` and what you
+may see, which is the key a consumer that caches pages can use, and `changes` says when to drop them.
+The call is logged with the view's name and hash, never a parameter value or an id.
+
 
 ## Names and lookup
 

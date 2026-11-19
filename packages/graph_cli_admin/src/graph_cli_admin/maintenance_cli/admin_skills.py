@@ -28,6 +28,7 @@ NAMES: Final = (
     "authoring-graph-actions",
     "authoring-graph-functions",
     "authoring-graph-skills",
+    "authoring-graph-views",
     "maintaining-graphs",
     "ontology-best-practices",
 )

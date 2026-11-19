@@ -44,6 +44,7 @@ def access_record(
     query: Mapping[str, JsonValue] | None = None,
     opened: Mapping[str, JsonValue] | None = None,
     found: Mapping[str, JsonValue] | None = None,
+    found_view: Mapping[str, JsonValue] | None = None,
 ) -> dict[str, JsonValue]:
     """One line of the access log, from the envelope the command wrote (B9.2). ``opened``
     is the graph a read opened and ``found`` the function a ``run`` found: they name the
@@ -76,6 +77,13 @@ def access_record(
         function = dict(found)
     if function is not None:
         record["function"] = function
+    authored = _named(document, "view", "view")  # the card has no hash: nothing to log
+    if authored is not None and authored.get("hash") is None:
+        authored = None
+    if authored is None and found_view is not None and document.get("command") == "view":
+        authored = dict(found_view)
+    if authored is not None:
+        record["view"] = authored
     action = _named(document, "do", "action")
     if action is not None:
         record["action"] = action

@@ -99,6 +99,8 @@ PROJECT_COMMANDS: Final = frozenset(
         "graph show",
         "graph skill publish",
         "graph skill render",
+        "graph views publish",
+        "graph views show",
         "ontology diff",
         "ontology release",
     }

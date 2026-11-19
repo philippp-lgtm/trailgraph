@@ -1,0 +1,15 @@
+schema: graph_cli.view/1
+name: unknown_enum
+module: organization
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+params:
+  kind:
+    type: enum
+    enum: ppl:NoSuchKind
+    summary: Kind of external.
+sections:
+  - kind: list
+    type: ppl:External
+    where: ["kind=$kind"]
+    fields: [kind]

@@ -96,19 +96,22 @@ class SkillSlot:
 
 FUNCTION_SLOT_SCHEMA: Final = "graph_cli.function_slot/1"
 ACTION_SLOT_SCHEMA: Final = "graph_cli.action_slot/1"
+VIEW_SLOT_SCHEMA: Final = "graph_cli.view_slot/1"
 
-SlotKind = Literal["functions", "actions"]
+SlotKind = Literal["functions", "actions", "views"]
 
 
 @dataclass(frozen=True, slots=True)
 class KindSpec:
-    """What differs between the kinds of kinetic slot (``functions/``, ``actions/``): the
-    schema names, the list key of the compiled document and the damaged-slot error code.
+    """What differs between the kinds of kinetic slot (``functions/``, ``actions/``, ``views/``):
+    the schema names, the list key of the compiled document and the damaged-slot error code.
     Everything else about a slot is one implementation."""
 
     kind: SlotKind
     slot_schema: str
-    catalog_schema: str  # kinetic.format / kinetic.action_format CATALOG_SCHEMA; pinned by tests
+    catalog_schema: (
+        str  # CATALOG_SCHEMA of kinetic.format, action_format, view_format; pinned by tests
+    )
     list_key: str
     invalid_code: str
 
@@ -128,6 +131,13 @@ KINDS: Final[Mapping[str, KindSpec]] = {
         "actions",
         "actions.slot_invalid",
     ),
+    "views": KindSpec(
+        "views",
+        VIEW_SLOT_SCHEMA,
+        "graph_cli.view_catalog/1",
+        "views",
+        "views.slot_invalid",
+    ),
 }
 
 
@@ -141,12 +151,13 @@ functions_hash = sources_hash
 
 @dataclass(frozen=True, slots=True)
 class KineticSlot:
-    """The published function or action catalog of a graph (K6, actions plan A8), written
-    only by graph-admin.
+    """The published function, action or view catalog of a graph (K6, actions plan A8, views
+    plan V9), written only by graph-admin.
 
     ``hash`` is the tree hash of the authored sources (``<name>.yaml``), the one
     the audit chain records; ``compiled`` is the catalog document
-    (``graph_cli.functions/1`` or ``graph_cli.action_catalog/1``) checked against
+    (``graph_cli.functions/1``, ``graph_cli.action_catalog/1`` or ``graph_cli.view_catalog/1``)
+    checked against
     ``published_against``, the graph's ontology pin at publish time, and
     ``compiled_hash`` its C.2 hash. ``files`` holds the sources when the maintenance
     port read them; the catalog port, which the app uses, leaves it empty because the
@@ -229,6 +240,11 @@ class Catalog(Protocol):
     def read_actions(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
         """The graph's published action catalog, or ``None`` when none was published
         (actions plan A8); ``sources`` as for ``read_functions``."""
+        ...
+
+    def read_views(self, graph: GraphId, *, sources: bool = False) -> KineticSlot | None:
+        """The graph's published view catalog, or ``None`` when none was published (views
+        plan V9); ``sources`` as for ``read_functions``."""
         ...
 
     def store_for(self, graph: GraphId) -> tuple[GraphStoreRead, GraphStoreWrite]: ...

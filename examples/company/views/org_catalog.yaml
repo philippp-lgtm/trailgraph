@@ -1,0 +1,30 @@
+schema: graph_cli.view/1
+name: org_catalog
+module: organization
+summary: Every unit, position and person with their keys and relations, for catalog renderers.
+use_when: >-
+  Render or export the organization as a whole, one listing per kind of thing, for a script or a
+  document; not for one entity (use graph view REF).
+page_bytes: 65536
+sections:
+  - kind: list
+    id: units
+    title: Units
+    type: org:OrgUnit
+    fields: all
+    relations: all
+  - kind: list
+    id: positions
+    title: Positions
+    type: org:Position
+    order: [title]
+    fields: [title, status]
+    relations:
+      - all
+      - {relation: org:holds, direction: in, fields: [name]}
+  - kind: list
+    id: people
+    title: People
+    type: ppl:Person
+    fields: all
+    relations: all

@@ -70,6 +70,7 @@ DAMAGED_SLOT = frozenset(
         "skills.source_invalid",
         "functions.slot_invalid",
         "actions.slot_invalid",
+        "views.slot_invalid",
         "format.unsupported_version",
     }
 )
@@ -188,16 +189,19 @@ def _catalog_state(
 
 
 def _installed_slots(session: MaintenanceSession) -> InstalledSlots:
-    """The published skill, function catalog and action catalog as found, damaged ones as
+    """The published skill, function, action and view catalogs as found, damaged ones as
     findings."""
     functions, functions_compiled = _catalog_state(session.read_functions)
     actions, actions_compiled = _catalog_state(session.read_actions)
+    views, views_compiled = _catalog_state(session.read_views)
     return InstalledSlots(
         skill=_slot_hash(session.read_skill),
         functions=functions,
         functions_compiled=functions_compiled,
         actions=actions,
         actions_compiled=actions_compiled,
+        views=views,
+        views_compiled=views_compiled,
     )
 
 

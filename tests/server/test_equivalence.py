@@ -66,6 +66,14 @@ def actions_step(ontology: str) -> tuple[tuple[str, ...], ...]:
     return (("graph", "actions", "publish", "example_graph", str(folder)),)
 
 
+def views_step(ontology: str) -> tuple[tuple[str, ...], ...]:
+    """Publish the fixture views of the ontology, if it has some (after the functions they run)."""
+    folder = FIXTURES / "views" / ontology / "valid"
+    if not folder.is_dir():
+        return ()
+    return (("graph", "views", "publish", "example_graph", str(folder)),)
+
+
 def prepare(
     env: dict[str, str], cwd: Path, ontology: str, version: str | None = None, *, s3: bool = False
 ) -> None:
@@ -87,6 +95,7 @@ def prepare(
         ("graph", "skill", "publish", "example_graph", str(GRAPH_SKILL)),
         *functions_step(ontology),
         *actions_step(ontology),
+        *views_step(ontology),
     ):
         result = launcher.run(
             [str(BIN_DIR / "graph-admin"), *args], env=env, cwd=cwd, capture_output=True, text=True
@@ -144,6 +153,13 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "action", "move_item"),
         ("describe", "action", "no_such_action"),
         ("describe", "search", "location", "--kind", "action"),
+        ("describe", "views"),
+        ("describe", "views", "--include-deprecated", "--module", "inventory"),
+        ("describe", "views", "--module", "no_such_module"),
+        ("describe", "view", "location_overview"),
+        ("describe", "view", "items_in_location"),
+        ("describe", "view", "no_such_view"),
+        ("describe", "search", "location", "--kind", "view"),
     ):
         call(*args)
     text("describe", "types")
@@ -151,6 +167,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     text("describe", "function", "items_in_location")
     text("describe", "actions")
     text("describe", "action", "move_item")
+    text("describe", "views")
+    text("describe", "view", "location_overview")
     text("describe", "modules")
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))
@@ -234,6 +252,24 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call("run", "items_by_condition", "--param", "condition=damaged")
         call("run", "items_by_condition", "--param", "condition=mint")
         text("run", "items_in_location", "--param", f"location={place}")
+        call("get", place, "--affordances")  # names the views of the class that are not the default
+        call("view", place)  # the default view of the class
+        call("view", place, "--name", "card")
+        call("view", place, "--name", "location_overview")
+        call("view", place, "--name", "item_catalog")  # a set view takes no entity
+        call("view", "--name", "location_overview")  # an entity view takes one
+        call("view", "--name", "no_such_view")
+        call("view", "--name", "items_in_location", "--param", f"location={place}")
+        call("view", "--name", "items_in_location", "--param", f"location={other}")  # wrong class
+        paged = ("view", "--name", "item_catalog", "--page-bytes", "300")
+        page = call(*paged)  # the cursor of a page asked remotely is accepted by the next call
+        assert page["data"]["more"], page
+        call(*paged, "--cursor", page["data"]["next"])
+        call(*paged, "--cursor", "garbage")
+        call(*paged, "--page-bytes", "0")
+        call(*paged, "--as-of", "tx:1")
+        text(*paged)
+        text("view", place)
     call("do", "no_such_action")
     if "inv:Location" in factory.model.classes:  # the ontology with published actions
         stock, far = create("inv:Item", "stock"), create("inv:Location", "far")

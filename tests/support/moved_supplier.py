@@ -5,7 +5,9 @@ policies and catalogs that follow a rename (migration plan M8).
 old CURIE), everything else is as in 1.1.0. Published against 1.1.0 (``module: inventory``: with
 several modules a function names its module), a function with the bare
 name ``Supplier`` follows the move; one with the CURIE ``inv:Supplier`` does not (an action
-names its classes by CURIE, so it never follows a move of one it names).
+names its classes by CURIE, so it never follows a move of one it names). A view follows
+the same way: ``BARE_VIEW`` lists ``Supplier`` by its bare name and runs ``BARE_FUNCTION``,
+``CURIE_VIEW`` names the old CURIE.
 """
 
 from pathlib import Path
@@ -67,6 +69,37 @@ returns:
     summary: Name of the supplier.
 examples:
   - question: Which suppliers are there?
+"""
+
+BARE_VIEW = """\
+schema: graph_cli.view/1
+name: supplier_catalog
+module: inventory
+summary: Every supplier, for renderers.
+use_when: >-
+  Export or render the suppliers; a list of suppliers.
+sections:
+  - kind: list
+    id: suppliers
+    type: Supplier
+    fields: [name]
+  - kind: rows
+    id: names
+    function: suppliers_by_name
+"""
+
+CURIE_VIEW = """\
+schema: graph_cli.view/1
+name: supplier_exact
+module: inventory
+summary: Every supplier, named by its CURIE.
+use_when: >-
+  Export or render the suppliers, asked with the full type name.
+sections:
+  - kind: list
+    id: suppliers
+    type: inv:Supplier
+    fields: [name]
 """
 
 ACTION = """\

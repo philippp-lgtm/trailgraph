@@ -1,0 +1,14 @@
+schema: graph_cli.view/1
+name: type_mismatch
+module: operations
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+params:
+  before:
+    type: string
+    default: x
+    summary: A text, not a day.
+sections:
+  - kind: list
+    type: ops:Task
+    where: ["due_on:lt=$before"]

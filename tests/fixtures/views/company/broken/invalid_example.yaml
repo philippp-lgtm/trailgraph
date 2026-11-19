@@ -1,0 +1,12 @@
+schema: graph_cli.view/1
+name: invalid_example
+module: organization
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+takes: org:Team
+examples:
+  - question: A question.
+    params: {nothing: 1}
+sections:
+  - kind: fields
+    fields: [name]

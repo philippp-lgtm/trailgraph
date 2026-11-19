@@ -31,42 +31,92 @@ are all inactive may be named there although it would have had a count of zero.
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Mapping, Sequence
+import sys
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Final, Literal
+from decimal import Decimal
+from typing import Any, Final, Literal
 
 from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.ids import EntityId, TermRef
 from graph_cli.kernel.langtag import text_of
 from graph_cli.kernel.ports.storage import Snapshot
+from graph_cli.kernel.query_ast import OrderKey, Pred
 from graph_cli.kernel.records import EdgeRecord, Revision
-from graph_cli.kernel.text import normalize_label
+from graph_cli.kinetic import view_format as fmt
+from graph_cli.kinetic.params import bind_json
+from graph_cli.kinetic.view_entries import ViewEntry
+from graph_cli.kinetic.view_format import (
+    ENTITY_MAX_BYTES,
+    FIELDS_MAX_DEFAULT,
+    GROUPS_MAX_DEFAULT,
+    ITEMS_MAX_DEFAULT,
+    VALUE_CHARS_DEFAULT,
+    FieldSel,
+)
+from graph_cli.kinetic.view_rows import (
+    NO_VALUES,
+    Loader,
+    Loads,
+    Row,
+    RowBuilder,
+    RowRelationSpec,
+    RowsResult,
+)
+from graph_cli.kinetic.view_values import (
+    cut as _cut,
+)
+from graph_cli.kinetic.view_values import (
+    field_value,
+)
+from graph_cli.kinetic.view_values import (
+    has_value as _has_value,
+)
+from graph_cli.kinetic.view_values import (
+    label_key as _label_key,
+)
+from graph_cli.kinetic.view_values import (
+    lifecycle_attribute as _lifecycle_attribute,
+)
+from graph_cli.kinetic.view_values import (
+    main_label as _main_label,
+)
+from graph_cli.kinetic.view_values import (
+    state_of as _state,
+)
 from graph_cli.ontology_layer.affordances import ACTIVE
 from graph_cli.ontology_layer.model import AttributeDef, Bound, CompiledModel
 from graph_cli.ontology_layer.vocabulary import LABEL_ROLES
+from graph_cli.query.cypher.values import Value
 from graph_cli.query.lookup import label_text, text_values
+from graph_cli.query.plan import Clause, Operand, plan_clauses
 
 VIEW_MODEL_SCHEMA: Final = "graph_cli.view_model/1"
 CARD: Final = "card"
 GENERATED: Final = "generated"
+AUTHORED: Final = "authored"
 FILES_MODULE_RELATION: Final = "files:from_file"
 FILE_CLASS: Final = "files:File"
 
-BYTE_LIMIT: Final = 6144
-FIELDS_MAX: Final = 8
-VALUE_CHARS: Final = 100
+BYTE_LIMIT: Final = ENTITY_MAX_BYTES  # the one definition is the format's: a view may only lower it
+FIELDS_MAX: Final = FIELDS_MAX_DEFAULT
+VALUE_CHARS: Final = VALUE_CHARS_DEFAULT
 GUARD_VALUE_CHARS: Final = 40
 LIST_ITEMS: Final = 5
 OTHER_MAX: Final = 12
 ALT_LABELS_MAX: Final = 3
-GROUPS_MAX: Final = 8
-ITEMS_MAX: Final = 3
+GROUPS_MAX: Final = GROUPS_MAX_DEFAULT
+ITEMS_MAX: Final = ITEMS_MAX_DEFAULT
 LABEL_CHARS: Final = 48
 KEY_CHARS: Final = 60
 FILES_MAX: Final = 5
 FILES_LOAD_MAX: Final = 50
 LOAD_MAX: Final = 100
 NAMES_MAX: Final = 5
+ENTITY_LOADS: Final = 1000  # revisions the authored sections of one entity view may load
+ERROR_CHARS: Final = 300  # the message of a section error is cut here
+ROWS_CELL_CHARS: Final = 200  # a string cell of a ``rows`` section is cut here in an entity view
 
 Direction = Literal["out", "in"]
 Json = dict[str, JsonValue]
@@ -85,12 +135,21 @@ class FieldChoice:
 
 @dataclass(frozen=True, slots=True)
 class FieldsSpec:
+    """The ``fields`` section: ``choices`` as given (the generated card), or, for an authored
+    view, ``names`` (the listed attributes, roles read from the entity's class, or ``all``) or
+    ``derive`` (the generated choice of the entity's own class)."""
+
     choices: tuple[FieldChoice, ...]
     max_items: int = FIELDS_MAX
     value_chars: int = VALUE_CHARS
     list_items: int = LIST_ITEMS
     max_alt_labels: int = ALT_LABELS_MAX
     other_max: int = OTHER_MAX
+    id: str | None = None
+    title: str | None = None
+    names: tuple[str, ...] | Literal["all"] | None = None
+    derive: bool = False
+    name_other: bool = True  # attributes that are not shown are named in ``other``
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +160,9 @@ class RelationsSpec:
     label_chars: int = LABEL_CHARS
     key_chars: int = KEY_CHARS  # the one key field of a neighbour; 0 shows none
     order: Literal["label"] = "label"  # first by name: deterministic, cacheable
+    id: str | None = None
+    title: str | None = None
+    only: tuple[tuple[str, Direction], ...] | None = None  # authored: these, in this order
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,14 +170,67 @@ class FilesSpec:
     max_items: int = FILES_MAX
     load_max: int = FILES_LOAD_MAX
     label_chars: int = LABEL_CHARS
+    id: str | None = None
+    title: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class AffordancesSpec:
     max_names: int = NAMES_MAX
+    id: str | None = None
+    title: str | None = None
 
 
-type SectionSpec = FieldsSpec | RelationsSpec | FilesSpec | AffordancesSpec
+@dataclass(frozen=True, slots=True)
+class NeighborsSpec:
+    """One relation of the entity as rows. ``where`` and ``order`` are planned (``plan_find``)
+    with the view's parameters substituted."""
+
+    id: str
+    relation: str
+    direction: Direction = "out"
+    title: str | None = None
+    where: Pred | None = None
+    order: tuple[OrderKey, ...] = ()
+    fields: FieldSel = None
+    relations: tuple[RowRelationSpec, ...] = ()
+    max: int = 10
+    value_chars: int = VALUE_CHARS
+    label_chars: int = LABEL_CHARS
+
+
+@dataclass(frozen=True, slots=True)
+class RowsSpec:
+    """The rows of a published function; the service runs it and hands the result to ``render``."""
+
+    id: str
+    function: str
+    title: str | None = None
+    max: int | None = 10  # None: a set view, the rows are paged, never cut
+    cell_chars: int | None = ROWS_CELL_CHARS  # None: values are never cut (set views)
+
+
+@dataclass(frozen=True, slots=True)
+class ListSpec:
+    """A type listing as rows (set views): the active entities of ``classes`` that match
+    ``where``, in ``order`` (the ``find`` order: by id, by default), paged by the caller.
+    ``with_type`` is decided by the classes, not by the data: several concrete classes put the
+    class on every row."""
+
+    id: str
+    types: tuple[str, ...]
+    classes: tuple[str, ...]  # the types and their subclasses, as ``find --type`` expands them
+    title: str | None = None
+    where: Pred | None = None
+    order: tuple[OrderKey, ...] = ()
+    fields: FieldSel = None
+    relations: tuple[RowRelationSpec, ...] = ()
+    with_type: bool = False
+
+
+type SectionSpec = (
+    FieldsSpec | RelationsSpec | FilesSpec | AffordancesSpec | NeighborsSpec | RowsSpec | ListSpec
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +239,8 @@ class ViewSpec:
     origin: str
     sections: tuple[SectionSpec, ...]
     byte_limit: int = BYTE_LIMIT
+    hash: str | None = None  # of the published view an authored spec comes from
+    page_bytes: int | None = None  # set views: the page size the file asks for
 
 
 def _plain(attribute: AttributeDef) -> bool:
@@ -132,14 +249,9 @@ def _plain(attribute: AttributeDef) -> bool:
     return attribute.role not in LABEL_ROLES and attribute.type != "blob"
 
 
-def generated_spec(model: CompiledModel, class_curie: str) -> ViewSpec:
-    """The card of a class, derived from the ontology (nothing is stored).
-
-    Key fields in order: the main label and the alternative labels, the lifecycle attributes,
-    the attributes marked ``required``, the attributes marked ``unique``. These are the only
-    statements about importance that every ontology makes. Hidden labels and the hash of a stored
-    file (type ``blob``) are never candidates.
-    """
+def field_choices(model: CompiledModel, class_curie: str) -> tuple[FieldChoice, ...]:
+    """The key fields of a class in order: the main label and the alternative labels, the
+    lifecycle attributes, the attributes marked ``required``, the attributes marked ``unique``."""
     cls = model.classes.get(class_curie)
     attributes = {} if cls is None else cls.attributes
     choices: list[FieldChoice] = []
@@ -165,21 +277,204 @@ def generated_spec(model: CompiledModel, class_curie: str) -> ViewSpec:
     for name in sorted(attributes):
         if _plain(attributes[name]) and attributes[name].unique:
             add(name, None)
+    return tuple(choices)
+
+
+def generated_spec(model: CompiledModel, class_curie: str) -> ViewSpec:
+    """The card of a class, derived from the ontology (nothing is stored).
+
+    Key fields in order: the main label and the alternative labels, the lifecycle attributes,
+    the attributes marked ``required``, the attributes marked ``unique``. These are the only
+    statements about importance that every ontology makes. Hidden labels and the hash of a stored
+    file (type ``blob``) are never candidates.
+    """
+    choices = field_choices(model, class_curie)
     return ViewSpec(
         CARD,
         GENERATED,
-        (FieldsSpec(tuple(choices)), RelationsSpec(), FilesSpec(), AffordancesSpec()),
+        (FieldsSpec(choices), RelationsSpec(), FilesSpec(), AffordancesSpec()),
+    )
+
+
+# ---- the spec of an authored view ------------------------------------------------------------
+
+
+def _direction(text: str) -> Direction:
+    return "in" if text == "in" else "out"
+
+
+def _far_end(model: CompiledModel, relation: str, direction: Direction) -> tuple[str, ...]:
+    """The classes at the far end of ``relation`` read in ``direction`` as declared (empty:
+    any class)."""
+    declared = model.relations[relation]
+    return declared.range if direction == "out" else declared.domain
+
+
+def _operand(value: Value) -> Operand:
+    if isinstance(value, list):
+        return [_operand(item) for item in value]
+    assert isinstance(value, str | int | bool | Decimal)
+    return value
+
+
+def _plan(
+    model: CompiledModel,
+    types: tuple[str, ...],
+    where: tuple[str, ...],
+    order: tuple[str, ...],
+    params: Mapping[str, Value],
+) -> tuple[Pred | None, tuple[OrderKey, ...]]:
+    """``where`` (a ``$name`` as the typed operand of the bound parameter) and ``order`` planned
+    by the ``find`` planner against ``types``; a published view compiled against the model, so
+    nothing fails."""
+    clauses: list[Clause] = []
+    for entry in where:
+        left, name = fmt.where_parts(entry)
+        if name is None:
+            clauses.append(entry)
+        elif name in params:
+            clauses.append((left, _operand(params[name])))
+        else:  # a parameter that was never bound must not be matched as the text "$name"
+            raise GraphCliError("internal.error", f"the parameter {name!r} of a view is not bound")
+    return plan_clauses(model, types, clauses, order)
+
+
+def _row_relations(
+    model: CompiledModel,
+    relations: tuple[fmt.RowRelation, ...],
+    params: Mapping[str, Value],
+    *,
+    edge_order: bool = False,
+) -> tuple[RowRelationSpec, ...]:
+    """The per-row lists of a section. ``edge_order`` (``list`` sections): out-relations without
+    ``order`` keep the edge order ``find`` gives; everywhere else they follow the label."""
+    found: list[RowRelationSpec] = []
+    for rel in relations:
+        if rel.relation is None:
+            found.append(RowRelationSpec(None, "out", None, None, (), rel.max, edge_order))
+            continue
+        direction = _direction(rel.direction)
+        where, order = _plan(
+            model, _far_end(model, rel.relation, direction), rel.where, rel.order, params
+        )
+        found.append(
+            RowRelationSpec(rel.relation, direction, rel.fields, where, order, rel.max, edge_order)
+        )
+    return tuple(found)
+
+
+def spec_of(
+    entry: ViewEntry, model: CompiledModel, params: Mapping[str, Value] | None = None
+) -> ViewSpec:
+    """The spec of a published entity view: its normalized sections one to one, ``where`` and
+    ``order`` planned against ``model`` (the reader's) with the bound ``params`` substituted.
+    A parameter that is not given takes its default (``view.parameter_missing`` for a required
+    one). Pure; the same entry, model and parameters give the same spec."""
+    values = dict(params or {})
+    missing = [p for p in entry.defn.params if p.name not in values]
+    if missing:
+        values.update(bind_json("view", entry.name, missing, {}, model))
+    sections: list[SectionSpec] = []
+    for section in entry.defn.sections:
+        if isinstance(section, fmt.FieldsSection):
+            names = section.fields
+            sections.append(
+                FieldsSpec(
+                    (),
+                    section.max,
+                    section.value_chars,
+                    id=section.id,
+                    title=section.title,
+                    names=names,
+                    derive=names is None,
+                    name_other=not isinstance(names, tuple),
+                )
+            )
+        elif isinstance(section, fmt.RelationsSection):
+            only = None
+            if section.relations is not None:
+                only = tuple((r.relation, _direction(r.direction)) for r in section.relations)
+            sections.append(
+                RelationsSpec(
+                    section.max_groups,
+                    section.max_items,
+                    id=section.id,
+                    title=section.title,
+                    only=only,
+                )
+            )
+        elif isinstance(section, fmt.FilesSection):
+            sections.append(FilesSpec(id=section.id, title=section.title))
+        elif isinstance(section, fmt.AffordancesSection):
+            sections.append(AffordancesSpec(id=section.id, title=section.title))
+        elif isinstance(section, fmt.NeighborsSection):
+            direction = _direction(section.direction)
+            end = _far_end(model, section.relation, direction)
+            where, order = _plan(model, end, section.where, section.order, values)
+            sections.append(
+                NeighborsSpec(
+                    section.id,
+                    section.relation,
+                    direction,
+                    section.title,
+                    where,
+                    order,
+                    section.fields,
+                    _row_relations(model, section.relations, values),
+                    section.max,
+                )
+            )
+        elif isinstance(section, fmt.RowsSection):
+            sections.append(
+                RowsSpec(
+                    section.id,
+                    section.function,
+                    section.title,
+                    section.max if entry.entity else None,
+                    ROWS_CELL_CHARS if entry.entity else None,
+                )
+            )
+        elif isinstance(section, fmt.ListSection):
+            classes = tuple(sorted({c for t in section.types for c in model.subtypes(t)}))
+            where, order = _plan(model, section.types, section.where, section.order, values)
+            concrete = [c for c in classes if not model.classes[c].abstract]
+            sections.append(
+                ListSpec(
+                    section.id,
+                    section.types,
+                    classes,
+                    section.title,
+                    where,
+                    order,
+                    section.fields,
+                    _row_relations(model, section.relations, values, edge_order=True),
+                    len(concrete) > 1,
+                )
+            )
+        else:
+            raise ValueError(f"a {section.kind} section is not part of this view")
+    limit = entry.defn.max_bytes or BYTE_LIMIT
+    return ViewSpec(
+        entry.name,
+        AUTHORED,
+        tuple(sections),
+        min(limit, BYTE_LIMIT),
+        entry.hash,
+        entry.defn.page_bytes,
     )
 
 
 # ---- the view model --------------------------------------------------------------------------
 
 
-def _cut(text: str, limit: int) -> tuple[str, int | None]:
-    """``text`` cut to ``limit`` characters with an ellipsis, and its length when it was cut."""
-    if len(text) <= limit:
-        return text, None
-    return text[:limit] + "…", len(text)
+def _head(kind: str, id: str | None, title: str | None) -> Json:
+    """The start of a section: its kind and, for an authored view, its id and title."""
+    found: Json = {"kind": kind}
+    if id is not None:
+        found["id"] = id
+    if title is not None:
+        found["title"] = title
+    return found
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,9 +502,11 @@ class FieldsSection:
     items: tuple[FieldItem, ...]
     other: tuple[str, ...] = ()  # names of attributes with a value that are not shown
     other_more: int = 0  # names cut from ``other``
+    id: str | None = None
+    title: str | None = None
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "fields"}
+        found = _head("fields", self.id, self.title)
         if self.items:
             found["items"] = [i.to_json() for i in self.items]
         if self.other:
@@ -283,9 +580,11 @@ class Group:
 class RelationsSection:
     groups: tuple[Group, ...]
     more_groups: tuple[str, ...] = ()  # relation names with edges that are not shown
+    id: str | None = None
+    title: str | None = None
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "relations"}
+        found = _head("relations", self.id, self.title)
         if self.groups:
             found["groups"] = [g.to_json() for g in self.groups]
         if self.more_groups:
@@ -320,9 +619,11 @@ class FilesSection:
     items: tuple[FileRef, ...]
     more: int = 0
     sampled: int = 0
+    id: str | None = None
+    title: str | None = None
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "files"}
+        found = _head("files", self.id, self.title)
         if self.items:
             found["items"] = [i.to_json() for i in self.items]
         if self.more:
@@ -363,13 +664,17 @@ class CitedBySection:
     pages_cited: int = 0
     sampled: int = 0
     approx: bool = False
+    id: str | None = None
+    title: str | None = None
 
     @property
     def more(self) -> int:
         return max(0, self.count - len(self.items))
 
     def to_json(self) -> Json:
-        found: Json = {"kind": "files", "variant": "cited_by", "count": self.count}
+        found = _head("files", self.id, self.title)
+        found["variant"] = "cited_by"
+        found["count"] = self.count
         if self.page_min is not None:
             found["page_min"] = self.page_min
         if self.page_max is not None:
@@ -390,30 +695,172 @@ class CitedBySection:
 @dataclass(frozen=True, slots=True)
 class AffordancesSection:
     summary: Mapping[str, JsonValue]  # ``affordance_summary``, plus ``detail``
+    id: str | None = None
+    title: str | None = None
 
     def to_json(self) -> Json:
-        return {"kind": "affordances", **self.summary}
+        return {**_head("affordances", self.id, self.title), **self.summary}
 
 
-type Section = FieldsSection | RelationsSection | FilesSection | CitedBySection | AffordancesSection
+@dataclass(frozen=True, slots=True)
+class NeighborsSection:
+    """One relation of the entity as rows; ``count`` is what the reader sees (the entries that
+    match ``where``), ``more`` what ``max`` cut, ``sampled`` the edges read when there are more."""
+
+    id: str
+    relation: str
+    direction: Direction
+    items: tuple[Row, ...]
+    count: int
+    sampled: int = 0
+    approx: bool = False
+    title: str | None = None
+    unread: int = 0  # edges not read: ``count`` may be off by up to this many
+
+    @property
+    def more(self) -> int:
+        return max(0, self.count - len(self.items))
+
+    def to_json(self) -> Json:
+        found = _head("neighbors", self.id, self.title)
+        found["relation"] = self.relation
+        found["direction"] = self.direction
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
+        found["count"] = self.count
+        if self.more:
+            found["more"] = self.more
+        if self.sampled:
+            found["sampled"] = self.sampled
+        if self.approx:
+            found["approx"] = True
+        if self.unread:
+            found["unread"] = self.unread
+        return found
+
+
+@dataclass(frozen=True, slots=True)
+class RowsSection:
+    """The rows of a published function (``columns`` and ``items`` as the function returned them,
+    long strings cut), or the ``error`` that ended it: the rest of the view still comes."""
+
+    id: str
+    function: str
+    function_hash: str | None = None
+    columns: tuple[str, ...] = ()
+    items: tuple[Mapping[str, JsonValue], ...] = ()
+    count: int = 0
+    error: tuple[str, str] | None = None  # (code, message)
+    title: str | None = None
+    cells_cut: int = 0  # cells that were shortened (strings, lists), counted, not dropped silently
+    start: int = 0  # set views: the offset of the first row when a page starts inside the section
+    paged: bool = False  # set views: the cursor says what is left, a section has no ``more``
+
+    @property
+    def more(self) -> int:
+        return 0 if self.paged else max(0, self.count - len(self.items))
+
+    def to_json(self) -> Json:
+        found = _head("rows", self.id, self.title)
+        function: Json = {"name": self.function}
+        if self.function_hash is not None:
+            function["hash"] = self.function_hash
+        found["function"] = function
+        if self.error is not None:
+            found["error"] = {"code": self.error[0], "message": self.error[1]}
+            return found
+        found["columns"] = list(self.columns)
+        if self.items:
+            found["items"] = [dict(i) for i in self.items]
+        found["count"] = self.count
+        if self.more:
+            found["more"] = self.more
+        if self.cells_cut:
+            found["cells_cut"] = self.cells_cut
+        if self.start:
+            found["from"] = self.start
+        return found
+
+
+@dataclass(frozen=True, slots=True)
+class StubSection:
+    """What is left of a section of an authored view that had to go to keep the answer within
+    its limit: its kind and id, and that it was cut."""
+
+    kind: str
+    id: str | None = None
+
+    def to_json(self) -> Json:
+        found = _head(self.kind, self.id, None)
+        found["cut"] = True
+        return found
+
+
+@dataclass(frozen=True, slots=True)
+class ListSection:
+    """The rows of a type listing on one page of a set view: ``count`` is every row of the
+    section, ``start`` the offset of the first row of this page (``from``)."""
+
+    id: str
+    types: tuple[str, ...]
+    items: tuple[Row, ...]
+    count: int
+    start: int = 0
+    title: str | None = None
+
+    def to_json(self) -> Json:
+        found = _head("list", self.id, self.title)
+        found["type"] = self.types[0] if len(self.types) == 1 else list(self.types)
+        if self.items:
+            found["items"] = [i.to_json() for i in self.items]
+        found["count"] = self.count
+        if self.start:
+            found["from"] = self.start
+        return found
+
+
+type Section = (
+    FieldsSection
+    | RelationsSection
+    | FilesSection
+    | CitedBySection
+    | AffordancesSection
+    | NeighborsSection
+    | RowsSection
+    | StubSection
+    | ListSection
+)
 
 
 @dataclass(frozen=True, slots=True)
 class ViewModel:
     name: str
     origin: str
-    entity: Mapping[str, JsonValue]
+    entity: Mapping[str, JsonValue] | None  # ``None``: a set view takes no entity
     sections: tuple[Section, ...]
     cut: bool = False
+    hash: str | None = None  # of the published view (authored views only)
+    next: str | None = None  # set views: the cursor of the next page; ``None``: this is the last
+    sections_cut: int = 0  # trailing sections that had to go, when even their stubs did not fit
+    oversize: bool = False  # set views: the one row of this page is larger than the page limit
 
     def to_json(self) -> Json:
         """The compact answer; ``bytes`` is the size of this very document in UTF-8."""
-        found: Json = {
-            "view": {"name": self.name, "origin": self.origin},
-            "entity": dict(self.entity),
-            "sections": [s.to_json() for s in self.sections],
-            "bytes": 0,
-        }
+        view: Json = {"name": self.name, "origin": self.origin}
+        if self.hash is not None:
+            view["hash"] = self.hash
+        found: Json = {"view": view}
+        if self.entity is not None:
+            found["entity"] = dict(self.entity)
+        found["sections"] = [s.to_json() for s in self.sections]
+        if self.sections_cut:
+            found["sections_cut"] = self.sections_cut
+        if self.next is not None:
+            found["next"] = self.next
+            found["more"] = True
+        if self.oversize:
+            found["oversize"] = True
+        found["bytes"] = 0
         if self.cut:
             found["cut"] = True
         size = len(dumps(found))
@@ -437,6 +884,8 @@ class ViewModel:
                 named = [i.entity for g in section.groups for i in g.items]
             elif isinstance(section, FilesSection | CitedBySection):
                 named = [i.entity for i in section.items]
+            elif isinstance(section, NeighborsSection | ListSection):
+                named = [e for row in section.items for e in (row.entity, *row.named())]
             else:
                 continue
             found.update({e: None for e in named if e is not None})
@@ -459,7 +908,8 @@ def affordance_summary(
     ``transitions`` has one entry per lifecycle attribute: the states it may move to and the
     states it may not, each with the ids of the guards that fail (never the prose); ``actions``
     the names that apply and how many are blocked; ``functions`` the names. What is cut is
-    counted (``actions_more``, ``functions_more``, ``transitions_more``).
+    counted (``actions_more``, ``functions_more``, ``transitions_more``, ``views_more``). ``views``
+    names the other entity views of the entity's class (present only when there are any).
     """
     limit = (spec or AffordancesSpec()).max_names
     found: Json = {}
@@ -528,6 +978,16 @@ def affordance_summary(
     more = max(0, len(functions) - limit) + _count(affordances.get("functions_more"))
     if more:
         found["functions_more"] = more
+    views: list[JsonValue] = []
+    for raw in _list(affordances.get("views")):
+        name = _mapping(raw).get("view")
+        if isinstance(name, str) and name not in views:
+            views.append(name)
+    if views:
+        found["views"] = views[:limit]
+    more = max(0, len(views) - limit) + _count(affordances.get("views_more"))
+    if more:
+        found["views_more"] = more
     return found
 
 
@@ -557,6 +1017,7 @@ def render(
     superseded_by: Sequence[str] = (),
     retracted_by: Sequence[str] = (),
     file_classes: Collection[str] | None = None,
+    rows: Mapping[str, RowsResult] | None = None,
 ) -> ViewModel:
     """The card of ``entity`` as ``snapshot`` and ``model`` show it (pure; reads only through
     ``snapshot``). ``language`` is the graph's language, the one a main label is shown in;
@@ -564,6 +1025,8 @@ def render(
     ``file_classes`` are the classes that count as stored files (the family of ``files:File``);
     a limited reader's model may lack ``files:File`` itself although it sees a subclass, so the
     service passes the family of the stored model; None: the family of ``model``.
+    ``rows`` are the results of the functions behind the ``rows`` sections of an authored view,
+    by section id: the function runs in the service, this only formats and trims them.
     """
     ref = entity.alias or str(entity.id)
     header: Json = {"id": str(entity.id)}
@@ -580,56 +1043,175 @@ def render(
     if retracted_by:
         header["retracted_by"] = list(retracted_by)
     is_file = str(entity.type) in (file_classes_of(model) if file_classes is None else file_classes)
-    candidates, citations = _candidates(entity, snapshot, model, is_file)
+    candidates, citations = _candidates(entity, snapshot, model, is_file, _wanted(spec))
+    # one read of each revision; the authored sections share a budget, the generated card has
+    # none (its caps per group bound it, and a budget could only change what it shows)
+    loader = Loader(snapshot, Loads(sys.maxsize if spec.origin == GENERATED else ENTITY_LOADS))
     sections: list[Section] = []
     for section_spec in spec.sections:
         built: Section | None = None
         if isinstance(section_spec, FieldsSpec):
             built = _fields(section_spec, entity, model, language)
         elif isinstance(section_spec, RelationsSpec):
-            built = _relations(section_spec, candidates, snapshot, model, language)
+            built = _relations(section_spec, candidates, loader, model, language)
         elif isinstance(section_spec, FilesSpec):
-            built = _files(section_spec, entity, is_file, citations, snapshot, model, language)
+            built = _files(section_spec, entity, is_file, citations, loader, model, language)
         elif isinstance(section_spec, AffordancesSpec):
             summary = affordance_summary(affordances or {}, section_spec)
             if summary:
                 summary = {**summary, "detail": f"graph get {ref} --affordances"}
             built = AffordancesSection(summary)
+        elif isinstance(section_spec, NeighborsSpec):
+            built = _neighbors(section_spec, entity, loader, model, language)
+        elif isinstance(section_spec, RowsSpec):
+            built = _rows(section_spec, rows)
+        else:
+            raise ValueError("a list section belongs to a set view: render it with render_set")
         if built is not None:
-            sections.append(built)
-    return _guard(ViewModel(spec.name, spec.origin, header, tuple(sections)), spec.byte_limit)
+            sections.append(_named(built, section_spec))
+    card = ViewModel(spec.name, spec.origin, header, tuple(sections), hash=spec.hash)
+    return _guard(card, spec.byte_limit)
 
 
-def _main_label(model: CompiledModel, revision: Revision, language: str | None) -> str | None:
-    if str(revision.type) not in model.classes:
-        return None
-    for attr, role in model.label_attributes(str(revision.type)):
-        if role == "label":
-            return label_text(revision.attrs.get(attr), (language,))
+def _wanted(spec: ViewSpec) -> frozenset[str] | None:
+    """The relations the ``relations`` sections of an authored view list, so that no other
+    relation is read; ``None`` when a section takes every relation (the generated card)."""
+    wanted: set[str] = set()
+    for section in spec.sections:
+        if isinstance(section, RelationsSpec):
+            if section.only is None:
+                return None
+            wanted.update(relation for relation, _direction in section.only)
+    return frozenset(wanted)
+
+
+def _named(section: Section, spec: SectionSpec) -> Section:
+    """``section`` with the id and title of an authored spec (the generated card has none)."""
+    if isinstance(section, NeighborsSection | RowsSection | StubSection | ListSection) or (
+        spec.id is None and spec.title is None
+    ):
+        return section
+    return replace(section, id=spec.id, title=spec.title)
+
+
+def _neighbors(
+    spec: NeighborsSpec,
+    entity: Revision,
+    loader: Loader,
+    model: CompiledModel,
+    language: str | None,
+) -> NeighborsSection:
+    builder = RowBuilder(
+        loader.snapshot,
+        model,
+        language,
+        loads=loader.loads,
+        loader=loader,
+        value_chars=spec.value_chars,
+        label_chars=spec.label_chars,
+    )
+    if spec.direction == "out":
+        edges = [(e.target, e) for e in entity.edges if str(e.rel) == spec.relation]
+    else:
+        edges = list(loader.snapshot.incoming(entity.id, TermRef(spec.relation)))
+    selection = builder.select(edges, spec.direction, spec.where, spec.order)
+    items = builder.rows(selection, spec.fields, spec.relations, spec.max)
+    return NeighborsSection(
+        spec.id,
+        spec.relation,
+        spec.direction,
+        items,
+        selection.count,
+        selection.sampled,
+        selection.approx,
+        spec.title,
+        selection.unread,
+    )
+
+
+def _cell(value: JsonValue, limit: int | None) -> tuple[JsonValue, bool]:
+    """A cell of a function's row as an entity view shows it: strings cut, lists to a few
+    elements, and whether anything was cut (``limit`` None, a set view: nothing is cut)."""
+    if limit is None:
+        return value, False
+    if isinstance(value, str):
+        text, chars = _cut(value, limit)
+        return text, chars is not None
+    if isinstance(value, list):
+        cells = [_cell(item, limit) for item in value[:LIST_ITEMS]]
+        return [c for c, _ in cells], len(value) > LIST_ITEMS or any(w for _, w in cells)
+    if isinstance(value, Mapping):
+        found = {k: _cell(v, limit) for k, v in value.items()}
+        return {k: c for k, (c, _) in found.items()}, any(w for _, w in found.values())
+    return value, False
+
+
+def rows_error(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection | None:
+    """The section of a ``rows`` spec whose function did not give rows: it was not run
+    (``view.section_unavailable``) or it failed; ``None`` when there are rows to show."""
+    result = (results or {}).get(spec.id)
+    if result is None:
+        message = "the function of this section was not run"
+        error = ("view.section_unavailable", message)
+        return RowsSection(spec.id, spec.function, error=error, title=spec.title)
+    if result.error is not None:
+        code, text = result.error
+        error = (code, _cut(text, ERROR_CHARS)[0])
+        return RowsSection(spec.id, spec.function, result.hash, error=error, title=spec.title)
     return None
 
 
-def _has_value(value: JsonValue) -> bool:
-    return value is not None and value != "" and value != [] and value != {}
+def _rows(spec: RowsSpec, results: Mapping[str, RowsResult] | None) -> RowsSection:
+    failed = rows_error(spec, results)
+    if failed is not None:
+        return failed
+    result = (results or {})[spec.id]
+    items: list[Mapping[str, JsonValue]] = []
+    cells_cut = 0
+    for row in result.rows[: spec.max]:
+        cells = {column: _cell(value, spec.cell_chars) for column, value in row.items()}
+        cells_cut += sum(1 for _, was_cut in cells.values() if was_cut)
+        items.append({column: cell for column, (cell, _) in cells.items()})
+    return RowsSection(
+        spec.id,
+        spec.function,
+        result.hash,
+        result.columns,
+        tuple(items),
+        len(result.rows),
+        title=spec.title,
+        cells_cut=cells_cut,
+    )
 
 
 def _field_value(value: JsonValue, spec: FieldsSpec) -> tuple[JsonValue, int | None, int]:
-    """The value as shown, the length of a string that was cut, the elements of a list cut."""
-    if isinstance(value, str):
-        text, chars = _cut(value, spec.value_chars)
-        return text, chars, 0
-    if isinstance(value, Mapping):
-        text_raw = value.get("value")
-        if isinstance(text_raw, str) and value.keys() == {"value", "lang"}:  # language-tagged
-            text, chars = _cut(text_raw, spec.value_chars)
-            return {"value": text, "lang": value["lang"]}, chars, 0
-        return value, None, 0
-    if isinstance(value, Sequence):
-        shown: list[JsonValue] = []
-        for element in value[: spec.list_items]:
-            shown.append(_field_value(element, spec)[0])
-        return shown, None, max(0, len(value) - spec.list_items)
-    return value, None, 0
+    return field_value(value, spec.value_chars, spec.list_items)
+
+
+def _role_of(attribute: AttributeDef | None) -> str | None:
+    if attribute is None:
+        return None
+    if attribute.role in ("label", "alt_label"):
+        return attribute.role
+    return "state" if attribute.kind == "lifecycle" else None
+
+
+def _choices(
+    spec: FieldsSpec, model: CompiledModel, class_curie: str, known: Mapping[str, AttributeDef]
+) -> tuple[FieldChoice, ...]:
+    """The candidates of the section: as the spec gives them (the generated card), the listed
+    names with the roles of the entity's class, ``all`` (the key fields first, then every other
+    attribute by name, never a ``blob``) or the generated choice of the entity's own class."""
+    if spec.names is None:
+        return field_choices(model, class_curie) if spec.derive else spec.choices
+    if spec.names != "all":
+        return tuple(FieldChoice(name, _role_of(known.get(name))) for name in spec.names)
+    key = [c for c in field_choices(model, class_curie) if c.role is not None]
+    seen = {c.name for c in key}
+    rest = [
+        FieldChoice(n, None) for n in sorted(known) if n not in seen and known[n].type != "blob"
+    ]
+    return (*key, *rest)
 
 
 def _fields(
@@ -641,7 +1223,7 @@ def _fields(
     accounted: set[str] = set()  # attributes shown or deliberately never named
     alt_names: list[str] = []
     alt_texts: list[str] = []
-    for choice in spec.choices:
+    for choice in _choices(spec, model, str(entity.type), known):
         value = entity.attrs.get(choice.name)
         if choice.name not in known or not _has_value(value):
             continue
@@ -683,7 +1265,8 @@ def _fields(
     other = sorted(
         name
         for name, attribute in known.items()
-        if name not in accounted
+        if spec.name_other
+        and name not in accounted
         and attribute.role != "hidden_label"
         and _has_value(entity.attrs.get(name))
     )
@@ -714,14 +1297,18 @@ def file_classes_of(model: CompiledModel) -> frozenset[str]:
 
 
 def _candidates(
-    entity: Revision, snapshot: Snapshot, model: CompiledModel, is_file: bool
+    entity: Revision,
+    snapshot: Snapshot,
+    model: CompiledModel,
+    is_file: bool,
+    wanted: frozenset[str] | None = None,
 ) -> tuple[list[_Candidate], list[_Candidate]]:
     """The (relation, direction) pairs that have at least one edge the reader sees, in card order;
     the second list is the ``files:from_file`` edges of a stored file (its citations)."""
     out: dict[str, list[tuple[EntityId, EdgeRecord]]] = {}
     for edge in entity.edges:
         name = str(edge.rel)
-        if name == FILES_MODULE_RELATION:
+        if name == FILES_MODULE_RELATION or (wanted is not None and name not in wanted):
             continue
         out.setdefault(name, []).append((edge.target, edge))
     found = [_Candidate(name, "out", tuple(edges)) for name, edges in out.items()]
@@ -732,7 +1319,7 @@ def _candidates(
         if cited:
             citations.append(_Candidate(FILES_MODULE_RELATION, "in", tuple(cited)))
     for name in sorted(model.relations):
-        if name == FILES_MODULE_RELATION:
+        if name == FILES_MODULE_RELATION or (wanted is not None and name not in wanted):
             continue
         if not model.is_a_any(str(entity.type), model.relations[name].range):
             continue
@@ -753,34 +1340,23 @@ def _candidates(
     return found, citations
 
 
-def _label_key(label: str | None, entity: EntityId) -> tuple[bool, str, str]:
-    return (label is None, "" if label is None else normalize_label(label), str(entity))
-
-
-def _lifecycle_attribute(model: CompiledModel, revision: Revision) -> str | None:
-    return model.lifecycle_attribute(str(revision.type))
-
-
-def _state(model: CompiledModel, revision: Revision) -> str | None:
-    attr = _lifecycle_attribute(model, revision)
-    value = None if attr is None else revision.attrs.get(attr)
-    return value if isinstance(value, str) else None
-
-
 def _relations(
     spec: RelationsSpec,
     candidates: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> RelationsSection | None:
     groups: list[Group] = []
     unshown: list[str] = []
+    if spec.only is not None:  # an authored list: these relations, in this order
+        by_key = {(c.relation, c.direction): c for c in candidates}
+        candidates = [by_key[key] for key in spec.only if key in by_key]
     for position, candidate in enumerate(candidates):
         if len(groups) >= spec.max_groups:
             unshown.extend(c.relation for c in candidates[position:])
             break
-        group = _group(spec, candidate, snapshot, model, language)
+        group = _group(spec, candidate, loader, model, language)
         if group is not None:
             groups.append(group)
     more: list[str] = []
@@ -795,21 +1371,22 @@ def _relations(
 def _group(
     spec: RelationsSpec,
     candidate: _Candidate,
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> Group | None:
     edges = candidate.edges
     inbound = candidate.direction == "in"
     sample = edges[: spec.load_max]
-    loaded = snapshot.get_many([neighbour for neighbour, _ in sample])
+    admitted, loaded = loader.read([neighbour for neighbour, _ in sample])
+    sample = sample[:admitted]  # what the budget of the answer allows
     rows: list[tuple[EntityId, EdgeRecord, Revision | None]] = []
     for neighbour, edge in sample:
         revision = loaded.get(neighbour)
         if inbound and (revision is None or revision.record_status != ACTIVE):
             continue  # an in-edge counts only while its source is active
         rows.append((neighbour, edge, revision))
-    sampled = len(edges) > spec.load_max
+    sampled = len(edges) > len(sample)
     count = (len(edges) if sampled else len(rows)) if inbound else len(edges)
     if count == 0:
         return None
@@ -838,7 +1415,7 @@ def _group(
         count,
         items,
         dict(sorted(states.items())),
-        spec.load_max if sampled else 0,
+        len(sample) if sampled else 0,
         inbound and sampled,
         max(0, bound.min - count),
     )
@@ -908,17 +1485,18 @@ def _files(
     entity: Revision,
     is_file: bool,
     citations: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> FilesSection | CitedBySection | None:
     if is_file:
-        return _cited_by(spec, citations, snapshot, model, language)
+        return _cited_by(spec, citations, loader, model, language)
     edges = [(e.target, e) for e in entity.edges if str(e.rel) == FILES_MODULE_RELATION]
     if not edges:
         return None
     sample = edges[: spec.load_max]
-    loaded = snapshot.get_many([target for target, _ in sample])
+    admitted, loaded = loader.read([target for target, _ in sample])
+    sample = sample[:admitted]
     rows: list[tuple[tuple[bool, str, str], int, int, str, FileRef]] = []
     for target, edge in sample:
         revision = loaded.get(target)
@@ -943,7 +1521,7 @@ def _files(
     rows.sort(key=lambda row: row[:4])
     shown = tuple(row[4] for row in rows[: spec.max_items])
     return FilesSection(
-        shown, max(0, len(edges) - len(shown)), spec.load_max if len(edges) > spec.load_max else 0
+        shown, max(0, len(edges) - len(shown)), len(sample) if len(edges) > len(sample) else 0
     )
 
 
@@ -962,7 +1540,7 @@ def _merged_length(intervals: list[tuple[int, int]]) -> int:
 def _cited_by(
     spec: FilesSpec,
     citations: Sequence[_Candidate],
-    snapshot: Snapshot,
+    loader: Loader,
     model: CompiledModel,
     language: str | None,
 ) -> CitedBySection | None:
@@ -977,15 +1555,15 @@ def _cited_by(
             str(pair[0]),
         )
     )
-    load = spec.load_max
-    sample = edges[:load]
-    loaded = snapshot.get_many([source for source, _ in sample])
+    sample = edges[: spec.load_max]
+    admitted, loaded = loader.read([source for source, _ in sample])
+    sample = sample[:admitted]
     rows = [
         (source, edge, revision)
         for source, edge in sample
         if (revision := loaded.get(source)) is not None and revision.record_status == ACTIVE
     ]
-    sampled = len(edges) > load
+    sampled = len(edges) > len(sample)
     count = len(edges) if sampled else len(rows)
     if count == 0:
         return None
@@ -1020,7 +1598,7 @@ def _cited_by(
         min((low for low, _ in spans), default=None),
         max((high for _, high in spans), default=None),
         _merged_length(spans),
-        load if sampled else 0,
+        len(sample) if sampled else 0,
         sampled,
     )
 
@@ -1028,94 +1606,231 @@ def _cited_by(
 # ---- the byte guard --------------------------------------------------------------------------
 
 
+type Stage = Callable[[Any], Iterator[Section]]
+"""One trimming stage of one section: yields the section after each elementary step, so the
+guard can stop as soon as the document fits. A generator keeps what a stage must remember."""
+
+
+def _with(card: ViewModel, index: int, section: Section) -> ViewModel:
+    """``card`` with the section at ``index`` replaced (never by kind: a view may have two of a
+    kind and each is trimmed on its own)."""
+    sections = list(card.sections)
+    sections[index] = section
+    return replace(card, sections=tuple(sections))
+
+
 def _guard(card: ViewModel, limit: int) -> ViewModel:
-    """Trim in a fixed order until the JSON fits ``limit``; header, label, state and the
-    affordance summary are never trimmed. The same input gives the same bytes."""
+    """Trim in a fixed order until the JSON fits ``limit``; header, label, state, the affordance
+    summary and a section's error are never trimmed. The same input gives the same bytes.
+
+    The stages come in a fixed order (``_STAGES``); a stage works through the sections it trims
+    from the last to the first, one elementary step at a time, and the guard returns as soon as
+    the document fits."""
     if card.size() <= limit:
         return card
     card = replace(card, cut=True)
-
-    def fits() -> bool:
-        return card.size() <= limit
-
-    def swap(kind: type, new: Section) -> None:
-        nonlocal card
-        card = replace(
-            card, sections=tuple(new if isinstance(s, kind) else s for s in card.sections)
-        )
-
-    relations = next((s for s in card.sections if isinstance(s, RelationsSection)), None)
-    if relations is not None:
-        groups = [  # first the key fields of the neighbours go
-            replace(g, items=tuple(replace(i, key_field=None) for i in g.items))
-            for g in relations.groups
-        ]
-        swap(RelationsSection, replace(relations, groups=tuple(groups)))
-        if fits():
-            return card
-        for index in reversed(range(len(groups))):  # items per group to 1, last group first
-            if len(groups[index].items) > 1:
-                groups[index] = replace(groups[index], items=groups[index].items[:1])
-                swap(RelationsSection, replace(relations, groups=tuple(groups)))
-                if fits():
+    for kinds, stage in _STAGES:
+        for index in reversed(range(len(card.sections))):
+            if not isinstance(card.sections[index], kinds):
+                continue
+            for trimmed in stage(card.sections[index]):
+                card = _with(card, index, trimmed)
+                if card.size() <= limit:
                     return card
-        moved: list[str] = []
-        while groups and not fits():  # then the trailing groups move to ``more_groups``
-            dropped = groups.pop()
-            if dropped.relation not in moved:
-                moved.insert(0, dropped.relation)
-            names = [*moved, *(n for n in relations.more_groups if n not in moved)]
-            swap(
-                RelationsSection, replace(relations, groups=tuple(groups), more_groups=tuple(names))
-            )
-        if fits():
-            return card
-    fields = next((s for s in card.sections if isinstance(s, FieldsSection)), None)
-    if fields is not None:
-        shortened = tuple(_shorten(item) for item in fields.items)  # then values to 40 characters
-        swap(FieldsSection, replace(fields, items=shortened))
-        if fits():
-            return card
-        items = list(shortened)
-        moved_names: list[str] = []
-        while not fits():  # then trailing fields move to ``other``
-            last = next(
-                (i for i in reversed(range(len(items))) if items[i].role not in ("label", "state")),
-                None,
-            )
-            if last is None:
-                break
-            moved_names.append(items.pop(last).name)
-            every = sorted({*fields.other, *moved_names})
-            swap(
-                FieldsSection,
-                replace(
-                    fields,
-                    items=tuple(items),
-                    other=tuple(every[:OTHER_MAX]),
-                    other_more=fields.other_more + max(0, len(every) - OTHER_MAX),
-                ),
-            )
-        if fits():
-            return card
-    for kind in (FilesSection, CitedBySection):  # last: file references, to one, then none
-        section = next((s for s in card.sections if isinstance(s, kind)), None)
-        if section is None:
-            continue
-        for keep in (1, 0):
-            if len(section.items) > keep:
-                if isinstance(section, FilesSection):
-                    trimmed: Section = replace(
-                        section,
-                        items=section.items[:keep],
-                        more=section.more + len(section.items) - keep,
-                    )
-                else:
-                    trimmed = replace(section, items=section.items[:keep])
-                swap(kind, trimmed)
-                if fits():
+    if card.origin == AUTHORED:  # the generated card keeps its bytes: it has no such stages
+        for final in _FINAL:
+            for trimmed_card in final(card):
+                card = trimmed_card
+                if card.size() <= limit:
                     return card
     return card
+
+
+def _row_without_values(row: Row) -> Row:
+    lists = tuple(
+        replace(g, items=tuple(replace(i, values=NO_VALUES) for i in g.items))
+        for g in row.relations
+    )
+    return replace(row, values=NO_VALUES, relations=lists)
+
+
+def _drop_row_values(section: NeighborsSection) -> Iterator[Section]:
+    """First the attributes of the rows (and of their neighbour lists) go."""
+    yield replace(section, items=tuple(_row_without_values(r) for r in section.items))
+
+
+def _lists_to_one(section: NeighborsSection) -> Iterator[Section]:
+    """Then the per-row neighbour lists shrink to one item each."""
+    items = tuple(
+        replace(r, relations=tuple(replace(g, items=g.items[:1]) for g in r.relations))
+        for r in section.items
+    )
+    yield replace(section, items=items)
+
+
+def _kept(section: NeighborsSection | RowsSection, keep: int) -> Section:
+    """``section`` with its first ``keep`` rows (the counts stay)."""
+    # the two kinds hold other items; ``replace`` does the same for both
+    return replace(section, items=section.items[:keep])  # type: ignore[arg-type]
+
+
+def _rows_to_few(section: NeighborsSection | RowsSection) -> Iterator[Section]:
+    """Then the rows of a ``neighbors`` or ``rows`` section shrink to three, then to one."""
+    for keep in (3, 1):
+        if len(section.items) > keep:
+            yield _kept(section, keep)
+
+
+def _key_fields_go(section: RelationsSection) -> Iterator[Section]:
+    """The key fields of the neighbours of the generated groups go first."""
+    groups = tuple(
+        replace(g, items=tuple(replace(i, key_field=None) for i in g.items)) for g in section.groups
+    )
+    yield replace(section, groups=groups)
+
+
+def _group_items_to_one(section: RelationsSection) -> Iterator[Section]:
+    """Items per group to 1, last group first."""
+    groups = list(section.groups)
+    for index in reversed(range(len(groups))):
+        if len(groups[index].items) > 1:
+            groups[index] = replace(groups[index], items=groups[index].items[:1])
+            yield replace(section, groups=tuple(groups))
+
+
+def _groups_to_more(section: RelationsSection) -> Iterator[Section]:
+    """Then the trailing groups move to ``more_groups``."""
+    groups = list(section.groups)
+    moved: list[str] = []
+    while groups:
+        dropped = groups.pop()
+        if dropped.relation not in moved:
+            moved.insert(0, dropped.relation)
+        names = [*moved, *(n for n in section.more_groups if n not in moved)]
+        yield replace(section, groups=tuple(groups), more_groups=tuple(names))
+
+
+def _values_shortened(section: FieldsSection) -> Iterator[Section]:
+    """Then values shrink to 40 characters."""
+    yield replace(section, items=tuple(_shorten(item) for item in section.items))
+
+
+def _fields_to_other(section: FieldsSection) -> Iterator[Section]:
+    """Then trailing fields move to ``other``."""
+    items = list(section.items)
+    moved_names: list[str] = []
+    while True:
+        last = next(
+            (i for i in reversed(range(len(items))) if items[i].role not in ("label", "state")),
+            None,
+        )
+        if last is None:
+            return
+        moved_names.append(items.pop(last).name)
+        every = sorted({*section.other, *moved_names})
+        yield replace(
+            section,
+            items=tuple(items),
+            other=tuple(every[:OTHER_MAX]),
+            other_more=section.other_more + max(0, len(every) - OTHER_MAX),
+        )
+
+
+def _files_to_few(section: FilesSection) -> Iterator[Section]:
+    """File references to one, then none."""
+    for keep in (1, 0):
+        if len(section.items) > keep:
+            yield replace(
+                section,
+                items=section.items[:keep],
+                more=section.more + len(section.items) - keep,
+            )
+
+
+def _citations_to_few(section: CitedBySection) -> Iterator[Section]:
+    """Citations to one, then none."""
+    for keep in (1, 0):
+        if len(section.items) > keep:
+            yield replace(section, items=section.items[:keep])
+
+
+def _no_rows(section: NeighborsSection | RowsSection) -> Iterator[Section]:
+    """Last of all: the rows of an authored section go, the count stays."""
+    if section.items:
+        yield _kept(section, 0)
+
+
+def _titles_go(card: ViewModel) -> Iterator[ViewModel]:
+    """Last resort of an authored view: the section titles go, last section first."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if not isinstance(section, StubSection) and section.title is not None:
+            card = _with(card, index, replace(section, title=None))
+            yield card
+
+
+def _labels_shortened(card: ViewModel) -> Iterator[ViewModel]:
+    """Then the label and state of an authored ``fields`` section shrink to 40 characters and
+    its alternative labels to one."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if isinstance(section, FieldsSection) and section.id is not None:
+            card = _with(
+                card, index, replace(section, items=tuple(_pared(i) for i in section.items))
+            )
+            yield card
+
+
+def _pared(item: FieldItem) -> FieldItem:
+    if isinstance(item.value, list) and item.role == "alt_label":
+        return replace(item, value=item.value[:1], more=item.more + max(0, len(item.value) - 1))
+    shrinks = item.role in ("label", "state") and isinstance(item.value, str)
+    if shrinks and len(str(item.value)) > GUARD_VALUE_CHARS + 1:
+        text, _ = _cut(str(item.value).removesuffix("…"), GUARD_VALUE_CHARS)
+        return replace(item, value=text, chars=item.chars or len(str(item.value)))
+    return item
+
+
+def _sections_to_stubs(card: ViewModel) -> Iterator[ViewModel]:
+    """Then whole sections go, last first, and leave their kind and id behind."""
+    for index in reversed(range(len(card.sections))):
+        section = card.sections[index]
+        if not isinstance(section, StubSection):
+            stub = StubSection(str(section.to_json()["kind"]), section.id)
+            card = _with(card, index, stub)
+            yield card
+
+
+def _stubs_folded(card: ViewModel) -> Iterator[ViewModel]:
+    """At the very end the trailing stubs fold into one count (``sections_cut``): at the lowest
+    limits even 32 stubs would not fit, and the answer then says how many sections went."""
+    while card.sections and isinstance(card.sections[-1], StubSection):
+        card = replace(card, sections=card.sections[:-1], sections_cut=card.sections_cut + 1)
+        yield card
+
+
+_FINAL: Final[tuple[Callable[[ViewModel], Iterator[ViewModel]], ...]] = (
+    _titles_go,
+    _labels_shortened,
+    _sections_to_stubs,
+    _stubs_folded,
+)
+
+# The generated card has one section per kind, so for it the stages below run in the order it
+# always had (relations, fields, files, citations); the authored kinds come first.
+_STAGES: Final[tuple[tuple[type | tuple[type, ...], Stage], ...]] = (
+    (NeighborsSection, _drop_row_values),
+    (NeighborsSection, _lists_to_one),
+    ((NeighborsSection, RowsSection), _rows_to_few),
+    (RelationsSection, _key_fields_go),
+    (RelationsSection, _group_items_to_one),
+    (RelationsSection, _groups_to_more),
+    (FieldsSection, _values_shortened),
+    (FieldsSection, _fields_to_other),
+    (FilesSection, _files_to_few),
+    (CitedBySection, _citations_to_few),
+    ((NeighborsSection, RowsSection), _no_rows),
+)
 
 
 def _shorten(item: FieldItem) -> FieldItem:

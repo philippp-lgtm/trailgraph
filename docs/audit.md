@@ -224,21 +224,22 @@ installed policy again records the mirrors such a graph lacks.
 
 ## Slot verification
 
-Publishing the graph skill, the function catalog or the action catalog is one maintenance
+Publishing the graph skill, the function, action or view catalog is one maintenance
 operation: an intent in the graph stream with `change.skill{from, to}`,
-`change.functions{from, to, compiled_hash}` or `change.actions{from, to, compiled_hash}`
+`change.functions{from, to, compiled_hash}`, `change.actions{from, to, compiled_hash}` or
+`change.views{from, to, compiled_hash}`
 (the tree hash of the published files before,
 `null` for the first publish, and after; for the catalog also the hash of the compiled
 catalog the app reads), the slot switch, then an
 installation event that anchors the intent. `audit verify` walks these
 intents from "no slot" and compares the end with the slot on disk: the
-published hash must equal the last committed `to`, and for the function and
-action catalogs the `compiled_hash` of their slot (whose file content is hash-checked on
+published hash must equal the last committed `to`, and for the function,
+action and view catalogs the `compiled_hash` of their slot (whose file content is hash-checked on
 read) must equal the one the last committed event recorded; a replaced compiled
 catalog with an adjusted `slot.json` is caught this way. A slot published,
 changed, damaged or removed by hand, or a skill or catalog that differs
 from its recorded hash, is `integrity.audit.slot_mismatch` (its target names
-`graphs/<id>/skill`, `.../functions` or `.../actions`); an intent
+`graphs/<id>/skill`, `.../functions`, `.../actions` or `.../views`); an intent
 whose slot switch never happened is an interrupted publish
 (`intent_without_effect`, info).
 

@@ -102,6 +102,15 @@ def leaf(fn: Callable[..., Result]) -> Callable[..., None]:
     return callback
 
 
+def missing_argument(name: str) -> click.UsageError:
+    """The usage error click raises for a required argument that was not given, for a command
+    whose argument is required only in some cases (the handler decides): the answer is the one
+    click gives, the usage block in text mode included."""
+    ctx = click.get_current_context()
+    param = next(p for p in ctx.command.params if p.name == name)
+    return click.MissingParameter(ctx=ctx, param=param)
+
+
 def run(
     program: click.Command,
     argv: Sequence[str],

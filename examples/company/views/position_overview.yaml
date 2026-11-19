@@ -1,0 +1,35 @@
+schema: graph_cli.view/1
+name: position_overview
+module: organization
+summary: A position with its unit, its holder and the positions it reports up to.
+use_when: >-
+  Who holds a position, where it sits in the organization and whom it reports to, in one call;
+  the first look at a position before a function or a query is needed.
+takes: org:Position
+default: true
+sections:
+  - kind: fields
+    fields: all
+    value_chars: 200
+    max: 16
+  - kind: neighbors
+    id: unit
+    title: Unit
+    relation: in_unit
+    fields: [name]
+  - kind: neighbors
+    id: holder
+    title: Holder
+    relation: holds
+    direction: in
+    fields: [name, work_email]
+    max: 1
+  - kind: rows
+    id: chain
+    title: Reports up to
+    function: reporting_chain
+    args: {position: $entity}
+    max: 5
+  - kind: affordances
+examples:
+  - question: Who holds the position of head of infrastructure and whom does it report to?

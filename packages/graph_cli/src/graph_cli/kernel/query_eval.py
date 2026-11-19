@@ -393,6 +393,17 @@ def _row_key(keys: Sequence[OrderKey]) -> Callable[[_Row], Any]:
     return cmp_to_key(compare)
 
 
+def sort_revisions(revisions: Sequence[Revision], order: Sequence[OrderKey]) -> list[Revision]:
+    """``revisions`` in the order of ``order`` as ``run_query`` sorts (missing values last, ties
+    by id); the revisions are compared as they are, so a caller passes what the reader sees."""
+    rows: list[_Row] = [
+        (r, [_sort_value(field_value(r, k.field), k.numeric, k.tagged) for k in order], r)
+        for r in revisions
+    ]
+    rows.sort(key=_row_key(order))
+    return [row[0] for row in rows]
+
+
 def _pred_fields(pred: Pred) -> Iterable[str]:
     match pred:
         case Cmp():

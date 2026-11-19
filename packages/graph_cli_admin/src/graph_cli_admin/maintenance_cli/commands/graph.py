@@ -1,5 +1,6 @@
 """``graph-admin graph create|list|show|check|reindex|pull|push``, ``graph skill
-publish|render``, ``graph functions publish|show`` and ``graph actions publish|show``."""
+publish|render``, ``graph functions publish|show``, ``graph actions publish|show`` and
+``graph views publish|show``."""
 
 from __future__ import annotations
 
@@ -38,7 +39,14 @@ from graph_cli_admin.maintenance_cli.output_schemas import (
     SKILL_KIND,
     STRINGS,
 )
-from graph_cli_admin.services_admin import actions, functions, graphs, skill, sources
+from graph_cli_admin.services_admin import (
+    actions,
+    authored_views,
+    functions,
+    graphs,
+    skill,
+    sources,
+)
 from graph_cli_admin.services_admin.check import check
 from graph_cli_admin.services_admin.reindex import reindex
 
@@ -56,6 +64,15 @@ FUNCTIONS_DIR: Final = ParamSpec(
     "dir",
     "directory",
     "A functions folder: one <name>.yaml per function.",
+    required=True,
+    positional=True,
+    keyword="source",
+    must_exist=True,
+)
+VIEWS_DIR: Final = ParamSpec(
+    "dir",
+    "directory",
+    "A views folder: one <name>.yaml per view.",
     required=True,
     positional=True,
     keyword="source",
@@ -208,6 +225,31 @@ def show_actions(state: CommandState, ref: str, data_root: str | None) -> Result
     return Result(data=data, graph=graphs.envelope_graph(entry, None))
 
 
+def publish_views(
+    state: CommandState,
+    ref: str,
+    source: str,
+    reason: str | None,
+    dry_run: bool,
+    data_root: str | None,
+) -> Result:
+    ctx = admin_context(state, data_root)
+    published = authored_views.publish(
+        ctx, graph_ref=ref, source=Path(source).resolve(), reason=reason, dry_run=dry_run
+    )
+    return Result(
+        data=published.data,
+        graph=graphs.envelope_graph(published.entry, published.seq),
+        warnings=published.warnings,
+    )
+
+
+def show_views(state: CommandState, ref: str, data_root: str | None) -> Result:
+    ctx = admin_context(state, data_root)
+    entry, data = authored_views.show(ctx, graph_ref=ref)
+    return Result(data=data, graph=graphs.envelope_graph(entry, None))
+
+
 def render(
     state: CommandState,
     ref: str,
@@ -317,7 +359,8 @@ SHOW_OUTPUT: Final = obj(  # services_admin.graphs.show
         "skill": nullable(ref("skill_summary")),
         "functions": nullable(obj({"count": INTEGER, "hash": STRING})),
         "actions": nullable(obj({"count": INTEGER, "hash": STRING})),
-    }
+    },
+    {"views": nullable(obj({"count": INTEGER, "hash": STRING}))},  # only when views are published
 )
 CHECK_OUTPUT: Final = obj(  # services_admin.check.check
     {
@@ -335,6 +378,9 @@ CHECK_OUTPUT: Final = obj(  # services_admin.check.check
         ),
     },
     {
+        "views": obj(  # only when views are published
+            {"count": INTEGER, "problems": array(ref("view_problem"))}
+        ),
         "migration": ref("migration_preview"),  # --ontology with a migration.yaml
         "republished": ref("republished"),  # --ontology: catalogs a release would publish again
     },
@@ -362,7 +408,10 @@ PULL_OUTPUT: Final = obj(  # services_admin.sources.pull
         "actions": nullable(ref("source_actions")),
         "files": STRINGS,
     },
-    {"pulled": RETURNED_FILES},
+    {
+        "views": nullable(ref("source_views")),  # only when views are published
+        "pulled": RETURNED_FILES,
+    },
 )
 PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
     {
@@ -409,9 +458,22 @@ PUSH_OUTPUT: Final = obj(  # services_admin.sources.push
                 "skill": nullable(ref("source_skill")),
                 "functions": nullable(ref("source_functions")),
                 "actions": nullable(ref("source_actions")),
-            }
+            },
+            {"views": nullable(ref("source_views"))},  # only when views are published
         ),
-    }
+    },
+    {  # only when the workspace has a views folder or the graph has published views
+        "views": nullable(
+            obj(
+                {
+                    "from": nullable(ref("views_summary")),
+                    "to": nullable(ref("views_summary")),
+                    "views": STRINGS,
+                    "published": BOOLEAN,
+                }
+            )
+        )
+    },
 )
 PUBLISH_OUTPUT: Final = obj(  # services_admin.skill.publish
     {
@@ -474,6 +536,35 @@ SHOW_ACTIONS_OUTPUT: Final = obj(  # services_admin.actions.show
                     "summary": STRING,
                     "status": enum("active", "deprecated"),
                     "featured": BOOLEAN,
+                    "hash": STRING,
+                }
+            )
+        ),
+    }
+)
+PUBLISH_VIEWS_OUTPUT: Final = obj(  # services_admin.authored_views.publish
+    {
+        "graph_id": STRING,
+        "from": nullable(ref("views_summary")),
+        "to": ref("views_summary"),
+        "views": STRINGS,
+        "published": BOOLEAN,
+        "dry_run": BOOLEAN,
+    }
+)
+SHOW_VIEWS_OUTPUT: Final = obj(  # services_admin.authored_views.show
+    {
+        "graph_id": STRING,
+        "slot": nullable(ref("views_summary")),
+        "views": array(
+            obj(
+                {
+                    "name": STRING,
+                    "module": NULLABLE_STRING,
+                    "summary": STRING,
+                    "status": enum("active", "deprecated"),
+                    "takes": NULLABLE_STRING,
+                    "default": BOOLEAN,
                     "hash": STRING,
                 }
             )
@@ -627,6 +718,7 @@ SPECS: Final = (
             "ontology.marking_name_reused",
             "admin.functions_broken",
             "admin.actions_broken",
+            "admin.views_broken",
         ),
         handler=check_command,
         output=CHECK_OUTPUT,
@@ -634,8 +726,9 @@ SPECS: Final = (
         " cardinality of relations, which no write checks. Exits 1 (admin.data_errors) on an"
         " error finding; warnings are listed only. Also checks the published functions against the"
         " model (admin.functions_broken, for example function.stale after an interrupted"
-        " push) and the published actions (admin.actions_broken, for example action.stale; the"
-        " functions are reported first). With --ontology, checks the data under an"
+        " push), the published actions (admin.actions_broken, for example action.stale) and the"
+        " published views (admin.views_broken, for example view.stale; the functions are"
+        " reported first, the views last). With --ontology, checks the data under an"
         " authored version before it is released: for a major version with a migration.yaml (or"
         " renames that rewrite data) the migration is applied to an overlay, the findings are"
         " those of the migrated data, and the migration block of the answer counts what each"
@@ -677,7 +770,7 @@ SPECS: Final = (
         kind="read",
         surface="model",
         action="maint.graph_configure",
-        summary="Write graph REF's ontology release, skill, functions and actions into DIR.",
+        summary="Write graph REF's ontology release, skill, functions, actions and views into DIR.",
         params=(
             REF,
             ParamSpec(
@@ -692,8 +785,8 @@ SPECS: Final = (
             ParamSpec(
                 "--force",
                 "flag",
-                "Replace the version, skill, functions and actions directories and base file"
-                " if they exist.",
+                "Replace the version, skill, functions, actions and views directories and base"
+                " file if they exist.",
             ),
             DATA_ROOT,
         ),
@@ -713,13 +806,15 @@ SPECS: Final = (
             "skills.source_invalid",
             "functions.slot_invalid",
             "actions.slot_invalid",
+            "views.slot_invalid",
         ),
         handler=pull,
         output=PULL_OUTPUT,
         description="Writes DIR/ontology/<version>/<module>.yaml (the authored modules of the"
         " release, byte for byte), DIR/skill/graph-<graph>/ (the published skill, if any),"
         " DIR/functions/<name>.yaml (the published functions, if any),"
-        " DIR/actions/<name>.yaml (the published actions, if any) and"
+        " DIR/actions/<name>.yaml (the published actions, if any),"
+        " DIR/views/<name>.yaml (the published views, if any) and"
         " DIR/.graph_cli_source.json, the base push checks. Other files in DIR stay. Changes"
         " nothing in the data root.",
         remote="hooked",
@@ -769,19 +864,23 @@ SPECS: Final = (
             "admin.functions_broken",
             "admin.actions_invalid",
             "admin.actions_broken",
+            "admin.views_invalid",
+            "admin.views_broken",
         ),
         handler=push,
         output=PUSH_OUTPUT,
-        description="The graph must still have the ontology release, skill, functions and actions"
-        " DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
+        description="The graph must still have the ontology release, skill, functions, actions and"
+        " views DIR was pulled from (or already what DIR holds), else admin.source_conflict. The"
         " highest ontology/<version>/ is released and pinned when it differs"
         " (maint.ontology_release, maint.ontology_pin), the skill directory, the functions"
-        " directory and the actions directory published when they differ (maint.graph_configure;"
-        " a missing functions or actions directory is an empty one); whenever the ontology"
-        " changes, the skill, the functions and the actions are checked against the ontology"
-        " they will have (the published functions and actions too, if the push does not replace"
-        " them: admin.functions_broken, admin.actions_broken; a release with renames publishes"
-        " those that still compile again by itself). A function and an action may not"
+        " directory, the actions directory and the views directory published when they differ,"
+        " in this order (maint.graph_configure; a missing functions, actions or views"
+        " directory is an empty one); whenever the ontology changes, the skill, the functions,"
+        " the actions and the views are checked against the ontology they will have (the"
+        " published ones too, if the push does not replace them: admin.functions_broken,"
+        " admin.actions_broken, admin.views_broken; a release with renames publishes those that"
+        " still compile again by itself). The views are checked against the functions the graph"
+        " will have after the push. A function and an action may not"
         " share a name. A release in it may carry a data migration (migration.yaml in the version"
         " directory; see ontology release). Everything is checked before the first write; the new"
         " base is written into DIR.",
@@ -878,14 +977,21 @@ SPECS: Final = (
                 "Check them and show the change, as JSON.",
             ),
         ),
-        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.functions_invalid"),
+        errors=(
+            *GRAPH_ERRORS,
+            *CHANGE_ERRORS,
+            "graph.archived",
+            "admin.functions_invalid",
+            "admin.views_broken",
+        ),
         handler=publish_functions,
         output=PUBLISH_FUNCTIONS_OUTPUT,
         description="DIR holds one <name>.yaml per function (graph_cli.function/1). Every"
         " function is checked against the graph's current ontology pin; all problems are"
         " reported together (admin.functions_invalid, details.problems). An empty DIR"
-        " unpublishes every function. Publishing the same files again changes nothing."
-        " --dry-run is the check.",
+        " unpublishes every function. A published view that runs a function the new catalog"
+        " lacks, or binds with another parameter, refuses the publish (admin.views_broken)."
+        " Publishing the same files again changes nothing. --dry-run is the check.",
         remote="hooked",
     ),
     CommandSpec(
@@ -952,6 +1058,55 @@ SPECS: Final = (
         output=SHOW_ACTIONS_OUTPUT,
         description="The slot (hash, ontology pin it was published against) and one line per"
         " action; read-only.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "views", "publish"),
+        kind="write",
+        surface="act",
+        action="maint.graph_configure",
+        summary="Publish DIR as the view catalog of graph REF (name or id).",
+        params=(
+            REF,
+            VIEWS_DIR,
+            ParamSpec("--reason", "string", "Why the views change; recorded in the audit event."),
+            ParamSpec("--dry-run", "flag", "Check and show the change without writing."),
+            DATA_ROOT,
+        ),
+        examples=(
+            Example("graph-admin graph views publish <graph> <dir>", "Publish the views."),
+            Example(
+                "graph-admin graph views publish <graph> <dir> --dry-run --json",
+                "Check them and show the change, as JSON.",
+            ),
+        ),
+        errors=(*GRAPH_ERRORS, *CHANGE_ERRORS, "graph.archived", "admin.views_invalid"),
+        handler=publish_views,
+        output=PUBLISH_VIEWS_OUTPUT,
+        description="DIR holds one <name>.yaml per view (graph_cli.view/1). Every view is"
+        " checked against the graph's current ontology pin and the published functions its rows"
+        " sections run; all problems are reported together (admin.views_invalid,"
+        " details.problems). Views have a namespace of their own: a view may be named like a"
+        " function, never card. An empty DIR unpublishes every view. Publishing the same files"
+        " again changes nothing. --dry-run is the check.",
+        remote="hooked",
+    ),
+    CommandSpec(
+        path=("graph", "views", "show"),
+        kind="read",
+        surface="meta",
+        action="maint.graph_configure",
+        summary="Show the published view catalog of graph REF.",
+        params=(REF, DATA_ROOT),
+        examples=(
+            Example("graph-admin graph views show <graph>", "List the published views."),
+            Example("graph-admin graph views show <graph> --json", "The same, as JSON."),
+        ),
+        errors=(*GRAPH_ERRORS, "access.denied"),
+        handler=show_views,
+        output=SHOW_VIEWS_OUTPUT,
+        description="The slot (hash, ontology pin it was published against) and one line per"
+        " view; read-only.",
         remote="hooked",
     ),
 )

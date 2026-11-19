@@ -1,0 +1,14 @@
+schema: graph_cli.view/1
+name: invalid_default
+module: operations
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+params:
+  before:
+    type: date
+    default: not-a-date
+    summary: Only tasks due before this day.
+sections:
+  - kind: list
+    type: ops:Task
+    where: ["due_on:lt=$before"]

@@ -92,21 +92,25 @@ UNREADABLE = "unreadable"
 
 @dataclass(frozen=True, slots=True)
 class InstalledSlots:
-    """The tree hashes of the published skill, function catalog and action catalog as found:
+    """The tree hashes of the published skill, function, action and view catalogs as found:
     ``None`` when the slot is empty, ``"unreadable"`` when it is damaged (K6).
-    ``functions_compiled`` and ``actions_compiled`` are the hash of the compiled catalog the
-    slot names (``None`` when there is no slot)."""
+    ``functions_compiled``, ``actions_compiled`` and ``views_compiled`` are the hash of the
+    compiled catalog the slot names (``None`` when there is no slot)."""
 
     skill: str | None
     functions: str | None
     functions_compiled: str | None = None
     actions: str | None = None
     actions_compiled: str | None = None
+    views: str | None = None
+    views_compiled: str | None = None
 
     def compiled_of(self, key: str) -> tuple[str | None, str | None]:
         """The tree hash and the compiled hash of the catalog slot ``key``."""
         if key == "functions":
             return self.functions, self.functions_compiled
+        if key == "views":
+            return self.views, self.views_compiled
         return self.actions, self.actions_compiled
 
 
@@ -575,7 +579,7 @@ def check_maintenance(
         findings += _blob_store_walk(stream, ok, effects.blob_store, effects.anchored)
     if effects.slots is not None:
         findings += _slot_walk(stream, ok, "skill", effects.slots.skill, effects.anchored)
-        for key in ("functions", "actions"):
+        for key in ("functions", "actions", "views"):
             tree, _ = effects.slots.compiled_of(key)
             walked = _slot_walk(stream, ok, key, tree, effects.anchored)
             if not any(f.code == codes.SLOT_MISMATCH for f in walked):
@@ -1148,7 +1152,7 @@ def _compiled_check(
     slots: InstalledSlots,
     anchored: frozenset[int],
 ) -> list[Finding]:
-    """The compiled catalog the ``key`` slot (``functions`` or ``actions``) names must be
+    """The compiled catalog the ``key`` slot (``functions``, ``actions`` or ``views``) names must be
     the one the last committed publish recorded in ``change.<key>.compiled_hash`` (the app
     reads the compiled file, not the sources); the caller skips it when the sources hash
     already mismatches."""

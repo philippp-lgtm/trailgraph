@@ -1,0 +1,9 @@
+schema: graph_cli.view/1
+name: unknown_function
+summary: Runs a function the graph does not have.
+use_when: Testing one rule of the checks.
+takes: inv:Location
+sections:
+  - kind: rows
+    function: no_such_function
+    args: {location: $entity}

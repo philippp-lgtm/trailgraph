@@ -1,7 +1,7 @@
-"""The function and action catalog slots: read through the catalog, replaced by the
-maintenance port (K6, A8; section 5 ``functions/``, ``actions/``; crash points
-``functions.before_rename`` and ``actions.before_rename``). Every test runs for both kinds:
-one implementation."""
+"""The function, action and view catalog slots: read through the catalog, replaced by the
+maintenance port (K6, A8, V9; section 5 ``functions/``, ``actions/``, ``views/``; crash points
+``functions.before_rename``, ``actions.before_rename`` and ``views.before_rename``). Every test
+runs for all kinds: one implementation."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -19,14 +19,23 @@ from graph_cli.kernel.ports.audit import AuditReceipt, graph_stream
 from graph_cli.kernel.ports.catalog import KINDS, KineticSlot, SlotKind, sources_hash
 from graph_cli.kinetic.action_format import CATALOG_SCHEMA as ACTION_SCHEMA
 from graph_cli.kinetic.format import CATALOG_SCHEMA as FUNCTION_SCHEMA
+from graph_cli.kinetic.view_format import CATALOG_SCHEMA as VIEW_SCHEMA
 from graph_cli.storage.common.faults import CrashPoint
 from graph_cli.storage.files.maintenance import FileMaintenanceSession
 
 
-@pytest.fixture(params=["functions", "actions"])
+@pytest.fixture(params=["functions", "actions", "views"])
 def kind(request: pytest.FixtureRequest) -> SlotKind:
     value: SlotKind = request.param
     return value
+
+
+SCHEMAS = {"functions": FUNCTION_SCHEMA, "actions": ACTION_SCHEMA, "views": VIEW_SCHEMA}
+POINTS = {
+    "functions": CrashPoint.FUNCTIONS_BEFORE_RENAME,
+    "actions": CrashPoint.ACTIONS_BEFORE_RENAME,
+    "views": CrashPoint.VIEWS_BEFORE_RENAME,
+}
 
 
 @pytest.fixture
@@ -38,7 +47,7 @@ def slot(
     inst: Installation, graph_id: GraphId, kind: SlotKind, names: tuple[str, ...] = ("one",)
 ) -> KineticSlot:
     files = {f"{name}.yaml": f"name: {name}\n".encode() for name in names}
-    schema = FUNCTION_SCHEMA if kind == "functions" else ACTION_SCHEMA
+    schema = SCHEMAS[kind]
     compiled = {"schema": schema, kind: [{"name": name} for name in names]}
     pin = FileCatalog(inst.root).resolve(str(graph_id)).pin
     return KineticSlot(sources_hash(files), hash_value(compiled), pin, compiled, files, kind)
@@ -55,18 +64,28 @@ def intent(inst: Installation, session: FileMaintenanceSession, graph_id: GraphI
 
 
 def replacer(session: FileMaintenanceSession, kind: SlotKind) -> Callable[..., None]:
-    return session.replace_functions if kind == "functions" else session.replace_actions
+    return {
+        "functions": session.replace_functions,
+        "actions": session.replace_actions,
+        "views": session.replace_views,
+    }[kind]
 
 
 def reader(session: FileMaintenanceSession, kind: SlotKind) -> Callable[[], KineticSlot | None]:
-    return session.read_functions if kind == "functions" else session.read_actions
+    return {
+        "functions": session.read_functions,
+        "actions": session.read_actions,
+        "views": session.read_views,
+    }[kind]
 
 
 def read_app(inst: Installation, graph_id: GraphId, kind: SlotKind) -> KineticSlot | None:
     catalog = FileCatalog(inst.root)
-    return (
-        catalog.read_functions(graph_id) if kind == "functions" else catalog.read_actions(graph_id)
-    )
+    return {
+        "functions": catalog.read_functions,
+        "actions": catalog.read_actions,
+        "views": catalog.read_views,
+    }[kind](graph_id)
 
 
 def publish(inst: Installation, graph_id: GraphId, new: KineticSlot) -> None:
@@ -92,8 +111,11 @@ def app_view(published: KineticSlot) -> KineticSlot:
 def test_the_stored_schemas_are_the_format_schemas() -> None:
     assert KINDS["functions"].catalog_schema == FUNCTION_SCHEMA
     assert KINDS["actions"].catalog_schema == ACTION_SCHEMA
+    assert KINDS["views"].catalog_schema == VIEW_SCHEMA
     assert KINDS["functions"].slot_schema == "graph_cli.function_slot/1"
     assert KINDS["actions"].slot_schema == "graph_cli.action_slot/1"
+    assert KINDS["views"].slot_schema == "graph_cli.view_slot/1"
+    assert KINDS["views"].invalid_code == "views.slot_invalid"
 
 
 def test_no_slot_reads_as_none(inst: Installation, kind: SlotKind) -> None:
@@ -102,7 +124,11 @@ def test_no_slot_reads_as_none(inst: Installation, kind: SlotKind) -> None:
     with inst.maintenance.maintenance_session(graph_id, timeout_s=5) as session:
         assert reader(session, kind)() is None
     memory = MemoryCatalog()
-    assert (memory.read_functions if kind == "functions" else memory.read_actions)(graph_id) is None
+    assert {
+        "functions": memory.read_functions,
+        "actions": memory.read_actions,
+        "views": memory.read_views,
+    }[kind](graph_id) is None
 
 
 def test_publish_then_replace(inst: Installation, kind: SlotKind) -> None:
@@ -128,19 +154,25 @@ def test_the_kinds_do_not_share_files(inst: Installation) -> None:
     graph_id = inst.create()
     publish(inst, graph_id, slot(inst, graph_id, "functions", ("alpha",)))
     assert read_app(inst, graph_id, "actions") is None
+    assert read_app(inst, graph_id, "views") is None
     publish(inst, graph_id, slot(inst, graph_id, "actions", ("beta",)))
+    assert read_app(inst, graph_id, "views") is None
+    publish(inst, graph_id, slot(inst, graph_id, "views", ("gamma",)))
     functions, actions = read_app(inst, graph_id, "functions"), read_app(inst, graph_id, "actions")
-    assert functions is not None and actions is not None
-    assert functions.kind == "functions" and actions.kind == "actions"
+    views = read_app(inst, graph_id, "views")
+    assert functions is not None and actions is not None and views is not None
+    assert (functions.kind, actions.kind, views.kind) == ("functions", "actions", "views")
     assert functions.compiled["functions"] == [{"name": "alpha"}]
     assert actions.compiled["actions"] == [{"name": "beta"}]
+    assert views.compiled["views"] == [{"name": "gamma"}]
     stored = (kind_dir(inst, graph_id, "actions") / "slot.json").read_text()
     assert "graph_cli.action_slot/1" in stored
+    assert "graph_cli.view_slot/1" in (kind_dir(inst, graph_id, "views") / "slot.json").read_text()
 
 
 def test_a_slot_of_the_other_kind_is_refused(inst: Installation, kind: SlotKind) -> None:
     graph_id = inst.create()
-    other: SlotKind = "actions" if kind == "functions" else "functions"
+    other: SlotKind = "actions" if kind != "actions" else "views"
     bad = slot(inst, graph_id, other)
     with (
         inst.maintenance.maintenance_session(graph_id, timeout_s=5) as session,
@@ -193,12 +225,7 @@ def test_interrupted_publish_keeps_the_old_catalog(inst: Installation, kind: Slo
     graph_id = inst.create()
     first, second = slot(inst, graph_id, kind), slot(inst, graph_id, kind, ("one", "two"))
     publish(inst, graph_id, first)
-    point = (
-        CrashPoint.FUNCTIONS_BEFORE_RENAME
-        if kind == "functions"
-        else CrashPoint.ACTIONS_BEFORE_RENAME
-    )
-    inst.faults.armed.add(point)
+    inst.faults.armed.add(POINTS[kind])
     with pytest.raises(GraphCliError) as caught:
         publish(inst, graph_id, second)
     assert caught.value.code == "backend.unavailable"
@@ -215,12 +242,7 @@ def test_interrupted_publish_keeps_the_old_catalog(inst: Installation, kind: Slo
 
 def test_interrupted_first_publish_leaves_no_catalog(inst: Installation, kind: SlotKind) -> None:
     graph_id = inst.create()
-    point = (
-        CrashPoint.FUNCTIONS_BEFORE_RENAME
-        if kind == "functions"
-        else CrashPoint.ACTIONS_BEFORE_RENAME
-    )
-    inst.faults.armed.add(point)
+    inst.faults.armed.add(POINTS[kind])
     with pytest.raises(GraphCliError):
         publish(inst, graph_id, slot(inst, graph_id, kind))
     assert read_app(inst, graph_id, kind) is None
@@ -268,7 +290,7 @@ def test_damaged_slots(inst: Installation, kind: SlotKind) -> None:
     slot_file.write_bytes(original.replace(good.hash.encode(), b"sha256:" + b"0" * 64))
     assert code(sources=True) == invalid
     # the other kind's schema in the compiled file is refused as well
-    other = ACTION_SCHEMA if kind == "functions" else FUNCTION_SCHEMA
+    other = ACTION_SCHEMA if kind != "actions" else FUNCTION_SCHEMA
     slot_file.write_bytes(original)
     compiled.write_bytes(
         compiled_bytes.replace(KINDS[kind].catalog_schema.encode(), other.encode())

@@ -47,6 +47,13 @@ by a minor release and is explored by agents top down.
   agents run it with `graph do`, and the curated skill lists them through its `actions` block
   instead of spelling out the steps. See [Actions](../../docs/cli_graph.md#actions) and the
   `authoring-graph-actions` admin skill.
+- **Views** (`views/`, one `graph_cli.view/1` file each): `position_overview` is an entity view
+  and the default of `org:Position` (fields, the unit, the holder, and the reporting chain from
+  the `reporting_chain` function in one answer under 6 KiB); `org_catalog` is a set view that lists
+  every unit, position and person with their keys and relations, paged by bytes, for scripts and
+  renderers that would otherwise make one `find` call per type. Agents call them with
+  `graph view`. See [Authored views and set views](../../docs/cli_graph.md#authored-views-and-set-views)
+  and the `authoring-graph-views` admin skill.
 - **Synthetic seed data**: `seeds/1.0.0.jsonl` for the first version,
   `seeds/1.1.0.jsonl` for what only exists from the second. Stable idempotency keys
   (`company-<version>-<nn>`), so a second apply writes nothing twice.
@@ -67,9 +74,9 @@ graph-admin view                          # the live view, see docs/live_view.md
 
 It runs `graph-admin init`, creates the graph from `ontology/1.0.0` (`--module company`
 names the main module), applies `seeds/1.0.0.jsonl`, releases `ontology/1.1.0`, applies
-`seeds/1.1.0.jsonl`, publishes the functions, the actions and then the skill (the skill lists
-the functions and actions and is checked against them) and ends with `graph-admin graph check company` and
-`graph-admin audit verify`, both clean. `setup.sh 1.0.0` stops after the first version, so
+`seeds/1.1.0.jsonl`, publishes the functions, the actions, the views and then the skill (the
+skill lists the functions and actions and is checked against them) and ends with `graph-admin
+graph check company` and `graph-admin audit verify`, both clean. `setup.sh 1.0.0` stops after the first version, so
 the minor release can be shown by hand:
 
 ```sh
@@ -78,6 +85,7 @@ graph-admin ontology release company examples/company/ontology/1.1.0 --module co
 graph apply examples/company/seeds/1.1.0.jsonl
 graph-admin graph functions publish company examples/company/functions
 graph-admin graph actions publish company examples/company/actions
+graph-admin graph views publish company examples/company/views
 graph-admin graph skill publish company examples/company/skill/graph-company
 ```
 
@@ -123,12 +131,27 @@ graph describe types --module ops        # --module also limits types, relations
 graph describe schema --module legal --compact
 ```
 
-Read one entity at a glance (key fields, relations with counts and the first neighbours, what
-applies next):
+Read one entity at a glance (the default view of its class, else the generated card with key
+fields, relations with counts and the first neighbours, what applies next):
 
 ```sh
 graph view POS-0013
+graph view POS-0013 --name card           # the generated card, whatever views the graph has
 ```
+
+Find and read the published views; a set view takes no entity and answers in pages of whole rows:
+
+```sh
+graph describe views
+graph describe view org_catalog
+graph view --name org_catalog --page-bytes 4096          # the first page, with next and more
+graph view --name org_catalog --page-bytes 4096 --cursor <value>   # the cursor of that page
+graph view --name org_catalog --page-bytes 262144        # the whole catalog in one call
+```
+
+A script that reads the JSON form of a large page (`--json`) gets it in a file once it is bigger than
+the spill limit (`output.spilled`); `GRAPH_CLI_SPILL_BYTES=0` keeps it on stdout
+([configuration](../../docs/configuration.md)).
 
 Run a named function (parameters are ids or aliases, found with `graph lookup`):
 

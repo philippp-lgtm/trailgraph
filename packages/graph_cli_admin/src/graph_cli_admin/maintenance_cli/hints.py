@@ -90,6 +90,8 @@ ADMIN_HINTS: Final[Mapping[str, Hint | None]] = {
     "admin.actions_invalid": None,  # the problems to fix are in details.problems
     "admin.functions_broken": None,  # details.problems names the functions to fix or delete
     "admin.actions_broken": None,  # details.problems names the actions to fix or delete
+    "admin.views_invalid": None,  # the problems to fix are in details.problems
+    "admin.views_broken": None,  # details.problems names the views to fix or unpublish
     "admin.skill_render_exists": _render_force,
     "admin.source_exists": _pull_force,
     "admin.source_conflict": None,  # the message says to pull into another directory

@@ -416,6 +416,12 @@ def actions_change(old_hash: str | None, new_hash: str, compiled_hash: str) -> d
     return {"actions": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
 
 
+def views_change(old_hash: str | None, new_hash: str, compiled_hash: str) -> dict[str, JsonValue]:
+    """``change`` of a ``maint.graph_configure`` intent that publishes the view catalog
+    (views plan V9), shaped like ``functions_change``."""
+    return {"views": {"from": old_hash, "to": new_hash, "compiled_hash": compiled_hash}}
+
+
 def blob_store_change(
     old: str, new: str, store_id: str, *, blobs: int, size: int
 ) -> dict[str, JsonValue]:

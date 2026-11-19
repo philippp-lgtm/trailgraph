@@ -1,0 +1,11 @@
+schema: graph_cli.view/1
+name: duplicate_section
+module: organization
+summary: A broken probe.
+use_when: Testing one rule of the checks.
+takes: org:Team
+sections:
+  - kind: fields
+    fields: [name]
+  - kind: fields
+    fields: [alt_labels]

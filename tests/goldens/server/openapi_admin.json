@@ -1639,6 +1639,24 @@
               "problems"
             ]
           },
+          "views": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "problems": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/view_problem"
+                }
+              }
+            },
+            "required": [
+              "count",
+              "problems"
+            ]
+          },
           "migration": {
             "$ref": "#/components/schemas/migration_preview"
           },
@@ -2012,6 +2030,16 @@
               "type": "string"
             }
           },
+          "views": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/source_views"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pulled": {
             "type": "object",
             "additionalProperties": {
@@ -2242,6 +2270,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "views": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/source_views"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -2251,6 +2289,53 @@
               "skill",
               "functions",
               "actions"
+            ]
+          },
+          "views": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/views_summary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "to": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/views_summary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "views": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "published": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "views",
+                  "published"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -2419,6 +2504,28 @@
             ]
           },
           "actions": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "count",
+                  "hash"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "views": {
             "anyOf": [
               {
                 "type": "object",
@@ -2618,6 +2725,126 @@
           "files",
           "problems",
           "size"
+        ]
+      },
+      "graph_views_publish_data": {
+        "type": "object",
+        "properties": {
+          "graph_id": {
+            "type": "string"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/views_summary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to": {
+            "$ref": "#/components/schemas/views_summary"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "graph_id",
+          "from",
+          "to",
+          "views",
+          "published",
+          "dry_run"
+        ]
+      },
+      "graph_views_show_data": {
+        "type": "object",
+        "properties": {
+          "graph_id": {
+            "type": "string"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/views_summary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "module": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "deprecated"
+                  ]
+                },
+                "takes": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "default": {
+                  "type": "boolean"
+                },
+                "hash": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "module",
+                "summary",
+                "status",
+                "takes",
+                "default",
+                "hash"
+              ]
+            }
+          }
+        },
+        "required": [
+          "graph_id",
+          "slot",
+          "views"
         ]
       },
       "hint": {
@@ -3188,6 +3415,24 @@
                       "effect",
                       "resource",
                       "covered"
+                    ]
+                  }
+                },
+                "views": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "explicit": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "explicit"
                     ]
                   }
                 }
@@ -4446,6 +4691,40 @@
               "names",
               "compiled_hash"
             ]
+          },
+          "views": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "compiled_hash": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "names",
+              "compiled_hash"
+            ]
           }
         }
       },
@@ -4592,6 +4871,21 @@
         "required": [
           "name",
           "kind",
+          "hash"
+        ]
+      },
+      "source_views": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
           "hash"
         ]
       },
@@ -5202,6 +5496,75 @@
           "skipped_lines",
           "without_graph",
           "graphs"
+        ]
+      },
+      "view_problem": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "view",
+          "code",
+          "message",
+          "path",
+          "line",
+          "details"
+        ]
+      },
+      "views_summary": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "compiled_hash": {
+            "type": "string"
+          },
+          "published_against": {
+            "$ref": "#/components/schemas/ontology_pin"
+          }
+        },
+        "required": [
+          "count",
+          "hash",
+          "compiled_hash",
+          "published_against"
         ]
       },
       "warning": {
@@ -9990,7 +10353,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.remote_mode, migration.invalid, ontology.marking_name_reused, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.data_errors, admin.functions_broken, admin.migration_from_mismatch, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.remote_mode, admin.views_broken, migration.invalid, ontology.marking_name_reused, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -10018,6 +10381,7 @@
               "admin.model_invalid",
               "admin.policy_renamed_term",
               "admin.remote_mode",
+              "admin.views_broken",
               "migration.invalid",
               "ontology.marking_name_reused",
               "remote.client_outdated"
@@ -10726,7 +11090,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.functions_invalid, admin.remote_mode, graph.archived, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.functions_invalid, admin.remote_mode, admin.views_broken, graph.archived, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -10747,6 +11111,7 @@
             "x-graph-cli-error-codes": [
               "admin.functions_invalid",
               "admin.remote_mode",
+              "admin.views_broken",
               "graph.archived",
               "remote.client_outdated"
             ]
@@ -11480,7 +11845,7 @@
     "/v1/admin/commands/graph/pull": {
       "post": {
         "operationId": "graph_pull",
-        "summary": "Write graph REF's ontology release, skill, functions and actions into DIR.",
+        "summary": "Write graph REF's ontology release, skill, functions, actions and views into DIR.",
         "responses": {
           "200": {
             "description": "The answer.",
@@ -11658,7 +12023,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: actions.slot_invalid, admin.remote_mode, admin.source_exists, functions.slot_invalid, remote.client_outdated, skills.source_invalid.",
+            "description": "Unprocessable Content: actions.slot_invalid, admin.remote_mode, admin.source_exists, functions.slot_invalid, remote.client_outdated, skills.source_invalid, views.slot_invalid.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -11682,7 +12047,8 @@
               "admin.source_exists",
               "functions.slot_invalid",
               "remote.client_outdated",
-              "skills.source_invalid"
+              "skills.source_invalid",
+              "views.slot_invalid"
             ]
           },
           "500": {
@@ -11801,7 +12167,7 @@
                       },
                       "force": {
                         "type": "boolean",
-                        "description": "Replace the version, skill, functions and actions directories and base file if they exist."
+                        "description": "Replace the version, skill, functions, actions and views directories and base file if they exist."
                       },
                       "--force": {
                         "type": "boolean",
@@ -12030,7 +12396,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.actions_invalid, admin.functions_broken, admin.functions_invalid, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.skill_invalid, admin.version_bump_insufficient, admin.views_broken, admin.views_invalid, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -12063,6 +12429,8 @@
               "admin.remote_mode",
               "admin.skill_invalid",
               "admin.version_bump_insufficient",
+              "admin.views_broken",
+              "admin.views_invalid",
               "graph.archived",
               "migration.invalid",
               "ontology.marking_name_reused",
@@ -13581,6 +13949,656 @@
         "x-graph-cli-remote": "hooked"
       }
     },
+    "/v1/admin/commands/graph/views/publish": {
+      "post": {
+        "operationId": "graph_views_publish",
+        "summary": "Publish DIR as the view catalog of graph REF (name or id).",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/graph_views_publish_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, admin.views_invalid, graph.archived, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "admin.views_invalid",
+              "graph.archived",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: audit.unavailable, backend.lock_timeout, backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "audit.unavailable",
+              "backend.lock_timeout",
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "description": "Graph name or id."
+                      },
+                      "dir": {
+                        "type": "object",
+                        "properties": {
+                          "files": {
+                            "type": "object",
+                            "description": "Relative path of every file to an upload of PUT /v1/uploads.",
+                            "additionalProperties": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "files",
+                          "name"
+                        ],
+                        "description": "A views folder: one <name>.yaml per view."
+                      },
+                      "reason": {
+                        "type": "string",
+                        "description": "Why the views change; recorded in the audit event."
+                      },
+                      "--reason": {
+                        "type": "string",
+                        "description": "The inventory name of reason; never both.",
+                        "deprecated": true
+                      },
+                      "dry_run": {
+                        "type": "boolean",
+                        "description": "Check and show the change without writing."
+                      },
+                      "--dry-run": {
+                        "type": "boolean",
+                        "description": "The inventory name of dry_run; never both.",
+                        "deprecated": true
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "dir"
+                    ]
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "write",
+        "x-graph-cli-remote": "hooked"
+      }
+    },
+    "/v1/admin/commands/graph/views/show": {
+      "post": {
+        "operationId": "graph_views_show",
+        "summary": "Show the published view catalog of graph REF.",
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "const": "graph_cli.envelope/1"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "command": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/graph"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/graph_views_show_data"
+                    },
+                    "page": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/page"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/hint"
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/warning"
+                      }
+                    },
+                    "error": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "ok",
+                    "command",
+                    "graph",
+                    "data",
+                    "page",
+                    "hints",
+                    "warnings",
+                    "error"
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request: usage.invalid_argument.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "usage.invalid_argument"
+            ]
+          },
+          "401": {
+            "description": "Unauthorized: remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "remote.unauthorized"
+            ]
+          },
+          "403": {
+            "description": "Forbidden: access.denied, remote.unauthorized.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "access.denied",
+              "remote.unauthorized"
+            ]
+          },
+          "404": {
+            "description": "Not Found: graph.not_found.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "graph.not_found"
+            ]
+          },
+          "422": {
+            "description": "Unprocessable Content: admin.remote_mode, remote.client_outdated.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "admin.remote_mode",
+              "remote.client_outdated"
+            ]
+          },
+          "500": {
+            "description": "Internal Server Error: internal.error.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "internal.error"
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable: backend.unavailable, config.invalid.",
+            "headers": {
+              "Graph-Cli-Exit-Code": {
+                "$ref": "#/components/headers/Graph-Cli-Exit-Code"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            },
+            "x-graph-cli-error-codes": [
+              "backend.unavailable",
+              "config.invalid"
+            ]
+          },
+          "default": {
+            "description": "The envelope with the error, or problem details on request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/failed_envelope"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "description": "Graph name or id."
+                      }
+                    },
+                    "required": [
+                      "ref"
+                    ]
+                  },
+                  "actor": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-cli-kind": "read",
+        "x-graph-cli-remote": "hooked"
+      }
+    },
     "/v1/admin/commands/ontology/diff": {
       "post": {
         "operationId": "ontology_diff",
@@ -13942,7 +14960,7 @@
                       },
                       "graph": {
                         "type": "string",
-                        "description": "Compare with the release this graph is pinned to; warns (admin.functions_affected, admin.actions_affected) about published functions and actions the release would break."
+                        "description": "Compare with the release this graph is pinned to; warns (admin.functions_affected, admin.actions_affected, admin.views_affected) about published functions, actions and views the release would break."
                       },
                       "--graph": {
                         "type": "string",
@@ -14147,7 +15165,7 @@
             ]
           },
           "422": {
-            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
+            "description": "Unprocessable Content: admin.actions_broken, admin.functions_broken, admin.migration_from_mismatch, admin.migration_incomplete, admin.migration_required, admin.migration_unexpected, admin.model_invalid, admin.policy_renamed_term, admin.release_exists, admin.remote_mode, admin.version_bump_insufficient, admin.views_broken, graph.archived, migration.invalid, ontology.marking_name_reused, ontology.rename_invalid, remote.client_outdated.",
             "headers": {
               "Graph-Cli-Exit-Code": {
                 "$ref": "#/components/headers/Graph-Cli-Exit-Code"
@@ -14177,6 +15195,7 @@
               "admin.release_exists",
               "admin.remote_mode",
               "admin.version_bump_insufficient",
+              "admin.views_broken",
               "graph.archived",
               "migration.invalid",
               "ontology.marking_name_reused",

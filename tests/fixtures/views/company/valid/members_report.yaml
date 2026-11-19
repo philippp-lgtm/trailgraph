@@ -1,0 +1,14 @@
+schema: graph_cli.view/1
+name: members_report
+module: organization
+summary: The people of one department, from the published function.
+use_when: Who works in a department including its teams, as a set view with a reference parameter.
+params:
+  unit:
+    type: ref
+    class: org:Department
+    summary: The department to report on.
+sections:
+  - kind: rows
+    function: members_of_unit
+    args: {unit: $unit}

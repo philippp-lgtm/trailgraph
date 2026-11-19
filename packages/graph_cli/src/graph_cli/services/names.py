@@ -552,6 +552,9 @@ _PROBLEM_KINDS: Final = {
     "action.unknown_attribute": "attribute",
     "action.unknown_class": "type",
     "function.unknown_class": "type",
+    "view.unknown_class": "type",
+    "view.unknown_relation": "relation",
+    "view.unknown_attribute": "attribute",
 }
 
 

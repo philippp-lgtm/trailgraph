@@ -11,9 +11,12 @@ from support.actions import valid_sources as action_sources
 from support.fixtures import FIXTURES, GOLDENS, compiled_model
 from support.functions import valid_sources as function_sources
 from support.skills import GRAPH_SKILL_NAME, render_inputs
+from support.views import company_model as views_model
+from support.views import edited, function_entries, valid_sources
 
 from graph_cli.kinetic.action_compile import compile_actions
 from graph_cli.kinetic.compile import compile_catalog
+from graph_cli.kinetic.view_compile import compile_views
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.skills.graph_skill import render_checked
 from graph_cli.skills.names import check_names
@@ -84,6 +87,32 @@ def test_functions_and_actions_come_first_when_the_graph_has_them() -> None:
     with_actions = skill(company_model(), ACTIONS, actions=action_catalog())
     assert "run a named action when one fits" in with_actions
     assert "Otherwise preview `create`" in with_actions
+
+
+def view_catalog(sources: dict[str, str] | None = None) -> dict[str, Any]:
+    """The compiled view catalog of the company fixtures (or of ``sources``)."""
+    document, problems = compile_views(
+        sources or valid_sources(), views_model(), function_entries()
+    )
+    assert problems == []
+    return document
+
+
+def test_a_graph_with_views_says_where_to_list_them() -> None:
+    clause = "The graph also has published views: `graph describe views --graph "
+    with_views = skill(company_model(), ACTIONS, actions=action_catalog(), views=view_catalog())
+    assert clause + "example_graph`." in with_views
+    assert with_views.count("published views") == 1
+    plain = skill(company_model(), ACTIONS, actions=action_catalog())
+    assert "published views" not in plain and "describe views" not in plain
+    # the clause is the only difference: no list of views in level 0
+    assert with_views.replace(f" {clause}example_graph`.", "") == plain
+    legacy = edited("legacy_unit_overview.yaml", "replaced_by: unit_overview\n", "")
+    only_deprecated = view_catalog(
+        {"legacy_unit_overview.yaml": legacy["legacy_unit_overview.yaml"]}
+    )
+    deprecated = skill(company_model(), ACTIONS, actions=action_catalog(), views=only_deprecated)
+    assert deprecated == plain  # a deprecated view is not advertised
 
 
 def test_the_module_views_are_the_exception_to_json() -> None:

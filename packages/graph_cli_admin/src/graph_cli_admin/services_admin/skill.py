@@ -130,10 +130,12 @@ def check_files(
     model: CompiledModel | None = None,
     functions: JsonObject | None = None,
     actions: JsonObject | None = None,
+    views: JsonObject | None = None,
 ) -> Checked:
     """``check_source`` for files read already; a template renders against ``model`` (the
     entry's pinned model when ``None``), the compiled function catalog ``functions`` and the
-    compiled action catalog ``actions`` (the published ones when ``None``). Unlike the app,
+    compiled action catalog ``actions`` and the compiled view catalog ``views`` (the published
+    ones when ``None``). Unlike the app,
     which lists only the actions a reader may run, the maintainer's view has every action, so
     the preview and ``check_names`` know every name."""
     name = graph_skill_name(entry.name)
@@ -148,8 +150,15 @@ def check_files(
     if actions is None:
         published = ctx.catalog.read_actions(entry.id)
         actions = published.compiled if published is not None and published.count else None
+    if views is None:
+        shown = ctx.catalog.read_views(entry.id)
+        views = shown.compiled if shown is not None and shown.count else None
     described = describe_model(
-        entry, model if model is not None else pinned_model(ctx.catalog, entry), functions, actions
+        entry,
+        model if model is not None else pinned_model(ctx.catalog, entry),
+        functions,
+        actions,
+        views,
     )
     graph = graph_block(entry)
     rendered, render_problems = render_checked(

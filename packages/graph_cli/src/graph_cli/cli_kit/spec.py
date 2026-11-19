@@ -134,9 +134,18 @@ def _click_type(param: ParamSpec) -> click.ParamType[Any]:
     return click.STRING
 
 
+class _Positional(click.Argument):
+    """A positional that shows in brackets in the usage line when it is not required (a custom
+    metavar would otherwise hide that); errors keep the plain name."""
+
+    def get_usage_pieces(self, ctx: click.Context) -> list[str]:
+        (piece,) = super().get_usage_pieces(ctx)
+        return [piece if self.required else f"[{piece}]"]
+
+
 def _click_param(param: ParamSpec, **extra: Any) -> click.Parameter:
     if param.positional:
-        return click.Argument(
+        return _Positional(
             [param.dest],
             required=param.required,
             nargs=-1 if param.repeatable else 1,

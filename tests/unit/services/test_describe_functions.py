@@ -106,6 +106,14 @@ def test_a_function_is_described_completely() -> None:
     assert (deprecated["status"], deprecated["replaced_by"]) == ("deprecated", "members_of_unit")
 
 
+def test_replaced_by_names_only_a_function_the_reader_sees() -> None:
+    visible = tuple(f for f in FUNCTIONS if f.name != "members_of_unit")
+    hidden = describe_function(ENTRY, MODEL, visible, "unit_members")["function"]
+    assert (hidden["status"], hidden["replaced_by"]) == ("deprecated", None)
+    shown = describe_function(ENTRY, MODEL, FUNCTIONS, "unit_members")["function"]
+    assert shown["replaced_by"] == "members_of_unit"
+
+
 def test_an_unknown_function_names_the_close_ones() -> None:
     with pytest.raises(GraphCliError) as info:
         describe_function(ENTRY, MODEL, FUNCTIONS, "member_of_unit")
