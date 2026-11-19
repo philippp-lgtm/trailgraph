@@ -133,7 +133,7 @@ def _single(data: bytes) -> bool:
 def query_hook(
     session: RemoteSession, spec: CommandSpec, state: CommandState, args: dict[str, JsonValue]
 ) -> Result:
-    from graph_cli.app_cli.commands.read import query_text
+    from graph_cli.app_cli.commands.read.query import query_text
     from graph_cli.app_cli.commands.read.shared import STDIN
 
     text, file = args.get("text"), args.get("--file")
