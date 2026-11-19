@@ -67,6 +67,11 @@ def _action_search(details: Mapping[str, JsonValue], program: str) -> str | None
     return f"{program} describe search <words> --kind action"
 
 
+def _view_search(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """Find a view by what it shows."""
+    return f"{program} describe search <words> --kind view"
+
+
 def _precondition(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A refused action: read its preconditions, then look at the dry run."""
     action = details.get("action")
@@ -371,7 +376,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "view.parameter_unknown": None,
     "view.parameter_invalid": None,
     "view.parameter_type": _lookup_class,
-    "view.not_found": None,
+    "view.not_found": _view_search,
     "view.takes_entity": None,
     "view.takes_no_entity": None,
     "view.class_mismatch": _lookup_class,

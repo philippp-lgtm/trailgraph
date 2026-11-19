@@ -223,6 +223,9 @@ def _affordances(section: Mapping[str, JsonValue]) -> list[str]:
     if section.get("functions"):
         more = f" (+{section['functions_more']})" if section.get("functions_more") else ""
         can.append(f"run {', '.join(_strs(section['functions']))}{more}")
+    if section.get("views"):
+        more = f" (+{section['views_more']})" if section.get("views_more") else ""
+        can.append(f"view --name {', '.join(_strs(section['views']))}{more}")
     parts = []
     if can:
         parts.append("can: " + "; ".join(can))

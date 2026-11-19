@@ -151,8 +151,8 @@ def test_modules_and_module_carry_actions_only_when_given() -> None:
     assert keys.index("actions") == keys.index("functions") + 1
 
 
-def test_action_is_the_last_search_kind() -> None:
-    assert SEARCH_TERM_KINDS[-2:] == ("function", "action")  # existing tie-breaks stay
+def test_action_comes_after_function_and_before_view_in_the_search_kinds() -> None:
+    assert SEARCH_TERM_KINDS[-3:] == ("function", "action", "view")  # existing tie-breaks stay
 
 
 def test_name_and_summary_tiers() -> None:

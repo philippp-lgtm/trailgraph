@@ -1185,7 +1185,7 @@
       "kind": "read",
       "surface": "model",
       "action": "read.describe",
-      "summary": "Search the ontology by text: types, relations, fields, enum values, states, functions, actions.",
+      "summary": "Search the model by text: types, relations, fields, enum values, states, functions, actions, views.",
       "args": [
         {
           "name": "text",
@@ -1209,7 +1209,8 @@
             "enum_value",
             "state",
             "function",
-            "action"
+            "action",
+            "view"
           ]
         },
         {
@@ -1259,6 +1260,10 @@
         {
           "command": "graph describe search <value> --kind action",
           "summary": "Only the actions that fit the words."
+        },
+        {
+          "command": "graph describe search <value> --kind view",
+          "summary": "Only the published views that fit the words."
         }
       ],
       "errors": [
@@ -1397,6 +1402,144 @@
         {
           "command": "graph describe types --module <module>",
           "summary": "Only the types of one module."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "term.unknown",
+        "usage.invalid_argument"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "view"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "Describe one view: what it takes, its parameters and sections and how to call it.",
+      "args": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "repeatable": false,
+          "summary": "The view name."
+        }
+      ],
+      "options": [
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe view <view>",
+          "summary": "Everything about one view."
+        },
+        {
+          "command": "graph describe view <view> --json",
+          "summary": "The view as graph_cli.model/1."
+        }
+      ],
+      "errors": [
+        "access.denied",
+        "access.project_mismatch",
+        "backend.unavailable",
+        "config.forbidden_key",
+        "config.invalid",
+        "graph.not_found",
+        "graph.not_in_project",
+        "graph.not_selected",
+        "internal.error",
+        "ontology.artifact_missing",
+        "remote.client_outdated",
+        "remote.protocol",
+        "remote.unauthorized",
+        "remote.unreachable",
+        "usage.invalid_argument",
+        "view.not_found"
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "limits": {},
+      "remote": "server"
+    },
+    {
+      "path": [
+        "describe",
+        "views"
+      ],
+      "kind": "read",
+      "surface": "model",
+      "action": "read.describe",
+      "summary": "List the published views of the graph with their parameters.",
+      "args": [],
+      "options": [
+        {
+          "name": "--module",
+          "type": "string",
+          "required": false,
+          "repeatable": false,
+          "summary": "Only the terms of this module (id or prefix); see describe modules."
+        },
+        {
+          "name": "--include-deprecated",
+          "type": "flag",
+          "required": false,
+          "repeatable": false,
+          "summary": "Also list deprecated views."
+        },
+        {
+          "name": "--graph",
+          "type": "graph_ref",
+          "required": false,
+          "repeatable": false,
+          "summary": "Graph name or id; else GRAPH_CLI_GRAPH or the pointer default."
+        }
+      ],
+      "examples": [
+        {
+          "command": "graph describe views",
+          "summary": "The views: name, parameters, what they take, summary."
+        },
+        {
+          "command": "graph describe views --module <module> --include-deprecated",
+          "summary": "One module's views, deprecated ones too."
         }
       ],
       "errors": [

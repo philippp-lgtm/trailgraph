@@ -326,7 +326,7 @@ Usage: `graph describe schema [OPTIONS]`
 
 ## graph describe search
 
-Search the ontology by text: types, relations, fields, enum values, states, functions, actions.
+Search the model by text: types, relations, fields, enum values, states, functions, actions, views.
 
 Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
 
@@ -338,7 +338,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 
 | Option | Type | Required | Repeatable | Summary |
 |---|---|---|---|---|
-| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`. |
+| `--kind` | choice | no | yes | Only this kind of term. One of `type`, `relation`, `attribute`, `enum_value`, `state`, `function`, `action`, `view`. |
 | `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
 | `--limit` | integer | no | no | Page size, at most 500. Default: `50`. |
 | `--offset` | integer | no | no | Skip this many results. Default: `0`. |
@@ -354,6 +354,7 @@ Usage: `graph describe search TEXT [OPTIONS]`
 | `graph describe search <value> --kind attribute --module <module> --json` | Only fields, only in one module. |
 | `graph describe search <value> --kind function` | Only the named functions that fit the words. |
 | `graph describe search <value> --kind action` | Only the actions that fit the words. |
+| `graph describe search <value> --kind view` | Only the published views that fit the words. |
 
 ## graph describe type
 
@@ -394,6 +395,46 @@ Usage: `graph describe types [OPTIONS]`
 | `graph describe types` | All types with summaries. |
 | `graph describe types --graph <graph> --json` | Types of one graph. |
 | `graph describe types --module <module>` | Only the types of one module. |
+
+## graph describe view
+
+Describe one view: what it takes, its parameters and sections and how to call it.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe view NAME [OPTIONS]`
+
+| Argument | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `name` | string | yes | no | The view name. |
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe view <view>` | Everything about one view. |
+| `graph describe view <view> --json` | The view as graph_cli.model/1. |
+
+## graph describe views
+
+List the published views of the graph with their parameters.
+
+Kind: read. Surface: model. Action: `read.describe`. Exit codes: 0, 1, 2, 3, 5, 6.
+
+Usage: `graph describe views [OPTIONS]`
+
+| Option | Type | Required | Repeatable | Summary |
+|---|---|---|---|---|
+| `--module` | string | no | no | Only the terms of this module (id or prefix); see describe modules. |
+| `--include-deprecated` | flag | no | no | Also list deprecated views. |
+| `--graph` | graph_ref | no | no | Graph name or id; else GRAPH_CLI_GRAPH or the pointer default. |
+
+| Example | Summary |
+|---|---|
+| `graph describe views` | The views: name, parameters, what they take, summary. |
+| `graph describe views --module <module> --include-deprecated` | One module's views, deprecated ones too. |
 
 ## graph do
 

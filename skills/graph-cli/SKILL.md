@@ -3,7 +3,7 @@ name: graph-cli
 description: "Read and write a typed knowledge graph through its command-line tool: find, inspect and traverse entities, record new facts, update or correct them and move them through their lifecycle, all validated against the graph's ontology and audited. Use when the user asks what is known about something, wants knowledge recorded or changed in a graph, or wants to explore how things relate. Do not use for creating graphs, changing ontologies or schemas, migrations, archiving, or editing store files directly."
 metadata:
   generator: "graph_cli.skills/1"
-  inventory_hash: "sha256:185e7066010583be802d91e650609733b65d8d739bc907a2f526aea634d4488b"
+  inventory_hash: "sha256:3bde3c3baed3514df5010d4aed4058a574c70afd0f93778d1e79f4a90675cf96"
   inventory_schema: "graph_cli.inventory/1"
   program: "graph"
   program_version: "0.27.0"
@@ -179,9 +179,11 @@ Every `--json` call prints one JSON object on stdout.
 | `graph describe modules` | read | List the modules (subject areas) of the graph's ontology and how they link. |
 | `graph describe relations` | read | List the relations of the selected graph's ontology. |
 | `graph describe schema` | read | Show the model as graph query sees it: labels, relationship patterns, properties. |
-| `graph describe search` | read | Search the ontology by text: types, relations, fields, enum values, states, functions, actions. |
+| `graph describe search` | read | Search the model by text: types, relations, fields, enum values, states, functions, actions, views. |
 | `graph describe type` | read | Describe one type: fields, lifecycles, relations and rules. |
 | `graph describe types` | read | List the types of the selected graph's ontology. |
+| `graph describe view` | read | Describe one view: what it takes, its parameters and sections and how to call it. |
+| `graph describe views` | read | List the published views of the graph with their parameters. |
 | `graph do` | write | Run a named action of the graph: a reviewed write with typed parameters. |
 | `graph file add` | write | Store a file as a files:File entity; known content is not stored twice. |
 | `graph file check` | read | Compare the origins of stored files with their content: same, changed, missing. |

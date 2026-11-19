@@ -118,7 +118,8 @@ with `graph_cli.skills.install`, whose scan sees only one owner's skills
 and `neighbors` flags into the query AST, `graph_cli.query.lookup` plans,
 matches and ranks `lookup`, `graph_cli.query.search` the same for `search`
 (match keys and trigrams in `kernel.text`); `services.read` and `services.describe` answer
-them; `services.schema_search` ranks the terms of the model for `describe search` (no graph data).
+them; `services.schema_search` ranks the terms of the model and the functions, actions and views
+the caller may see for `describe search` (no graph data).
 `graph_cli.query.cypher` holds the read-only Cypher subset: `lexer`
 and `parser` (hand-written recursive descent) produce the syntax tree of
 `ast`, `resolve` checks it against the model (names to CURIEs, fields,
@@ -227,7 +228,7 @@ kinds share the parameter grammar and binding (`kinetic.params`).
 | `kinetic.action_compile` | `compile_actions` checks the action files of a graph against a compiled ontology (names, parameters, ops, that the template assembles into a change set, preconditions, limits) and writes the catalog document `graph_cli.action_catalog/1` with the compiled ops, preconditions, `touches` and the `write.*` pairs the ops need; `check_actions` runs the same checks over a published catalog against another model |
 | `kinetic.action_entries` | the entries of a published action catalog as the app shows them: the summary and detail documents, `find_action` |
 | `kinetic.action_needs` | `action_needs`: what an action's ops need on concrete types against a model, with the attributes and relations they write (declared classes expanded to their non-abstract subtypes, any of which meets a need); pure, no policy |
-| `kinetic.affordances` | which published actions and functions take a given entity as a parameter, judged from the entries the actor may see, for `get --affordances` (`actions_for`, `functions_for`; pure) |
+| `kinetic.affordances` | which published actions and functions take a given entity as a parameter, and which other entity views take its class, judged from the entries the actor may see, for `get --affordances` and the card (`actions_for`, `functions_for`, `views_for`; pure) |
 | `kinetic.card` | the entity card of `graph view`, generated or authored: a `ViewSpec` derived from the ontology (`generated_spec`) or from a published entity view (`spec_of`, with `where` and `order` planned by `query.plan` for the bound parameters), `render` over a `Snapshot` and the reader's model into a `ViewModel` (`fields`, `relations`, `files`, `affordances`, `neighbors`, `rows` and, for set views, `list` sections, bounded loads, a byte limit with a deterministic trim that works section by section in a fixed order; pure, nothing stored) |
 | `kinetic.view_rows` | the row builder of views: an entity as a lean row (reference, label, requested attributes, per-row neighbour lists with their own `where`, `order` and `max`), read through the reader's `Snapshot` under a shared budget of loads; the result type of a `rows` section |
 | `kinetic.view_page` | one page of a set view: `render_set` fills a page with whole rows in section order (type listings read through the reader's `Snapshot` with the `find` order, rows of published functions) up to a byte limit and a budget of loads, `Cursor` (`v1.<seq>.<section>.<offset>.<key>`) with `cursor_key`, `decode_cursor` and the stale and invalid checks; pure, same input and same bytes |

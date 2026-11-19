@@ -153,6 +153,13 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         ("describe", "action", "move_item"),
         ("describe", "action", "no_such_action"),
         ("describe", "search", "location", "--kind", "action"),
+        ("describe", "views"),
+        ("describe", "views", "--include-deprecated", "--module", "inventory"),
+        ("describe", "views", "--module", "no_such_module"),
+        ("describe", "view", "location_overview"),
+        ("describe", "view", "items_in_location"),
+        ("describe", "view", "no_such_view"),
+        ("describe", "search", "location", "--kind", "view"),
     ):
         call(*args)
     text("describe", "types")
@@ -160,6 +167,8 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
     text("describe", "function", "items_in_location")
     text("describe", "actions")
     text("describe", "action", "move_item")
+    text("describe", "views")
+    text("describe", "view", "location_overview")
     text("describe", "modules")
     entity = create(cls, "x")
     attr = next(n for n, v in factory.attrs(cls).items() if isinstance(v, str))
@@ -243,6 +252,7 @@ def scenario(run: Run, roles: Roles, factory: OpsFactory, cwd: Path) -> list[Any
         call("run", "items_by_condition", "--param", "condition=damaged")
         call("run", "items_by_condition", "--param", "condition=mint")
         text("run", "items_in_location", "--param", f"location={place}")
+        call("get", place, "--affordances")  # names the views of the class that are not the default
         call("view", place)  # the default view of the class
         call("view", place, "--name", "card")
         call("view", place, "--name", "location_overview")

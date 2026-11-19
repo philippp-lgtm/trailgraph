@@ -900,7 +900,8 @@ def affordance_summary(
     ``transitions`` has one entry per lifecycle attribute: the states it may move to and the
     states it may not, each with the ids of the guards that fail (never the prose); ``actions``
     the names that apply and how many are blocked; ``functions`` the names. What is cut is
-    counted (``actions_more``, ``functions_more``, ``transitions_more``).
+    counted (``actions_more``, ``functions_more``, ``transitions_more``, ``views_more``). ``views``
+    names the other entity views of the entity's class (present only when there are any).
     """
     limit = (spec or AffordancesSpec()).max_names
     found: Json = {}
@@ -969,6 +970,16 @@ def affordance_summary(
     more = max(0, len(functions) - limit) + _count(affordances.get("functions_more"))
     if more:
         found["functions_more"] = more
+    views: list[JsonValue] = []
+    for raw in _list(affordances.get("views")):
+        name = _mapping(raw).get("view")
+        if isinstance(name, str) and name not in views:
+            views.append(name)
+    if views:
+        found["views"] = views[:limit]
+    more = max(0, len(views) - limit) + _count(affordances.get("views_more"))
+    if more:
+        found["views_more"] = more
     return found
 
 

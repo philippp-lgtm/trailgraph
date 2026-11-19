@@ -490,3 +490,118 @@ def test_a_deprecated_function_never_names_a_replacement_the_caller_cannot_see(
     view_note = warned("view", "--name", "old_rows")
     assert view_note["details"]["replaced_by"] is None
     assert "employee_mail" not in json.dumps(view_note)
+    described = ok(run_cli, "describe", "function", "old_mail").data["function"]
+    assert described["status"] == "deprecated" and described["replaced_by"] is None
+    install(run_cli, world, HOLDER)
+    assert ok(run_cli, "describe", "function", "old_mail").data["function"]["replaced_by"] == (
+        "employee_mail"
+    )
+
+
+# ---- discovery: describe, search and the affordance --------------------------------------------
+
+
+def listed(run_cli: CliRunner, env: dict[str, str] | None = None) -> list[str]:
+    return [v["name"] for v in ok(run_cli, "describe", "views", env=env).data["views"]]
+
+
+def test_describe_views_lists_what_the_caller_can_call_and_nothing_else(
+    run_cli: CliRunner, world: Path
+) -> None:
+    install(run_cli, world, HOLDER)
+    everything = sorted(set(VIEWS) - {"old_staff"})
+    assert listed(run_cli) == everything
+    install(run_cli, world, READER)
+    assert listed(run_cli) == [n for n in everything if n not in HIDDEN_FROM_READER]
+    assert listed(run_cli) == sorted(  # the same set `graph view --name` finds
+        n for n in named(run_cli, *VIEWS) if n != "old_staff"
+    )
+    text = run_cli("graph", "describe", "views", env=ENV).stdout
+    assert [n for n in HIDDEN_FROM_READER if n in text] == []
+    install(run_cli, world, READS_PEOPLE)  # no crews: the views that name them go
+    assert not {"crew_overview", "colleague_crew"} & set(listed(run_cli))
+
+
+def test_a_hidden_view_cannot_be_described_and_is_not_suggested(
+    run_cli: CliRunner, world: Path
+) -> None:
+    install(run_cli, world, READER)
+    asked = shown(app(run_cli, "describe", "view", "pay_roll", env=ENV))
+    absent = shown(app(run_cli, "describe", "view", "pay_rolls", env=ENV))
+    assert asked["error"]["code"] == "view.not_found"
+    the_same_but_for(
+        without_suggestions(asked), without_suggestions(absent), ("pay_roll", "pay_rolls")
+    )
+    assert "employee_overview" not in json.dumps(asked["error"])
+    visible = ok(run_cli, "describe", "view", "staff_catalog").data["view"]
+    assert visible["takes"] is None and visible["touches"]["functions"] == []
+    install(run_cli, world, HOLDER)
+    assert ok(run_cli, "describe", "view", "pay_roll").data["view"]["name"] == "pay_roll"
+
+
+def test_search_never_finds_a_hidden_view_by_any_of_its_words(
+    run_cli: CliRunner, world: Path
+) -> None:
+    install(run_cli, world, READER)
+
+    def found(text: str) -> list[str]:
+        items = ok(run_cli, "describe", "search", text, "--kind", "view").data["items"]
+        return [i["curie"] for i in items]
+
+    for text in (
+        "pay roll",
+        "pay_roll",
+        "salary of every employee",
+        "pay of every employee",
+        "private mail rows",
+        "employee mail",
+        "employee overview",
+        "e-mail of a colleague",
+    ):
+        assert not set(found(text)) & set(HIDDEN_FROM_READER), text
+    assert "colleague_mail" in found("e-mail of a colleague")
+    everything = json.dumps(ok(run_cli, "describe", "search", "employee").data)
+    assert [n for n in HIDDEN_FROM_READER if f'"{n}"' in everything] == []
+    install(run_cli, world, HOLDER)
+    assert "pay_roll" in found("pay of every employee")
+    assert "mail_rows" in found("private mail rows")
+
+
+def test_the_affordance_names_the_other_views_the_caller_sees(
+    run_cli: CliRunner, world: Path
+) -> None:
+    def affordance(ref: str) -> list[str]:
+        found = ok(run_cli, "get", ref, "--affordances").data["affordances"]
+        return [v["view"] for v in found.get("views", [])]
+
+    install(run_cli, world, HOLDER)
+    # an employee: the default of its own class is what `view` shows; the default of the
+    # superclass is another view of it and is named
+    assert affordance("EMP-0001") == ["colleague_crew", "colleague_mail", "colleague_overview"]
+    install(run_cli, world, READER)
+    assert affordance("EMP-0001") == ["colleague_crew", "colleague_mail"]
+    assert affordance("CON-0001") == ["colleague_crew", "colleague_mail"]
+    assert affordance("BDG-0001") == []
+    card = ok(run_cli, "view", "EMP-0001", "--name", "card").data
+    section = next(s for s in card["sections"] if s["kind"] == "affordances")
+    assert section["views"] == ["colleague_crew", "colleague_mail"]
+    assert "employee_overview" not in json.dumps(card)
+    install(run_cli, world, READS_PEOPLE)  # the crews are gone, and the view that reads them
+    assert "colleague_crew" not in affordance("EMP-0001")
+
+
+def test_a_caller_without_read_function_or_read_find_is_not_told_about_those_views(
+    run_cli: CliRunner, world: Path
+) -> None:
+    install(run_cli, world, NO_EXPLORE % ("functions", "read.function"))
+    explore = {**EXPLORE}
+    assert "names_rows" in listed(run_cli) and "names_rows" not in listed(run_cli, explore)
+    assert "staff_catalog" in listed(run_cli, explore)
+    asked = app(run_cli, "describe", "view", "names_rows", env=explore)
+    assert (asked.code, asked.error["code"]) == (1, "view.not_found")
+    install(run_cli, world, NO_EXPLORE % ("find", "read.find"))
+    without_find = listed(run_cli, explore)
+    assert "staff_catalog" not in without_find and "pay_roll" not in without_find
+    assert "colleague_mail" in without_find  # entity views need read.get only
+    hits = ok(run_cli, "describe", "search", "staff", "--kind", "view", env=explore).data["items"]
+    assert [i["curie"] for i in hits] == []

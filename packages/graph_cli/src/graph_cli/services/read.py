@@ -90,7 +90,7 @@ from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
-from graph_cli.kinetic.affordances import actions_for, functions_for
+from graph_cli.kinetic.affordances import actions_for, functions_for, views_for
 from graph_cli.kinetic.bind import bind_cli
 from graph_cli.kinetic.card import (
     AffordancesSpec,
@@ -1402,7 +1402,11 @@ class ReadService:
                 view.snapshot,
                 view.model,
                 language=view.entry.language,
-                affordances=self._affordances(view, entity[1], room=False) if wants else None,
+                affordances=(
+                    self._affordances(view, entity[1], room=False, showing=chosen)
+                    if wants
+                    else None
+                ),
                 superseded_by=entity[3],
                 retracted_by=entity[4],
                 file_classes=self._file_classes(view),
@@ -1555,10 +1559,17 @@ class ReadService:
         return file_classes_of(stored) & frozenset(view.model.classes)
 
     def _affordances(
-        self, view: GraphRead, current: Revision, *, room: bool = True
+        self,
+        view: GraphRead,
+        current: Revision,
+        *,
+        room: bool = True,
+        showing: ViewEntry | None = None,
     ) -> dict[str, JsonValue]:
         """The ``affordances`` object of ``get``: the four groups, composed here because
-        only the service knows which actions and functions the actor may see. Without ``room``
+        only the service knows which actions and functions the actor may see, and the entity
+        views that take the entity (key ``views``, only when there are any, without the default
+        view of its class and ``showing``, the view being shown). Without ``room``
         the relation group is left out: it reads every in-edge source of the entity, and the
         card (which shows counts of its own) never uses it."""
         found: dict[str, JsonValue] = {"record_status": current.record_status}
@@ -1569,6 +1580,11 @@ class ReadService:
         found.update(actions_for(current, actions, view.snapshot, view.model).to_json())
         functions = self.functions(view.actor, view.entry) or ()
         found.update(functions_for(current, functions, view.model).to_json())
+        views = self._visible_views(view.actor, view.entry, view.read_view)
+        if views:  # absent for a graph without (visible) views, so its answers do not change
+            shown = [default_view(views, view.model, str(current.type)), showing]
+            others = [v for v in shown if v is not None]
+            found.update(views_for(current, views, view.model, others).to_json())
         return found
 
     @_query
