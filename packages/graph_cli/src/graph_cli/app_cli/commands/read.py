@@ -915,7 +915,7 @@ HISTORY_OUTPUT: Final = obj(
                 {
                     "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
                     "source": SOURCE,  # set by a document that names its source run
-                    # the revision a migration wrote (services.read._migration_item)
+                    # a migration tx wrote it (services.read.migration_effects.migration_item)
                     "migration": obj(
                         {
                             "from": NULLABLE_STRING,
@@ -966,7 +966,7 @@ CHANGES_OUTPUT: Final = obj(
                 {
                     "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
                     "source": SOURCE,  # set by a document that names its source run
-                    "migration": obj(  # a migration tx (services.read._feed_migration)
+                    "migration": obj(  # a migration tx (services.read.change_feed._feed_migration)
                         {"from": NULLABLE_STRING, "to": NULLABLE_STRING}, {"summary": STRING}
                     ),
                     "partial": BOOLEAN,  # true: the tx goes on on the next page
