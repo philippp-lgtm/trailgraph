@@ -28,6 +28,10 @@ the lowered preconditions, ``touches``, ``needs`` (the ``write.*`` action and
 type pairs the ops are authorized as) and the hash. ``check_actions`` is the
 release invariant: it compiles the stored sources against another model, and
 the stored normalized form must still compile (``action.stale``).
+
+The slot typing of check 3, the conditions of check 5 and the template of
+check 4 are in ``action_slots``, ``action_conditions`` and ``action_template``;
+they report to the ``CheckContext`` of ``action_context``.
 """
 
 from __future__ import annotations
@@ -38,16 +42,14 @@ from dataclasses import dataclass, replace
 from typing import Final
 
 from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
-from graph_cli.kernel.changeset import OP_ACTIONS, parse_changeset
+from graph_cli.kernel.changeset import OP_ACTIONS
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
 from graph_cli.kinetic.action_conditions import ConditionCheck
 from graph_cli.kinetic.action_context import CheckContext
 from graph_cli.kinetic.action_format import (
-    ABSENT,
     CATALOG_SCHEMA,
     PLACEHOLDER_RE,
-    Absent,
     ActionDef,
     OpScan,
     PreconditionDef,
@@ -56,18 +58,14 @@ from graph_cli.kinetic.action_format import (
     load_action,
     path_text,
     scan_op,
-    substitute,
 )
 from graph_cli.kinetic.action_slots import SlotChecks
-from graph_cli.kinetic.bind import placeholder
+from graph_cli.kinetic.action_template import TemplateCheck
 from graph_cli.kinetic.compile import resolve_module
 from graph_cli.kinetic.params import (
     PARAM_RE,
-    ParamDef,
     Problem,
     bind_json,
-    json_value,
-    text_value,
 )
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.expressions import (
@@ -82,10 +80,6 @@ from graph_cli.query.plan import resolve_term
 MAX_ACTIONS: Final = 1000
 MAX_OPS: Final = 50
 MAX_PRECONDITIONS: Final = 10
-
-# Placeholders for the entity ids and the edge id a template is assembled with.
-_FAKE_ENTITY: Final = "00000000-0000-7000-8000-000000000001"
-_FAKE_EDGE: Final = "00000000-0000-7000-8000-0000000000e1"
 
 _ENTITY_ROLES: Final = ("entity", "entities")
 
@@ -244,6 +238,7 @@ class _Compile:
         self.stored_form = stored_form  # compiling the normalized form: the checks of 3 to 5
         self.ctx = CheckContext(defn, model)
         self.slots = SlotChecks(self.ctx)
+        self.template = TemplateCheck(self.ctx)
         self.used: set[str] = set()
         self.reported: set[str] = set()  # undeclared parameters already reported
         self.locals: dict[str, str] = {}  # local name -> create type (CURIE)
@@ -268,7 +263,7 @@ class _Compile:
         preconditions = self.preconditions()
         self.unused()
         if not self.problems:
-            self.assemble(ops)
+            self.template.assemble(ops)
         if self.problems:
             return None
         return self.entry(module, ops, preconditions)
@@ -780,49 +775,6 @@ class _Compile:
                 "it takes one string",
                 parameter=param.name,
             )
-
-    # Template
-
-    def assemble(self, ops: Sequence[Mapping[str, JsonValue]]) -> None:
-        """The ops with typed placeholder values must form a document ``parse_changeset``
-        accepts; also with every optional parameter absent."""
-        self.assembled(ops, absent=False)
-        if any(p.optional for p in self.defn.params):
-            self.assembled(ops, absent=True)
-
-    def assembled(self, ops: Sequence[Mapping[str, JsonValue]], *, absent: bool) -> None:
-        def value_of(use: Use) -> JsonValue | Absent:
-            param = self.ctx.declared[use.name]
-            if absent and param.optional:
-                return ABSENT
-            return self.sample(param, use)
-
-        built: list[JsonValue] = []
-        for index, op in enumerate(ops):
-            scan = scan_op(op, index)
-            instance = substitute(op, scan.uses, value_of)
-            if is_dynamic_unlink(instance):
-                instance = {"op": "unlink", "id": instance["id"], "edge_id": _FAKE_EDGE}
-            built.append(instance)
-        try:
-            parse_changeset({"ops": built})
-        except GraphCliError as exc:
-            path = exc.details.get("path")
-            prefix = "with every optional parameter absent: " if absent else ""
-            self.ctx.add(
-                "action.template_invalid",
-                path if isinstance(path, str) else None,
-                f"{prefix}{exc.message}",
-                error=exc.code,
-            )
-
-    def sample(self, param: ParamDef, use: Use) -> JsonValue:
-        if param.type == "ref":
-            return [_FAKE_ENTITY] if param.many else _FAKE_ENTITY
-        value = placeholder(param, self.model)
-        if use.text:
-            return [text_value(v) for v in value] if isinstance(value, list) else text_value(value)
-        return json_value(value)
 
     # Preconditions
 
