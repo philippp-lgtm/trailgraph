@@ -931,7 +931,8 @@ HISTORY_OUTPUT: Final = obj(
         ),
     }
 )
-# services.read.change_page: the answer of ``graph changes`` (change feed plan section 4)
+# services.read.change_feed.change_page: the answer of ``graph changes`` (change feed plan
+# section 4)
 CHANGES_OUTPUT: Final = obj(
     {
         "since": STRING,
@@ -1003,7 +1004,7 @@ LOOKUP_OUTPUT: Final = obj(
         "texts": array(
             obj({"text": STRING, "total": INTEGER, "exact": INTEGER, "excluded": INTEGER})
         ),
-        "fit": nullable(  # --for, --for-source: services.read.ReadService.lookup
+        "fit": nullable(  # --for, --for-source: services.read.finding
             obj({"for": NULLABLE_STRING, "for_source": NULLABLE_STRING, "types": nullable(STRINGS)})
         ),
     }

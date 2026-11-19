@@ -29,6 +29,13 @@ The command's timings get the phases ``authorize``, ``audit`` (a denial),
 Cypher ``query`` has ``parse``, ``resolve`` and ``execute`` instead.
 The Cypher engine is imported by ``parse_query`` and ``query`` only: every
 other command starts without it.
+
+The code is split by concern, each in its own module, and ``ReadService`` (in ``service``)
+is the composition of them: ``state`` holds what they share, ``access`` the authorization,
+``catalogs`` the published functions, actions and views, and ``opening``, ``entities``,
+``finding``, ``history``, ``queries``, ``views``, ``skills`` and ``installation`` the reads.
+The modules import each other by their own paths, never this package; this file only
+re-exports the public names.
 """
 
 from __future__ import annotations
@@ -36,15 +43,10 @@ from __future__ import annotations
 from graph_cli.services.read.access import denial_error
 from graph_cli.services.read.change_feed import change_page
 from graph_cli.services.read.entities import refuse_affordances_with_rev
-from graph_cli.services.read.finding import ReadFinding
 from graph_cli.services.read.graph_read import ActionCatalog, GraphRead, Page, graph_json
-from graph_cli.services.read.history import ReadHistory
-from graph_cli.services.read.installation import ReadInstallation
 from graph_cli.services.read.json_shapes import edge_json, entity_json
-from graph_cli.services.read.opening import ReadOpen
 from graph_cli.services.read.queries import QuerySpec
-from graph_cli.services.read.skills import ReadSkills
-from graph_cli.services.read.views import ReadViews
+from graph_cli.services.read.service import ReadService
 
 __all__ = [
     "ActionCatalog",
@@ -59,7 +61,3 @@ __all__ = [
     "graph_json",
     "refuse_affordances_with_rev",
 ]
-
-
-class ReadService(ReadViews, ReadFinding, ReadHistory, ReadOpen, ReadSkills, ReadInstallation):
-    pass

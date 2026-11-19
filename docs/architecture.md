@@ -29,8 +29,6 @@ Dependencies point down only. Enforced by import-linter
 | --- | --- |
 | CLI | `app_cli` |
 | Skill generators | `skills` |
-| `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
-| `views` | `ReadViews`: `view` (the generated card of an entity, an authored entity view, or a set view) and what it builds from the reader's own snapshot and model |
 | CLI infrastructure | `cli_kit` |
 | Registry and wiring | `catalog` |
 | Extensions | `extensions` |
@@ -140,21 +138,24 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 
 | Module | Holds |
 | --- | --- |
-| `__init__` | the docstring, the public names and the concerns of `ReadService` that are not yet in a module of their own |
+| `__init__` | the docstring (the contract of all reads) and the public names, re-exported |
+| `service` | `ReadService`: the concerns below composed into one class (no body of its own) |
 | `state` | `ReadState`: the collaborators and caches every concern shares (the only `__init__`), and `query_phase`, the wrapper of reads answered from a snapshot |
 | `access` | `ReadAccess`: the authorization of a read, a caller's read view and visible types, the refusal of what is hidden and the audit of a denial; `denial_error` (also used by `services.write` and `services.file_metadata`) |
 | `catalogs` | `ReadCatalogs`: the published functions, actions and views of a graph as an actor may see them (hidden and stale entries, the needs and problems of actions) |
-| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json`, and `ActionCatalog` (a graph's parsed action catalog, which `state` caches) |
-| `json_shapes` | how reads show entities, edges and query values as JSON |
-| `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
-| `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
+| `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
 | `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
-| `queries` | `ReadQueries`: parsing a Cypher query before the graph is opened, running it over a snapshot, and running a named function; `QuerySpec`; the Cypher parser, resolver and executor are imported inside its methods |
+| `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
+| `installation` | `ReadInstallation`: the reads that name no graph: `graphs` (the graphs a caller may see) and `whoami` (the caller's grants, read limits and visible types) |
 | `entities` | `ReadEntities`: `get` and `neighbors`, and the actions, functions and views a reader may use next with an entity (`--affordances`); `current_entity`, the revision a ref names |
 | `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |
 | `history` | `ReadHistory`: `history` (one entity's revisions) and `changes` (the change feed of a graph) |
-| `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
-| `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
+| `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
+| `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
+| `queries` | `ReadQueries`: parsing a Cypher query before the graph is opened, running it over a snapshot, and running a named function; `QuerySpec`; the Cypher parser, resolver and executor are imported inside its methods |
+| `views` | `ReadViews`: `view` (the generated card of an entity, an authored entity view, or a set view) and what it builds from the reader's own snapshot and model |
+| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json`, and `ActionCatalog` (a graph's parsed action catalog, which `state` caches) |
+| `json_shapes` | how reads show entities, edges and query values as JSON |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
