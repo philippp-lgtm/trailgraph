@@ -152,6 +152,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `finding` | `ReadFinding`: `find`, `lookup` and `search`, and how a lookup fits the functions the caller may run (`_use_fit`, `_parameter_fit`) |
 | `history` | `ReadHistory`: `history` (one entity's revisions) and `changes` (the change feed of a graph) |
 | `opening` | `ReadOpen`: `open` (the graph's model and one snapshot, the head or the state `--as-of` names, behind the read limits of the caller) and `rename_hint` (the current name of an old term a refused write names) |
+| `skills` | `ReadSkills`: the published skill of a graph and the inputs a generated skill is rendered with (model documents, names, digest) |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root

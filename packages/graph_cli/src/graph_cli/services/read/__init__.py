@@ -53,13 +53,11 @@ from graph_cli.access_control.terms import TermModel
 from graph_cli.kernel.actions import READ_ACTIONS, RESERVED_ACTIONS, WRITE_ACTIONS
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext
-from graph_cli.kernel.canonical import JsonObject, JsonValue
+from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError, WarningRecord
 from graph_cli.kernel.ids import EntityId
-from graph_cli.kernel.json_access import req_list
-from graph_cli.kernel.ports.catalog import GraphEntry, SkillSlot
+from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.policy import PolicySet
-from graph_cli.kernel.read_view import UNLIMITED, ReadView
 from graph_cli.kernel.records import RequestMeta, Revision
 from graph_cli.kinetic import params as kinetic_params
 from graph_cli.kinetic.card import AffordancesSpec, file_classes_of, generated_spec, render, spec_of
@@ -69,9 +67,7 @@ from graph_cli.kinetic.view_entries import ViewEntry, find_view
 from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
 from graph_cli.kinetic.view_page import decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
-from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.query.cypher.values import Value
-from graph_cli.services.describe import describe_model
 from graph_cli.services.read.access import denial_error
 from graph_cli.services.read.catalogs import ActionCatalog
 from graph_cli.services.read.change_feed import change_page
@@ -92,6 +88,7 @@ from graph_cli.services.read.json_shapes import (
 )
 from graph_cli.services.read.opening import ReadOpen
 from graph_cli.services.read.queries import QuerySpec, ReadQueries
+from graph_cli.services.read.skills import ReadSkills
 from graph_cli.services.read.state import query_phase
 from graph_cli.services.refs import entity_params
 from graph_cli.services.term_model import term_model
@@ -122,123 +119,8 @@ _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no p
 MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
 
 
-class ReadService(ReadQueries, ReadEntities, ReadFinding, ReadHistory, ReadOpen):
+class ReadService(ReadQueries, ReadEntities, ReadFinding, ReadHistory, ReadOpen, ReadSkills):
     # ---- reads ---------------------------------------------------------
-
-    def skill(
-        self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
-    ) -> SkillSlot | None:
-        """The graph's published skill (D15 Q1): a description of the graph, so
-        ``read.describe`` on ``graph:<id>``; ``None`` when none is published."""
-        self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
-        return self._catalog.read_skill(entry.id)
-
-    def skill_model(
-        self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
-    ) -> tuple[dict[str, JsonValue], tuple[WarningRecord, ...]]:
-        """The model documents a generated graph skill is rendered with: those of the
-        graph's current pin, as ``graph describe`` prints them (``read.describe``), plus the
-        compiled function catalog and the action catalog when the graph has them. Like the
-        type names, the function names and summaries are schema-level text, so the skill lists
-        them for every reader of the description (K10). Actions are different on purpose: a
-        skill block is a listing, so it holds only the actions the actor may run (actions plan
-        A6, as ``actions``); an actor who may run none gets the documents of a graph without
-        actions. The rest of the catalog document is kept as published, so the renderer sees
-        one shape. For an actor who sees only some types (type read limits plan V7) the
-        documents are those of its model view and hold the functions and actions that fit it,
-        so the skill names nothing the actor cannot see."""
-        self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
-        model, warnings = self._models.load_for_read(entry)
-        view = self.read_view(actor, entry)
-        if view.limited:
-            model = self._visibility.model(entry, model, view)
-        return self._skill_documents(actor, entry, model, view, limits=True), warnings
-
-    def skill_names_model(
-        self, actor: ActorContext, entry: GraphEntry, request: RequestMeta
-    ) -> dict[str, JsonValue] | None:
-        """The documents of ``skill_model`` as they are without the actor's read limits, to
-        check the curated text of a template against the full model (``skills.sources``): text
-        that names a hidden type is the maintainer's, and a problem about it would name the
-        type to the reader. ``None`` when the actor has no limit (``skill_model`` is the full
-        model then). The documents are used for the check only, never rendered."""
-        self.authorize(actor, "read.describe", f"graph:{entry.id}", request, entry)
-        if not self.read_view(actor, entry).limited:
-            return None
-        model, _ = self._models.load_for_read(entry)
-        return self._skill_documents(actor, entry, model, UNLIMITED, limits=False)
-
-    def skill_digest(self, actor: ActorContext, entry: GraphEntry) -> str | None:
-        """A digest of what the actor sees (``ReadView.digest``), recorded in the claim of an
-        installed graph skill so a policy change makes the copy stale; ``None`` for an actor
-        without a read limit, whose claims stay as they were. Without an attribute half it is
-        the digest of the visible types, as before markings existed."""
-        return self.read_view(actor, entry).digest
-
-    def _skill_documents(
-        self,
-        actor: ActorContext,
-        entry: GraphEntry,
-        model: CompiledModel,
-        view: ReadView,
-        *,
-        limits: bool,
-    ) -> dict[str, JsonValue]:
-        """``describe_model`` of ``model`` with the compiled function catalog (the functions
-        that fit a reader with ``view``) and the action catalog narrowed to the
-        actions ``actor`` may run (within its read limits when ``limits``)."""
-        found = self._published_slot(entry)
-        catalog: JsonObject | None = None
-        if found is not None and found[1].count:
-            document = found[1].compiled
-            if not view.limited:
-                catalog = document
-            else:
-                hidden = self._hidden_functions(entry, found, view)
-                kept = [
-                    e
-                    for e in req_list(document, "functions")
-                    if isinstance(e, dict) and e.get("name") not in hidden
-                ]
-                catalog = {**document, "functions": kept} if kept else None
-        actions = self._visible_catalog(actor, entry, limits=limits)
-        return describe_model(
-            entry, model, catalog, actions, self._views_catalog(actor, entry, view)
-        )
-
-    def _views_catalog(
-        self, actor: ActorContext, entry: GraphEntry, view: ReadView
-    ) -> JsonObject | None:
-        """The compiled view catalog narrowed to the views ``actor`` may see, as the published
-        document; ``None`` when there are none (a graph skill then has no views clause)."""
-        visible = self._visible_views(actor, entry, view)
-        found = self._published_views(entry)
-        if not visible or found is None:
-            return None
-        names = {v.name for v in visible}
-        document = found[1].compiled
-        kept = [
-            e for e in req_list(document, "views") if isinstance(e, dict) and e.get("name") in names
-        ]
-        return {**document, "views": kept}
-
-    def _visible_catalog(
-        self, actor: ActorContext, entry: GraphEntry, *, limits: bool = True
-    ) -> JsonObject | None:
-        """The compiled action catalog narrowed to the actions ``actor`` may see, as the
-        published document (same schema, entries as compiled); ``None`` when there are none."""
-        published = self.published_actions(entry)
-        if published is None:
-            return None
-        names = {a.name for a in self.visible_actions(actor, entry, published, limits=limits)}
-        if not names:
-            return None
-        kept = [
-            e
-            for e in req_list(published.compiled, "actions")
-            if isinstance(e, dict) and e.get("name") in names
-        ]
-        return {**published.compiled, "actions": kept}
 
     def graphs(
         self, actor: ActorContext, request: RequestMeta, *, allowed: Sequence[str] | None
