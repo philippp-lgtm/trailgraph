@@ -155,6 +155,7 @@ from graph_cli.services.view_call import (
     CARD,
     LazyRows,
     default_view,
+    has_default_for,
     page_key,
     rows_share,
 )
@@ -196,6 +197,17 @@ _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no p
 _VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
 MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
 ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
+
+
+def _seen_replacement(
+    function: FunctionEntry, visible: Sequence[FunctionEntry] | None
+) -> str | None:
+    """The function ``function`` was replaced by, only when the reader sees that one too: a
+    name the reader cannot see is not told in a deprecation warning."""
+    replaced = function.defn.replaced_by
+    if replaced is None or all(f.name != replaced for f in visible or ()):
+        return None
+    return replaced
 
 
 def refuse_affordances_with_rev() -> GraphCliError:
@@ -1212,15 +1224,34 @@ class ReadService:
             raise GraphCliError("usage.missing_argument", MISSING_REF)
         chosen: ViewEntry | None = None
         resolved: tuple[EntityId, Revision, list[WarningRecord], list[str], list[str]] | None = None
+        notes: list[WarningRecord] = []
         if name is not None and name != CARD:
             chosen = find_view(self._visible_views(view.actor, view.entry, view.read_view), name)
         elif name is None and ref is not None:
-            visible = self._visible_views(view.actor, view.entry, view.read_view)
-            if visible and any(v.defn.default for v in visible):
+            published = self._published_views(view.entry)
+            if published is not None and any(v.defn.default for v in published[0]):
                 resolved = _current_entity(view, ref)
-                chosen = default_view(visible, view.model, str(resolved[1].type))
+                found = str(resolved[1].type)
+                # judge what the reader sees only when some default fits the entity's class
+                if has_default_for(published[0], view.model, found):
+                    visible = self._visible_views(view.actor, view.entry, view.read_view)
+                    chosen = default_view(visible or (), view.model, found)
+                if chosen is not None:
+                    problem = self._stale_view(view.entry, published, chosen.name)
+                    if problem is not None:  # the card answers; asking by name refuses
+                        notes.append(
+                            WarningRecord(
+                                "view.default_stale",
+                                f"the default view {chosen.name} no longer fits the graph's "
+                                f"ontology ({problem.code}); the generated card is shown; "
+                                "tell the maintainer of this graph",
+                                {"view": chosen.name, "hash": chosen.hash, "cause": problem.code},
+                            )
+                        )
+                        chosen = None
         if chosen is None:
-            return self._card(view, ref, pairs, cursor, page_bytes, resolved)
+            data, warnings = self._card(view, ref, pairs, cursor, page_bytes, resolved)
+            return data, [*warnings, *notes]
         return self._authored_view(view, chosen, ref, pairs, cursor, page_bytes, as_of, resolved)
 
     def _card(
@@ -1238,9 +1269,9 @@ class ReadService:
         ``retracted_by`` are those of ``get``; the affordances are ``get --affordances`` summed
         up by names."""
         for option, given in (
-            ("--param", pairs),
-            ("--cursor", cursor),
-            ("--page-bytes", page_bytes),
+            ("--param", bool(pairs)),
+            ("--cursor", cursor is not None),
+            ("--page-bytes", page_bytes is not None),
         ):
             if given:
                 raise GraphCliError(
@@ -1438,10 +1469,11 @@ class ReadService:
         warn ``view.section_failed``; any other error ends the call. The warning comes with
         every page that runs the section. The function runs on the reader's snapshot and model
         within ``budget``, the section's share of what one call may spend."""
-        function = find_entry(self._visible_functions(view.entry, view.read_view), section.function)
+        visible = self._visible_functions(view.entry, view.read_view)
+        function = find_entry(visible, section.function)
         if function.deprecated and function.name not in deprecated:
             deprecated.add(function.name)
-            replaced = function.defn.replaced_by
+            replaced = _seen_replacement(function, visible)
             failures.append(
                 WarningRecord(
                     "view.function_deprecated",
@@ -2007,11 +2039,12 @@ class ReadService:
         normalized query text is parsed and resolved against the current pin: text that no
         longer does is ``function.stale``. The rows are paged and signalled like ``query``;
         the activity signal names the function, never a value."""
-        function = find_entry(self._visible_functions(view.entry, view.read_view), name)
+        visible = self._visible_functions(view.entry, view.read_view)
+        function = find_entry(visible, name)
         self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []
         if function.deprecated:
-            replaced = function.defn.replaced_by
+            replaced = _seen_replacement(function, visible)
             warnings.append(
                 WarningRecord(
                     "function.deprecated",

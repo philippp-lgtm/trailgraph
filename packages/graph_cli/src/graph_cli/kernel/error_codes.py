@@ -965,6 +965,12 @@ _BASE: Final[tuple[ErrorSpec, ...]] = (
     ErrorSpec("view.function_deprecated", _C.WARNING, False, "A view uses a deprecated function."),
     ErrorSpec("view.deprecated", _C.WARNING, False, "The view is deprecated."),
     ErrorSpec(
+        "view.default_stale",
+        _C.WARNING,
+        False,
+        "The default view of a class no longer fits the model; the generated card was shown.",
+    ),
+    ErrorSpec(
         "view.section_failed", _C.WARNING, False, "A section of a view could not be answered."
     ),
     ErrorSpec("temporal.as_of_read", _C.WARNING, False, "An earlier state was read."),

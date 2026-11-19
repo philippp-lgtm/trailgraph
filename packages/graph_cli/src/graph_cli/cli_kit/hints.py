@@ -377,6 +377,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "view.class_mismatch": _lookup_class,
     "view.function_deprecated": None,
     "view.deprecated": None,
+    "view.default_stale": None,
     "view.section_failed": None,
     "temporal.as_of_unsupported": None,
     "conflict.version_mismatch": _get,

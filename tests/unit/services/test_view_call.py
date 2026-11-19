@@ -14,6 +14,7 @@ from graph_cli.services.view_call import (
     ROWS_BUDGET,
     LazyRows,
     default_view,
+    has_default_for,
     page_key,
     rows_share,
 )
@@ -54,6 +55,17 @@ def test_the_default_view_is_that_of_the_nearest_class_on_the_chain() -> None:
     )["team_default"]
     assert default_view([unit, deeper], MODEL, "org:Team") is deeper  # the most specific class
     assert default_view([unit, deeper], MODEL, "org:Department") is unit
+
+
+def test_a_class_without_a_default_candidate_needs_no_judgement_of_the_views() -> None:
+    catalog = list(views.compiled_entries().values())
+    assert has_default_for(catalog, MODEL, "org:OrgUnit")
+    assert has_default_for(catalog, MODEL, "org:Team")  # a subclass of the class that has one
+    assert not has_default_for(catalog, MODEL, "org:Position")  # a view of it, but no default
+    assert not has_default_for(catalog, MODEL, "no:Such")
+    assert not has_default_for([], MODEL, "org:Team")
+    sets = [v for v in catalog if not v.entity]
+    assert not has_default_for(sets, MODEL, "org:OrgUnit")
 
 
 def test_a_deprecated_view_is_never_a_default() -> None:

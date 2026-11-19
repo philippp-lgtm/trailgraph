@@ -36,7 +36,7 @@ from graph_cli.cli_kit.output_schemas import (
     one_of,
     ref,
 )
-from graph_cli.cli_kit.runner import CommandState
+from graph_cli.cli_kit.runner import CommandState, missing_argument
 from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
@@ -55,7 +55,6 @@ from graph_cli.query.plan import (
 )
 from graph_cli.query.search import SearchSpec
 from graph_cli.services.read import (
-    MISSING_REF,
     GraphRead,
     QuerySpec,
     refuse_affordances_with_rev,
@@ -180,7 +179,7 @@ def view(
     point = _as_of(as_of)
     if ref is None and name is None:  # REF was required: the answer is what it was
         context(state).select(graph)  # a graph that is not there is reported first, as before
-        raise GraphCliError("usage.missing_argument", MISSING_REF)
+        raise missing_argument("ref")
     pairs = [split_assignment(text, "--param") for text in param]
     args: dict[str, JsonValue] = {}
     if ref is not None:  # only what was given: the request of ``graph view REF`` is as it was

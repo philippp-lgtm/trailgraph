@@ -20,9 +20,11 @@ from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
 from support.app import app
 from support.markings import (
+    FUNCTION,
     FUNCTION_SOURCES,
     HIDDEN_NAMES,
     HOLDER,
+    NAME_ONLY,
     PERSONAL_ONLY,
     READER,
     STAFF,
@@ -431,3 +433,60 @@ def test_a_stale_view_says_only_that_it_is_and_never_what_it_names(
     assert "salary" not in text and "pay" not in text.replace("payload", "")
     # the other views of the catalog are fine
     assert ok(run_cli, "view", "CON-0001", "--name", "colleague_overview").code == 0
+
+
+# ---- what a deprecation names ------------------------------------------------------------------
+
+
+def test_a_deprecated_function_never_names_a_replacement_the_caller_cannot_see(
+    run_cli: CliRunner, world: Path, tmp_path: Path
+) -> None:
+    """``old_mail`` (names only) is replaced by ``employee_mail``, which a reader without the
+    markings does not see: neither ``graph run`` nor a view that runs it names the replacement."""
+    functions = tmp_path / "functions_more"
+    functions.mkdir()
+    for name, text in FUNCTION_SOURCES.items():
+        (functions / name).write_text(text)
+    (functions / "old_mail.yaml").write_text(
+        FUNCTION.format(
+            name="old_mail",
+            summary="The old list of names.",
+            params="{}",
+            query="MATCH (e:Employee) RETURN e.name AS name ORDER BY name",
+            returns=NAME_ONLY,
+        )
+        + "status: deprecated\nreplaced_by: employee_mail\n"
+    )
+    views = tmp_path / "views_more"
+    views.mkdir()
+    for name, text in VIEWS.items():
+        (views / f"{name}.yaml").write_text(text)
+    (views / "old_rows.yaml").write_text(
+        HEAD % ("old_rows", "The old names.", "The rows of the deprecated function.")
+        + "sections:\n  - kind: rows\n    function: old_mail\n"
+    )
+    for kind, folder in (("functions", functions), ("views", views)):
+        published = admin(run_cli, "graph", kind, "publish", "example_graph", str(folder))
+        assert published.code == 0, published.envelope
+
+    def warned(*args: str) -> dict[str, Any]:
+        found = ok(run_cli, *args).envelope["warnings"]
+        [note] = [
+            w for w in found if w["code"] in ("function.deprecated", "view.function_deprecated")
+        ]
+        assert isinstance(note, dict)
+        return note
+
+    install(run_cli, world, HOLDER)
+    assert warned("run", "old_mail")["details"] == {
+        "name": "old_mail",
+        "replaced_by": "employee_mail",
+    }
+    assert warned("view", "--name", "old_rows")["details"]["replaced_by"] == "employee_mail"
+    install(run_cli, world, READER)
+    run_note = warned("run", "old_mail")
+    assert run_note["details"] == {"name": "old_mail", "replaced_by": None}
+    assert "employee_mail" not in json.dumps(run_note) and "use " not in run_note["message"]
+    view_note = warned("view", "--name", "old_rows")
+    assert view_note["details"]["replaced_by"] is None
+    assert "employee_mail" not in json.dumps(view_note)

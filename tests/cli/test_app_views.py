@@ -18,6 +18,7 @@ from harness import CliRunner
 from support.admin import Outcome, admin, init, write_documents
 from support.app import app, create_graph
 from support.fixtures import FIXTURES
+from support.views import stale_on_disk
 
 ENV = {"GRAPH_CLI_GRAPH": "example_graph"}
 PLAIN = {"GRAPH_CLI_GRAPH": "plain_graph"}
@@ -179,6 +180,47 @@ def test_the_options_of_a_set_view_are_refused_for_an_entity_view_and_the_card(
     assert plain.error["code"] == "usage.invalid_argument"
     unknown = app(run_cli, "view", shelf, "--name", "location_overview", "--param", "a=b", env=ENV)
     assert unknown.error["code"] == "view.parameter_unknown"
+
+
+def test_the_card_refuses_a_zero_or_empty_paging_option_like_any_other(
+    run_cli: CliRunner, root: Path
+) -> None:
+    item = ok(run_cli, "find", "--type", "inv:Item").data["items"][0]["alias"]
+    for env in (PLAIN, ENV):  # a graph without views, and an item whose class has no default
+        for options in (["--page-bytes", "0"], ["--cursor", ""], ["--page-bytes", "5"]):
+            outcome = app(run_cli, "view", item, *options, env=env)
+            assert (outcome.code, outcome.error["code"]) == (2, "usage.invalid_argument"), options
+    assert app(run_cli, "view", item, "--name", "card", "--cursor", "", env=ENV).code == 2
+
+
+def test_a_default_view_that_no_longer_fits_gives_way_to_the_card_with_a_warning(
+    run_cli: CliRunner, root: Path
+) -> None:
+    """A release refuses to break a view, so a stale one comes from a crash window or damage:
+    plain ``graph view REF`` then still answers, with the generated card and a warning that
+    names the code of the cause only; asking for the view by name refuses it."""
+    shelf = location(run_cli, "SH")
+    graph_id = next(
+        g["id"] for g in ok(run_cli, "graphs").data["items"] if g["name"] == "example_graph"
+    )
+
+    def edit(entry: dict[str, Any]) -> None:
+        entry["sections"][0]["fields"] = ["name", "no_such_attribute"]
+
+    digest = stale_on_disk(root, graph_id, "location_overview", edit)
+    plain = ok(run_cli, "view", shelf)
+    assert plain.data["view"] == {"name": "card", "origin": "generated"}
+    [note] = [w for w in plain.envelope["warnings"] if w["code"] == "view.default_stale"]
+    assert set(note["details"]) == {"view", "hash", "cause"}
+    assert note["details"]["view"] == "location_overview" and note["details"]["hash"] == digest
+    assert note["details"]["cause"].startswith("view.")
+    assert "no_such_attribute" not in json.dumps(plain.envelope)
+    named = app(run_cli, "view", shelf, "--name", "location_overview", env=ENV)
+    assert (named.code, named.error["code"]) == (1, "view.stale")
+    # the other classes and views are not affected
+    item = ok(run_cli, "find", "--type", "inv:Item").data["items"][0]["alias"]
+    assert "warnings" not in ok(run_cli, "view", item).envelope
+    assert ok(run_cli, "view", "--name", "item_catalog").data["sections"]
 
 
 # ---- set views ------------------------------------------------------------------------------

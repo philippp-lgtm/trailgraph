@@ -34,6 +34,16 @@ def rows_share(sections: int) -> int:
     return max(1, ROWS_BUDGET // max(1, sections))
 
 
+def has_default_for(views: Sequence[ViewEntry], model: CompiledModel, entity_type: str) -> bool:
+    """Whether some default entity view takes the class of the entity (itself or an ancestor): a
+    reader whose class has none is shown the card without judging what it may see of the views.
+    ``views`` is the whole catalog, ``model`` the reader's."""
+    return any(
+        v.entity and v.defn.default and v.takes is not None and model.is_a(entity_type, v.takes)
+        for v in views
+    )
+
+
 def default_view(
     views: Sequence[ViewEntry], model: CompiledModel, entity_type: str
 ) -> ViewEntry | None:
