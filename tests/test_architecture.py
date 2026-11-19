@@ -147,7 +147,8 @@ def test_app_wheel_contains_no_admin_code_or_fixtures(wheels: dict[str, list[str
 def test_admin_wheel_does_not_bundle_app_code(wheels: dict[str, list[str]]) -> None:
     files = wheels["graph_cli_admin"]
     assert not [f for f in files if f.startswith("graph_cli/")]
-    assert "graph_cli_admin/maintenance_cli/static/view.html" in files  # the view page ships
+    for name in ("view.html", "view.css", "js/state.js", "js/interaction.js"):
+        assert f"graph_cli_admin/maintenance_cli/static/{name}" in files  # the view page ships
 
 
 @pytest.mark.slow

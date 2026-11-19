@@ -22,6 +22,15 @@ GRAPH_CLI_DOCKER_TESTS=1 uv run pytest tests/docker  # the container: kill mid-w
 tests/integration/run_garage.sh            # stored files in a real object store (Garage in Docker)
 ```
 
+The page of `graph-admin view` is kept as separate source files under
+`packages/graph_cli_admin/src/graph_cli_admin/maintenance_cli/static/`:
+`view.html` (markup), `view.css` and `js/*.js`, listed in `view.html` in load
+order. The scripts are classic scripts that share one global scope, so the order
+is the order of their top-level code. `maintenance_cli.view_page` inlines the
+style sheet and the scripts into one document at start, so the view serves the
+page on the one route `/` and a reverse proxy needs no route for assets.
+Add a script by adding its `<script src="js/<name>.js">` line to `view.html`.
+
 Run the CLIs from the checkout:
 
 ```sh

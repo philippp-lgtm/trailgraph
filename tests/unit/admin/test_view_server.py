@@ -273,14 +273,19 @@ def test_the_trail_has_the_steps_the_page_missed(server: ViewServer, svc: Servic
 
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+PNG = (  # one transparent pixel
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa75\x81\x84\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
-@pytest.fixture
-def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
+def serve_file(
+    tmp_path: Path, name: str, data: bytes
+) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
     env = ServiceEnv("files", "notes_and_sources", tmp_path / "root", version="1.1.0")
     assert env.apply_seed().error is None
-    document = tmp_path / "report.pdf"
-    document.write_bytes(PDF)
+    document = tmp_path / name
+    document.write_bytes(data)
     added = env.make_files().add(
         FileAddRequest(
             actor=env.actor,
@@ -297,6 +302,16 @@ def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
         yield running, str(added.entity["id"]), env
     finally:
         running.stop()
+
+
+@pytest.fixture
+def file_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
+    yield from serve_file(tmp_path, "report.pdf", PDF)
+
+
+@pytest.fixture
+def image_server(tmp_path: Path) -> Iterator[tuple[ViewServer, str, ServiceEnv]]:
+    yield from serve_file(tmp_path, "picture.png", PNG)
 
 
 def test_entity_details_with_attributes_edges_and_agents(
@@ -325,22 +340,34 @@ def test_entity_errors(server: ViewServer) -> None:
     assert garbage.status == 400 and json.loads(garbage.read())["code"] == "usage.invalid_argument"
 
 
-def test_a_stored_pdf_is_served_inline(file_server: tuple[ViewServer, str, ServiceEnv]) -> None:
+def test_a_stored_pdf_is_only_a_download(file_server: tuple[ViewServer, str, ServiceEnv]) -> None:
     server, entity, _ = file_server
     details = json.loads(get(server, f"/entity?id={entity}&t={server.token}").read())
     assert details["file"] == {
         "media_type": "application/pdf",
         "size": len(PDF),
         "stored": True,
-        "inline": True,
+        "inline": False,
     }
     response = get(server, f"/blob?id={entity}&t={server.token}")
     assert response.status == 200 and response.read() == PDF
-    assert response.getheader("Content-Type") == "application/pdf"
-    assert str(response.getheader("Content-Disposition")).startswith("inline;")
+    assert response.getheader("Content-Type") == "application/octet-stream"
+    assert str(response.getheader("Content-Disposition")).startswith("attachment;")
     policy = str(response.getheader("Content-Security-Policy"))
     assert "default-src 'none'" in policy and "script-src" not in policy
     assert get(server, f"/blob?id={entity}").status == 403  # no token
+
+
+def test_a_stored_image_is_served_inline(
+    image_server: tuple[ViewServer, str, ServiceEnv],
+) -> None:
+    server, entity, _ = image_server
+    details = json.loads(get(server, f"/entity?id={entity}&t={server.token}").read())
+    assert details["file"]["media_type"] == "image/png" and details["file"]["inline"] is True
+    response = get(server, f"/blob?id={entity}&t={server.token}")
+    assert response.status == 200 and response.read() == PNG
+    assert response.getheader("Content-Type") == "image/png"
+    assert str(response.getheader("Content-Disposition")).startswith("inline;")
 
 
 def test_a_blob_only_for_files(server: ViewServer, svc: ServiceEnv) -> None:
@@ -622,7 +649,7 @@ def test_the_entity_page_degrades_without_the_object_store(
             "media_type": "application/pdf",
             "size": None,
             "stored": None,
-            "inline": True,
+            "inline": False,
         }
         assert details["history"] and details["attrs"]["file_name"] == "report.pdf"
         refused = get(running, f"/blob?id={entity}&t={token}")

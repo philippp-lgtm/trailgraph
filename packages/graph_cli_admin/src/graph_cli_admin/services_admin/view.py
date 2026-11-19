@@ -112,10 +112,9 @@ RELOAD_REVISIONS: Final = 250
 TRAIL_STEPS: Final = 500
 MAX_OPEN: Final = 8  # graphs a view keeps open, each with its model, feed and trail
 DENIAL_AUDIT_S: Final = 60.0  # a refused graph's denial is audited at most once in this time
-# Shown in the browser itself; any other media type is only offered as a download.
-INLINE_MEDIA_TYPES: Final = frozenset(
-    {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}
-)
+# Shown in the page itself; any other media type, PDFs included, is only offered as a download:
+# the view is no document reader.
+INLINE_MEDIA_TYPES: Final = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 _ALL_STATUSES: Final = frozenset(RECORD_STATUSES)
 
 

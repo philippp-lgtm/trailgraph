@@ -17,7 +17,7 @@ another site cannot probe it by DNS rebinding; it touches no graph.
 (name or id; without it the graph of ``--graph``): ``/graph`` the whole
 graph as JSON, ``/entity?id=`` one entity in full (attributes, edges,
 history with the writing agents), ``/blob?id=`` the stored file of a file
-entity (PDFs and images inline, anything else as a download), ``/model``
+entity (images inline, anything else, PDFs included, as a download), ``/model``
 the ontology (``model_json``, also needs ``read.describe``), ``/functions``
 the published functions in full (``functions_json``), ``/policies`` the
 installed policies as they bear on that graph (``policies_json``, also
@@ -85,13 +85,13 @@ SECURITY_HEADERS: Final = (
     (
         "Content-Security-Policy",
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-        "connect-src 'self'; img-src 'self'; frame-src 'self'; "
+        "connect-src 'self'; img-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     ),
 )
-# A stored file is shown inside the page only: it runs no script and loads nothing.
+# A stored file runs no script and loads nothing.
 BLOB_POLICY: Final = (
-    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'self'"
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'"
 )
 NOT_FOUND_CODES: Final = frozenset({"entity.not_found", "graph.not_found"})
 
