@@ -804,6 +804,34 @@ def _section_line(section: JsonObject) -> str:
     return f"  {req_str(section, 'id')}  {kind}{'  ' + what if what else ''}{title}"
 
 
+def _names(value: JsonValue) -> str:
+    """A field selection as the JSON has it: ``all`` or the attribute names."""
+    return value if isinstance(value, str) else ", ".join(str(n) for n in as_list(value, "fields"))
+
+
+def _relation_entry(value: JsonValue) -> str:
+    """One relation of a section as the JSON has it: ``all``, or the relation with its direction
+    and, when it lists attributes of the neighbours, them."""
+    item = as_object(value, "relation")
+    if item["relation"] is None:
+        return "all"
+    text = f"{req_str(item, 'relation')} ({req_str(item, 'direction')})"
+    fields = item.get("fields")
+    return text if fields is None else f"{text} with {_names(fields)}"
+
+
+def _section_detail(section: JsonObject) -> list[str]:
+    """The fields and relations a section lists, one line each, when it names any."""
+    lines = []
+    if section.get("fields") is not None:
+        lines.append(f"    fields: {_names(section['fields'])}")
+    relations = section.get("relations")
+    if relations:
+        entries = [_relation_entry(r) for r in as_list(relations, "relations")]
+        lines.append(f"    relations: {'; '.join(entries)}")
+    return lines
+
+
 def _view_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, sections, examples, touched terms,
     how to call it."""
@@ -820,7 +848,10 @@ def _view_text(data: JsonObject) -> str:
     lines.append("Parameters:")
     lines.extend(_param_lines(v))
     lines.append("Sections:")
-    lines.extend(_section_line(as_object(s, "section")) for s in req_list(v, "sections"))
+    for value in req_list(v, "sections"):
+        section = as_object(value, "section")
+        lines.append(_section_line(section))
+        lines.extend(_section_detail(section))
     lines.append("Examples:")
     for value in req_list(v, "examples"):
         lines.append(f"  {req_str(as_object(value, 'example'), 'question')}")

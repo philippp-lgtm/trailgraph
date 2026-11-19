@@ -72,6 +72,14 @@ def _view_search(details: Mapping[str, JsonValue], program: str) -> str | None:
     return f"{program} describe search <words> --kind view"
 
 
+def _view_same_state(details: Mapping[str, JsonValue], program: str) -> str | None:
+    """A stale page cursor: the next page of the state it was issued for."""
+    seq = details.get("cursor_seq")
+    if not isinstance(seq, int):
+        return None
+    return f"{program} view --name <name> --cursor <cursor> --as-of tx:{seq}"
+
+
 def _precondition(details: Mapping[str, JsonValue], program: str) -> str | None:
     """A refused action: read its preconditions, then look at the dry run."""
     action = details.get("action")
@@ -371,7 +379,7 @@ _BASE: Final[dict[str, Hint | None]] = {
     "view.too_many_views": None,
     "view.section_unavailable": None,
     "view.cursor_invalid": None,
-    "view.cursor_stale": None,
+    "view.cursor_stale": _view_same_state,
     "view.parameter_missing": None,
     "view.parameter_unknown": None,
     "view.parameter_invalid": None,

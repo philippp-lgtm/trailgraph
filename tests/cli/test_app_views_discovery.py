@@ -144,6 +144,11 @@ def test_describe_view_gives_the_definition_and_how_to_call_it(
     assert "  contents  rows  items_in_location\n" in overview
     assert "  items  neighbors  inv:located_in (in)\n" in overview
     assert "Functions run: items_in_location\n" in overview
+    # every section lists the fields it shows, as the JSON has them
+    assert "  fields  fields\n    fields: name, code\n" in overview
+    assert (
+        "  items  neighbors  inv:located_in (in)\n    fields: name, quantity, status\n" in overview
+    )
 
 
 def test_the_hash_of_describe_is_the_hash_of_the_answer(run_cli: CliRunner, root: Path) -> None:

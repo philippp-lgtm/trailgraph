@@ -138,6 +138,11 @@ def test_the_card_is_always_there_and_is_what_a_graph_without_views_answers(
         assert views.envelope.get("warnings") == plain_answer.envelope.get("warnings"), args
 
 
+def test_the_usage_line_shows_that_the_entity_is_optional(run_cli: CliRunner) -> None:
+    usage = run_cli("graph", "view", "--help").stdout.splitlines()[0]
+    assert usage == "Usage: graph view [OPTIONS] [REF]"
+
+
 def test_a_class_without_a_default_view_gets_the_card(run_cli: CliRunner, root: Path) -> None:
     item = ok(run_cli, "find", "--type", "inv:Item").data["items"][0]["alias"]
     assert ok(run_cli, "view", item).data["view"]["name"] == "card"
@@ -357,6 +362,7 @@ def test_a_stale_cursor_is_repaired_by_naming_the_state_it_was_issued_for(
     stale = app(run_cli, "view", *base, "--cursor", cursor, env=ENV)
     assert (stale.code, stale.error["code"]) == (1, "view.cursor_stale"), stale.envelope
     assert f"--as-of tx:{seq}" in stale.error["message"]
+    assert f"--cursor <cursor> --as-of tx:{seq}" in stale.error["hint"], stale.error
     # the state the cursor was issued for: the pages of the listings put together are those
     # of the page that began them (the rows of a function are unavailable for an earlier state)
     pinned = ["--as-of", f"tx:{seq}"]
@@ -414,6 +420,9 @@ sections:
     assert worn.error["code"] == "view.cursor_invalid"
     bad = app(run_cli, "view", *base, "--param", "condition=broken", env=ENV)
     assert bad.error["code"] == "view.parameter_invalid"
+    text = run_cli("graph", "describe", "view", "by_condition", env=ENV).stdout
+    assert "  items  list  inv:Item\n    fields: name, condition\n" in text
+    assert "  everything  list  inv:Item\n    fields: name\n" in text
 
 
 def test_the_next_hint_repeats_what_the_cursor_is_tied_to(run_cli: CliRunner, root: Path) -> None:

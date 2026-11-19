@@ -317,7 +317,9 @@ functions, the pinned ontology and what the reader sees:
 
 `graph-admin graph views publish` (also as part of `graph-admin graph push`) checks every file against
 the ontology the graph is pinned to (or will be, in a push) and the functions the graph will have, and
-reports all problems together as `admin.views_invalid`. The `code` of each problem in
+reports all problems together as `admin.views_invalid`, with one exception: a file with a problem of
+shape (the rows "the file", "flavour" and "sections" below) shows only those; its problems with terms
+and functions come once the shape is fixed. Other files are checked in full. The `code` of each problem in
 `details.problems`:
 
 | Rule | Codes |

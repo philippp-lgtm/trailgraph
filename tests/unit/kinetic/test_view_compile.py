@@ -339,6 +339,7 @@ def test_a_relation_must_start_at_the_class_of_the_section() -> None:
     assert problem.code == "view.relation_mismatch"
     assert problem.details["expected"] == ["ppl:Person"]
     assert problem.details["direction"] == "out"
+    assert problem.message.endswith("starts at ppl:Person, which the entity can never be")
 
 
 def test_a_row_relation_is_checked_against_the_rows_and_its_far_end() -> None:

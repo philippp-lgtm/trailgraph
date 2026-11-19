@@ -540,6 +540,8 @@ def test_a_hidden_view_cannot_be_described_and_is_not_suggested(
     assert "employee_overview" not in json.dumps(asked["error"])
     visible = ok(run_cli, "describe", "view", "staff_catalog").data["view"]
     assert visible["takes"] is None and visible["touches"]["functions"] == []
+    text = run_cli("graph", "describe", "view", "staff_catalog", env=ENV).stdout
+    assert "  employees  list  stf:Employee\n    fields: all\n    relations: all\n" in text
     install(run_cli, world, HOLDER)
     assert ok(run_cli, "describe", "view", "pay_roll").data["view"]["name"] == "pay_roll"
 

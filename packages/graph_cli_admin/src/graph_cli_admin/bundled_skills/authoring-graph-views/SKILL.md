@@ -81,7 +81,8 @@ filters as `graph find --type <type> --where <entry>` before writing them into t
 1. Write or edit `<folder>/views/<name>.yaml`.
 2. Check without publishing: `graph-admin graph views publish <graph> <folder>/views --dry-run`.
    Every problem of every file comes back in one answer (`admin.views_invalid`, `details.problems`
-   with the view, the rule `code`, the path in the file and often the line).
+   with the view, the rule `code`, the path in the file and often the line); a file with a shape
+   problem shows its term and function problems only after that is fixed.
 3. Fix and repeat until it passes, then publish as described in `maintaining-graphs`. `graph-admin
    graph views show <graph>` lists what is published and against which ontology release.
 4. Try it as an agent would: `graph describe search "<the question>" --kind view`, `graph describe

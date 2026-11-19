@@ -436,7 +436,7 @@ class _Compile:
             "view.relation_mismatch",
             path,
             f"{relation} read {direction} starts at "
-            f"{'|'.join(near) if near else 'any class'}, which {where} never has",
+            f"{'|'.join(near) if near else 'any class'}, which {where} can never be",
             relation=relation,
             direction=direction,
             expected=list(near),
