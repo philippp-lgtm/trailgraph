@@ -107,6 +107,9 @@ def test_an_action_is_described_completely() -> None:
     assert a["hash"].startswith("sha256:") and "use_when" in a and "signature" in a
     deprecated = describe_action(ENTRY, MODEL, DEPRECATED, "create_task")["action"]
     assert (deprecated["status"], deprecated["replaced_by"]) == ("deprecated", "assign_position")
+    alone = tuple(a for a in DEPRECATED if a.name == "create_task")  # the replacement is not given
+    hidden = describe_action(ENTRY, MODEL, alone, "create_task")["action"]
+    assert (hidden["status"], hidden["replaced_by"]) == ("deprecated", None)
 
 
 def test_an_unknown_action_names_the_close_ones_among_the_given() -> None:

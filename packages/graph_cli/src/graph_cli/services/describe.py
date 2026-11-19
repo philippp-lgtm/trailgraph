@@ -451,9 +451,13 @@ def describe_action(
 ) -> dict[str, JsonValue]:
     """One action with everything its definition says, the compiled ops, the terms it touches,
     the write rights it needs and its hash; ``action.not_found`` with ``did_you_mean`` (over
-    the given actions only) for an unknown name."""
+    the given actions only) for an unknown name. ``replaced_by`` names an action only when it is
+    among the given ones (a replacement the reader may not run is ``null``)."""
     found = find_action(actions, name)
-    return model_envelope(entry, model, action=found.detail_json())
+    detail = found.detail_json()
+    if detail["replaced_by"] not in {a.name for a in actions or ()}:
+        detail["replaced_by"] = None
+    return model_envelope(entry, model, action=detail)
 
 
 def describe_views(

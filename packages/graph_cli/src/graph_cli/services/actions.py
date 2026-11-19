@@ -92,6 +92,8 @@ class ActionService:
         warnings: list[WarningRecord] = []
         if action.deprecated:
             replaced = action.defn.replaced_by
+            if replaced is not None and all(a.name != replaced for a in visible):
+                replaced = None  # a replacement the caller may not run is not named
             warnings.append(
                 WarningRecord(
                     "action.deprecated",
