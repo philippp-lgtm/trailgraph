@@ -50,7 +50,6 @@ from graph_cli.kinetic.view_page import decode_cursor, render_set
 from graph_cli.kinetic.view_rows import RowsResult
 from graph_cli.query.cypher.values import Value
 from graph_cli.services.read.access import denial_error
-from graph_cli.services.read.catalogs import ActionCatalog
 from graph_cli.services.read.change_feed import change_page
 from graph_cli.services.read.entities import (
     ReadEntities,
@@ -58,7 +57,7 @@ from graph_cli.services.read.entities import (
     refuse_affordances_with_rev,
 )
 from graph_cli.services.read.finding import ReadFinding
-from graph_cli.services.read.graph_read import GraphRead, Page, graph_json
+from graph_cli.services.read.graph_read import ActionCatalog, GraphRead, Page, graph_json
 from graph_cli.services.read.history import ReadHistory
 from graph_cli.services.read.installation import ReadInstallation
 from graph_cli.services.read.json_shapes import (

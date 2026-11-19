@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 from graph_cli.access_control.authorize import authorize
 from graph_cli.kernel.actor import ActorContext
 from graph_cli.kernel.authz import AuthzContext
-from graph_cli.kernel.canonical import JsonObject
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import JsonShapeError
 from graph_cli.kernel.ports.catalog import FunctionsSlot, GraphEntry
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
-from graph_cli.kernel.records import OntologyPin
 from graph_cli.kinetic.action_entries import ActionEntry, load_action_entries
 from graph_cli.kinetic.action_needs import NeedOptions
 from graph_cli.kinetic.action_needs import action_needs as derive_needs
@@ -23,17 +20,8 @@ from graph_cli.kinetic.view_entries import ViewEntry, load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.action_rights import need_decisions
 from graph_cli.services.read.access import VISIBLE, ReadAccess
+from graph_cli.services.read.graph_read import ActionCatalog
 from graph_cli.services.visible_catalog import hidden_actions, hidden_functions, hidden_views
-
-
-@dataclass(frozen=True, slots=True)
-class ActionCatalog:
-    """The parsed published action catalog of a graph and what it was published against."""
-
-    entries: tuple[ActionEntry, ...]
-    compiled_hash: str
-    published_against: OntologyPin
-    compiled: JsonObject
 
 
 class ReadCatalogs(ReadAccess):

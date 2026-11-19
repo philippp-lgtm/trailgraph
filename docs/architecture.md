@@ -142,8 +142,8 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `__init__` | the docstring, the public names and the concerns of `ReadService` that are not yet in a module of their own |
 | `state` | `ReadState`: the collaborators and caches every concern shares (the only `__init__`), and `query_phase`, the wrapper of reads answered from a snapshot |
 | `access` | `ReadAccess`: the authorization of a read, a caller's read view and visible types, the refusal of what is hidden and the audit of a denial; `denial_error` (also used by `services.write` and `services.file_metadata`) |
-| `catalogs` | `ReadCatalogs`: the published functions, actions and views of a graph as an actor may see them (hidden and stale entries, the needs and problems of actions); `ActionCatalog` |
-| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json` |
+| `catalogs` | `ReadCatalogs`: the published functions, actions and views of a graph as an actor may see them (hidden and stale entries, the needs and problems of actions) |
+| `graph_read` | `GraphRead` (one graph opened for one actor and command), `Page`, `graph_json`, and `ActionCatalog` (a graph's parsed action catalog, which `state` caches) |
 | `json_shapes` | how reads show entities, edges and query values as JSON |
 | `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
 | `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |

@@ -1,16 +1,17 @@
-"""The result types of a read: the opened graph, a page of rows and the envelope graph block."""
+"""The result types of a read: the opened graph, a page of rows, the graph block, a catalog."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from graph_cli.kernel.actor import ActorContext
-from graph_cli.kernel.canonical import JsonValue
+from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.errors import WarningRecord
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kernel.ports.storage import Snapshot
 from graph_cli.kernel.read_view import UNLIMITED, ReadView
-from graph_cli.kernel.records import Revision
+from graph_cli.kernel.records import OntologyPin, Revision
+from graph_cli.kinetic.action_entries import ActionEntry
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.names import MappedSnapshot
 from graph_cli.services.visibility import VisibleSnapshot
@@ -90,3 +91,13 @@ def graph_json(entry: GraphEntry, seq: int | None) -> dict[str, JsonValue]:
         "ontology": {"bundle": entry.pin.bundle, "version": entry.pin.version},
         "seq": seq,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ActionCatalog:
+    """The parsed published action catalog of a graph and what it was published against."""
+
+    entries: tuple[ActionEntry, ...]
+    compiled_hash: str
+    published_against: OntologyPin
+    compiled: JsonObject
