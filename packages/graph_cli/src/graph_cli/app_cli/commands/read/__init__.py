@@ -21,6 +21,16 @@ from graph_cli.app_cli.commands.common import (
     context,
     next_page,
 )
+from graph_cli.app_cli.commands.read.shared import (
+    FIELDS,
+    FULL,
+    REF,
+    REF_ERRORS,
+    STDIN,
+    as_of_flag,
+    open_graph,
+    pinned,
+)
 from graph_cli.app_cli.commands.view_text import view_hints, view_text
 from graph_cli.app_cli.output_schemas import NULLABLE_STRING, SOURCE, STRINGS
 from graph_cli.cli_kit.envelope import Result
@@ -41,7 +51,6 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonValue
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.langtag import tagged_parts
-from graph_cli.kernel.query_ast import AsOf
 from graph_cli.kernel.records import RequestMeta
 from graph_cli.query.cypher.values import Value, parameter_value
 from graph_cli.query.lookup import MATCH_KINDS, LookupSpec
@@ -54,23 +63,12 @@ from graph_cli.query.plan import (
     split_assignment,
 )
 from graph_cli.query.search import SearchSpec
-from graph_cli.services.read import (
-    GraphRead,
-    QuerySpec,
-    refuse_affordances_with_rev,
-)
-from graph_cli.temporal_knowledge.as_of import as_of_text, parse_as_of
+from graph_cli.services.read import QuerySpec, refuse_affordances_with_rev
 from graph_cli.temporal_knowledge.changes import FEED_LIMIT, parse_since
 
 if TYPE_CHECKING:  # the cover rule pulls in the Cypher parser, which reads must not load
     from graph_cli.kinetic.cover import Cover
 
-REF_ERRORS: Final = (
-    *GRAPH_ERRORS,
-    "entity.not_found",
-    "entity.ambiguous_ref",
-    "temporal.as_of_unsupported",
-)
 QUERY_ERRORS: Final = (
     *GRAPH_ERRORS,
     "temporal.as_of_unsupported",
@@ -82,50 +80,6 @@ QUERY_ERRORS: Final = (
     "query.parameter_missing",
     "query.too_large",
     "query.invalid_value",
-)
-STDIN: Final = "-"
-
-
-def _open(
-    state: CommandState,
-    graph: str | None,
-    action: str,
-    command: str,
-    args: dict[str, JsonValue],
-    as_of: AsOf | None,
-) -> GraphRead:
-    ctx = context(state)
-    entry = ctx.select(graph)
-    if as_of is not None:
-        args = {**args, "as_of": as_of_text(as_of)}
-    request = RequestMeta.of(command, {"graph": entry.name, **args})
-    view = ctx.reader.open(ctx.actor, entry, action, request, as_of=as_of)
-    state.warnings += view.warnings
-    return view
-
-
-def _as_of(text: str | None) -> AsOf | None:
-    """``--as-of`` parsed before the graph is opened (B8.8)."""
-    return None if text is None else parse_as_of(text)
-
-
-def _pinned(view: GraphRead, as_of: AsOf | None) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    """``--as-of tx:<seq>`` for a next-page command: the same state, also after a timestamp."""
-    return () if as_of is None else (("--as-of", (f"tx:{view.snapshot.seq}",)),)
-
-
-FIELDS: Final = ParamSpec(
-    "--fields",
-    "string",
-    "Only these fields (comma-separated): attributes, edges or system fields;"
-    " id, alias, type, rev and record_status always.",
-    repeatable=True,
-)
-FULL: Final = ParamSpec(
-    "--full",
-    "flag",
-    "Also the system fields of how each entity was stored (created_at, recorded_at, tx_seq,"
-    " ontology_version, content_hash) and the edge ids, for unlink --edge-id.",
 )
 
 
@@ -141,13 +95,13 @@ def get(
 ) -> Result:
     if affordances and rev is not None:
         raise refuse_affordances_with_rev()
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     args: dict[str, JsonValue] = {"ref": ref} if rev is None else {"ref": ref, "rev": rev}
     if affordances:
         args["affordances"] = True  # only when set: the log and audit args stay as they were
     if full:
         args["full"] = True
-    view = _open(state, graph, "read.get", "get", args, point)
+    view = open_graph(state, graph, "read.get", "get", args, point)
     ctx = context(state)
     if rev is not None and point is None:
         # An earlier revision is history: read.get and read.history (B8.15); with
@@ -176,7 +130,7 @@ def view(
     """An object view: the generated card of one entity (stage 1), a published entity view, or a
     published set view paged by bytes (stage 2). The request names the view and the parameter
     names, never their values."""
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     if ref is None and name is None:  # REF was required: the answer is what it was
         context(state).select(graph)  # a graph that is not there is reported first, as before
         raise missing_argument("ref")
@@ -188,7 +142,7 @@ def view(
         args["name"] = name
     if pairs:
         args["param"] = sorted({key for key, _ in pairs})
-    reading = _open(state, graph, "read.get", "view", args, point)
+    reading = open_graph(state, graph, "read.get", "view", args, point)
     data, warnings = context(state).reader.view(
         reading,
         ref,
@@ -208,7 +162,7 @@ def view(
             name=name,
             params=param,
             page_bytes=page_bytes,
-            pinned=_pinned(reading, point),
+            pinned=pinned(reading, point),
         ),
         text=view_text(data),
     )
@@ -217,17 +171,17 @@ def view(
 def history(
     state: CommandState, ref: str, limit: int, offset: int, graph: str | None, as_of: str | None
 ) -> Result:
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     check_paging(limit, offset)
     args: dict[str, JsonValue] = {"ref": ref, "limit": limit, "offset": offset}
-    view = _open(state, graph, "read.history", "history", args, point)
+    view = open_graph(state, graph, "read.history", "history", args, point)
     ctx = context(state)
     data, page, warnings = ctx.reader.history(view, ctx.actor, ref, limit=limit, offset=offset)
     state.warnings += warnings
     page_json = page.to_json()
 
     def line(next_offset: int) -> str:
-        options = _pinned(view, point)
+        options = pinned(view, point)
         return command_line("history", (ref,), view.entry.name, options, (), limit, next_offset)
 
     hints = next_page(page_json, line)
@@ -241,7 +195,7 @@ def changes(state: CommandState, since: str, limit: int, graph: str | None) -> R
     position = parse_since(since)
     check_paging(limit, 0)
     args: dict[str, JsonValue] = {"since": since, "limit": limit}
-    view = _open(state, graph, "read.history", "changes", args, None)
+    view = open_graph(state, graph, "read.history", "changes", args, None)
     data = context(state).reader.changes(view, position, limit=limit)
     options = (("--since", (str(data["next"]),)),)
     hints: tuple[Hint, ...] = ()
@@ -334,7 +288,7 @@ def find(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     args: dict[str, JsonValue] = {
         "type": list(type),
         "where": list(where),
@@ -350,7 +304,7 @@ def find(
         args["full"] = True
     rels = [parse_rel_flag(text, "--rel") for text in rel]
     in_rels = [parse_rel_flag(text, "--in-rel") for text in in_rel]
-    view = _open(state, graph, "read.find", "find", args, point)
+    view = open_graph(state, graph, "read.find", "find", args, point)
     spec = FindSpec(
         types=type,
         where=where,
@@ -371,7 +325,7 @@ def find(
         ("--in-rel", in_rel),
         ("--sort", sort),
         ("--fields", fields),
-        *_pinned(view, point),
+        *pinned(view, point),
     )
     switches = ("--include-inactive",) * include_inactive + ("--full",) * full
 
@@ -407,7 +361,7 @@ def lookup(
             f"text: at most {MAX_LOOKUP_TEXTS} values, got {len(text)}",
             details={"argument": "text", "actual": len(text)},
         )
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     args: dict[str, JsonValue] = {
         "text": list(text),
         "type": list(type),
@@ -420,7 +374,7 @@ def lookup(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.find", "lookup", args, point)
+    view = open_graph(state, graph, "read.find", "lookup", args, point)
     spec = LookupSpec(
         text=text[0],
         types=type,
@@ -461,7 +415,7 @@ def lookup(
             *(uses if fit else ()),
             ("--match", (match_kind,) if match_kind != "exact" else ()),
             ("--lang", (lang,) if lang else ()),
-            *_pinned(view, point),
+            *pinned(view, point),
         )
         return command_line("lookup", texts, view.entry.name, options, switches, limit, next_offset)
 
@@ -484,7 +438,7 @@ def lookup(
             ("--type", type),
             *uses,
             ("--lang", (lang,) if lang else ()),
-            *_pinned(view, point),
+            *pinned(view, point),
         )
         hints += tuple(
             {
@@ -563,7 +517,7 @@ def search(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     args: dict[str, JsonValue] = {
         "text": text,
         "type": list(type),
@@ -573,7 +527,7 @@ def search(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.find", "search", args, point)
+    view = open_graph(state, graph, "read.find", "search", args, point)
     spec = SearchSpec(
         text=text,
         types=type,
@@ -586,7 +540,7 @@ def search(
     data, page = context(state).reader.search(view, spec)
     page_json = page.to_json()
     language = ("--lang", (lang,) if lang else ())
-    options = (("--type", type), ("--field", field), language, *_pinned(view, point))
+    options = (("--type", type), ("--field", field), language, *pinned(view, point))
     switches = ("--include-inactive",) if include_inactive else ()
 
     def line(next_offset: int) -> str:
@@ -603,7 +557,7 @@ def search(
                     "search",
                     (text,),
                     view.entry.name,
-                    (language, *_pinned(view, point)),
+                    (language, *pinned(view, point)),
                     switches,
                     DEFAULT_LIMIT,
                 ),
@@ -623,7 +577,7 @@ def neighbors(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     args: dict[str, JsonValue] = {
         "ref": ref,
         "rel": list(rel),
@@ -633,7 +587,7 @@ def neighbors(
     }
     if full:
         args["full"] = True
-    view = _open(state, graph, "read.traverse", "neighbors", args, point)
+    view = open_graph(state, graph, "read.traverse", "neighbors", args, point)
     data, warnings = context(state).reader.neighbors(
         view, ref, rels=rel, direction=direction, depth=depth, fields=fields, full=full
     )
@@ -748,7 +702,7 @@ def query(
     graph: str | None,
     as_of: str | None,
 ) -> Result:
-    point = _as_of(as_of)
+    point = as_of_flag(as_of)
     check_paging(limit, offset)
     source = query_text(text, file)
     parameters = _parameters(param)
@@ -762,7 +716,7 @@ def query(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.query", "query", args, point)
+    view = open_graph(state, graph, "read.query", "query", args, point)
     spec = QuerySpec(parameters, include_inactive, explain, limit, offset)
     data, page, covers = reader.query(view, parsed, spec)
     cover_hints = _cover_hints(covers, view.entry.name)
@@ -773,7 +727,7 @@ def query(
     options = (
         ("--file", () if file is None else (file,)),
         ("--param", param),
-        *_pinned(view, point),
+        *pinned(view, point),
     )
     switches = ("--include-inactive",) if include_inactive else ()
 
@@ -809,7 +763,7 @@ def run(
         "limit": limit,
         "offset": offset,
     }
-    view = _open(state, graph, "read.function", "run", args, None)
+    view = open_graph(state, graph, "read.function", "run", args, None)
     data, page, warnings = context(state).reader.run(view, name, pairs, limit=limit, offset=offset)
     state.warnings += warnings
     page_json = page.to_json()
@@ -830,9 +784,6 @@ def run(
     )
 
 
-REF: Final = ParamSpec(
-    "ref", "entity_ref", "Full id, alias or trailing hex of the id.", required=True, positional=True
-)
 # ``graph view``: the entity is optional (a set view has none), the rest picks a published view.
 VIEW_REF: Final = ParamSpec(
     "ref",
