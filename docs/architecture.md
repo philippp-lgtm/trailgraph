@@ -104,12 +104,17 @@ the mode selects, so it needs no route of its own.
 Commands of `graph` are declared as data in `graph_cli.app_cli.commands`,
 those of `graph-admin` in `graph_cli_admin.maintenance_cli.commands`
 (`cli_kit.spec.CommandSpec`); for each program the click tree and the
-inventory are built from the same declarations. The `describe` commands live
-in the package `app_cli.commands.describe` (`model`: the ontology, `kinetic`:
-functions, actions and views, `shared`: what both use). The read commands live in
-`app_cli.commands.read` (`shared`: what several of them use; `entity`: `get` and `view`;
-`history`: `history` and `changes`; `find`: `find`, `lookup`, `search` and `neighbors`;
-`query`: `query` and `run`). The package's `SPECS` joins theirs in the order of the help.
+inventory are built from the same declarations.
+
+Two command groups of `graph` are packages. The `describe` commands except
+`describe commands` (which stays in `app_cli.commands.meta`) live in
+`app_cli.commands.describe` (`model`: the ontology, `kinetic`: functions,
+actions and views, `shared`: what both use). The read commands live in
+`app_cli.commands.read` (`shared`: what several of them use; `entity`: `get`
+and `view`; `history`: `history` and `changes`; `find`: `find`, `lookup`,
+`search` and `neighbors`; `query`: `query` and `run`). The package's `SPECS`
+joins theirs in the order of the help.
+
 A declaration also names the
 JSON Schema of its answer's `data` (`output`); shapes several commands share
 are definitions with one home each, next to what produces them:
