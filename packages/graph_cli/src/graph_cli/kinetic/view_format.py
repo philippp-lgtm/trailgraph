@@ -81,7 +81,6 @@ ALL: Final = "all"
 ENTITY_MAX_BYTES: Final = 6144
 MIN_BYTES: Final = 1024
 PAGE_BYTES_MAX: Final = 262_144
-MIN_SECTIONS: Final = 1
 MAX_SECTIONS: Final = 32
 MAX_TITLE: Final = 100
 MAX_FIELD_NAMES: Final = 64  # attributes a row lists

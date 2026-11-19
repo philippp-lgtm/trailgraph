@@ -9,7 +9,8 @@ problems may name what the reader must not see). ``fields: all`` names nothing.
 from support import views
 from support.fixtures import example_model
 
-from graph_cli.kinetic.view_entries import load_view_entries
+from graph_cli.kernel.canonical import JsonObject
+from graph_cli.kinetic.view_entries import ViewEntry, load_view_entries
 from graph_cli.ontology_layer.model import CompiledModel
 from graph_cli.services.visibility import filter_model
 from graph_cli.services.visible_catalog import HiddenCatalog, hidden_views, view_hidden
@@ -29,7 +30,7 @@ sections:
 """
 
 
-def catalog() -> tuple[dict[str, object], tuple[object, ...]]:
+def catalog() -> tuple[JsonObject, tuple[ViewEntry, ...]]:
     sources = views.valid_sources()
     sources["position_fields.yaml"] = ALL_FIELDS
     document, problems = views.compile_views(sources, MODEL, FUNCTIONS)
@@ -46,7 +47,7 @@ def hidden(
 ) -> frozenset[str]:
     document, entries = catalog()
     limited = filter_model(MODEL, visible, attributes)
-    return hidden_views(entries, document, MODEL, limited, FUNCTIONS)  # type: ignore[arg-type]
+    return hidden_views(entries, document, limited, FUNCTIONS)
 
 
 def test_nothing_is_hidden_from_a_reader_who_sees_everything() -> None:
@@ -103,13 +104,13 @@ def test_a_view_that_is_stale_for_everyone_is_hidden_from_a_limited_reader() -> 
         for e in document["views"]  # type: ignore[attr-defined]
     ]
     limited = filter_model(MODEL, concrete() - {"ops:Task"}, None)
-    found = hidden_views(entries, broken, MODEL, limited, FUNCTIONS)  # type: ignore[arg-type]
+    found = hidden_views(entries, broken, limited, FUNCTIONS)
     assert found == {"tasks_by_state", "unit_overview"}  # stale for everyone, so not shown
 
 
 def test_view_hidden_reads_the_touched_terms_of_the_entry() -> None:
     _, entries = catalog()
-    by_name = {e.name: e for e in entries}  # type: ignore[attr-defined]
+    by_name = {e.name: e for e in entries}
     limited: CompiledModel = filter_model(MODEL, concrete() - {"ops:Task"}, None)
     assert view_hidden(by_name["tasks_by_state"], limited)
     assert not view_hidden(by_name["unit_overview"], limited)

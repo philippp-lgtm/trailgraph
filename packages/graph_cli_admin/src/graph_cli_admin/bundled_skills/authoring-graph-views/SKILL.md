@@ -111,10 +111,11 @@ functions it has. So:
 ## Changing and retiring
 
 - Edit the file and publish; a view has no version, its hash changes with its content. Consumers that
-  cache an answer key it by the hash, the parameters, the page size, the cursor and the graph's seq.
+  cache an answer key it by the hash, the parameters, the page size, the cursor, the graph's seq and the reader
+  (what it may see).
 - To replace one, publish the new view, then set `status: deprecated` and `replaced_by: <new name>` on
   the old one. It keeps answering, with a warning that names the replacement, and is left out of
-  listings. To retire it, delete its file.
+  `describe views` and of the affordances (search marks it deprecated). To retire it, delete its file.
 
 ## Common refusals
 

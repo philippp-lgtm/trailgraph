@@ -140,7 +140,6 @@ def hidden_actions(
 def hidden_views(
     entries: Sequence[ViewEntry],
     document: JsonObject,
-    full: CompiledModel,
     limited: CompiledModel,
     functions: Sequence[FunctionEntry],
 ) -> frozenset[str]:

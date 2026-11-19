@@ -129,6 +129,7 @@ def test_the_reference_names_every_limit() -> None:
     assert (view_format.VALUE_CHARS_MAX, view_format.FIELDS_MAX_MAX) == (2000, 32)
     assert (view_format.NEIGHBORS_MAX_MAX, view_format.ROWS_MAX_MAX) == (50, 50)
     assert (view_format.ROW_RELATION_MAX_MAX, view_format.MAX_TYPES) == (500, 16)
+    assert (view_format.MAX_CLAUSE_CHARS, view_format.MAX_CLAUSES) == (200, 8)
     for text in (
         "1 to 32 sections",
         "1024 to 6144",
@@ -137,6 +138,8 @@ def test_the_reference_names_every_limit() -> None:
         "at most 32",
         "at most 50",
         "at most 500",
+        "at most 8 filters of at most 200 characters",
+        "at most 8 sort keys of at most 200 characters",
         "up to 16",
         "1,000 per graph",
         "6,144 bytes",

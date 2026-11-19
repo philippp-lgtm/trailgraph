@@ -113,7 +113,7 @@ sections:
 | `page_bytes` | no | set views only: 1024 to 262144; the default page size of the view (the call's `--page-bytes` wins) |
 | `sections` | yes | 1 to 32 sections (below) |
 | `examples` | no | list of `{question, params}`: questions a user would ask, `params` literals of declared parameters (never an entity reference); search reads the questions |
-| `status` | no | `active` (default) or `deprecated`; a deprecated view still answers, with the warning `view.deprecated`, and is left out of listings and of the affordances |
+| `status` | no | `active` (default) or `deprecated`; a deprecated view still answers, with the warning `view.deprecated`, and is left out of `describe views` (unless `--include-deprecated`) and of the affordances; `describe search` still finds it and marks it deprecated |
 | `replaced_by` | no | name of an active view; only with `status: deprecated`. It may name a view of the other flavour or of another class; a view cannot replace itself |
 
 Summaries of parameters and example questions have at most 200 characters.
@@ -214,8 +214,8 @@ No keys beyond `id` and `title`; they read as the card does.
 | --- | --- |
 | `relation` | the relation to follow (required) |
 | `direction` | `out` (default) or `in` |
-| `where` | at most 8 filters of the `find --where` grammar (`attr[:op]=value`, `op` in `eq ne lt le gt ge contains prefix in exists lang`, all AND-ed), planned against the class at the far end; `$name` as the whole value |
-| `order` | at most 8 sort keys of the `find --sort` grammar (`attr` or `attr:desc`); left out: by label, then id |
+| `where` | at most 8 filters of at most 200 characters each, in the `find --where` grammar (`attr[:op]=value`, `op` in `eq ne lt le gt ge contains prefix in exists lang`, all AND-ed), planned against the class at the far end; `$name` as the whole value |
+| `order` | at most 8 sort keys of at most 200 characters each, in the `find --sort` grammar (`attr` or `attr:desc`); left out: by label, then id |
 | `fields` | a list of attribute names (at most 64) or `all`; default none (key and label only) |
 | `relations` | per-row neighbour lists (below) |
 | `max` | rows shown (default 10, at most 50); the cut is counted in `more` |
@@ -258,8 +258,8 @@ There is no deeper nesting: a second hop is a join by key across sections, or a 
 ## What a call answers
 
 `graph view` answers `graph_cli.view_model/1`: `view` (`name`, `origin`, and `hash` for an authored
-view: the hash of the compiled entry, the consumer's cache key with the parameters, the page size,
-the cursor and `graph.seq`), `entity` (entity views), `sections` (each with its `kind`, its `id` and
+view: the hash of the compiled entry; with the parameters, the page size, the cursor, `graph.seq` and
+the reader (what it may see) it is the key of a consumer's cache), `entity` (entity views), `sections` (each with its `kind`, its `id` and
 `title`), `bytes`, and for a set view `next` and `more`. Nothing is cached or stored: every call reads
 the reader's own snapshot, and the same input gives the same bytes.
 
@@ -288,7 +288,7 @@ the edge, `fields` (the attribute values as `get` shows them), `relations` (grou
 
 | Bound | Value |
 | --- | --- |
-| entity view answer | at most 6,144 bytes (`max_bytes` lowers it); the card's guard trims in a fixed order: the key fields of neighbours, per-row lists, rows of `neighbors` and `rows` to three then one, the card's own stages, titles, labels, stubs |
+| entity view answer | at most 6,144 bytes (`max_bytes` lowers it); the guard trims in a fixed order: the attributes of `neighbors` rows and their lists, per-row lists to one item, rows of `neighbors` and `rows` to three then one, the card's own stages (key fields of relation neighbours, group items, groups, field values, fields, files), then the rows of `neighbors` and `rows` (the counts stay), titles, labels, stubs, stubs folded into `sections_cut` |
 | loaded revisions of an entity view | one budget of 1,000 shared by every section; a group reads at most 500 edges |
 | set view page | `--page-bytes`, else `page_bytes`, else 12,288; 1 to 262,144, else `usage.invalid_argument`; cut at whole rows; a page always holds one row (a row larger than the page goes alone with `oversize: true`; values are never cut in set views) |
 | loads per page | 20,000 plus the one row that crosses the budget, so a row reads the same on every page it could be on |

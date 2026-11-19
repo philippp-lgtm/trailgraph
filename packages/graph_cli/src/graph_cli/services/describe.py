@@ -26,7 +26,7 @@ from typing import Final, Protocol
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.ports.catalog import GraphEntry
 from graph_cli.kinetic.action_entries import ActionEntry, find_action
-from graph_cli.kinetic.entries import FunctionEntry, find_entry
+from graph_cli.kinetic.entries import FunctionEntry, find_entry, seen_replacement
 from graph_cli.kinetic.view_entries import ViewEntry, find_view
 from graph_cli.ontology_layer.model import (
     AttributeDef,
@@ -419,8 +419,7 @@ def describe_function(
     a function only when it is among the given ones (a hidden replacement is ``null``)."""
     found = find_entry(functions, name)
     detail = found.detail_json()
-    if detail["replaced_by"] not in {f.name for f in functions or ()}:
-        detail["replaced_by"] = None
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, functions)
     return model_envelope(entry, model, function=detail)
 
 
@@ -455,8 +454,7 @@ def describe_action(
     among the given ones (a replacement the reader may not run is ``null``)."""
     found = find_action(actions, name)
     detail = found.detail_json()
-    if detail["replaced_by"] not in {a.name for a in actions or ()}:
-        detail["replaced_by"] = None
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, actions)
     return model_envelope(entry, model, action=detail)
 
 
@@ -490,8 +488,7 @@ def describe_view(
     for an unknown name. ``replaced_by`` names a view only when it is among the given ones."""
     found = find_view(views, name)
     detail = found.detail_json()
-    if detail["replaced_by"] not in {v.name for v in views or ()}:
-        detail["replaced_by"] = None
+    detail["replaced_by"] = seen_replacement(found.defn.replaced_by, views)
     return model_envelope(entry, model, view=detail)
 
 

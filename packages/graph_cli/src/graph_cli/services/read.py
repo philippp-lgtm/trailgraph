@@ -99,7 +99,7 @@ from graph_cli.kinetic.card import (
     render,
     spec_of,
 )
-from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries
+from graph_cli.kinetic.entries import FunctionEntry, find_entry, load_entries, seen_replacement
 from graph_cli.kinetic.params import Problem, json_value
 from graph_cli.kinetic.view_entries import ViewEntry, find_view, load_view_entries
 from graph_cli.kinetic.view_format import ENTITY, RowsSection, placeholder_name
@@ -198,17 +198,6 @@ _NO_GRAPH = "graph:00000000-0000-0000-0000-000000000000"  # whoami: a graph no p
 _VISIBLE = AuthzContext(op_count=0, has_reason=False, dry_run=False)
 MISSING_REF: Final = "Missing argument 'REF'."  # what the required REF of 0.27 said
 ACCESS_DENIED_HINT = "ask the maintainer of this installation; do not work around it"
-
-
-def _seen_replacement(
-    function: FunctionEntry, visible: Sequence[FunctionEntry] | None
-) -> str | None:
-    """The function ``function`` was replaced by, only when the reader sees that one too: a
-    name the reader cannot see is not told in a deprecation warning."""
-    replaced = function.defn.replaced_by
-    if replaced is None or all(f.name != replaced for f in visible or ()):
-        return None
-    return replaced
 
 
 def refuse_affordances_with_rev() -> GraphCliError:
@@ -765,7 +754,7 @@ class ReadService:
         def compute() -> frozenset[str]:
             full, _ = self._models.load_for_read(entry)
             limited = self._visibility.model(entry, full, view)
-            return hidden_views(entries, slot.compiled, full, limited, function_entries)
+            return hidden_views(entries, slot.compiled, limited, function_entries)
 
         return self._hidden.of(
             "views", f"{slot.compiled_hash}+{digest}", entry.pin.artifact_hash, view, compute
@@ -1463,9 +1452,8 @@ class ReadService:
             return []
         replaced = chosen.defn.replaced_by
         if replaced is not None:
-            visible = self._visible_views(view.actor, view.entry, view.read_view) or ()
-            if all(v.name != replaced for v in visible):
-                replaced = None
+            visible = self._visible_views(view.actor, view.entry, view.read_view)
+            replaced = seen_replacement(replaced, visible)
         return [
             WarningRecord(
                 "view.deprecated",
@@ -1496,7 +1484,7 @@ class ReadService:
         function = find_entry(visible, section.function)
         if function.deprecated and function.name not in deprecated:
             deprecated.add(function.name)
-            replaced = _seen_replacement(function, visible)
+            replaced = seen_replacement(function.defn.replaced_by, visible)
             failures.append(
                 WarningRecord(
                     "view.function_deprecated",
@@ -2083,7 +2071,7 @@ class ReadService:
         self.usage.function = {"name": name, "hash": function.hash}
         warnings: list[WarningRecord] = []
         if function.deprecated:
-            replaced = _seen_replacement(function, visible)
+            replaced = seen_replacement(function.defn.replaced_by, visible)
             warnings.append(
                 WarningRecord(
                     "function.deprecated",

@@ -149,6 +149,10 @@ graph view --name org_catalog --page-bytes 4096 --cursor <value>   # the cursor 
 graph view --name org_catalog --page-bytes 262144        # the whole catalog in one call
 ```
 
+A script that reads the JSON form of a large page (`--json`) gets it in a file once it is bigger than
+the spill limit (`output.spilled`); `GRAPH_CLI_SPILL_BYTES=0` keeps it on stdout
+([configuration](../../docs/configuration.md)).
+
 Run a named function (parameters are ids or aliases, found with `graph lookup`):
 
 ```sh
