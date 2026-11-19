@@ -2,8 +2,10 @@
 
 ``action_compile`` hands every op to ``OpChecks.dispatch`` after it has counted
 the placeholder uses. The checks resolve the types, relations and entities an op
-names (a ``$ref`` parameter or an ``@local`` of a create), type the values and the
-one-position placeholders with ``action_slots`` and report to the ``CheckContext``.
+names (a ``$ref`` parameter or an ``@local`` of a create), type the values with
+``action_slots``, check the one-position placeholders of ``time`` and ``set_alias``
+themselves and report to the ``CheckContext``. ``prepare_locals`` binds the ``@local`` names
+of the creates once per action; ``check_locals`` resolves the uses of one op.
 The types, relations and ``write.*`` needs the ops (and the preconditions of the
 driver) touch are recorded in one ``Footprint`` the driver reads for ``touches``
 and ``needs``.
