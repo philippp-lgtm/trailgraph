@@ -915,7 +915,8 @@ HISTORY_OUTPUT: Final = obj(
                 {
                     "action": obj({"name": STRING, "hash": STRING}),  # set by a ``do``
                     "source": SOURCE,  # set by a document that names its source run
-                    # the revision a migration wrote (services.read.migration_effects.migration_item)
+                    # the revision a migration wrote
+                    # (services.read.migration_effects.migration_item)
                     "migration": obj(
                         {
                             "from": NULLABLE_STRING,
