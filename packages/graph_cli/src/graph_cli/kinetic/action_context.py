@@ -1,11 +1,11 @@
 """The state and reporting primitives the checks of one action share.
 
-``action_compile`` checks one action with several collaborators (the slot
-typing of ``action_slots``, the conditions of ``action_conditions``, the
-template of ``action_template``); the context holds what they and the driver
-read and write together: the definition, the model, the placeholder uses of
-the ops and the problems found so far, in one list so that their order is the
-order of the checks.
+``action_compile`` checks one action with several collaborators (the ops of
+``action_ops`` with the slot typing of ``action_slots``, the conditions of
+``action_conditions``, the template of ``action_template``); the context holds
+what they and the driver read and write together: the definition, the model,
+the placeholder uses of the ops and the problems found so far, in one list so
+that their order is the order of the checks.
 """
 
 from __future__ import annotations
