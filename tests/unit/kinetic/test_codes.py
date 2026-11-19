@@ -19,7 +19,7 @@ ADMIN_SOURCES = (
 )
 # ``graph view``, the read service: view.stale, view.takes_entity, ... (its function.* codes are
 # the function tests' business)
-VIEW_SOURCES = (Path(read_service.__file__),)
+VIEW_SOURCES = tuple(sorted(Path(read_service.__file__).parent.glob("*.py")))
 LITERAL = re.compile(r'"((?:function|action|view)\.[a-z_]+)"')
 
 # Codes the package builds from the kind (``f"{kind}.parameter_missing"``): each is
