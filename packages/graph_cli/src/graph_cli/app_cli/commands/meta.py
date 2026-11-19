@@ -15,6 +15,16 @@ from graph_cli.app_cli.commands.common import (
     context,
     next_page,
 )
+from graph_cli.app_cli.commands.describe.shared import (
+    MODULE_FILTER,
+    MODULE_OPTION,
+    describe_spec,
+    function_call,
+    open_view,
+    visible_actions,
+    visible_functions,
+    visible_views,
+)
 from graph_cli.app_cli.output_schemas import DEFS, NULLABLE_STRING, STRINGS, model_document
 from graph_cli.cli_kit.envelope import Result
 from graph_cli.cli_kit.inventory import build_inventory
@@ -23,7 +33,6 @@ from graph_cli.cli_kit.output_schemas import (
     BOOLEAN,
     INTEGER,
     STRING,
-    Schema,
     array,
     enum,
     nullable,
@@ -35,17 +44,11 @@ from graph_cli.cli_kit.spec import CommandSpec, Example, ParamSpec
 from graph_cli.kernel.canonical import JsonObject, JsonValue
 from graph_cli.kernel.json_access import as_list, as_object, req_list, req_str
 from graph_cli.kernel.records import RequestMeta
-from graph_cli.kinetic.action_entries import ActionEntry
-from graph_cli.kinetic.entries import FunctionEntry
-from graph_cli.kinetic.view_entries import ViewEntry
 from graph_cli.query.plan import DEFAULT_LIMIT, MAX_LIMIT
 from graph_cli.services import describe
-from graph_cli.services.read import GraphRead, Page
+from graph_cli.services.read import Page
 from graph_cli.services.schema_search import SEARCH_TERM_KINDS, search_model
 
-TYPE_ARG: Final = ParamSpec(
-    "type", "term", "Type CURIE or unique local name.", required=True, positional=True
-)
 _OBLIGATIONS: Final = obj(  # access_control.effective.write_obligations
     extra=obj(optional={"require_reason": BOOLEAN, "max_batch": INTEGER})
 )
@@ -158,17 +161,6 @@ _RELATION: Final = obj(
 _PROPERTIES: Final = {  # absent with --compact
     "properties": array(obj({"name": STRING, "base": STRING, "many": BOOLEAN}))
 }
-MODULE_OPTION: Final = ParamSpec(
-    "--module", "string", "Only the terms of this module (id or prefix); see describe modules."
-)
-MODULE_ARG: Final = ParamSpec(
-    "module",
-    "string",
-    "Module id or prefix (see describe modules).",
-    required=True,
-    positional=True,
-)
-_MODULE_FILTER: Final = {"module": STRING}  # a filtered answer names the module it is limited to
 _TYPE_ITEM: Final = obj({"curie": STRING, "abstract": BOOLEAN, "extends": NULLABLE_STRING, **_DOC})
 _MODULE_LINK: Final = obj(
     {
@@ -391,7 +383,7 @@ _SEARCH: Final = model_document(
             )
         ),
     },
-    _MODULE_FILTER,
+    MODULE_FILTER,
 )
 _SCHEMA: Final = model_document(
     {
@@ -407,7 +399,7 @@ _SCHEMA: Final = model_document(
         "node_fields": STRINGS,
         "relationship_fields": STRINGS,
     },
-    _MODULE_FILTER,
+    MODULE_FILTER,
 )
 
 
@@ -448,18 +440,8 @@ def inventory(
     )
 
 
-def _view(state: CommandState, graph: str | None, command: str) -> GraphRead:
-    ctx = context(state)
-    entry = ctx.select(graph)
-    view = ctx.reader.open(
-        ctx.actor, entry, "read.describe", RequestMeta.of(command, {"graph": entry.name})
-    )
-    state.warnings += view.warnings
-    return view
-
-
 def describe_types(state: CommandState, module: str | None, graph: str | None) -> Result:
-    view = _view(state, graph, "describe types")
+    view = open_view(state, graph, "describe types")
     return Result(
         data=describe.describe_types(view.entry, view.model, module=module),
         graph=view.envelope_graph(),
@@ -504,11 +486,6 @@ def _link_line(link: JsonObject, module_id: str) -> str:
     if owner != module_id and owner not in others:
         where += f"; declared in {owner}"
     return f"  {_ends(link, 'from')} -{req_str(link, 'relation')}-> {_ends(link, 'to')}  [{where}]"
-
-
-def _function_call(item: JsonObject) -> str:
-    """``name(signature)``: how a function or an action is called."""
-    return f"{req_str(item, 'name')}({req_str(item, 'signature')})"
 
 
 def _module_text(data: JsonObject) -> str:
@@ -557,41 +534,25 @@ def _module_text(data: JsonObject) -> str:
     section("Rules:", rules)
     if "functions" in item:
         calls = [as_object(v, "function") for v in req_list(item, "functions")]
-        section("Functions:", [f"  {_function_call(c)}  {req_str(c, 'summary')}" for c in calls])
+        section("Functions:", [f"  {function_call(c)}  {req_str(c, 'summary')}" for c in calls])
     if "actions" in item:
         runs = [as_object(v, "action") for v in req_list(item, "actions")]
-        section("Actions:", [f"  {_function_call(r)}  {req_str(r, 'summary')}" for r in runs])
+        section("Actions:", [f"  {function_call(r)}  {req_str(r, 'summary')}" for r in runs])
     return "\n".join(lines) + "\n"
 
 
-def _functions(state: CommandState, view: GraphRead) -> tuple[FunctionEntry, ...] | None:
-    """The graph's functions the caller may see (``read.function``), else ``None``."""
-    return context(state).reader.functions(view.actor, view.entry)
-
-
-def _actions(state: CommandState, view: GraphRead) -> tuple[ActionEntry, ...] | None:
-    """The graph's actions the caller may run (all their write rights), else ``None``."""
-    return context(state).reader.actions(view.actor, view.entry)
-
-
-def _views(state: CommandState, view: GraphRead) -> tuple[ViewEntry, ...] | None:
-    """The graph's views the caller may see (what they name is visible, ``read.function`` for
-    the functions they run, ``read.find`` for set views), else ``None``."""
-    return context(state).reader.views(view.actor, view.entry)
-
-
 def describe_modules(state: CommandState, graph: str | None) -> Result:
-    view = _view(state, graph, "describe modules")
+    view = open_view(state, graph, "describe modules")
     data = describe.describe_modules(
-        view.entry, view.model, _functions(state, view), _actions(state, view)
+        view.entry, view.model, visible_functions(state, view), visible_actions(state, view)
     )
     return Result(data=data, graph=view.envelope_graph(), text=_modules_text(data))
 
 
 def describe_module(state: CommandState, module: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe module")
+    view = open_view(state, graph, "describe module")
     data = describe.describe_module(
-        view.entry, view.model, module, _functions(state, view), _actions(state, view)
+        view.entry, view.model, module, visible_functions(state, view), visible_actions(state, view)
     )
     return Result(data=data, graph=view.envelope_graph(), text=_module_text(data))
 
@@ -603,18 +564,18 @@ def _functions_text(data: JsonObject) -> str:
         item = as_object(value, "function")
         deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
         module = f"  [{item['module']}]" if item["module"] else ""
-        lines.append(f"{_function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
+        lines.append(f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
     return "\n".join(lines or ["-"]) + "\n"
 
 
 def describe_functions(
     state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
 ) -> Result:
-    view = _view(state, graph, "describe functions")
+    view = open_view(state, graph, "describe functions")
     data = describe.describe_functions(
         view.entry,
         view.model,
-        _functions(state, view),
+        visible_functions(state, view),
         module=module,
         include_deprecated=include_deprecated,
     )
@@ -638,7 +599,7 @@ def _param_lines(item: JsonObject) -> list[str]:
 def _function_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, columns, touched terms, query."""
     f = as_object(data["function"], "function")
-    head = f"{_function_call(f)}  [{f['module']}]" if f["module"] else _function_call(f)
+    head = f"{function_call(f)}  [{f['module']}]" if f["module"] else function_call(f)
     lines = [head, f"  {req_str(f, 'summary')}", f"  Use when: {req_str(f, 'use_when')}"]
     if f["status"] == "deprecated":
         replaced = f"; use {f['replaced_by']}" if f["replaced_by"] else ""
@@ -663,8 +624,8 @@ def _function_text(data: JsonObject) -> str:
 
 
 def describe_function(state: CommandState, name: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe function")
-    data = describe.describe_function(view.entry, view.model, _functions(state, view), name)
+    view = open_view(state, graph, "describe function")
+    data = describe.describe_function(view.entry, view.model, visible_functions(state, view), name)
     return Result(data=data, graph=view.envelope_graph(), text=_function_text(data))
 
 
@@ -675,18 +636,18 @@ def _actions_text(data: JsonObject) -> str:
         item = as_object(value, "action")
         deprecated = " (deprecated)" if item["status"] == "deprecated" else ""
         module = f"  [{item['module']}]" if item["module"] else ""
-        lines.append(f"{_function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
+        lines.append(f"{function_call(item)}{module}{deprecated}  {req_str(item, 'summary')}")
     return "\n".join(lines or ["-"]) + "\n"
 
 
 def describe_actions(
     state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
 ) -> Result:
-    view = _view(state, graph, "describe actions")
+    view = open_view(state, graph, "describe actions")
     data = describe.describe_actions(
         view.entry,
         view.model,
-        _actions(state, view),
+        visible_actions(state, view),
         module=module,
         include_deprecated=include_deprecated,
     )
@@ -697,7 +658,7 @@ def _action_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, preconditions, operations, needed
     rights, examples."""
     a = as_object(data["action"], "action")
-    head = f"{_function_call(a)}  [{a['module']}]" if a["module"] else _function_call(a)
+    head = f"{function_call(a)}  [{a['module']}]" if a["module"] else function_call(a)
     lines = [head, f"  {req_str(a, 'summary')}", f"  Use when: {req_str(a, 'use_when')}"]
     if a["status"] == "deprecated":
         replaced = f"; use {a['replaced_by']}" if a["replaced_by"] else ""
@@ -728,8 +689,8 @@ def _action_text(data: JsonObject) -> str:
 
 
 def describe_action(state: CommandState, name: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe action")
-    data = describe.describe_action(view.entry, view.model, _actions(state, view), name)
+    view = open_view(state, graph, "describe action")
+    data = describe.describe_action(view.entry, view.model, visible_actions(state, view), name)
     return Result(data=data, graph=view.envelope_graph(), text=_action_text(data))
 
 
@@ -743,7 +704,7 @@ def _views_text(data: JsonObject) -> str:
         takes = f" takes {item['takes']}" if "takes" in item else " set view"
         default = ", default" if item.get("default") else ""
         lines.append(
-            f"{_function_call(item)}{module}{deprecated}  ({takes.strip()}{default})"
+            f"{function_call(item)}{module}{deprecated}  ({takes.strip()}{default})"
             f"  {req_str(item, 'summary')}"
         )
     return "\n".join(lines or ["-"]) + "\n"
@@ -752,11 +713,11 @@ def _views_text(data: JsonObject) -> str:
 def describe_views(
     state: CommandState, module: str | None, include_deprecated: bool, graph: str | None
 ) -> Result:
-    view = _view(state, graph, "describe views")
+    view = open_view(state, graph, "describe views")
     data = describe.describe_views(
         view.entry,
         view.model,
-        _views(state, view),
+        visible_views(state, view),
         module=module,
         include_deprecated=include_deprecated,
     )
@@ -828,7 +789,7 @@ def _view_text(data: JsonObject) -> str:
     """The definition in reading order: head, parameters, sections, examples, touched terms,
     how to call it."""
     v = as_object(data["view"], "view")
-    head = f"{_function_call(v)}  [{v['module']}]" if v["module"] else _function_call(v)
+    head = f"{function_call(v)}  [{v['module']}]" if v["module"] else function_call(v)
     flavour = f"takes {v['takes']}" if v["takes"] is not None else "set view"
     if v["default"]:
         flavour += ", default"
@@ -861,8 +822,8 @@ def _view_text(data: JsonObject) -> str:
 
 
 def describe_view(state: CommandState, name: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe view")
-    data = describe.describe_view(view.entry, view.model, _views(state, view), name)
+    view = open_view(state, graph, "describe view")
+    data = describe.describe_view(view.entry, view.model, visible_views(state, view), name)
     item = as_object(data["view"], "view")
     data = {**data, "view": {**item, "call": _view_call(item, view.entry.name)}}
     return Result(data=data, graph=view.envelope_graph(), text=_view_text(data))
@@ -892,7 +853,7 @@ def describe_search(
     offset: int,
     graph: str | None,
 ) -> Result:
-    view = _view(state, graph, "describe search")
+    view = open_view(state, graph, "describe search")
     data, total = search_model(
         view.entry,
         view.model,
@@ -901,9 +862,9 @@ def describe_search(
         module=module,
         limit=limit,
         offset=offset,
-        functions=_functions(state, view),
-        actions=_actions(state, view),
-        views=_views(state, view),
+        functions=visible_functions(state, view),
+        actions=visible_actions(state, view),
+        views=visible_views(state, view),
     )
     page = Page(total, len(req_list(data, "items")), limit, offset).to_json()
     options = (("--kind", kind), ("--module", (module,) if module else ()))
@@ -929,14 +890,14 @@ def describe_search(
 
 
 def describe_type(state: CommandState, type: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe type")
+    view = open_view(state, graph, "describe type")
     return Result(
         data=describe.describe_type(view.entry, view.model, type), graph=view.envelope_graph()
     )
 
 
 def describe_relations(state: CommandState, module: str | None, graph: str | None) -> Result:
-    view = _view(state, graph, "describe relations")
+    view = open_view(state, graph, "describe relations")
     return Result(
         data=describe.describe_relations(view.entry, view.model, module=module),
         graph=view.envelope_graph(),
@@ -944,14 +905,14 @@ def describe_relations(state: CommandState, module: str | None, graph: str | Non
 
 
 def describe_fields(state: CommandState, type: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe fields")
+    view = open_view(state, graph, "describe fields")
     return Result(
         data=describe.describe_fields(view.entry, view.model, type), graph=view.envelope_graph()
     )
 
 
 def describe_lifecycle(state: CommandState, type: str, graph: str | None) -> Result:
-    view = _view(state, graph, "describe lifecycle")
+    view = open_view(state, graph, "describe lifecycle")
     return Result(
         data=describe.describe_lifecycle(view.entry, view.model, type), graph=view.envelope_graph()
     )
@@ -983,44 +944,9 @@ def _schema_text(data: JsonObject) -> str:
 def describe_schema(
     state: CommandState, compact: bool, module: str | None, graph: str | None
 ) -> Result:
-    view = _view(state, graph, "describe schema")
+    view = open_view(state, graph, "describe schema")
     data = describe.describe_schema(view.entry, view.model, compact=compact, module=module)
     return Result(data=data, graph=view.envelope_graph(), text=_schema_text(data))
-
-
-def _describe(
-    name: str,
-    summary: str,
-    handler: object,
-    *,
-    with_type: bool,
-    with_module: bool = False,
-    examples: tuple[Example, ...],
-    output: Schema,
-    options: tuple[ParamSpec, ...] = (),
-) -> CommandSpec:
-    params = (TYPE_ARG, *options, GRAPH) if with_type else (*options, GRAPH)
-    if with_module:
-        params = (MODULE_ARG, GRAPH)
-    errors = (
-        (*GRAPH_ERRORS, "term.unknown", "query.ambiguous_term")
-        if with_type
-        else (*GRAPH_ERRORS, "term.unknown")
-        if with_module or MODULE_OPTION in options
-        else GRAPH_ERRORS
-    )
-    return CommandSpec(
-        path=("describe", name),
-        kind="read",
-        surface="model",
-        action="read.describe",
-        summary=summary,
-        params=params,
-        examples=examples,
-        errors=errors,
-        handler=handler,  # type: ignore[arg-type]
-        output=output,
-    )
 
 
 SPECS: Final = (
@@ -1083,12 +1009,12 @@ SPECS: Final = (
         remote="client",
         output=ref("inventory"),
     ),
-    _describe(
+    describe_spec(
         "types",
         "List the types of the selected graph's ontology.",
         describe_types,
         with_type=False,
-        output=model_document({"types": array(_TYPE_ITEM)}, _MODULE_FILTER),
+        output=model_document({"types": array(_TYPE_ITEM)}, MODULE_FILTER),
         examples=(
             Example("graph describe types", "All types with summaries."),
             Example("graph describe types --graph <graph> --json", "Types of one graph."),
@@ -1096,7 +1022,7 @@ SPECS: Final = (
         ),
         options=(MODULE_OPTION,),
     ),
-    _describe(
+    describe_spec(
         "modules",
         "List the modules (subject areas) of the graph's ontology and how they link.",
         describe_modules,
@@ -1107,7 +1033,7 @@ SPECS: Final = (
             Example("graph describe modules --json", "The modules as graph_cli.model/1."),
         ),
     ),
-    _describe(
+    describe_spec(
         "module",
         "Describe one module: its types, relations, links to other modules and rules.",
         describe_module,
@@ -1174,12 +1100,12 @@ SPECS: Final = (
         output=_SEARCH,
         limits={"limit": MAX_LIMIT},
     ),
-    _describe(
+    describe_spec(
         "functions",
         "List the named functions of the graph with their parameters.",
         describe_functions,
         with_type=False,
-        output=model_document({"functions": array(obj(_FUNCTION_ITEM))}, _MODULE_FILTER),
+        output=model_document({"functions": array(obj(_FUNCTION_ITEM))}, MODULE_FILTER),
         examples=(
             Example("graph describe functions", "The functions: name, parameters, summary."),
             Example(
@@ -1217,12 +1143,12 @@ SPECS: Final = (
         handler=describe_function,
         output=_FUNCTION,
     ),
-    _describe(
+    describe_spec(
         "actions",
         "List the actions of the graph with their parameters.",
         describe_actions,
         with_type=False,
-        output=model_document({"actions": array(obj(_ACTION_ITEM))}, _MODULE_FILTER),
+        output=model_document({"actions": array(obj(_ACTION_ITEM))}, MODULE_FILTER),
         examples=(
             Example("graph describe actions", "The actions: name, parameters, summary."),
             Example(
@@ -1258,13 +1184,13 @@ SPECS: Final = (
         handler=describe_action,
         output=_ACTION,
     ),
-    _describe(
+    describe_spec(
         "views",
         "List the published views of the graph with their parameters.",
         describe_views,
         with_type=False,
         output=model_document(
-            {"views": array(obj(_VIEW_ITEM, _VIEW_ITEM_OPTIONAL))}, _MODULE_FILTER
+            {"views": array(obj(_VIEW_ITEM, _VIEW_ITEM_OPTIONAL))}, MODULE_FILTER
         ),
         examples=(
             Example(
@@ -1304,7 +1230,7 @@ SPECS: Final = (
         handler=describe_view,
         output=_VIEW,
     ),
-    _describe(
+    describe_spec(
         "type",
         "Describe one type: fields, lifecycles, relations and rules.",
         describe_type,
@@ -1315,12 +1241,12 @@ SPECS: Final = (
             Example("graph describe type <type> --json", "The type as graph_cli.model/1."),
         ),
     ),
-    _describe(
+    describe_spec(
         "relations",
         "List the relations of the selected graph's ontology.",
         describe_relations,
         with_type=False,
-        output=model_document({"relations": array(_RELATION)}, _MODULE_FILTER),
+        output=model_document({"relations": array(_RELATION)}, MODULE_FILTER),
         examples=(
             Example("graph describe relations", "All relations."),
             Example("graph describe relations --json", "Relations as JSON."),
@@ -1331,7 +1257,7 @@ SPECS: Final = (
         ),
         options=(MODULE_OPTION,),
     ),
-    _describe(
+    describe_spec(
         "schema",
         "Show the model as graph query sees it: labels, relationship patterns, properties.",
         describe_schema,
@@ -1351,7 +1277,7 @@ SPECS: Final = (
             MODULE_OPTION,
         ),
     ),
-    _describe(
+    describe_spec(
         "fields",
         "List the fields of one type with datatypes and limits.",
         describe_fields,
@@ -1362,7 +1288,7 @@ SPECS: Final = (
             Example("graph describe fields <type> --json", "Fields as JSON."),
         ),
     ),
-    _describe(
+    describe_spec(
         "lifecycle",
         "Show the lifecycles of a type, or one lifecycle by name.",
         describe_lifecycle,
