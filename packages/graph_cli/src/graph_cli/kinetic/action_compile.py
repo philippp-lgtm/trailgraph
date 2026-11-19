@@ -41,6 +41,7 @@ from graph_cli.kernel.canonical import JsonObject, JsonValue, hash_document
 from graph_cli.kernel.changeset import OP_ACTIONS, parse_changeset
 from graph_cli.kernel.errors import GraphCliError
 from graph_cli.kernel.json_access import as_object, req_list, req_obj, req_str
+from graph_cli.kinetic.action_conditions import ConditionCheck
 from graph_cli.kinetic.action_context import CheckContext
 from graph_cli.kinetic.action_format import (
     ABSENT,
@@ -69,13 +70,10 @@ from graph_cli.kinetic.params import (
 )
 from graph_cli.ontology_layer.connecting import connecting
 from graph_cli.ontology_layer.expressions import (
-    AttrCond,
-    AttrRef,
     Cond,
     CountCond,
     SumCond,
     iter_conditions,
-    lower,
 )
 from graph_cli.ontology_layer.model import AttributeDef, CompiledModel
 from graph_cli.ontology_layer.vocabulary import LANG_BASES
@@ -1035,7 +1033,7 @@ class _Compile:
         self.types.add(param.of_class)
         self.touch_conditions(pre.conds)
         before = len(self.problems)
-        resolved = _ConditionCheck(self, param.of_class, pre.conds).run()
+        resolved = ConditionCheck(self.ctx, param.of_class, pre.conds).run()
         if len(self.problems) > before:
             return None
         return resolved
@@ -1075,110 +1073,6 @@ class _Compile:
             ]
 
         return {"types": named(self.types), "relations": named(self.relations)}
-
-
-class _ConditionCheck:
-    """The checks of rule conditions in the ontology validator, on a ``CompiledModel``."""
-
-    def __init__(self, parent: _Compile, scope: str, conds: tuple[Cond, ...]) -> None:
-        self.parent = parent
-        self.model = parent.model
-        self.scope = scope
-        self.conds = conds
-        self.rels: dict[str, str] = {}
-        self.classes: dict[str, str] = {}
-
-    def run(self) -> JsonValue | None:
-        for cond in iter_conditions(self.conds):
-            compares_attr = any(isinstance(value, AttrRef) for _, value in cond.ops)
-            if isinstance(cond, AttrCond):
-                self.scope_attribute(f"{cond.path}.attr", cond.attr, compares_attr)
-            else:
-                self.aggregate(cond)
-            for op, value in cond.ops:
-                if isinstance(value, AttrRef):
-                    self.scope_attribute(f"{cond.path}.{op}.attr", value.attr, True)
-        return lower(self.conds, lambda r: self.rels.get(r, r), lambda c: self.classes.get(c, c))
-
-    def scope_attribute(self, path: str, name: str, numeric: bool) -> None:
-        found = self.model.classes[self.scope].attributes.get(name)
-        if found is None:
-            self.parent.ctx.unknown(
-                "action.unknown_attribute",
-                path,
-                self.scope,
-                name,
-                list(self.model.classes[self.scope].attributes),
-            )
-        elif numeric and not _numeric(self.model, found):
-            self.parent.ctx.add(
-                "action.not_numeric",
-                path,
-                f"{name!r} of {self.scope} is not a single integer or decimal value",
-                name=name,
-            )
-
-    def aggregate(self, cond: CountCond | SumCond) -> None:
-        kind = "count" if isinstance(cond, CountCond) else "sum"
-        rel = self.parent.ctx.term(
-            "relation", cond.rel, self.model.relations, f"{cond.path}.{kind}.rel"
-        )
-        if rel is not None:
-            self.rels[cond.rel] = rel
-        types: set[str] = set()
-        complete = True
-        for ref in cond.types:
-            curie = self.parent.ctx.term(
-                "type", ref, self.model.classes, f"{cond.path}.{kind}.where.type"
-            )
-            if curie is None:
-                complete = False
-            else:
-                self.classes[ref] = curie
-                types.add(curie)
-        if isinstance(cond, SumCond) and rel is not None and complete:
-            self.summed(cond, rel, types)
-
-    def summed(self, cond: SumCond, rel: str, types: set[str]) -> None:
-        definition = self.model.relations[rel]
-        bases = set(definition.range if cond.direction == "out" else definition.domain)
-        ends = []
-        for curie, cls in self.model.classes.items():
-            lineage = {curie, *cls.ancestors}
-            if cls.abstract or (bases and lineage.isdisjoint(bases)):
-                continue
-            if not types or not lineage.isdisjoint(types):
-                ends.append(curie)
-        path = f"{cond.path}.sum.attr"
-        missing, other = [], []
-        for curie in ends:
-            attribute = self.model.classes[curie].attributes.get(cond.attr)
-            if attribute is None:
-                missing.append(curie)
-            elif not _numeric(self.model, attribute):
-                other.append(curie)
-        if missing:
-            self.parent.ctx.add(
-                "action.unknown_attribute",
-                path,
-                f"{', '.join(missing)} at the other end of {rel} "
-                f"{'has' if len(missing) == 1 else 'have'} no attribute {cond.attr!r}; "
-                "narrow with where.type",
-                name=cond.attr,
-            )
-        if other:
-            self.parent.ctx.add(
-                "action.not_numeric",
-                path,
-                f"{cond.attr!r} of {other[0]} is not a single integer or decimal value",
-                name=cond.attr,
-            )
-
-
-def _numeric(model: CompiledModel, attribute: AttributeDef) -> bool:
-    if attribute.kind in ("lifecycle", "enum") or attribute.many:
-        return False
-    return model.value_base(attribute.kind, attribute.type) in ("integer", "decimal")
 
 
 def _accepts(model: CompiledModel, accepted: tuple[str, ...], classes: frozenset[str]) -> bool:
