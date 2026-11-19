@@ -143,6 +143,7 @@ clauses (projection, aggregation, sorting, paging, `UNWIND`), `evaluate` and
 | `json_shapes` | how reads show entities, edges and query values as JSON |
 | `change_feed` | the page of `changes` and the per-revision parts `history` shares with it (pure, over the reader's snapshot and the raw one below it) |
 | `migration_effects` | `history`'s migration item: the renames and steps a migration tx applied to one entity, judged per attribute for a limited reader |
+| `as_of` | the earlier state `--as-of` names: its snapshot, and the warning that says which state is read |
 
 `cli_kit` (envelope, error rendering, hints; `run` reports the bytes it
 wrote, for the access log) is shared with the maintenance CLI; `graph_cli_admin.maintenance_cli.wiring` is the admin composition root
