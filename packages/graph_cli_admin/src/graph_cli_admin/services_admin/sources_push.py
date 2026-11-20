@@ -255,6 +255,17 @@ class _Catalogs:
     view_functions: tuple[FunctionEntry, ...]  # the functions the pushed views were checked with
 
 
+@dataclass(frozen=True, slots=True)
+class _Final:
+    """What the graph holds once the push is done (or would hold: a dry run): the published
+    slots, else what the release compiles again, else what is published now."""
+
+    skill: SkillSlot | None
+    functions: KineticSlot | None
+    actions: KineticSlot | None
+    views: KineticSlot | None
+
+
 def push(
     ctx: AdminContext,
     *,
@@ -289,144 +300,218 @@ def push(
         checked = _check_skill(locked, catalogs, inventory=inventory)
         slot = _skill_slot(locked, checked)
         seq = session.head().seq
-        after = locked.after
-        if not dry_run:
-            if locked.releasing:
-                assert locked.planned is not None and auth.decisions is not None
-                after = release.write(
-                    ctx, session, locked.planned, auth.decisions, auth.meta, reason=reason
-                )
-            if slot is not None:
-                skill.write(
-                    ctx,
-                    session,
-                    after,
-                    auth.configure,
-                    auth.meta,
-                    current.skill,
-                    slot,
-                    reason=reason,
-                )
-            if catalogs.functions is not None:
-                functions.write(
-                    ctx,
-                    session,
-                    after,
-                    auth.configure,
-                    auth.meta,
-                    current.functions,
-                    catalogs.functions,
-                    reason=reason,
-                )
-            if catalogs.actions is not None:
-                actions.write(
-                    ctx,
-                    session,
-                    after,
-                    auth.configure,
-                    auth.meta,
-                    current.actions,
-                    catalogs.actions,
-                    reason=reason,
-                )
-            if catalogs.views is not None:
-                authored_views.write(
-                    ctx,
-                    session,
-                    after,
-                    auth.configure,
-                    auth.meta,
-                    current.views,
-                    catalogs.views,
-                    reason=reason,
-                )
-        ontology: dict[str, JsonValue] = (
-            planned.data
-            if planned is not None
-            else {
-                "from": entry.pin.to_json(),
-                "to": entry.pin.to_json(),
-                "released": False,
-                "pinned": False,
-            }
+        after = (
+            locked.after
+            if dry_run
+            else _write_all(ctx, session, locked, catalogs, slot, auth, reason=reason)
         )
-        final = slot if slot is not None else current.skill
-        # a catalog the release compiles again (plan M8) is the same sources, compiled anew
-        again_functions = planned.functions if planned is not None else None
-        again_actions = planned.actions if planned is not None else None
-        again_views = planned.views if planned is not None else None
-        final_functions = catalogs.functions or (
-            again_functions.slot if again_functions else current.functions
-        )
-        final_actions = catalogs.actions or (
-            again_actions.slot if again_actions else current.actions
-        )
-        final_views = catalogs.views or (again_views.slot if again_views else current.views)
-        data: dict[str, JsonValue] = {
-            "graph_id": str(entry.id),
-            "ontology": {k: v for k, v in ontology.items() if k != "graph_id"},
-            "skill": None
-            if ws.skill.files is None
-            else {
-                "skill": ws.skill.name,
-                "from": current.skill.summary() if current.skill is not None else None,
-                "to": final.summary() if final is not None else None,
-                "files": sorted(ws.skill.files),
-                "published": slot is not None and not dry_run,
-            },
-            "functions": None
-            if not (ws.functions.directory.is_dir() or catalogs.functions is not None)
-            else {
-                "from": current.functions.summary() if current.functions is not None else None,
-                "to": final_functions.summary() if final_functions is not None else None,
-                "functions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.functions.files)],
-                "published": catalogs.functions is not None and not dry_run,
-            },
-            "actions": None
-            if not (ws.actions.directory.is_dir() or catalogs.actions is not None)
-            else {
-                "from": current.actions.summary() if current.actions is not None else None,
-                "to": final_actions.summary() if final_actions is not None else None,
-                "actions": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.actions.files)],
-                "published": catalogs.actions is not None and not dry_run,
-            },
-            "unchanged": not (
-                locked.releasing
-                or locked.publishing_skill
-                or catalogs.functions is not None
-                or catalogs.actions is not None
-                or catalogs.views is not None
-            ),
-            "dry_run": dry_run,
-            "source": base_document(
-                after, after.pin, final, final_functions, final_actions, final_views
-            ),
-        }
-        if final_views is not None:  # as for a graph without views: follows the slot
-            data["views"] = {
-                "from": current.views.summary() if current.views is not None else None,
-                "to": final_views.summary() if final_views is not None else None,
-                "views": [n.removesuffix(FILE_SUFFIX) for n in sorted(ws.views.files)],
-                "published": catalogs.views is not None and not dry_run,
-            }
+        final = _final(locked, catalogs, slot)
+        data = _answer(locked, catalogs, slot, final, after, dry_run=dry_run)
     if not dry_run:
-        write_base(
-            source,
-            base_document(after, after.pin, final, final_functions, final_actions, final_views),
+        write_base(source, _source_document(after, final))
+    return Pushed(after, data, seq, _warnings(locked, catalogs, checked, after))
+
+
+def _write_all(
+    ctx: AdminContext,
+    session: MaintenanceSession,
+    locked: _Locked,
+    catalogs: _Catalogs,
+    slot: SkillSlot | None,
+    auth: _Authorized,
+    *,
+    reason: str | None,
+) -> GraphEntry:
+    """Write the push, in the order release, skill, functions, actions, views (an interrupted
+    push is repeatable from any point); returns the entry after the release."""
+    after = locked.after
+    current = locked.current
+    if locked.releasing:
+        assert locked.planned is not None and auth.decisions is not None
+        after = release.write(
+            ctx, session, locked.planned, auth.decisions, auth.meta, reason=reason
         )
-    warnings = planned.warnings if planned is not None else ()
+    if slot is not None:
+        skill.write(
+            ctx, session, after, auth.configure, auth.meta, current.skill, slot, reason=reason
+        )
+    if catalogs.functions is not None:
+        functions.write(
+            ctx,
+            session,
+            after,
+            auth.configure,
+            auth.meta,
+            current.functions,
+            catalogs.functions,
+            reason=reason,
+        )
+    if catalogs.actions is not None:
+        actions.write(
+            ctx,
+            session,
+            after,
+            auth.configure,
+            auth.meta,
+            current.actions,
+            catalogs.actions,
+            reason=reason,
+        )
+    if catalogs.views is not None:
+        authored_views.write(
+            ctx,
+            session,
+            after,
+            auth.configure,
+            auth.meta,
+            current.views,
+            catalogs.views,
+            reason=reason,
+        )
+    return after
+
+
+def _final(locked: _Locked, catalogs: _Catalogs, slot: SkillSlot | None) -> _Final:
+    """The slots the graph holds after the push."""
+    planned, current = locked.planned, locked.current
+    # a catalog the release compiles again (plan M8) is the same sources, compiled anew
+    again_functions = planned.functions if planned is not None else None
+    again_actions = planned.actions if planned is not None else None
+    again_views = planned.views if planned is not None else None
+    return _Final(
+        skill=slot if slot is not None else current.skill,
+        functions=catalogs.functions
+        or (again_functions.slot if again_functions else current.functions),
+        actions=catalogs.actions or (again_actions.slot if again_actions else current.actions),
+        views=catalogs.views or (again_views.slot if again_views else current.views),
+    )
+
+
+def _source_document(after: GraphEntry, final: _Final) -> dict[str, JsonValue]:
+    """The new base file: the graph as the push leaves it."""
+    return base_document(after, after.pin, final.skill, final.functions, final.actions, final.views)
+
+
+def _answer(
+    locked: _Locked,
+    catalogs: _Catalogs,
+    slot: SkillSlot | None,
+    final: _Final,
+    after: GraphEntry,
+    *,
+    dry_run: bool,
+) -> dict[str, JsonValue]:
+    """What the push answers; ``views`` comes last and only for a graph that has views."""
+    ws, current = locked.ws, locked.current
+    data: dict[str, JsonValue] = {
+        "graph_id": str(locked.entry.id),
+        "ontology": {k: v for k, v in _ontology_answer(locked).items() if k != "graph_id"},
+        "skill": _skill_answer(locked, slot, final, dry_run=dry_run),
+        "functions": None
+        if not (ws.functions.directory.is_dir() or catalogs.functions is not None)
+        else _kind_answer(
+            current.functions,
+            final.functions,
+            "functions",
+            ws.functions.files,
+            published=catalogs.functions is not None and not dry_run,
+        ),
+        "actions": None
+        if not (ws.actions.directory.is_dir() or catalogs.actions is not None)
+        else _kind_answer(
+            current.actions,
+            final.actions,
+            "actions",
+            ws.actions.files,
+            published=catalogs.actions is not None and not dry_run,
+        ),
+        "unchanged": not (
+            locked.releasing
+            or locked.publishing_skill
+            or catalogs.functions is not None
+            or catalogs.actions is not None
+            or catalogs.views is not None
+        ),
+        "dry_run": dry_run,
+        "source": _source_document(after, final),
+    }
+    if final.views is not None:  # as for a graph without views: follows the slot
+        data["views"] = _kind_answer(
+            current.views,
+            final.views,
+            "views",
+            ws.views.files,
+            published=catalogs.views is not None and not dry_run,
+        )
+    return data
+
+
+def _ontology_answer(locked: _Locked) -> dict[str, JsonValue]:
+    """The release the push makes, or that there is none."""
+    if locked.planned is not None:
+        return locked.planned.data
+    entry = locked.entry
+    return {
+        "from": entry.pin.to_json(),
+        "to": entry.pin.to_json(),
+        "released": False,
+        "pinned": False,
+    }
+
+
+def _skill_answer(
+    locked: _Locked, slot: SkillSlot | None, final: _Final, *, dry_run: bool
+) -> dict[str, JsonValue] | None:
+    """What the push does with the skill; ``None`` without a skill directory."""
+    ws, current = locked.ws, locked.current
+    if ws.skill.files is None:
+        return None
+    return {
+        "skill": ws.skill.name,
+        "from": current.skill.summary() if current.skill is not None else None,
+        "to": final.skill.summary() if final.skill is not None else None,
+        "files": sorted(ws.skill.files),
+        "published": slot is not None and not dry_run,
+    }
+
+
+def _kind_answer(
+    current: KineticSlot | None,
+    final: KineticSlot | None,
+    key: str,
+    files: Mapping[str, bytes],
+    *,
+    published: bool,
+) -> dict[str, JsonValue]:
+    """What the push does with the functions, actions or views: ``key`` is the name the
+    names of the pushed ``files`` are answered under."""
+    return {
+        "from": current.summary() if current is not None else None,
+        "to": final.summary() if final is not None else None,
+        key: [n.removesuffix(FILE_SUFFIX) for n in sorted(files)],
+        "published": published,
+    }
+
+
+def _warnings(
+    locked: _Locked, catalogs: _Catalogs, checked: skill.Checked | None, after: GraphEntry
+) -> tuple[WarningRecord, ...]:
+    """The warnings of the push: the release's, then the pushed actions', views' and skill's.
+    Computed after the writes and the new base: a warning check that raises fails the command
+    late, with the push done."""
+    warnings = locked.planned.warnings if locked.planned is not None else ()
     if (
         catalogs.actions is not None
     ):  # the published catalog was not looked at: judge the pushed one
         assert catalogs.action_model is not None
         warnings += marking_warnings.precondition_warnings(
-            catalogs.action_model, catalogs.actions, entry
+            catalogs.action_model, catalogs.actions, locked.entry
         )
     if catalogs.views is not None:
         warnings += authored_views.deprecated_warnings(catalogs.views, catalogs.view_functions)
     if checked is not None:
-        warnings += checked.warnings(after, ws.skill.name)
-    return Pushed(after, data, seq, warnings)
+        warnings += checked.warnings(after, locked.ws.skill.name)
+    return warnings
 
 
 def _authorize(
