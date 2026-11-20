@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from graph_cli.kernel.authz import Decision
@@ -42,9 +42,7 @@ from graph_cli.kernel.records import OntologyPin, RequestMeta
 from graph_cli.kinetic.compile import compile_catalog
 from graph_cli.kinetic.entries import FunctionEntry, load_entries
 from graph_cli.kinetic.format import FILE_SUFFIX
-from graph_cli.ontology_layer.diff import derive_renames
 from graph_cli.ontology_layer.model import CompiledModel
-from graph_cli.temporal_knowledge.name_map import Hop
 from graph_cli_admin.services_admin import (
     actions,
     authored_views,
@@ -56,7 +54,6 @@ from graph_cli_admin.services_admin import (
 )
 from graph_cli_admin.services_admin.catalog_follow import Republish, function_entries, names_of
 from graph_cli_admin.services_admin.context import AdminContext
-from graph_cli_admin.services_admin.ontology import pinned_model
 from graph_cli_admin.services_admin.sources import (
     Base,
     base_document,
@@ -65,6 +62,7 @@ from graph_cli_admin.services_admin.sources import (
     write_base,
 )
 from graph_cli_admin.services_admin.sources_push_read import EMPTY, Workspace, read_workspace
+from graph_cli_admin.services_admin.sources_push_state import Catalogs, Current, Locked, Publishing
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,112 +80,6 @@ class _Authorized:
     meta: RequestMeta
     configure: tuple[Decision, ...]
     decisions: release.Decisions | None  # only when the ontology is a new release
-
-
-@dataclass(frozen=True, slots=True)
-class _Current:
-    """The slots a graph holds under the lock; ``None``: nothing published."""
-
-    skill: SkillSlot | None
-    functions: KineticSlot | None
-    actions: KineticSlot | None
-    views: KineticSlot | None
-
-    @property
-    def skill_hash(self) -> str | None:
-        return self.skill.hash if self.skill is not None else None
-
-    @property
-    def functions_hash(self) -> str:
-        return self.functions.hash if self.functions is not None else EMPTY
-
-    @property
-    def actions_hash(self) -> str:
-        return self.actions.hash if self.actions is not None else EMPTY
-
-    @property
-    def views_hash(self) -> str:
-        return self.views.hash if self.views is not None else EMPTY
-
-
-@dataclass(frozen=True, slots=True)
-class _Publishing:
-    """What a push really writes: a kind is published when its folder differs from the base
-    and from what the graph holds; and the names each catalog will have."""
-
-    functions: bool
-    actions: bool
-    views: bool
-    # One namespace per graph: each kind is checked against the names of the other kind the
-    # graph will have (the pushed files if the push publishes them, else the published).
-    function_names: frozenset[str]
-    action_names: frozenset[str]
-
-
-@dataclass(frozen=True, slots=True)
-class _Locked:
-    """What the checks of a push under the lock read: the graph as the release leaves it
-    (``after``, before any write), the workspace, the published slots and the release plan."""
-
-    ctx: AdminContext
-    entry: GraphEntry  # re-read under the lock
-    after: GraphEntry  # the entry with the pin the release will set; the writes return the real one
-    ws: Workspace
-    current: _Current
-    publishes: _Publishing
-    planned: release.Planned | None
-    pending: Hop | None  # the release as the last hop of the name map, for the rename hints
-    releasing: bool  # the release changes the graph: its pin moves
-
-    @classmethod
-    def of(
-        cls,
-        ctx: AdminContext,
-        entry: GraphEntry,
-        ws: Workspace,
-        current: _Current,
-        publishes: _Publishing,
-        planned: release.Planned | None,
-        target_pin: OntologyPin,
-    ) -> _Locked:
-        releasing = planned is not None and not planned.unchanged
-        after = replace(entry, pin=target_pin) if releasing else entry
-        # The functions the graph will have must resolve against the ontology it will have.
-        pending = _pending_hop(entry, planned) if releasing else None
-        return cls(
-            ctx=ctx,
-            entry=entry,
-            after=after,
-            ws=ws,
-            current=current,
-            publishes=publishes,
-            planned=planned,
-            pending=pending,
-            releasing=releasing,
-        )
-
-    @property
-    def publishing_skill(self) -> bool:
-        return self.ws.skill.changed and self.current.skill_hash != self.ws.skill.hash
-
-    def model(self) -> CompiledModel:
-        """The model the graph will have: the compiled one for a release, else the pinned one
-        (read on each call: once per kind, as the checks run)."""
-        if self.releasing:
-            return self.ws.compiled.model
-        return pinned_model(self.ctx.catalog, self.after)
-
-
-@dataclass(frozen=True, slots=True)
-class _Catalogs:
-    """The catalogs a push publishes (``None``: not published), checked, and what the
-    warnings read of the checks afterwards."""
-
-    functions: KineticSlot | None
-    actions: KineticSlot | None
-    views: KineticSlot | None
-    action_model: CompiledModel | None  # the model the pushed actions were checked against
-    view_functions: tuple[FunctionEntry, ...]  # the functions the pushed views were checked with
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,7 +122,7 @@ def push(
         _check_unmoved(ws, entry, current, target_pin)
         publishes = _publishing(ws, current)
         planned = _plan_release(ctx, session, ws, current, publishes, dry_run=dry_run)
-        locked = _Locked.of(ctx, entry, ws, current, publishes, planned, target_pin)
+        locked = Locked.of(ctx, entry, ws, current, publishes, planned, target_pin)
         catalogs = _check_catalogs(locked)
         checked = _check_skill(locked, catalogs, inventory=inventory)
         slot = _skill_slot(locked, checked)
@@ -250,8 +142,8 @@ def push(
 def _write_all(
     ctx: AdminContext,
     session: MaintenanceSession,
-    locked: _Locked,
-    catalogs: _Catalogs,
+    locked: Locked,
+    catalogs: Catalogs,
     slot: SkillSlot | None,
     auth: _Authorized,
     *,
@@ -306,7 +198,7 @@ def _write_all(
     return after
 
 
-def _final(locked: _Locked, catalogs: _Catalogs, slot: SkillSlot | None) -> _Final:
+def _final(locked: Locked, catalogs: Catalogs, slot: SkillSlot | None) -> _Final:
     """The slots the graph holds after the push."""
     planned, current = locked.planned, locked.current
     # a catalog the release compiles again (plan M8) is the same sources, compiled anew
@@ -328,8 +220,8 @@ def _source_document(after: GraphEntry, final: _Final) -> dict[str, JsonValue]:
 
 
 def _answer(
-    locked: _Locked,
-    catalogs: _Catalogs,
+    locked: Locked,
+    catalogs: Catalogs,
     slot: SkillSlot | None,
     final: _Final,
     after: GraphEntry,
@@ -381,7 +273,7 @@ def _answer(
     return data
 
 
-def _ontology_answer(locked: _Locked) -> dict[str, JsonValue]:
+def _ontology_answer(locked: Locked) -> dict[str, JsonValue]:
     """The release the push makes, or that there is none."""
     if locked.planned is not None:
         return locked.planned.data
@@ -395,7 +287,7 @@ def _ontology_answer(locked: _Locked) -> dict[str, JsonValue]:
 
 
 def _skill_answer(
-    locked: _Locked, slot: SkillSlot | None, final: _Final, *, dry_run: bool
+    locked: Locked, slot: SkillSlot | None, final: _Final, *, dry_run: bool
 ) -> dict[str, JsonValue] | None:
     """What the push does with the skill; ``None`` without a skill directory."""
     ws, current = locked.ws, locked.current
@@ -429,7 +321,7 @@ def _kind_answer(
 
 
 def _warnings(
-    locked: _Locked, catalogs: _Catalogs, checked: skill.Checked | None, after: GraphEntry
+    locked: Locked, catalogs: Catalogs, checked: skill.Checked | None, after: GraphEntry
 ) -> tuple[WarningRecord, ...]:
     """The warnings of the push: the release's, then the pushed actions', views' and skill's.
     Computed after the writes and the new base: a warning check that raises fails the command
@@ -483,7 +375,7 @@ def _authorize(
     return _Authorized(meta=meta, configure=configure, decisions=decisions)
 
 
-def _publishing(ws: Workspace, current: _Current) -> _Publishing:
+def _publishing(ws: Workspace, current: Current) -> Publishing:
     """Which of the function, action and view folders the push publishes, and the names the
     functions and the actions will have."""
     functions_published = ws.functions.changed and current.functions_hash != ws.functions.hash
@@ -493,7 +385,7 @@ def _publishing(ws: Workspace, current: _Current) -> _Publishing:
         _stems(ws.functions.files) if functions_published else names_of(current.functions)
     )
     action_names = _stems(ws.actions.files) if actions_published else names_of(current.actions)
-    return _Publishing(
+    return Publishing(
         functions=functions_published,
         actions=actions_published,
         views=views_published,
@@ -503,7 +395,7 @@ def _publishing(ws: Workspace, current: _Current) -> _Publishing:
 
 
 def _views_for_release(
-    ws: Workspace, current: _Current, publishes: _Publishing
+    ws: Workspace, current: Current, publishes: Publishing
 ) -> tuple[bool, tuple[FunctionEntry, ...] | None]:
     """Whether the release leaves the published views to the push, and else the functions it
     judges them with. The published views are checked in the release with the functions the
@@ -527,8 +419,8 @@ def _plan_release(
     ctx: AdminContext,
     session: MaintenanceSession,
     ws: Workspace,
-    current: _Current,
-    publishes: _Publishing,
+    current: Current,
+    publishes: Publishing,
     *,
     dry_run: bool,
 ) -> release.Planned | None:
@@ -550,7 +442,7 @@ def _plan_release(
     )
 
 
-def _functions_slot(locked: _Locked) -> KineticSlot | None:
+def _functions_slot(locked: Locked) -> KineticSlot | None:
     """The functions the push publishes, checked against the model the graph will have;
     ``None`` when it publishes none (the folder must still be valid)."""
     ws = locked.ws
@@ -578,7 +470,7 @@ def _functions_slot(locked: _Locked) -> KineticSlot | None:
     return functions.slot_of(checked, locked.after)
 
 
-def _actions_slot(locked: _Locked) -> tuple[KineticSlot | None, CompiledModel | None]:
+def _actions_slot(locked: Locked) -> tuple[KineticSlot | None, CompiledModel | None]:
     """The actions the push publishes and the model they were checked against."""
     ws = locked.ws
     if not locked.publishes.actions:
@@ -598,7 +490,7 @@ def _actions_slot(locked: _Locked) -> tuple[KineticSlot | None, CompiledModel | 
 
 
 def _views_slot(
-    locked: _Locked, function_slot: KineticSlot | None
+    locked: Locked, function_slot: KineticSlot | None
 ) -> tuple[KineticSlot | None, tuple[FunctionEntry, ...]]:
     """The views the push publishes and the functions they were checked with: the pushed
     ones, else the published ones as the release leaves them."""
@@ -627,13 +519,13 @@ def _views_slot(
     return authored_views.slot_of(checked, locked.after), entries
 
 
-def _check_catalogs(locked: _Locked) -> _Catalogs:
+def _check_catalogs(locked: Locked) -> Catalogs:
     """Check the catalogs the graph will have, in the order functions, actions, views: the
     first refusal is the one the user sees."""
     function_slot = _functions_slot(locked)
     action_slot, action_model = _actions_slot(locked)
     view_slot, view_functions = _views_slot(locked, function_slot)
-    return _Catalogs(
+    return Catalogs(
         functions=function_slot,
         actions=action_slot,
         views=view_slot,
@@ -643,7 +535,7 @@ def _check_catalogs(locked: _Locked) -> _Catalogs:
 
 
 def _check_skill(
-    locked: _Locked, catalogs: _Catalogs, *, inventory: Mapping[str, JsonValue]
+    locked: Locked, catalogs: Catalogs, *, inventory: Mapping[str, JsonValue]
 ) -> skill.Checked | None:
     """The skill the graph will have, checked against the ontology and the catalogs it will
     have; ``None`` when neither the release nor the skill changes it, or there is no skill."""
@@ -677,7 +569,7 @@ def _check_skill(
     return checked
 
 
-def _skill_slot(locked: _Locked, checked: skill.Checked | None) -> SkillSlot | None:
+def _skill_slot(locked: Locked, checked: skill.Checked | None) -> SkillSlot | None:
     """The slot of the skill the push publishes, ``None`` when it publishes none."""
     if not locked.publishing_skill:
         return None
@@ -686,9 +578,9 @@ def _skill_slot(locked: _Locked, checked: skill.Checked | None) -> SkillSlot | N
     return SkillSlot(checked.kind, ws.skill.hash, locked.after.pin, ws.skill.files)
 
 
-def _read_current(session: MaintenanceSession) -> _Current:
+def _read_current(session: MaintenanceSession) -> Current:
     """The published slots, read under the lock in the order skill, functions, actions, views."""
-    return _Current(
+    return Current(
         skill=skill.current_slot(session),
         functions=functions.current_slot(session),
         actions=actions.current_slot(session),
@@ -697,7 +589,7 @@ def _read_current(session: MaintenanceSession) -> _Current:
 
 
 def _check_unmoved(
-    ws: Workspace, entry: GraphEntry, current: _Current, target_pin: OntologyPin
+    ws: Workspace, entry: GraphEntry, current: Current, target_pin: OntologyPin
 ) -> None:
     """``admin.source_conflict`` unless every part of the graph is still what the base says
     or already what the push makes of it (a repeated push)."""
@@ -727,7 +619,7 @@ def _stems(files: Mapping[str, bytes]) -> frozenset[str]:
     return frozenset(n.removesuffix(FILE_SUFFIX) for n in files)
 
 
-def _conflict(source: Path, entry: GraphEntry, base: Base, current: _Current) -> GraphCliError:
+def _conflict(source: Path, entry: GraphEntry, base: Base, current: Current) -> GraphCliError:
     base_details: dict[str, JsonValue] = {
         "ontology": base.pin.to_json(),
         "skill": base.skill,
@@ -754,15 +646,3 @@ def _conflict(source: Path, entry: GraphEntry, base: Base, current: _Current) ->
             "current": current_details,
         },
     )
-
-
-def _pending_hop(entry: GraphEntry, planned: release.Planned | None) -> Hop | None:
-    """The release a push makes, as the last step of the graph's name map: the rename hints
-    of the functions and actions it publishes name its version (migration plan M7)."""
-    if planned is None or planned.old is None:
-        return None
-    old, new = planned.old.model, planned.compiled.model
-    run = planned.migration
-    renames = run.renames if run is not None else derive_renames(old, new)
-    doc = run.migration.doc if run is not None and run.migration is not None else None
-    return Hop(entry.pin.version, planned.compiled.pin.version, old, new, renames, doc)
